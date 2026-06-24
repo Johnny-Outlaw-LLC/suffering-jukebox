@@ -632,6 +632,8 @@ body:not(.light) .tt-num { color: var(--text); }
 .sc-sub { font-size: .5rem; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sc-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: .75rem; padding: 3px 5px; border-radius: 5px; transition: color .1s, background .1s; flex-shrink: 0; line-height: 1; }
 .sc-close:hover { color: var(--text); background: var(--border); }
+.sc-gear { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: .75rem; padding: 3px 5px; border-radius: 5px; transition: color .1s, background .1s; flex-shrink: 0; line-height: 1; }
+.sc-gear:hover { color: var(--accent,#a78bfa); background: var(--border); }
 .sc-body { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .sc-section-lbl { font-size: .4rem; letter-spacing: .16em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; justify-content: space-between; }
 .sc-metrics { display: flex; gap: 14px; flex-wrap: wrap; }
@@ -909,6 +911,22 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
 .admin-metrics-error { font-size:.56rem; color:#ef4444; text-align:center; padding:1rem 0; }
 .admin-detail-back { background:none; border:none; color:#a78bfa; font-family:var(--mono); font-size:.52rem; cursor:pointer; padding:0; margin-bottom:.75rem; letter-spacing:.04em; }
 .admin-detail-back:hover { color:#c4b5fd; }
+/* Song Details modal */
+.sd-meta-row { font-size:.46rem; color:var(--text-muted); margin-bottom:.75rem; display:flex; flex-wrap:wrap; gap:.25rem; align-items:center; }
+.sd-meta-dot { opacity:.4; }
+.sd-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:.45rem; margin-bottom:.9rem; }
+@media(max-width:420px){ .sd-metrics { grid-template-columns:repeat(2,1fr); } }
+.sd-metric { background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:.5rem .6rem; }
+.sd-metric-lbl { font-size:.38rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
+.sd-metric-val { font-size:.68rem; font-weight:700; margin-top:.12rem; color:var(--text); }
+.sd-metric-sm { font-size:.52rem !important; }
+.sd-field { display:grid; gap:.28rem; margin-bottom:.6rem; }
+.sd-field label { font-size:.4rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
+.sd-input { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.52rem; padding:.5rem .65rem; border-radius:8px; box-sizing:border-box; }
+.sd-input:focus { outline:none; border-color:#7c3aed88; }
+.sd-field-ro { margin-top:-.1rem; }
+.sd-readonly { font-size:.48rem; color:var(--text-muted); word-break:break-all; }
+.sd-status { font-size:.48rem; min-height:1.2em; margin-top:.25rem; color:var(--text-muted); }
 .admin-detail-section { margin-bottom:1rem; }
 .admin-detail-section h4 { font-size:.48rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); margin-bottom:.45rem; }
 .admin-detail-table { width:100%; border-collapse:collapse; font-size:.52rem; }
@@ -1003,7 +1021,6 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
           <button type="button" class="user-menu-item" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
-          <button type="button" class="user-menu-item admin-only" id="user-menu-songs" onclick="userMenuAction('songs')">Song Management</button>
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
         </div>
       </div>
@@ -1103,14 +1120,18 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
   </div>
 </div>
 
-<!-- ADMIN SONG MANAGEMENT -->
-<div class="pl-modal-overlay" id="adminSongsOverlay" onclick="if(event.target===this)closeAdminSongs()">
-  <div class="pl-modal admin-modal-wide" style="width:min(720px,96vw)!important">
-    <div class="pl-modal-header"><span class="pl-modal-title" id="admin-songs-title">Song Management</span><button class="modal-close" onclick="closeAdminSongs()">✕</button></div>
-    <div class="pl-modal-body" id="admin-songs-body"><div class="admin-metrics-loading">Loading catalog…</div></div>
-    <div class="pl-modal-footer" id="admin-songs-footer">
-      <button class="pl-btn ghost" onclick="closeAdminSongs()">Close</button>
-      <button class="pl-btn" id="admin-songs-refresh" onclick="adminSongsRefresh()">Refresh</button>
+
+<!-- SONG DETAILS MODAL -->
+<div class="pl-modal-overlay" id="songDetailsOverlay" onclick="if(event.target===this)closeSongDetails()">
+  <div class="pl-modal" style="width:min(480px,96vw)">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title" id="song-details-title">Song Details</span>
+      <button class="modal-close" onclick="closeSongDetails()">✕</button>
+    </div>
+    <div class="pl-modal-body" id="song-details-body"><div class="admin-metrics-loading">Loading…</div></div>
+    <div class="pl-modal-footer" id="song-details-footer">
+      <button class="pl-btn ghost" onclick="closeSongDetails()">Cancel</button>
+      <button class="pl-btn sd-save-btn">Save &amp; Refresh Views</button>
     </div>
   </div>
 </div>
@@ -1939,6 +1960,7 @@ function openSongCard(trackId) {
         <div class="sc-track-name" style="color:var(--text)">${track.name}</div>
         <div class="sc-sub">${metaLine}</div>
       </div>
+      ${sjIsAdmin ? `<button class="sc-gear" onclick="openSongDetails('${trackId}');event.stopPropagation()" title="Song details">⚙</button>` : ''}
       <button class="sc-close" onclick="closeSongCard('${trackId}')" title="Close">✕</button>
     </div>
     <div class="sc-body">
@@ -4220,9 +4242,6 @@ const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
 let googleUser = null;
 let sjIsAdmin = false;
 let sjLastUpdated = SJ_APP_UPDATED_FALLBACK;
-let _adminSongView = 'catalog';
-let _adminSongTrackId = null;
-let _adminSongCatalog = null;
 const SJ_PROTECTED_ADMIN_EMAIL = 'johnnyoutlawllc@gmail.com';
 
 function sjApiUrl(path) {
@@ -4291,10 +4310,6 @@ async function userMenuAction(action) {
     if (!sjIsAdmin) return;
     openAdminUsers();
     return;
-  }
-  if (action === 'songs') {
-    if (!sjIsAdmin) return;
-    openAdminSongs();
   }
 }
 
@@ -4690,176 +4705,88 @@ async function toggleAdminUser(email, makeAdmin, btn) {
   }
 }
 
-// ── Admin: Song Management ───────────────────────────────────
-function openAdminSongs() {
+// ── Song Details Modal (admin) ────────────────────────────────
+async function openSongDetails(trackId) {
   if (!sjIsAdmin) return;
-  _adminSongView = 'catalog';
-  _adminSongTrackId = null;
-  document.getElementById('adminSongsOverlay')?.classList.add('open');
-  loadAdminSongCatalog();
-}
-
-function closeAdminSongs() {
-  document.getElementById('adminSongsOverlay')?.classList.remove('open');
-}
-
-function adminSongsRefresh() {
-  if (_adminSongView === 'detail' && _adminSongTrackId) loadAdminSongDetail(_adminSongTrackId);
-  else loadAdminSongCatalog();
-}
-
-function renderAdminSongCatalog(catalog) {
-  const body = document.getElementById('admin-songs-body');
-  if (!body) return;
-  const totalTracks = catalog.reduce((n, alb) => n + (alb.tracks?.length || 0), 0);
-  if (!catalog.length) {
-    body.innerHTML = '<div class="admin-metrics-error">No albums found.</div>';
-    return;
-  }
-  body.innerHTML = `
-    <div class="admin-page-toolbar">
-      <div class="admin-page-title">${fmtAdminNum(catalog.length)} albums · ${fmtAdminNum(totalTracks)} tracks</div>
-    </div>
-    ${catalog.map((alb, albIdx) => `
-      <div class="admin-song-album">
-        <div class="admin-song-album-hdr" onclick="toggleAdminSongAlbum(${albIdx})">
-          <div>
-            <h3>${escAdmin(alb.name || 'Untitled album')}</h3>
-            <div class="admin-song-album-meta">${escAdmin(alb.artist_name || '')}${alb.release_date ? ' · ' + escAdmin(alb.release_date) : ''} · ${alb.tracks?.length || 0} tracks</div>
-          </div>
-          <div class="admin-song-album-meta" id="admin-song-album-chevron-${albIdx}">▾</div>
-        </div>
-        <div id="admin-song-album-tracks-${albIdx}">
-          ${(alb.tracks || []).map(t => `
-            <div class="admin-song-track" data-track-id="${escAdmin(t.id)}" onclick="loadAdminSongDetail(this.dataset.trackId)">
-              <div>
-                <div class="admin-song-track-name">${escAdmin(t.track_number ? t.track_number + '. ' : '')}${escAdmin(t.name || 'Untitled track')}</div>
-                <div class="admin-song-album-meta">${t.video_id ? 'YouTube: ' + escAdmin(t.video_id) : 'No YouTube link'}</div>
-              </div>
-              <div class="num" style="font-size:.46rem;color:var(--text-muted)">${t.views != null ? fmtV(t.views) + ' views' : '—'}</div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `).join('')}`;
-}
-
-function toggleAdminSongAlbum(albIdx) {
-  const tracks = document.getElementById('admin-song-album-tracks-' + albIdx);
-  const chev = document.getElementById('admin-song-album-chevron-' + albIdx);
-  if (!tracks) return;
-  const hidden = tracks.style.display === 'none';
-  tracks.style.display = hidden ? '' : 'none';
-  if (chev) chev.textContent = hidden ? '▾' : '▸';
-}
-
-async function loadAdminSongCatalog() {
-  _adminSongView = 'catalog';
-  _adminSongTrackId = null;
-  const body = document.getElementById('admin-songs-body');
-  const title = document.getElementById('admin-songs-title');
-  const refresh = document.getElementById('admin-songs-refresh');
-  if (!body) return;
-  if (title) title.textContent = 'Song Management';
-  if (refresh) refresh.textContent = 'Refresh';
-  body.innerHTML = '<div class="admin-metrics-loading">Loading catalog…</div>';
+  const overlay = document.getElementById('songDetailsOverlay');
+  const body    = document.getElementById('song-details-body');
+  const footer  = document.getElementById('song-details-footer');
+  if (!overlay || !body) return;
+  overlay.classList.add('open');
+  body.innerHTML = '<div class="admin-metrics-loading">Loading…</div>';
+  if (footer) footer.style.display = 'none';
   try {
-    const res = await fetch(sjApiUrl('/api/sj-admin-songs'), { headers: await sjAuthHeaders() });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load catalog.');
-    _adminSongCatalog = data.catalog || [];
-    renderAdminSongCatalog(_adminSongCatalog);
-  } catch (e) {
-    body.innerHTML = `<div class="admin-metrics-error">${escAdmin(e.message || 'Could not load catalog.')}</div>`;
-  }
-}
-
-async function loadAdminSongDetail(trackId) {
-  _adminSongView = 'detail';
-  _adminSongTrackId = trackId;
-  const body = document.getElementById('admin-songs-body');
-  const title = document.getElementById('admin-songs-title');
-  const refresh = document.getElementById('admin-songs-refresh');
-  if (!body) return;
-  body.innerHTML = '<div class="admin-metrics-loading">Loading song…</div>';
-  if (refresh) refresh.textContent = 'Refresh Detail';
-  try {
-    const res = await fetch(sjApiUrl('/api/sj-admin-songs?track_id=' + encodeURIComponent(trackId)), { headers: await sjAuthHeaders() });
+    const res  = await fetch(sjApiUrl('/api/sj-admin-songs?track_id=' + encodeURIComponent(trackId)), { headers: await sjAuthHeaders() });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load song.');
-    const track = data.track;
-    const album = data.album;
-    const yt = data.youtube || {};
-    if (title) title.textContent = track?.name || 'Song';
+    const track   = data.track   || {};
+    const album   = data.album   || {};
+    const yt      = data.youtube || {};
     const videoId = yt.youtube_video_id || '';
+    const dur     = track.duration_ms ? fmtDur(track.duration_ms) : '—';
+    document.getElementById('song-details-title').textContent = track.name || 'Song Details';
     body.innerHTML = `
-      <button type="button" class="admin-detail-back" onclick="loadAdminSongCatalog()">← Back to albums</button>
-      <div class="admin-page-toolbar" style="margin-top:.25rem">
-        <div>
-          <div class="admin-page-title">${escAdmin(track?.name || 'Track')}</div>
-          <div class="admin-song-album-meta">${escAdmin(album?.name || '')}${album?.release_date ? ' · ' + escAdmin(album.release_date) : ''}</div>
-        </div>
+      <div class="sd-meta-row">
+        <span class="sd-meta-alb">${escAdmin(album.name || '')}</span>
+        ${track.track_number ? `<span class="sd-meta-dot">·</span><span class="sd-meta-num">Track ${track.track_number}</span>` : ''}
+        ${dur !== '—' ? `<span class="sd-meta-dot">·</span><span class="sd-meta-dur">${escAdmin(dur)}</span>` : ''}
       </div>
-      <div class="admin-song-detail-grid">
-        <div class="admin-song-metrics">
-          <div class="admin-song-metric"><div class="admin-song-metric-lbl">YouTube Views</div><div class="admin-song-metric-val" id="admin-song-views">${yt.youtube_views != null ? fmtV(yt.youtube_views) : '—'}</div></div>
-          <div class="admin-song-metric"><div class="admin-song-metric-lbl">YouTube Likes</div><div class="admin-song-metric-val" id="admin-song-likes">${yt.youtube_likes != null ? fmtV(yt.youtube_likes) : '—'}</div></div>
-          <div class="admin-song-metric"><div class="admin-song-metric-lbl">Track #</div><div class="admin-song-metric-val">${track?.track_number ?? '—'}</div></div>
-        </div>
-        <div class="admin-song-field">
-          <label for="admin-yt-input">YouTube Link or Video ID</label>
-          <input id="admin-yt-input" type="text" value="${videoId ? 'https://www.youtube.com/watch?v=' + escAdmin(videoId) : ''}" placeholder="https://www.youtube.com/watch?v=…">
-        </div>
-        <div class="admin-song-field">
-          <label>Track ID</label>
-          <div class="admin-song-readonly">${escAdmin(track?.id || '')}</div>
-        </div>
-        <div class="admin-song-field">
-          <label>Duration</label>
-          <div class="admin-song-readonly">${track?.duration_ms ? Math.round(track.duration_ms / 1000) + 's' : '—'}</div>
-        </div>
-        <div class="admin-song-field">
-          <label>Lyrics Source</label>
-          <div class="admin-song-readonly">${escAdmin(data.lyrics?.lyrics_source || '—')}</div>
-        </div>
-        <div style="display:flex;gap:.5rem;justify-content:flex-end">
-          <button class="pl-btn" id="admin-yt-save" onclick="saveAdminSongYoutube('${trackId}')">Save Link &amp; Refresh Views</button>
-        </div>
-        <div id="admin-song-save-status" style="font-size:.48rem;color:var(--text-muted)"></div>
-      </div>`;
+      <div class="sd-metrics">
+        <div class="sd-metric"><div class="sd-metric-lbl">YT Views</div><div class="sd-metric-val" id="sd-views">${yt.youtube_views != null ? fmtV(yt.youtube_views) : '—'}</div></div>
+        <div class="sd-metric"><div class="sd-metric-lbl">YT Likes</div><div class="sd-metric-val" id="sd-likes">${yt.youtube_likes != null ? fmtV(yt.youtube_likes) : '—'}</div></div>
+        <div class="sd-metric"><div class="sd-metric-lbl">Jukebox Plays</div><div class="sd-metric-val">${fmtV(data.play_count ?? 0)}</div></div>
+        <div class="sd-metric"><div class="sd-metric-lbl">Lyrics Source</div><div class="sd-metric-val sd-metric-sm">${escAdmin(data.lyrics?.lyrics_source || '—')}</div></div>
+      </div>
+      <div class="sd-field">
+        <label for="sd-yt-input">YouTube Link or Video ID</label>
+        <input id="sd-yt-input" type="text" class="sd-input" value="${videoId ? 'https://www.youtube.com/watch?v=' + escAdmin(videoId) : ''}" placeholder="https://www.youtube.com/watch?v=…">
+      </div>
+      <div class="sd-field sd-field-ro">
+        <label>Track ID</label>
+        <span class="sd-readonly">${escAdmin(track.id || '')}</span>
+      </div>
+      <div id="sd-status" class="sd-status"></div>`;
+    if (footer) {
+      footer.style.display = '';
+      footer.querySelector('.sd-save-btn').onclick = () => _saveSongDetails(trackId);
+    }
   } catch (e) {
-    body.innerHTML = `<button type="button" class="admin-detail-back" onclick="loadAdminSongCatalog()">← Back to albums</button><div class="admin-metrics-error">${escAdmin(e.message || 'Could not load song.')}</div>`;
+    body.innerHTML = `<div class="admin-metrics-error">${escAdmin(e.message || 'Could not load song.')}</div>`;
+    if (footer) footer.style.display = '';
   }
 }
 
-async function saveAdminSongYoutube(trackId) {
-  const input = document.getElementById('admin-yt-input');
-  const btn = document.getElementById('admin-yt-save');
-  const status = document.getElementById('admin-song-save-status');
-  if (!input || !btn) return;
+function closeSongDetails() {
+  document.getElementById('songDetailsOverlay')?.classList.remove('open');
+}
+
+async function _saveSongDetails(trackId) {
+  const input  = document.getElementById('sd-yt-input');
+  const saveBtn = document.querySelector('#song-details-footer .sd-save-btn');
+  const status = document.getElementById('sd-status');
+  if (!input || !saveBtn) return;
   const youtube_url = input.value.trim();
-  if (!youtube_url) { alert('Enter a YouTube link or video ID.'); return; }
-  btn.disabled = true;
-  if (status) status.textContent = 'Saving and fetching YouTube stats…';
+  if (!youtube_url) { if (status) { status.textContent = 'Enter a YouTube link or video ID.'; status.style.color = 'var(--danger,#ef4444)'; } return; }
+  saveBtn.disabled = true;
+  if (status) { status.textContent = 'Saving and fetching YouTube stats…'; status.style.color = 'var(--text-muted)'; }
   try {
-    const res = await fetch(sjApiUrl('/api/sj-admin-songs'), {
+    const res  = await fetch(sjApiUrl('/api/sj-admin-songs'), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
       body: JSON.stringify({ track_id: trackId, youtube_url }),
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Save failed.');
-    const viewsEl = document.getElementById('admin-song-views');
-    const likesEl = document.getElementById('admin-song-likes');
+    const viewsEl = document.getElementById('sd-views');
+    const likesEl = document.getElementById('sd-likes');
     if (viewsEl) viewsEl.textContent = fmtV(data.views);
     if (likesEl) likesEl.textContent = fmtV(data.likes);
-    if (status) status.textContent = 'Saved. View counts updated from YouTube.';
-    await loadData();
+    if (status) { status.textContent = '✓ Saved — view counts refreshed from YouTube.'; status.style.color = '#4ade80'; }
+    await loadData();   // refresh chart bars etc.
   } catch (e) {
-    if (status) status.textContent = '';
-    alert(e.message || 'Could not save YouTube link.');
+    if (status) { status.textContent = e.message || 'Could not save.'; status.style.color = 'var(--danger,#ef4444)'; }
   } finally {
-    btn.disabled = false;
+    saveBtn.disabled = false;
   }
 }
 
@@ -6113,3 +6040,4 @@ function escHtml(s) {
 </script>
 </body>
 </html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
