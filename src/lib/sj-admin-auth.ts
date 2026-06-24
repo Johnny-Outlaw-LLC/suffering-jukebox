@@ -7,12 +7,16 @@ export const SJ_PROTECTED_ADMIN_EMAIL = "johnnyoutlawllc@gmail.com";
 export const SJ_SUPABASE_URL = "https://ntyvtpimesfoesuykuyi.supabase.co";
 export const SJ_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMTc0NjIsImV4cCI6MjA4OTU5MzQ2Mn0.S6hw0xc4PVKZy_OBj7eu8eRpGHEqZMJ6_6p_Lut1BpQ";
-const SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDAxNzQ2MiwiZXhwIjoyMDg5NTkzNDYyfQ.V5n70eqfAAL_fUtT-EctG_BqmCdfYp9BHxuZ18Zmfz4";
+function requireServiceRoleKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!key) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured.");
+  }
+  return key;
+}
 
 export function createSjServiceClient() {
-  return createClient(SJ_SUPABASE_URL, SERVICE_ROLE_KEY, {
+  return createClient(SJ_SUPABASE_URL, requireServiceRoleKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
