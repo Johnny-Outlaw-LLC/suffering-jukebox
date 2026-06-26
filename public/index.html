@@ -5135,7 +5135,6 @@ async function loadDailyMetrics() {
   const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
   const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   try {
-    // ── 1. YT daily view counts ─────────────────────────────────────────────
     const ytRows = await fetch(
       `${REST}/yt_daily_snapshots?select=track_id,snapshot_date,view_count&snapshot_date=gte.${since}&order=track_id.asc,snapshot_date.asc`,
       { headers: hdrs }
@@ -5149,13 +5148,12 @@ async function loadDailyMetrics() {
     }
   } catch (e) { console.warn('loadDailyMetrics yt error', e); }
   try {
-    // ── 2. Daily jukebox play counts ────────────────────────────────────────
     const peRows = await fetch(
       `${REST}/play_events?select=track_id,played_at&played_at=gte.${since}T00:00:00Z&track_id=neq.test-verify&album_id=not.is.null`,
       { headers: hdrs }
     ).then(r => r.json());
     if (Array.isArray(peRows)) {
-      const _tmp = {}; // trackId+date → count
+      const _tmp = {};
       peRows.forEach(r => {
         if (!r.track_id || !r.played_at) return;
         const day = r.played_at.slice(0, 10);
@@ -5166,18 +5164,16 @@ async function loadDailyMetrics() {
         const [tid, date] = key.split('|');
         (dailyPlaysData[tid] = dailyPlaysData[tid] || []).push({ date, count });
       });
-      // sort each track's array by date
       Object.values(dailyPlaysData).forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
     }
   } catch (e) { console.warn('loadDailyMetrics plays error', e); }
   try {
-    // ── 3. Daily rating events ──────────────────────────────────────────────
     const reRows = await fetch(
       `${REST}/rating_events?select=track_id,rated_at,new_rating&rated_at=gte.${since}T00:00:00Z&album_id=not.is.null`,
       { headers: hdrs }
     ).then(r => r.json());
     if (Array.isArray(reRows)) {
-      const _tmp = {}; // trackId+date → {sum, count}
+      const _tmp = {};
       reRows.forEach(r => {
         if (!r.track_id || !r.rated_at || r.new_rating == null) return;
         const day = r.rated_at.slice(0, 10);
@@ -5195,7 +5191,6 @@ async function loadDailyMetrics() {
   } catch (e) { console.warn('loadDailyMetrics ratings error', e); }
 }
 
-// ── Render a mini sparkline SVG ─────────────────────────────────────────────
 function renderSparkSVG(points, color) {
   if (!points || points.length < 2) return '';
   const vals = points.map(p => p.value);
@@ -5207,7 +5202,6 @@ function renderSparkSVG(points, color) {
   const ys = points.map(p => H - pad - ((p.value - minV) / range) * (H - pad * 2));
   const d  = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
   const fd = d + ` L${xs[xs.length-1].toFixed(1)},${H} L${xs[0].toFixed(1)},${H} Z`;
-  // mark the last (most recent) point
   const lx = xs[xs.length-1], ly = ys[ys.length-1];
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
     <path d="${fd}" fill="${color}" opacity="0.15"/>
@@ -5216,13 +5210,10 @@ function renderSparkSVG(points, color) {
   </svg>`;
 }
 
-// ── Get daily sparkline data for a track (or album) given current metric ────
 function getDailySparkPoints(trackId) {
-  let raw, labelKey;
   if (barChartMode === 'yt') {
     const arr = dailyYtData[trackId];
     if (!arr || arr.length < 2) return null;
-    // compute daily deltas (new views per day)
     const pts = [];
     for (let i = 1; i < arr.length; i++) {
       const delta = Math.max(0, arr[i].views - arr[i-1].views);
@@ -5241,43 +5232,33 @@ function getDailySparkPoints(trackId) {
   return null;
 }
 
-// ── Aggregate daily spark data across multiple track IDs (for album) ─────────
 function getAlbumDailySparkPoints(albId) {
-  // find all tracks for this album
   const albTrackIds = [];
   for (const aid of Object.keys(tracks)) {
     (tracks[aid] || []).filter(t => t.album_id === albId).forEach(t => albTrackIds.push(t.id));
   }
   if (!albTrackIds.length) return null;
-
-  // gather all dates across all tracks, sum values per date
-  const dateMap = {};
-  albTrackIds.forEach(tid => {
-    const sp = getDailySparkPoints(tid);
-    if (!sp) return;
-    sp.points.forEach(p => {
-      dateMap[p.date] = (dateMap[p.date] || 0) + p.value;
-    });
-  });
-  const dates = Object.keys(dateMap).sort();
-  if (!dates.length) return null;
-  const label = barChartMode === 'yt' ? 'Daily New YT Views' : barChartMode === 'score' ? 'Avg Daily Rating' : 'Daily Jukebox Plays';
-  // for score/rating: average instead of sum
   if (barChartMode === 'score') {
-    const rateDateMap = {};
-    const rateCountMap = {};
+    const rateDateMap = {}, rateCountMap = {};
     albTrackIds.forEach(tid => {
-      const arr = dailyRatingData[tid];
-      if (!arr) return;
-      arr.forEach(p => {
+      (dailyRatingData[tid] || []).forEach(p => {
         rateDateMap[p.date] = (rateDateMap[p.date] || 0) + p.avg * p.count;
         rateCountMap[p.date] = (rateCountMap[p.date] || 0) + p.count;
       });
     });
-    const avgDates = Object.keys(rateDateMap).sort();
-    if (!avgDates.length) return null;
-    return { points: avgDates.map(d => ({ date: d, value: rateDateMap[d] / (rateCountMap[d] || 1) })), label };
+    const dates = Object.keys(rateDateMap).sort();
+    if (!dates.length) return null;
+    return { points: dates.map(d => ({ date: d, value: rateDateMap[d] / (rateCountMap[d] || 1) })), label: 'Avg Daily Rating' };
   }
+  const dateMap = {};
+  albTrackIds.forEach(tid => {
+    const sp = getDailySparkPoints(tid);
+    if (!sp) return;
+    sp.points.forEach(p => { dateMap[p.date] = (dateMap[p.date] || 0) + p.value; });
+  });
+  const dates = Object.keys(dateMap).sort();
+  if (!dates.length) return null;
+  const label = barChartMode === 'yt' ? 'Daily New YT Views' : 'Daily Jukebox Plays';
   return { points: dates.map(d => ({ date: d, value: dateMap[d] })), label };
 }
 
@@ -5653,37 +5634,26 @@ init();
   function showTipForRow(row, e) {
     if (row === _cur) return;
     _cur = row;
-
-    // \u2500\u2500 Determine if track or album row \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    const isAlb = row.classList.contains('list-album-row');
+    const isAlb   = row.classList.contains('list-album-row');
     const trackId = row.dataset.trackId || null;
     const albId   = row.dataset.albId   || null;
     const color   = row.dataset.tipColor || row.dataset.albColor || 'var(--accent)';
     const thumb   = row.dataset.tipThumb || row.dataset.albThumb || '';
     const name    = row.dataset.tipName  || row.dataset.albName  || '';
     const albLbl  = row.dataset.tipAlb   || '';
-
-    // \u2500\u2500 Thumbnail \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     tipImg.innerHTML = thumb
       ? '<img src="' + thumb + '" style="width:56px;height:56px;border-radius:5px;object-fit:cover">'
       : '<div style="width:56px;height:56px;border-radius:5px;background:' + color + '22;display:flex;align-items:center;justify-content:center;font-size:1.2rem;color:' + color + '">' + (isAlb ? '\u266b' : '\u266a') + '</div>';
-
     tipName.textContent = name;
     tipAlb.textContent  = isAlb ? '' : albLbl;
     tipAlb.style.color  = color;
     tipStats.textContent= row.dataset.tipStats || '';
-
-    // \u2500\u2500 Sparkline \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     let sparkData = null;
-    if (trackId) {
-      sparkData = getDailySparkPoints(trackId);
-    } else if (albId) {
-      sparkData = getAlbumDailySparkPoints(albId);
-    }
-
+    if (trackId) sparkData = getDailySparkPoints(trackId);
+    else if (albId) sparkData = getAlbumDailySparkPoints(albId);
     if (sparkData && sparkData.points.length >= 2) {
-      const pts   = sparkData.points;
-      const first = pts[0].date.slice(5).replace('-', '/');   // MM/DD
+      const pts = sparkData.points;
+      const first = pts[0].date.slice(5).replace('-', '/');
       const last  = pts[pts.length-1].date.slice(5).replace('-', '/');
       const lastVal = pts[pts.length-1].value;
       const valFmt = lastVal >= 1000 ? fmtV(Math.round(lastVal)) : (Number.isInteger(lastVal) ? lastVal : lastVal.toFixed(1));
@@ -5694,17 +5664,14 @@ init();
     } else {
       tipSpark.innerHTML = '';
     }
-
     tip.classList.add('visible');
     positionTip(e);
   }
 
   document.addEventListener('mouseover', function(e) {
     if (window.innerWidth <= 640) return;
-    // Handle track rows (top tracks table)
     const trkRow = e.target.closest('.tt-row');
     if (trkRow && trkRow.dataset.tipName) { showTipForRow(trkRow, e); return; }
-    // Handle album rows (list view)
     const albRow = e.target.closest('.list-album-row');
     if (albRow && albRow.dataset.albId) { showTipForRow(albRow, e); return; }
     hideTip();
@@ -6041,4 +6008,223 @@ async function loadPlaylists() {
 function renderPlaylists() {
   // Trigger async load and re-render
   if (!_savedPlaylists.length) {
-    loadPlaylists().the
+    loadPlaylists().then(() => {
+      const wrap = document.getElementById('tl-wrap');
+      if (wrap && viewMode === 'playlists') wrap.innerHTML = buildPlaylistsHTML(_savedPlaylists);
+    });
+    return `<div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:.65rem">Loading playlists…</div>`;
+  }
+  return buildPlaylistsHTML(_savedPlaylists);
+}
+
+function buildPlaylistsHTML(playlists) {
+  const myEmail = googleUser?.email;
+  const mine = playlists.filter(p => p.user_email === myEmail);
+  const community = playlists.filter(p => p.is_public && p.user_email !== myEmail);
+
+  function plCard(p) {
+    const trackCount = p._tracks?.length || 0;
+    const isOwner = p.user_email === myEmail;
+    const firstTracks = (p._tracks || []).slice(0, 3).map(pt => {
+      const t = findTrackById(pt.track_id);
+      return t ? `<div style="font-size:.5rem;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name}</div>` : '';
+    }).join('');
+    return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:200px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+        <div>
+          <div style="font-size:.72rem;font-weight:700;color:var(--text);line-height:1.3">${(p.name||'').replace(/</g,'&lt;')}</div>
+          <div style="font-size:.48rem;color:var(--text-muted);margin-top:2px">${trackCount} track${trackCount===1?'':'s'}${!isOwner ? ` · by ${p.user_email.split('@')[0]}` : ''}</div>
+        </div>
+        ${p.is_public ? `<span style="font-size:.38rem;letter-spacing:.08em;text-transform:uppercase;color:#888;border:1px solid #333;border-radius:4px;padding:1px 5px;flex-shrink:0">Public</span>` : `<span style="font-size:.38rem;letter-spacing:.08em;text-transform:uppercase;color:#555;flex-shrink:0">Private</span>`}
+      </div>
+      <div style="min-height:36px">${firstTracks}</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:2px">
+        <button onclick="playFromPlaylist('${p.id}')" style="background:#ff4444;border:none;color:#fff;font-family:var(--mono);font-size:.5rem;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600">▶ Play</button>
+        <button onclick="loadAndAddPlaylistToQueue('${p.id}')" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-family:var(--mono);font-size:.5rem;padding:5px 10px;border-radius:6px;cursor:pointer">+ Queue</button>
+        ${isOwner ? `<button onclick="deletePlaylist('${p.id}')" style="background:none;border:none;color:#555;font-family:var(--mono);font-size:.65rem;padding:4px 6px;cursor:pointer;margin-left:auto" title="Delete" onmouseover="this.style.color='#ff4444'" onmouseout="this.style.color='#555'">✕</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  let html = `<div style="display:flex;flex-direction:column;gap:1.5rem;padding:.5rem 0">`;
+
+  if (mine.length) {
+    html += `<div>
+      <div style="font-size:.5rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);font-weight:600;margin-bottom:.6rem">My Playlists</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">${mine.map(plCard).join('')}</div>
+    </div>`;
+  }
+
+  if (community.length) {
+    html += `<div>
+      <div style="font-size:.5rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);font-weight:600;margin-bottom:.6rem">Community Playlists</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">${community.map(plCard).join('')}</div>
+    </div>`;
+  }
+
+  if (!mine.length && !community.length) {
+    html += `<div style="padding:3rem;text-align:center;color:var(--text-muted);font-size:.65rem">
+      No playlists yet.<br>
+      <span style="font-size:.58rem;opacity:.6">Add tracks to your queue and hit <strong>💾 Save Playlist</strong>.</span>
+    </div>`;
+  }
+
+  if (googleUser) {
+    html += `<div style="text-align:right;padding-top:.5rem">
+      <button onclick="_savedPlaylists=[];render()" style="background:none;border:none;color:var(--text-muted);font-family:var(--mono);font-size:.48rem;cursor:pointer;letter-spacing:.04em;padding:4px 0" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">↺ Refresh</button>
+    </div>`;
+  }
+
+  return html + '</div>';
+}
+
+async function loadAndAddPlaylistToQueue(playlistId) {
+  const pl = _savedPlaylists.find(p => p.id === playlistId);
+  if (!pl) return;
+  const sorted = (pl._tracks || []).sort((a, b) => a.position - b.position);
+  sorted.forEach(pt => {
+    const t = findTrackById(pt.track_id);
+    const vid = ytData[pt.track_id]?.video_id;
+    if (t && vid) ytAddToQueue(vid, t.name, t.id);
+  });
+  if (!ytPlayerEl && ytQueue.length) {
+    const first = ytQueue[0];
+    openYTPlayer(first.videoId, first.title, first.trackId);
+  }
+}
+
+function toggleTLBars() {
+  _tlBarsVisible = !_tlBarsVisible;
+  const stage = document.getElementById('stage');
+  if (stage) stage.classList.toggle('tl-bars-hidden', !_tlBarsVisible);
+  const btn = document.getElementById('tl-toggle-bars-btn');
+  if (btn) {
+    btn.style.borderColor = _tlBarsVisible ? 'var(--border)' : 'var(--accent)';
+    btn.style.color = _tlBarsVisible ? 'var(--text-muted)' : 'var(--accent)';
+  }
+}
+
+// ── Lyrics editing ────────────────────────────────────────────
+async function startLyricsEdit(trackId, mode) {
+  if (!googleUser) return;
+  const existing = lyricsCache[trackId] || '';
+  const elId = mode === 'card' ? `sc-lyrics-${trackId}` : null;
+  const accEl = document.querySelector(`[data-acc-lyric="${trackId}"]`);
+  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
+  const targetEl = mode === 'card' ? cardEl : accEl;
+  if (!targetEl) return;
+  const parent = targetEl.parentNode;
+  const editWrap = document.createElement('div');
+  editWrap.id = `lyr-edit-wrap-${trackId}-${mode}`;
+  editWrap.innerHTML =
+    `<textarea class="lyr-edit-area" id="lyr-ta-${trackId}-${mode}">${existing.replace(/</g,'&lt;')}</textarea>` +
+    `<div class="lyr-edit-row">` +
+    `<button class="lyr-save-btn" onclick="saveLyricsEdit('${trackId}','${mode}')">Save</button>` +
+    `<button class="lyr-cancel-btn" onclick="cancelLyricsEdit('${trackId}','${mode}')">Cancel</button>` +
+    `<span style="font-size:.42rem;color:var(--text-muted);margin-left:auto;align-self:center">Editing as ${googleUser.name}</span>` +
+    `</div>`;
+  targetEl.style.display = 'none';
+  parent.insertBefore(editWrap, targetEl.nextSibling);
+}
+
+function cancelLyricsEdit(trackId, mode) {
+  const wrap = document.getElementById(`lyr-edit-wrap-${trackId}-${mode}`);
+  if (wrap) wrap.remove();
+  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
+  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
+  if (mode === 'card' && cardEl) cardEl.style.display = '';
+  if (mode === 'acc'  && accEl)  accEl.style.display  = '';
+}
+
+async function saveLyricsEdit(trackId, mode) {
+  if (!googleUser) return;
+  const ta = document.getElementById(`lyr-ta-${trackId}-${mode}`);
+  if (!ta) return;
+  const newLyrics  = ta.value.trim();
+  const oldLyrics  = lyricsCache[trackId] || null;
+  const saveBtn    = ta.parentNode.querySelector('.lyr-save-btn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+  try {
+    const session = (await sbAuth.auth.getSession()).data?.session;
+    const tok = session?.access_token || ANON;
+    const hdrs = {
+      apikey: ANON, Authorization: 'Bearer ' + tok,
+      'Content-Type': 'application/json',
+      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox',
+      Prefer: 'return=minimal'
+    };
+
+    // Upsert lyrics
+    await fetch(REST + '/lyrics?track_id=eq.' + trackId, {
+      method: 'PATCH', headers: hdrs,
+      body: JSON.stringify({ lyrics: newLyrics, lyrics_source: 'user-edit', lyrics_saved_at: new Date().toISOString() })
+    });
+
+    // Log edit history
+    await fetch(REST + '/lyrics_edits', {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({
+        track_id: trackId, old_lyrics: oldLyrics, new_lyrics: newLyrics,
+        editor_email: googleUser.email, editor_name: googleUser.name
+      })
+    });
+
+    // Update cache and UI
+    lyricsCache[trackId] = newLyrics;
+    cancelLyricsEdit(trackId, mode);
+    renderLyrics(trackId, newLyrics, 'user-edit');
+    document.querySelectorAll(`[data-acc-lyric="${trackId}"]`).forEach(el => {
+      el.className = 'sc-lyrics-text'; el.textContent = newLyrics;
+    });
+  } catch(e) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    alert('Save failed: ' + e.message);
+  }
+}
+
+async function openLyricsHistory(trackId) {
+  const modal = document.getElementById('lyr-hist-modal');
+  const body  = document.getElementById('lyr-hist-body');
+  const title = document.getElementById('lyr-hist-title');
+  const track = findTrackById(trackId);
+  title.textContent = 'Lyrics Edit History' + (track ? ' — ' + track.name : '');
+  modal.classList.add('open');
+  body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem">Loading…</p>';
+  try {
+    const rows = await fetch(REST + '/lyrics_edits?track_id=eq.' + trackId + '&order=edited_at.desc&limit=50', {
+      headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Accept-Profile': 'jukebox' }
+    }).then(r => r.json());
+    if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem;padding:8px">No edits recorded yet.</p>'; return; }
+    body.innerHTML = rows.map(r => {
+      const dt   = new Date(r.edited_at).toLocaleString();
+      const diff = computeLyricsDiff(r.old_lyrics || '', r.new_lyrics);
+      return `<div class="lyr-hist-entry">
+        <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
+        <div class="lyr-hist-diff">${diff}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { body.innerHTML = '<p style="color:#ef4444;font-size:.6rem">Failed to load history.</p>'; }
+}
+
+function closeLyricsHistory() {
+  document.getElementById('lyr-hist-modal').classList.remove('open');
+}
+
+function computeLyricsDiff(oldTxt, newTxt) {
+  const oldLines = (oldTxt || '').split('\n');
+  const newLines = (newTxt || '').split('\n');
+  const oldSet   = new Set(oldLines);
+  const newSet   = new Set(newLines);
+  const out = [];
+  oldLines.forEach(l => { if (!newSet.has(l)) out.push(`<span class="diff-del">${escHtml(l)}</span>`); });
+  newLines.forEach(l => { if (!oldSet.has(l)) out.push(`<span class="diff-add">${escHtml(l)}</span>`); });
+  return out.length ? out.join('\n') : '<span style="color:var(--text-muted)">No line-level changes detected.</span>';
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
