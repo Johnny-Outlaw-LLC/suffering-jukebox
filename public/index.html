@@ -2147,6 +2147,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       '<span class="ytp-lyr-font-ctrl" style="font-size:.38rem;color:var(--text-muted)">A</span>' +
       '<input class="ytp-lyr-font-ctrl" type="range" min="9" max="28" value="' + globalLyricSize + '" onmousedown="event.stopPropagation()" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none">' +
       '<span class="ytp-lyr-font-ctrl" style="font-size:.5rem;color:var(--text-muted)">A</span>' +
+      '<span id="ytp-lyr-btns" style="display:flex;gap:4px;flex-shrink:0;align-items:center"></span>' +
     '</div>' +
     '<div id="ytp-lyr-body" style="flex:1;overflow-y:auto;padding:12px 14px;scrollbar-width:thin;scrollbar-color:var(--border) transparent">' +
       '<div id="ytp-lyr-text" class="sc-lyrics-ph">No track playing.</div>' +
@@ -3002,8 +3003,16 @@ async function ytpUpdateLyrics(trackId) {
   const titleEl = document.getElementById('ytp-lyr-title');
   const textEl  = document.getElementById('ytp-lyr-text');
   if (!textEl) return;
+  _ytpCurrentTrackId = trackId;
   const track = findTrackById(trackId);
   if (titleEl && track) titleEl.textContent = track.name || 'Lyrics';
+  const btnsEl = document.getElementById('ytp-lyr-btns');
+  if (btnsEl) {
+    btnsEl.innerHTML = googleUser
+      ? `<button class="lyr-edit-btn" onclick="startLyricsEdit('${trackId}','ytp')" title="Edit lyrics">&#9999; Edit</button>` +
+        `<button class="lyr-hist-btn" onclick="openLyricsHistory('${trackId}')" title="Edit history">&#128336;</button>`
+      : '';
+  }
   textEl.className = 'sc-lyrics-ph';
   textEl.textContent = 'Loading…';
   textEl.style.fontSize = globalLyricSize + 'px';
@@ -3549,6 +3558,8 @@ function albumThumb(album) {
 // Track list rows — always uses inline accordion now; mode param kept for compat
 function renderTrackLines(alb, mode = 'inline') {
   const color     = albumColor(alb);
+  const albThumb  = albumThumb(alb) || '';
+  const albYr     = (alb.release_date || '').slice(0, 4);
   const albTracks = (tracks[alb.artist_id] || [])
     .filter(t => t.album_id === alb.id)
     .sort((a, b) => a.track_number - b.track_number);
@@ -3586,7 +3597,18 @@ function renderTrackLines(alb, mode = 'inline') {
       ? `<div class="trk-bar-group"><div class="trk-bar-wrap"><div class="trk-bar-bg"><div class="trk-bar-fill" data-bar-fill="${t.id}" style="width:${barPct}%;background:${barColor};opacity:${barOp}"></div></div></div><span class="trk-v" data-bar-val="${t.id}">${barDisplay}</span></div>`
       : '';
     // All modes now use inline accordion — no floating popup cards
-    return `<div class="trk-line" data-track-id="${t.id}" onclick="toggleTrackAccordion('${t.id}',event)">
+    const _trkTipStats = (() => {
+      const v = ytData[t.id]?.views, l = ytData[t.id]?.likes;
+      const parts = []; if (v) parts.push('\u25B6 ' + fmtV(v) + ' views'); if (l) parts.push('\u2665 ' + fmtV(l)); parts.push('\u266A ' + (t.track_number ? 'track ' + t.track_number : t.name));
+      return parts.join('  ');
+    })();
+    return `<div class="trk-line" data-track-id="${t.id}"
+      data-tip-name="${(t.name||'').replace(/"/g,'&quot;')}"
+      data-tip-alb="${(alb.name||'').replace(/"/g,'&quot;')}${albYr ? ' · ' + albYr : ''}"
+      data-tip-color="${color}"
+      data-tip-thumb="${albThumb.replace(/"/g,'&quot;')}"
+      data-tip-stats="${_trkTipStats.replace(/"/g,'&quot;')}"
+      onclick="toggleTrackAccordion('${t.id}',event)">
       <button class="tvb-cycle" data-vote-track="${t.id}" onclick="cycleVote('${t.id}');event.stopPropagation()" title="Rate">—</button>
       <span class="trk-n">${t.track_number || '·'}</span>
       <span class="trk-name">${t.name}</span>
@@ -4974,6 +4996,7 @@ let inAppPlays    = {};  // trackId → play count (loaded from DB)
 let myInAppPlays  = {};  // trackId → current user's personal play count
 let barChartMode  = 'yt'; // 'yt' | 'mine' | 'total' | 'hidden' | 'score'
 let trackVoteScores = {};  // trackId → net vote score (all users, from DB)
+let _ytpCurrentTrackId = null; // track currently shown in lyrics side panel
 let dailyYtData    = {};   // trackId → [{date:'YYYY-MM-DD', views:N}] sorted asc
 let dailyPlaysData = {};   // trackId → [{date:'YYYY-MM-DD', count:N}] sorted asc
 let dailyRatingData= {};   // trackId → [{date:'YYYY-MM-DD', avg:N, count:N}] sorted asc
@@ -5672,6 +5695,8 @@ init();
     if (window.innerWidth <= 640) return;
     const trkRow = e.target.closest('.tt-row');
     if (trkRow && trkRow.dataset.tipName) { showTipForRow(trkRow, e); return; }
+    const trkLine = e.target.closest('.trk-line');
+    if (trkLine && trkLine.dataset.tipName) { showTipForRow(trkLine, e); return; }
     const albRow = e.target.closest('.list-album-row');
     if (albRow && albRow.dataset.albId) { showTipForRow(albRow, e); return; }
     hideTip();
@@ -5684,7 +5709,7 @@ init();
   });
 
   document.addEventListener('mouseout', function(e) {
-    const row = e.target.closest('.tt-row') || e.target.closest('.list-album-row');
+    const row = e.target.closest('.tt-row') || e.target.closest('.trk-line') || e.target.closest('.list-album-row');
     if (!row) return;
     const to = e.relatedTarget;
     if (to && row.contains(to)) return;
@@ -6109,9 +6134,10 @@ async function startLyricsEdit(trackId, mode) {
   if (!googleUser) return;
   const existing = lyricsCache[trackId] || '';
   const elId = mode === 'card' ? `sc-lyrics-${trackId}` : null;
-  const accEl = document.querySelector(`[data-acc-lyric="${trackId}"]`);
+  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
   const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
-  const targetEl = mode === 'card' ? cardEl : accEl;
+  const ytpEl  = mode === 'ytp' ? document.getElementById('ytp-lyr-text') : null;
+  const targetEl = mode === 'card' ? cardEl : mode === 'ytp' ? ytpEl : accEl;
   if (!targetEl) return;
   const parent = targetEl.parentNode;
   const editWrap = document.createElement('div');
@@ -6132,8 +6158,10 @@ function cancelLyricsEdit(trackId, mode) {
   if (wrap) wrap.remove();
   const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
   const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
+  const ytpEl  = document.getElementById('ytp-lyr-text');
   if (mode === 'card' && cardEl) cardEl.style.display = '';
   if (mode === 'acc'  && accEl)  accEl.style.display  = '';
+  if (mode === 'ytp'  && ytpEl)  ytpEl.style.display  = '';
 }
 
 async function saveLyricsEdit(trackId, mode) {
