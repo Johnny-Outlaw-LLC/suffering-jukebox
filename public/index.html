@@ -993,6 +993,9 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
 .pl-row-badge.pub { background:#22c55e18; color:#22c55e; border-color:#22c55e44; }
 .pl-row-del { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.7rem; padding:0 3px; line-height:1; transition:color .1s; flex-shrink:0; opacity:.55; }
 .pl-row-del:hover { color:#ef4444; opacity:1; }
+.pl-row-rename { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.7rem; padding:0 3px; line-height:1; transition:color .1s; flex-shrink:0; opacity:.55; }
+.pl-row-rename:hover { color:var(--accent); opacity:1; }
+.pl-rename-input { flex:1; min-width:0; }
 .pl-row-play { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.44rem; padding:2px 7px; border-radius:4px; cursor:pointer; transition:all .1s; white-space:nowrap; flex-shrink:0; }
 .pl-row-play:hover { color:var(--accent); border-color:var(--accent); }
 .pl-empty { font-size:.58rem; color:var(--text-muted); font-style:italic; text-align:center; padding:1.5rem; }
@@ -1045,7 +1048,7 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
         <div class="user-menu" id="user-menu">
           <div class="user-menu-meta">App Last Updated</div>
           <div class="user-menu-date" id="user-menu-updated">—</div>
-          <button type="button" class="user-menu-item" onclick="userMenuAction('playlists')">Manage Playlists</button>
+          <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
@@ -1183,18 +1186,9 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
     <div class="pl-modal-header"><span class="pl-modal-title">♪ My Playlists</span><button class="modal-close" onclick="closeManagePlaylists()">✕</button></div>
     <div class="pl-modal-body">
       <div id="pl-list-section" class="pl-list"><div class="pl-empty">Loading…</div></div>
-      <div class="pl-new-form">
-        <div class="pl-new-title">New Playlist</div>
-        <input class="pl-input" id="pl-new-name" placeholder="Playlist name…" maxlength="80" autocomplete="off">
-        <div class="pl-toggle-row">
-          <button class="pl-toggle" id="pl-pub-toggle" onclick="this.classList.toggle('on')"></button>
-          <span class="pl-toggle-lbl">Make public</span>
-        </div>
-      </div>
     </div>
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closeManagePlaylists()">Close</button>
-      <button class="pl-btn" onclick="createNewPlaylist()">+ Create Playlist</button>
     </div>
   </div>
 </div>
@@ -1278,6 +1272,17 @@ const dbDelete = async (path) => {
   const r = await fetch(`${REST}${path}`, {
     method: 'DELETE',
     headers: { apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' }
+  });
+  if (!r.ok) throw new Error(await r.text());
+};
+
+const dbPatch = async (path, body) => {
+  const { data: { session } } = await sbAuth.auth.getSession();
+  if (!session) throw new Error('Not signed in');
+  const r = await fetch(`${REST}${path}`, {
+    method: 'PATCH',
+    headers: { apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
+    body: JSON.stringify(body)
   });
   if (!r.ok) throw new Error(await r.text());
 };
@@ -3405,12 +3410,18 @@ async function doSavePlaylist() {
   finally { if (btn) { btn.disabled=false; btn.textContent='Save'; } }
 }
 
+function syncManagePlaylistsBtn() {
+  const btn = document.getElementById('user-menu-playlists');
+  if (!btn) return;
+  btn.style.display = (googleUser && playlists.length > 0) ? '' : 'none';
+}
+
 function openManagePlaylists() {
   if (!googleUser) { alert('Sign in to manage playlists.'); return; }
   const overlay = document.getElementById('plModalOverlay');
   if (!overlay) return;
   overlay.classList.add('open');
-  if (!playlists.length) loadPlaylists().then(renderPlaylistList); else renderPlaylistList();
+  if (!playlists.length) loadPlaylists().then(() => { renderPlaylistList(); syncManagePlaylistsBtn(); }); else renderPlaylistList();
 }
 
 function closeManagePlaylists() { document.getElementById('plModalOverlay')?.classList.remove('open'); }
@@ -3418,13 +3429,40 @@ function closeManagePlaylists() { document.getElementById('plModalOverlay')?.cla
 function renderPlaylistList() {
   const section = document.getElementById('pl-list-section');
   if (!section) return;
-  if (!playlists.length) { section.innerHTML='<div class="pl-empty">No playlists yet. Create one below!</div>'; return; }
+  if (!playlists.length) { section.innerHTML='<div class="pl-empty">No playlists to manage.</div>'; return; }
   section.innerHTML = playlists.map(p => `<div class="pl-row" id="pl-row-${p.id}">
     <div class="pl-row-name" title="${p.name.replace(/"/g,'&quot;')}">${p.name.replace(/</g,'&lt;')}</div>
     <span class="pl-row-badge ${p.is_public?'pub':''}">${p.is_public?'🌐 Public':'🔒 Private'}</span>
     <button class="pl-row-play" onclick="closeManagePlaylists();setTimeout(()=>playPlaylist('${p.id}'),100)">▶ Play</button>
+    <button class="pl-row-rename" onclick="startRenamePlaylist('${p.id}','${p.name.replace(/'/g,"\\'")}')">✏</button>
     <button class="pl-row-del" onclick="confirmDeletePlaylist('${p.id}','${p.name.replace(/'/g,"\\'")}')">🗑</button>
   </div>`).join('');
+}
+
+function startRenamePlaylist(id, currentName) {
+  const row = document.getElementById(`pl-row-${id}`);
+  if (!row) return;
+  row.innerHTML = `
+    <input class="pl-input pl-rename-input" id="pl-rename-${id}" value="${currentName.replace(/"/g,'&quot;')}" maxlength="80" autocomplete="off">
+    <button class="pl-btn" style="padding:4px 12px;font-size:.52rem" onclick="commitRenamePlaylist('${id}')">Save</button>
+    <button class="pl-btn ghost" style="padding:4px 10px;font-size:.52rem" onclick="renderPlaylistList()">Cancel</button>
+  `;
+  const inp = document.getElementById(`pl-rename-${id}`);
+  inp?.focus(); inp?.select();
+  inp?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') commitRenamePlaylist(id);
+    if (e.key === 'Escape') renderPlaylistList();
+  });
+}
+
+async function commitRenamePlaylist(id) {
+  const inp = document.getElementById(`pl-rename-${id}`);
+  const name = inp?.value.trim();
+  if (!name) { inp?.focus(); return; }
+  try {
+    await dbPatch(`/playlists?id=eq.${id}`, { name });
+    await loadPlaylists(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
+  } catch(e) { alert('Error renaming playlist: ' + e.message); }
 }
 
 async function createNewPlaylist() {
@@ -3445,7 +3483,9 @@ async function confirmDeletePlaylist(id, name) {
   try {
     await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
     await dbDelete(`/playlists?id=eq.${id}`);
-    await loadPlaylists(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
+    await loadPlaylists(); syncManagePlaylistsBtn(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
+    // If the user just deleted their last playlist, close the modal — nothing left to manage
+    if (!playlists.length) closeManagePlaylists();
   } catch(e) { alert('Error deleting: '+e.message); }
 }
 
@@ -4451,6 +4491,7 @@ function updateAuthBtn() {
     _playlistsLoaded = false; _savedPlaylists = []; playlists = []; pubPlaylists = [];
     loadPlaylists().then(() => {
       _playlistsLoaded = true;
+      syncManagePlaylistsBtn();
       if (ytPlayerEl) updateYTQueueUI();
       render();
     });
