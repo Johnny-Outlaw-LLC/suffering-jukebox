@@ -987,17 +987,31 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
 .pl-modal-title { font-size:.8rem; font-weight:700; }
 .pl-modal-body { overflow-y:auto; padding:1rem 1.3rem; flex:1; display:flex; flex-direction:column; gap:1rem; }
 .pl-list { display:flex; flex-direction:column; gap:5px; }
-.pl-row { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--border); }
-.pl-row-name { flex:1; font-size:.6rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pl-row-badge { font-size:.42rem; padding:2px 6px; border-radius:4px; background:var(--bg); color:var(--text-muted); border:1px solid var(--border); white-space:nowrap; }
-.pl-row-badge.pub { background:#22c55e18; color:#22c55e; border-color:#22c55e44; }
-.pl-row-del { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.7rem; padding:0 3px; line-height:1; transition:color .1s; flex-shrink:0; opacity:.55; }
-.pl-row-del:hover { color:#ef4444; opacity:1; }
-.pl-row-rename { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.7rem; padding:0 3px; line-height:1; transition:color .1s; flex-shrink:0; opacity:.55; }
-.pl-row-rename:hover { color:var(--accent); opacity:1; }
-.pl-rename-input { flex:1; min-width:0; }
+.pl-card { display:flex; flex-direction:column; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--border); overflow:hidden; }
+.pl-row-hdr { display:flex; align-items:center; gap:6px; padding:8px 10px; flex-wrap:wrap; }
+.pl-row-name { flex:1; font-size:.6rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:80px; }
+.pl-vis-select { font-family:var(--mono); font-size:.42rem; padding:2px 6px; border-radius:4px; background:var(--bg); color:var(--text-muted); border:1px solid var(--border); cursor:pointer; outline:none; flex-shrink:0; }
+.pl-vis-select.pub { background:#22c55e18; color:#22c55e; border-color:#22c55e44; }
 .pl-row-play { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.44rem; padding:2px 7px; border-radius:4px; cursor:pointer; transition:all .1s; white-space:nowrap; flex-shrink:0; }
 .pl-row-play:hover { color:var(--accent); border-color:var(--accent); }
+.pl-row-action-btn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.42rem; padding:2px 8px; border-radius:4px; cursor:pointer; transition:all .1s; white-space:nowrap; flex-shrink:0; }
+.pl-row-action-btn:hover { color:var(--text); border-color:var(--text-muted); }
+.pl-row-action-btn.danger:hover { color:#ef4444; border-color:#ef4444; }
+.pl-row-expand { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.55rem; padding:0 3px; flex-shrink:0; transition:color .1s; }
+.pl-row-expand:hover { color:var(--text); }
+.pl-rename-input { flex:1; min-width:80px; }
+.pl-track-list { border-top:1px solid var(--border); display:flex; flex-direction:column; }
+.pl-track-item { display:flex; align-items:center; gap:5px; padding:4px 10px; border-bottom:1px solid var(--border); font-size:.54rem; }
+.pl-track-item:last-of-type { border-bottom:none; }
+.pl-track-move-btns { display:flex; flex-direction:column; gap:0; flex-shrink:0; }
+.pl-track-move { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.48rem; padding:0 2px; line-height:1.4; transition:color .1s; }
+.pl-track-move:hover:not(:disabled) { color:var(--accent); }
+.pl-track-move:disabled { opacity:.2; cursor:default; }
+.pl-track-num { color:var(--text-muted); font-size:.46rem; min-width:18px; text-align:right; flex-shrink:0; }
+.pl-track-name-cell { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.pl-track-remove { background:none; border:1px solid transparent; color:var(--text-muted); font-family:var(--mono); font-size:.4rem; padding:1px 6px; border-radius:3px; cursor:pointer; transition:all .1s; flex-shrink:0; opacity:.5; }
+.pl-track-remove:hover { color:#ef4444; border-color:#ef4444; opacity:1; }
+.pl-track-actions { display:flex; gap:8px; padding:7px 10px; border-top:1px solid var(--border); background:var(--bg); flex-shrink:0; }
 .pl-empty { font-size:.58rem; color:var(--text-muted); font-style:italic; text-align:center; padding:1.5rem; }
 .pl-new-form { display:flex; flex-direction:column; gap:.6rem; padding:1rem; background:var(--bg); border-radius:8px; border:1px solid var(--border); }
 .pl-new-title { font-size:.56rem; font-weight:600; color:var(--text-muted); letter-spacing:.08em; text-transform:uppercase; }
@@ -3426,56 +3440,173 @@ function openManagePlaylists() {
 
 function closeManagePlaylists() { document.getElementById('plModalOverlay')?.classList.remove('open'); }
 
-function renderPlaylistList() {
-  const section = document.getElementById('pl-list-section');
-  if (!section) return;
-  if (!playlists.length) { section.innerHTML='<div class="pl-empty">No playlists to manage.</div>'; return; }
-  section.innerHTML = playlists.map(p => `<div class="pl-row" id="pl-row-${p.id}">
-    <div class="pl-row-name" title="${p.name.replace(/"/g,'&quot;')}">${p.name.replace(/</g,'&lt;')}</div>
-    <span class="pl-row-badge ${p.is_public?'pub':''}">${p.is_public?'🌐 Public':'🔒 Private'}</span>
-    <button class="pl-row-play" onclick="closeManagePlaylists();setTimeout(()=>playPlaylist('${p.id}'),100)">▶ Play</button>
-    <button class="pl-row-rename" onclick="startRenamePlaylist('${p.id}','${p.name.replace(/'/g,"\\'")}')">✏</button>
-    <button class="pl-row-del" onclick="confirmDeletePlaylist('${p.id}','${p.name.replace(/'/g,"\\'")}')">🗑</button>
-  </div>`).join('');
+// ── Playlist management state ──────────────────────────────────────────────
+let plExpanded  = new Set(); // playlist IDs currently expanded
+let plDirty     = {};        // {id: {tracks:[...]}} — working copies of track lists
+let plRenaming  = new Set(); // playlist IDs in inline rename mode
+
+function trackById(tid) {
+  for (const aid of Object.keys(tracks)) {
+    const t = (tracks[aid] || []).find(t => t.id === tid);
+    if (t) return t;
+  }
+  return null;
 }
 
-function startRenamePlaylist(id, currentName) {
-  const row = document.getElementById(`pl-row-${id}`);
-  if (!row) return;
-  row.innerHTML = `
-    <input class="pl-input pl-rename-input" id="pl-rename-${id}" value="${currentName.replace(/"/g,'&quot;')}" maxlength="80" autocomplete="off">
-    <button class="pl-btn" style="padding:4px 12px;font-size:.52rem" onclick="commitRenamePlaylist('${id}')">Save</button>
-    <button class="pl-btn ghost" style="padding:4px 10px;font-size:.52rem" onclick="renderPlaylistList()">Cancel</button>
-  `;
-  const inp = document.getElementById(`pl-rename-${id}`);
-  inp?.focus(); inp?.select();
-  inp?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') commitRenamePlaylist(id);
-    if (e.key === 'Escape') renderPlaylistList();
-  });
+function buildPlaylistCard(p) {
+  const expanded  = plExpanded.has(p.id);
+  const isDirty   = !!plDirty[p.id];
+  const renaming  = plRenaming.has(p.id);
+  const trackList = isDirty ? plDirty[p.id].tracks : (p._tracks || []);
+
+  const nameHtml = renaming
+    ? `<input class="pl-input pl-rename-input" id="pl-rename-${p.id}" value="${p.name.replace(/"/g,'&quot;')}" maxlength="80" autocomplete="off"
+         onkeydown="if(event.key==='Enter')commitRenamePlaylist('${p.id}');else if(event.key==='Escape')cancelRenamePlaylist('${p.id}')">`
+    : `<div class="pl-row-name" title="${p.name.replace(/"/g,'&quot;')}">${p.name.replace(/</g,'&lt;')}</div>`;
+
+  const actionBtns = renaming
+    ? `<button class="pl-row-action-btn" onclick="commitRenamePlaylist('${p.id}')">Save</button>
+       <button class="pl-row-action-btn" onclick="cancelRenamePlaylist('${p.id}')">Cancel</button>`
+    : `<button class="pl-row-play" onclick="closeManagePlaylists();setTimeout(()=>playPlaylist('${p.id}'),100)">▶ Play</button>
+       <button class="pl-row-action-btn" onclick="startRenamePlaylist('${p.id}')">Rename</button>
+       <button class="pl-row-action-btn danger" onclick="confirmDeletePlaylist('${p.id}','${p.name.replace(/'/g,"\\'")}')">Delete</button>`;
+
+  const tracksHtml = expanded ? buildTrackListHtml(p.id, trackList, isDirty) : '';
+
+  return `<div class="pl-card" id="pl-row-${p.id}">
+    <div class="pl-row-hdr">
+      ${nameHtml}
+      <select class="pl-vis-select${p.is_public?' pub':''}" onchange="changePlaylistVisibility('${p.id}',this.value==='public')">
+        <option value="private"${!p.is_public?' selected':''}>Private</option>
+        <option value="public"${p.is_public?' selected':''}>Public</option>
+      </select>
+      ${actionBtns}
+      <button class="pl-row-expand" onclick="toggleExpandPlaylist('${p.id}')" title="${expanded?'Collapse':'View tracks'}">${expanded?'▲':'▼'}</button>
+    </div>
+    ${tracksHtml}
+  </div>`;
+}
+
+function buildTrackListHtml(playlistId, trackList, isDirty) {
+  const items = trackList.length
+    ? trackList.map((row, idx) => {
+        const t    = trackById(row.track_id);
+        const name = t ? t.name : `(track ${row.track_id})`;
+        const isFirst = idx === 0, isLast = idx === trackList.length - 1;
+        return `<div class="pl-track-item">
+          <div class="pl-track-move-btns">
+            <button class="pl-track-move" onclick="moveTrack('${playlistId}',${idx},-1)"${isFirst?' disabled':''}>↑</button>
+            <button class="pl-track-move" onclick="moveTrack('${playlistId}',${idx},1)"${isLast?' disabled':''}>↓</button>
+          </div>
+          <span class="pl-track-num">${idx+1}.</span>
+          <span class="pl-track-name-cell">${name.replace(/</g,'&lt;')}</span>
+          <button class="pl-track-remove" onclick="removeTrackFromPlaylist('${playlistId}','${row.track_id}',${idx})">Remove</button>
+        </div>`;
+      }).join('')
+    : '<div class="pl-empty" style="padding:.6rem">No tracks in this playlist.</div>';
+
+  const saveBar = isDirty
+    ? `<div class="pl-track-actions">
+         <button class="pl-btn" onclick="savePlaylistChanges('${playlistId}')">Save Changes</button>
+         <button class="pl-btn ghost" onclick="cancelPlaylistChanges('${playlistId}')">Cancel</button>
+       </div>`
+    : '';
+
+  return `<div class="pl-track-list">${items}${saveBar}</div>`;
+}
+
+function renderPlaylistList() {
+  // Clear transient state on a full reload from server
+  plDirty = {}; plRenaming.clear();
+  const section = document.getElementById('pl-list-section');
+  if (!section) return;
+  if (!playlists.length) { section.innerHTML = '<div class="pl-empty">No playlists to manage.</div>'; return; }
+  section.innerHTML = playlists.map(p => buildPlaylistCard(p)).join('');
+}
+
+function rerenderPlaylistCard(id) {
+  const p  = playlists.find(pl => pl.id === id);
+  const el = document.getElementById(`pl-row-${id}`);
+  if (!p || !el) return;
+  el.outerHTML = buildPlaylistCard(p);
+  if (plRenaming.has(id)) {
+    setTimeout(() => { const inp = document.getElementById(`pl-rename-${id}`); inp?.focus(); inp?.select(); }, 0);
+  }
+}
+
+function toggleExpandPlaylist(id) {
+  if (plExpanded.has(id)) plExpanded.delete(id); else plExpanded.add(id);
+  rerenderPlaylistCard(id);
+}
+
+function startRenamePlaylist(id) {
+  plRenaming.add(id);
+  rerenderPlaylistCard(id);
+}
+
+function cancelRenamePlaylist(id) {
+  plRenaming.delete(id);
+  rerenderPlaylistCard(id);
 }
 
 async function commitRenamePlaylist(id) {
-  const inp = document.getElementById(`pl-rename-${id}`);
+  const inp  = document.getElementById(`pl-rename-${id}`);
   const name = inp?.value.trim();
   if (!name) { inp?.focus(); return; }
   try {
     await dbPatch(`/playlists?id=eq.${id}`, { name });
+    plRenaming.delete(id);
     await loadPlaylists(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
-  } catch(e) { alert('Error renaming playlist: ' + e.message); }
+  } catch(e) { alert('Error renaming: ' + e.message); }
 }
 
-async function createNewPlaylist() {
-  if (!googleUser) return;
-  const nameInput = document.getElementById('pl-new-name');
-  const name = nameInput?.value.trim();
-  if (!name) { nameInput?.focus(); return; }
-  const isPublic = document.getElementById('pl-pub-toggle')?.classList.contains('on') || false;
+async function changePlaylistVisibility(id, isPublic) {
   try {
-    await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:googleUser.displayName||googleUser.name||'' });
-    nameInput.value = ''; document.getElementById('pl-pub-toggle')?.classList.remove('on');
+    await dbPatch(`/playlists?id=eq.${id}`, { is_public: isPublic });
+    // Update local cache without a full round-trip
+    [playlists, _savedPlaylists].forEach(arr => { const p = arr.find(p => p.id === id); if (p) p.is_public = isPublic; });
+    rerenderPlaylistCard(id);
+    if (ytPlayerEl) updateYTQueueUI();
+  } catch(e) { alert('Error updating visibility: ' + e.message); rerenderPlaylistCard(id); }
+}
+
+function removeTrackFromPlaylist(playlistId, trackId, idx) {
+  if (!plDirty[playlistId]) {
+    const p = playlists.find(pl => pl.id === playlistId);
+    plDirty[playlistId] = { tracks: [...(p?._tracks || [])] };
+  }
+  plDirty[playlistId].tracks.splice(idx, 1);
+  rerenderPlaylistCard(playlistId);
+}
+
+function moveTrack(playlistId, idx, dir) {
+  if (!plDirty[playlistId]) {
+    const p = playlists.find(pl => pl.id === playlistId);
+    plDirty[playlistId] = { tracks: [...(p?._tracks || [])] };
+  }
+  const arr = plDirty[playlistId].tracks;
+  const to  = idx + dir;
+  if (to < 0 || to >= arr.length) return;
+  [arr[idx], arr[to]] = [arr[to], arr[idx]];
+  rerenderPlaylistCard(playlistId);
+}
+
+async function savePlaylistChanges(id) {
+  if (!plDirty[id]) return;
+  const newTracks = plDirty[id].tracks;
+  try {
+    await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
+    for (let i = 0; i < newTracks.length; i++) {
+      await dbPost('/playlist_tracks', { playlist_id: id, track_id: newTracks[i].track_id, position: i });
+    }
+    delete plDirty[id];
     await loadPlaylists(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
-  } catch(e) { alert('Error creating playlist: '+e.message); }
+  } catch(e) { alert('Error saving changes: ' + e.message); }
+}
+
+function cancelPlaylistChanges(id) {
+  delete plDirty[id];
+  rerenderPlaylistCard(id);
 }
 
 async function confirmDeletePlaylist(id, name) {
@@ -3483,10 +3614,10 @@ async function confirmDeletePlaylist(id, name) {
   try {
     await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
     await dbDelete(`/playlists?id=eq.${id}`);
+    delete plDirty[id]; plExpanded.delete(id); plRenaming.delete(id);
     await loadPlaylists(); syncManagePlaylistsBtn(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
-    // If the user just deleted their last playlist, close the modal — nothing left to manage
     if (!playlists.length) closeManagePlaylists();
-  } catch(e) { alert('Error deleting: '+e.message); }
+  } catch(e) { alert('Error deleting: ' + e.message); }
 }
 
 async function init() {
@@ -6165,135 +6296,4 @@ function toggleTLBars() {
   if (stage) stage.classList.toggle('tl-bars-hidden', !_tlBarsVisible);
   const btn = document.getElementById('tl-toggle-bars-btn');
   if (btn) {
-    btn.style.borderColor = _tlBarsVisible ? 'var(--border)' : 'var(--accent)';
-    btn.style.color = _tlBarsVisible ? 'var(--text-muted)' : 'var(--accent)';
-  }
-}
-
-// ── Lyrics editing ────────────────────────────────────────────
-async function startLyricsEdit(trackId, mode) {
-  if (!googleUser) return;
-  const existing = lyricsCache[trackId] || '';
-  const elId = mode === 'card' ? `sc-lyrics-${trackId}` : null;
-  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
-  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
-  const ytpEl  = mode === 'ytp' ? document.getElementById('ytp-lyr-text') : null;
-  const targetEl = mode === 'card' ? cardEl : mode === 'ytp' ? ytpEl : accEl;
-  if (!targetEl) return;
-  const parent = targetEl.parentNode;
-  const editWrap = document.createElement('div');
-  editWrap.id = `lyr-edit-wrap-${trackId}-${mode}`;
-  editWrap.innerHTML =
-    `<textarea class="lyr-edit-area" id="lyr-ta-${trackId}-${mode}">${existing.replace(/</g,'&lt;')}</textarea>` +
-    `<div class="lyr-edit-row">` +
-    `<button class="lyr-save-btn" onclick="saveLyricsEdit('${trackId}','${mode}')">Save</button>` +
-    `<button class="lyr-cancel-btn" onclick="cancelLyricsEdit('${trackId}','${mode}')">Cancel</button>` +
-    `<span style="font-size:.42rem;color:var(--text-muted);margin-left:auto;align-self:center">Editing as ${googleUser.name}</span>` +
-    `</div>`;
-  targetEl.style.display = 'none';
-  parent.insertBefore(editWrap, targetEl.nextSibling);
-}
-
-function cancelLyricsEdit(trackId, mode) {
-  const wrap = document.getElementById(`lyr-edit-wrap-${trackId}-${mode}`);
-  if (wrap) wrap.remove();
-  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
-  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
-  const ytpEl  = document.getElementById('ytp-lyr-text');
-  if (mode === 'card' && cardEl) cardEl.style.display = '';
-  if (mode === 'acc'  && accEl)  accEl.style.display  = '';
-  if (mode === 'ytp'  && ytpEl)  ytpEl.style.display  = '';
-}
-
-async function saveLyricsEdit(trackId, mode) {
-  if (!googleUser) return;
-  const ta = document.getElementById(`lyr-ta-${trackId}-${mode}`);
-  if (!ta) return;
-  const newLyrics  = ta.value.trim();
-  const oldLyrics  = lyricsCache[trackId] || null;
-  const saveBtn    = ta.parentNode.querySelector('.lyr-save-btn');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
-
-  try {
-    const session = (await sbAuth.auth.getSession()).data?.session;
-    const tok = session?.access_token || ANON;
-    const hdrs = {
-      apikey: ANON, Authorization: 'Bearer ' + tok,
-      'Content-Type': 'application/json',
-      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox',
-      Prefer: 'return=minimal'
-    };
-
-    // Upsert lyrics
-    await fetch(REST + '/lyrics?track_id=eq.' + trackId, {
-      method: 'PATCH', headers: hdrs,
-      body: JSON.stringify({ lyrics: newLyrics, lyrics_source: 'user-edit', lyrics_saved_at: new Date().toISOString() })
-    });
-
-    // Log edit history
-    await fetch(REST + '/lyrics_edits', {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify({
-        track_id: trackId, old_lyrics: oldLyrics, new_lyrics: newLyrics,
-        editor_email: googleUser.email, editor_name: googleUser.name
-      })
-    });
-
-    // Update cache and UI
-    lyricsCache[trackId] = newLyrics;
-    cancelLyricsEdit(trackId, mode);
-    renderLyrics(trackId, newLyrics, 'user-edit');
-    document.querySelectorAll(`[data-acc-lyric="${trackId}"]`).forEach(el => {
-      el.className = 'sc-lyrics-text'; el.textContent = newLyrics;
-    });
-  } catch(e) {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
-    alert('Save failed: ' + e.message);
-  }
-}
-
-async function openLyricsHistory(trackId) {
-  const modal = document.getElementById('lyr-hist-modal');
-  const body  = document.getElementById('lyr-hist-body');
-  const title = document.getElementById('lyr-hist-title');
-  const track = findTrackById(trackId);
-  title.textContent = 'Lyrics Edit History' + (track ? ' — ' + track.name : '');
-  modal.classList.add('open');
-  body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem">Loading…</p>';
-  try {
-    const rows = await fetch(REST + '/lyrics_edits?track_id=eq.' + trackId + '&order=edited_at.desc&limit=50', {
-      headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Accept-Profile': 'jukebox' }
-    }).then(r => r.json());
-    if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem;padding:8px">No edits recorded yet.</p>'; return; }
-    body.innerHTML = rows.map(r => {
-      const dt   = new Date(r.edited_at).toLocaleString();
-      const diff = computeLyricsDiff(r.old_lyrics || '', r.new_lyrics);
-      return `<div class="lyr-hist-entry">
-        <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
-        <div class="lyr-hist-diff">${diff}</div>
-      </div>`;
-    }).join('');
-  } catch(e) { body.innerHTML = '<p style="color:#ef4444;font-size:.6rem">Failed to load history.</p>'; }
-}
-
-function closeLyricsHistory() {
-  document.getElementById('lyr-hist-modal').classList.remove('open');
-}
-
-function computeLyricsDiff(oldTxt, newTxt) {
-  const oldLines = (oldTxt || '').split('\n');
-  const newLines = (newTxt || '').split('\n');
-  const oldSet   = new Set(oldLines);
-  const newSet   = new Set(newLines);
-  const out = [];
-  oldLines.forEach(l => { if (!newSet.has(l)) out.push(`<span class="diff-del">${escHtml(l)}</span>`); });
-  newLines.forEach(l => { if (!oldSet.has(l)) out.push(`<span class="diff-add">${escHtml(l)}</span>`); });
-  return out.length ? out.join('\n') : '<span style="color:var(--text-muted)">No line-level changes detected.</span>';
-}
-
-function escHtml(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-</script>
-</body>
-</html>
+    btn.style.borderColor = _tlBarsVisible ? 'var(--border)' : 'v
