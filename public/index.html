@@ -3378,9 +3378,28 @@ async function playPlaylist(playlistId) {
       if (yt?.video_id) { const t = findTrackById(r.track_id); q.push({ videoId: yt.video_id, title: t?.name||'Track', trackId: r.track_id }); }
     }
     if (!q.length) { alert('No playable tracks found.'); return; }
-    if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-    else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-    ytQueue = q; ytQueueIdx = 0; _queueHasAdditions = true; updateYTQueueUI();
+    const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
+    const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
+    setYtShuffleEnabled(doShuffle);
+    _queueHasAdditions = true;
+    ytQueue = q; ytQueueIdx = 0;
+    if (doShuffle && q.length > 1) {
+      // Open/start the first track then immediately skip to a random one,
+      // mimicking loadQueueForShuffle so the "skip first" rule applies.
+      if (!ytPlayerEl) {
+        openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+        updateYTQueueUI();
+        _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
+      } else {
+        ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+        updateYTQueueUI();
+        ytNextTrack(); // player already exists — skip immediately
+      }
+    } else {
+      if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+      else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+      updateYTQueueUI();
+    }
   } catch(e) { alert('Failed to load playlist: ' + e.message); }
 }
 
@@ -3473,12 +3492,17 @@ function buildPlaylistCard(p) {
 
   const tracksHtml = expanded ? buildTrackListHtml(p.id, trackList, isDirty) : '';
 
+  const playMode = p.default_play_mode || 'order';
   return `<div class="pl-card" id="pl-row-${p.id}">
     <div class="pl-row-hdr">
       ${nameHtml}
       <select class="pl-vis-select${p.is_public?' pub':''}" onchange="changePlaylistVisibility('${p.id}',this.value==='public')">
         <option value="private"${!p.is_public?' selected':''}>Private</option>
         <option value="public"${p.is_public?' selected':''}>Public</option>
+      </select>
+      <select class="pl-vis-select${playMode==='shuffle'?' pub':''}" title="Default play mode" onchange="changePlaylistPlayMode('${p.id}',this.value)">
+        <option value="order"${playMode==='order'?' selected':''}>▶ In Order</option>
+        <option value="shuffle"${playMode==='shuffle'?' selected':''}>⇄ Shuffle</option>
       </select>
       ${actionBtns}
       <button class="pl-row-expand" onclick="toggleExpandPlaylist('${p.id}')" title="${expanded?'Collapse':'View tracks'}">${expanded?'▲':'▼'}</button>
@@ -3568,6 +3592,14 @@ async function changePlaylistVisibility(id, isPublic) {
     rerenderPlaylistCard(id);
     if (ytPlayerEl) updateYTQueueUI();
   } catch(e) { alert('Error updating visibility: ' + e.message); rerenderPlaylistCard(id); }
+}
+
+async function changePlaylistPlayMode(id, mode) {
+  try {
+    await dbPatch(`/playlists?id=eq.${id}`, { default_play_mode: mode });
+    [playlists, _savedPlaylists].forEach(arr => { const p = arr.find(p => p.id === id); if (p) p.default_play_mode = mode; });
+    rerenderPlaylistCard(id);
+  } catch(e) { alert('Error updating play mode: ' + e.message); rerenderPlaylistCard(id); }
 }
 
 function removeTrackFromPlaylist(playlistId, trackId, idx) {
@@ -6393,38 +6425,4 @@ async function openLyricsHistory(trackId) {
   body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem">Loading…</p>';
   try {
     const rows = await fetch(REST + '/lyrics_edits?track_id=eq.' + trackId + '&order=edited_at.desc&limit=50', {
-      headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Accept-Profile': 'jukebox' }
-    }).then(r => r.json());
-    if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem;padding:8px">No edits recorded yet.</p>'; return; }
-    body.innerHTML = rows.map(r => {
-      const dt   = new Date(r.edited_at).toLocaleString();
-      const diff = computeLyricsDiff(r.old_lyrics || '', r.new_lyrics);
-      return `<div class="lyr-hist-entry">
-        <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
-        <div class="lyr-hist-diff">${diff}</div>
-      </div>`;
-    }).join('');
-  } catch(e) { body.innerHTML = '<p style="color:#ef4444;font-size:.6rem">Failed to load history.</p>'; }
-}
-
-function closeLyricsHistory() {
-  document.getElementById('lyr-hist-modal').classList.remove('open');
-}
-
-function computeLyricsDiff(oldTxt, newTxt) {
-  const oldLines = (oldTxt || '').split('\n');
-  const newLines = (newTxt || '').split('\n');
-  const oldSet   = new Set(oldLines);
-  const newSet   = new Set(newLines);
-  const out = [];
-  oldLines.forEach(l => { if (!newSet.has(l)) out.push(`<span class="diff-del">${escHtml(l)}</span>`); });
-  newLines.forEach(l => { if (!oldSet.has(l)) out.push(`<span class="diff-add">${escHtml(l)}</span>`); });
-  return out.length ? out.join('\n') : '<span style="color:var(--text-muted)">No line-level changes detected.</span>';
-}
-
-function escHtml(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-</script>
-</body>
-</html>
+      header
