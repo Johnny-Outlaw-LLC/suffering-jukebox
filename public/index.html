@@ -6065,10 +6065,28 @@ function playFromPlaylist(playlistId) {
       return { videoId: vid, title: t.name, trackId: t.id };
     }).filter(Boolean);
   if (!q.length) return;
+  _activePlaylistId = playlistId;
   _queueHasAdditions = false;
-  if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-  else { ytPlayNow(q[0].videoId, q[0].title, q[0].trackId); }
-  ytQueue = q; ytQueueIdx = 0; updateYTQueueUI();
+  const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
+  if (doShuffle && q.length > 1) {
+    setYtShuffleEnabled(true);
+    if (!ytPlayerEl) {
+      openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+      ytQueue = q; ytQueueIdx = 0;
+      updateYTQueueUI();
+      _ytShuffleAfterReady = true;
+    } else {
+      ytQueue = q; ytQueueIdx = 0;
+      updateYTQueueUI();
+      ytNextTrack();
+    }
+  } else {
+    setYtShuffleEnabled(false);
+    if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+    else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+    ytQueue = q; ytQueueIdx = 0;
+    updateYTQueueUI();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
