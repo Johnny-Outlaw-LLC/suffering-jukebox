@@ -3348,7 +3348,9 @@ function ytPlaylistBarHTML() {
     pubPlaylists.length ? '<div class="yt-pl-dd-sep">Public Playlists</div>' : '',
     ...pubPlaylists.map(p => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${(p.user_name||p.user_email||'').split('@')[0]}</span></div>`)
   ].filter(Boolean).join('');
-  return `<div class="yt-playlist-bar" id="yt-playlist-bar"><div class="yt-pl-dd-wrap" id="yt-pl-dd-wrap"><button class="yt-pl-dd-btn" onclick="toggleYTPlaylistDD(event)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">♪ ${has?'Load Playlist':'No Playlists'}</span><span>▾</span></button><div class="yt-pl-dd-menu" id="yt-pl-dd-menu" style="display:none">${has?items:'<div class="yt-pl-dd-item" style="color:#444;cursor:default">No playlists yet</div>'}</div></div>${googleUser?`<button class="yt-pl-save-btn" onclick="openSavePlaylistDialog()">💾 Save</button>`:''}</div>`;
+  const activePl = _activePlaylistId ? _savedPlaylists.find(p => p.id === _activePlaylistId) : null;
+  const ddLabel = activePl ? '\u266a ' + activePl.name : ('\u266a ' + (has ? 'Load Playlist' : 'No Playlists'));
+  return `<div class="yt-playlist-bar" id="yt-playlist-bar"><div class="yt-pl-dd-wrap" id="yt-pl-dd-wrap"><button class="yt-pl-dd-btn" onclick="toggleYTPlaylistDD(event)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${ddLabel}</span><span>▾</span></button><div class="yt-pl-dd-menu" id="yt-pl-dd-menu" style="display:none">${has?items:'<div class="yt-pl-dd-item" style="color:#444;cursor:default">No playlists yet</div>'}</div></div>${googleUser?`<button class="yt-pl-save-btn" onclick="openSavePlaylistDialog()">💾 Save</button>`:''}</div>`;
 }
 
 function toggleYTPlaylistDD(e) {
@@ -3393,23 +3395,28 @@ async function playPlaylist(playlistId) {
     _activePlaylistId = playlistId;
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
-    setYtShuffleEnabled(doShuffle);
     _queueHasAdditions = true;
-    ytQueue = q; ytQueueIdx = 0;
+    // NOTE: openYTPlayer() and ytPlayNow() both reset ytQueue to [first track],
+    // so we must restore the full queue AFTER calling them.
     if (doShuffle && q.length > 1) {
+      setYtShuffleEnabled(true);
       if (!ytPlayerEl) {
         openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-        updateYTQueueUI(); updateYTPlaylistDDLabel();
-        _ytShuffleAfterReady = true;
+        ytQueue = q; ytQueueIdx = 0; // restore full queue
+        updateYTQueueUI();
+        _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
       } else {
         ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-        updateYTQueueUI(); updateYTPlaylistDDLabel();
-        ytNextTrack();
+        ytQueue = q; ytQueueIdx = 0; // restore full queue
+        updateYTQueueUI();
+        ytNextTrack(); // skip to random track
       }
     } else {
+      setYtShuffleEnabled(false);
       if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
       else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-      updateYTQueueUI(); updateYTPlaylistDDLabel();
+      ytQueue = q; ytQueueIdx = 0; // restore full queue
+      updateYTQueueUI();
     }
   } catch(e) { alert('Failed to load playlist: ' + e.message); }
 }
