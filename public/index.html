@@ -2210,7 +2210,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       <div style="display:flex;align-items:center;gap:5px;padding:2px 8px 6px 10px">
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭ Next</button>
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
-        <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)" ${ytShuffle?"checked":""}><span style="font-size:.45rem">Shuffle</span></label>
+        <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
       </div>
     </div>
@@ -3348,9 +3348,7 @@ function ytPlaylistBarHTML() {
     pubPlaylists.length ? '<div class="yt-pl-dd-sep">Public Playlists</div>' : '',
     ...pubPlaylists.map(p => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${(p.user_name||p.user_email||'').split('@')[0]}</span></div>`)
   ].filter(Boolean).join('');
-  const activePl = _activePlaylistId ? _savedPlaylists.find(p => p.id === _activePlaylistId) : null;
-  const ddLabel = activePl ? '\u266a ' + activePl.name : ('\u266a ' + (has ? 'Load Playlist' : 'No Playlists'));
-  return `<div class="yt-playlist-bar" id="yt-playlist-bar"><div class="yt-pl-dd-wrap" id="yt-pl-dd-wrap"><button class="yt-pl-dd-btn" onclick="toggleYTPlaylistDD(event)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${ddLabel}</span><span>▾</span></button><div class="yt-pl-dd-menu" id="yt-pl-dd-menu" style="display:none">${has?items:'<div class="yt-pl-dd-item" style="color:#444;cursor:default">No playlists yet</div>'}</div></div>${googleUser?`<button class="yt-pl-save-btn" onclick="openSavePlaylistDialog()">💾 Save</button>`:''}</div>`;
+  return `<div class="yt-playlist-bar" id="yt-playlist-bar"><div class="yt-pl-dd-wrap" id="yt-pl-dd-wrap"><button class="yt-pl-dd-btn" onclick="toggleYTPlaylistDD(event)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">♪ ${has?'Load Playlist':'No Playlists'}</span><span>▾</span></button><div class="yt-pl-dd-menu" id="yt-pl-dd-menu" style="display:none">${has?items:'<div class="yt-pl-dd-item" style="color:#444;cursor:default">No playlists yet</div>'}</div></div>${googleUser?`<button class="yt-pl-save-btn" onclick="openSavePlaylistDialog()">💾 Save</button>`:''}</div>`;
 }
 
 function toggleYTPlaylistDD(e) {
@@ -3370,18 +3368,6 @@ function closeYTPlaylistDD() {
   if (m) m.style.display = 'none';
 }
 
-function updateYTPlaylistDDLabel() {
-  const btn = document.querySelector('#yt-pl-dd-wrap .yt-pl-dd-btn span:first-child');
-  if (!btn) return;
-  if (_activePlaylistId) {
-    const pl = _savedPlaylists.find(p => p.id === _activePlaylistId);
-    btn.textContent = pl ? '\u266a ' + pl.name : '\u266a Load Playlist';
-  } else {
-    const has = playlists.length > 0 || pubPlaylists.length > 0;
-    btn.textContent = '\u266a ' + (has ? 'Load Playlist' : 'No Playlists');
-  }
-}
-
 async function playPlaylist(playlistId) {
   try {
     const rows = await dbGet(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
@@ -3392,28 +3378,26 @@ async function playPlaylist(playlistId) {
       if (yt?.video_id) { const t = findTrackById(r.track_id); q.push({ videoId: yt.video_id, title: t?.name||'Track', trackId: r.track_id }); }
     }
     if (!q.length) { alert('No playable tracks found.'); return; }
-    _activePlaylistId = playlistId;
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
+    setYtShuffleEnabled(doShuffle);
     _queueHasAdditions = true;
+    ytQueue = q; ytQueueIdx = 0;
     if (doShuffle && q.length > 1) {
-      // Mirror loadQueueForShuffle: for existing player, set queue then ytNextTrack picks random
-      setYtShuffleEnabled(true);
+      // Open/start the first track then immediately skip to a random one,
+      // mimicking loadQueueForShuffle so the "skip first" rule applies.
       if (!ytPlayerEl) {
-        openYTPlayer(q[0].videoId, q[0].title, q[0].trackId); // resets ytQueue internally
-        ytQueue = q; ytQueueIdx = 0;
+        openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
         updateYTQueueUI();
-        _ytShuffleAfterReady = true;
+        _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
       } else {
-        ytQueue = q; ytQueueIdx = 0;
+        ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
         updateYTQueueUI();
-        ytNextTrack(); // picks random index and loads that video
+        ytNextTrack(); // player already exists — skip immediately
       }
     } else {
-      setYtShuffleEnabled(false);
       if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
       else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-      ytQueue = q; ytQueueIdx = 0;
       updateYTQueueUI();
     }
   } catch(e) { alert('Failed to load playlist: ' + e.message); }
@@ -3517,11 +3501,11 @@ function buildPlaylistCard(p) {
         <option value="public"${p.is_public?' selected':''}>Public</option>
       </select>
       <select class="pl-vis-select${playMode==='shuffle'?' pub':''}" title="Default play mode" onchange="changePlaylistPlayMode('${p.id}',this.value)">
-        <option value="order"${playMode==='order'?' selected':''}>&#9658; In Order</option>
-        <option value="shuffle"${playMode==='shuffle'?' selected':''}>&#8644; Shuffle</option>
+        <option value="order"${playMode==='order'?' selected':''}>▶ In Order</option>
+        <option value="shuffle"${playMode==='shuffle'?' selected':''}>⇄ Shuffle</option>
       </select>
       ${actionBtns}
-      <button class="pl-row-expand" onclick="toggleExpandPlaylist('${p.id}')" title="${expanded?'Collapse':'View tracks'}">${expanded?'&#9650;':'&#9660;'}</button>
+      <button class="pl-row-expand" onclick="toggleExpandPlaylist('${p.id}')" title="${expanded?'Collapse':'View tracks'}">${expanded?'▲':'▼'}</button>
     </div>
     ${tracksHtml}
   </div>`;
@@ -4086,10 +4070,13 @@ function renderTimeline(albList, tlMode) {
     const isExp  = expandedAlbumIds.has(alb.id);
 
     if (barH > 0) {
-      html += `<div data-tl-item="${alb.id}" class="tl-bar-rect" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x - BAR_W/2}px;top:${barTop}px;width:${BAR_W}px;height:${barH}px;background:${color};opacity:.9;border-radius:4px 4px 0 0;transition:height .45s ease,top .45s ease,opacity .3s;cursor:pointer"></div>`;
+      const _albNameEsc = (name||'').replace(/"/g,'&quot;');
+      const _albThumbEsc = (thumb||'').replace(/"/g,'&quot;');
+      const _albDataAttrs = `data-alb-id="${alb.id}" data-alb-name="${_albNameEsc}" data-alb-color="${color}" data-alb-thumb="${_albThumbEsc}"`;
+      html += `<div data-tl-item="${alb.id}" class="tl-bar-rect tl-alb-row" ${_albDataAttrs} onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x - BAR_W/2}px;top:${barTop}px;width:${BAR_W}px;height:${barH}px;background:${color};opacity:.9;border-radius:4px 4px 0 0;transition:height .45s ease,top .45s ease,opacity .3s;cursor:pointer"></div>`;
       const _barLbl = barChartMode === 'mine' ? 'My Jukebox Plays' : barChartMode === 'total' ? 'Jukebox Plays' : barChartMode === 'score' ? 'Jukebox Score' : 'YT Views';
       const _barValFmt = barChartMode === 'score' ? (views > 0 ? '+' + views : String(views || 0)) : fmtV(views);
-      html += `<div data-tl-lbl="${alb.id}" class="tl-bar-lbl-el" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x}px;top:${barTop - TOP_PAD + 3}px;transform:translateX(-50%);white-space:nowrap;font-weight:600;text-align:center;line-height:1.2;cursor:pointer"><div style="font-size:.72rem;color:var(--accent)">${_barValFmt}</div><div style="font-size:.35rem;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase">${_barLbl}</div></div>`;
+      html += `<div data-tl-lbl="${alb.id}" class="tl-bar-lbl-el tl-alb-row" ${_albDataAttrs} onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x}px;top:${barTop - TOP_PAD + 3}px;transform:translateX(-50%);white-space:nowrap;font-weight:600;text-align:center;line-height:1.2;cursor:pointer"><div style="font-size:.72rem;color:var(--accent)">${_barValFmt}</div><div style="font-size:.35rem;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase">${_barLbl}</div></div>`;
     }
 
     html += `<div style="position:absolute;left:${x}px;top:${AXIS_Y-4}px;transform:translateX(-50%);width:8px;height:8px;border-radius:50%;background:${color};border:2px solid var(--bg)"></div>`;
@@ -4501,7 +4488,7 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-06-30';
+const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
 
 let googleUser = null;
 let sjIsAdmin = false;
@@ -5223,7 +5210,6 @@ let dailyRatingData= {};   // trackId → [{date:'YYYY-MM-DD', avg:N, count:N}] 
 const _cardPlayTimers = {};  // trackId → setTimeout handle for 10-second play threshold
 let _queueHasAdditions = false;  // true when user has explicitly added to queue
 let _savedPlaylists = [];  // cached playlists from Supabase
-let _activePlaylistId = null;  // id of playlist currently loaded in queue
 let _playlistsLoading = false;
 let _playlistsLoaded  = false; // set true after first load so render() never re-loops
 let playlists    = []; // own playlists
@@ -5878,7 +5864,7 @@ init();
   function showTipForRow(row, e) {
     if (row === _cur) return;
     _cur = row;
-    const isAlb   = row.classList.contains('list-album-row');
+    const isAlb   = row.classList.contains('list-album-row') || row.classList.contains('tl-alb-row');
     const trackId = row.dataset.trackId || null;
     const albId   = row.dataset.albId   || null;
     const color   = row.dataset.tipColor || row.dataset.albColor || 'var(--accent)';
@@ -5920,6 +5906,8 @@ init();
     if (trkLine && trkLine.dataset.tipName) { showTipForRow(trkLine, e); return; }
     const albRow = e.target.closest('.list-album-row');
     if (albRow && albRow.dataset.albId) { showTipForRow(albRow, e); return; }
+    const barEl = e.target.closest('.tl-alb-row');
+    if (barEl && barEl.dataset.albId) { showTipForRow(barEl, e); return; }
     hideTip();
   });
 
@@ -5930,7 +5918,7 @@ init();
   });
 
   document.addEventListener('mouseout', function(e) {
-    const row = e.target.closest('.tt-row') || e.target.closest('.trk-line') || e.target.closest('.list-album-row');
+    const row = e.target.closest('.tt-row') || e.target.closest('.trk-line') || e.target.closest('.list-album-row') || e.target.closest('.tl-alb-row');
     if (!row) return;
     const to = e.relatedTarget;
     if (to && row.contains(to)) return;
@@ -6065,28 +6053,10 @@ function playFromPlaylist(playlistId) {
       return { videoId: vid, title: t.name, trackId: t.id };
     }).filter(Boolean);
   if (!q.length) return;
-  _activePlaylistId = playlistId;
   _queueHasAdditions = false;
-  const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
-  if (doShuffle && q.length > 1) {
-    setYtShuffleEnabled(true);
-    if (!ytPlayerEl) {
-      openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-      ytQueue = q; ytQueueIdx = 0;
-      updateYTQueueUI();
-      _ytShuffleAfterReady = true;
-    } else {
-      ytQueue = q; ytQueueIdx = 0;
-      updateYTQueueUI();
-      ytNextTrack();
-    }
-  } else {
-    setYtShuffleEnabled(false);
-    if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-    else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-    ytQueue = q; ytQueueIdx = 0;
-    updateYTQueueUI();
-  }
+  if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+  else { ytPlayNow(q[0].videoId, q[0].title, q[0].trackId); }
+  ytQueue = q; ytQueueIdx = 0; updateYTQueueUI();
 }
 
 // ══════════════════════════════════════════════════════════════
