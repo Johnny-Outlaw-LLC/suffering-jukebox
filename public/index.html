@@ -2210,7 +2210,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       <div style="display:flex;align-items:center;gap:5px;padding:2px 8px 6px 10px">
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭ Next</button>
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
-        <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
+        <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)" ${ytShuffle?"checked":""}><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
       </div>
     </div>
@@ -3368,6 +3368,18 @@ function closeYTPlaylistDD() {
   if (m) m.style.display = 'none';
 }
 
+function updateYTPlaylistDDLabel() {
+  const btn = document.querySelector('#yt-pl-dd-wrap .yt-pl-dd-btn span:first-child');
+  if (!btn) return;
+  if (_activePlaylistId) {
+    const pl = _savedPlaylists.find(p => p.id === _activePlaylistId);
+    btn.textContent = pl ? '\u266a ' + pl.name : '\u266a Load Playlist';
+  } else {
+    const has = playlists.length > 0 || pubPlaylists.length > 0;
+    btn.textContent = '\u266a ' + (has ? 'Load Playlist' : 'No Playlists');
+  }
+}
+
 async function playPlaylist(playlistId) {
   try {
     const rows = await dbGet(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
@@ -3378,6 +3390,7 @@ async function playPlaylist(playlistId) {
       if (yt?.video_id) { const t = findTrackById(r.track_id); q.push({ videoId: yt.video_id, title: t?.name||'Track', trackId: r.track_id }); }
     }
     if (!q.length) { alert('No playable tracks found.'); return; }
+    _activePlaylistId = playlistId;
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
@@ -3386,17 +3399,17 @@ async function playPlaylist(playlistId) {
     if (doShuffle && q.length > 1) {
       if (!ytPlayerEl) {
         openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-        updateYTQueueUI();
+        updateYTQueueUI(); updateYTPlaylistDDLabel();
         _ytShuffleAfterReady = true;
       } else {
         ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-        updateYTQueueUI();
+        updateYTQueueUI(); updateYTPlaylistDDLabel();
         ytNextTrack();
       }
     } else {
       if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
       else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-      updateYTQueueUI();
+      updateYTQueueUI(); updateYTPlaylistDDLabel();
     }
   } catch(e) { alert('Failed to load playlist: ' + e.message); }
 }
@@ -5205,6 +5218,7 @@ let dailyRatingData= {};   // trackId → [{date:'YYYY-MM-DD', avg:N, count:N}] 
 const _cardPlayTimers = {};  // trackId → setTimeout handle for 10-second play threshold
 let _queueHasAdditions = false;  // true when user has explicitly added to queue
 let _savedPlaylists = [];  // cached playlists from Supabase
+let _activePlaylistId = null;  // id of playlist currently loaded in queue
 let _playlistsLoading = false;
 let _playlistsLoaded  = false; // set true after first load so render() never re-loops
 let playlists    = []; // own playlists
