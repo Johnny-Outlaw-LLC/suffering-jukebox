@@ -6054,9 +6054,26 @@ function playFromPlaylist(playlistId) {
     }).filter(Boolean);
   if (!q.length) return;
   _queueHasAdditions = false;
-  if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-  else { ytPlayNow(q[0].videoId, q[0].title, q[0].trackId); }
-  ytQueue = q; ytQueueIdx = 0; updateYTQueueUI();
+  const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
+  setYtShuffleEnabled(doShuffle);
+  ytQueue = q; ytQueueIdx = 0;
+  if (doShuffle && q.length > 1) {
+    // Mirrors playPlaylist(): start the first track, then immediately
+    // skip to a random one so shuffle mode kicks in right away.
+    if (!ytPlayerEl) {
+      openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+      updateYTQueueUI();
+      _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
+    } else {
+      ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+      updateYTQueueUI();
+      ytNextTrack();
+    }
+  } else {
+    if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+    else { ytPlayNow(q[0].videoId, q[0].title, q[0].trackId); }
+    updateYTQueueUI();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
