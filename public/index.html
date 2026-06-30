@@ -3396,26 +3396,24 @@ async function playPlaylist(playlistId) {
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
     _queueHasAdditions = true;
-    // NOTE: openYTPlayer() and ytPlayNow() both reset ytQueue to [first track],
-    // so we must restore the full queue AFTER calling them.
     if (doShuffle && q.length > 1) {
+      // Mirror loadQueueForShuffle: for existing player, set queue then ytNextTrack picks random
       setYtShuffleEnabled(true);
       if (!ytPlayerEl) {
-        openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-        ytQueue = q; ytQueueIdx = 0; // restore full queue
+        openYTPlayer(q[0].videoId, q[0].title, q[0].trackId); // resets ytQueue internally
+        ytQueue = q; ytQueueIdx = 0;
         updateYTQueueUI();
-        _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
+        _ytShuffleAfterReady = true;
       } else {
-        ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-        ytQueue = q; ytQueueIdx = 0; // restore full queue
+        ytQueue = q; ytQueueIdx = 0;
         updateYTQueueUI();
-        ytNextTrack(); // skip to random track
+        ytNextTrack(); // picks random index and loads that video
       }
     } else {
       setYtShuffleEnabled(false);
       if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
       else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-      ytQueue = q; ytQueueIdx = 0; // restore full queue
+      ytQueue = q; ytQueueIdx = 0;
       updateYTQueueUI();
     }
   } catch(e) { alert('Failed to load playlist: ' + e.message); }
@@ -4503,7 +4501,7 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
+const SJ_APP_UPDATED_FALLBACK = '2026-06-30';
 
 let googleUser = null;
 let sjIsAdmin = false;
