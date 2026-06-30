@@ -2219,6 +2219,13 @@ function openYTPlayer(videoId, title, trackId, ev) {
     </div>
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
   _ytpContainerEl.appendChild(ytPlayerEl);
+  // Sync the newly-created Shuffle/Repeat checkboxes to whatever state
+  // was set before the player existed (e.g. shuffleAllVisible() calling
+  // setYtShuffleEnabled() ahead of openYTPlayer()).
+  const _shChk0 = ytPlayerEl.querySelector('#ytp-shuffle-chk');
+  if (_shChk0) _shChk0.checked = ytShuffle;
+  const _rpChk0 = ytPlayerEl.querySelector('#ytp-repeat-chk');
+  if (_rpChk0) _rpChk0.checked = ytRepeat;
 
   // Initialize queue with this first track
   ytQueue = [{videoId, title, trackId: trackId || null}];
@@ -4634,10 +4641,17 @@ function updateAuthBtn() {
   });
   if (updatedEl) {
     try {
-      const d = new Date(sjLastUpdated + (sjLastUpdated.includes('T') ? '' : 'T12:00:00'));
-      updatedEl.textContent = isNaN(d.getTime())
-        ? sjLastUpdated
-        : d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+      const hasTime = /\d{2}:\d{2}/.test(sjLastUpdated);
+      const d = new Date(hasTime ? sjLastUpdated.replace(' ', 'T') : sjLastUpdated + 'T12:00:00');
+      if (isNaN(d.getTime())) {
+        updatedEl.textContent = sjLastUpdated;
+      } else if (hasTime) {
+        const datePart = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
+        const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago', timeZoneName: 'short' });
+        updatedEl.textContent = datePart + ' · ' + timePart;
+      } else {
+        updatedEl.textContent = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+      }
     } catch (_) {
       updatedEl.textContent = sjLastUpdated;
     }

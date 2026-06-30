@@ -78,7 +78,8 @@ export async function getSjLastUpdated(): Promise<string | null> {
     .eq("key", "last_updated")
     .maybeSingle();
   if (error || !data) return null;
-  return data.value || data.updated_at || null;
+  // Prefer updated_at (full timestamp) so the UI can show date + time.
+  return data.updated_at || data.value || null;
 }
 
 export function parseYouTubeVideoId(input: string): string | null {
