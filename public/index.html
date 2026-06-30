@@ -3389,23 +3389,20 @@ async function playPlaylist(playlistId) {
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
     _queueHasAdditions = true;
-    ytQueue = q; ytQueueIdx = 0;
-    if (doShuffle && q.length > 1) {
-      // Open/start the first track then immediately skip to a random one,
-      // mimicking loadQueueForShuffle so the "skip first" rule applies.
-      if (!ytPlayerEl) {
-        openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-        updateYTQueueUI();
-        _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
-      } else {
-        ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-        updateYTQueueUI();
-        ytNextTrack(); // player already exists — skip immediately
-      }
-    } else {
-      if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-      else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+    // IMPORTANT: openYTPlayer()/ytPlayNow() both reset ytQueue internally to a
+    // single-track array, so ytQueue must be (re)assigned AFTER starting
+    // playback, not before — otherwise it gets clobbered and ytNextTrack()
+    // has nothing to shuffle into.
+    if (!ytPlayerEl) {
+      openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+      ytQueue = q; ytQueueIdx = 0;
       updateYTQueueUI();
+      if (doShuffle && q.length > 1) _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
+    } else {
+      ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+      ytQueue = q; ytQueueIdx = 0;
+      updateYTQueueUI();
+      if (doShuffle && q.length > 1) ytNextTrack(); // player already exists — skip immediately
     }
   } catch(e) { alert('Failed to load playlist: ' + e.message); }
 }
@@ -6070,23 +6067,20 @@ function playFromPlaylist(playlistId) {
   _queueHasAdditions = false;
   const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
   setYtShuffleEnabled(doShuffle);
-  ytQueue = q; ytQueueIdx = 0;
-  if (doShuffle && q.length > 1) {
-    // Mirrors playPlaylist(): start the first track, then immediately
-    // skip to a random one so shuffle mode kicks in right away.
-    if (!ytPlayerEl) {
-      openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-      updateYTQueueUI();
-      _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
-    } else {
-      ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-      updateYTQueueUI();
-      ytNextTrack();
-    }
-  } else {
-    if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-    else { ytPlayNow(q[0].videoId, q[0].title, q[0].trackId); }
+  // IMPORTANT: openYTPlayer()/ytPlayNow() both reset ytQueue internally to a
+  // single-track array, so ytQueue must be (re)assigned AFTER starting
+  // playback, not before — otherwise it gets clobbered and ytNextTrack()
+  // has nothing to shuffle into.
+  if (!ytPlayerEl) {
+    openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+    ytQueue = q; ytQueueIdx = 0;
     updateYTQueueUI();
+    if (doShuffle && q.length > 1) _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
+  } else {
+    ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+    ytQueue = q; ytQueueIdx = 0;
+    updateYTQueueUI();
+    if (doShuffle && q.length > 1) ytNextTrack();
   }
 }
 
