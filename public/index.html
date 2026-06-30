@@ -796,6 +796,21 @@ body:not(.light) .tt-num { color: var(--text); }
 .ytp-progress-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: var(--accent); border-radius: 2px; pointer-events: none; }
 .ytp-progress-handle { position: absolute; top: 50%; left: 0%; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); transform: translate(-50%,-50%); box-shadow: 0 0 0 2px rgba(0,0,0,.45); pointer-events: none; }
 .ytp-progress-time { font-size: .5rem; font-family: var(--mono); color: #fff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
+/* Sits permanently on top of the iframe (transparent) so the mouse never
+   actually hovers the YouTube document itself. Even with controls=0,
+   YouTube's embed shows a title/share/"watch on YouTube" overlay on hover
+   that can't be turned off via URL params — the only reliable fix is to
+   stop the iframe from ever receiving the hover/mousemove events that
+   trigger it. Clicking still toggles play/pause through our own API. */
+.ytp-hover-block { position: absolute; inset: 0; z-index: 3; background: transparent; cursor: pointer; }
+/* Covers the iframe whenever paused — YouTube shows a mandatory branding/
+   suggestions overlay on pause that can't be suppressed via embed params,
+   so we hide it behind our own pause screen instead. */
+.ytp-pause-cover { position: absolute; inset: 0; z-index: 4; cursor: pointer; overflow: hidden; }
+.ytp-pause-cover img { width: 100%; height: 100%; object-fit: cover; filter: blur(2px) brightness(.42); }
+.ytp-pause-cover-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; background: rgba(0,0,0,.2); padding: 10px; }
+.ytp-pause-cover-icon { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.14); border: 2px solid rgba(255,255,255,.65); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; color: #fff; padding-left: 3px; }
+.ytp-pause-cover-title { font-size: .62rem; font-weight: 700; color: #fff; text-align: center; max-width: 88%; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
 .ytp-play-overlay {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -2226,7 +2241,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       </div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
-      ${ytpIframeHTML(videoId, cH)}
+      ${ytpIframeHTML(videoId, cH, title)}
     </div>
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
   _ytpContainerEl.appendChild(ytPlayerEl);
@@ -2257,11 +2272,20 @@ function openYTPlayer(videoId, title, trackId, ev) {
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
 }
 
-function ytpIframeHTML(videoId, h) {
+function ytpIframeHTML(videoId, h, title) {
+  const safeCoverTitle = (title || '').replace(/</g, '&lt;');
   return `<iframe id="yt-embed-iframe" src="${ytpEmbedSrc(videoId)}"
     style="width:100%;height:${h}px;border:none;display:block"
     allow="autoplay; encrypted-media; picture-in-picture"
     allowfullscreen></iframe>
+  <div class="ytp-hover-block" id="ytp-hover-block" onclick="ytTogglePlayPause()" title="Pause/Play"></div>
+  <div class="ytp-pause-cover" id="ytp-pause-cover" onclick="ytTogglePlayPause()" title="Resume" style="display:none">
+    <img src="https://i.ytimg.com/vi/${videoId}/hqdefault.jpg" alt="">
+    <div class="ytp-pause-cover-overlay">
+      <div class="ytp-pause-cover-icon">▶</div>
+      <div class="ytp-pause-cover-title">${safeCoverTitle}</div>
+    </div>
+  </div>
   <div class="ytp-progress-wrap" id="ytp-progress-wrap">
     <div class="ytp-progress-track" id="ytp-progress-track" onmousedown="ytpProgressPointerDown(event)" ontouchstart="ytpProgressPointerDown(event)">
       <div class="ytp-progress-fill" id="ytp-progress-fill"></div>
@@ -2306,7 +2330,7 @@ function ytpPlayInline() {
   if (!frame) return;
   const h = frame.offsetHeight || Math.round(320 * 9 / 16);
   frame.onclick = null; // prevent double-fire
-  frame.innerHTML = ytpIframeHTML(ytVideoId, h);
+  frame.innerHTML = ytpIframeHTML(ytVideoId, h, (ytQueue[ytQueueIdx] && ytQueue[ytQueueIdx].title) || '');
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
 }
 
@@ -2405,7 +2429,7 @@ function ytPlayNow(videoId, title, trackId) {
     const iframe = ytPlayerEl.querySelector('iframe');
     const frame  = ytPlayerEl.querySelector('.yt-player-frame');
     if (iframe) { iframe.src = ytpEmbedSrc(videoId); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
-    else if (frame) { frame.innerHTML = ytpIframeHTML(videoId, frame.offsetHeight); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
+    else if (frame) { frame.innerHTML = ytpIframeHTML(videoId, frame.offsetHeight, title); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
   }
   const titleEl = ytPlayerEl.querySelector('.ytp-title');
   if (titleEl) titleEl.textContent = title || '';
@@ -2438,7 +2462,7 @@ function ytPlayQueueIdx(idx) {
     const iframe = ytPlayerEl.querySelector('iframe');
     const frame  = ytPlayerEl.querySelector('.yt-player-frame');
     if (iframe) { iframe.src = ytpEmbedSrc(item.videoId); }
-    else if (frame) { frame.innerHTML = ytpIframeHTML(item.videoId, frame.offsetHeight); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
+    else if (frame) { frame.innerHTML = ytpIframeHTML(item.videoId, frame.offsetHeight, item.title); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
   }
   const titleEl = ytPlayerEl.querySelector('.ytp-title');
   if (titleEl) titleEl.textContent = item.title || '';
@@ -2471,6 +2495,11 @@ function ytpSetPlayPauseIcon(playing) {
   if (!btn) return;
   btn.textContent = playing ? '⏸' : '▶';
   btn.title = playing ? 'Pause' : 'Play';
+}
+
+function ytpSetPauseCover(show) {
+  const cov = document.getElementById('ytp-pause-cover');
+  if (cov) cov.style.display = show ? '' : 'none';
 }
 
 // ── Mini-player rating for the currently playing track ──
@@ -2524,6 +2553,7 @@ function attachYTAPIPlayer() {
       onStateChange: function(ev) {
         if (ev.data === 1) { // PLAYING
           ytpSetPlayPauseIcon(true);
+          ytpSetPauseCover(false);
           if (_ytCurrentPlay && !_ytCurrentPlay.playbackStarted) _ytCurrentPlay.playbackStarted = Date.now();
           // Start 10-second play threshold timer
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
@@ -2539,6 +2569,7 @@ function attachYTAPIPlayer() {
           }
         } else if (ev.data === 2) { // PAUSED
           ytpSetPlayPauseIcon(false);
+          ytpSetPauseCover(true);
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
           patchYTPlayDuration();
         } else if (ev.data === 0) { // ENDED
