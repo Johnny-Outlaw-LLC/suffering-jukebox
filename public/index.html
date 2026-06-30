@@ -789,28 +789,6 @@ body:not(.light) .tt-num { color: var(--text); }
 #yt-player-container.ytp-fs .yt-player-header { cursor: default; }
 .yt-player-frame { flex: 1; background: var(--bg); min-height: 170px; position: relative; cursor: pointer; overflow: hidden; }
 .yt-player-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* Custom seek bar — replaces YouTube's native controls (controls=0) */
-.ytp-progress-wrap { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 7px; padding: 4px 9px 7px; background: linear-gradient(to top, rgba(0,0,0,.78), rgba(0,0,0,0)); pointer-events: none; }
-.ytp-progress-track { position: relative; flex: 1; height: 4px; background: rgba(255,255,255,.28); border-radius: 2px; cursor: pointer; pointer-events: auto; transition: height .1s; }
-.ytp-progress-track:hover { height: 6px; }
-.ytp-progress-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%; background: var(--accent); border-radius: 2px; pointer-events: none; }
-.ytp-progress-handle { position: absolute; top: 50%; left: 0%; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); transform: translate(-50%,-50%); box-shadow: 0 0 0 2px rgba(0,0,0,.45); pointer-events: none; }
-.ytp-progress-time { font-size: .5rem; font-family: var(--mono); color: #fff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
-/* Sits permanently on top of the iframe (transparent) so the mouse never
-   actually hovers the YouTube document itself. Even with controls=0,
-   YouTube's embed shows a title/share/"watch on YouTube" overlay on hover
-   that can't be turned off via URL params — the only reliable fix is to
-   stop the iframe from ever receiving the hover/mousemove events that
-   trigger it. Clicking still toggles play/pause through our own API. */
-.ytp-hover-block { position: absolute; inset: 0; z-index: 3; background: transparent; cursor: pointer; }
-/* Covers the iframe whenever paused — YouTube shows a mandatory branding/
-   suggestions overlay on pause that can't be suppressed via embed params,
-   so we hide it behind our own pause screen instead. */
-.ytp-pause-cover { position: absolute; inset: 0; z-index: 4; cursor: pointer; overflow: hidden; }
-.ytp-pause-cover img { width: 100%; height: 100%; object-fit: cover; filter: blur(2px) brightness(.42); }
-.ytp-pause-cover-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; background: rgba(0,0,0,.2); padding: 10px; }
-.ytp-pause-cover-icon { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.14); border: 2px solid rgba(255,255,255,.65); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; color: #fff; padding-left: 3px; }
-.ytp-pause-cover-title { font-size: .62rem; font-weight: 700; color: #fff; text-align: center; max-width: 88%; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
 .ytp-play-overlay {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -2241,7 +2219,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       </div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
-      ${ytpIframeHTML(videoId, cH, title)}
+      ${ytpIframeHTML(videoId, cH)}
     </div>
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
   _ytpContainerEl.appendChild(ytPlayerEl);
@@ -2272,27 +2250,11 @@ function openYTPlayer(videoId, title, trackId, ev) {
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
 }
 
-function ytpIframeHTML(videoId, h, title) {
-  const safeCoverTitle = (title || '').replace(/</g, '&lt;');
+function ytpIframeHTML(videoId, h) {
   return `<iframe id="yt-embed-iframe" src="${ytpEmbedSrc(videoId)}"
     style="width:100%;height:${h}px;border:none;display:block"
     allow="autoplay; encrypted-media; picture-in-picture"
-    allowfullscreen></iframe>
-  <div class="ytp-hover-block" id="ytp-hover-block" onclick="ytTogglePlayPause()" title="Pause/Play"></div>
-  <div class="ytp-pause-cover" id="ytp-pause-cover" onclick="ytTogglePlayPause()" title="Resume" style="display:none">
-    <img src="https://i.ytimg.com/vi/${videoId}/hqdefault.jpg" alt="">
-    <div class="ytp-pause-cover-overlay">
-      <div class="ytp-pause-cover-icon">▶</div>
-      <div class="ytp-pause-cover-title">${safeCoverTitle}</div>
-    </div>
-  </div>
-  <div class="ytp-progress-wrap" id="ytp-progress-wrap">
-    <div class="ytp-progress-track" id="ytp-progress-track" onmousedown="ytpProgressPointerDown(event)" ontouchstart="ytpProgressPointerDown(event)">
-      <div class="ytp-progress-fill" id="ytp-progress-fill"></div>
-      <div class="ytp-progress-handle" id="ytp-progress-handle"></div>
-    </div>
-    <div class="ytp-progress-time" id="ytp-progress-time">0:00 / 0:00</div>
-  </div>`;
+    allowfullscreen></iframe>`;
 }
 
 function ytpEmbedTheme() {
@@ -2300,7 +2262,7 @@ function ytpEmbedTheme() {
 }
 
 function ytpEmbedSrc(videoId) {
-  return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&enablejsapi=1&controls=0&disablekb=1&theme=${ytpEmbedTheme()}`;
+  return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&enablejsapi=1&theme=${ytpEmbedTheme()}`;
 }
 
 function updateYTEmbedTheme() {
@@ -2330,13 +2292,12 @@ function ytpPlayInline() {
   if (!frame) return;
   const h = frame.offsetHeight || Math.round(320 * 9 / 16);
   frame.onclick = null; // prevent double-fire
-  frame.innerHTML = ytpIframeHTML(ytVideoId, h, (ytQueue[ytQueueIdx] && ytQueue[ytQueueIdx].title) || '');
+  frame.innerHTML = ytpIframeHTML(ytVideoId, h);
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
 }
 
 function closeYTPlayer() {
   if (!ytPlayerEl) return;
-  ytpStopProgressLoop();
   patchYTPlayDuration();
   _ytCurrentPlay = null;
   // Dismiss choice popup if open
@@ -2429,11 +2390,10 @@ function ytPlayNow(videoId, title, trackId) {
     const iframe = ytPlayerEl.querySelector('iframe');
     const frame  = ytPlayerEl.querySelector('.yt-player-frame');
     if (iframe) { iframe.src = ytpEmbedSrc(videoId); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
-    else if (frame) { frame.innerHTML = ytpIframeHTML(videoId, frame.offsetHeight, title); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
+    else if (frame) { frame.innerHTML = ytpIframeHTML(videoId, frame.offsetHeight); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
   }
   const titleEl = ytPlayerEl.querySelector('.ytp-title');
   if (titleEl) titleEl.textContent = title || '';
-  ytpUpdatePauseCover(videoId, title);
   if (_ytpContainerEl) _ytpContainerEl.style.zIndex = ++scZCounter;
   else ytPlayerEl.style.zIndex = ++scZCounter;
   if (_ytpLyricsOpen && trackId) ytpUpdateLyrics(trackId);
@@ -2463,11 +2423,10 @@ function ytPlayQueueIdx(idx) {
     const iframe = ytPlayerEl.querySelector('iframe');
     const frame  = ytPlayerEl.querySelector('.yt-player-frame');
     if (iframe) { iframe.src = ytpEmbedSrc(item.videoId); }
-    else if (frame) { frame.innerHTML = ytpIframeHTML(item.videoId, frame.offsetHeight, item.title); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
+    else if (frame) { frame.innerHTML = ytpIframeHTML(item.videoId, frame.offsetHeight); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
   }
   const titleEl = ytPlayerEl.querySelector('.ytp-title');
   if (titleEl) titleEl.textContent = item.title || '';
-  ytpUpdatePauseCover(item.videoId, item.title);
   if (_ytpLyricsOpen && item.trackId) ytpUpdateLyrics(item.trackId);
   updateYTQueueUI();
 }
@@ -2497,20 +2456,6 @@ function ytpSetPlayPauseIcon(playing) {
   if (!btn) return;
   btn.textContent = playing ? '⏸' : '▶';
   btn.title = playing ? 'Pause' : 'Play';
-}
-
-function ytpSetPauseCover(show) {
-  const cov = document.getElementById('ytp-pause-cover');
-  if (cov) cov.style.display = show ? '' : 'none';
-}
-
-function ytpUpdatePauseCover(videoId, title) {
-  const cov = document.getElementById('ytp-pause-cover');
-  if (!cov) return;
-  const img = cov.querySelector('img');
-  const titleEl = cov.querySelector('.ytp-pause-cover-title');
-  if (img) img.src = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
-  if (titleEl) titleEl.textContent = title || '';
 }
 
 // ── Mini-player rating for the currently playing track ──
@@ -2551,7 +2496,6 @@ function attachYTAPIPlayer() {
   ytAPIPlayer = new YT.Player('yt-embed-iframe', {
     events: {
       onReady: function(ev) {
-        ytpStartProgressLoop();
         if (_ytShuffleAfterReady && ytQueue.length > 1) {
           _ytShuffleAfterReady = false;
           ytNextTrack();
@@ -2564,7 +2508,6 @@ function attachYTAPIPlayer() {
       onStateChange: function(ev) {
         if (ev.data === 1) { // PLAYING
           ytpSetPlayPauseIcon(true);
-          ytpSetPauseCover(false);
           if (_ytCurrentPlay && !_ytCurrentPlay.playbackStarted) _ytCurrentPlay.playbackStarted = Date.now();
           // Start 10-second play threshold timer
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
@@ -2580,7 +2523,6 @@ function attachYTAPIPlayer() {
           }
         } else if (ev.data === 2) { // PAUSED
           ytpSetPlayPauseIcon(false);
-          ytpSetPauseCover(true);
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
           patchYTPlayDuration();
         } else if (ev.data === 0) { // ENDED
@@ -2845,82 +2787,6 @@ function ytpLyrResizeStart(e) {
   };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
-}
-
-// ── Custom seek bar (YouTube controls are hidden via controls=0) ──
-let _ytpProgressTimer = null;
-let _ytpSeeking = false;
-let _ytpSeekPct = null;
-
-function ytpFormatTime(s) {
-  if (!isFinite(s) || s < 0) s = 0;
-  s = Math.floor(s);
-  const m = Math.floor(s / 60), sec = s % 60;
-  return m + ':' + String(sec).padStart(2, '0');
-}
-
-function ytpStartProgressLoop() {
-  ytpStopProgressLoop();
-  _ytpProgressTimer = setInterval(ytpTickProgress, 500);
-  ytpTickProgress();
-}
-
-function ytpStopProgressLoop() {
-  if (_ytpProgressTimer) { clearInterval(_ytpProgressTimer); _ytpProgressTimer = null; }
-}
-
-function ytpTickProgress() {
-  if (_ytpSeeking || !ytAPIPlayer || typeof ytAPIPlayer.getCurrentTime !== 'function') return;
-  let cur, dur;
-  try { cur = ytAPIPlayer.getCurrentTime() || 0; dur = ytAPIPlayer.getDuration() || 0; } catch (e) { return; }
-  const pct = dur > 0 ? Math.min(100, (cur / dur) * 100) : 0;
-  const fill   = document.getElementById('ytp-progress-fill');
-  const handle = document.getElementById('ytp-progress-handle');
-  const timeEl = document.getElementById('ytp-progress-time');
-  if (fill)   fill.style.width = pct + '%';
-  if (handle) handle.style.left = pct + '%';
-  if (timeEl) timeEl.textContent = ytpFormatTime(cur) + ' / ' + ytpFormatTime(dur);
-}
-
-function ytpProgressPointerDown(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  const track = document.getElementById('ytp-progress-track');
-  if (!track) return;
-  _ytpSeeking = true;
-
-  const move = (ev) => {
-    const x = ev.touches ? ev.touches[0].clientX : ev.clientX;
-    const rect = track.getBoundingClientRect();
-    let pct = rect.width ? (x - rect.left) / rect.width : 0;
-    pct = Math.max(0, Math.min(1, pct));
-    _ytpSeekPct = pct;
-    const fill   = document.getElementById('ytp-progress-fill');
-    const handle = document.getElementById('ytp-progress-handle');
-    if (fill)   fill.style.width = (pct * 100) + '%';
-    if (handle) handle.style.left = (pct * 100) + '%';
-  };
-
-  const up = () => {
-    document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', up);
-    document.removeEventListener('touchmove', move);
-    document.removeEventListener('touchend', up);
-    if (ytAPIPlayer && typeof ytAPIPlayer.getDuration === 'function' && _ytpSeekPct != null) {
-      try {
-        const dur = ytAPIPlayer.getDuration() || 0;
-        if (dur > 0) ytAPIPlayer.seekTo(dur * _ytpSeekPct, true);
-      } catch (err) {}
-    }
-    _ytpSeeking = false;
-    _ytpSeekPct = null;
-  };
-
-  move(e);
-  document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', up);
-  document.addEventListener('touchmove', move, { passive: false });
-  document.addEventListener('touchend', up);
 }
 
 let _ytpMinimized = false;
