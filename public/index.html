@@ -754,6 +754,10 @@ body:not(.light) .tt-num { color: var(--text); }
 .ytp-title { flex: 1; font-size: .55rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ytp-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; font-size: .6rem; padding: 2px 7px; border-radius: 5px; transition: color .1s, border-color .1s; line-height: 1.5; white-space: nowrap; font-family: var(--mono); }
 .ytp-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.ytp-playpause-btn { padding: 2px 8px; font-size: .65rem; }
+.ytp-vote-btn { display:flex; align-items:center; padding: 2px 6px; }
+.ytp-vote-btn.tvb-up { color: #22c55e; border-color: #22c55e; }
+.ytp-vote-btn.tvb-down { color: #ef4444; border-color: #ef4444; }
 .ytp-titlebar-btns { display: flex; align-items: center; flex-shrink: 0; }
 .ytp-win-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -2209,9 +2213,12 @@ function openYTPlayer(videoId, title, trackId, ev) {
       </div>
       <div style="display:flex;align-items:center;gap:5px;padding:2px 8px 6px 10px">
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭ Next</button>
+        <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">⏸</button>
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
+        <button class="ytp-btn ytp-vote-btn" id="ytp-vote-up" onclick="ytpVote(1)" title="Thumbs up" onmousedown="event.stopPropagation()">${_SVG_TH_UP}</button>
+        <button class="ytp-btn ytp-vote-btn" id="ytp-vote-down" onclick="ytpVote(-1)" title="Thumbs down" onmousedown="event.stopPropagation()">${_SVG_TH_DN}</button>
       </div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
@@ -2230,6 +2237,8 @@ function openYTPlayer(videoId, title, trackId, ev) {
   // Initialize queue with this first track
   ytQueue = [{videoId, title, trackId: trackId || null}];
   ytQueueIdx = 0;
+  ytpRefreshVoteBtns(trackId || null);
+  ytpSetPlayPauseIcon(true);
   // play will be logged by onStateChange after 10 seconds
 
   document.body.appendChild(_ytpContainerEl);
@@ -2437,6 +2446,37 @@ function ytNextTrack() {
   }
 }
 
+// ── Mini-player play/pause toggle ──────────────────────────────
+function ytTogglePlayPause() {
+  if (!ytAPIPlayer || typeof ytAPIPlayer.getPlayerState !== 'function') return;
+  const st = ytAPIPlayer.getPlayerState();
+  if (st === 1) ytAPIPlayer.pauseVideo();
+  else ytAPIPlayer.playVideo();
+}
+
+function ytpSetPlayPauseIcon(playing) {
+  const btn = document.getElementById('ytp-playpause-btn');
+  if (!btn) return;
+  btn.textContent = playing ? '⏸' : '▶';
+  btn.title = playing ? 'Pause' : 'Play';
+}
+
+// ── Mini-player thumbs up/down for the currently playing track ──
+function ytpVote(dir) {
+  const item = ytQueue[ytQueueIdx];
+  if (!item || !item.trackId) return;
+  instantVote(item.trackId, dir);
+  ytpRefreshVoteBtns(item.trackId);
+}
+
+function ytpRefreshVoteBtns(trackId) {
+  const up = document.getElementById('ytp-vote-up');
+  const dn = document.getElementById('ytp-vote-down');
+  const v  = trackId ? getMyVote(trackId) : 0;
+  if (up) { up.classList.toggle('tvb-up', v > 0); up.style.display = trackId ? '' : 'none'; }
+  if (dn) { dn.classList.toggle('tvb-down', v < 0); dn.style.display = trackId ? '' : 'none'; }
+}
+
 // ── YouTube iframe API: dynamic loader + auto-advance on video end ─
 function loadYTAPI() {
   if (document.getElementById('yt-api-script')) return; // already loading/loaded
@@ -2467,6 +2507,7 @@ function attachYTAPIPlayer() {
       },
       onStateChange: function(ev) {
         if (ev.data === 1) { // PLAYING
+          ytpSetPlayPauseIcon(true);
           if (_ytCurrentPlay && !_ytCurrentPlay.playbackStarted) _ytCurrentPlay.playbackStarted = Date.now();
           // Start 10-second play threshold timer
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
@@ -2481,6 +2522,7 @@ function attachYTAPIPlayer() {
             }, 10000);
           }
         } else if (ev.data === 2) { // PAUSED
+          ytpSetPlayPauseIcon(false);
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
           patchYTPlayDuration();
         } else if (ev.data === 0) { // ENDED
@@ -2604,6 +2646,10 @@ function ytRemoveFromQueue(i) {
 
 function updateYTQueueUI() {
   if (!ytPlayerEl) return;
+
+  // Keep the mini-player thumbs up/down in sync with the current track
+  const _curQItem = ytQueue[ytQueueIdx];
+  ytpRefreshVoteBtns(_curQItem ? _curQItem.trackId : null);
 
   // Show/hide the Next button in the header
   const nextBtn = ytPlayerEl.querySelector('.ytp-next-btn');
