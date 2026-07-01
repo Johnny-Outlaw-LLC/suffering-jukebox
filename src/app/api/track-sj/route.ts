@@ -37,7 +37,7 @@ function getReferrerHost(ref: string) {
   try {
     const u = new URL(ref);
     const h = u.hostname.replace(/^www\./, "");
-    if (h === "sufferingjukebox.stream") return "(internal)";
+    if (h === "sufferingjukebox.stream" || h === "www.sufferingjukebox.stream") return "(internal)";
     if (h === "mail.google.com" || h === "gmail.com") return "Gmail";
     if (h === "google.com" && u.pathname.startsWith("/url")) return "Gmail";
     if (h.includes("outlook.")) return "Outlook";
