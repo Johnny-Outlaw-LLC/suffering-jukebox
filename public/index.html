@@ -2431,9 +2431,7 @@ function closeYTPlayer() {
   if (!ytPlayerEl) return;
   patchYTPlayDuration();
   _ytCurrentPlay = null;
-  // Dismiss choice popup if open
-  const choice = document.getElementById('yt-queue-choice');
-  if (choice) choice.remove();
+  dismissYTQueueChoice();
   // Destroy YT API player
   lyrSyncStop();
   try { if (ytAPIPlayer) { ytAPIPlayer.destroy(); } } catch(e) {}
@@ -2451,9 +2449,37 @@ function closeYTPlayer() {
 }
 
 // ── Queue: Play Now / Add to Queue popup ─────────────────────
+let _ytQueueChoiceCloser = null;
+
+function dismissYTQueueChoice() {
+  if (_ytQueueChoiceCloser) {
+    document.removeEventListener('click', _ytQueueChoiceCloser);
+    _ytQueueChoiceCloser = null;
+  }
+  document.getElementById('yt-queue-choice')?.remove();
+}
+
+function attachYTQueueChoiceCloser() {
+  if (_ytQueueChoiceCloser) {
+    document.removeEventListener('click', _ytQueueChoiceCloser);
+    _ytQueueChoiceCloser = null;
+  }
+  setTimeout(() => {
+    _ytQueueChoiceCloser = function(e) {
+      const el = document.getElementById('yt-queue-choice');
+      if (!el) {
+        document.removeEventListener('click', _ytQueueChoiceCloser);
+        _ytQueueChoiceCloser = null;
+        return;
+      }
+      if (!el.contains(e.target)) dismissYTQueueChoice();
+    };
+    document.addEventListener('click', _ytQueueChoiceCloser);
+  }, 0);
+}
+
 function showYTQueueChoice(videoId, title, trackId, triggerEl) {
-  const old = document.getElementById('yt-queue-choice');
-  if (old) old.remove();
+  dismissYTQueueChoice();
 
   const popup = document.createElement('div');
   popup.id = 'yt-queue-choice';
@@ -2497,18 +2523,11 @@ function showYTQueueChoice(videoId, title, trackId, triggerEl) {
     e.stopPropagation();
     if (btn.dataset.qaction === 'play') ytPlayNow(videoId, title, trackId);
     else                                ytAddToQueue(videoId, title, trackId);
-    popup.remove();
+    dismissYTQueueChoice();
   });
 
   document.body.appendChild(popup);
-
-  // Close on outside click
-  setTimeout(() => {
-    document.addEventListener('click', function closeChoice(e) {
-      const el = document.getElementById('yt-queue-choice');
-      if (el && !el.contains(e.target)) { el.remove(); document.removeEventListener('click', closeChoice); }
-    });
-  }, 0);
+  attachYTQueueChoiceCloser();
 }
 
 function ytPlayNow(videoId, title, trackId) {
@@ -2710,8 +2729,7 @@ function playAlbum(albumId, e) {
 }
 
 function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
-  const old = document.getElementById('yt-queue-choice');
-  if (old) old.remove();
+  dismissYTQueueChoice();
 
   const popup = document.createElement('div');
   popup.id = 'yt-queue-choice';
@@ -2761,16 +2779,11 @@ function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
       fullQueue.forEach(item => ytQueue.push(item));
       updateYTQueueUI();
     }
-    popup.remove();
+    dismissYTQueueChoice();
   });
 
   document.body.appendChild(popup);
-  setTimeout(() => {
-    document.addEventListener('click', function closeAlbChoice(ev) {
-      const el = document.getElementById('yt-queue-choice');
-      if (el && !el.contains(ev.target)) { el.remove(); document.removeEventListener('click', closeAlbChoice); }
-    });
-  }, 0);
+  attachYTQueueChoiceCloser();
 }
 
 function ytScrollQueueToCurrent() {
