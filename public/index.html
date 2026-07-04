@@ -6714,4 +6714,250 @@ function toggleTLBars() {
   }
 }
 
-// ── Lyrics editing ─────────────────────────────�
+
+// ══════════════════════════════════════════════════════════════
+// SEARCH
+// ══════════════════════════════════════════════════════════════
+
+let _srchTimer = null;
+
+function openSearchModal(query) {
+  const overlay = document.getElementById('srch-overlay');
+  const input   = document.getElementById('srch-head-input');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  if (input) {
+    input.value = query || '';
+    input.focus();
+    if (query) _runSearch(query);
+  }
+  document.addEventListener('keydown', _srchKeyHandler);
+}
+
+function closeSearchModal() {
+  const overlay = document.getElementById('srch-overlay');
+  if (overlay) overlay.classList.remove('open');
+  document.removeEventListener('keydown', _srchKeyHandler);
+  const hdrInput = document.getElementById('hdr-search-input');
+  if (hdrInput) hdrInput.value = '';
+}
+
+function _srchKeyHandler(e) {
+  if (e.key === 'Escape') closeSearchModal();
+}
+
+function scheduleSearch(val) {
+  if (val && val.length >= 2) openSearchModal(val);
+}
+
+function _srchDebounce(val) {
+  clearTimeout(_srchTimer);
+  _srchTimer = setTimeout(() => _runSearch(val), 220);
+}
+
+function _runSearch(query) {
+  const hdrInput  = document.getElementById('srch-head-input');
+  const statusEl  = document.getElementById('srch-status');
+  const bodyEl    = document.getElementById('srch-body');
+  const countEl   = document.getElementById('srch-count');
+  if (hdrInput && hdrInput.value !== query) hdrInput.value = query;
+  if (!query || query.trim().length < 2) {
+    if (statusEl) statusEl.textContent = 'Start typing to search songs and lyrics.';
+    if (bodyEl)   bodyEl.innerHTML = '<div id="srch-status">Start typing to search songs and lyrics.</div>';
+    if (countEl)  countEl.textContent = '';
+    return;
+  }
+
+  const q    = query.trim().toLowerCase();
+  const hits = [];
+
+  (tracks || []).forEach(t => {
+    const nameMatch    = t.name.toLowerCase().includes(q);
+    const albumMatch   = (t.album || '').toLowerCase().includes(q);
+    const lyricsRaw    = lyricsCache[t.id] || '';
+    const lyricsMatch  = lyricsRaw.toLowerCase().includes(q);
+    if (!nameMatch && !albumMatch && !lyricsMatch) return;
+
+    let snippet = '';
+    if (lyricsMatch) {
+      const lines   = lyricsRaw.split('\n');
+      const lineIdx = lines.findIndex(l => l.toLowerCase().includes(q));
+      if (lineIdx >= 0) {
+        const start = Math.max(0, lineIdx - 1);
+        const end   = Math.min(lines.length, lineIdx + 3);
+        snippet = lines.slice(start, end).join('\n');
+      }
+    }
+    hits.push({ track: t, nameMatch, albumMatch, lyricsMatch, snippet });
+  });
+
+  // Sort: name matches first, then album, then lyrics
+  hits.sort((a, b) => {
+    const score = x => (x.nameMatch ? 4 : 0) + (x.albumMatch ? 2 : 0) + (x.lyricsMatch ? 1 : 0);
+    return score(b) - score(a);
+  });
+
+  if (countEl) countEl.textContent = hits.length ? `${hits.length} result${hits.length === 1 ? '' : 's'}` : '';
+
+  if (!hits.length) {
+    if (bodyEl) bodyEl.innerHTML = `<div id="srch-status">No results for "${escHtml(query)}".</div>`;
+    return;
+  }
+
+  function hl(str) {
+    if (!str) return '';
+    return escHtml(str).replace(new RegExp(escHtml(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'),
+      m => `<mark>${m}</mark>`);
+  }
+
+  const cards = hits.map(({ track: t, nameMatch, albumMatch, lyricsMatch, snippet }) => {
+    const art = t.album_art
+      ? `<img class="srch-art" src="${escHtml(t.album_art)}" alt="">`
+      : `<div class="srch-art-ph" style="background:var(--bg-elevated)">${escHtml((t.name||'?')[0].toUpperCase())}</div>`;
+    const meta = [t.album, t.year].filter(Boolean).join(' · ');
+    const snipHtml = snippet
+      ? `<div class="srch-lyr-panel">${hl(snippet)}</div>` : '';
+    return `<div class="srch-card" data-track-id="${t.id}">
+      ${art}
+      <div class="srch-info">
+        <div class="srch-track-name">${hl(t.name)}</div>
+        ${meta ? `<div class="srch-meta">${hl(meta)}</div>` : ''}
+        ${snipHtml}
+      </div>
+      <div class="srch-actions">
+        <button class="srch-btn play" onclick="closeSearchModal();playTrack('${t.id}')">▶ Play</button>
+        <button class="srch-btn" onclick="closeSearchModal();selectTrack('${t.id}')">View</button>
+      </div>
+    </div>`;
+  });
+
+  if (bodyEl) bodyEl.innerHTML = cards.join('');
+}
+
+// ── Lyrics editing ────────────────────────────────────────────
+async function startLyricsEdit(trackId, mode) {
+  if (!googleUser) return;
+  const existing = lyricsCache[trackId] || '';
+  const elId = mode === 'card' ? `sc-lyrics-${trackId}` : null;
+  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
+  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
+  const ytpEl  = mode === 'ytp' ? document.getElementById('ytp-lyr-text') : null;
+  const targetEl = mode === 'card' ? cardEl : mode === 'ytp' ? ytpEl : accEl;
+  if (!targetEl) return;
+  const parent = targetEl.parentNode;
+  const editWrap = document.createElement('div');
+  editWrap.id = `lyr-edit-wrap-${trackId}-${mode}`;
+  editWrap.innerHTML =
+    `<textarea class="lyr-edit-area" id="lyr-ta-${trackId}-${mode}">${existing.replace(/</g,'&lt;')}</textarea>` +
+    `<div class="lyr-edit-row">` +
+    `<button class="lyr-save-btn" onclick="saveLyricsEdit('${trackId}','${mode}')">Save</button>` +
+    `<button class="lyr-cancel-btn" onclick="cancelLyricsEdit('${trackId}','${mode}')">Cancel</button>` +
+    `<span style="font-size:.42rem;color:var(--text-muted);margin-left:auto;align-self:center">Editing as ${googleUser.name}</span>` +
+    `</div>`;
+  targetEl.style.display = 'none';
+  parent.insertBefore(editWrap, targetEl.nextSibling);
+}
+
+function cancelLyricsEdit(trackId, mode) {
+  const wrap = document.getElementById(`lyr-edit-wrap-${trackId}-${mode}`);
+  if (wrap) wrap.remove();
+  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
+  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
+  const ytpEl  = document.getElementById('ytp-lyr-text');
+  if (mode === 'card' && cardEl) cardEl.style.display = '';
+  if (mode === 'acc'  && accEl)  accEl.style.display  = '';
+  if (mode === 'ytp'  && ytpEl)  ytpEl.style.display  = '';
+}
+
+async function saveLyricsEdit(trackId, mode) {
+  if (!googleUser) return;
+  const ta = document.getElementById(`lyr-ta-${trackId}-${mode}`);
+  if (!ta) return;
+  const newLyrics  = ta.value.trim();
+  const oldLyrics  = lyricsCache[trackId] || null;
+  const saveBtn    = ta.parentNode.querySelector('.lyr-save-btn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+  try {
+    const session = (await sbAuth.auth.getSession()).data?.session;
+    const tok = session?.access_token || ANON;
+    const hdrs = {
+      apikey: ANON, Authorization: 'Bearer ' + tok,
+      'Content-Type': 'application/json',
+      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox',
+      Prefer: 'return=minimal'
+    };
+
+    // Upsert lyrics
+    await fetch(REST + '/lyrics?track_id=eq.' + trackId, {
+      method: 'PATCH', headers: hdrs,
+      body: JSON.stringify({ lyrics: newLyrics, lyrics_source: 'user-edit', lyrics_saved_at: new Date().toISOString() })
+    });
+
+    // Log edit history
+    await fetch(REST + '/lyrics_edits', {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({
+        track_id: trackId, old_lyrics: oldLyrics, new_lyrics: newLyrics,
+        editor_email: googleUser.email, editor_name: googleUser.name
+      })
+    });
+
+    // Update cache and UI
+    lyricsCache[trackId] = newLyrics;
+    cancelLyricsEdit(trackId, mode);
+    renderLyrics(trackId, newLyrics, 'user-edit');
+    document.querySelectorAll(`[data-acc-lyric="${trackId}"]`).forEach(el => {
+      el.className = 'sc-lyrics-text'; el.textContent = newLyrics;
+    });
+  } catch(e) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    alert('Save failed: ' + e.message);
+  }
+}
+
+async function openLyricsHistory(trackId) {
+  const modal = document.getElementById('lyr-hist-modal');
+  const body  = document.getElementById('lyr-hist-body');
+  const title = document.getElementById('lyr-hist-title');
+  const track = findTrackById(trackId);
+  title.textContent = 'Lyrics Edit History' + (track ? ' — ' + track.name : '');
+  modal.classList.add('open');
+  body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem">Loading…</p>';
+  try {
+    const rows = await fetch(REST + '/lyrics_edits?track_id=eq.' + trackId + '&order=edited_at.desc&limit=50', {
+      headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Accept-Profile': 'jukebox' }
+    }).then(r => r.json());
+    if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem;padding:8px">No edits recorded yet.</p>'; return; }
+    body.innerHTML = rows.map(r => {
+      const dt   = new Date(r.edited_at).toLocaleString();
+      const diff = computeLyricsDiff(r.old_lyrics || '', r.new_lyrics);
+      return `<div class="lyr-hist-entry">
+        <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
+        <div class="lyr-hist-diff">${diff}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { body.innerHTML = '<p style="color:#ef4444;font-size:.6rem">Failed to load history.</p>'; }
+}
+
+function closeLyricsHistory() {
+  document.getElementById('lyr-hist-modal').classList.remove('open');
+}
+
+function computeLyricsDiff(oldTxt, newTxt) {
+  const oldLines = (oldTxt || '').split('\n');
+  const newLines = (newTxt || '').split('\n');
+  const oldSet   = new Set(oldLines);
+  const newSet   = new Set(newLines);
+  const out = [];
+  oldLines.forEach(l => { if (!newSet.has(l)) out.push(`<span class="diff-del">${escHtml(l)}</span>`); });
+  newLines.forEach(l => { if (!oldSet.has(l)) out.push(`<span class="diff-add">${escHtml(l)}</span>`); });
+  return out.length ? out.join('\n') : '<span style="color:var(--text-muted)">No line-level changes detected.</span>';
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
