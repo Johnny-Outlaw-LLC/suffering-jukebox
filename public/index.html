@@ -6864,7 +6864,7 @@ async function _runSearch(query) {
         ${snipHtml}
       </div>
       <div class="srch-actions">
-        <button class="srch-btn play" onclick="const _v=ytData['${t.id}']?.video_id;if(_v){closeSearchModal();ytPlayNow(_v,${JSON.stringify(t.name)},'${t.id}')}" ${!ytData[t.id]?.video_id ? 'disabled title="No video available"' : ''}>▶ Play</button>
+        <button class="srch-btn play" onclick="const _v=ytData['${t.id}']?.video_id;if(_v){closeSearchModal();ytPlayNow(_v,${JSON.stringify(t.name)},'${t.id}')}" ${!ytData[t.id]?.video_id ? 'disabled title=\"No video available\"' : ''}>▶ Play</button>
       </div>
     </div>`;
   });
@@ -6972,4 +6972,29 @@ async function openLyricsHistory(trackId) {
       const diff = computeLyricsDiff(r.old_lyrics || '', r.new_lyrics);
       return `<div class="lyr-hist-entry">
         <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
-        <div
+        <div class="lyr-hist-diff">${diff}</div>
+      </div>`;
+    }).join('');
+  } catch(e) { body.innerHTML = '<p style="color:#ef4444;font-size:.6rem">Failed to load history.</p>'; }
+}
+
+function closeLyricsHistory() {
+  document.getElementById('lyr-hist-modal').classList.remove('open');
+}
+
+function computeLyricsDiff(oldTxt, newTxt) {
+  const oldLines = (oldTxt || '').split('\n');
+  const newLines = (newTxt || '').split('\n');
+  const oldSet   = new Set(oldLines);
+  const newSet   = new Set(newLines);
+  const out = [];
+  oldLines.forEach(l => { if (!newSet.has(l)) out.push(`<span class="diff-del">${escHtml(l)}</span>`); });
+  newLines.forEach(l => { if (!oldSet.has(l)) out.push(`<span class="diff-add">${escHtml(l)}</span>`); });
+  return out.length ? out.join('\n') : '<span style="color:var(--text-muted)">No line-level changes detected.</span>';
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</
