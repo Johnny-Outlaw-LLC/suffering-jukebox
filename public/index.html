@@ -6755,11 +6755,14 @@ function _srchDebounce(val) {
   _srchTimer = setTimeout(() => _runSearch(val), 220);
 }
 
-function _runSearch(query) {
-  const hdrInput  = document.getElementById('srch-head-input');
-  const statusEl  = document.getElementById('srch-status');
-  const bodyEl    = document.getElementById('srch-body');
-  const countEl   = document.getElementById('srch-count');
+let _srchToken = 0; // cancellation token for in-flight searches
+
+async function _runSearch(query) {
+  const token    = ++_srchToken;
+  const hdrInput = document.getElementById('srch-head-input');
+  const statusEl = document.getElementById('srch-status');
+  const bodyEl   = document.getElementById('srch-body');
+  const countEl  = document.getElementById('srch-count');
   if (hdrInput && hdrInput.value !== query) hdrInput.value = query;
   if (!query || query.trim().length < 2) {
     if (statusEl) statusEl.textContent = 'Start typing to search songs and lyrics.';
@@ -6768,14 +6771,33 @@ function _runSearch(query) {
     return;
   }
 
-  const q    = query.trim().toLowerCase();
+  const q = query.trim().toLowerCase();
+
+  // Show a quick loading state while we hit the DB for lyrics
+  if (bodyEl) bodyEl.innerHTML = '<div id="srch-status">Searching…</div>';
+  if (countEl) countEl.textContent = '';
+
+  // Fetch lyrics matches from DB (ilike = case-insensitive contains)
+  let lyricsRows = [];
+  try {
+    lyricsRows = await dbGet(`/lyrics?lyrics=ilike.*${encodeURIComponent(q)}*&select=track_id,lyrics&limit=200`);
+  } catch(e) { /* non-fatal — fall back to cached only */ }
+
+  if (token !== _srchToken) return; // stale query, another one fired
+
+  // Populate lyricsCache with fresh DB data
+  lyricsRows.forEach(r => { if (lyricsCache[r.track_id] === undefined) lyricsCache[r.track_id] = r.lyrics; });
+
+  const lyricsByTrackId = {};
+  lyricsRows.forEach(r => { lyricsByTrackId[r.track_id] = r.lyrics || ''; });
+
   const hits = [];
 
   Object.values(tracks).flat().forEach(t => {
-    const nameMatch    = t.name.toLowerCase().includes(q);
-    const albumMatch   = (t.album || '').toLowerCase().includes(q);
-    const lyricsRaw    = lyricsCache[t.id] || '';
-    const lyricsMatch  = lyricsRaw.toLowerCase().includes(q);
+    const nameMatch   = t.name.toLowerCase().includes(q);
+    const albumMatch  = (t.album || '').toLowerCase().includes(q);
+    const lyricsRaw   = lyricsByTrackId[t.id] || lyricsCache[t.id] || '';
+    const lyricsMatch = !!lyricsRaw && lyricsRaw.toLowerCase().includes(q);
     if (!nameMatch && !albumMatch && !lyricsMatch) return;
 
     let snippet = '';
@@ -6935,28 +6957,4 @@ async function openLyricsHistory(trackId) {
       return `<div class="lyr-hist-entry">
         <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
         <div class="lyr-hist-diff">${diff}</div>
-      </div>`;
-    }).join('');
-  } catch(e) { body.innerHTML = '<p style="color:#ef4444;font-size:.6rem">Failed to load history.</p>'; }
-}
-
-function closeLyricsHistory() {
-  document.getElementById('lyr-hist-modal').classList.remove('open');
-}
-
-function computeLyricsDiff(oldTxt, newTxt) {
-  const oldLines = (oldTxt || '').split('\n');
-  const newLines = (newTxt || '').split('\n');
-  const oldSet   = new Set(oldLines);
-  const newSet   = new Set(newLines);
-  const out = [];
-  oldLines.forEach(l => { if (!newSet.has(l)) out.push(`<span class="diff-del">${escHtml(l)}</span>`); });
-  newLines.forEach(l => { if (!oldSet.has(l)) out.push(`<span class="diff-add">${escHtml(l)}</span>`); });
-  return out.length ? out.join('\n') : '<span style="color:var(--text-muted)">No line-level changes detected.</span>';
-}
-
-function escHtml(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-</script>
-</
+ 
