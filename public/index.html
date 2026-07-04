@@ -81,6 +81,13 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 .btn:hover { border-color: var(--text); color: var(--text); }
 .theme-toggle { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; transition: all .15s; }
 .theme-toggle:hover { border-color: var(--text); color: var(--text); }
+.hdr-icon-btns { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.hdr-search-btn {
+  display: none; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted);
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 0.75rem;
+  align-items: center; justify-content: center; transition: all .15s; padding: 0;
+}
+.hdr-search-btn:hover { border-color: var(--text); color: var(--text); }
 
 .auth-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.06em; padding: 0.38rem 0.9rem; cursor: pointer; border-radius: 8px; transition: all .15s; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .auth-btn:hover { border-color: var(--text); color: var(--text); }
@@ -386,10 +393,16 @@ body:not(.light) .tt-num { color: var(--text); }
   }
   .header-btns { display: contents; }
   .header-btns .mgmt-playlists-btn { display: none !important; }
-  .theme-toggle {
+  .hdr-icon-btns {
     grid-column: 2;
     grid-row: 1;
     justify-self: end;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hdr-search-btn { display: flex; }
+  .theme-toggle {
     font-size: .7rem;
     width: 28px;
     height: 28px;
@@ -1054,6 +1067,18 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
 .hdr-search-input::placeholder { color:var(--text-muted); }
 @media (max-width:640px) { .hdr-search-wrap { display:none !important; } }
 
+@media (max-width:640px) {
+  #srch-overlay { align-items: stretch; }
+  #srch-box {
+    margin-top: 0; width: 100%; max-width: 100%;
+    max-height: 100dvh; height: 100dvh;
+    border-radius: 0; border: none;
+  }
+  #srch-head-input { font-size: 16px; }
+  .srch-btn { font-size: .52rem; padding: .35rem .7rem; min-height: 32px; }
+  body.srch-open { overflow: hidden; }
+}
+
 /* ── SEARCH RESULTS MODAL ── */
 #srch-overlay {
   position:fixed; inset:0; z-index:8000;
@@ -1174,7 +1199,10 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
         </div>
       </div>
-      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark"><span id="themeIcon">☀</span></button>
+      <div class="hdr-icon-btns">
+        <button type="button" class="hdr-search-btn" onclick="openSearchModal('')" title="Search songs or lyrics" aria-label="Search songs or lyrics">🔍</button>
+        <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark"><span id="themeIcon">☀</span></button>
+      </div>
     </div>
   </div>
   <div class="hdr-r1-filters">
@@ -6777,6 +6805,7 @@ function openSearchModal(query) {
   const input   = document.getElementById('srch-head-input');
   if (!overlay) return;
   overlay.classList.add('open');
+  if (window.innerWidth <= 640) document.body.classList.add('srch-open');
   if (input) {
     input.value = query || '';
     input.focus();
@@ -6788,6 +6817,7 @@ function openSearchModal(query) {
 function closeSearchModal() {
   const overlay = document.getElementById('srch-overlay');
   if (overlay) overlay.classList.remove('open');
+  document.body.classList.remove('srch-open');
   document.removeEventListener('keydown', _srchKeyHandler);
   const hdrInput = document.getElementById('hdr-search-input');
   if (hdrInput) hdrInput.value = '';
