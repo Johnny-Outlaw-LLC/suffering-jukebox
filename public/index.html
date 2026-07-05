@@ -3512,57 +3512,92 @@ try { _lyrSyncEnabled = localStorage.getItem('sj_lyric_sync') !== '0'; } catch(e
 // The original audio upload doesn't. We track a per-session offset so lyric sync stays accurate.
 const AMHIG_ORIG_VIDEO_ID  = 'SS792qY-y7M';
 const AMHIG_MV_LYR_OFFSET  = 128; // seconds (2:06 intro + ~2s buffer)
+// "Random Rules" — alternate official music video (default ytData upload is the original audio).
+const RR_MV_VIDEO_ID       = 'bPD0JLwpc3k';
 let   _ytpLyrOffset        = 0;   // subtract from video time before matching LRC timestamps
 
-// Called whenever the active video/track changes. Shows/hides the AMHIG version-switcher
+// Called whenever the active video/track changes. Shows/hides the alt-version switcher
 // button and sets the lyric sync offset appropriately.
 function ytpOnTrackChange(videoId, trackId, title) {
-  const isAMHIG = (title || '').toLowerCase().includes('all my happiness');
-  const isOrig  = videoId === AMHIG_ORIG_VIDEO_ID;
-  _ytpLyrOffset    = (isAMHIG && !isOrig) ? AMHIG_MV_LYR_OFFSET : 0;
+  const t       = (title || '').toLowerCase();
+  const isAMHIG = t.includes('all my happiness');
+  const isRR    = t.includes('random rules');
   _lyrSyncActiveIdx = -1; // force tick to re-evaluate from scratch
   if (ytPlayerEl && _ytUserWantsPlay) ytpUpdateMediaSession();
   const btn = document.getElementById('ytp-amhig-btn');
   if (!btn) return;
-  if (isAMHIG && !isOrig) {
-    btn.textContent  = '▶ Original';
+  if (isAMHIG) {
+    const isOrig = videoId === AMHIG_ORIG_VIDEO_ID;
+    _ytpLyrOffset = isOrig ? 0 : AMHIG_MV_LYR_OFFSET;
+    btn.textContent  = isOrig ? '▶ Music Video' : '▶ Original';
     btn.style.display = '';
-  } else if (isAMHIG && isOrig) {
-    btn.textContent  = '▶ Music Video';
+  } else if (isRR) {
+    const isMV = videoId === RR_MV_VIDEO_ID;
+    _ytpLyrOffset = 0;
+    btn.textContent  = isMV ? '▶ Original' : '▶ Music Video';
     btn.style.display = '';
   } else {
+    _ytpLyrOffset = 0;
     btn.style.display = 'none';
   }
 }
 
-// Swap between the music video and the original audio upload for AMHIG.
+// Swap between alternate video versions (AMHIG original ↔ MV, Random Rules MV ↔ original).
 function ytpToggleAMHIGVersion() {
-  const isOrig = ytVideoId === AMHIG_ORIG_VIDEO_ID;
-  const item   = ytQueue[ytQueueIdx];
-  if (isOrig) {
-    // Switch back to the music video (video_id stored in ytData for this track)
-    const mvId = item?.trackId ? ytData[item.trackId]?.video_id : null;
-    if (!mvId) return;
-    ytVideoId = mvId;
-    if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(mvId);
-    else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(mvId); }
-    _ytpLyrOffset     = AMHIG_MV_LYR_OFFSET;
-    _lyrSyncActiveIdx = -1;
-    const btn = document.getElementById('ytp-amhig-btn');
-    if (btn) btn.textContent = '▶ Original';
-    const titleEl = ytPlayerEl?.querySelector('.ytp-title');
-    if (titleEl) titleEl.textContent = item?.title || 'All My Happiness is Gone';
-  } else {
-    // Switch to the original song (no extended intro)
-    ytVideoId = AMHIG_ORIG_VIDEO_ID;
-    if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(AMHIG_ORIG_VIDEO_ID);
-    else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(AMHIG_ORIG_VIDEO_ID); }
-    _ytpLyrOffset     = 0;
-    _lyrSyncActiveIdx = -1;
-    const btn = document.getElementById('ytp-amhig-btn');
-    if (btn) btn.textContent = '▶ Music Video';
-    const titleEl = ytPlayerEl?.querySelector('.ytp-title');
-    if (titleEl) titleEl.textContent = 'All My Happiness is Gone (Original)';
+  const item  = ytQueue[ytQueueIdx];
+  const title = (item?.title || '').toLowerCase();
+  const isAMHIG = title.includes('all my happiness');
+  const isRR    = title.includes('random rules');
+  if (isAMHIG) {
+    const isOrig = ytVideoId === AMHIG_ORIG_VIDEO_ID;
+    if (isOrig) {
+      const mvId = item?.trackId ? ytData[item.trackId]?.video_id : null;
+      if (!mvId) return;
+      ytVideoId = mvId;
+      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(mvId);
+      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(mvId); }
+      _ytpLyrOffset     = AMHIG_MV_LYR_OFFSET;
+      _lyrSyncActiveIdx = -1;
+      const btn = document.getElementById('ytp-amhig-btn');
+      if (btn) btn.textContent = '▶ Original';
+      const titleEl = ytPlayerEl?.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = item?.title || 'All My Happiness is Gone';
+    } else {
+      ytVideoId = AMHIG_ORIG_VIDEO_ID;
+      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(AMHIG_ORIG_VIDEO_ID);
+      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(AMHIG_ORIG_VIDEO_ID); }
+      _ytpLyrOffset     = 0;
+      _lyrSyncActiveIdx = -1;
+      const btn = document.getElementById('ytp-amhig-btn');
+      if (btn) btn.textContent = '▶ Music Video';
+      const titleEl = ytPlayerEl?.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = 'All My Happiness is Gone (Original)';
+    }
+  } else if (isRR) {
+    const isMV = ytVideoId === RR_MV_VIDEO_ID;
+    if (isMV) {
+      const origId = item?.trackId ? ytData[item.trackId]?.video_id : null;
+      if (!origId) return;
+      ytVideoId = origId;
+      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(origId);
+      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(origId); }
+      _ytpLyrOffset     = 0;
+      _lyrSyncActiveIdx = -1;
+      const btn = document.getElementById('ytp-amhig-btn');
+      if (btn) btn.textContent = '▶ Music Video';
+      const titleEl = ytPlayerEl?.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = item?.title || 'Random Rules';
+    } else {
+      ytVideoId = RR_MV_VIDEO_ID;
+      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(RR_MV_VIDEO_ID);
+      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(RR_MV_VIDEO_ID); }
+      _ytpLyrOffset     = 0;
+      _lyrSyncActiveIdx = -1;
+      const btn = document.getElementById('ytp-amhig-btn');
+      if (btn) btn.textContent = '▶ Original';
+      const titleEl = ytPlayerEl?.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = 'Random Rules (Music Video)';
+    }
   }
 }
 
@@ -5672,13 +5707,14 @@ function loadLocalVotes() {
   try { localVotes = JSON.parse(localStorage.getItem('sj_votes') || '{}'); } catch(e) { localVotes = {}; }
 }
 function saveLocalVotes() { localStorage.setItem('sj_votes', JSON.stringify(localVotes)); }
-function getMyVote(trackId) { return localVotes[trackId] || 0; }
+function normalizeVote(v) { return v === -2 ? -1 : (v || 0); }
+function getMyVote(trackId) { return normalizeVote(localVotes[trackId]); }
 
 const _SVG_TH_UP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
 const _SVG_TH_DN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;transform:scaleY(-1);display:inline-block"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
-const VOTE_LABELS = {'2':'<span class="tvb-dbl">'+_SVG_TH_UP+_SVG_TH_UP+'</span>','1':_SVG_TH_UP,'0':'—','-1':_SVG_TH_DN,'-2':'<span class="tvb-dbl">'+_SVG_TH_DN+_SVG_TH_DN+'</span>'};
+const VOTE_LABELS = {'2':'<span class="tvb-dbl">'+_SVG_TH_UP+_SVG_TH_UP+'</span>','1':_SVG_TH_UP,'0':'—','-1':_SVG_TH_DN};
 function cycleVote(trackId) {
-  const cycle = [0,1,2,-1,-2];
+  const cycle = [0,1,2,-1];
   const cur   = getMyVote(trackId);
   const idx   = cycle.indexOf(cur);
   const next  = cycle[(idx === -1 ? 1 : idx + 1) % cycle.length];
