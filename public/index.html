@@ -5441,6 +5441,7 @@ function initGoogleAuth() {
         picture : u.user_metadata?.avatar_url || null
       };
       loadMyPlayCounts();
+      loadMyVotes();
       refreshSjAdminState().then(updateAuthBtn);
       restorePlaybackState();
     } else {
@@ -5462,6 +5463,7 @@ function initGoogleAuth() {
       refreshSjAdminState().then(() => {
         updateAuthBtn();
         loadMyPlayCounts();
+        loadMyVotes();
       });
       restorePlaybackState();
     }
@@ -6360,6 +6362,24 @@ function getAlbumDailySparkPoints(albId) {
   if (!dates.length) return null;
   const label = barChartMode === 'yt' ? 'Daily New YT Views' : 'Daily Jukebox Plays';
   return { points: dates.map(d => ({ date: d, value: dateMap[d] })), label };
+}
+
+// ── Pull this signed-in user's ratings from the server and adopt them as
+// this device's view. Ratings are stored per-account (jukebox.feedback);
+// while signed out, we fall back to whatever's cached in this browser's
+// localStorage (device-level). ──────────────────────────────────────────
+async function loadMyVotes() {
+  if (!googleUser?.email) return;
+  try {
+    const rows = await dbGet(
+      '/feedback?select=track_id,vote&target_type=eq.track&user_email=eq.' + encodeURIComponent(googleUser.email)
+    );
+    const affected = new Set(Object.keys(localVotes));
+    localVotes = {};
+    rows.forEach(r => { if (r.track_id && r.vote) { localVotes[r.track_id] = normalizeVote(r.vote); affected.add(r.track_id); } });
+    saveLocalVotes();
+    affected.forEach(refreshVoteUI);
+  } catch (e) { console.warn('loadMyVotes error', e); }
 }
 
 // ── Refresh in-app play UI without full re-render ──────────────────────────
