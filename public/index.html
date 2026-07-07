@@ -6781,6 +6781,16 @@ let _plShareUrl  = null;   // last created link (for the channel buttons)
 let _plShareName = '';
 let _plShareAutoName = '';  // last lyric suggestion we auto-filled, so we can safely replace it
 
+function _plShareKebab(name) {
+  return (name || '').toLowerCase().replace(/['\u2019]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+}
+
+function _plSharePrettyUrl(slug, name) {
+  const k = _plShareKebab(name);
+  return `${SJ_SHARE_SITE}/s/${k ? k + '-' : ''}${slug}`;
+}
+
 function _plShareSlug() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const buf = new Uint8Array(8);
@@ -6889,7 +6899,7 @@ async function plShareCreate() {
     }
     if (!row) throw new Error('Could not generate a unique link - try again.');
 
-    _plShareUrl = `${SJ_SHARE_SITE}/s/${row.slug}`;
+    _plShareUrl = _plSharePrettyUrl(row.slug, name);
     try {
       const mine = _plShareMyShares();
       mine.unshift({ slug: row.slug, name: name || `${payload.queue.length} tracks`, at: Date.now() });
@@ -6939,7 +6949,7 @@ async function _plShareRenderMine() {
     `<div style="display:flex;align-items:center;gap:6px;font-size:.52rem;color:#999">
        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.name || m.slug).replace(/</g,'&lt;')}</span>
        <span data-share-opens="${m.slug}" style="color:#555;flex-shrink:0">&hellip;</span>
-       <button class="pl-btn ghost" style="padding:1px 7px;font-size:.48rem;flex-shrink:0" onclick="navigator.clipboard.writeText('${SJ_SHARE_SITE}/s/${m.slug}').then(()=>showShareToast('Link copied'))">Copy</button>
+       <button class="pl-btn ghost" style="padding:1px 7px;font-size:.48rem;flex-shrink:0" onclick="navigator.clipboard.writeText('${_plSharePrettyUrl(m.slug, m.name)}').then(()=>showShareToast('Link copied'))">Copy</button>
      </div>`).join('');
   try {
     const slugs = mine.map(m => m.slug).join(',');
@@ -7013,7 +7023,8 @@ async function hydrateSharedLink() {
       headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
       body: JSON.stringify({ p_slug: slug })
     }).catch(() => {});
-    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    // Keep a readable share URL in the address bar so people can see what they clicked
+    try { history.replaceState(null, '', new URL(_plSharePrettyUrl(slug, row.name)).pathname); } catch (e) {}
   } catch (e) { console.error('hydrateSharedLink', e); }
 }
 hydrateSharedLink();

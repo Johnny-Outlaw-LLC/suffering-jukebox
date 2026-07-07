@@ -17,8 +17,12 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const { slug } = await params;
-  if (!/^[A-Za-z0-9]{6,12}$/.test(slug)) {
+  const { slug: rawSegment } = await params;
+  // Links may be pretty ("rainy-day-berman-P7JVExZB") or bare ("P7JVExZB");
+  // the real slug is always the final hyphen-separated token.
+  const m = rawSegment.match(/(?:^|-)([A-Za-z0-9]{6,12})$/);
+  const slug = m?.[1];
+  if (!slug) {
     return NextResponse.redirect("https://sufferingjukebox.stream/", 302);
   }
 
@@ -65,7 +69,7 @@ export async function GET(
 <meta property="og:site_name" content="${esc(SITE_NAME)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="https://sufferingjukebox.stream/s/${slug}">
+<meta property="og:url" content="https://sufferingjukebox.stream/s/${esc(rawSegment)}">
 ${thumb ? `<meta property="og:image" content="${esc(thumb)}">` : ""}
 <meta name="twitter:card" content="${thumb ? "summary_large_image" : "summary"}">
 <meta name="twitter:title" content="${esc(title)}">
