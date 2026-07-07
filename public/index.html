@@ -1307,6 +1307,53 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
 </div>
 <div id="share-toast" class="share-toast" role="status"></div>
 
+<!-- SHARE PLAYLIST MODAL -->
+<div class="pl-modal-overlay" id="plShareModalOverlay" onclick="if(event.target===this)closePlShareModal()">
+  <div class="pl-modal" style="width:430px">
+    <div class="pl-modal-header"><span class="pl-modal-title">Share This Playlist</span><button class="modal-close" onclick="closePlShareModal()">✕</button></div>
+    <div class="pl-modal-body">
+      <!-- Step 1: options -->
+      <div id="pls-step-opts">
+        <p id="pls-summary" style="font-size:.54rem;color:#888;line-height:1.5;margin-bottom:.7rem"></p>
+        <label style="display:block;font-size:.5rem;color:#666;margin-bottom:.25rem">Playlist name</label>
+        <input id="pls-name" type="text" maxlength="120" placeholder="e.g. Rainy Day Berman" style="width:100%;box-sizing:border-box;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:6px;color:#eee;font-family:var(--mono);font-size:.58rem;padding:.5rem .6rem;margin-bottom:.55rem;outline:none">
+        <label style="display:block;font-size:.5rem;color:#666;margin-bottom:.25rem">Your name (shown to whoever opens it — optional)</label>
+        <input id="pls-by" type="text" maxlength="80" placeholder="Anonymous" style="width:100%;box-sizing:border-box;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:6px;color:#eee;font-family:var(--mono);font-size:.58rem;padding:.5rem .6rem;margin-bottom:.75rem;outline:none">
+        <div style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.4rem">
+          <label class="pls-chk-row" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.55rem;color:#bbb"><input type="checkbox" id="pls-inc-layout" checked style="accent-color:var(--accent)"><span>Include player layout (<span id="pls-layout-lbl">windowed</span>)</span></label>
+          <label class="pls-chk-row" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.55rem;color:#bbb"><input type="checkbox" id="pls-inc-lyrics" checked style="accent-color:var(--accent)"><span>Include lyric settings (<span id="pls-lyrics-lbl">closed</span>)</span></label>
+          <label class="pls-chk-row" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.55rem;color:#bbb"><input type="checkbox" id="pls-inc-time" style="accent-color:var(--accent)"><span>Start where I am (<span id="pls-time-lbl">0:00</span> into <span id="pls-time-track" style="color:#ddd"></span>)</span></label>
+        </div>
+      </div>
+      <!-- Step 2: result -->
+      <div id="pls-step-done" style="display:none">
+        <p style="font-size:.54rem;color:#888;line-height:1.5;margin-bottom:.55rem">Link ready — anyone who opens it gets your playlist exactly as you set it up.</p>
+        <div style="display:flex;gap:6px;margin-bottom:.8rem">
+          <input id="pls-link" type="text" readonly onclick="this.select()" style="flex:1;box-sizing:border-box;background:#0a0a0a;border:1px solid var(--accent);border-radius:6px;color:var(--accent);font-family:var(--mono);font-size:.55rem;padding:.5rem .6rem;outline:none">
+          <button class="pl-btn" onclick="plShareCopy()" style="flex-shrink:0">Copy</button>
+        </div>
+        <div class="share-grid">
+          <button type="button" class="share-opt" onclick="plShareVia('sms')"><span class="share-opt-icon">💬</span><span class="share-opt-lbl">Text</span></button>
+          <button type="button" class="share-opt" onclick="plShareVia('email')"><span class="share-opt-icon">✉️</span><span class="share-opt-lbl">Email</span></button>
+          <button type="button" class="share-opt" onclick="plShareVia('twitter')"><span class="share-opt-icon">𝕏</span><span class="share-opt-lbl">X / Twitter</span></button>
+          <button type="button" class="share-opt" onclick="plShareVia('facebook')"><span class="share-opt-icon">f</span><span class="share-opt-lbl">Facebook</span></button>
+          <button type="button" class="share-opt" onclick="plShareVia('reddit')"><span class="share-opt-icon">👽</span><span class="share-opt-lbl">Reddit</span></button>
+          <button type="button" class="share-opt" id="pls-native-btn" style="display:none" onclick="plShareVia('native')"><span class="share-opt-icon">⤴</span><span class="share-opt-lbl">Share via…</span></button>
+        </div>
+      </div>
+      <!-- My shares (both steps) -->
+      <div id="pls-mine-wrap" style="display:none;margin-top:.9rem;border-top:1px solid #222;padding-top:.6rem">
+        <div style="font-size:.5rem;color:#666;margin-bottom:.35rem;letter-spacing:.06em">YOUR SHARED PLAYLISTS</div>
+        <div id="pls-mine" style="display:flex;flex-direction:column;gap:.3rem;max-height:130px;overflow-y:auto;scrollbar-width:thin"></div>
+      </div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closePlShareModal()">Close</button>
+      <button class="pl-btn" id="pls-create-btn" onclick="plShareCreate()">Create Share Link</button>
+    </div>
+  </div>
+</div>
+
 <!-- SEARCH RESULTS MODAL -->
 <div id="srch-overlay" onclick="if(event.target===this)closeSearchModal()">
   <div id="srch-box">
@@ -2426,6 +2473,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
+        <button class="ytp-btn" title="Share this playlist" onclick="openPlShareModal();event.stopPropagation()" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:3px"><span style="font-size:.5rem">⤴</span><span style="font-size:.45rem">Share</span></button>
         <button class="tvb-cycle" id="ytp-vote-btn" data-vote-track="${trackId||''}" onclick="ytpCycleVote();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Rate" style="${trackId?'':'display:none'}">${trackId?(VOTE_LABELS[String(getMyVote(trackId))]||'—'):'—'}</button>
         <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
@@ -6721,6 +6769,236 @@ async function shareVia(medium) {
   }
 }
 
+// ── Share Playlist (snapshot links) ──────────────────────────
+// Saves the current queue + optional layout/lyrics/playhead to
+// jukebox.shared_links and hands back a short link. Anyone can create one;
+// anyone can open one. Recent shares (+ open counts) live in localStorage.
+let _plShareUrl  = null;   // last created link (for the channel buttons)
+let _plShareName = '';
+
+function _plShareSlug() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const buf = new Uint8Array(8);
+  (window.crypto || {}).getRandomValues ? crypto.getRandomValues(buf) : buf.forEach((_, i) => buf[i] = Math.floor(Math.random() * 256));
+  return Array.from(buf, b => chars[b % 62]).join('');
+}
+
+// Anon-friendly insert (dbPost requires a session; sharing shouldn't)
+async function _plShareInsert(body) {
+  const { data: { session } } = await sbAuth.auth.getSession().catch(() => ({ data: {} }));
+  const tok = session?.access_token || ANON;
+  const r = await fetch(`${REST}/shared_links`, {
+    method: 'POST',
+    headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=representation' },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function _plShareFmtTime(sec) {
+  sec = Math.max(0, Math.floor(sec || 0));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+
+function _plShareMyShares() {
+  try { return JSON.parse(localStorage.getItem('sj_my_shares') || '[]'); } catch (e) { return []; }
+}
+
+function openPlShareModal() {
+  if (!ytQueue.length) { showToast('Start playing something first, then share it.'); return; }
+  const ov = document.getElementById('plShareModalOverlay');
+  if (!ov) return;
+  // reset to step 1
+  document.getElementById('pls-step-opts').style.display = '';
+  document.getElementById('pls-step-done').style.display = 'none';
+  document.getElementById('pls-create-btn').style.display = '';
+  document.getElementById('pls-create-btn').disabled = false;
+  document.getElementById('pls-create-btn').textContent = 'Create Share Link';
+
+  const n = ytQueue.length;
+  const cur = ytQueue[ytQueueIdx] || ytQueue[0];
+  document.getElementById('pls-summary').textContent = `Sharing ${n} track${n === 1 ? '' : 's'}, currently on “${cur?.title || '—'}”.`;
+  document.getElementById('pls-name').value = _plShareName || '';
+  const byEl = document.getElementById('pls-by');
+  if (!byEl.value && googleUser?.name) byEl.value = googleUser.name;
+
+  document.getElementById('pls-layout-lbl').textContent = _ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed');
+  document.getElementById('pls-lyrics-lbl').textContent = _ytpLyricsOpen ? ('open, sync ' + (_lyrSyncEnabled ? 'on' : 'off')) : 'closed';
+  let pos = 0;
+  try { if (ytAPIPlayer?.getCurrentTime) pos = ytAPIPlayer.getCurrentTime(); } catch (e) {}
+  document.getElementById('pls-time-lbl').textContent = _plShareFmtTime(pos);
+  document.getElementById('pls-time-track').textContent = cur?.title ? `“${cur.title}”` : '';
+
+  _plShareRenderMine();
+  ov.classList.add('open');
+}
+
+function closePlShareModal() {
+  document.getElementById('plShareModalOverlay')?.classList.remove('open');
+}
+
+async function plShareCreate() {
+  const btn = document.getElementById('pls-create-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const incLayout = document.getElementById('pls-inc-layout').checked;
+    const incLyrics = document.getElementById('pls-inc-lyrics').checked;
+    const incTime   = document.getElementById('pls-inc-time').checked;
+    let pos = 0;
+    try { if (ytAPIPlayer?.getCurrentTime) pos = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
+    const payload = {
+      v: 1,
+      queue: ytQueue.map(q => ({ videoId: q.videoId, title: q.title, trackId: q.trackId || null })),
+      idx: Math.max(0, ytQueueIdx),
+      shuffle: !!ytShuffle,
+      repeat: !!ytRepeat,
+      startAt: incTime ? pos : null,
+      layout: incLayout ? (_ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed')) : null,
+      lyrics: incLyrics ? { open: !!_ytpLyricsOpen, sync: !!_lyrSyncEnabled, size: globalLyricSize } : null,
+    };
+    const name = (document.getElementById('pls-name').value || '').trim();
+    const by   = (document.getElementById('pls-by').value || '').trim();
+    _plShareName = name;
+
+    let row = null;
+    for (let attempt = 0; attempt < 3 && !row; attempt++) {   // retry on slug collision
+      try {
+        const rows = await _plShareInsert({ slug: _plShareSlug(), name, payload, shared_by: by, shared_by_email: googleUser?.email || null });
+        row = rows[0];
+      } catch (e) { if (!String(e.message).includes('duplicate')) throw e; }
+    }
+    if (!row) throw new Error('Could not generate a unique link — try again.');
+
+    _plShareUrl = `${SJ_SHARE_SITE}/s/${row.slug}`;
+    try {
+      const mine = _plShareMyShares();
+      mine.unshift({ slug: row.slug, name: name || `${payload.queue.length} tracks`, at: Date.now() });
+      localStorage.setItem('sj_my_shares', JSON.stringify(mine.slice(0, 20)));
+    } catch (e) {}
+
+    document.getElementById('pls-step-opts').style.display = 'none';
+    document.getElementById('pls-step-done').style.display = '';
+    btn.style.display = 'none';
+    document.getElementById('pls-link').value = _plShareUrl;
+    document.getElementById('pls-native-btn').style.display = navigator.share ? '' : 'none';
+    plShareCopy();      // copy immediately — least friction
+    _plShareRenderMine();
+  } catch (e) {
+    console.error('plShareCreate', e);
+    showToast('Could not create link — try again.');
+    btn.disabled = false; btn.textContent = 'Create Share Link';
+  }
+}
+
+async function plShareCopy() {
+  if (!_plShareUrl) return;
+  try { await navigator.clipboard.writeText(_plShareUrl); showShareToast('Link copied'); }
+  catch (e) { const el = document.getElementById('pls-link'); if (el) { el.select(); showShareToast('Press Ctrl/Cmd+C to copy'); } }
+}
+
+function plShareVia(medium) {
+  if (!_plShareUrl) return;
+  const url  = _plShareUrl;
+  const name = _plShareName || 'a Silver Jews playlist';
+  const text = `I made you a playlist on Suffering Jukebox — ${name}.`;
+  if (medium === 'native') { navigator.share({ title: 'Suffering Jukebox', text, url }).catch(() => {}); return; }
+  if (medium === 'sms')    { window.location.href = `sms:?${/iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : ''}body=${encodeURIComponent(text + ' ' + url)}`; return; }
+  if (medium === 'email')  { window.location.href = `mailto:?subject=${encodeURIComponent('A playlist for you — Suffering Jukebox')}&body=${encodeURIComponent(text + '\n\n' + url)}`; return; }
+  if (medium === 'twitter'){ window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
+  if (medium === 'facebook'){ window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
+  if (medium === 'reddit') { window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); return; }
+}
+
+async function _plShareRenderMine() {
+  const wrap = document.getElementById('pls-mine-wrap');
+  const list = document.getElementById('pls-mine');
+  const mine = _plShareMyShares();
+  if (!mine.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  list.innerHTML = mine.map(m =>
+    `<div style="display:flex;align-items:center;gap:6px;font-size:.52rem;color:#999">
+       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.name || m.slug).replace(/</g,'&lt;')}</span>
+       <span data-share-opens="${m.slug}" style="color:#555;flex-shrink:0">— opens</span>
+       <button class="pl-btn ghost" style="padding:1px 7px;font-size:.48rem;flex-shrink:0" onclick="navigator.clipboard.writeText('${SJ_SHARE_SITE}/s/${m.slug}').then(()=>showShareToast('Link copied'))">Copy</button>
+     </div>`).join('');
+  try {
+    const slugs = mine.map(m => m.slug).join(',');
+    const rows = await dbGet(`/shared_links?slug=in.(${slugs})&select=slug,open_count`);
+    rows.forEach(r => {
+      const el = list.querySelector(`[data-share-opens="${r.slug}"]`);
+      if (el) el.textContent = r.open_count === 1 ? '1 open' : `${r.open_count} opens`;
+    });
+  } catch (e) {}
+}
+
+// ── Opening a shared link (?s=SLUG) ──────────────────────────
+const _plShareIncomingSlug = new URLSearchParams(location.search).get('s');
+if (_plShareIncomingSlug) _pbRestoreDone = true;  // don't let sign-in restore clobber the shared queue
+
+async function hydrateSharedLink() {
+  const slug = _plShareIncomingSlug;
+  if (!slug || !/^[A-Za-z0-9]{6,12}$/.test(slug)) return;
+  try {
+    const rows = await dbGet(`/shared_links?slug=eq.${slug}&select=name,payload,shared_by,created_at`);
+    const row = rows[0];
+    const p = row?.payload;
+    if (!p || !Array.isArray(p.queue) || !p.queue.length) { showToast('That share link has gone missing.'); return; }
+
+    // Lyric settings first — they take effect when the pane opens
+    if (p.lyrics) {
+      _lyrSyncEnabled = !!p.lyrics.sync;
+      try { localStorage.setItem('sj_lyric_sync', p.lyrics.sync ? '1' : '0'); } catch (e) {}
+      if (p.lyrics.size) applyGlobalLyricSize(p.lyrics.size);
+    }
+
+    const idx  = Math.min(Math.max(p.idx || 0, 0), p.queue.length - 1);
+    const item = p.queue[idx];
+    openYTPlayer(item.videoId, item.title, item.trackId || null);
+    ytQueue = p.queue;
+    ytQueueIdx = idx;
+    setYtShuffleEnabled(!!p.shuffle);
+    ytRepeat = !!p.repeat;
+    const rpChk = document.getElementById('ytp-repeat-chk');
+    if (rpChk) rpChk.checked = ytRepeat;
+    updateYTQueueUI();
+
+    // Layout + lyrics once the player element exists
+    setTimeout(() => {
+      if (p.layout === 'fullscreen' && !_ytpFs) ytpToggleFullscreen();
+      if (p.layout === 'minimized' && !_ytpMinimized) ytpToggleMinimize();
+      if (p.lyrics?.open) {
+        const chk = document.getElementById('ytp-lyrics-chk');
+        if (chk) chk.checked = true;
+        ytpToggleLyrics(true);
+      }
+    }, 300);
+
+    // Seek to the shared playhead once the YT API is up, then pause —
+    // browsers block unmuted autoplay anyway, so the recipient hits play.
+    const startAt = Math.max(p.startAt || 0, 0);
+    const seekWhenReady = (tries) => {
+      if (ytAPIPlayer?.seekTo) {
+        try { if (startAt > 0) ytAPIPlayer.seekTo(startAt, true); ytAPIPlayer.pauseVideo(); ytpSetPlayPauseIcon(false); } catch (e) {}
+      } else if ((tries || 0) < 20) setTimeout(() => seekWhenReady((tries || 0) + 1), 300);
+    };
+    setTimeout(() => seekWhenReady(0), 800);
+
+    const who = (row.shared_by || '').trim();
+    const what = (row.name || '').trim() || `${p.queue.length} track${p.queue.length === 1 ? '' : 's'}`;
+    setTimeout(() => showToast(`🎵 ${who || 'Someone'} shared “${what}” with you — press play`), 900);
+
+    // Count the open (fire-and-forget) and clean the URL
+    fetch(`${REST}/rpc/bump_share_open`, {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
+      body: JSON.stringify({ p_slug: slug })
+    }).catch(() => {});
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  } catch (e) { console.error('hydrateSharedLink', e); }
+}
+hydrateSharedLink();
+
 // Init Google auth after GIS script loads
 window.addEventListener('load', initGoogleAuth);
 
@@ -7171,375 +7449,4 @@ function renderPlaylists() {
 
 function buildPlaylistsHTML(playlists) {
   const myEmail = googleUser?.email;
-  const mine = playlists.filter(p => p.user_email === myEmail);
-  const community = playlists.filter(p => p.is_public && p.user_email !== myEmail);
-
-  function plCard(p) {
-    const trackCount = p._tracks?.length || 0;
-    const isOwner = p.user_email === myEmail;
-    const firstTracks = (p._tracks || []).slice(0, 3).map(pt => {
-      const t = findTrackById(pt.track_id);
-      return t ? `<div style="font-size:.5rem;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.name}</div>` : '';
-    }).join('');
-    return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:200px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-        <div>
-          <div style="font-size:.72rem;font-weight:700;color:var(--text);line-height:1.3">${(p.name||'').replace(/</g,'&lt;')}</div>
-          <div style="font-size:.48rem;color:var(--text-muted);margin-top:2px">${trackCount} track${trackCount===1?'':'s'}${!isOwner ? ` · by ${p.user_email.split('@')[0]}` : ''}</div>
-        </div>
-        ${p.is_public ? `<span style="font-size:.38rem;letter-spacing:.08em;text-transform:uppercase;color:#888;border:1px solid #333;border-radius:4px;padding:1px 5px;flex-shrink:0">Public</span>` : `<span style="font-size:.38rem;letter-spacing:.08em;text-transform:uppercase;color:#555;flex-shrink:0">Private</span>`}
-      </div>
-      <div style="min-height:36px">${firstTracks}</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-top:2px">
-        <button onclick="playFromPlaylist('${p.id}')" style="background:#ff4444;border:none;color:#fff;font-family:var(--mono);font-size:.5rem;padding:5px 12px;border-radius:6px;cursor:pointer;font-weight:600">▶ Play</button>
-        <button onclick="loadAndAddPlaylistToQueue('${p.id}')" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-family:var(--mono);font-size:.5rem;padding:5px 10px;border-radius:6px;cursor:pointer">+ Queue</button>
-        ${isOwner ? `<button onclick="deletePlaylist('${p.id}')" style="background:none;border:none;color:#555;font-family:var(--mono);font-size:.65rem;padding:4px 6px;cursor:pointer;margin-left:auto" title="Delete" onmouseover="this.style.color='#ff4444'" onmouseout="this.style.color='#555'">✕</button>` : ''}
-      </div>
-    </div>`;
-  }
-
-  let html = `<div style="display:flex;flex-direction:column;gap:1.5rem;padding:.5rem 0">`;
-
-  if (mine.length) {
-    html += `<div>
-      <div style="font-size:.5rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);font-weight:600;margin-bottom:.6rem">My Playlists</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">${mine.map(plCard).join('')}</div>
-    </div>`;
-  }
-
-  if (community.length) {
-    html += `<div>
-      <div style="font-size:.5rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);font-weight:600;margin-bottom:.6rem">Community Playlists</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">${community.map(plCard).join('')}</div>
-    </div>`;
-  }
-
-  if (!mine.length && !community.length) {
-    html += `<div style="padding:3rem;text-align:center;color:var(--text-muted);font-size:.65rem">
-      No playlists yet.<br>
-      <span style="font-size:.58rem;opacity:.6">Add tracks to your queue and hit <strong>💾 Save Playlist</strong>.</span>
-    </div>`;
-  }
-
-  if (googleUser) {
-    html += `<div style="text-align:right;padding-top:.5rem">
-      <button onclick="_savedPlaylists=[];render()" style="background:none;border:none;color:var(--text-muted);font-family:var(--mono);font-size:.48rem;cursor:pointer;letter-spacing:.04em;padding:4px 0" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text-muted)'">↺ Refresh</button>
-    </div>`;
-  }
-
-  return html + '</div>';
-}
-
-async function loadAndAddPlaylistToQueue(playlistId) {
-  const pl = _savedPlaylists.find(p => p.id === playlistId);
-  if (!pl) return;
-  const sorted = (pl._tracks || []).sort((a, b) => a.position - b.position);
-  sorted.forEach(pt => {
-    const t = findTrackById(pt.track_id);
-    const vid = ytData[pt.track_id]?.video_id;
-    if (t && vid) ytAddToQueue(vid, t.name, t.id);
-  });
-  if (!ytPlayerEl && ytQueue.length) {
-    const first = ytQueue[0];
-    openYTPlayer(first.videoId, first.title, first.trackId);
-  }
-}
-
-function toggleTLBars() {
-  _tlBarsVisible = !_tlBarsVisible;
-  const stage = document.getElementById('stage');
-  if (stage) stage.classList.toggle('tl-bars-hidden', !_tlBarsVisible);
-  const btn = document.getElementById('tl-toggle-bars-btn');
-  if (btn) {
-    btn.style.borderColor = _tlBarsVisible ? 'var(--border)' : 'var(--accent)';
-    btn.style.color = _tlBarsVisible ? 'var(--text-muted)' : 'var(--accent)';
-  }
-}
-
-
-// ══════════════════════════════════════════════════════════════
-// SEARCH
-// ══════════════════════════════════════════════════════════════
-
-function srchPlay(vid, title, trackId, el) {
-  showYTQueueChoice(vid, title, trackId, el);
-  const popup = document.getElementById('yt-queue-choice');
-  if (popup) popup.addEventListener('click', e => {
-    if (e.target.closest('[data-qaction]')) closeSearchModal();
-  });
-}
-
-function srchPlayTrack(trackId, el) {
-  const vid = ytData[trackId]?.video_id;
-  if (!vid) return;
-  const t = findTrackById(trackId);
-  srchPlay(vid, t?.name || '', trackId, el);
-}
-
-let _srchTimer = null;
-
-function openSearchModal(query) {
-  const overlay = document.getElementById('srch-overlay');
-  const input   = document.getElementById('srch-head-input');
-  if (!overlay) return;
-  overlay.classList.add('open');
-  if (window.innerWidth <= 640) document.body.classList.add('srch-open');
-  if (input) {
-    input.value = query || '';
-    input.focus();
-    if (query) _runSearch(query);
-  }
-  document.addEventListener('keydown', _srchKeyHandler);
-}
-
-function closeSearchModal() {
-  const overlay = document.getElementById('srch-overlay');
-  if (overlay) overlay.classList.remove('open');
-  document.body.classList.remove('srch-open');
-  document.removeEventListener('keydown', _srchKeyHandler);
-  const hdrInput = document.getElementById('hdr-search-input');
-  if (hdrInput) hdrInput.value = '';
-}
-
-function _srchKeyHandler(e) {
-  if (e.key === 'Escape') closeSearchModal();
-}
-
-function scheduleSearch(val) {
-  if (val && val.length >= 2) openSearchModal(val);
-}
-
-function _srchDebounce(val) {
-  clearTimeout(_srchTimer);
-  _srchTimer = setTimeout(() => _runSearch(val), 220);
-}
-
-let _srchToken = 0; // cancellation token for in-flight searches
-
-async function _runSearch(query) {
-  const token    = ++_srchToken;
-  const hdrInput = document.getElementById('srch-head-input');
-  const statusEl = document.getElementById('srch-status');
-  const bodyEl   = document.getElementById('srch-body');
-  const countEl  = document.getElementById('srch-count');
-  if (hdrInput && hdrInput.value !== query) hdrInput.value = query;
-  if (!query || query.trim().length < 2) {
-    if (statusEl) statusEl.textContent = 'Start typing to search songs and lyrics.';
-    if (bodyEl)   bodyEl.innerHTML = '<div id="srch-status">Start typing to search songs and lyrics.</div>';
-    if (countEl)  countEl.textContent = '';
-    return;
-  }
-
-  const q = query.trim().toLowerCase();
-
-  // Show a quick loading state while we hit the DB for lyrics
-  if (bodyEl) bodyEl.innerHTML = '<div id="srch-status">Searching…</div>';
-  if (countEl) countEl.textContent = '';
-
-  // Fetch lyrics matches from DB (ilike = case-insensitive contains)
-  let lyricsRows = [];
-  try {
-    lyricsRows = await dbGet(`/lyrics?lyrics=ilike.*${encodeURIComponent(q)}*&select=track_id,lyrics&limit=200`);
-  } catch(e) { /* non-fatal — fall back to cached only */ }
-
-  if (token !== _srchToken) return; // stale query, another one fired
-
-  // Populate lyricsCache with fresh DB data
-  lyricsRows.forEach(r => { if (lyricsCache[r.track_id] === undefined) lyricsCache[r.track_id] = r.lyrics; });
-
-  const lyricsByTrackId = {};
-  lyricsRows.forEach(r => { lyricsByTrackId[r.track_id] = r.lyrics || ''; });
-
-  const hits = [];
-
-  Object.values(tracks).flat().forEach(t => {
-    const nameMatch   = t.name.toLowerCase().includes(q);
-    const albumMatch  = (t.album || '').toLowerCase().includes(q);
-    const lyricsRaw   = lyricsByTrackId[t.id] || lyricsCache[t.id] || '';
-    const lyricsMatch = !!lyricsRaw && lyricsRaw.toLowerCase().includes(q);
-    if (!nameMatch && !albumMatch && !lyricsMatch) return;
-
-    let snippet = '';
-    if (lyricsMatch) {
-      const lines   = lyricsRaw.split('\n');
-      const lineIdx = lines.findIndex(l => l.toLowerCase().includes(q));
-      if (lineIdx >= 0) {
-        const start = Math.max(0, lineIdx - 1);
-        const end   = Math.min(lines.length, lineIdx + 3);
-        snippet = lines.slice(start, end).join('\n');
-      }
-    }
-    hits.push({ track: t, nameMatch, albumMatch, lyricsMatch, snippet });
-  });
-
-  // Sort: name matches first, then album, then lyrics
-  hits.sort((a, b) => {
-    const score = x => (x.nameMatch ? 4 : 0) + (x.albumMatch ? 2 : 0) + (x.lyricsMatch ? 1 : 0);
-    return score(b) - score(a);
-  });
-
-  if (countEl) countEl.textContent = hits.length ? `${hits.length} result${hits.length === 1 ? '' : 's'}` : '';
-
-  if (!hits.length) {
-    if (bodyEl) bodyEl.innerHTML = `<div id="srch-status">No results for "${escHtml(query)}".</div>`;
-    return;
-  }
-
-  function hl(str) {
-    if (!str) return '';
-    return escHtml(str).replace(new RegExp(escHtml(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'),
-      m => `<mark>${m}</mark>`);
-  }
-
-  const cards = hits.map(({ track: t, nameMatch, albumMatch, lyricsMatch, snippet }) => {
-    const alb   = getAlbumForTrack(t);
-    const thumb = alb ? albumThumb(alb) : (ytData[t.id]?.thumbnail || '');
-    const art   = thumb
-      ? `<img class="srch-art" src="${escHtml(thumb)}" alt="">`
-      : `<div class="srch-art-ph" style="background:var(--bg-elevated)">${escHtml((t.name||'?')[0].toUpperCase())}</div>`;
-    const meta = [t.album, t.year].filter(Boolean).join(' · ');
-    const snipHtml = snippet
-      ? `<div class="srch-lyr-panel">${hl(snippet)}</div>` : '';
-    return `<div class="srch-card" data-track-id="${t.id}">
-      ${art}
-      <div class="srch-info">
-        <div class="srch-track-name">${hl(t.name)}</div>
-        ${meta ? `<div class="srch-meta">${hl(meta)}</div>` : ''}
-        ${snipHtml}
-      </div>
-      <div class="srch-actions">
-        <button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${!ytData[t.id]?.video_id ? 'disabled title=\"No video available\"' : ''}>▶ Play</button>
-      </div>
-    </div>`;
-  });
-
-  if (bodyEl) bodyEl.innerHTML = cards.join('');
-}
-
-// ── Lyrics editing ────────────────────────────────────────────
-async function startLyricsEdit(trackId, mode) {
-  if (!googleUser) return;
-  const existing = lyricsCache[trackId] || '';
-  const elId = mode === 'card' ? `sc-lyrics-${trackId}` : null;
-  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
-  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
-  const ytpEl  = mode === 'ytp' ? document.getElementById('ytp-lyr-text') : null;
-  const targetEl = mode === 'card' ? cardEl : mode === 'ytp' ? ytpEl : accEl;
-  if (!targetEl) return;
-  const parent = targetEl.parentNode;
-  const editWrap = document.createElement('div');
-  editWrap.id = `lyr-edit-wrap-${trackId}-${mode}`;
-  editWrap.innerHTML =
-    `<textarea class="lyr-edit-area" id="lyr-ta-${trackId}-${mode}">${existing.replace(/</g,'&lt;')}</textarea>` +
-    `<div class="lyr-edit-row">` +
-    `<button class="lyr-save-btn" onclick="saveLyricsEdit('${trackId}','${mode}')">Save</button>` +
-    `<button class="lyr-cancel-btn" onclick="cancelLyricsEdit('${trackId}','${mode}')">Cancel</button>` +
-    `<span style="font-size:.42rem;color:var(--text-muted);margin-left:auto;align-self:center">Editing as ${googleUser.name}</span>` +
-    `</div>`;
-  targetEl.style.display = 'none';
-  parent.insertBefore(editWrap, targetEl.nextSibling);
-}
-
-function cancelLyricsEdit(trackId, mode) {
-  const wrap = document.getElementById(`lyr-edit-wrap-${trackId}-${mode}`);
-  if (wrap) wrap.remove();
-  const cardEl = document.getElementById(`sc-lyrics-${trackId}`);
-  const accEl  = document.querySelector(`[data-acc-lyric="${trackId}"]`);
-  const ytpEl  = document.getElementById('ytp-lyr-text');
-  if (mode === 'card' && cardEl) cardEl.style.display = '';
-  if (mode === 'acc'  && accEl)  accEl.style.display  = '';
-  if (mode === 'ytp'  && ytpEl)  ytpEl.style.display  = '';
-}
-
-async function saveLyricsEdit(trackId, mode) {
-  if (!googleUser) return;
-  const ta = document.getElementById(`lyr-ta-${trackId}-${mode}`);
-  if (!ta) return;
-  const newLyrics  = ta.value.trim();
-  const oldLyrics  = lyricsCache[trackId] || null;
-  const saveBtn    = ta.parentNode.querySelector('.lyr-save-btn');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
-
-  try {
-    const session = (await sbAuth.auth.getSession()).data?.session;
-    const tok = session?.access_token || ANON;
-    const hdrs = {
-      apikey: ANON, Authorization: 'Bearer ' + tok,
-      'Content-Type': 'application/json',
-      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox',
-      Prefer: 'return=minimal'
-    };
-
-    // Upsert lyrics
-    await fetch(REST + '/lyrics?track_id=eq.' + trackId, {
-      method: 'PATCH', headers: hdrs,
-      body: JSON.stringify({ lyrics: newLyrics, lyrics_source: 'user-edit', lyrics_saved_at: new Date().toISOString() })
-    });
-
-    // Log edit history
-    await fetch(REST + '/lyrics_edits', {
-      method: 'POST', headers: hdrs,
-      body: JSON.stringify({
-        track_id: trackId, old_lyrics: oldLyrics, new_lyrics: newLyrics,
-        editor_email: googleUser.email, editor_name: googleUser.name
-      })
-    });
-
-    // Update cache and UI
-    lyricsCache[trackId] = newLyrics;
-    cancelLyricsEdit(trackId, mode);
-    renderLyrics(trackId, newLyrics, 'user-edit');
-    document.querySelectorAll(`[data-acc-lyric="${trackId}"]`).forEach(el => {
-      el.className = 'sc-lyrics-text'; el.textContent = newLyrics;
-    });
-  } catch(e) {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
-    alert('Save failed: ' + e.message);
-  }
-}
-
-async function openLyricsHistory(trackId) {
-  const modal = document.getElementById('lyr-hist-modal');
-  const body  = document.getElementById('lyr-hist-body');
-  const title = document.getElementById('lyr-hist-title');
-  const track = findTrackById(trackId);
-  title.textContent = 'Lyrics Edit History' + (track ? ' — ' + track.name : '');
-  modal.classList.add('open');
-  body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem">Loading…</p>';
-  try {
-    const rows = await fetch(REST + '/lyrics_edits?track_id=eq.' + trackId + '&order=edited_at.desc&limit=50', {
-      headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Accept-Profile': 'jukebox' }
-    }).then(r => r.json());
-    if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem;padding:8px">No edits recorded yet.</p>'; return; }
-    body.innerHTML = rows.map(r => {
-      const dt   = new Date(r.edited_at).toLocaleString();
-      const diff = computeLyricsDiff(r.old_lyrics || '', r.new_lyrics);
-      return `<div class="lyr-hist-entry">
-        <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
-        <div class="lyr-hist-diff">${diff}</div>
-      </div>`;
-    }).join('');
-  } catch(e) { body.innerHTML = '<p style="color:#ef4444;font-size:.6rem">Failed to load history.</p>'; }
-}
-
-function closeLyricsHistory() {
-  document.getElementById('lyr-hist-modal').classList.remove('open');
-}
-
-function computeLyricsDiff(oldTxt, newTxt) {
-  const oldLines = (oldTxt || '').split('\n');
-  const newLines = (newTxt || '').split('\n');
-  const oldSet   = new Set(oldLines);
-  const newSet   = new Set(newLines);
-  const out = [];
-  oldLines.forEach(l => { if (!newSet.has(l)) out.push(`<span class="diff-del">${escHtml(l)}</span>`); });
-  newLines.forEach(l => { if (!oldSet.has(l)) out.push(`<span class="diff-add">${escHtml(l)}</span>`); });
-  return out.length ? out.join('\n') : '<span style="color:var(--text-muted)">No line-level changes detected.</span>';
-}
-
-function escHtml(s) {
-  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-</script>
-</body>
-</html>
+  const mine = playli
