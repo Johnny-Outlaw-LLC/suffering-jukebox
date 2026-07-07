@@ -49,7 +49,7 @@ export async function GET(
     /* fall through — serve generic tags */
   }
 
-  const title = name ? `${name} — ${SITE_NAME}` : `A shared playlist — ${SITE_NAME}`;
+  const title = name ? `${name} | ${SITE_NAME}` : `A shared playlist | ${SITE_NAME}`;
   const desc = count
     ? `${by || "Someone"} shared ${count} track${count === 1 ? "" : "s"} of Silver Jews & Purple Mountains. Press play.`
     : "A shared Silver Jews & Purple Mountains playlist. Press play.";
