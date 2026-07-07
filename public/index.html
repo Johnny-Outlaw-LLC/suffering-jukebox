@@ -1312,16 +1312,16 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
 <!-- SHARE PLAYLIST MODAL -->
 <div class="pl-modal-overlay" id="plShareModalOverlay" onclick="if(event.target===this)closePlShareModal()">
   <div class="pl-modal" style="width:430px">
-    <div class="pl-modal-header"><span class="pl-modal-title">Share This Playlist</span><button class="modal-close" onclick="closePlShareModal()">✕</button></div>
+    <div class="pl-modal-header"><span class="pl-modal-title" id="pls-modal-title">Share This Playlist</span><button class="modal-close" onclick="closePlShareModal()">✕</button></div>
     <div class="pl-modal-body">
       <!-- Step 1: options -->
       <div id="pls-step-opts">
         <p id="pls-summary" style="font-size:.54rem;color:#888;line-height:1.5;margin-bottom:.7rem"></p>
-        <label style="display:block;font-size:.5rem;color:#666;margin-bottom:.25rem">Playlist name</label>
+        <label id="pls-name-lbl" style="display:block;font-size:.5rem;color:#666;margin-bottom:.25rem">Playlist name</label>
         <input id="pls-name" type="text" maxlength="120" placeholder="e.g. Rainy Day Berman" style="width:100%;box-sizing:border-box;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:6px;color:#eee;font-family:var(--mono);font-size:.58rem;padding:.5rem .6rem;margin-bottom:.55rem;outline:none">
         <label style="display:block;font-size:.5rem;color:#666;margin-bottom:.25rem">Your name (optional, shown to whoever opens it)</label>
         <input id="pls-by" type="text" maxlength="80" placeholder="Anonymous" style="width:100%;box-sizing:border-box;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:6px;color:#eee;font-family:var(--mono);font-size:.58rem;padding:.5rem .6rem;margin-bottom:.75rem;outline:none">
-        <div style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.4rem">
+        <div id="pls-playback-opts" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.4rem">
           <label class="pls-chk-row" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.55rem;color:#bbb"><input type="checkbox" id="pls-inc-layout" checked style="accent-color:var(--accent)"><span>Include player layout (<span id="pls-layout-lbl">windowed</span>)</span></label>
           <label class="pls-chk-row" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.55rem;color:#bbb"><input type="checkbox" id="pls-inc-lyrics" checked style="accent-color:var(--accent)"><span>Include lyric settings (<span id="pls-lyrics-lbl">closed</span>)</span></label>
           <label class="pls-chk-row" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.55rem;color:#bbb"><input type="checkbox" id="pls-inc-time" style="accent-color:var(--accent)"><span>Start where I am (<span id="pls-time-lbl">0:00</span> into <span id="pls-time-track" style="color:#ddd"></span>)</span></label>
@@ -5446,6 +5446,20 @@ function schedulePlaybackStateSave() {
   _pbSaveTimer = setTimeout(savePlaybackState, 800);
 }
 
+// True when the queue has genuinely played through to the end (last track,
+// no repeat/shuffle to keep it going, and the player actually reached
+// ENDED) rather than just being paused mid-song.
+function _pbIsFinishedEnd() {
+  if (!ytQueue.length || ytShuffle || ytRepeat) return false;
+  if (ytQueueIdx !== ytQueue.length - 1) return false;
+  try {
+    if (ytAPIPlayer && typeof ytAPIPlayer.getPlayerState === 'function') {
+      return ytAPIPlayer.getPlayerState() === 0; // YT.PlayerState.ENDED
+    }
+  } catch (e) {}
+  return false;
+}
+
 async function savePlaybackState() {
   if (!googleUser || !ytQueue.length || ytQueueIdx < 0) return;
   try {
@@ -5460,6 +5474,7 @@ async function savePlaybackState() {
       queue_idx: ytQueueIdx,
       shuffle: ytShuffle,
       position_seconds: posSec,
+      ended: _pbIsFinishedEnd(),
       updated_at: new Date().toISOString()
     });
   } catch (e) { /* best-effort - never interrupt playback over a failed save */ }
@@ -5467,13 +5482,16 @@ async function savePlaybackState() {
 
 // Restores the last queue + playhead position for the signed-in user, if any.
 // Only runs once per sign-in and never clobbers a player the user already has open.
+// Skips the restore entirely if they'd already finished playing through the
+// queue (no music playing, sitting at the end) when they left.
 async function restorePlaybackState() {
   if (_pbRestoreDone || !googleUser || ytPlayerEl) return;
   _pbRestoreDone = true;
   try {
-    const rows = await dbGetAuth('/playback_state?select=queue,queue_idx,shuffle,position_seconds&limit=1');
+    const rows = await dbGetAuth('/playback_state?select=queue,queue_idx,shuffle,position_seconds,ended&limit=1');
     const row = rows[0];
     if (!row || !Array.isArray(row.queue) || !row.queue.length) return;
+    if (row.ended) return; // finished listening last time - don't reopen by default
     const idx  = Math.min(Math.max(row.queue_idx || 0, 0), row.queue.length - 1);
     const item = row.queue[idx];
     if (!item?.videoId) return;
@@ -6837,10 +6855,12 @@ function _plShareMyShares() {
   try { return JSON.parse(localStorage.getItem('sj_my_shares') || '[]'); } catch (e) { return []; }
 }
 
+const _pbViewModeLabels = { byyear: 'By Year', timeline: 'Timeline', byviews: 'By Views', list: 'Albums List', alltracks: 'All Tracks', playlists: 'Playlists' };
+
 function openPlShareModal() {
-  if (!ytQueue.length) { showToast('Start playing something first, then share it.'); return; }
   const ov = document.getElementById('plShareModalOverlay');
   if (!ov) return;
+  const hasQueue = ytQueue.length > 0;
   // reset to step 1
   document.getElementById('pls-step-opts').style.display = '';
   document.getElementById('pls-step-done').style.display = 'none';
@@ -6848,31 +6868,45 @@ function openPlShareModal() {
   document.getElementById('pls-create-btn').disabled = false;
   document.getElementById('pls-create-btn').textContent = 'Create Share Link';
 
-  const n = ytQueue.length;
-  const cur = ytQueue[ytQueueIdx] || ytQueue[0];
-  document.getElementById('pls-summary').textContent = `Sharing ${n} track${n === 1 ? '' : 's'}, currently on “${cur?.title || '-'}”.`;
+  const titleEl = document.getElementById('pls-modal-title');
+  if (titleEl) titleEl.textContent = hasQueue ? 'Share This Playlist' : 'Share This View';
+  const nameLbl = document.getElementById('pls-name-lbl');
+  if (nameLbl) nameLbl.textContent = hasQueue ? 'Playlist name' : 'View name';
+  const playbackOpts = document.getElementById('pls-playback-opts');
+  if (playbackOpts) playbackOpts.style.display = hasQueue ? '' : 'none';
+
   const nameEl = document.getElementById('pls-name');
   nameEl.value = _plShareName || '';
-  // Suggest a random lyric line from the queued songs as the name (same
-  // trick as Save Playlist), filled into the field so it's used as-is.
-  if (!nameEl.value || nameEl.value === _plShareAutoName) {
-    _fetchLyricsForTracks([...new Set(ytQueue.map(q => q.trackId).filter(Boolean))]).then(() => {
-      const suggestion = _getQueueLyricPlaceholder();
-      if (suggestion && (!nameEl.value || nameEl.value === _plShareAutoName)) {
-        nameEl.value = suggestion;
-        _plShareAutoName = suggestion;
-      }
-    }).catch(() => {});
+
+  if (hasQueue) {
+    const n = ytQueue.length;
+    const cur = ytQueue[ytQueueIdx] || ytQueue[0];
+    document.getElementById('pls-summary').textContent = `Sharing ${n} track${n === 1 ? '' : 's'}, currently on “${cur?.title || '-'}”.`;
+    // Suggest a random lyric line from the queued songs as the name (same
+    // trick as Save Playlist), filled into the field so it's used as-is.
+    if (!nameEl.value || nameEl.value === _plShareAutoName) {
+      _fetchLyricsForTracks([...new Set(ytQueue.map(q => q.trackId).filter(Boolean))]).then(() => {
+        const suggestion = _getQueueLyricPlaceholder();
+        if (suggestion && (!nameEl.value || nameEl.value === _plShareAutoName)) {
+          nameEl.value = suggestion;
+          _plShareAutoName = suggestion;
+        }
+      }).catch(() => {});
+    }
+    document.getElementById('pls-layout-lbl').textContent = _ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed');
+    document.getElementById('pls-lyrics-lbl').textContent = _ytpLyricsOpen ? ('open, sync ' + (_lyrSyncEnabled ? 'on' : 'off')) : 'closed';
+    let pos = 0;
+    try { if (ytAPIPlayer?.getCurrentTime) pos = ytAPIPlayer.getCurrentTime(); } catch (e) {}
+    document.getElementById('pls-time-lbl').textContent = _plShareFmtTime(pos);
+    document.getElementById('pls-time-track').textContent = cur?.title ? `“${cur.title}”` : '';
+  } else {
+    const label = _pbViewModeLabels[viewMode] || viewMode;
+    const hiddenNote = excludedAlbumIds.size ? ` (${excludedAlbumIds.size} album${excludedAlbumIds.size === 1 ? '' : 's'} hidden)` : '';
+    document.getElementById('pls-summary').textContent = `Sharing your current view: ${label}${hiddenNote}. No music playing - whoever opens this link just sees the same layout you're looking at.`;
   }
+
   const byEl = document.getElementById('pls-by');
   if (!byEl.value && googleUser?.name) byEl.value = googleUser.name;
-
-  document.getElementById('pls-layout-lbl').textContent = _ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed');
-  document.getElementById('pls-lyrics-lbl').textContent = _ytpLyricsOpen ? ('open, sync ' + (_lyrSyncEnabled ? 'on' : 'off')) : 'closed';
-  let pos = 0;
-  try { if (ytAPIPlayer?.getCurrentTime) pos = ytAPIPlayer.getCurrentTime(); } catch (e) {}
-  document.getElementById('pls-time-lbl').textContent = _plShareFmtTime(pos);
-  document.getElementById('pls-time-track').textContent = cur?.title ? `“${cur.title}”` : '';
 
   const sms1 = document.getElementById('pls-sms-opt');
   if (sms1) sms1.style.display = SJ_MOB_UA ? '' : 'none';
@@ -6888,6 +6922,7 @@ async function plShareCreate() {
   const btn = document.getElementById('pls-create-btn');
   btn.disabled = true; btn.textContent = 'Creating…';
   try {
+    const hasQueue  = ytQueue.length > 0;
     const incLayout = document.getElementById('pls-inc-layout').checked;
     const incLyrics = document.getElementById('pls-inc-lyrics').checked;
     const incTime   = document.getElementById('pls-inc-time').checked;
@@ -6895,14 +6930,15 @@ async function plShareCreate() {
     try { if (ytAPIPlayer?.getCurrentTime) pos = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
     const payload = {
       v: 1,
-      queue: ytQueue.map(q => ({ videoId: q.videoId, title: q.title, trackId: q.trackId || null })),
-      idx: Math.max(0, ytQueueIdx),
-      shuffle: !!ytShuffle,
-      repeat: !!ytRepeat,
-      startAt: incTime ? pos : null,
-      layout: incLayout ? (_ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed')) : null,
-      lyrics: incLyrics ? { open: !!_ytpLyricsOpen, sync: !!_lyrSyncEnabled, size: globalLyricSize } : null,
+      queue: hasQueue ? ytQueue.map(q => ({ videoId: q.videoId, title: q.title, trackId: q.trackId || null })) : [],
+      idx: hasQueue ? Math.max(0, ytQueueIdx) : 0,
+      shuffle: hasQueue ? !!ytShuffle : false,
+      repeat: hasQueue ? !!ytRepeat : false,
+      startAt: hasQueue && incTime ? pos : null,
+      layout: hasQueue && incLayout ? (_ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed')) : null,
+      lyrics: hasQueue && incLyrics ? { open: !!_ytpLyricsOpen, sync: !!_lyrSyncEnabled, size: globalLyricSize } : null,
       viewMode: viewMode,
+      filters: { excludedAlbumIds: [...excludedAlbumIds], listSort: listSort },
     };
     const name = (document.getElementById('pls-name').value || '').trim();
     const by   = (document.getElementById('pls-by').value || '').trim();
@@ -6920,7 +6956,8 @@ async function plShareCreate() {
     _plShareUrl = _plSharePrettyUrl(row.slug, name);
     try {
       const mine = _plShareMyShares();
-      mine.unshift({ slug: row.slug, name: name || `${payload.queue.length} tracks`, at: Date.now() });
+      const fallbackName = payload.queue.length ? `${payload.queue.length} tracks` : (_pbViewModeLabels[viewMode] || viewMode);
+      mine.unshift({ slug: row.slug, name: name || fallbackName, at: Date.now() });
       localStorage.setItem('sj_my_shares', JSON.stringify(mine.slice(0, 20)));
     } catch (e) {}
     syncManageSharesBtn();
@@ -6997,7 +7034,7 @@ function buildShareCard(m) {
                <span class="pl-track-num">${i + 1}.</span>
                <span class="pl-track-name-cell">${(q.title || '(untitled)').replace(/</g,'&lt;')}</span>
              </div>`).join('')}</div>`
-        : `<div class="pl-empty" style="padding:.6rem">No tracks in this share.</div>`;
+        : `<div class="pl-empty" style="padding:.6rem">View-only share${cached.viewMode ? ` (${_pbViewModeLabels[cached.viewMode] || cached.viewMode})` : ''} - no tracks.</div>`;
     } else if (cached === null) {
       tracksHtml = `<div class="pl-empty" style="padding:.6rem">Could not load tracks.</div>`;
     } else {
@@ -7111,56 +7148,70 @@ async function hydrateSharedLink() {
     const rows = await dbGet(`/shared_links?slug=eq.${slug}&select=name,payload,shared_by,created_at`);
     const row = rows[0];
     const p = row?.payload;
-    if (!p || !Array.isArray(p.queue) || !p.queue.length) { showToast('That share link has gone missing.'); return; }
+    if (!p) { showToast('That share link has gone missing.'); return; }
 
-    // Restore the top view mode (By Year / Timeline / By Views / Albums List /
-    // All Tracks) so the recipient lands on the exact same layout.
-    if (p.viewMode && typeof setViewMode === 'function') {
-      try { setViewMode(p.viewMode); } catch (e) {}
+    // Restore filters + the top view mode (By Year / Timeline / By Views /
+    // Albums List / All Tracks) so the recipient lands on the exact same
+    // layout - this applies whether or not the share includes a playlist.
+    let viewChanged = false;
+    if (p.filters) {
+      if (Array.isArray(p.filters.excludedAlbumIds)) { excludedAlbumIds = new Set(p.filters.excludedAlbumIds); viewChanged = true; }
+      if (p.filters.listSort) { listSort = p.filters.listSort; viewChanged = true; }
     }
-
-    // Lyric settings first - they take effect when the pane opens
-    if (p.lyrics) {
-      _lyrSyncEnabled = !!p.lyrics.sync;
-      try { localStorage.setItem('sj_lyric_sync', p.lyrics.sync ? '1' : '0'); } catch (e) {}
-      if (p.lyrics.size) applyGlobalLyricSize(p.lyrics.size);
-    }
-
-    const idx  = Math.min(Math.max(p.idx || 0, 0), p.queue.length - 1);
-    const item = p.queue[idx];
-    openYTPlayer(item.videoId, item.title, item.trackId || null);
-    ytQueue = p.queue;
-    ytQueueIdx = idx;
-    setYtShuffleEnabled(!!p.shuffle);
-    ytRepeat = !!p.repeat;
-    const rpChk = document.getElementById('ytp-repeat-chk');
-    if (rpChk) rpChk.checked = ytRepeat;
-    updateYTQueueUI();
-
-    // Layout + lyrics once the player element exists
-    setTimeout(() => {
-      if (p.layout === 'fullscreen' && !_ytpFs) ytpToggleFullscreen();
-      if (p.layout === 'minimized' && !_ytpMinimized) ytpToggleMinimize();
-      if (p.lyrics?.open) {
-        const chk = document.getElementById('ytp-lyrics-chk');
-        if (chk) chk.checked = true;
-        ytpToggleLyrics(true);
-      }
-    }, 300);
-
-    // Seek to the shared playhead once the YT API is up, then pause -
-    // browsers block unmuted autoplay anyway, so the recipient hits play.
-    const startAt = Math.max(p.startAt || 0, 0);
-    const seekWhenReady = (tries) => {
-      if (ytAPIPlayer?.seekTo) {
-        try { if (startAt > 0) ytAPIPlayer.seekTo(startAt, true); ytAPIPlayer.pauseVideo(); ytpSetPlayPauseIcon(false); } catch (e) {}
-      } else if ((tries || 0) < 20) setTimeout(() => seekWhenReady((tries || 0) + 1), 300);
-    };
-    setTimeout(() => seekWhenReady(0), 800);
+    if (p.viewMode) { viewMode = p.viewMode; viewChanged = true; }
+    if (viewChanged && typeof render === 'function') { try { render(); } catch (e) {} }
 
     const who = (row.shared_by || '').trim();
-    const what = (row.name || '').trim() || `${p.queue.length} track${p.queue.length === 1 ? '' : 's'}`;
-    setTimeout(() => showToast(`🎵 ${who || 'Someone'} shared “${what}” with you. Press play`), 900);
+    const hasQueue = Array.isArray(p.queue) && p.queue.length > 0;
+
+    if (!hasQueue) {
+      // View-only share - nothing was playing when it was made, so just
+      // land the recipient on the same view instead of opening a player.
+      const what = (row.name || '').trim() || `${_pbViewModeLabels[p.viewMode] || p.viewMode || 'a view'} of Suffering Jukebox`;
+      setTimeout(() => showToast(`🔎 ${who || 'Someone'} shared “${what}” with you.`), 900);
+    } else {
+      // Lyric settings first - they take effect when the pane opens
+      if (p.lyrics) {
+        _lyrSyncEnabled = !!p.lyrics.sync;
+        try { localStorage.setItem('sj_lyric_sync', p.lyrics.sync ? '1' : '0'); } catch (e) {}
+        if (p.lyrics.size) applyGlobalLyricSize(p.lyrics.size);
+      }
+
+      const idx  = Math.min(Math.max(p.idx || 0, 0), p.queue.length - 1);
+      const item = p.queue[idx];
+      openYTPlayer(item.videoId, item.title, item.trackId || null);
+      ytQueue = p.queue;
+      ytQueueIdx = idx;
+      setYtShuffleEnabled(!!p.shuffle);
+      ytRepeat = !!p.repeat;
+      const rpChk = document.getElementById('ytp-repeat-chk');
+      if (rpChk) rpChk.checked = ytRepeat;
+      updateYTQueueUI();
+
+      // Layout + lyrics once the player element exists
+      setTimeout(() => {
+        if (p.layout === 'fullscreen' && !_ytpFs) ytpToggleFullscreen();
+        if (p.layout === 'minimized' && !_ytpMinimized) ytpToggleMinimize();
+        if (p.lyrics?.open) {
+          const chk = document.getElementById('ytp-lyrics-chk');
+          if (chk) chk.checked = true;
+          ytpToggleLyrics(true);
+        }
+      }, 300);
+
+      // Seek to the shared playhead once the YT API is up, then pause -
+      // browsers block unmuted autoplay anyway, so the recipient hits play.
+      const startAt = Math.max(p.startAt || 0, 0);
+      const seekWhenReady = (tries) => {
+        if (ytAPIPlayer?.seekTo) {
+          try { if (startAt > 0) ytAPIPlayer.seekTo(startAt, true); ytAPIPlayer.pauseVideo(); ytpSetPlayPauseIcon(false); } catch (e) {}
+        } else if ((tries || 0) < 20) setTimeout(() => seekWhenReady((tries || 0) + 1), 300);
+      };
+      setTimeout(() => seekWhenReady(0), 800);
+
+      const what = (row.name || '').trim() || `${p.queue.length} track${p.queue.length === 1 ? '' : 's'}`;
+      setTimeout(() => showToast(`🎵 ${who || 'Someone'} shared “${what}” with you. Press play`), 900);
+    }
 
     // Count the open (fire-and-forget) and clean the URL
     fetch(`${REST}/rpc/bump_share_open`, {
