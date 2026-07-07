@@ -2467,7 +2467,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
           <button class="sc-close" onclick="closeYTPlayer()" title="Close" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">✕</button>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:5px;padding:2px 8px 6px 10px">
+      <div style="display:flex;align-items:center;flex-wrap:wrap;row-gap:4px;gap:5px;padding:2px 8px 6px 10px">
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭ Next</button>
         <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">⏸</button>
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
@@ -7314,6 +7314,13 @@ async function _fetchLyricsForTracks(trackIds) {
 }
 
 function _getQueueLyricPlaceholder() {
+  // Prefer a line from whatever's actually playing right now.
+  const currentTrackId = ytQueue[ytQueueIdx]?.trackId;
+  if (currentTrackId) {
+    const line = _pickLyricLineFromText(lyricsCache[currentTrackId]);
+    if (line) return line;
+  }
+  // Fall back to any track in the queue (e.g. nothing playing yet).
   const trackIds = [...new Set(ytQueue.map(q => q.trackId).filter(Boolean))];
   const allLines = [];
   trackIds.forEach(trackId => {
