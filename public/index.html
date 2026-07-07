@@ -1215,6 +1215,7 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
           <div class="user-menu-date" id="user-menu-updated">-</div>
           <button type="button" class="clog-link" onclick="openChangelog(event)">Change Log</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
+          <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
@@ -1344,7 +1345,7 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
       <!-- My shares (both steps) -->
       <div id="pls-mine-wrap" style="display:none;margin-top:.9rem;border-top:1px solid #222;padding-top:.6rem">
         <div style="font-size:.5rem;color:#666;margin-bottom:.35rem;letter-spacing:.06em">YOUR SHARED PLAYLISTS</div>
-        <div id="pls-mine" style="display:flex;flex-direction:column;gap:.3rem;max-height:130px;overflow-y:auto;scrollbar-width:thin"></div>
+        <div id="pls-mine" style="display:flex;flex-direction:column;gap:.3rem;max-height:260px;overflow-y:auto;scrollbar-width:thin"></div>
       </div>
     </div>
     <div class="pl-modal-footer">
@@ -1435,6 +1436,18 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
     </div>
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closeManagePlaylists()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="pl-modal-overlay" id="manageSharesModalOverlay" onclick="if(event.target===this)closeManageShares()">
+  <div class="pl-modal">
+    <div class="pl-modal-header"><span class="pl-modal-title">⤴ My Shared Playlists</span><button class="modal-close" onclick="closeManageShares()">✕</button></div>
+    <div class="pl-modal-body">
+      <div id="manage-shares-list" class="pl-list"><div class="pl-empty">Loading…</div></div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closeManageShares()">Close</button>
     </div>
   </div>
 </div>
@@ -5395,6 +5408,10 @@ async function userMenuAction(action) {
     openManagePlaylists();
     return;
   }
+  if (action === 'shares') {
+    openManageShares();
+    return;
+  }
   if (action === 'logout') {
     await handleLogout();
     return;
@@ -6905,6 +6922,7 @@ async function plShareCreate() {
       mine.unshift({ slug: row.slug, name: name || `${payload.queue.length} tracks`, at: Date.now() });
       localStorage.setItem('sj_my_shares', JSON.stringify(mine.slice(0, 20)));
     } catch (e) {}
+    syncManageSharesBtn();
 
     document.getElementById('pls-step-opts').style.display = 'none';
     document.getElementById('pls-step-done').style.display = '';
@@ -6939,18 +6957,108 @@ function plShareVia(medium) {
   if (medium === 'reddit') { window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); return; }
 }
 
+// ── Manage Shares (expand to view tracks, delete) ────────────────────────
+let _shareExpanded    = new Set();  // slugs currently expanded to show tracks
+let _sharePayloadCache = {};        // slug -> payload object | null (fetch failed) | 'loading'
+
+function _shareCopyLink(slug, name) {
+  navigator.clipboard.writeText(_plSharePrettyUrl(slug, name)).then(() => showShareToast('Link copied'))
+    .catch(() => showShareToast('Could not copy link'));
+}
+
+async function _fetchSharePayload(slug) {
+  const cached = _sharePayloadCache[slug];
+  if (cached && cached !== 'loading') return cached;
+  if (cached === 'loading') return null;
+  _sharePayloadCache[slug] = 'loading';
+  try {
+    const rows = await dbGet(`/shared_links?slug=eq.${slug}&select=payload`);
+    const payload = rows[0]?.payload || null;
+    _sharePayloadCache[slug] = payload;
+    return payload;
+  } catch (e) {
+    _sharePayloadCache[slug] = null;
+    return null;
+  }
+}
+
+function buildShareCard(m) {
+  const expanded = _shareExpanded.has(m.slug);
+  const cached   = _sharePayloadCache[m.slug];
+  const name     = m.name || m.slug;
+
+  let tracksHtml = '';
+  if (expanded) {
+    if (cached && cached !== 'loading' && Array.isArray(cached.queue)) {
+      tracksHtml = cached.queue.length
+        ? `<div class="pl-track-list">${cached.queue.map((q, i) =>
+            `<div class="pl-track-item">
+               <span class="pl-track-num">${i + 1}.</span>
+               <span class="pl-track-name-cell">${(q.title || '(untitled)').replace(/</g,'&lt;')}</span>
+             </div>`).join('')}</div>`
+        : `<div class="pl-empty" style="padding:.6rem">No tracks in this share.</div>`;
+    } else if (cached === null) {
+      tracksHtml = `<div class="pl-empty" style="padding:.6rem">Could not load tracks.</div>`;
+    } else {
+      tracksHtml = `<div class="pl-empty" style="padding:.6rem">Loading tracks…</div>`;
+    }
+  }
+
+  return `<div class="pl-card" id="share-row-${m.slug}">
+    <div class="pl-row-hdr">
+      <div class="pl-row-name" title="${name.replace(/"/g,'&quot;')}">${name.replace(/</g,'&lt;')}</div>
+      <span data-share-opens="${m.slug}" style="font-size:.5rem;color:#666;flex-shrink:0">&hellip;</span>
+      <button class="pl-row-action-btn" onclick="_shareCopyLink('${m.slug}','${name.replace(/'/g,"\\'")}')">Copy</button>
+      <button class="pl-row-action-btn danger" onclick="confirmDeleteShare('${m.slug}','${name.replace(/'/g,"\\'")}')">Delete</button>
+      <button class="pl-row-expand" onclick="toggleExpandShare('${m.slug}')" title="${expanded ? 'Collapse' : 'View tracks'}">${expanded ? '▲' : '▼'}</button>
+    </div>
+    ${tracksHtml}
+  </div>`;
+}
+
+function toggleExpandShare(slug) {
+  if (_shareExpanded.has(slug)) {
+    _shareExpanded.delete(slug);
+    rerenderShareLists();
+    return;
+  }
+  _shareExpanded.add(slug);
+  rerenderShareLists();
+  _fetchSharePayload(slug).then(() => rerenderShareLists());
+}
+
+async function confirmDeleteShare(slug, name) {
+  if (!confirm(`Delete the share link "${name || slug}"? Anyone who has it will no longer be able to open it.`)) return;
+  try {
+    await fetch(`${REST}/rpc/delete_shared_link`, {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
+      body: JSON.stringify({ p_slug: slug })
+    });
+  } catch (e) { console.error('confirmDeleteShare', e); }
+  try {
+    const mine = _plShareMyShares().filter(m => m.slug !== slug);
+    localStorage.setItem('sj_my_shares', JSON.stringify(mine));
+  } catch (e) {}
+  _shareExpanded.delete(slug);
+  delete _sharePayloadCache[slug];
+  syncManageSharesBtn();
+  rerenderShareLists();
+  showShareToast('Share deleted');
+}
+
+function rerenderShareLists() {
+  if (document.getElementById('pls-mine-wrap')) _plShareRenderMine();
+  if (document.getElementById('manageSharesModalOverlay')?.classList.contains('open')) renderManageSharesList();
+}
+
 async function _plShareRenderMine() {
   const wrap = document.getElementById('pls-mine-wrap');
   const list = document.getElementById('pls-mine');
   const mine = _plShareMyShares();
   if (!mine.length) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
-  list.innerHTML = mine.map(m =>
-    `<div style="display:flex;align-items:center;gap:6px;font-size:.52rem;color:#999">
-       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(m.name || m.slug).replace(/</g,'&lt;')}</span>
-       <span data-share-opens="${m.slug}" style="color:#555;flex-shrink:0">&hellip;</span>
-       <button class="pl-btn ghost" style="padding:1px 7px;font-size:.48rem;flex-shrink:0" onclick="navigator.clipboard.writeText('${_plSharePrettyUrl(m.slug, m.name)}').then(()=>showShareToast('Link copied'))">Copy</button>
-     </div>`).join('');
+  list.innerHTML = mine.map(m => buildShareCard(m)).join('');
   try {
     const slugs = mine.map(m => m.slug).join(',');
     const rows = await dbGet(`/shared_links?slug=in.(${slugs})&select=slug,open_count`);
@@ -6960,6 +7068,36 @@ async function _plShareRenderMine() {
     });
   } catch (e) {}
 }
+
+function syncManageSharesBtn() {
+  const btn = document.getElementById('user-menu-shares');
+  if (!btn) return;
+  btn.style.display = _plShareMyShares().length > 0 ? '' : 'none';
+}
+
+function renderManageSharesList() {
+  const section = document.getElementById('manage-shares-list');
+  if (!section) return;
+  const mine = _plShareMyShares();
+  if (!mine.length) { section.innerHTML = '<div class="pl-empty">No shared playlists yet.</div>'; return; }
+  section.innerHTML = mine.map(m => buildShareCard(m)).join('');
+  const slugs = mine.map(m => m.slug).join(',');
+  dbGet(`/shared_links?slug=in.(${slugs})&select=slug,open_count`).then(rows => {
+    rows.forEach(r => {
+      const el = section.querySelector(`[data-share-opens="${r.slug}"]`);
+      if (el) el.textContent = r.open_count === 1 ? '1 open' : `${r.open_count} opens`;
+    });
+  }).catch(() => {});
+}
+
+function openManageShares() {
+  const overlay = document.getElementById('manageSharesModalOverlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  renderManageSharesList();
+}
+
+function closeManageShares() { document.getElementById('manageSharesModalOverlay')?.classList.remove('open'); }
 
 // ── Opening a shared link (?s=SLUG) ──────────────────────────
 const _plShareIncomingSlug = new URLSearchParams(location.search).get('s');
@@ -7028,6 +7166,7 @@ async function hydrateSharedLink() {
   } catch (e) { console.error('hydrateSharedLink', e); }
 }
 hydrateSharedLink();
+syncManageSharesBtn();
 
 // Init Google auth after GIS script loads
 window.addEventListener('load', initGoogleAuth);
