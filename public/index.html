@@ -1010,6 +1010,22 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
 .pl-modal-header { padding:1rem 1.3rem; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
 .pl-modal-title { font-size:.8rem; font-weight:700; }
 .pl-modal-body { overflow-y:auto; padding:1rem 1.3rem; flex:1; display:flex; flex-direction:column; gap:1rem; }
+/* ── CHANGE LOG ── */
+.user-menu-meta-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.clog-link { background:none; border:none; color:var(--accent); font-family:var(--mono); font-size:.46rem; letter-spacing:.03em; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; }
+.clog-link:hover { filter:brightness(1.15); }
+.clog-group { border:1px solid var(--border); border-radius:8px; background:var(--bg-elevated); overflow:hidden; }
+.clog-summary { padding:8px 10px; cursor:pointer; font-size:.6rem; font-weight:700; list-style:none; display:flex; align-items:center; justify-content:space-between; user-select:none; gap:8px; }
+.clog-summary::-webkit-details-marker { display:none; }
+.clog-summary-left { display:flex; align-items:center; gap:7px; min-width:0; }
+.clog-caret { color:var(--text-muted); font-size:.5rem; transition:transform .15s; flex-shrink:0; }
+.clog-group[open] .clog-caret { transform:rotate(90deg); }
+.clog-date { color:var(--text); white-space:nowrap; }
+.clog-count { color:var(--text-muted); font-size:.48rem; font-weight:400; flex-shrink:0; }
+.clog-body { padding:0 12px 10px 12px; border-top:1px solid var(--border); }
+.clog-list { margin:8px 0 0 0; padding-left:1.1rem; display:flex; flex-direction:column; gap:6px; }
+.clog-list li { font-size:.58rem; line-height:1.45; color:var(--text); }
+.clog-empty { font-size:.58rem; color:var(--text-muted); text-align:center; padding:1rem 0; }
 .pl-list { display:flex; flex-direction:column; gap:5px; }
 .pl-card { display:flex; flex-direction:column; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--border); overflow:hidden; }
 .pl-row-hdr { display:flex; align-items:center; gap:6px; padding:8px 10px; flex-wrap:wrap; }
@@ -1196,7 +1212,10 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
       <div class="user-menu-wrap" id="user-menu-wrap" style="display:none">
         <button class="auth-btn signed-in" id="user-menu-btn" onclick="toggleUserMenu(event)" title="Account menu"></button>
         <div class="user-menu" id="user-menu">
-          <div class="user-menu-meta">App Last Updated</div>
+          <div class="user-menu-meta-row">
+            <div class="user-menu-meta">App Last Updated</div>
+            <button type="button" class="clog-link" onclick="openChangelog(event)">Change Log</button>
+          </div>
           <div class="user-menu-date" id="user-menu-updated">—</div>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
@@ -1346,6 +1365,19 @@ body:not(.light) .admin-metric:hover { background:#120a1a; }
     <div class="pl-modal-footer" id="admin-metrics-footer">
       <button class="pl-btn ghost" onclick="closeAdminMetrics()">Close</button>
       <button class="pl-btn" id="admin-metrics-refresh" onclick="adminMetricsRefresh()">Refresh</button>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE LOG MODAL -->
+<div class="pl-modal-overlay" id="changelogOverlay" onclick="if(event.target===this)closeChangelog()">
+  <div class="pl-modal">
+    <div class="pl-modal-header"><span class="pl-modal-title">📋 Change Log</span><button class="modal-close" onclick="closeChangelog()">✕</button></div>
+    <div class="pl-modal-body">
+      <div class="pl-list" id="changelog-list"></div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closeChangelog()">Close</button>
     </div>
   </div>
 </div>
@@ -5168,6 +5200,96 @@ const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
 const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
+
+// ── Change Log — newest release first; each entry groups the user-facing
+// changes that shipped on that date. Update this by hand when you ship. ──
+const SJ_CHANGELOG = [
+  { date: '2026-07-06', items: [
+    'Shuffle now plays through every song in the queue before repeating any track.',
+    'Signed-in users\u2019 queue and playback position are remembered and resume automatically next visit.',
+  ]},
+  { date: '2026-07-05', items: [
+    'Removed the duplicate thumbs-down control from song ratings.',
+    'Added a toggle for the alternate "Random Rules" music video.',
+    'Album covers now show in search results instead of letter placeholders.',
+  ]},
+  { date: '2026-07-04', items: [
+    'Playback now continues in the background on mobile, with lock-screen controls.',
+    'Fixed a page-load bug that left stray text visible.',
+  ]},
+  { date: '2026-07-03', items: [
+    'Added a song and lyrics search box in the header, plus a full-screen search view on mobile.',
+    'Added a music-video / original-audio switcher for "All My Happiness Is Gone" and fixed its lyric sync timing.',
+    'Various reliability fixes for search (play button, popups, lyrics lookup).',
+  ]},
+  { date: '2026-07-02', items: [
+    'Synced lyrics: the current line highlights automatically with auto-scroll, click-to-seek, and a Sync toggle.',
+  ]},
+  { date: '2026-07-01', items: [
+    'SEO improvements: sitemap, robots.txt, About page, and canonical URLs.',
+  ]},
+  { date: '2026-06-30', items: [
+    'Added play/pause and rating controls directly to the mini player.',
+    'Added hover tooltips with album art to the By Year / By Views charts.',
+    'Fixed shuffle mode so it\u2019s respected consistently across playlists, the queue, and reloads.',
+  ]},
+  { date: '2026-06-29', items: [
+    'Playlists: set a default play mode (In Order / Shuffle), rename or delete, and reorder tracks in an expandable list.',
+  ]},
+  { date: '2026-06-28', items: [
+    'Fixed sizing issues with the fullscreen player.',
+    'Added play-history sparkline tooltips, plus an edit/history panel for lyrics.',
+  ]},
+  { date: '2026-06-26', items: [
+    'Added daily play-count sparklines to track and album tooltips.',
+  ]},
+  { date: '2026-06-25', items: [
+    'Renamed "in-app plays" to "Jukebox Plays" for clarity.',
+  ]},
+  { date: '2026-06-24', items: [
+    'Launched Suffering Jukebox: browse, play, and rate the complete Silver Jews & Purple Mountains catalog.',
+    'SEO metadata and branding polish.',
+    'Security fix: removed a hardcoded key from server routes.',
+  ]},
+];
+
+function _clogFmtDate(iso) {
+  try {
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  } catch (e) { return iso; }
+}
+
+function renderChangelog() {
+  const list = document.getElementById('changelog-list');
+  if (!list) return;
+  if (!SJ_CHANGELOG.length) {
+    list.innerHTML = '<div class="clog-empty">No changes logged yet.</div>';
+    return;
+  }
+  list.innerHTML = SJ_CHANGELOG.map((grp, i) => `
+    <details class="clog-group"${i === 0 ? ' open' : ''}>
+      <summary class="clog-summary">
+        <span class="clog-summary-left"><span class="clog-caret">▸</span><span class="clog-date">${_clogFmtDate(grp.date)}</span></span>
+        <span class="clog-count">${grp.items.length} change${grp.items.length === 1 ? '' : 's'}</span>
+      </summary>
+      <div class="clog-body">
+        <ul class="clog-list">${grp.items.map(it => `<li>${it}</li>`).join('')}</ul>
+      </div>
+    </details>
+  `).join('');
+}
+
+function openChangelog(ev) {
+  ev?.stopPropagation();
+  closeUserMenu();
+  renderChangelog();
+  document.getElementById('changelogOverlay')?.classList.add('open');
+}
+
+function closeChangelog() {
+  document.getElementById('changelogOverlay')?.classList.remove('open');
+}
 
 let googleUser = null;
 let sjIsAdmin = false;
