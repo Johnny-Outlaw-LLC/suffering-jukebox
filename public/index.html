@@ -5966,33 +5966,35 @@ async function instantVote(trackId, vote) {
     refreshTrackBarUI(trackId);
   }
   if (!googleUser) return;
-  const key     = 'track:' + trackId;
-  const session = (await sbAuth.auth.getSession()).data?.session;
-  const tok     = session?.access_token || ANON_KEY;
-  const userId  = session?.user?.id;
-  if (!userId) return;
-  const hdrs = {
-    apikey: ANON_KEY, Authorization: 'Bearer ' + tok,
-    'Content-Type': 'application/json',
-    'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox'
-  };
-  const existing = (feedbackCache[key] || []).find(r => r.user_email === googleUser.email);
-  if (existing) {
-    await fetch(DB + '/feedback?id=eq.' + existing.id,
-      { method: 'PATCH', headers: hdrs, body: JSON.stringify({ vote: next || null }) });
-    existing.vote = next || null;
-  } else if (next) {
-    const body = { user_id: userId, user_email: googleUser.email,
-      target_type: 'track', track_id: trackId, vote: next };
-    const res = await fetch(DB + '/feedback',
-      { method: 'POST', headers: Object.assign({ Prefer: 'return=representation' }, hdrs),
-        body: JSON.stringify(body) });
-    if (res.ok) {
-      const newRow = (await res.json())[0] || body;
-      if (!feedbackCache[key]) feedbackCache[key] = [];
-      feedbackCache[key].push(newRow);
+  try {
+    const key     = 'track:' + trackId;
+    const session = (await sbAuth.auth.getSession()).data?.session;
+    const tok     = session?.access_token || ANON;
+    const userId  = session?.user?.id;
+    if (!userId) return;
+    const hdrs = {
+      apikey: ANON, Authorization: 'Bearer ' + tok,
+      'Content-Type': 'application/json',
+      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox'
+    };
+    const existing = (feedbackCache[key] || []).find(r => r.user_email === googleUser.email);
+    if (existing) {
+      await fetch(REST + '/feedback?id=eq.' + existing.id,
+        { method: 'PATCH', headers: hdrs, body: JSON.stringify({ vote: next || null }) });
+      existing.vote = next || null;
+    } else if (next) {
+      const body = { user_id: userId, user_email: googleUser.email,
+        target_type: 'track', track_id: trackId, vote: next };
+      const res = await fetch(REST + '/feedback',
+        { method: 'POST', headers: Object.assign({ Prefer: 'return=representation' }, hdrs),
+          body: JSON.stringify(body) });
+      if (res.ok) {
+        const newRow = (await res.json())[0] || body;
+        if (!feedbackCache[key]) feedbackCache[key] = [];
+        feedbackCache[key].push(newRow);
+      }
     }
-  }
+  } catch (e) { console.warn('instantVote sync error', e); }
 }
 
 async function loadTrackComments(trackId) {
