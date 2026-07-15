@@ -27,9 +27,16 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
 
   const detail = req.nextUrl.searchParams.get("detail");
+  const dashboard = req.nextUrl.searchParams.get("dashboard");
   const sb = createSjServiceClient();
 
   try {
+    if (dashboard) {
+      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("admin_dashboard");
+      if (error) throw error;
+      return NextResponse.json({ ok: true, dashboard: data });
+    }
+
     if (detail) {
       if (!DETAIL_METRICS.has(detail)) {
         return NextResponse.json({ ok: false, error: "Unknown metric." }, { status: 400 });
