@@ -32,7 +32,12 @@ export async function GET(req: NextRequest) {
 
   try {
     if (dashboard) {
-      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("admin_dashboard");
+      const daysRaw = parseInt(req.nextUrl.searchParams.get("days") ?? "30", 10);
+      const days = [7, 30, 90].includes(daysRaw) ? daysRaw : 30;
+      const user = req.nextUrl.searchParams.get("user")?.trim().toLowerCase() || null;
+      const { data, error } = await sb
+        .schema(JUKEBOX_SCHEMA)
+        .rpc("admin_dashboard", { p_days: days, p_user: user });
       if (error) throw error;
       return NextResponse.json({ ok: true, dashboard: data });
     }

@@ -1074,6 +1074,13 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sjd-nodata { font-size:.44rem; color:var(--text-muted); padding:.35rem 0; }
 @media (max-width:900px) { .sjd-kpis { grid-template-columns:repeat(3,1fr); } .sjd-grid2, .sjd-grid-13 { grid-template-columns:1fr; } }
 @media (max-width:560px) { .sjd-kpis { grid-template-columns:repeat(2,1fr); } .sjd-minis { grid-template-columns:1fr; } .sjd-header { padding:.7rem .8rem .6rem; } .sjd-body { padding:.8rem .8rem 1rem; } .sjd-song-name, .sjd-song-track { max-width:7rem; } }
+.sjd-dim { opacity:.45; pointer-events:none; transition:opacity .15s; }
+.sjd-filter-chip { display:inline-flex; align-items:center; gap:.3rem; background:rgba(255,107,53,.12); border:1px solid var(--accent); color:var(--accent); font-family:var(--sjd-mono); font-size:.44rem; letter-spacing:.04em; padding:.28rem .55rem; border-radius:999px; cursor:pointer; max-width:9rem; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.sjd-filter-chip span { opacity:.75; }
+.sjd-filter-chip:hover { background:rgba(255,107,53,.22); }
+.sjd-table tr.sjd-click { cursor:pointer; }
+.sjd-table tr.sjd-click:hover td { background:rgba(255,107,53,.06); }
+.sjd-table tr.sjd-click.on td { background:rgba(255,107,53,.1); }
 /* ── SHARE ── */
 .share-btn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; letter-spacing:.06em; padding:.38rem .75rem; cursor:pointer; border-radius:8px; transition:all .15s; display:flex; align-items:center; gap:5px; white-space:nowrap; flex-shrink:0; }
 .share-btn:hover { border-color:var(--accent); color:var(--accent); }
@@ -1497,7 +1504,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
         <div class="sjd-eyebrow">Suffering Jukebox — Admin</div>
         <div class="sjd-title">In-App <span>Analytics</span></div>
       </div>
-      <div class="sjd-header-actions">
+      <div class="sjd-header-actions"><span id="sjd-filter-slot"></span>
         <div class="sjd-seg" id="sjd-range">
           <button type="button" data-days="7" onclick="sjdSetRange(7)">7D</button>
           <button type="button" data-days="30" class="on" onclick="sjdSetRange(30)">30D</button>
@@ -5760,6 +5767,8 @@ function fmtAdminDateTime(iso) {
 let _sjdData = null;
 let _sjdDays = 30;
 let _sjdMetric = 'page_loads';
+let _sjdUser = null;
+let _sjdUserName = null;
 let _sjdFetchedAt = null;
 let _sjdGradSeq = 0;
 
@@ -5783,8 +5792,7 @@ function sjdMetricVal(key, n) {
   return key === 'avg_ms' ? fmtAdminDuration(n) : sjdFmtCompact(n);
 }
 
-function sjdSlice(days) { return (_sjdData?.daily || []).slice(-days); }
-function sjdPrevSlice(days) { return (_sjdData?.daily || []).slice(-(days * 2), -days); }
+function sjdDaily() { return _sjdData?.daily || []; }
 
 function sjdAgg(rows, key) {
   if (SJD_METRICS[key].kind === 'avg') {
@@ -5794,12 +5802,9 @@ function sjdAgg(rows, key) {
   return rows.reduce((s, r) => s + (r[key] || 0), 0);
 }
 
-function sjdDeltaHTML(key) {
-  const prevRows = sjdPrevSlice(_sjdDays);
-  const cur = sjdAgg(sjdSlice(_sjdDays), key);
-  if (!prevRows.length) return '<span class="sjd-kpi-delta flat"><em>last ' + _sjdDays + 'd: ' + escAdmin(sjdMetricVal(key, cur)) + '</em></span>';
-  const prev = sjdAgg(prevRows, key);
-  if (prev === 0 && cur === 0) return '<span class="sjd-kpi-delta flat">— <em>no activity ' + _sjdDays + 'd</em></span>';
+function sjdDeltaHTML(cur, prev) {
+  cur = Number(cur) || 0; prev = Number(prev) || 0;
+  if (prev === 0 && cur === 0) return '<span class="sjd-kpi-delta flat">— <em>no activity</em></span>';
   if (prev === 0) return '<span class="sjd-kpi-delta up">▲ new <em>vs prior ' + _sjdDays + 'd</em></span>';
   const pct = ((cur - prev) / prev) * 100;
   const cls = pct > 0.5 ? 'up' : pct < -0.5 ? 'down' : 'flat';
@@ -5874,15 +5879,14 @@ function sjdBigChartSVG(rows, key) {
 }
 
 function sjdChartReadoutDefault() {
-  const rows = sjdSlice(_sjdDays);
   const conf = SJD_METRICS[_sjdMetric];
-  const total = sjdAgg(rows, _sjdMetric);
+  const total = sjdAgg(sjdDaily(), _sjdMetric);
   return (conf.kind === 'avg' ? 'avg ' : 'Σ ') + '<strong>' + escAdmin(sjdMetricVal(_sjdMetric, total)) + '</strong> ' + escAdmin(conf.short) + ' · last ' + _sjdDays + 'd';
 }
 
 function sjdChartHover(i) {
   if (!_sjdData) return;
-  const rows = sjdSlice(_sjdDays);
+  const rows = sjdDaily();
   if (!rows[i]) return;
   const g = sjdChartGeom(rows, _sjdMetric);
   const dot = document.getElementById('sjd-chart-dot');
@@ -5904,7 +5908,7 @@ function sjdChartLeave() {
 
 function sjdPunchHTML() {
   const punch = _sjdData.punch || [];
-  if (!punch.length) return '<div class="sjd-nodata">No plays tracked yet.</div>';
+  if (!punch.length) return '<div class="sjd-nodata">No plays in this range.</div>';
   const off = Math.round(-new Date().getTimezoneOffset() / 60);
   const map = {};
   let max = 1;
@@ -5933,18 +5937,18 @@ function sjdPunchHTML() {
   return html + '</div>';
 }
 
-const SJD_RATE_COLORS = { '2': '#4ade80', '1': '#a3e635', '0': '#9ca3af', '-1': '#fb923c', '-2': '#f87171' };
+const SJD_RATE_COLORS = { '2': '#4ade80', '1': '#a3e635', '0': '#9ca3af', '-1': '#f87171', '-2': '#f87171' };
 
 function sjdRatingsHTML() {
   const dist = _sjdData.ratingDist || [];
   const t = _sjdData.totals || {};
-  if (!dist.length) return '<div class="sjd-nodata">No ratings yet.</div>';
+  if (!dist.length) return '<div class="sjd-nodata">No ratings in this range.</div>';
   const map = {};
-  dist.forEach(d => { map[d.rating] = d.count; });
+  dist.forEach(d => { map[d.rating] = (map[d.rating] || 0) + d.count; });
   const total = dist.reduce((s, d) => s + d.count, 0) || 1;
   const max = Math.max(...dist.map(d => d.count), 1);
   const avg = Number(t.avgRating) || 0;
-  const rows = [2, 1, 0, -1, -2].map(r => {
+  const rows = [2, 1, 0, -1].map(r => {
     const c = map[r] || 0;
     const w = Math.max(c > 0 ? 3 : 0, Math.round((c / max) * 100));
     const pct = Math.round((c / total) * 100);
@@ -5956,12 +5960,12 @@ function sjdRatingsHTML() {
     + (avg > 0 ? '+' : '') + avg.toFixed(2) + '</strong><span>avg rating</span></div><div>' + rows + '</div></div>';
 }
 
-function sjdBarListHTML(items, color) {
-  if (!items?.length) return '<div class="sjd-nodata">No data yet.</div>';
+function sjdBarListHTML(items) {
+  if (!items?.length) return '<div class="sjd-nodata">No data in this range.</div>';
   const max = Math.max(...items.map(i => i.count), 1);
   return '<div class="sjd-bars">' + items.map(it =>
     '<div class="sjd-bar-row"><span class="lbl" title="' + escAdmin(it.label) + '">' + escAdmin(it.label) + '</span>'
-    + '<div class="sjd-bar-track"><i style="width:' + Math.max(2, Math.round((it.count / max) * 100)) + '%' + (color ? ';background:' + color : '') + '"></i></div>'
+    + '<div class="sjd-bar-track"><i style="width:' + Math.max(2, Math.round((it.count / max) * 100)) + '%"></i></div>'
     + '<span class="cnt">' + it.count.toLocaleString() + '</span></div>'
   ).join('') + '</div>';
 }
@@ -5969,13 +5973,13 @@ function sjdBarListHTML(items, color) {
 function sjdRatingChip(v) {
   if (v === null || v === undefined) return '<span class="sjd-chip" style="opacity:.5">—</span>';
   const n = Number(v);
-  const color = n >= 1 ? '#4ade80' : n > 0 ? '#a3e635' : n === 0 ? '#9ca3af' : n >= -1 ? '#fb923c' : '#f87171';
+  const color = n >= 1 ? '#4ade80' : n > 0 ? '#a3e635' : n === 0 ? '#9ca3af' : '#f87171';
   return '<span class="sjd-chip" style="color:' + color + '">' + (n > 0 ? '+' : '') + n.toFixed(1) + '</span>';
 }
 
 function sjdTopSongsHTML() {
   const songs = _sjdData.topSongs || [];
-  if (!songs.length) return '<div class="sjd-nodata">No plays yet.</div>';
+  if (!songs.length) return '<div class="sjd-nodata">No plays in this range.</div>';
   const max = Math.max(...songs.map(s => s.plays), 1);
   return '<table class="sjd-table"><thead><tr><th>Song</th><th class="num">Plays</th><th class="num">Rated</th><th class="num">Avg</th></tr></thead><tbody>'
     + songs.map(s =>
@@ -6004,10 +6008,10 @@ function sjdTimeAgo(iso) {
 
 function sjdRecentHTML() {
   const recent = _sjdData.recent || [];
-  if (!recent.length) return '<div class="sjd-nodata">Nothing yet.</div>';
+  if (!recent.length) return '<div class="sjd-nodata">Nothing in this range.</div>';
   return '<div class="sjd-feed">' + recent.map(e => {
     const ico = e.kind === 'play'
-      ? '<span class="sjd-feed-ico" style="color:#4ade80">▶</span>'
+      ? '<span class="sjd-feed-ico" style="color:var(--accent)">▶</span>'
       : '<span class="sjd-feed-ico" style="color:' + (SJD_RATE_COLORS[e.rating] || '#facc15') + '">★' + (e.rating > 0 ? '+' + e.rating : (e.rating ?? '')) + '</span>';
     return '<div class="sjd-feed-row">' + ico
       + '<span class="sjd-feed-song" title="' + escAdmin(e.song) + '">' + escAdmin(e.song) + '</span>'
@@ -6018,81 +6022,100 @@ function sjdRecentHTML() {
 
 function sjdUsersHTML() {
   const users = _sjdData.users || [];
-  if (!users.length) return '<div class="sjd-nodata">No signed-in visitors yet.</div>';
+  if (!users.length) return '<div class="sjd-nodata">No signed-in visitors in this range.</div>';
   const max = Math.max(...users.map(u => u.visits), 1);
   return '<table class="sjd-table"><thead><tr><th>Listener</th><th class="num">Events</th><th class="num">Last Seen</th></tr></thead><tbody>'
-    + users.map(u =>
-      '<tr><td><span class="sjd-song-name" title="' + escAdmin(u.email) + '">' + escAdmin(sjdWho(u.name || u.email)) + '</span>'
-      + '<span class="sjd-song-track"><i style="width:' + Math.round((u.visits / max) * 100) + '%;background:#60a5fa"></i></span></td>'
-      + '<td class="num">' + u.visits.toLocaleString() + '</td>'
-      + '<td class="num">' + escAdmin(fmtAdminDateTime(u.last_seen)) + '</td></tr>'
-    ).join('') + '</tbody></table>';
+    + users.map((u, i) => {
+      const active = _sjdUser && String(u.email).toLowerCase() === _sjdUser;
+      return '<tr class="sjd-click' + (active ? ' on' : '') + '" onclick="sjdSetUserIdx(' + i + ')" title="' + (active ? 'Clear filter' : 'Filter dashboard to ' + escAdmin(u.email)) + '">'
+        + '<td><span class="sjd-song-name" title="' + escAdmin(u.email) + '">' + (active ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(sjdWho(u.name || u.email)) + '</span>'
+        + '<span class="sjd-song-track"><i style="width:' + Math.round((u.visits / max) * 100) + '%"></i></span></td>'
+        + '<td class="num">' + u.visits.toLocaleString() + '</td>'
+        + '<td class="num">' + escAdmin(fmtAdminDateTime(u.last_seen)) + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function sjdFilterChipHTML() {
+  if (!_sjdUser) return '';
+  return '<button type="button" class="sjd-filter-chip" onclick="sjdSetUser(null)" title="Clear listener filter">'
+    + escAdmin(sjdWho(_sjdUserName || _sjdUser)) + ' <span>✕</span></button>';
+}
+
+function sjdSyncHeader() {
+  const slot = document.getElementById('sjd-filter-slot');
+  if (slot) slot.innerHTML = sjdFilterChipHTML();
+  document.querySelectorAll('#sjd-range button').forEach(b => b.classList.toggle('on', Number(b.dataset.days) === _sjdDays));
 }
 
 function renderSjDashboard() {
   const body = document.getElementById('admin-metrics-body');
   if (!body || !_sjdData) return;
   const t = _sjdData.totals || {};
-  const rows = sjdSlice(_sjdDays);
+  const rows = sjdDaily();
+  const avg = Number(t.avgRating) || 0;
 
   const kpis = [
-    { key: 'page_loads', total: t.pageLoads, sub: 'all-time page views' },
-    { key: 'avg_ms', total: t.avgPageOpenMs, sub: 'per tracked session', fmt: fmtAdminDuration },
-    { key: 'plays', total: t.songsPlayed, sub: (t.uniqueSongsPlayed || 0) + ' unique songs' },
-    { key: 'ratings', total: t.songsRated, sub: 'rating events' },
-    { key: 'logged_in', total: t.loggedInUsers, sub: 'unique accounts' },
-    { key: 'anon', total: t.anonymousUsers, sub: 'unique IPs' }
+    { key: 'page_loads', cur: t.pageLoads, prev: t.pageLoadsPrev, sub: 'page views' },
+    { key: 'avg_ms', cur: t.avgPageOpenMs, prev: t.avgPageOpenMsPrev, sub: 'per tracked session', fmt: fmtAdminDuration },
+    { key: 'plays', cur: t.songsPlayed, prev: t.songsPlayedPrev, sub: (t.uniqueSongsPlayed || 0) + ' unique songs' },
+    { key: 'ratings', cur: t.songsRated, prev: t.songsRatedPrev, sub: 'avg ' + (avg > 0 ? '+' : '') + avg.toFixed(2) },
+    { key: 'logged_in', cur: t.loggedInUsers, prev: t.loggedInUsersPrev, sub: 'unique accounts' },
+    { key: 'anon', cur: t.anonymousUsers, prev: t.anonymousUsersPrev, sub: 'unique IPs' }
   ];
 
   const kpiHTML = kpis.map(k => {
     const conf = SJD_METRICS[k.key];
-    const val = k.fmt ? k.fmt(k.total) : sjdFmtCompact(k.total);
+    const val = k.fmt ? k.fmt(k.cur) : sjdFmtCompact(k.cur);
     const spark = sjdSparkSVG(rows.map(r => r[k.key] || 0), conf.color);
     return '<button type="button" class="sjd-kpi' + (_sjdMetric === k.key ? ' on' : '') + '" style="--c:' + conf.color + '" onclick="sjdSetMetric(\'' + k.key + '\')" title="Show ' + escAdmin(conf.label) + ' trend">'
       + '<span class="sjd-kpi-lbl"><i></i>' + escAdmin(conf.label) + '</span>'
       + '<span class="sjd-kpi-val">' + escAdmin(val) + '</span>'
-      + sjdDeltaHTML(k.key)
+      + sjdDeltaHTML(k.cur, k.prev)
       + spark
       + '<span class="sjd-kpi-sub">' + escAdmin(k.sub) + '</span>'
       + '</button>';
   }).join('');
 
   const conf = SJD_METRICS[_sjdMetric];
+  const rangeLbl = 'last ' + _sjdDays + 'd';
+  const scopeLbl = rangeLbl + (_sjdUser ? ' · ' + escAdmin(sjdWho(_sjdUserName || _sjdUser)) : '');
   const audience = '<div class="sjd-minis">'
-    + '<div><div class="sjd-mini-title">Devices</div>' + sjdBarListHTML(_sjdData.devices, '#60a5fa') + '</div>'
-    + '<div><div class="sjd-mini-title">Browsers</div>' + sjdBarListHTML(_sjdData.browsers, '#a78bfa') + '</div>'
+    + '<div><div class="sjd-mini-title">Devices</div>' + sjdBarListHTML(_sjdData.devices) + '</div>'
+    + '<div><div class="sjd-mini-title">Browsers</div>' + sjdBarListHTML(_sjdData.browsers) + '</div>'
     + '</div>'
-    + (_sjdData.countries?.length ? '<div class="sjd-mini-title" style="margin-top:.6rem">Countries</div>' + sjdBarListHTML(_sjdData.countries, '#4ade80') : '');
+    + (_sjdData.countries?.length ? '<div class="sjd-mini-title" style="margin-top:.6rem">Countries</div>' + sjdBarListHTML(_sjdData.countries) : '');
 
   body.innerHTML =
     '<div class="sjd-kpis">' + kpiHTML + '</div>'
     + '<div class="sjd-card">'
-    + '<div class="sjd-card-head"><div class="sjd-card-title" style="margin-bottom:.4rem"><span style="color:' + conf.color + '">●</span> ' + escAdmin(conf.label) + ' <em>daily · last ' + _sjdDays + ' days</em></div>'
+    + '<div class="sjd-card-head"><div class="sjd-card-title" style="margin-bottom:.4rem"><span style="color:' + conf.color + '">●</span> ' + escAdmin(conf.label) + ' <em>daily · ' + scopeLbl + '</em></div>'
     + '<div class="sjd-readout" id="sjd-chart-readout">' + sjdChartReadoutDefault() + '</div></div>'
     + sjdBigChartSVG(rows, _sjdMetric)
     + '</div>'
     + '<div class="sjd-grid2">'
-    + '<div class="sjd-card"><div class="sjd-card-title">Listening Punchcard <em>plays by hour · your local time · 90d</em></div>' + sjdPunchHTML() + '</div>'
-    + '<div class="sjd-card"><div class="sjd-card-title">Rating Sentiment <em>−2 to +2 · all-time</em></div>' + sjdRatingsHTML() + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Listening Punchcard <em>plays by hour · local time · ' + scopeLbl + '</em></div>' + sjdPunchHTML() + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Rating Sentiment <em>−1 to +2 · ' + scopeLbl + '</em></div>' + sjdRatingsHTML() + '</div>'
     + '</div>'
     + '<div class="sjd-grid2 sjd-grid-13">'
-    + '<div class="sjd-card"><div class="sjd-card-title">Top Songs <em>by plays · all-time</em></div>' + sjdTopSongsHTML() + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Top Songs <em>by plays · ' + scopeLbl + '</em></div>' + sjdTopSongsHTML() + '</div>'
     + '<div class="sjd-stack">'
-    + '<div class="sjd-card"><div class="sjd-card-title">Traffic Sources</div>' + sjdBarListHTML(_sjdData.referrers) + '</div>'
-    + '<div class="sjd-card"><div class="sjd-card-title">Audience</div>' + audience + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Traffic Sources <em>' + scopeLbl + '</em></div>' + sjdBarListHTML(_sjdData.referrers) + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Audience <em>' + scopeLbl + '</em></div>' + audience + '</div>'
     + '</div>'
     + '</div>'
     + '<div class="sjd-grid2">'
-    + '<div class="sjd-card"><div class="sjd-card-title">Top Listeners <em>signed-in activity</em></div>' + sjdUsersHTML() + '</div>'
-    + '<div class="sjd-card"><div class="sjd-card-title">Recent Activity</div>' + sjdRecentHTML() + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Top Listeners <em>' + rangeLbl + ' · click to filter</em></div>' + sjdUsersHTML() + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Recent Activity <em>' + (_sjdUser ? escAdmin(sjdWho(_sjdUserName || _sjdUser)) : 'everyone') + '</em></div>' + sjdRecentHTML() + '</div>'
     + '</div>'
     + '<div class="sjd-stamp"><i></i>Live · updated ' + escAdmin(_sjdFetchedAt ? _sjdFetchedAt.toLocaleTimeString() : '') + '</div>';
+  sjdSyncHeader();
 }
 
 function sjdSetRange(d) {
+  if (_sjdDays === d && _sjdData) return;
   _sjdDays = d;
-  document.querySelectorAll('#sjd-range button').forEach(b => b.classList.toggle('on', Number(b.dataset.days) === d));
-  if (_sjdData) renderSjDashboard();
+  sjdSyncHeader();
+  loadAdminMetrics();
 }
 
 function sjdSetMetric(k) {
@@ -6101,29 +6124,57 @@ function sjdSetMetric(k) {
   if (_sjdData) renderSjDashboard();
 }
 
-function adminMetricsRefresh() {
-  loadAdminMetrics(true);
+function sjdSetUser(email, name) {
+  const e = email ? String(email).toLowerCase() : null;
+  if (_sjdUser === e || !e) {
+    _sjdUser = null;
+    _sjdUserName = null;
+  } else {
+    _sjdUser = e;
+    _sjdUserName = name || email;
+  }
+  sjdSyncHeader();
+  loadAdminMetrics();
 }
 
-async function loadAdminMetrics(force) {
+function sjdSetUserIdx(i) {
+  const u = (_sjdData?.users || [])[i];
+  if (u) sjdSetUser(u.email, u.name);
+}
+
+function adminMetricsRefresh() {
+  loadAdminMetrics();
+}
+
+let _sjdFetchSeq = 0;
+
+async function loadAdminMetrics() {
   const body = document.getElementById('admin-metrics-body');
   if (!body) return;
-  if (!_sjdData || force) body.innerHTML = '<div class="admin-metrics-loading">Loading analytics…</div>';
+  const seq = ++_sjdFetchSeq;
+  if (body.querySelector('.sjd-kpis')) body.classList.add('sjd-dim');
+  else body.innerHTML = '<div class="admin-metrics-loading">Loading analytics…</div>';
   const session = (await sbAuth.auth.getSession()).data?.session;
   if (!session?.access_token) {
+    body.classList.remove('sjd-dim');
     body.innerHTML = '<div class="admin-metrics-error">Sign in required.</div>';
     return;
   }
   try {
-    const res = await fetch(sjApiUrl('/api/sj-admin-metrics?dashboard=1'), {
+    const qs = '/api/sj-admin-metrics?dashboard=1&days=' + _sjdDays + (_sjdUser ? '&user=' + encodeURIComponent(_sjdUser) : '');
+    const res = await fetch(sjApiUrl(qs), {
       headers: { Authorization: 'Bearer ' + session.access_token }
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to load metrics');
+    if (seq !== _sjdFetchSeq) return;
     _sjdData = data.dashboard;
     _sjdFetchedAt = new Date();
+    body.classList.remove('sjd-dim');
     renderSjDashboard();
   } catch (e) {
+    if (seq !== _sjdFetchSeq) return;
+    body.classList.remove('sjd-dim');
     body.innerHTML = '<div class="admin-metrics-error">' + escAdmin(e.message || 'Could not load metrics.') + '</div>';
   }
 }
@@ -6131,6 +6182,7 @@ async function loadAdminMetrics(force) {
 function openAdminMetrics() {
   if (!googleUser || !sjIsAdmin) return;
   document.getElementById('adminMetricsOverlay')?.classList.add('open');
+  sjdSyncHeader();
   loadAdminMetrics();
 }
 
