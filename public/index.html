@@ -1836,6 +1836,17 @@ function getSJExcludedSet() {
   return sjFilterPending !== null ? sjFilterPending : excludedAlbumIds;
 }
 
+// Albums governed by the main filter dropdown: the SJ catalog normally,
+// the page's own artist(s) on a community jukebox.
+function filterBarAlbums() {
+  if (IS_COMMUNITY) {
+    return allArtists.flatMap(a => (albums[a.id] || []))
+      .slice().sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
+  }
+  const sjArtist = allArtists.find(a => a.name.toLowerCase().includes('silver jews'));
+  return sjArtist ? (albums[sjArtist.id] || []) : [];
+}
+
 function isSJAlbumShown(albumId) {
   return !getSJExcludedSet().has(albumId);
 }
@@ -1851,8 +1862,7 @@ function syncSJFilterMenu() {
   });
   const allCb = document.getElementById('sj-filter-all-cb');
   if (allCb) {
-    const sjArtist = allArtists.find(a => a.name.toLowerCase().includes('silver jews'));
-    const sjAlbs = sjArtist ? (albums[sjArtist.id] || []) : [];
+    const sjAlbs = filterBarAlbums();
     allCb.checked = sjAlbs.length > 0 && sjAlbs.every(a => !ex.has(a.id));
     allCb.indeterminate = !allCb.checked && sjAlbs.some(a => !ex.has(a.id));
   }
@@ -1860,8 +1870,7 @@ function syncSJFilterMenu() {
 
 function toggleSJAlbumPending(albumId, show) {
   ensureSJFilterPending();
-  const sjArtist = allArtists.find(a => a.name.toLowerCase().includes('silver jews'));
-  const sjAlbs = sjArtist ? (albums[sjArtist.id] || []) : [];
+  const sjAlbs = filterBarAlbums();
   if (show) sjFilterPending.delete(albumId);
   else {
     const visibleN = sjAlbs.filter(a => !sjFilterPending.has(a.id)).length;
@@ -1873,9 +1882,8 @@ function toggleSJAlbumPending(albumId, show) {
 
 function toggleAllSJAlbumsPending(show) {
   ensureSJFilterPending();
-  const sjArtist = allArtists.find(a => a.name.toLowerCase().includes('silver jews'));
-  if (!sjArtist) return;
-  const sjAlbs = albums[sjArtist.id] || [];
+  const sjAlbs = filterBarAlbums();
+  if (!sjAlbs.length) return;
   sjAlbs.forEach(a => show ? sjFilterPending.delete(a.id) : sjFilterPending.add(a.id));
   if (!show) {
     const visibleN = sjAlbs.filter(a => !sjFilterPending.has(a.id)).length;
@@ -2071,19 +2079,34 @@ function calcTLLayout(sorted, flat) {
   const panelZoneTop = AXIS_Y + ART_GAP + LBL_TOTAL_H + LBL_GAP + ART_H + LBL_GAP + CONN_ZONE_H;
   const albumIdxMap = {};
   sorted.forEach((alb, i) => { albumIdxMap[alb.id] = i; });
-  const xOf = (yr, albId) => {
+  const rawXOf = (yr, albId) => {
     if (flat && albId !== undefined) {
       const fi = albumIdxMap[albId];
       return LEFT_PAD + (sorted.length > 1 ? fi / (sorted.length - 1) : 0.5) * usableW;
     }
     return LEFT_PAD + ((yr - minYear) / range) * usableW;
   };
+  // Timeline mode: same/adjacent-year releases can land closer together than the art is
+  // wide. Push-apart pass enforces a minimum center-to-center gap so art and title labels
+  // never overlap, widening the stage when the cascade runs past the right edge.
+  let xOf = rawXOf;
+  let finalStageW = stageW;
+  if (!flat && sorted.length > 1) {
+    const MIN_ART_PAD = _isMob ? 10 : 16;
+    const minSpace = Math.max(ART_H, LBL_W) + MIN_ART_PAD;
+    const xs = sorted.map(a => rawXOf(parseInt((a.release_date || '2000-01-01').slice(0, 4))));
+    for (let i = 1; i < xs.length; i++) if (xs[i] < xs[i - 1] + minSpace) xs[i] = xs[i - 1] + minSpace;
+    finalStageW = Math.max(stageW, Math.ceil(xs[xs.length - 1] + RIGHT_PAD));
+    const posMap = {};
+    sorted.forEach((a, i) => { posMap[a.id] = xs[i]; });
+    xOf = (yr, albId) => (albId !== undefined && posMap[albId] !== undefined) ? posMap[albId] : rawXOf(yr, albId);
+  }
   // Panel width + positions computed together so open cards share space without overlap
   const { panelPos, panelW: eachPanelW } = calcPanelPositions(
-    expandedSorted, stageW, xOf, PANEL_GAP, MIN_PANEL_W, MAX_PANEL_W
+    expandedSorted, finalStageW, xOf, PANEL_GAP, MIN_PANEL_W, MAX_PANEL_W
   );
   const maxViews = Math.max(...sorted.map(a => albumViews(a)), 1);
-  return { sorted, minYear, range, stageW, scrollW, usableW, LEFT_PAD, ART_H, BAR_W, LBL_W,
+  return { sorted, minYear, range, stageW: finalStageW, scrollW, usableW, LEFT_PAD, ART_H, BAR_W, LBL_W,
     TOP_PAD, MAX_BAR, AXIS_Y, ART_GAP, LBL_GAP, YEAR_H, TITLE_H, LBL_TOTAL_H, PANEL_GAP, PANEL_TRK_H,
     PANEL_HDR_H, MAX_VIS_TRK, CONN_ZONE_H, PANEL_BODY_H, STAGE_H, eachPanelW,
     panelZoneTop, panelPos, expandedSorted, numExp, xOf, maxViews };
@@ -4970,8 +4993,56 @@ function renderViewToggle() {
 
 // ══════════════════════════════════════════════════════════════
 // FILTER BAR - dropdown for SJ albums, toggle for PM
+// (community jukebox: featured-artist dropdown + Other Artists)
 // ══════════════════════════════════════════════════════════════
+function renderCommunityFilterBar() {
+  const esc = s => (s || '').replace(/</g, '&lt;');
+  const featured   = allArtists.length === 1 ? allArtists[0] : null;
+  const albs       = filterBarAlbums();
+  const someHidden = albs.some(a => !isAlbumVisible(a.id));
+  const allVisible = albs.length > 0 && albs.every(a => isAlbumVisible(a.id));
+  const hiddenN    = albs.filter(a => !isAlbumVisible(a.id)).length;
+  const ddName     = featured ? esc(featured.name) : 'Albums';
+  const label = someHidden
+    ? `${ddName} <span style="opacity:.6;font-size:.85em">(${hiddenN} hidden)</span>`
+    : (featured ? `All ${ddName}` : 'All Albums');
+  const items = albs.map(alb => {
+    const color   = albumColor(alb);
+    const yr      = (alb.release_date || '').slice(0, 4);
+    const checked = isSJAlbumShown(alb.id);
+    return `<label class="filter-dd-item" onclick="event.stopPropagation()">
+      <input type="checkbox" data-sj-alb-cb="${alb.id}" ${checked ? 'checked' : ''} onchange="toggleSJAlbumPending('${alb.id}', this.checked)">
+      <span class="pill-dot" style="background:${color}"></span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(alb.name)}</span>
+      <span style="opacity:.45;font-size:.57rem;flex-shrink:0;margin-left:4px">${yr}</span>
+    </label>`;
+  }).join('');
+  const allShown = albs.length > 0 && albs.every(a => isSJAlbumShown(a.id));
+  return `<div class="filter-bar" id="filter-bar">
+    <div class="filter-dd-wrap">
+      <button class="ctrl-btn filter-dd-trigger ${allVisible ? 'ctrl-btn--accent' : someHidden ? 'ctrl-btn--partial' : ''}" onclick="toggleSJDropdown(event)">
+        ${label} <span class="filter-dd-caret">▾</span>
+      </button>
+      <div class="filter-dd-menu">
+        <div class="filter-dd-scroll">
+          <label class="filter-dd-item" onclick="event.stopPropagation()">
+            <input type="checkbox" id="sj-filter-all-cb" ${allShown ? 'checked' : ''} onchange="toggleAllSJAlbumsPending(this.checked)">
+            <span style="font-weight:600">${featured ? `All ${ddName} Albums` : 'All Albums'}</span>
+          </label>
+          <div class="filter-dd-divider"></div>
+          ${items}
+        </div>
+        <div class="filter-dd-footer">
+          <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
+        </div>
+      </div>
+    </div>
+    ${renderOtherArtistsBtn()}
+  </div>`;
+}
+
 function renderFilterBar(allAlbs) {
+  if (IS_COMMUNITY) return renderCommunityFilterBar();
   const sjArtist = allArtists.find(a => a.name.toLowerCase().includes('silver jews'));
   const pmArtist = allArtists.find(a => a.name.toLowerCase().includes('purple mountains'));
   const sjAlbs   = sjArtist ? (albums[sjArtist.id] || []).slice().sort((a,b)=>(a.release_date||'').localeCompare(b.release_date||'')) : [];
@@ -5520,10 +5591,12 @@ async function oaToggleJukebox(id) {
 }
 
 function renderOtherArtistsBtn() {
-  if (IS_COMMUNITY) return '';
   const esc = s => (s || '').replace(/</g, '&lt;');
-  const activeN = [...addedCommunityIds].filter(id => communityArtists.find(a => a.id === id)).length;
-  const rows = communityArtists.map(a => {
+  // On an artist jukebox page, list every community artist except the featured one
+  const _featuredId = IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null;
+  const _oaList = _featuredId ? communityArtists.filter(a => a.id !== _featuredId) : communityArtists;
+  const activeN = IS_COMMUNITY ? 0 : [...addedCommunityIds].filter(id => communityArtists.find(a => a.id === id)).length;
+  const rows = _oaList.map(a => {
     const inJuke = addedCommunityIds.has(a.id);
     const isExp  = oaExpanded.has(a.id);
     const albs   = communityAlbumsCache[a.id];
@@ -5540,7 +5613,7 @@ function renderOtherArtistsBtn() {
           <div class="oa-name">${esc(a.name)}</div>
           <div class="oa-meta">${a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist'}</div>
         </div>
-        <button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>
+        ${IS_COMMUNITY ? '' : `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>`}
         <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='/community?artist=${a.id}'" title="Open a jukebox with only this artist">Artist Jukebox →</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
