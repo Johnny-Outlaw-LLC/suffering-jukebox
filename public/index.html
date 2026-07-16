@@ -1673,6 +1673,7 @@ const YT_FN   = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/youtube-s
 const COMMUNITY_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/community-import';
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
 const IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community';
+const FEATURED_ARTIST_ID = IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null;
 function filterPageArtists(rows) {
   if (IS_COMMUNITY) {
     let out = rows.filter(a => a.is_community);
@@ -1786,16 +1787,73 @@ const fmtV = (n) => {
   return n.toString();
 };
 
-// Artist-level fallback color (for Top Tracks where we might not have the album)
+// Distinct single colors for community artists (indexed by their position in communityArtists)
+const OA_PALETTE = ['#e05656', '#4f9d69', '#c9902e', '#5b8dd6', '#b467c9', '#3aa8a8', '#d66b9e', '#8a9a3b'];
+
+// Artist-level color: one color per artist (SJ/PM keep their signature colors)
 const colorOf = (artistId) => {
   const name = (allArtists.find(a => a.id === artistId)?.name || '').toLowerCase();
   if (name.includes('purple mountains')) return '#7040a8';
   if (name.includes('silver jews'))      return '#6a8aa0';
-  return '#ff6b35';
+  const i = communityArtists.findIndex(a => a.id === artistId);
+  return i >= 0 ? OA_PALETTE[i % OA_PALETTE.length] : '#ff6b35';
 };
 
-// Album-specific color - this is what makes the bars pretty
-const albumColor = (alb) => ALBUM_COLORS[alb.name] || colorOf(alb.artist_id);
+// Dominant-color cache extracted from album art (featured artist jukebox)
+const artColorCache = {};   // albumId -> hex
+
+// Album-specific color - this is what makes the bars pretty.
+// Featured artist jukebox: per-album color from its art; other artists: one color per artist.
+const albumColor = (alb) => {
+  if (IS_COMMUNITY && FEATURED_ARTIST_ID) {
+    if (alb.artist_id === FEATURED_ARTIST_ID)
+      return artColorCache[alb.id] || ALBUM_COLORS[alb.name] || '#ff6b35';
+    return colorOf(alb.artist_id);
+  }
+  return ALBUM_COLORS[alb.name] || colorOf(alb.artist_id);
+};
+
+// ── Dominant color extraction from album art ──
+function _dominantColorFromImage(img) {
+  const N = 24, c = document.createElement('canvas');
+  c.width = N; c.height = N;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, N, N);
+  const d = ctx.getImageData(0, 0, N, N).data;
+  const buckets = {};
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    if (d[i + 3] < 200) continue;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const lum = (mx + mn) / 2;
+    if (lum < 28 || lum > 235) continue;               // skip near-black / near-white
+    const key = ((r >> 5) << 10) | ((g >> 5) << 5) | (b >> 5);
+    const w = 1 + (mx - mn) / 32;                      // favor saturated pixels
+    const bk = buckets[key] || (buckets[key] = [0, 0, 0, 0]);
+    bk[0] += r * w; bk[1] += g * w; bk[2] += b * w; bk[3] += w;
+  }
+  let best = null;
+  for (const k in buckets) if (!best || buckets[k][3] > best[3]) best = buckets[k];
+  if (!best) return null;
+  let r = Math.round(best[0] / best[3]), g = Math.round(best[1] / best[3]), b = Math.round(best[2] / best[3]);
+  const mx = Math.max(r, g, b);
+  if (mx < 90) { const f = 90 / mx; r = Math.min(255, Math.round(r * f)); g = Math.min(255, Math.round(g * f)); b = Math.min(255, Math.round(b * f)); }
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// Resolve dominant colors for the given albums; returns how many NEW colors landed
+function extractArtColors(albs) {
+  const jobs = albs.filter(a => !artColorCache[a.id]).map(alb => new Promise(res => {
+    const url = albumThumb(alb);
+    if (!url) return res(0);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload  = () => { try { const c = _dominantColorFromImage(img); if (c) { artColorCache[alb.id] = c; return res(1); } } catch (_) {} res(0); };
+    img.onerror = () => res(0);
+    img.src = url;
+  }));
+  return Promise.all(jobs).then(rs => rs.reduce((s, n) => s + n, 0));
+}
 
 // ── State ─────────────────────────────────────────────────────
 let allArtists          = [];
@@ -4672,6 +4730,7 @@ async function init() {
         const _tag = document.getElementById('brand-tagline');
         if (_tag) _tag.innerHTML = 'The <strong>' + (_one.name || '').replace(/</g, '&lt;') + '</strong> jukebox' + (_one.added_by_name ? ' — added to the community by ' + (_one.added_by_name || '').replace(/</g, '&lt;') : '');
       }
+      if (_ap) restoreOtherArtists();
     }
     const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
     if (runIds.length) {
@@ -4735,6 +4794,11 @@ async function loadData() {
     }
 
     render();
+
+    // Featured artist jukebox: derive each album's bar color from its art, then repaint
+    if (IS_COMMUNITY && FEATURED_ARTIST_ID) {
+      extractArtColors(albums[FEATURED_ARTIST_ID] || []).then(n => { if (n) render(); });
+    }
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
@@ -5538,11 +5602,18 @@ let communityAlbumsCache = {};
 const oaExpanded = new Set();
 const addedCommunityIds = new Set();
 
+// Each artist jukebox page remembers its own added artists; the main page keeps its key
+const OA_STORE_KEY = IS_COMMUNITY ? 'sj_other_artists_' + (FEATURED_ARTIST_ID || 'community') : 'sj_other_artists';
+
+function oaFindArtist(id) {
+  return communityArtists.find(c => c.id === id) || mainCatalogArtists.find(c => c.id === id) || null;
+}
+
 function restoreOtherArtists() {
   let saved = [];
-  try { saved = JSON.parse(localStorage.getItem('sj_other_artists') || '[]'); } catch (e) {}
+  try { saved = JSON.parse(localStorage.getItem(OA_STORE_KEY) || '[]'); } catch (e) {}
   saved.forEach(id => {
-    const a = communityArtists.find(c => c.id === id);
+    const a = oaFindArtist(id);
     if (!a) return;
     addedCommunityIds.add(id);
     if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
@@ -5577,7 +5648,7 @@ async function oaToggleExpand(id) {
 }
 
 async function oaToggleJukebox(id) {
-  const a = communityArtists.find(c => c.id === id);
+  const a = oaFindArtist(id);
   if (!a) return;
   if (addedCommunityIds.has(id)) {
     addedCommunityIds.delete(id);
@@ -5589,7 +5660,7 @@ async function oaToggleJukebox(id) {
     if (!allArtists.find(x => x.id === id)) allArtists.push(a);
     selectedIds.add(id);
   }
-  try { localStorage.setItem('sj_other_artists', JSON.stringify([...addedCommunityIds])); } catch (e) {}
+  try { localStorage.setItem(OA_STORE_KEY, JSON.stringify([...addedCommunityIds])); } catch (e) {}
   await loadData();
   oaRerenderOpen();
 }
@@ -5609,7 +5680,7 @@ function renderOtherArtistsBtn() {
   // Community pages also list the main-jukebox artists (Silver Jews / Purple Mountains) up top
   const _mainSorted = [...mainCatalogArtists].sort((a, b) => /silver jews/i.test(b.name || '') - /silver jews/i.test(a.name || ''));
   const _oaList = IS_COMMUNITY ? [..._mainSorted, ..._commList] : _commList;
-  const activeN = IS_COMMUNITY ? 0 : [...addedCommunityIds].filter(id => communityArtists.find(a => a.id === id)).length;
+  const activeN = [...addedCommunityIds].filter(id => oaFindArtist(id)).length;
   const rows = _oaList.map(a => {
     const inJuke = addedCommunityIds.has(a.id);
     const isExp  = oaExpanded.has(a.id);
@@ -5618,7 +5689,7 @@ function renderOtherArtistsBtn() {
     if (isExp) {
       if (albs === undefined)  albRows = '<div class="oa-albs-note">Loading albums…</div>';
       else if (!albs.length)   albRows = '<div class="oa-albs-note">No albums yet</div>';
-      else albRows = albs.map(al => `<div class="oa-alb">${!IS_COMMUNITY && inJuke ? `<input type="checkbox" ${isAlbumVisible(al.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="oaToggleAlbum('${al.id}', this.checked)" title="Include this album in the jukebox chart">` : ''}${(al.art_url || ALBUM_ART[al.name]) ? `<img src="${al.art_url || ALBUM_ART[al.name]}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
+      else albRows = albs.map(al => `<div class="oa-alb">${(!IS_COMMUNITY || _featuredId) && inJuke ? `<input type="checkbox" ${isAlbumVisible(al.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="oaToggleAlbum('${al.id}', this.checked)" title="Include this album in the jukebox chart">` : ''}${(al.art_url || ALBUM_ART[al.name]) ? `<img src="${al.art_url || ALBUM_ART[al.name]}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
     }
     return `<div class="oa-artist">
       <div class="oa-artist-row" onclick="event.stopPropagation();oaToggleExpand('${a.id}')" title="Show albums">
@@ -5627,7 +5698,7 @@ function renderOtherArtistsBtn() {
           <div class="oa-name">${esc(a.name)}</div>
           <div class="oa-meta">${a.is_community === false ? 'main jukebox artist' : (a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist')}</div>
         </div>
-        ${IS_COMMUNITY ? '' : `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>`}
+        ${(!IS_COMMUNITY || _featuredId) ? `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>` : ''}
         <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='${a.is_community === false ? '/' : `/community?artist=${a.id}`}'" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
