@@ -370,6 +370,7 @@ body:not(.light) .tt-num { color: var(--text); }
 .oa-albs { background: var(--bg); border-top: 1px solid var(--border); padding: 4px 0; }
 .oa-alb { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 27px; font-family: var(--mono); font-size: .55rem; color: var(--text); }
 .oa-alb img { width: 22px; height: 22px; object-fit: cover; border-radius: 3px; flex-shrink: 0; }
+.oa-alb input[type="checkbox"] { flex-shrink: 0; width: 12px; height: 12px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .oa-alb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oa-alb-yr { color: var(--text-muted); font-size: .48rem; }
 .oa-albs-note { font-family: var(--mono); font-size: .52rem; color: var(--text-muted); padding: 10px 12px; }
@@ -5590,6 +5591,13 @@ async function oaToggleJukebox(id) {
   oaRerenderOpen();
 }
 
+function oaToggleAlbum(albumId, show) {
+  if (show) excludedAlbumIds.delete(albumId);
+  else excludedAlbumIds.add(albumId);
+  render();
+  oaRerenderOpen();
+}
+
 function renderOtherArtistsBtn() {
   const esc = s => (s || '').replace(/</g, '&lt;');
   // On an artist jukebox page, list every community artist except the featured one
@@ -5604,7 +5612,7 @@ function renderOtherArtistsBtn() {
     if (isExp) {
       if (albs === undefined)  albRows = '<div class="oa-albs-note">Loading albums…</div>';
       else if (!albs.length)   albRows = '<div class="oa-albs-note">No albums yet</div>';
-      else albRows = albs.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
+      else albRows = albs.map(al => `<div class="oa-alb">${!IS_COMMUNITY && inJuke ? `<input type="checkbox" ${isAlbumVisible(al.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="oaToggleAlbum('${al.id}', this.checked)" title="Include this album in the jukebox chart">` : ''}${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
     }
     return `<div class="oa-artist">
       <div class="oa-artist-row" onclick="event.stopPropagation();oaToggleExpand('${a.id}')" title="Show albums">
