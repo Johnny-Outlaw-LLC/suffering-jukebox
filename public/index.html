@@ -354,6 +354,25 @@ body:not(.light) .tt-num { color: var(--text); }
 .am-step-status.ok { color: #22c55e; }
 .am-step-status.err { color: #ef4444; }
 .alb-added-by { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); padding: .45rem .75rem .25rem; letter-spacing: .05em; }
+.oa-menu { min-width: 340px; max-width: min(92vw, 460px); }
+.oa-artist { border-bottom: 1px solid var(--border); }
+.oa-artist:last-child { border-bottom: none; }
+.oa-artist-row { display: flex; align-items: center; gap: 7px; padding: 8px 10px; cursor: pointer; }
+.oa-artist-row:hover { background: var(--bg-elevated); }
+.oa-caret { font-size: .55rem; color: var(--text-muted); width: 10px; flex-shrink: 0; }
+.oa-info { flex: 1; min-width: 0; }
+.oa-name { font-family: var(--mono); font-size: .6rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oa-meta { font-family: var(--mono); font-size: .45rem; color: var(--text-muted); letter-spacing: .04em; }
+.oa-act { background: none; border: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: .46rem; letter-spacing: .04em; padding: .25rem .5rem; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all .12s; }
+.oa-act:hover { border-color: var(--accent); color: var(--accent); }
+.oa-act.in { border-color: #22c55e66; color: #22c55e; }
+.oa-act.go:hover { border-color: var(--text); color: var(--text); }
+.oa-albs { background: var(--bg); border-top: 1px solid var(--border); padding: 4px 0; }
+.oa-alb { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 27px; font-family: var(--mono); font-size: .55rem; color: var(--text); }
+.oa-alb img { width: 22px; height: 22px; object-fit: cover; border-radius: 3px; flex-shrink: 0; }
+.oa-alb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oa-alb-yr { color: var(--text-muted); font-size: .48rem; }
+.oa-albs-note { font-family: var(--mono); font-size: .52rem; color: var(--text-muted); padding: 10px 12px; }
 @media (max-width: 640px) { .hdr-page-link .lbl, .hdr-add-music-btn .lbl { display: none; } }
 
 .footer-note { font-size: .48rem; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: .75rem; letter-spacing: .04em; }
@@ -1326,7 +1345,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           onkeydown="if(event.key==='Enter')openSearchModal(this.value)"
           oninput="scheduleSearch(this.value)">
       </div>
-      <a class="btn hdr-page-link" id="page-switch-link" href="/community" title="Community jukebox — music added by listeners">♪ <span class="lbl">Community</span></a>
+      <a class="btn hdr-page-link" id="page-switch-link" href="/" style="display:none">♪ <span class="lbl">Silver Jews</span></a>
       <button class="btn hdr-add-music-btn" id="add-music-btn" onclick="openAddMusic()" style="display:none">＋<span class="lbl"> Add Music</span></button>
       <button class="btn hdr-share-btn" onclick="openPlShareModal()" title="Share the current playlist">⤴ Share</button>
       <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()" title="Sign in with Google"><span class="auth-label-full">Sign In to Remember Ratings and Play History</span><span class="auth-label-short">Sign In</span></button>
@@ -1654,7 +1673,12 @@ const COMMUNITY_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/comm
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
 const IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community';
 function filterPageArtists(rows) {
-  if (IS_COMMUNITY) return rows.filter(a => a.is_community);
+  if (IS_COMMUNITY) {
+    let out = rows.filter(a => a.is_community);
+    const ap = new URLSearchParams(window.location.search).get('artist');
+    if (ap) { const one = out.filter(a => a.id === ap); if (one.length) out = one; }
+    return out;
+  }
   return rows.filter(a => {
     const n = a.name.toLowerCase();
     return (n.includes('silver jews') || n.includes('purple mountains')) && !a.is_community;
@@ -4610,8 +4634,20 @@ async function confirmDeletePlaylist(id, name) {
 
 async function init() {
   try {
-    allArtists = await dbGet('/artists?select=id,name,last_sync_id,is_community&order=name.asc');
-    allArtists = filterPageArtists(allArtists);
+    const _artistRows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+    communityArtists = _artistRows.filter(a => a.is_community);
+    allArtists = filterPageArtists(_artistRows);
+    if (!IS_COMMUNITY) {
+      restoreOtherArtists();
+    } else {
+      const _ap = new URLSearchParams(window.location.search).get('artist');
+      const _one = _ap && allArtists.find(a => a.id === _ap);
+      if (_one) {
+        document.title = _one.name + ' Jukebox — Suffering Jukebox';
+        const _tag = document.getElementById('brand-tagline');
+        if (_tag) _tag.innerHTML = 'The <strong>' + (_one.name || '').replace(/</g, '&lt;') + '</strong> jukebox' + (_one.added_by_name ? ' — added to the community by ' + (_one.added_by_name || '').replace(/</g, '&lt;') : '');
+      }
+    }
     const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
     if (runIds.length) {
       const runs = await dbGet(`/sync_runs?id=in.(${runIds.join(',')})&select=id,pulled_at,album_count,track_count`);
@@ -4775,7 +4811,7 @@ function renderTrackLines(alb, mode = 'inline') {
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
     </div>
     <div class="trk-accordion" data-acc="${t.id}"></div>`;
-  }).join('') + (IS_COMMUNITY && alb.added_by_name
+  }).join('') + (alb.added_by_name
     ? `<div class="alb-added-by">Added to the community by ${(alb.added_by_name || '').replace(/</g, '&lt;')}${alb.created_at ? ' · ' + new Date(alb.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</div>`
     : '');
 }
@@ -4989,6 +5025,7 @@ function renderFilterBar(allAlbs) {
       <span class="pill-dot" style="background:${pmAllHidden ? 'var(--text-muted)' : pmColor}"></span>
       Purple Mountains
     </button>
+    ${renderOtherArtistsBtn()}
   </div>`;
 }
 
@@ -5110,7 +5147,7 @@ function renderListView(albList, sortOverride) {
         ${thumb ? `<img src="${thumb}" loading="lazy" class="list-art">` : `<div class="list-art-ph" style="background:${color}22;color:${color}">${alb.name.charAt(0)}</div>`}
         <div class="list-info">
           <div class="list-name">${alb.name}</div>
-          <div class="list-meta">${yr} · ${albTracks.length} tracks${IS_COMMUNITY && alb.added_by_name ? ` · added by ${(alb.added_by_name || '').replace(/</g, '&lt;')}` : ''}</div>
+          <div class="list-meta">${yr} · ${albTracks.length} tracks${alb.added_by_name ? ` · added by ${(alb.added_by_name || '').replace(/</g, '&lt;')}` : ''}</div>
         </div>
         ${_showListMetric ? `<div class="list-views-block">
           <div class="list-views" style="color:var(--accent)">${_listMetricFmt}</div>
@@ -5390,8 +5427,10 @@ async function runSync() {
     (data.log || []).forEach(l => mLog(l.startsWith('  ') ? 'ok' : '', l));
     mLog('ok', `✓ ${data.albums} albums · ${data.tracks} tracks`);
     statusEl.textContent = '✓ Done'; statusEl.style.color = '#22c55e';
-    allArtists = await dbGet('/artists?select=id,name,last_sync_id,is_community&order=name.asc');
-    allArtists = filterPageArtists(allArtists);
+    const _rows2 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+    communityArtists = _rows2.filter(a => a.is_community);
+    allArtists = filterPageArtists(_rows2);
+    if (!IS_COMMUNITY) restoreOtherArtists();
     const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
     if (runIds.length) { const runs = await dbGet(`/sync_runs?id=in.(${runIds.join(',')})&select=id,pulled_at,album_count,track_count`); runs.forEach(r => { syncRuns[r.id] = r; }); }
     const na = allArtists.find(a => a.name === modalSelected.name);
@@ -5417,6 +5456,110 @@ let amChannel = null;      // selected channel
 let amAlbums  = [];        // playlists returned for the selected channel
 let amPicked  = new Set(); // playlist ids chosen for import
 let amBusy    = false;
+
+// ── OTHER ARTISTS — community artists surfaced on the main page ──
+let communityArtists = [];
+let communityAlbumsCache = {};
+const oaExpanded = new Set();
+const addedCommunityIds = new Set();
+
+function restoreOtherArtists() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem('sj_other_artists') || '[]'); } catch (e) {}
+  saved.forEach(id => {
+    const a = communityArtists.find(c => c.id === id);
+    if (!a) return;
+    addedCommunityIds.add(id);
+    if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
+  });
+}
+
+function toggleOADropdown(e) {
+  if (e) { e.stopPropagation(); e.preventDefault(); }
+  const wrap = e?.currentTarget?.closest('.filter-dd-wrap');
+  const menu = wrap?.querySelector('.filter-dd-menu');
+  if (!menu) return;
+  const opening = !menu.classList.contains('open');
+  document.querySelectorAll('.filter-dd-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open'); });
+  menu.classList.toggle('open', opening);
+}
+
+function oaRerenderOpen() {
+  updateFilterHeader();
+  document.querySelectorAll('.oa-menu').forEach(m => m.classList.add('open'));
+}
+
+async function oaToggleExpand(id) {
+  if (oaExpanded.has(id)) { oaExpanded.delete(id); oaRerenderOpen(); return; }
+  oaExpanded.add(id);
+  oaRerenderOpen();
+  if (communityAlbumsCache[id] === undefined) {
+    try {
+      communityAlbumsCache[id] = await dbGet(`/albums?artist_id=eq.${id}&select=id,name,release_date,art_url&order=release_date.asc`);
+    } catch (e) { communityAlbumsCache[id] = []; }
+    oaRerenderOpen();
+  }
+}
+
+async function oaToggleJukebox(id) {
+  const a = communityArtists.find(c => c.id === id);
+  if (!a) return;
+  if (addedCommunityIds.has(id)) {
+    addedCommunityIds.delete(id);
+    selectedIds.delete(id);
+    allArtists = allArtists.filter(x => x.id !== id);
+    delete albums[id]; delete tracks[id];
+  } else {
+    addedCommunityIds.add(id);
+    if (!allArtists.find(x => x.id === id)) allArtists.push(a);
+    selectedIds.add(id);
+  }
+  try { localStorage.setItem('sj_other_artists', JSON.stringify([...addedCommunityIds])); } catch (e) {}
+  await loadData();
+  oaRerenderOpen();
+}
+
+function renderOtherArtistsBtn() {
+  if (IS_COMMUNITY) return '';
+  const esc = s => (s || '').replace(/</g, '&lt;');
+  const activeN = [...addedCommunityIds].filter(id => communityArtists.find(a => a.id === id)).length;
+  const rows = communityArtists.map(a => {
+    const inJuke = addedCommunityIds.has(a.id);
+    const isExp  = oaExpanded.has(a.id);
+    const albs   = communityAlbumsCache[a.id];
+    let albRows = '';
+    if (isExp) {
+      if (albs === undefined)  albRows = '<div class="oa-albs-note">Loading albums…</div>';
+      else if (!albs.length)   albRows = '<div class="oa-albs-note">No albums yet</div>';
+      else albRows = albs.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
+    }
+    return `<div class="oa-artist">
+      <div class="oa-artist-row" onclick="event.stopPropagation();oaToggleExpand('${a.id}')" title="Show albums">
+        <span class="oa-caret">${isExp ? '▾' : '▸'}</span>
+        <div class="oa-info">
+          <div class="oa-name">${esc(a.name)}</div>
+          <div class="oa-meta">${a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist'}</div>
+        </div>
+        <button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>
+        <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='/community?artist=${a.id}'" title="Open a jukebox with only this artist">Artist Jukebox →</button>
+      </div>
+      ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="filter-dd-wrap oa-wrap">
+    <button class="ctrl-btn filter-dd-trigger${activeN ? ' ctrl-btn--accent' : ''}" onclick="toggleOADropdown(event)">
+      Other Artists${activeN ? ` <span style="opacity:.75">(${activeN})</span>` : ''} <span class="filter-dd-caret">▾</span>
+    </button>
+    <div class="filter-dd-menu oa-menu">
+      <div class="filter-dd-scroll">
+        ${rows || '<div class="oa-albs-note">No community artists yet — add the first one!</div>'}
+      </div>
+      <div class="filter-dd-footer">
+        <button type="button" class="ctrl-btn" onclick="event.stopPropagation();closeSJDropdown();openAddMusic()">＋ Add Music</button>
+      </div>
+    </div>
+  </div>`;
+}
 
 function amStepReset() {
   const bar = document.getElementById('amSteps'); if (!bar) return;
@@ -5618,8 +5761,14 @@ async function amImport() {
       allArtists.forEach(a => selectedIds.add(a.id));
       await loadData();
     } else {
-      amLogLine('ok', 'Find it on the Community page (♪ Community, top of the page).');
+      try {
+        const _rows3 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+        communityArtists = _rows3.filter(a => a.is_community);
+        updateFilterHeader();
+      } catch (_) {}
+      amLogLine('ok', 'Added — find it under “Other Artists” in the filter bar.');
     }
+    if (data.artist_id) delete communityAlbumsCache[data.artist_id];
     btn.innerHTML = '<span class="m-spin"></span>Finding lyrics…';
     amStepGo(2, 'Looking up lyrics & release dates…');
     const enr = await amEnrich(data.albums_detail || []);
@@ -5684,6 +5833,7 @@ const SJ_CHANGELOG = [
     'New Community page: sign in and add any artist to the jukebox straight from YouTube — search the artist, pick which albums to include, and their daily YouTube views get tracked automatically.',
     'After an import, the jukebox automatically looks up song lyrics (including synced lyrics where available) and confirms album release dates against music databases.',
     'The Add Music window now shows a step-by-step progress bar (import → lyrics & dates → live), and community albums display who added them and when.',
+    'Community artists now live in an "Other Artists" dropdown next to Purple Mountains: browse each artist\u2019s albums, add an artist to the main jukebox chart, or open their own artist jukebox.',
   ]},
   { date: '2026-07-06', items: [
     'Shuffle now plays through every song in the queue before repeating any track.',
@@ -5954,7 +6104,7 @@ function initGoogleAuth() {
         const rp = localStorage.getItem('auth_return_path');
         if (rp) {
           localStorage.removeItem('auth_return_path');
-          if (rp !== window.location.pathname) { window.location.replace(rp); return; }
+          if (rp !== window.location.pathname + window.location.search) { window.location.replace(rp); return; }
         }
       } catch (e) {}
     } else {
@@ -5992,7 +6142,7 @@ function sjAuthRedirectUrl() {
 
 async function handleAuthClick() {
   if (googleUser) return;
-  try { localStorage.setItem('auth_return_path', window.location.pathname); } catch(e) {}
+  try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch(e) {}
   await sbAuth.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: sjAuthRedirectUrl() }
@@ -7944,7 +8094,7 @@ if (IS_COMMUNITY) {
   if (_tag) _tag.innerHTML = 'The <strong>Community</strong> jukebox — music added by listeners';
   document.querySelectorAll('.hdr-brand-mobile img, .brand-block img').forEach(img => { img.title = 'Community Jukebox'; });
   const _sw = document.getElementById('page-switch-link');
-  if (_sw) { _sw.href = '/'; _sw.innerHTML = '♪ <span class="lbl">Silver Jews</span>'; _sw.title = 'Back to the Silver Jews jukebox'; }
+  if (_sw) { _sw.style.display = ''; _sw.href = '/'; _sw.innerHTML = '♪ <span class="lbl">Silver Jews</span>'; _sw.title = 'Back to the Silver Jews jukebox'; }
   const _am = document.getElementById('add-music-btn');
   if (_am) _am.style.display = '';
 }
