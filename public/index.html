@@ -5513,6 +5513,21 @@ function amLogLine(type, text) {
   b.appendChild(d); b.scrollTop = b.scrollHeight;
 }
 
+async function amEnrich(albumList) {
+  if (!albumList.length) return;
+  amLogLine('head', `▶ Looking up lyrics & album dates (${albumList.length} album${albumList.length===1?'':'s'})… this can take a minute.`);
+  for (const alb of albumList) {
+    try {
+      const data = await amFetch('?action=enrich', { method: 'POST', body: JSON.stringify({ album_id: alb.id }) });
+      (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
+    } catch (e) {
+      amLogLine('err', `  ⚠ "${alb.name}": ${e.message}`);
+    }
+  }
+  amLogLine('ok', '✓ Lyrics & dates lookup complete.');
+  if (IS_COMMUNITY) { try { await loadData(); } catch(_) {} }
+}
+
 async function amImport() {
   if (!amChannel || !amPicked.size || amBusy) return;
   amBusy = true;
@@ -5543,6 +5558,8 @@ async function amImport() {
     } else {
       amLogLine('ok', 'Find it on the Community page (♪ Community, top of the page).');
     }
+    btn.innerHTML = '<span class="m-spin"></span>Finding lyrics…';
+    await amEnrich(data.albums_detail || []);
   } catch (e) {
     amLogLine('err', `✗ ${e.message}`);
     statusEl.textContent = '✗ Error'; statusEl.style.color = '#ef4444';
@@ -5597,6 +5614,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
 const SJ_CHANGELOG = [
   { date: '2026-07-16', items: [
     'New Community page: sign in and add any artist to the jukebox straight from YouTube — search the artist, pick which albums to include, and their daily YouTube views get tracked automatically.',
+    'After an import, the jukebox automatically looks up song lyrics (including synced lyrics where available) and confirms album release dates against music databases.',
   ]},
   { date: '2026-07-06', items: [
     'Shuffle now plays through every song in the queue before repeating any track.',
