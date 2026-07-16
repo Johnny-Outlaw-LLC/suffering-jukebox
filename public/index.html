@@ -331,6 +331,19 @@ body:not(.light) .tt-num { color: var(--text); }
 .spinner { display: inline-block; width: 9px; height: 9px; border: 2px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 4px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)} }
+/* ── Community / Add Music ── */
+.hdr-page-link { text-decoration: none; white-space: nowrap; }
+.hdr-add-music-btn { white-space: nowrap; }
+.am-albums { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: .4rem; background: var(--bg-card); }
+.am-alb-row { display: flex; align-items: center; gap: .6rem; padding: .45rem .6rem; border-bottom: 1px solid var(--border); cursor: pointer; }
+.am-alb-row:last-child { border-bottom: none; }
+.am-alb-row:hover { background: var(--bg-elevated); }
+.am-alb-row.done { opacity: .45; cursor: default; }
+.am-alb-row img { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
+.am-alb-name { font-size: .58rem; font-weight: 500; }
+.am-alb-meta { font-size: .48rem; color: var(--text-muted); }
+@media (max-width: 640px) { .hdr-page-link .lbl, .hdr-add-music-btn .lbl { display: none; } }
+
 .footer-note { font-size: .48rem; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: .75rem; letter-spacing: .04em; }
 @media(max-width:820px) { header, main { padding-left: 1rem; padding-right: 1rem; } }
 
@@ -1286,7 +1299,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     <div class="hdr-r1-left">
       <div class="brand-block">
         <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox">
-        <p class="brand-tagline">An interactive <strong>Silver Jews</strong> &amp; <strong>Purple Mountains</strong> jukebox</p>
+        <p class="brand-tagline" id="brand-tagline">An interactive <strong>Silver Jews</strong> &amp; <strong>Purple Mountains</strong> jukebox</p>
       </div>
       <div id="filter-header"></div>
     </div>
@@ -1301,6 +1314,8 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           onkeydown="if(event.key==='Enter')openSearchModal(this.value)"
           oninput="scheduleSearch(this.value)">
       </div>
+      <a class="btn hdr-page-link" id="page-switch-link" href="/community" title="Community jukebox — music added by listeners">♪ <span class="lbl">Community</span></a>
+      <button class="btn hdr-add-music-btn" id="add-music-btn" onclick="openAddMusic()" style="display:none">＋<span class="lbl"> Add Music</span></button>
       <button class="btn hdr-share-btn" onclick="openPlShareModal()" title="Share the current playlist">⤴ Share</button>
       <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()" title="Sign in with Google"><span class="auth-label-full">Sign In to Remember Ratings and Play History</span><span class="auth-label-short">Sign In</span></button>
       <div class="user-menu-wrap" id="user-menu-wrap" style="display:none">
@@ -1377,6 +1392,45 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="m-btn ghost" id="mSaveBtn" onclick="saveFilter()" disabled>Save Filter</button>
       <button class="m-btn" id="mSyncBtn" onclick="runSync()" disabled>▶ Sync Now</button>
       <span class="mf-status" id="mFooterStatus"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ADD MUSIC MODAL (community imports from YouTube) -->
+<div class="modal-overlay" id="addMusicOverlay" onclick="if(event.target===this)closeAddMusic()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Add Music from YouTube</span>
+      <button class="modal-close" onclick="closeAddMusic()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <div class="m-fl">Search YouTube for an artist</div>
+        <div class="m-search-row">
+          <input type="text" class="m-input" id="amSearchInput" placeholder="Artist name…" autocomplete="off">
+          <button class="m-btn" id="amSearchBtn" onclick="amSearch()">Search</button>
+        </div>
+        <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">Tip: an artist’s “‑ Topic” channel holds their official albums.</div>
+      </div>
+      <div class="m-results-grid" id="amResultsGrid"></div>
+      <div class="m-selected-panel" id="amSelectedPanel">
+        <div class="m-sel-row">
+          <div id="amSelImg"></div>
+          <div><div class="m-sel-name" id="amSelName">-</div><div class="m-sel-meta" id="amSelMeta">-</div></div>
+        </div>
+        <div>
+          <div class="m-fl" style="display:flex;justify-content:space-between;align-items:center">Pick the albums to include
+            <button class="m-btn ghost" style="font-size:.48rem;padding:.2rem .5rem" id="amToggleAllBtn" onclick="amToggleAll()">Select All</button>
+          </div>
+          <div class="am-albums" id="amAlbumsList"></div>
+        </div>
+        <div class="m-log" id="amLog"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeAddMusic()">Cancel</button>
+      <button class="m-btn" id="amImportBtn" onclick="amImport()" disabled>＋ Add Selected</button>
+      <span class="mf-status" id="amFooterStatus"></span>
     </div>
   </div>
 </div>
@@ -1578,6 +1632,16 @@ const REST    = 'https://ntyvtpimesfoesuykuyi.supabase.co/rest/v1';
 const ANON    = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMTc0NjIsImV4cCI6MjA4OTU5MzQ2Mn0.S6hw0xc4PVKZy_OBj7eu8eRpGHEqZMJ6_6p_Lut1BpQ';
 const SYNC_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/music-sync';
 const YT_FN   = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/youtube-sync';
+const COMMUNITY_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/community-import';
+// Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
+const IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community';
+function filterPageArtists(rows) {
+  if (IS_COMMUNITY) return rows.filter(a => a.is_community);
+  return rows.filter(a => {
+    const n = a.name.toLowerCase();
+    return (n.includes('silver jews') || n.includes('purple mountains')) && !a.is_community;
+  });
+}
 
 // Hardcoded Spotify album art URLs
 const ALBUM_ART = {
@@ -4528,18 +4592,18 @@ async function confirmDeletePlaylist(id, name) {
 
 async function init() {
   try {
-    allArtists = await dbGet('/artists?select=id,name,last_sync_id&order=name.asc');
-    allArtists = allArtists.filter(a => {
-      const n = a.name.toLowerCase();
-      return n.includes('silver jews') || n.includes('purple mountains');
-    });
+    allArtists = await dbGet('/artists?select=id,name,last_sync_id,is_community&order=name.asc');
+    allArtists = filterPageArtists(allArtists);
     const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
     if (runIds.length) {
       const runs = await dbGet(`/sync_runs?id=in.(${runIds.join(',')})&select=id,pulled_at,album_count,track_count`);
       runs.forEach(r => { syncRuns[r.id] = r; });
     }
     allArtists.forEach(a => selectedIds.add(a.id));
-    if (!allArtists.length) { renderEmpty('No artists yet - use ⚙ Sync to add one'); return; }
+    if (!allArtists.length) {
+      if (IS_COMMUNITY) { renderCommunityEmpty(); } else { renderEmpty('No artists yet - use ⚙ Sync to add one'); }
+      return;
+    }
     await loadData();
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
@@ -4627,6 +4691,7 @@ function albumViews(album) {
 function albumThumb(album) {
   const art = ALBUM_ART[album.name];
   if (art) return art;
+  if (album.art_url) return album.art_url;
   const tks = (tracks[album.artist_id] || []).filter(t => t.album_id === album.id);
   const top = tks.sort((a, b) => (ytData[b.id]?.views || 0) - (ytData[a.id]?.views || 0))[0];
   return top ? ytData[top.id]?.thumbnail : null;
@@ -5305,8 +5370,8 @@ async function runSync() {
     (data.log || []).forEach(l => mLog(l.startsWith('  ') ? 'ok' : '', l));
     mLog('ok', `✓ ${data.albums} albums · ${data.tracks} tracks`);
     statusEl.textContent = '✓ Done'; statusEl.style.color = '#22c55e';
-    allArtists = await dbGet('/artists?select=id,name,last_sync_id&order=name.asc');
-    allArtists = allArtists.filter(a => { const n = a.name.toLowerCase(); return n.includes('silver jews') || n.includes('purple mountains'); });
+    allArtists = await dbGet('/artists?select=id,name,last_sync_id,is_community&order=name.asc');
+    allArtists = filterPageArtists(allArtists);
     const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
     if (runIds.length) { const runs = await dbGet(`/sync_runs?id=in.(${runIds.join(',')})&select=id,pulled_at,album_count,track_count`); runs.forEach(r => { syncRuns[r.id] = r; }); }
     const na = allArtists.find(a => a.name === modalSelected.name);
@@ -5323,6 +5388,169 @@ function mLog(type, text) {
   const b = document.getElementById('mLog'), d = document.createElement('div');
   d.className = `m-log-line ${type}`; d.textContent = text;
   b.appendChild(d); b.scrollTop = b.scrollHeight;
+}
+
+// ══════════════════════════════════════════════════════════
+// ADD MUSIC (community imports from YouTube)
+// ══════════════════════════════════════════════════════════
+let amChannel = null;      // selected channel
+let amAlbums  = [];        // playlists returned for the selected channel
+let amPicked  = new Set(); // playlist ids chosen for import
+let amBusy    = false;
+
+function renderCommunityEmpty() {
+  document.getElementById('main').innerHTML = `<div class="empty-state"><div class="big-glyph">♩</div>
+    <p>No community music yet.</p>
+    <p style="margin-top:.4rem;color:var(--text-muted);font-size:.6rem">Sign in and add any artist straight from YouTube.</p>
+    <button class="btn-gold" style="margin-top:1rem" onclick="openAddMusic()">＋ Add Music</button></div>`;
+}
+
+function openAddMusic() {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to add music to the jukebox. Sign in now?')) handleAuthClick();
+    return;
+  }
+  document.getElementById('addMusicOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('amSearchInput')?.focus(), 50);
+}
+function closeAddMusic() {
+  if (amBusy) return;
+  document.getElementById('addMusicOverlay').classList.remove('open');
+}
+document.getElementById('amSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') amSearch(); });
+
+async function amFetch(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(await sjAuthHeaders()), ...(opts.headers || {}) };
+  const res = await fetch(COMMUNITY_FN + path, { ...opts, headers });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+async function amSearch() {
+  const q = document.getElementById('amSearchInput').value.trim();
+  if (!q) return;
+  const btn = document.getElementById('amSearchBtn');
+  btn.disabled = true; btn.textContent = '…';
+  const grid = document.getElementById('amResultsGrid');
+  grid.innerHTML = '';
+  document.getElementById('amSelectedPanel').classList.remove('visible');
+  try {
+    const data = await amFetch(`?action=search&q=${encodeURIComponent(q)}`);
+    if (!data.results.length) { grid.innerHTML = '<div style="color:#444;font-size:.6rem;grid-column:1/-1">No channels found.</div>'; return; }
+    data.results.forEach(ch => {
+      const card = document.createElement('div');
+      card.className = 'm-artist-card';
+      const subs = ch.subscribers >= 1e6 ? (ch.subscribers/1e6).toFixed(1)+'M' : ch.subscribers >= 1000 ? Math.round(ch.subscribers/1000)+'K' : String(ch.subscribers || 0);
+      card.innerHTML = `${ch.thumbnail ? `<img src="${ch.thumbnail}" loading="lazy">` : '<div style="background:#1a1a1a;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:22px;color:#2a2a2a">🎵</div>'}
+        <div class="m-card-info"><div class="m-card-name">${ch.title}</div><div class="m-card-meta">${subs} subs · ${ch.videos || 0} videos</div></div>`;
+      card.addEventListener('click', () => amPickChannel(ch, card));
+      grid.appendChild(card);
+    });
+  } catch (e) { grid.innerHTML = `<div style="color:#ef4444;font-size:.6rem;grid-column:1/-1">${e.message}</div>`; }
+  finally { btn.disabled = false; btn.textContent = 'Search'; }
+}
+
+async function amPickChannel(ch, card) {
+  document.querySelectorAll('#amResultsGrid .m-artist-card').forEach(c => c.classList.remove('selected'));
+  if (card) card.classList.add('selected');
+  amChannel = ch; amAlbums = []; amPicked = new Set();
+  document.getElementById('amSelImg').innerHTML = ch.thumbnail ? `<img src="${ch.thumbnail}">` : '';
+  document.getElementById('amSelName').textContent = ch.title.replace(/ - Topic$/, '');
+  document.getElementById('amSelMeta').textContent = 'Loading albums…';
+  document.getElementById('amAlbumsList').innerHTML = '';
+  document.getElementById('amLog').innerHTML = '';
+  document.getElementById('amLog').classList.remove('open');
+  document.getElementById('amSelectedPanel').classList.add('visible');
+  document.getElementById('amImportBtn').disabled = true;
+  document.getElementById('amFooterStatus').textContent = '';
+  try {
+    const data = await amFetch(`?action=albums&channel_id=${encodeURIComponent(ch.channel_id)}&q=${encodeURIComponent(ch.title.replace(/ - Topic$/, ''))}`);
+    amAlbums = data.results;
+    document.getElementById('amSelMeta').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
+    if (!amAlbums.length) {
+      document.getElementById('amAlbumsList').innerHTML = '<div style="color:#444;font-size:.55rem;padding:.8rem">No playlists on this channel. Search again and pick the artist\u2019s “- Topic” channel — that\u2019s where albums live.</div>';
+      return;
+    }
+    renderAmAlbums();
+  } catch (e) {
+    document.getElementById('amSelMeta').textContent = e.message;
+  }
+}
+
+function renderAmAlbums() {
+  document.getElementById('amAlbumsList').innerHTML = amAlbums.map((p, i) => `
+    <div class="am-alb-row${p.already_imported ? ' done' : ''}" onclick="amToggleAlbum(${i})">
+      ${p.thumbnail ? `<img src="${p.thumbnail}" loading="lazy">` : ''}
+      <input type="checkbox" ${amPicked.has(p.playlist_id) ? 'checked' : ''} ${p.already_imported ? 'disabled' : ''} onclick="event.stopPropagation();amToggleAlbum(${i})">
+      <div style="flex:1;min-width:0">
+        <div class="am-alb-name">${p.title}</div>
+        <div class="am-alb-meta">${p.track_count} tracks${p.source === 'search' && p.channel_title ? ' · via ' + p.channel_title : ''}${p.already_imported ? ' · already in jukebox' : ''}</div>
+      </div>
+    </div>`).join('');
+  document.getElementById('amImportBtn').disabled = amPicked.size === 0 || amBusy;
+}
+
+function amToggleAlbum(i) {
+  const p = amAlbums[i];
+  if (!p || p.already_imported || amBusy) return;
+  if (amPicked.has(p.playlist_id)) amPicked.delete(p.playlist_id); else amPicked.add(p.playlist_id);
+  renderAmAlbums();
+}
+function amToggleAll() {
+  if (amBusy) return;
+  const avail = amAlbums.filter(p => !p.already_imported);
+  if (amPicked.size < avail.length) avail.forEach(p => amPicked.add(p.playlist_id));
+  else amPicked.clear();
+  renderAmAlbums();
+}
+
+function amLogLine(type, text) {
+  const b = document.getElementById('amLog');
+  b.classList.add('open');
+  const d = document.createElement('div');
+  d.className = `m-log-line ${type}`; d.textContent = text;
+  b.appendChild(d); b.scrollTop = b.scrollHeight;
+}
+
+async function amImport() {
+  if (!amChannel || !amPicked.size || amBusy) return;
+  amBusy = true;
+  const btn = document.getElementById('amImportBtn');
+  const statusEl = document.getElementById('amFooterStatus');
+  btn.disabled = true; btn.innerHTML = '<span class="m-spin"></span>Importing…';
+  document.getElementById('amLog').innerHTML = '';
+  amLogLine('head', `▶ Importing from ${amChannel.title}…`);
+  try {
+    const picked = amAlbums.filter(p => amPicked.has(p.playlist_id)).map(p => ({ id: p.playlist_id, title: p.title }));
+    const data = await amFetch('', {
+      method: 'POST',
+      body: JSON.stringify({
+        channel_id: amChannel.channel_id,
+        artist_name: amChannel.title.replace(/ - Topic$/, ''),
+        playlists: picked,
+      }),
+    });
+    if (!data.success) throw new Error(data.error || 'Import failed');
+    (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
+    statusEl.textContent = '✓ Added'; statusEl.style.color = '#22c55e';
+    amAlbums.forEach(p => { if (amPicked.has(p.playlist_id)) p.already_imported = true; });
+    amPicked.clear();
+    if (IS_COMMUNITY) {
+      allArtists = filterPageArtists(await dbGet('/artists?select=id,name,last_sync_id,is_community&order=name.asc'));
+      allArtists.forEach(a => selectedIds.add(a.id));
+      await loadData();
+    } else {
+      amLogLine('ok', 'Find it on the Community page (♪ Community, top of the page).');
+    }
+  } catch (e) {
+    amLogLine('err', `✗ ${e.message}`);
+    statusEl.textContent = '✗ Error'; statusEl.style.color = '#ef4444';
+  } finally {
+    amBusy = false;
+    renderAmAlbums();
+    btn.innerHTML = '＋ Add Selected';
+  }
 }
 
 // ResizeObserver for sub-pixel smooth line updates during live resize
@@ -5367,6 +5595,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-07-16', items: [
+    'New Community page: sign in and add any artist to the jukebox straight from YouTube — search the artist, pick which albums to include, and their daily YouTube views get tracked automatically.',
+  ]},
   { date: '2026-07-06', items: [
     'Shuffle now plays through every song in the queue before repeating any track.',
     'Signed-in users\u2019 queue and playback position are remembered and resume automatically next visit.',
@@ -5632,6 +5863,13 @@ function initGoogleAuth() {
       loadMyVotes();
       refreshSjAdminState().then(updateAuthBtn);
       restorePlaybackState();
+      try {
+        const rp = localStorage.getItem('auth_return_path');
+        if (rp) {
+          localStorage.removeItem('auth_return_path');
+          if (rp !== window.location.pathname) { window.location.replace(rp); return; }
+        }
+      } catch (e) {}
     } else {
       googleUser = null;
       sjIsAdmin = false;
@@ -5667,7 +5905,7 @@ function sjAuthRedirectUrl() {
 
 async function handleAuthClick() {
   if (googleUser) return;
-  try { localStorage.setItem('auth_return_path', '/'); } catch(e) {}
+  try { localStorage.setItem('auth_return_path', window.location.pathname); } catch(e) {}
   await sbAuth.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: sjAuthRedirectUrl() }
@@ -5680,6 +5918,9 @@ function updateAuthBtn() {
   const menuBtn = document.getElementById('user-menu-btn');
   const updatedEl = document.getElementById('user-menu-updated');
   if (!btn) return;
+
+  const amBtn = document.getElementById('add-music-btn');
+  if (amBtn) amBtn.style.display = IS_COMMUNITY ? '' : 'none';
 
   document.querySelectorAll('.user-menu-item.admin-only').forEach(el => {
     el.classList.toggle('visible', !!sjIsAdmin);
@@ -7610,6 +7851,16 @@ function updatePageTitle(visAlbList) {
   // Header now shows logo + "SUFFERING JUKEBOX" - no dynamic override needed
 }
 
+if (IS_COMMUNITY) {
+  document.title = 'Community Jukebox — Suffering Jukebox';
+  const _tag = document.getElementById('brand-tagline');
+  if (_tag) _tag.innerHTML = 'The <strong>Community</strong> jukebox — music added by listeners';
+  document.querySelectorAll('.hdr-brand-mobile img, .brand-block img').forEach(img => { img.title = 'Community Jukebox'; });
+  const _sw = document.getElementById('page-switch-link');
+  if (_sw) { _sw.href = '/'; _sw.innerHTML = '♪ <span class="lbl">Silver Jews</span>'; _sw.title = 'Back to the Silver Jews jukebox'; }
+  const _am = document.getElementById('add-music-btn');
+  if (_am) _am.style.display = '';
+}
 init();
 </script>
 <footer style="text-align:center;padding:1.5rem 2rem 2rem;font-family:var(--mono);font-size:.46rem;color:var(--text-muted);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:2rem">
