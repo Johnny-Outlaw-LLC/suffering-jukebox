@@ -1330,13 +1330,13 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <div class="hdr-r1">
     <div class="hdr-r1-left">
       <div class="brand-block">
-        <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox">
+        <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="window.location.href='/'" title="Back to the Silver Jews jukebox">
         <p class="brand-tagline" id="brand-tagline">An interactive <strong>Silver Jews</strong> &amp; <strong>Purple Mountains</strong> jukebox</p>
       </div>
       <div id="filter-header"></div>
     </div>
     <div class="brand-block hdr-brand-mobile">
-      <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox">
+      <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="window.location.href='/'" title="Back to the Silver Jews jukebox">
     </div>
     <div class="header-btns">
       <div class="hdr-search-wrap">
@@ -4660,6 +4660,7 @@ async function init() {
   try {
     const _artistRows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
     communityArtists = _artistRows.filter(a => a.is_community);
+    mainCatalogArtists = _artistRows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     allArtists = filterPageArtists(_artistRows);
     if (!IS_COMMUNITY) {
       restoreOtherArtists();
@@ -5501,6 +5502,7 @@ async function runSync() {
     statusEl.textContent = '✓ Done'; statusEl.style.color = '#22c55e';
     const _rows2 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
     communityArtists = _rows2.filter(a => a.is_community);
+    mainCatalogArtists = _rows2.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     allArtists = filterPageArtists(_rows2);
     if (!IS_COMMUNITY) restoreOtherArtists();
     const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
@@ -5531,6 +5533,7 @@ let amBusy    = false;
 
 // ── OTHER ARTISTS — community artists surfaced on the main page ──
 let communityArtists = [];
+let mainCatalogArtists = [];   // Silver Jews + Purple Mountains rows (for community-page nav)
 let communityAlbumsCache = {};
 const oaExpanded = new Set();
 const addedCommunityIds = new Set();
@@ -5602,7 +5605,9 @@ function renderOtherArtistsBtn() {
   const esc = s => (s || '').replace(/</g, '&lt;');
   // On an artist jukebox page, list every community artist except the featured one
   const _featuredId = IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null;
-  const _oaList = _featuredId ? communityArtists.filter(a => a.id !== _featuredId) : communityArtists;
+  const _commList = _featuredId ? communityArtists.filter(a => a.id !== _featuredId) : communityArtists;
+  // Community pages also list the main-jukebox artists (Silver Jews / Purple Mountains) up top
+  const _oaList = IS_COMMUNITY ? [...mainCatalogArtists, ..._commList] : _commList;
   const activeN = IS_COMMUNITY ? 0 : [...addedCommunityIds].filter(id => communityArtists.find(a => a.id === id)).length;
   const rows = _oaList.map(a => {
     const inJuke = addedCommunityIds.has(a.id);
@@ -5612,17 +5617,17 @@ function renderOtherArtistsBtn() {
     if (isExp) {
       if (albs === undefined)  albRows = '<div class="oa-albs-note">Loading albums…</div>';
       else if (!albs.length)   albRows = '<div class="oa-albs-note">No albums yet</div>';
-      else albRows = albs.map(al => `<div class="oa-alb">${!IS_COMMUNITY && inJuke ? `<input type="checkbox" ${isAlbumVisible(al.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="oaToggleAlbum('${al.id}', this.checked)" title="Include this album in the jukebox chart">` : ''}${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
+      else albRows = albs.map(al => `<div class="oa-alb">${!IS_COMMUNITY && inJuke ? `<input type="checkbox" ${isAlbumVisible(al.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="oaToggleAlbum('${al.id}', this.checked)" title="Include this album in the jukebox chart">` : ''}${(al.art_url || ALBUM_ART[al.name]) ? `<img src="${al.art_url || ALBUM_ART[al.name]}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
     }
     return `<div class="oa-artist">
       <div class="oa-artist-row" onclick="event.stopPropagation();oaToggleExpand('${a.id}')" title="Show albums">
         <span class="oa-caret">${isExp ? '▾' : '▸'}</span>
         <div class="oa-info">
           <div class="oa-name">${esc(a.name)}</div>
-          <div class="oa-meta">${a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist'}</div>
+          <div class="oa-meta">${a.is_community === false ? 'main jukebox artist' : (a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist')}</div>
         </div>
         ${IS_COMMUNITY ? '' : `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>`}
-        <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='/community?artist=${a.id}'" title="Open a jukebox with only this artist">Artist Jukebox →</button>
+        <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='${a.is_community === false ? '/' : `/community?artist=${a.id}`}'" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
     </div>`;
@@ -5845,6 +5850,7 @@ async function amImport() {
       try {
         const _rows3 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
         communityArtists = _rows3.filter(a => a.is_community);
+    mainCatalogArtists = _rows3.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
         updateFilterHeader();
       } catch (_) {}
       amLogLine('ok', 'Added — find it under “Other Artists” in the filter bar.');
@@ -6238,7 +6244,7 @@ function updateAuthBtn() {
   if (!btn) return;
 
   const amBtn = document.getElementById('add-music-btn');
-  if (amBtn) amBtn.style.display = IS_COMMUNITY ? '' : 'none';
+  if (amBtn) amBtn.style.display = 'none';
 
   document.querySelectorAll('.user-menu-item.admin-only').forEach(el => {
     el.classList.toggle('visible', !!sjIsAdmin);
@@ -8174,10 +8180,8 @@ if (IS_COMMUNITY) {
   const _tag = document.getElementById('brand-tagline');
   if (_tag) _tag.innerHTML = 'The <strong>Community</strong> jukebox — music added by listeners';
   document.querySelectorAll('.hdr-brand-mobile img, .brand-block img').forEach(img => { img.title = 'Community Jukebox'; });
-  const _sw = document.getElementById('page-switch-link');
-  if (_sw) { _sw.style.display = ''; _sw.href = '/'; _sw.innerHTML = '♪ <span class="lbl">Silver Jews</span>'; _sw.title = 'Back to the Silver Jews jukebox'; }
-  const _am = document.getElementById('add-music-btn');
-  if (_am) _am.style.display = '';
+  // Header ♪ Silver Jews link and toolbar Add Music intentionally stay hidden:
+  // the logo click goes home and Add Music lives in the Other Artists dropdown.
 }
 init();
 </script>
