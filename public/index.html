@@ -342,6 +342,18 @@ body:not(.light) .tt-num { color: var(--text); }
 .am-alb-row img { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
 .am-alb-name { font-size: .58rem; font-weight: 500; }
 .am-alb-meta { font-size: .48rem; color: var(--text-muted); }
+.am-steps { display: flex; gap: .45rem; flex-wrap: wrap; }
+.am-step { display: flex; align-items: center; gap: .4rem; font-family: var(--mono); font-size: .52rem; letter-spacing: .05em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px; padding: .28rem .7rem .28rem .32rem; transition: color .2s, border-color .2s; }
+.am-step-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--bg-elevated); display: flex; align-items: center; justify-content: center; font-size: .5rem; flex-shrink: 0; }
+.am-step.active { color: var(--accent); border-color: var(--accent); }
+.am-step.active .am-step-dot { background: var(--accent); color: #000; }
+.am-step.done { color: #22c55e; border-color: #22c55e55; }
+.am-step.done .am-step-dot { background: #22c55e22; color: #22c55e; }
+.am-step.err { color: #ef4444; border-color: #ef4444; }
+.am-step-status { font-family: var(--mono); font-size: .52rem; color: var(--text-muted); letter-spacing: .04em; }
+.am-step-status.ok { color: #22c55e; }
+.am-step-status.err { color: #ef4444; }
+.alb-added-by { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); padding: .45rem .75rem .25rem; letter-spacing: .05em; }
 @media (max-width: 640px) { .hdr-page-link .lbl, .hdr-add-music-btn .lbl { display: none; } }
 
 .footer-note { font-size: .48rem; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: .75rem; letter-spacing: .04em; }
@@ -1404,6 +1416,12 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="modal-close" onclick="closeAddMusic()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="am-steps" id="amSteps" style="display:none">
+        <div class="am-step"><span class="am-step-dot">1</span>Import from YouTube</div>
+        <div class="am-step"><span class="am-step-dot">2</span>Lyrics &amp; dates</div>
+        <div class="am-step"><span class="am-step-dot">3</span>Live on the jukebox</div>
+      </div>
+      <div class="am-step-status" id="amStepStatus" style="display:none"></div>
       <div>
         <div class="m-fl">Search YouTube for an artist</div>
         <div class="m-search-row">
@@ -4757,7 +4775,9 @@ function renderTrackLines(alb, mode = 'inline') {
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
     </div>
     <div class="trk-accordion" data-acc="${t.id}"></div>`;
-  }).join('');
+  }).join('') + (IS_COMMUNITY && alb.added_by_name
+    ? `<div class="alb-added-by">Added to the community by ${(alb.added_by_name || '').replace(/</g, '&lt;')}${alb.created_at ? ' · ' + new Date(alb.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}</div>`
+    : '');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -5090,7 +5110,7 @@ function renderListView(albList, sortOverride) {
         ${thumb ? `<img src="${thumb}" loading="lazy" class="list-art">` : `<div class="list-art-ph" style="background:${color}22;color:${color}">${alb.name.charAt(0)}</div>`}
         <div class="list-info">
           <div class="list-name">${alb.name}</div>
-          <div class="list-meta">${yr} · ${albTracks.length} tracks</div>
+          <div class="list-meta">${yr} · ${albTracks.length} tracks${IS_COMMUNITY && alb.added_by_name ? ` · added by ${(alb.added_by_name || '').replace(/</g, '&lt;')}` : ''}</div>
         </div>
         ${_showListMetric ? `<div class="list-views-block">
           <div class="list-views" style="color:var(--accent)">${_listMetricFmt}</div>
@@ -5398,6 +5418,39 @@ let amAlbums  = [];        // playlists returned for the selected channel
 let amPicked  = new Set(); // playlist ids chosen for import
 let amBusy    = false;
 
+function amStepReset() {
+  const bar = document.getElementById('amSteps'); if (!bar) return;
+  bar.style.display = 'none';
+  const st = document.getElementById('amStepStatus');
+  st.style.display = 'none'; st.className = 'am-step-status'; st.textContent = '';
+  bar.querySelectorAll('.am-step').forEach((el, i) => { el.className = 'am-step'; el.querySelector('.am-step-dot').textContent = String(i + 1); });
+}
+function amStepGo(n, status) {
+  const bar = document.getElementById('amSteps'); if (!bar) return;
+  bar.style.display = '';
+  bar.querySelectorAll('.am-step').forEach((el, i) => {
+    const dot = el.querySelector('.am-step-dot');
+    if (i < n - 1)        { el.className = 'am-step done';   dot.textContent = '\u2713'; }
+    else if (i === n - 1) { el.className = 'am-step active'; dot.textContent = String(i + 1); }
+    else                  { el.className = 'am-step';        dot.textContent = String(i + 1); }
+  });
+  const st = document.getElementById('amStepStatus');
+  st.style.display = ''; st.className = 'am-step-status'; st.textContent = status || '';
+}
+function amStepDone(status) {
+  const bar = document.getElementById('amSteps'); if (!bar) return;
+  bar.style.display = '';
+  bar.querySelectorAll('.am-step').forEach(el => { el.className = 'am-step done'; el.querySelector('.am-step-dot').textContent = '\u2713'; });
+  const st = document.getElementById('amStepStatus');
+  st.style.display = ''; st.className = 'am-step-status ok'; st.textContent = status || '';
+}
+function amStepFail(msg) {
+  const st = document.getElementById('amStepStatus'); if (!st) return;
+  st.style.display = ''; st.className = 'am-step-status err'; st.textContent = '\u2717 ' + msg;
+  const act = document.querySelector('#amSteps .am-step.active');
+  if (act) act.classList.add('err');
+}
+
 function renderCommunityEmpty() {
   document.getElementById('main').innerHTML = `<div class="empty-state"><div class="big-glyph">♩</div>
     <p>No community music yet.</p>
@@ -5434,6 +5487,7 @@ async function amSearch() {
   btn.disabled = true; btn.textContent = '…';
   const grid = document.getElementById('amResultsGrid');
   grid.innerHTML = '';
+  amStepReset();
   document.getElementById('amSelectedPanel').classList.remove('visible');
   try {
     const data = await amFetch(`?action=search&q=${encodeURIComponent(q)}`);
@@ -5514,18 +5568,25 @@ function amLogLine(type, text) {
 }
 
 async function amEnrich(albumList) {
-  if (!albumList.length) return;
-  amLogLine('head', `▶ Looking up lyrics & album dates (${albumList.length} album${albumList.length===1?'':'s'})… this can take a minute.`);
-  for (const alb of albumList) {
+  const out = { lyrics: 0, synced: 0, dates: 0 };
+  if (!albumList.length) return out;
+  amLogLine('head', `▶ Looking up lyrics & album dates (${albumList.length} album${albumList.length===1?'':'s'})…`);
+  for (let i = 0; i < albumList.length; i++) {
+    const alb = albumList[i];
+    amStepGo(2, `Album ${i + 1} of ${albumList.length}: “${alb.name}” — fetching lyrics & release date…`);
     try {
       const data = await amFetch('?action=enrich', { method: 'POST', body: JSON.stringify({ album_id: alb.id }) });
       (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
+      out.lyrics += data.lyrics_found || 0;
+      out.synced += data.lyrics_synced || 0;
+      if (data.date_updated) out.dates++;
     } catch (e) {
-      amLogLine('err', `  ⚠ "${alb.name}": ${e.message}`);
+      amLogLine('err', `  ⚠ "${alb.name}": ${e.message} — you can retry this album later.`);
     }
   }
   amLogLine('ok', '✓ Lyrics & dates lookup complete.');
   if (IS_COMMUNITY) { try { await loadData(); } catch(_) {} }
+  return out;
 }
 
 async function amImport() {
@@ -5535,6 +5596,7 @@ async function amImport() {
   const statusEl = document.getElementById('amFooterStatus');
   btn.disabled = true; btn.innerHTML = '<span class="m-spin"></span>Importing…';
   document.getElementById('amLog').innerHTML = '';
+  amStepGo(1, `Importing ${amPicked.size} album${amPicked.size === 1 ? '' : 's'} from YouTube…`);
   amLogLine('head', `▶ Importing from ${amChannel.title}…`);
   try {
     const picked = amAlbums.filter(p => amPicked.has(p.playlist_id)).map(p => ({ id: p.playlist_id, title: p.title }));
@@ -5559,9 +5621,15 @@ async function amImport() {
       amLogLine('ok', 'Find it on the Community page (♪ Community, top of the page).');
     }
     btn.innerHTML = '<span class="m-spin"></span>Finding lyrics…';
-    await amEnrich(data.albums_detail || []);
+    amStepGo(2, 'Looking up lyrics & release dates…');
+    const enr = await amEnrich(data.albums_detail || []);
+    amStepDone(`All set — ${data.tracks} track${data.tracks === 1 ? '' : 's'} live on the Community page` +
+      (enr && enr.lyrics ? ` · lyrics for ${enr.lyrics}` : '') +
+      (enr && enr.dates ? ` · ${enr.dates} release date${enr.dates === 1 ? '' : 's'} corrected` : '') +
+      '. Daily view tracking starts tonight.');
   } catch (e) {
     amLogLine('err', `✗ ${e.message}`);
+    amStepFail(e.message);
     statusEl.textContent = '✗ Error'; statusEl.style.color = '#ef4444';
   } finally {
     amBusy = false;
@@ -5615,6 +5683,7 @@ const SJ_CHANGELOG = [
   { date: '2026-07-16', items: [
     'New Community page: sign in and add any artist to the jukebox straight from YouTube — search the artist, pick which albums to include, and their daily YouTube views get tracked automatically.',
     'After an import, the jukebox automatically looks up song lyrics (including synced lyrics where available) and confirms album release dates against music databases.',
+    'The Add Music window now shows a step-by-step progress bar (import → lyrics & dates → live), and community albums display who added them and when.',
   ]},
   { date: '2026-07-06', items: [
     'Shuffle now plays through every song in the queue before repeating any track.',
