@@ -1358,6 +1358,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="clog-link" onclick="openChangelog(event)">Change Log</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
+          <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
@@ -1469,6 +1470,23 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="m-btn ghost" onclick="closeAddMusic()">Cancel</button>
       <button class="m-btn" id="amImportBtn" onclick="amImport()" disabled>＋ Add Selected</button>
       <span class="mf-status" id="amFooterStatus"></span>
+    </div>
+  </div>
+</div>
+
+<!-- MANAGE MY ARTISTS MODAL -->
+<div class="modal-overlay" id="myArtistsOverlay" onclick="if(event.target===this)closeMyArtists()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Manage My Artists</span>
+      <button class="modal-close" onclick="closeMyArtists()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="myArtistsBody"><div class="oa-albs-note">Loading…</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeMyArtists()">Close</button>
+      <span class="mf-status" id="maStatus"></span>
     </div>
   </div>
 </div>
@@ -5797,9 +5815,20 @@ async function amSearch() {
       const card = document.createElement('div');
       card.className = 'm-artist-card';
       const subs = ch.subscribers >= 1e6 ? (ch.subscribers/1e6).toFixed(1)+'M' : ch.subscribers >= 1000 ? Math.round(ch.subscribers/1000)+'K' : String(ch.subscribers || 0);
+      const isMainDup = ch.existing_is_community === false;
+      const dupNote = isMainDup ? '<span style="color:#ef4444"> · already on the main jukebox</span>'
+        : ch.existing_artist_id ? '<span style="color:var(--accent)"> · in jukebox — add missing albums</span>' : '';
+      if (isMainDup) card.style.opacity = '.45';
       card.innerHTML = `${ch.thumbnail ? `<img src="${ch.thumbnail}" loading="lazy">` : '<div style="background:#1a1a1a;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:22px;color:#2a2a2a">🎵</div>'}
-        <div class="m-card-info"><div class="m-card-name">${ch.title}</div><div class="m-card-meta">${subs} subs · ${ch.videos || 0} videos</div></div>`;
-      card.addEventListener('click', () => amPickChannel(ch, card));
+        <div class="m-card-info"><div class="m-card-name">${ch.title}</div><div class="m-card-meta">${subs} subs · ${ch.videos || 0} videos${dupNote}</div></div>`;
+      card.addEventListener('click', () => {
+        if (isMainDup) {
+          document.getElementById('amFooterStatus').textContent = `"${ch.existing_name || ch.title}" is already on the main jukebox.`;
+          document.getElementById('amFooterStatus').style.color = '#ef4444';
+          return;
+        }
+        amPickChannel(ch, card);
+      });
       grid.appendChild(card);
     });
   } catch (e) { grid.innerHTML = `<div style="color:#ef4444;font-size:.6rem;grid-column:1/-1">${e.message}</div>`; }
@@ -5820,7 +5849,8 @@ async function amPickChannel(ch, card) {
   document.getElementById('amImportBtn').disabled = true;
   document.getElementById('amFooterStatus').textContent = '';
   try {
-    const data = await amFetch(`?action=albums&channel_id=${encodeURIComponent(ch.channel_id)}&q=${encodeURIComponent(ch.title.replace(/ - Topic$/, ''))}`);
+    const artistPlain = ch.title.replace(/ - Topic$/, '');
+    const data = await amFetch(`?action=albums&channel_id=${encodeURIComponent(ch.channel_id)}&q=${encodeURIComponent(artistPlain)}`);
     amAlbums = data.results;
     document.getElementById('amSelMeta').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
     if (!amAlbums.length) {
@@ -5828,6 +5858,19 @@ async function amPickChannel(ch, card) {
       return;
     }
     renderAmAlbums();
+    // Compare against the artist's Wikipedia discography and pre-select matches
+    document.getElementById('amSelMeta').textContent += ' · checking Wikipedia…';
+    try {
+      const wiki = await amWikiDiscography(artistPlain);
+      if (amChannel !== ch) return;   // user picked a different channel meanwhile
+      const matched = amApplySuggestions(wiki, artistPlain);
+      document.getElementById('amSelMeta').textContent =
+        `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found` +
+        (wiki.length ? ` · ${matched} of ${wiki.length} discography album${wiki.length===1?'':'s'} matched ✦` : ' · no Wikipedia discography found');
+      renderAmAlbums();
+    } catch (_) {
+      document.getElementById('amSelMeta').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
+    }
   } catch (e) {
     document.getElementById('amSelMeta').textContent = e.message;
   }
@@ -5840,10 +5883,200 @@ function renderAmAlbums() {
       <input type="checkbox" ${amPicked.has(p.playlist_id) ? 'checked' : ''} ${p.already_imported ? 'disabled' : ''} onclick="event.stopPropagation();amToggleAlbum(${i})">
       <div style="flex:1;min-width:0">
         <div class="am-alb-name">${p.title}</div>
-        <div class="am-alb-meta">${p.track_count} tracks${p.source === 'search' && p.channel_title ? ' · via ' + p.channel_title : ''}${p.already_imported ? ' · already in jukebox' : ''}</div>
+        <div class="am-alb-meta">${p.wiki_match ? `<span style="color:var(--accent)">✦ Wikipedia: ${p.wiki_match}</span> · ` : ''}${p.track_count} tracks${p.source === 'search' && p.channel_title ? ' · via ' + p.channel_title : ''}${p.already_imported ? ' · already in jukebox' : ''}</div>
       </div>
     </div>`).join('');
   document.getElementById('amImportBtn').disabled = amPicked.size === 0 || amBusy;
+}
+
+// ── Wikipedia discography → suggested playlists ──────────────────────────────
+// Mirrors the edge function's cleanAlbumName so titles match the same way
+function amCleanAlbumTitle(title, artistName) {
+  let t = title || '';
+  const pfx = new RegExp('^' + artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[-–—:/]\\s*', 'i');
+  t = t.replace(pfx, '');
+  t = t.replace(/\s*[\(\[][^\)\]]*(full\s+album|official|complete|hq|hd|remaster)[^\)\]]*[\)\]]\s*/gi, ' ');
+  t = t.replace(/\s*(full\s+album|album\s+completo)\s*$/i, '');
+  t = t.replace(/\s+/g, ' ').replace(/[\s\-–—/|]+$/g, '').trim();
+  return t || title;
+}
+
+// Fetch the artist's studio-album list: Wikipedia first, MusicBrainz fallback
+async function amWikiDiscography(artist) {
+  const albums = [];
+  const W = 'https://en.wikipedia.org/w/api.php';
+  const wget = async (params) => (await fetch(W + '?' + new URLSearchParams({ format: 'json', origin: '*', ...params }))).json();
+  try {
+    // Prefer a dedicated "<artist> discography" page…
+    const s = await wget({ action: 'query', list: 'search', srsearch: `intitle:"${artist} discography"`, srlimit: '3' });
+    const page = (s.query?.search || []).find(p => /discography/i.test(p.title) && p.title.toLowerCase().includes(artist.toLowerCase()))?.title;
+    let wikitext = '';
+    if (page) {
+      const d = await wget({ action: 'parse', page, prop: 'wikitext' });
+      wikitext = d.parse?.wikitext?.['*'] || '';
+      const m = wikitext.match(/==+\s*Studio albums\s*==+([\s\S]*?)(\n==[^=]|$)/i);
+      if (m) wikitext = m[1];
+    } else {
+      // …else the Discography section of the artist's own page
+      const s2 = await wget({ action: 'query', list: 'search', srsearch: artist, srlimit: '1' });
+      const t2 = s2.query?.search?.[0]?.title;
+      if (t2) {
+        const d2 = await wget({ action: 'parse', page: t2, prop: 'wikitext' });
+        const full = d2.parse?.wikitext?.['*'] || '';
+        const m2 = full.match(/==+\s*Discography\s*==+([\s\S]*?)(\n==[^=]|$)/i);
+        wikitext = m2 ? m2[1] : '';
+      }
+    }
+    const seen = new Set();
+    const re = /''\[\[([^\]|#]+?)(?:\|[^\]]*)?\]\]''|^\s*\*+\s*''([^'\[][^']*)''/gm;
+    let mt;
+    while ((mt = re.exec(wikitext)) !== null) {
+      const t = (mt[1] || mt[2] || '').replace(/\s*\([^)]*album[^)]*\)\s*$/i, '').trim();
+      if (t && t.length < 80 && !seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); albums.push(t); }
+    }
+  } catch (_) { /* Wikipedia down → fall through */ }
+  if (!albums.length) {
+    try {
+      const ar = await (await fetch(`https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent('"' + artist + '"')}&limit=1&fmt=json`)).json();
+      const top = ar.artists?.[0];
+      if (top && (top.score ?? 0) >= 90) {
+        const rg = await (await fetch(`https://musicbrainz.org/ws/2/release-group?artist=${top.id}&type=album&limit=100&fmt=json`)).json();
+        (rg['release-groups'] || []).forEach(g => {
+          if ((g['primary-type'] || '') === 'Album' && !(g['secondary-types'] || []).length) albums.push(g.title);
+        });
+      }
+    } catch (_) {}
+  }
+  return albums;
+}
+
+// Match discography names to playlists; pre-check the best playlist per album
+function amApplySuggestions(wikiAlbums, artistName) {
+  const n = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  let matched = 0;
+  wikiAlbums.forEach(w => {
+    const wn = n(w);
+    if (!wn || wn.length < 3) return;
+    let best = null, bestScore = -1;
+    amAlbums.forEach(p => {
+      if (p.wiki_match) return;
+      const pn = n(amCleanAlbumTitle(p.title, artistName));
+      if (!(pn === wn || pn.includes(wn) || (wn.includes(pn) && pn.length >= 5))) return;
+      const score = (pn === wn ? 4 : 2) + (p.source === 'channel' ? 1 : 0) + (p.track_count >= 5 && p.track_count <= 30 ? 1 : 0);
+      if (score > bestScore) { bestScore = score; best = p; }
+    });
+    if (best) {
+      best.wiki_match = w;
+      matched++;
+      if (!best.already_imported) amPicked.add(best.playlist_id);
+    }
+  });
+  amAlbums.sort((a, b) => (b.wiki_match ? 1 : 0) - (a.wiki_match ? 1 : 0));
+  return matched;
+}
+
+// ── MANAGE MY ARTISTS ────────────────────────────────────────────────────────
+let _maData = [];
+function openMyArtists() {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to manage your artists. Sign in now?')) handleAuthClick();
+    return;
+  }
+  document.getElementById('myArtistsOverlay').classList.add('open');
+  loadMyArtists();
+}
+function closeMyArtists() { document.getElementById('myArtistsOverlay').classList.remove('open'); }
+
+async function loadMyArtists() {
+  const body = document.getElementById('myArtistsBody');
+  body.innerHTML = '<div class="oa-albs-note">Loading…</div>';
+  try {
+    const d = await amFetch('?action=my_artists');
+    _maData = d.artists || [];
+    renderMyArtists(!!d.is_admin);
+  } catch (e) {
+    body.innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${e.message}</div>`;
+  }
+}
+
+function renderMyArtists(isAdmin) {
+  const esc = s => (s || '').replace(/</g, '&lt;');
+  const body = document.getElementById('myArtistsBody');
+  if (!_maData.length) {
+    body.innerHTML = '<div class="oa-albs-note">You haven\u2019t added any artists yet — use ＋ Add Music to import one from YouTube.</div>';
+    return;
+  }
+  body.innerHTML = _maData.map(a => `
+    <div class="oa-artist">
+      <div class="oa-artist-row" style="cursor:default">
+        <div class="oa-info">
+          <div class="oa-name">${esc(a.name)}</div>
+          <div class="oa-meta">${a.albums.length} album${a.albums.length===1?'':'s'} · ${a.track_count} track${a.track_count===1?'':'s'}${isAdmin && !a.mine ? ' · added by ' + esc(a.added_by_name || '?') : ''}</div>
+        </div>
+        <button type="button" class="oa-act" onclick="maRename('${a.id}')">✎ Rename</button>
+        <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444" onclick="maDeleteArtist('${a.id}')">✕ Remove</button>
+      </div>
+      <div class="oa-albs">
+        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function maBusy(msg, err) {
+  const st = document.getElementById('maStatus');
+  if (st) { st.textContent = msg || ''; st.style.color = err ? '#ef4444' : 'var(--text-muted)'; }
+}
+
+async function maRename(artistId) {
+  const a = _maData.find(x => x.id === artistId); if (!a) return;
+  const name = prompt('New artist name:', a.name);
+  if (!name || !name.trim() || name.trim() === a.name) return;
+  maBusy('Renaming…');
+  try {
+    await amFetch('?action=rename_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId, name: name.trim() }) });
+    maBusy('✓ Renamed');
+    await maAfterChange();
+  } catch (e) { maBusy('✗ ' + e.message, true); }
+}
+
+async function maDeleteAlbum(artistId, albumId) {
+  const a = _maData.find(x => x.id === artistId);
+  const al = a && a.albums.find(x => x.id === albumId);
+  if (!al) return;
+  if (!confirm(`Remove "${al.name}" and all its tracks? This cannot be undone.`)) return;
+  maBusy('Removing album…');
+  try {
+    await amFetch('?action=delete_album', { method: 'POST', body: JSON.stringify({ album_id: albumId }) });
+    maBusy('✓ Album removed');
+    await maAfterChange();
+  } catch (e) { maBusy('✗ ' + e.message, true); }
+}
+
+async function maDeleteArtist(artistId) {
+  const a = _maData.find(x => x.id === artistId); if (!a) return;
+  if (!confirm(`Remove "${a.name}" (${a.albums.length} album${a.albums.length===1?'':'s'}, ${a.track_count} tracks)? This cannot be undone.`)) return;
+  maBusy('Removing artist…');
+  try {
+    await amFetch('?action=delete_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId }) });
+    maBusy('✓ Artist removed');
+    await maAfterChange();
+  } catch (e) { maBusy('✗ ' + e.message, true); }
+}
+
+// Refresh app state after a manage action, then re-render the modal list
+async function maAfterChange() {
+  try {
+    const rows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+    communityArtists = rows.filter(a => a.is_community);
+    mainCatalogArtists = rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
+    communityAlbumsCache = {};
+    allArtists = filterPageArtists(rows);
+    restoreOtherArtists();
+    selectedIds = new Set(allArtists.map(a => a.id));
+    await loadData();
+    updateFilterHeader();
+  } catch (_) {}
+  await loadMyArtists();
 }
 
 function amToggleAlbum(i) {
@@ -6142,6 +6375,10 @@ async function userMenuAction(action) {
   }
   if (action === 'shares') {
     openManageShares();
+    return;
+  }
+  if (action === 'myartists') {
+    openMyArtists();
     return;
   }
   if (action === 'logout') {
