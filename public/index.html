@@ -353,6 +353,22 @@ body:not(.light) .tt-num { color: var(--text); }
 .am-step-status { font-family: var(--mono); font-size: .52rem; color: var(--text-muted); letter-spacing: .04em; }
 .am-step-status.ok { color: #22c55e; }
 .am-step-status.err { color: #ef4444; }
+.am-pane { display: none; }
+.am-pane.active { display: flex; flex-direction: column; gap: 1.1rem; }
+.am-sel-strip { display: flex; align-items: center; gap: .7rem; background: #161311; border: 1px solid var(--accent); border-radius: 8px; padding: .6rem .8rem; }
+.am-ft-section { display: flex; flex-direction: column; gap: .4rem; margin-bottom: 1rem; }
+.am-ft-row { display: flex; gap: .7rem; align-items: flex-start; background: #141414; border: 1px solid #262626; border-radius: 8px; padding: .7rem; }
+.am-ft-cover { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; flex-shrink: 0; display: block; background: #1a1a1a; }
+.am-ft-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .45rem; }
+.am-ft-yr { width: 76px; flex-shrink: 0; }
+.am-ft-arts { display: flex; gap: .35rem; flex-wrap: wrap; }
+.am-ft-arts img { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 2px solid transparent; opacity: .65; transition: opacity .15s, border-color .15s; }
+.am-ft-arts img:hover { opacity: 1; }
+.am-ft-arts img.sel { border-color: var(--accent); opacity: 1; }
+.am-swatches { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
+.am-swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid #333; box-sizing: border-box; padding: 0; }
+.am-swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px #ffffff33; }
+.am-swatch-custom { width: 26px; height: 26px; border-radius: 50%; border: 2px dashed #555; background: none; cursor: pointer; padding: 0; }
 .alb-added-by { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); padding: .45rem .75rem .25rem; letter-spacing: .05em; }
 .oa-menu { min-width: 340px; max-width: min(92vw, 460px); }
 .oa-artist { border-bottom: 1px solid var(--border); }
@@ -1437,25 +1453,36 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="modal-close" onclick="closeAddMusic()">✕</button>
     </div>
     <div class="modal-body">
-      <div class="am-steps" id="amSteps" style="display:none">
-        <div class="am-step"><span class="am-step-dot">1</span>Import from YouTube</div>
-        <div class="am-step"><span class="am-step-dot">2</span>Lyrics &amp; dates</div>
-        <div class="am-step"><span class="am-step-dot">3</span>Live on the jukebox</div>
+      <div class="am-steps" id="amSteps">
+        <div class="am-step"><span class="am-step-dot">1</span>Find the artist</div>
+        <div class="am-step"><span class="am-step-dot">2</span>Pick albums</div>
+        <div class="am-step"><span class="am-step-dot">3</span>Lyrics &amp; dates</div>
+        <div class="am-step"><span class="am-step-dot">4</span>Fine-tune</div>
       </div>
       <div class="am-step-status" id="amStepStatus" style="display:none"></div>
-      <div>
-        <div class="m-fl">Search YouTube for an artist</div>
-        <div class="m-search-row">
-          <input type="text" class="m-input" id="amSearchInput" placeholder="Artist name…" autocomplete="off">
-          <button class="m-btn" id="amSearchBtn" onclick="amSearch()">Search</button>
+      <!-- STEP 1: artist search & identification -->
+      <div class="am-pane active" id="amPane1">
+        <div>
+          <div class="m-fl">Search YouTube for an artist</div>
+          <div class="m-search-row">
+            <input type="text" class="m-input" id="amSearchInput" placeholder="Artist name…" autocomplete="off">
+            <button class="m-btn" id="amSearchBtn" onclick="amSearch()">Search</button>
+          </div>
+          <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">Tip: an artist’s “‑ Topic” channel holds their official albums.</div>
         </div>
-        <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">Tip: an artist’s “‑ Topic” channel holds their official albums.</div>
+        <div class="m-results-grid" id="amResultsGrid"></div>
+        <div class="am-sel-strip" id="amSelStrip" style="display:none">
+          <div class="m-sel-row" style="flex:1">
+            <div id="amSelImg"></div>
+            <div><div class="m-sel-name" id="amSelName">-</div><div class="m-sel-meta" id="amSelMeta">-</div></div>
+          </div>
+        </div>
       </div>
-      <div class="m-results-grid" id="amResultsGrid"></div>
-      <div class="m-selected-panel" id="amSelectedPanel">
+      <!-- STEP 2: album selection -->
+      <div class="am-pane" id="amPane2">
         <div class="m-sel-row">
-          <div id="amSelImg"></div>
-          <div><div class="m-sel-name" id="amSelName">-</div><div class="m-sel-meta" id="amSelMeta">-</div></div>
+          <div id="amSelImg2"></div>
+          <div><div class="m-sel-name" id="amSelName2">-</div><div class="m-sel-meta" id="amSelMeta2">-</div></div>
         </div>
         <div>
           <div class="m-fl" style="display:flex;justify-content:space-between;align-items:center">Pick the albums to include
@@ -1463,12 +1490,20 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           </div>
           <div class="am-albums" id="amAlbumsList"></div>
         </div>
+      </div>
+      <!-- STEP 3: import + lyric discovery -->
+      <div class="am-pane" id="amPane3">
         <div class="m-log" id="amLog"></div>
+      </div>
+      <!-- STEP 4: fine-tuning -->
+      <div class="am-pane" id="amPane4">
+        <div id="amFtBody"></div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closeAddMusic()">Cancel</button>
-      <button class="m-btn" id="amImportBtn" onclick="amImport()" disabled>＋ Add Selected</button>
+      <button class="m-btn ghost" id="amBackBtn" onclick="amBack()" style="display:none">‹ Back</button>
+      <button class="m-btn" id="amNextBtn" onclick="amNext()" disabled>Next: Choose Albums ›</button>
       <span class="mf-status" id="amFooterStatus"></span>
     </div>
   </div>
@@ -1810,10 +1845,12 @@ const OA_PALETTE = ['#e05656', '#4f9d69', '#c9902e', '#5b8dd6', '#b467c9', '#3aa
 
 // Artist-level color: one color per artist (SJ/PM keep their signature colors)
 const colorOf = (artistId) => {
-  const name = (allArtists.find(a => a.id === artistId)?.name || '').toLowerCase();
+  const a = allArtists.find(x => x.id === artistId) || communityArtists.find(x => x.id === artistId);
+  const name = (a?.name || '').toLowerCase();
   if (name.includes('purple mountains')) return '#7040a8';
   if (name.includes('silver jews'))      return '#6a8aa0';
-  const i = communityArtists.findIndex(a => a.id === artistId);
+  if (a?.color) return a.color;   // user-set default from the Add Music fine-tune step
+  const i = communityArtists.findIndex(x => x.id === artistId);
   return i >= 0 ? OA_PALETTE[i % OA_PALETTE.length] : '#ff6b35';
 };
 
@@ -4734,7 +4771,7 @@ async function confirmDeletePlaylist(id, name) {
 
 async function init() {
   try {
-    const _artistRows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+    const _artistRows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = _artistRows.filter(a => a.is_community);
     mainCatalogArtists = _artistRows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     allArtists = filterPageArtists(_artistRows);
@@ -5488,7 +5525,7 @@ document.getElementById('mSearchInput').addEventListener('keydown', e => { if (e
 async function loadModalArtists() {
   const tbody = document.getElementById('mArtistsBody');
   try {
-    const fresh  = await dbGet('/artists?select=id,name,last_sync_id&order=name.asc');
+    const fresh  = await dbGet('/artists?select=id,name,last_sync_id,color&order=name.asc');
     const runIds = [...new Set(fresh.map(a => a.last_sync_id).filter(Boolean))];
     const runMap = {};
     if (runIds.length) {
@@ -5582,7 +5619,7 @@ async function runSync() {
     (data.log || []).forEach(l => mLog(l.startsWith('  ') ? 'ok' : '', l));
     mLog('ok', `✓ ${data.albums} albums · ${data.tracks} tracks`);
     statusEl.textContent = '✓ Done'; statusEl.style.color = '#22c55e';
-    const _rows2 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+    const _rows2 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = _rows2.filter(a => a.is_community);
     mainCatalogArtists = _rows2.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     allArtists = filterPageArtists(_rows2);
@@ -5612,6 +5649,11 @@ let amChannel = null;      // selected channel
 let amAlbums  = [];        // playlists returned for the selected channel
 let amPicked  = new Set(); // playlist ids chosen for import
 let amBusy    = false;
+let amStep     = 1;     // wizard pane: 1 artist · 2 albums · 3 lyrics · 4 fine-tune
+let amArtistId = null;  // artist row id once the import lands
+let amImportOk = false; // import + lyric discovery finished
+let amFt       = null;  // fine-tune data from the edge function
+let amFtColor  = null;  // chosen chart color
 
 // ── OTHER ARTISTS — community artists surfaced on the main page ──
 let communityArtists = [];
@@ -5739,7 +5781,6 @@ function renderOtherArtistsBtn() {
 
 function amStepReset() {
   const bar = document.getElementById('amSteps'); if (!bar) return;
-  bar.style.display = 'none';
   const st = document.getElementById('amStepStatus');
   st.style.display = 'none'; st.className = 'am-step-status'; st.textContent = '';
   bar.querySelectorAll('.am-step').forEach((el, i) => { el.className = 'am-step'; el.querySelector('.am-step-dot').textContent = String(i + 1); });
@@ -5782,6 +5823,7 @@ function openAddMusic() {
     if (confirm('Sign in with Google to add music to the jukebox. Sign in now?')) handleAuthClick();
     return;
   }
+  amResetWizard();
   document.getElementById('addMusicOverlay').classList.add('open');
   setTimeout(() => document.getElementById('amSearchInput')?.focus(), 50);
 }
@@ -5806,8 +5848,11 @@ async function amSearch() {
   btn.disabled = true; btn.textContent = '…';
   const grid = document.getElementById('amResultsGrid');
   grid.innerHTML = '';
-  amStepReset();
-  document.getElementById('amSelectedPanel').classList.remove('visible');
+  amChannel = null; amAlbums = []; amPicked = new Set();
+  document.getElementById('amSelStrip').style.display = 'none';
+  if (amStep !== 1) amShowPane(1);
+  amStepGo(1, '');
+  amSetFooter(false, 'Next: Choose Albums ›', true);
   try {
     const data = await amFetch(`?action=search&q=${encodeURIComponent(q)}`);
     if (!data.results.length) { grid.innerHTML = '<div style="color:#444;font-size:.6rem;grid-column:1/-1">No channels found.</div>'; return; }
@@ -5835,44 +5880,217 @@ async function amSearch() {
   finally { btn.disabled = false; btn.textContent = 'Search'; }
 }
 
-async function amPickChannel(ch, card) {
+function amPickChannel(ch, card) {
   document.querySelectorAll('#amResultsGrid .m-artist-card').forEach(c => c.classList.remove('selected'));
   if (card) card.classList.add('selected');
   amChannel = ch; amAlbums = []; amPicked = new Set();
+  const subs = ch.subscribers >= 1e6 ? (ch.subscribers/1e6).toFixed(1)+'M' : ch.subscribers >= 1000 ? Math.round(ch.subscribers/1000)+'K' : String(ch.subscribers || 0);
   document.getElementById('amSelImg').innerHTML = ch.thumbnail ? `<img src="${ch.thumbnail}">` : '';
   document.getElementById('amSelName').textContent = ch.title.replace(/ - Topic$/, '');
-  document.getElementById('amSelMeta').textContent = 'Loading albums…';
-  document.getElementById('amAlbumsList').innerHTML = '';
-  document.getElementById('amLog').innerHTML = '';
-  document.getElementById('amLog').classList.remove('open');
-  document.getElementById('amSelectedPanel').classList.add('visible');
-  document.getElementById('amImportBtn').disabled = true;
+  document.getElementById('amSelMeta').textContent = `${subs} subs · ${ch.videos || 0} videos — if this is the right artist, continue.`;
+  document.getElementById('amSelStrip').style.display = '';
   document.getElementById('amFooterStatus').textContent = '';
+  amSetFooter(false, 'Next: Choose Albums ›', false);
+}
+
+// ── Wizard controller ──────────────────────────────────────────────────────────
+function amShowPane(n) {
+  amStep = n;
+  for (let i = 1; i <= 4; i++) {
+    const p = document.getElementById('amPane' + i);
+    if (p) p.classList.toggle('active', i === n);
+  }
+}
+function amSetFooter(backVisible, nextLabel, nextDisabled) {
+  const back = document.getElementById('amBackBtn'), next = document.getElementById('amNextBtn');
+  if (back) back.style.display = backVisible ? '' : 'none';
+  if (next) { next.innerHTML = nextLabel; next.disabled = !!nextDisabled; }
+}
+function amResetWizard() {
+  amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
+  amArtistId = null; amImportOk = false; amFt = null; amFtColor = null;
+  amStepReset(); amStepGo(1, '');
+  amShowPane(1);
+  document.getElementById('amResultsGrid').innerHTML = '';
+  document.getElementById('amSelStrip').style.display = 'none';
+  document.getElementById('amAlbumsList').innerHTML = '';
+  const log = document.getElementById('amLog'); log.innerHTML = ''; log.classList.remove('open');
+  document.getElementById('amFtBody').innerHTML = '';
+  const st = document.getElementById('amFooterStatus'); st.textContent = ''; st.style.color = '';
+  amSetFooter(false, 'Next: Choose Albums ›', true);
+}
+async function amNext() {
+  if (amBusy) return;
+  if (amStep === 1) { if (amChannel) amGoAlbums(); }
+  else if (amStep === 2) { if (amPicked.size) amImport(); }
+  else if (amStep === 3) { if (amImportOk) amGoFinetune(); else if (amPicked.size) amImport(); }
+  else if (amStep === 4) amFinish();
+}
+function amBack() {
+  if (amBusy) return;
+  if (amStep === 2) {
+    amShowPane(1); amStepGo(1, '');
+    amSetFooter(false, 'Next: Choose Albums ›', !amChannel);
+  } else if (amStep === 3 && !amImportOk) {
+    amShowPane(2); amStepGo(2, '');
+    renderAmAlbums();
+  }
+}
+
+// ── Step 2: load the channel's albums + Wikipedia discography matches ──────
+async function amGoAlbums() {
+  const ch = amChannel;
+  amShowPane(2);
+  amStepGo(2, 'Pick the albums to add — discography matches are pre-selected.');
+  document.getElementById('amSelImg2').innerHTML = ch.thumbnail ? `<img src="${ch.thumbnail}">` : '';
+  document.getElementById('amSelName2').textContent = ch.title.replace(/ - Topic$/, '');
+  if (amAlbums.length) { // came Back and returned — keep what we had
+    document.getElementById('amSelMeta2').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
+    renderAmAlbums();
+    return;
+  }
+  document.getElementById('amSelMeta2').textContent = 'Loading albums…';
+  document.getElementById('amAlbumsList').innerHTML = '';
+  amSetFooter(true, '<span class="m-spin"></span>Loading albums…', true);
   try {
     const artistPlain = ch.title.replace(/ - Topic$/, '');
     const data = await amFetch(`?action=albums&channel_id=${encodeURIComponent(ch.channel_id)}&q=${encodeURIComponent(artistPlain)}`);
+    if (amChannel !== ch) return;   // user went back and picked a different channel
     amAlbums = data.results;
-    document.getElementById('amSelMeta').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
+    document.getElementById('amSelMeta2').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
     if (!amAlbums.length) {
-      document.getElementById('amAlbumsList').innerHTML = '<div style="color:#444;font-size:.55rem;padding:.8rem">No playlists on this channel. Search again and pick the artist\u2019s “- Topic” channel — that\u2019s where albums live.</div>';
+      document.getElementById('amAlbumsList').innerHTML = '<div style="color:#444;font-size:.55rem;padding:.8rem">No playlists on this channel. Go back and pick the artist’s “- Topic” channel — that’s where albums live.</div>';
+      amSetFooter(true, 'Import Albums ›', true);
       return;
     }
     renderAmAlbums();
     // Compare against the artist's Wikipedia discography and pre-select matches
-    document.getElementById('amSelMeta').textContent += ' · checking Wikipedia…';
+    document.getElementById('amSelMeta2').textContent += ' · checking Wikipedia…';
     try {
       const wiki = await amWikiDiscography(artistPlain);
-      if (amChannel !== ch) return;   // user picked a different channel meanwhile
+      if (amChannel !== ch) return;
       const matched = amApplySuggestions(wiki, artistPlain);
-      document.getElementById('amSelMeta').textContent =
+      document.getElementById('amSelMeta2').textContent =
         `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found` +
         (wiki.length ? ` · ${matched} of ${wiki.length} discography album${wiki.length===1?'':'s'} matched ✦` : ' · no Wikipedia discography found');
       renderAmAlbums();
     } catch (_) {
-      document.getElementById('amSelMeta').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
+      document.getElementById('amSelMeta2').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
     }
   } catch (e) {
-    document.getElementById('amSelMeta').textContent = e.message;
+    document.getElementById('amSelMeta2').textContent = e.message;
+    amSetFooter(true, 'Import Albums ›', true);
+  }
+}
+
+// ── Step 4: fine-tune covers, names, years & chart color ──────────────────
+async function amGoFinetune() {
+  amShowPane(4);
+  amStepGo(4, 'Loading album details…');
+  amSetFooter(false, '<span class="m-spin"></span>Loading…', true);
+  amBusy = true;
+  try {
+    amFt = await amFetch(`?action=finetune_data&artist_id=${encodeURIComponent(amArtistId)}`);
+    amFtRender();
+    amStepGo(4, 'Optional: fix covers, names & years, and pick this artist’s chart color.');
+  } catch (e) {
+    amFt = null;
+    document.getElementById('amFtBody').innerHTML = `<div style="color:#ef4444;font-size:.55rem">${e.message}</div>`;
+    amStepGo(4, 'Fine-tuning unavailable — you can finish now.');
+  } finally {
+    amBusy = false;
+    amSetFooter(false, '✓ Finish', false);
+  }
+}
+
+function amFtRender() {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  amFtColor = amFt.artist.color || null;
+  const cur = amFt.artist.color || colorOf(amFt.artist.id);
+  const swatches = OA_PALETTE.map(c =>
+    `<button type="button" class="am-swatch${cur === c ? ' sel' : ''}" style="background:${c}" data-c="${c}" onclick="amFtPickColor('${c}')" title="${c}"></button>`).join('');
+  document.getElementById('amFtBody').innerHTML = `
+    <div class="am-ft-section">
+      <div class="m-fl">Artist name</div>
+      <input type="text" class="m-input" id="amFtArtistName" maxlength="80" value="${esc(amFt.artist.name)}">
+    </div>
+    <div class="am-ft-section">
+      <div class="m-fl">Chart color — this artist’s bars in the view charts</div>
+      <div class="am-swatches" id="amFtSwatches">${swatches}
+        <input type="color" class="am-swatch-custom" id="amFtCustomColor" value="${cur}" title="Custom color" oninput="amFtPickColor(this.value)">
+      </div>
+    </div>
+    <div class="am-ft-section">
+      <div class="m-fl">Albums — cover, name &amp; year</div>
+      <div style="display:flex;flex-direction:column;gap:.6rem">${amFt.albums.map((al, i) => `
+        <div class="am-ft-row">
+          <img class="am-ft-cover" id="amFtCover${i}" src="${esc(al.art_url || (al.art_options || [])[0] || '')}" alt="">
+          <div class="am-ft-fields">
+            <div style="display:flex;gap:.5rem">
+              <input type="text" class="m-input" id="amFtName${i}" maxlength="120" value="${esc(al.name)}" style="flex:1;min-width:0">
+              <input type="text" class="m-input am-ft-yr" id="amFtYear${i}" maxlength="4" inputmode="numeric" placeholder="Year" value="${(al.release_date || '').slice(0, 4)}">
+            </div>
+            ${(al.art_options || []).length > 1 ? `<div class="am-ft-arts">${al.art_options.map(u =>
+              `<img src="${esc(u)}" loading="lazy" class="${u === al.art_url ? 'sel' : ''}" data-u="${esc(u)}" onclick="amFtPickArt(${i}, this)">`).join('')}</div>` : ''}
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+}
+function amFtPickColor(c) {
+  amFtColor = c;
+  document.querySelectorAll('#amFtSwatches .am-swatch').forEach(el => el.classList.toggle('sel', el.dataset.c === c));
+  const custom = document.getElementById('amFtCustomColor');
+  if (custom && custom.value !== c) { try { custom.value = c; } catch (_) {} }
+}
+function amFtPickArt(i, el) {
+  amFt.albums[i]._pickedArt = el.dataset.u;
+  document.getElementById('amFtCover' + i).src = el.dataset.u;
+  el.parentElement.querySelectorAll('img').forEach(x => x.classList.toggle('sel', x === el));
+}
+
+async function amFinish() {
+  if (amBusy) return;
+  const next = document.getElementById('amNextBtn');
+  amBusy = true; next.disabled = true; next.innerHTML = '<span class="m-spin"></span>Saving…';
+  try {
+    if (amFt && amArtistId) {
+      const payload = { artist_id: amArtistId, albums: [] };
+      const nm = (document.getElementById('amFtArtistName')?.value || '').trim();
+      if (nm && nm !== amFt.artist.name) payload.artist_name = nm;
+      if (amFtColor && amFtColor !== (amFt.artist.color || null)) payload.color = amFtColor;
+      amFt.albums.forEach((al, i) => {
+        const d = { id: al.id };
+        const nn = (document.getElementById('amFtName' + i)?.value || '').trim();
+        const yy = (document.getElementById('amFtYear' + i)?.value || '').trim();
+        if (nn && nn !== al.name) d.name = nn;
+        if (/^\d{4}$/.test(yy) && yy !== (al.release_date || '').slice(0, 4)) d.release_date = yy;
+        if (al._pickedArt && al._pickedArt !== al.art_url) d.art_url = al._pickedArt;
+        if (Object.keys(d).length > 1) payload.albums.push(d);
+      });
+      if (payload.artist_name || payload.color || payload.albums.length) {
+        await amFetch('?action=finetune', { method: 'POST', body: JSON.stringify(payload) });
+      }
+    }
+    amStepDone('All set — your music is live on the jukebox.');
+    // Refresh app state so new names, years, covers and colors show everywhere
+    try {
+      const rows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
+      communityArtists = rows.filter(a => a.is_community);
+      mainCatalogArtists = rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
+      communityAlbumsCache = {};
+      allArtists = filterPageArtists(rows);
+      restoreOtherArtists();
+      selectedIds = new Set(allArtists.map(a => a.id));
+      await loadData();
+      updateFilterHeader();
+    } catch (_) {}
+    amBusy = false;
+    closeAddMusic();
+  } catch (e) {
+    amBusy = false;
+    amStepFail(e.message);
+    next.disabled = false; next.innerHTML = '✓ Finish';
   }
 }
 
@@ -5886,7 +6104,7 @@ function renderAmAlbums() {
         <div class="am-alb-meta">${p.wiki_match ? `<span style="color:var(--accent)">✦ Wikipedia: ${p.wiki_match}</span> · ` : ''}${p.track_count} tracks${p.source === 'search' && p.channel_title ? ' · via ' + p.channel_title : ''}${p.already_imported ? ' · already in jukebox' : ''}</div>
       </div>
     </div>`).join('');
-  document.getElementById('amImportBtn').disabled = amPicked.size === 0 || amBusy;
+  if (amStep === 2 && !amBusy) amSetFooter(true, amPicked.size ? `Import ${amPicked.size} Album${amPicked.size === 1 ? '' : 's'} ›` : 'Import Albums ›', amPicked.size === 0);
 }
 
 // ── Wikipedia discography → suggested playlists ──────────────────────────────
@@ -6066,7 +6284,7 @@ async function maDeleteArtist(artistId) {
 // Refresh app state after a manage action, then re-render the modal list
 async function maAfterChange() {
   try {
-    const rows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+    const rows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = rows.filter(a => a.is_community);
     mainCatalogArtists = rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     communityAlbumsCache = {};
@@ -6107,7 +6325,7 @@ async function amEnrich(albumList) {
   amLogLine('head', `▶ Looking up lyrics & album dates (${albumList.length} album${albumList.length===1?'':'s'})…`);
   for (let i = 0; i < albumList.length; i++) {
     const alb = albumList[i];
-    amStepGo(2, `Album ${i + 1} of ${albumList.length}: “${alb.name}” — fetching lyrics & release date…`);
+    amStepGo(3, `Album ${i + 1} of ${albumList.length}: “${alb.name}” — fetching lyrics & release date…`);
     try {
       const data = await amFetch('?action=enrich', { method: 'POST', body: JSON.stringify({ album_id: alb.id }) });
       (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
@@ -6126,11 +6344,13 @@ async function amEnrich(albumList) {
 async function amImport() {
   if (!amChannel || !amPicked.size || amBusy) return;
   amBusy = true;
-  const btn = document.getElementById('amImportBtn');
+  amShowPane(3);
+  amSetFooter(false, '<span class="m-spin"></span>Importing…', true);
   const statusEl = document.getElementById('amFooterStatus');
-  btn.disabled = true; btn.innerHTML = '<span class="m-spin"></span>Importing…';
-  document.getElementById('amLog').innerHTML = '';
-  amStepGo(1, `Importing ${amPicked.size} album${amPicked.size === 1 ? '' : 's'} from YouTube…`);
+  statusEl.textContent = '';
+  const logEl = document.getElementById('amLog');
+  logEl.innerHTML = ''; logEl.classList.add('open');
+  amStepGo(3, `Importing ${amPicked.size} album${amPicked.size === 1 ? '' : 's'} from YouTube…`);
   amLogLine('head', `▶ Importing from ${amChannel.title}…`);
   try {
     const picked = amAlbums.filter(p => amPicked.has(p.playlist_id)).map(p => ({ id: p.playlist_id, title: p.title }));
@@ -6144,38 +6364,40 @@ async function amImport() {
     });
     if (!data.success) throw new Error(data.error || 'Import failed');
     (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
-    statusEl.textContent = '✓ Added'; statusEl.style.color = '#22c55e';
+    amArtistId = data.artist_id || null;
     amAlbums.forEach(p => { if (amPicked.has(p.playlist_id)) p.already_imported = true; });
     amPicked.clear();
     if (IS_COMMUNITY) {
-      allArtists = filterPageArtists(await dbGet('/artists?select=id,name,last_sync_id,is_community&order=name.asc'));
+      allArtists = filterPageArtists(await dbGet('/artists?select=id,name,last_sync_id,is_community,color&order=name.asc'));
       allArtists.forEach(a => selectedIds.add(a.id));
       await loadData();
     } else {
       try {
-        const _rows3 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name&order=name.asc');
+        const _rows3 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
         communityArtists = _rows3.filter(a => a.is_community);
-    mainCatalogArtists = _rows3.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
+        mainCatalogArtists = _rows3.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
         updateFilterHeader();
       } catch (_) {}
       amLogLine('ok', 'Added — find it under “Other Artists” in the filter bar.');
     }
     if (data.artist_id) delete communityAlbumsCache[data.artist_id];
-    btn.innerHTML = '<span class="m-spin"></span>Finding lyrics…';
-    amStepGo(2, 'Looking up lyrics & release dates…');
+    amSetFooter(false, '<span class="m-spin"></span>Finding lyrics…', true);
+    amStepGo(3, 'Looking up lyrics & release dates…');
     const enr = await amEnrich(data.albums_detail || []);
-    amStepDone(`All set — ${data.tracks} track${data.tracks === 1 ? '' : 's'} live on the Community page` +
+    amImportOk = true;
+    amStepGo(4, `✓ ${data.tracks} track${data.tracks === 1 ? '' : 's'} live` +
       (enr && enr.lyrics ? ` · lyrics for ${enr.lyrics}` : '') +
       (enr && enr.dates ? ` · ${enr.dates} release date${enr.dates === 1 ? '' : 's'} corrected` : '') +
-      '. Daily view tracking starts tonight.');
+      ' — one last step: fine-tune how it looks.');
+    statusEl.textContent = '✓ Added'; statusEl.style.color = '#22c55e';
+    amSetFooter(false, 'Fine-tune ›', false);
   } catch (e) {
     amLogLine('err', `✗ ${e.message}`);
     amStepFail(e.message);
     statusEl.textContent = '✗ Error'; statusEl.style.color = '#ef4444';
+    amSetFooter(true, 'Retry Import ›', false);
   } finally {
     amBusy = false;
-    renderAmAlbums();
-    btn.innerHTML = '＋ Add Selected';
   }
 }
 
@@ -6224,7 +6446,7 @@ const SJ_CHANGELOG = [
   { date: '2026-07-16', items: [
     'New Community page: sign in and add any artist to the jukebox straight from YouTube — search the artist, pick which albums to include, and their daily YouTube views get tracked automatically.',
     'After an import, the jukebox automatically looks up song lyrics (including synced lyrics where available) and confirms album release dates against music databases.',
-    'The Add Music window now shows a step-by-step progress bar (import → lyrics & dates → live), and community albums display who added them and when.',
+    'Adding an artist is now a guided four-step wizard: find the artist, pick their albums, automatic lyrics & release-date lookup, then a fine-tune step to set album covers, names, years and the artist’s bar-chart color. Community albums display who added them and when.',
     'Community artists now live in an "Other Artists" dropdown next to Purple Mountains: browse each artist\u2019s albums, add an artist to the main jukebox chart, or open their own artist jukebox.',
   ]},
   { date: '2026-07-06', items: [
