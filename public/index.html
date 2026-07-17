@@ -375,6 +375,9 @@ body:not(.light) .tt-num { color: var(--text); }
 #am-minibar.err { border-color: #ef4444; }
 #am-minibar .am-mini-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { #am-minibar { bottom: 76px; right: 12px; } }
+.am-ident-card { display: flex; gap: .8rem; background: #161311; border: 1px solid var(--accent); border-radius: 8px; padding: .8rem; align-items: flex-start; }
+.am-ident-card img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+.am-ident-extract { font-size: .55rem; color: #bbb; line-height: 1.55; margin-top: .3rem; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .alb-added-by { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); padding: .45rem .75rem .25rem; letter-spacing: .05em; }
 .oa-menu { min-width: 340px; max-width: min(92vw, 460px); }
 .oa-artist { border-bottom: 1px solid var(--border); }
@@ -1475,15 +1478,9 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
             <input type="text" class="m-input" id="amSearchInput" placeholder="Artist name…" autocomplete="off">
             <button class="m-btn" id="amSearchBtn" onclick="amSearch()">Search</button>
           </div>
-          <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">Tip: an artist’s “‑ Topic” channel holds their official albums.</div>
+          <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">We’ll identify the artist and pull their studio discography automatically.</div>
         </div>
-        <div class="m-results-grid" id="amResultsGrid"></div>
-        <div class="am-sel-strip" id="amSelStrip" style="display:none">
-          <div class="m-sel-row" style="flex:1">
-            <div id="amSelImg"></div>
-            <div><div class="m-sel-name" id="amSelName">-</div><div class="m-sel-meta" id="amSelMeta">-</div></div>
-          </div>
-        </div>
+        <div class="am-ident-card" id="amIdentCard" style="display:none"></div>
       </div>
       <!-- STEP 2: album selection -->
       <div class="am-pane" id="amPane2">
@@ -1492,7 +1489,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <div><div class="m-sel-name" id="amSelName2">-</div><div class="m-sel-meta" id="amSelMeta2">-</div></div>
         </div>
         <div>
-          <div class="m-fl" style="display:flex;justify-content:space-between;align-items:center">Pick the albums to include
+          <div class="m-fl" style="display:flex;justify-content:space-between;align-items:center">Confirm the albums to import — the best YouTube playlist is found for each
             <button class="m-btn ghost" style="font-size:.48rem;padding:.2rem .5rem" id="amToggleAllBtn" onclick="amToggleAll()">Select All</button>
           </div>
           <div class="am-albums" id="amAlbumsList"></div>
@@ -5659,6 +5656,7 @@ let amFt       = null;  // fine-tune data from the edge function
 let amFtColor  = null;  // chosen chart color
 let amMinimized = false; // wizard hidden, work continuing in the background
 let _amLastStatus = ''; // last step-status line, mirrored on the minimized pill
+let amIdent = null;      // identify payload: wiki summary, discography, channel, existing flags
 
 // ── OTHER ARTISTS — community artists surfaced on the main page ──
 let communityArtists = [];
@@ -5889,51 +5887,54 @@ async function amSearch() {
   if (!q) return;
   const btn = document.getElementById('amSearchBtn');
   btn.disabled = true; btn.textContent = '…';
-  const grid = document.getElementById('amResultsGrid');
-  grid.innerHTML = '';
-  amChannel = null; amAlbums = []; amPicked = new Set();
-  document.getElementById('amSelStrip').style.display = 'none';
+  amIdent = null; amChannel = null; amAlbums = []; amPicked = new Set();
   if (amStep !== 1) amShowPane(1);
   amStepGo(1, '');
   amSetFooter(false, 'Next: Choose Albums ›', true);
+  const card = document.getElementById('amIdentCard');
+  card.style.display = '';
+  card.innerHTML = '<div style="color:var(--text-muted);font-size:.55rem"><span class="m-spin"></span> Identifying artist…</div>';
   try {
-    const data = await amFetch(`?action=search&q=${encodeURIComponent(q)}`);
-    if (!data.results.length) { grid.innerHTML = '<div style="color:#444;font-size:.6rem;grid-column:1/-1">No channels found.</div>'; return; }
-    data.results.forEach(ch => {
-      const card = document.createElement('div');
-      card.className = 'm-artist-card';
-      const subs = ch.subscribers >= 1e6 ? (ch.subscribers/1e6).toFixed(1)+'M' : ch.subscribers >= 1000 ? Math.round(ch.subscribers/1000)+'K' : String(ch.subscribers || 0);
-      const isMainDup = ch.existing_is_community === false;
-      const dupNote = isMainDup ? '<span style="color:#ef4444"> · already on the main jukebox</span>'
-        : ch.existing_artist_id ? '<span style="color:var(--accent)"> · in jukebox — add missing albums</span>' : '';
-      if (isMainDup) card.style.opacity = '.45';
-      card.innerHTML = `${ch.thumbnail ? `<img src="${ch.thumbnail}" loading="lazy">` : '<div style="background:#1a1a1a;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:22px;color:#2a2a2a">🎵</div>'}
-        <div class="m-card-info"><div class="m-card-name">${ch.title}</div><div class="m-card-meta">${subs} subs · ${ch.videos || 0} videos${dupNote}</div></div>`;
-      card.addEventListener('click', () => {
-        if (isMainDup) {
-          document.getElementById('amFooterStatus').textContent = `"${ch.existing_name || ch.title}" is already on the main jukebox.`;
-          document.getElementById('amFooterStatus').style.color = '#ef4444';
-          return;
-        }
-        amPickChannel(ch, card);
-      });
-      grid.appendChild(card);
-    });
-  } catch (e) { grid.innerHTML = `<div style="color:#ef4444;font-size:.6rem;grid-column:1/-1">${e.message}</div>`; }
-  finally { btn.disabled = false; btn.textContent = 'Search'; }
+    const d = await amFetch(`?action=identify&q=${encodeURIComponent(q)}`);
+    amIdent = d; amChannel = d.channel || null;
+    const nrm = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const already = (d.existing_albums || []).map(nrm);
+    amAlbums = (d.albums || []).map(a => ({ ...a, already: already.includes(nrm(a.title)) }));
+    amPicked = new Set(amAlbums.map((a, i) => a.already ? -1 : i).filter(i => i >= 0));
+    renderAmIdentCard();
+    const blocked = d.existing && d.existing.is_community === false;
+    amSetFooter(false, 'Next: Choose Albums ›', blocked || !amAlbums.length || !amChannel);
+    if (blocked) amStepGo(1, `“${d.existing.name}” is already on the main jukebox.`);
+    else if (!amAlbums.length) amStepGo(1, 'No discography found — try a different spelling.');
+    else if (!amChannel) amStepGo(1, 'No YouTube channel found for this artist.');
+    else amStepGo(1, 'If this is the right artist, continue to choose albums.');
+  } catch (e) {
+    card.innerHTML = `<div style="color:#ef4444;font-size:.55rem">${e.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = 'Search'; }
 }
 
-function amPickChannel(ch, card) {
-  document.querySelectorAll('#amResultsGrid .m-artist-card').forEach(c => c.classList.remove('selected'));
-  if (card) card.classList.add('selected');
-  amChannel = ch; amAlbums = []; amPicked = new Set();
-  const subs = ch.subscribers >= 1e6 ? (ch.subscribers/1e6).toFixed(1)+'M' : ch.subscribers >= 1000 ? Math.round(ch.subscribers/1000)+'K' : String(ch.subscribers || 0);
-  document.getElementById('amSelImg').innerHTML = ch.thumbnail ? `<img src="${ch.thumbnail}">` : '';
-  document.getElementById('amSelName').textContent = ch.title.replace(/ - Topic$/, '');
-  document.getElementById('amSelMeta').textContent = `${subs} subs · ${ch.videos || 0} videos — if this is the right artist, continue.`;
-  document.getElementById('amSelStrip').style.display = '';
-  document.getElementById('amFooterStatus').textContent = '';
-  amSetFooter(false, 'Next: Choose Albums ›', false);
+function renderAmIdentCard() {
+  const card = document.getElementById('amIdentCard');
+  if (!amIdent) { card.style.display = 'none'; return; }
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const w = amIdent.wiki;
+  const blocked = amIdent.existing && amIdent.existing.is_community === false;
+  const metaBits = [
+    `${amIdent.albums.length} studio album${amIdent.albums.length === 1 ? '' : 's'}`,
+    amIdent.channel ? `YouTube: ${esc(amIdent.channel.title)}` : 'no YouTube channel found',
+  ];
+  if (amIdent.existing && amIdent.existing.is_community) metaBits.push('already in the jukebox — missing albums can be added');
+  const img = (w && w.thumbnail) || (amIdent.channel && amIdent.channel.thumbnail) || null;
+  card.style.display = '';
+  card.innerHTML = `
+    ${img ? `<img src="${img}" alt="">` : ''}
+    <div style="flex:1;min-width:0">
+      <div class="m-sel-name">${esc(amIdent.artist_name)}</div>
+      <div class="am-ident-extract">${esc(w ? w.extract : 'No Wikipedia summary found.')}</div>
+      <div class="m-sel-meta" style="margin-top:.35rem">${metaBits.join(' · ')}${w && w.url ? ` · <a href="${w.url}" target="_blank" rel="noopener" style="color:var(--accent)">Wikipedia ↗</a>` : ''}</div>
+      ${blocked ? `<div style="color:#ef4444;font-size:.52rem;margin-top:.35rem">“${esc(amIdent.existing.name)}” is already part of the main jukebox.</div>` : ''}
+      <div style="color:var(--text-muted);font-size:.48rem;margin-top:.35rem">Not the right artist? Refine your search above.</div>
+    </div>`;
 }
 
 // ── Wizard controller ──────────────────────────────────────────────────────────
@@ -5957,8 +5958,9 @@ function amResetWizard() {
   if (mb) mb.style.display = 'none';
   amStepReset(); amStepGo(1, '');
   amShowPane(1);
-  document.getElementById('amResultsGrid').innerHTML = '';
-  document.getElementById('amSelStrip').style.display = 'none';
+  amIdent = null;
+  const ic = document.getElementById('amIdentCard');
+  if (ic) { ic.style.display = 'none'; ic.innerHTML = ''; }
   document.getElementById('amAlbumsList').innerHTML = '';
   const log = document.getElementById('amLog'); log.innerHTML = ''; log.classList.remove('open');
   document.getElementById('amFtBody').innerHTML = '';
@@ -5967,7 +5969,7 @@ function amResetWizard() {
 }
 async function amNext() {
   if (amBusy) return;
-  if (amStep === 1) { if (amChannel) amGoAlbums(); }
+  if (amStep === 1) { if (amIdent && amChannel && amAlbums.length && !(amIdent.existing && amIdent.existing.is_community === false)) amGoAlbums(); }
   else if (amStep === 2) { if (amPicked.size) amImport(); }
   else if (amStep === 3) { if (amImportOk) amGoFinetune(); else if (amPicked.size) amImport(); }
   else if (amStep === 4) amFinish();
@@ -5976,57 +5978,22 @@ function amBack() {
   if (amBusy) return;
   if (amStep === 2) {
     amShowPane(1); amStepGo(1, '');
-    amSetFooter(false, 'Next: Choose Albums ›', !amChannel);
+    amSetFooter(false, 'Next: Choose Albums ›', !(amIdent && amChannel && amAlbums.length));
   } else if (amStep === 3 && !amImportOk) {
     amShowPane(2); amStepGo(2, '');
     renderAmAlbums();
   }
 }
 
-// ── Step 2: load the channel's albums + Wikipedia discography matches ──────
-async function amGoAlbums() {
-  const ch = amChannel;
+// ── Step 2: confirm the discography albums to import ──────────────────────
+function amGoAlbums() {
   amShowPane(2);
-  amStepGo(2, 'Pick the albums to add — discography matches are pre-selected.');
-  document.getElementById('amSelImg2').innerHTML = ch.thumbnail ? `<img src="${ch.thumbnail}">` : '';
-  document.getElementById('amSelName2').textContent = ch.title.replace(/ - Topic$/, '');
-  if (amAlbums.length) { // came Back and returned — keep what we had
-    document.getElementById('amSelMeta2').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
-    renderAmAlbums();
-    return;
-  }
-  document.getElementById('amSelMeta2').textContent = 'Loading albums…';
-  document.getElementById('amAlbumsList').innerHTML = '';
-  amSetFooter(true, '<span class="m-spin"></span>Loading albums…', true);
-  try {
-    const artistPlain = ch.title.replace(/ - Topic$/, '');
-    const data = await amFetch(`?action=albums&channel_id=${encodeURIComponent(ch.channel_id)}&q=${encodeURIComponent(artistPlain)}`);
-    if (amChannel !== ch) return;   // user went back and picked a different channel
-    amAlbums = data.results;
-    document.getElementById('amSelMeta2').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
-    if (!amAlbums.length) {
-      document.getElementById('amAlbumsList').innerHTML = '<div style="color:#444;font-size:.55rem;padding:.8rem">No playlists on this channel. Go back and pick the artist’s “- Topic” channel — that’s where albums live.</div>';
-      amSetFooter(true, 'Import Albums ›', true);
-      return;
-    }
-    renderAmAlbums();
-    // Compare against the artist's Wikipedia discography and pre-select matches
-    document.getElementById('amSelMeta2').textContent += ' · checking Wikipedia…';
-    try {
-      const wiki = await amWikiDiscography(artistPlain);
-      if (amChannel !== ch) return;
-      const matched = amApplySuggestions(wiki, artistPlain);
-      document.getElementById('amSelMeta2').textContent =
-        `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found` +
-        (wiki.length ? ` · ${matched} of ${wiki.length} discography album${wiki.length===1?'':'s'} matched ✦` : ' · no Wikipedia discography found');
-      renderAmAlbums();
-    } catch (_) {
-      document.getElementById('amSelMeta2').textContent = `${amAlbums.length} album${amAlbums.length===1?'':'s'} / playlists found`;
-    }
-  } catch (e) {
-    document.getElementById('amSelMeta2').textContent = e.message;
-    amSetFooter(true, 'Import Albums ›', true);
-  }
+  amStepGo(2, 'Uncheck anything you don’t want — the best YouTube playlist is found for each album.');
+  const img = (amIdent.wiki && amIdent.wiki.thumbnail) || (amChannel && amChannel.thumbnail) || null;
+  document.getElementById('amSelImg2').innerHTML = img ? `<img src="${img}">` : '';
+  document.getElementById('amSelName2').textContent = amIdent.artist_name;
+  document.getElementById('amSelMeta2').textContent = `${amAlbums.length} studio album${amAlbums.length === 1 ? '' : 's'} in the discography`;
+  renderAmAlbums();
 }
 
 // ── Step 4: fine-tune covers, names, years & chart color ──────────────────
@@ -6141,114 +6108,19 @@ async function amFinish() {
 }
 
 function renderAmAlbums() {
-  document.getElementById('amAlbumsList').innerHTML = amAlbums.map((p, i) => `
-    <div class="am-alb-row${p.already_imported ? ' done' : ''}" onclick="amToggleAlbum(${i})">
-      ${p.thumbnail ? `<img src="${p.thumbnail}" loading="lazy">` : ''}
-      <input type="checkbox" ${amPicked.has(p.playlist_id) ? 'checked' : ''} ${p.already_imported ? 'disabled' : ''} onclick="event.stopPropagation();amToggleAlbum(${i})">
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  document.getElementById('amAlbumsList').innerHTML = amAlbums.map((a, i) => `
+    <div class="am-alb-row${a.already ? ' done' : ''}" onclick="amToggleAlbum(${i})">
+      <input type="checkbox" ${amPicked.has(i) ? 'checked' : ''} ${a.already ? 'disabled' : ''} onclick="event.stopPropagation();amToggleAlbum(${i})">
       <div style="flex:1;min-width:0">
-        <div class="am-alb-name">${p.title}</div>
-        <div class="am-alb-meta">${p.wiki_match ? `<span style="color:var(--accent)">✦ Wikipedia: ${p.wiki_match}</span> · ` : ''}${p.track_count} tracks${p.source === 'search' && p.channel_title ? ' · via ' + p.channel_title : ''}${p.already_imported ? ' · already in jukebox' : ''}</div>
+        <div class="am-alb-name">${esc(a.title)}</div>
+        <div class="am-alb-meta">${(a.date || '').slice(0, 4)}${a.already ? ' · already in jukebox' : ''}</div>
       </div>
     </div>`).join('');
   if (amStep === 2 && !amBusy) amSetFooter(true, amPicked.size ? `Import ${amPicked.size} Album${amPicked.size === 1 ? '' : 's'} ›` : 'Import Albums ›', amPicked.size === 0);
 }
 
-// ── Wikipedia discography → suggested playlists ──────────────────────────────
-// Mirrors the edge function's cleanAlbumName so titles match the same way
-function amCleanAlbumTitle(title, artistName) {
-  let t = title || '';
-  const nrm = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  const pfx = new RegExp('^' + artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[-–—:/]\\s*', 'i');
-  if (pfx.test(t)) t = t.replace(pfx, '');
-  else {
-    // fuzzy: strip the longest leading chunk that matches the artist name
-    // (handles channels like "Daniel Johnston Official" vs "Daniel Johnston - Album")
-    const na = nrm(artistName);
-    const seps = [...t.matchAll(/\s*[-–—:/]\s*/g)];
-    for (let i = seps.length - 1; i >= 0; i--) {
-      const np = nrm(t.slice(0, seps[i].index));
-      if (np && np.length >= 3 && (na.includes(np) || np.includes(na))) { t = t.slice(seps[i].index + seps[i][0].length); break; }
-    }
-  }
-  t = t.replace(/\s*[\(\[][^\)\]]*(full\s+album|official|complete|hq|hd|remaster)[^\)\]]*[\)\]]\s*/gi, ' ');
-  t = t.replace(/\s*(full\s+album|album\s+completo)\s*$/i, '');
-  t = t.replace(/\s+/g, ' ').replace(/[\s\-–—/|]+$/g, '').trim();
-  return t || title;
-}
-
-// Fetch the artist's studio-album list: Wikipedia first, MusicBrainz fallback
-async function amWikiDiscography(artist) {
-  const albums = [];
-  const W = 'https://en.wikipedia.org/w/api.php';
-  const wget = async (params) => (await fetch(W + '?' + new URLSearchParams({ format: 'json', origin: '*', ...params }))).json();
-  try {
-    // Prefer a dedicated "<artist> discography" page…
-    const s = await wget({ action: 'query', list: 'search', srsearch: `intitle:"${artist} discography"`, srlimit: '3' });
-    const page = (s.query?.search || []).find(p => /discography/i.test(p.title) && p.title.toLowerCase().includes(artist.toLowerCase()))?.title;
-    let wikitext = '';
-    if (page) {
-      const d = await wget({ action: 'parse', page, prop: 'wikitext' });
-      wikitext = d.parse?.wikitext?.['*'] || '';
-      const m = wikitext.match(/==+\s*Studio albums\s*==+([\s\S]*?)(\n==[^=]|$)/i);
-      if (m) wikitext = m[1];
-    } else {
-      // …else the Discography section of the artist's own page
-      const s2 = await wget({ action: 'query', list: 'search', srsearch: artist, srlimit: '1' });
-      const t2 = s2.query?.search?.[0]?.title;
-      if (t2) {
-        const d2 = await wget({ action: 'parse', page: t2, prop: 'wikitext' });
-        const full = d2.parse?.wikitext?.['*'] || '';
-        const m2 = full.match(/==+\s*Discography\s*==+([\s\S]*?)(\n==[^=]|$)/i);
-        wikitext = m2 ? m2[1] : '';
-      }
-    }
-    const seen = new Set();
-    const re = /''\[\[([^\]|#]+?)(?:\|[^\]]*)?\]\]''|^\s*\*+\s*''([^'\[][^']*)''/gm;
-    let mt;
-    while ((mt = re.exec(wikitext)) !== null) {
-      const t = (mt[1] || mt[2] || '').replace(/\s*\([^)]*album[^)]*\)\s*$/i, '').trim();
-      if (t && t.length < 80 && !seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); albums.push(t); }
-    }
-  } catch (_) { /* Wikipedia down → fall through */ }
-  if (!albums.length) {
-    try {
-      const ar = await (await fetch(`https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent('"' + artist + '"')}&limit=1&fmt=json`)).json();
-      const top = ar.artists?.[0];
-      if (top && (top.score ?? 0) >= 90) {
-        const rg = await (await fetch(`https://musicbrainz.org/ws/2/release-group?artist=${top.id}&type=album&limit=100&fmt=json`)).json();
-        (rg['release-groups'] || []).forEach(g => {
-          if ((g['primary-type'] || '') === 'Album' && !(g['secondary-types'] || []).length) albums.push(g.title);
-        });
-      }
-    } catch (_) {}
-  }
-  return albums;
-}
-
-// Match discography names to playlists; pre-check the best playlist per album
-function amApplySuggestions(wikiAlbums, artistName) {
-  const n = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-  let matched = 0;
-  wikiAlbums.forEach(w => {
-    const wn = n(w);
-    if (!wn || wn.length < 3) return;
-    let best = null, bestScore = -1;
-    amAlbums.forEach(p => {
-      if (p.wiki_match) return;
-      const pn = n(amCleanAlbumTitle(p.title, artistName));
-      if (!(pn === wn || pn.includes(wn) || (wn.includes(pn) && pn.length >= 5))) return;
-      const score = (pn === wn ? 4 : 2) + (p.source === 'channel' ? 1 : 0) + (p.track_count >= 5 && p.track_count <= 30 ? 1 : 0);
-      if (score > bestScore) { bestScore = score; best = p; }
-    });
-    if (best) {
-      best.wiki_match = w;
-      matched++;
-      if (!best.already_imported) amPicked.add(best.playlist_id);
-    }
-  });
-  amAlbums.sort((a, b) => (b.wiki_match ? 1 : 0) - (a.wiki_match ? 1 : 0));
-  return matched;
-}
+// (Wikipedia/MusicBrainz discography matching now happens in the edge function)
 
 // ── MANAGE MY ARTISTS ────────────────────────────────────────────────────────
 let _maData = [];
@@ -6369,15 +6241,15 @@ async function maAfterChange() {
 }
 
 function amToggleAlbum(i) {
-  const p = amAlbums[i];
-  if (!p || p.already_imported || amBusy) return;
-  if (amPicked.has(p.playlist_id)) amPicked.delete(p.playlist_id); else amPicked.add(p.playlist_id);
+  const a = amAlbums[i];
+  if (!a || a.already || amBusy) return;
+  if (amPicked.has(i)) amPicked.delete(i); else amPicked.add(i);
   renderAmAlbums();
 }
 function amToggleAll() {
   if (amBusy) return;
-  const avail = amAlbums.filter(p => !p.already_imported);
-  if (amPicked.size < avail.length) avail.forEach(p => amPicked.add(p.playlist_id));
+  const avail = amAlbums.map((a, i) => a.already ? -1 : i).filter(i => i >= 0);
+  if (amPicked.size < avail.length) avail.forEach(i => amPicked.add(i));
   else amPicked.clear();
   renderAmAlbums();
 }
@@ -6413,30 +6285,47 @@ async function amEnrich(albumList) {
 }
 
 async function amImport() {
-  if (!amChannel || !amPicked.size || amBusy) return;
+  if (!amIdent || !amPicked.size || amBusy) return;
+  if (!amChannel) { amStepFail('No YouTube channel found for this artist.'); return; }
   amBusy = true;
   amShowPane(3);
-  amSetFooter(false, '<span class="m-spin"></span>Importing…', true);
+  amSetFooter(false, '<span class="m-spin"></span>Matching…', true);
   const statusEl = document.getElementById('amFooterStatus');
   statusEl.textContent = '';
   const logEl = document.getElementById('amLog');
   logEl.innerHTML = ''; logEl.classList.add('open');
-  amStepGo(3, `Importing ${amPicked.size} album${amPicked.size === 1 ? '' : 's'} from YouTube…`);
-  amLogLine('head', `▶ Importing from ${amChannel.title}…`);
+  const picked = amAlbums.filter((a, i) => amPicked.has(i));
+  amLogLine('head', `▶ Finding the best YouTube playlist for ${picked.length} album${picked.length === 1 ? '' : 's'}…`);
   try {
-    const picked = amAlbums.filter(p => amPicked.has(p.playlist_id)).map(p => ({ id: p.playlist_id, title: p.title }));
+    const matches = [];
+    for (let i = 0; i < picked.length; i++) {
+      const a = picked[i];
+      amStepGo(3, `Album ${i + 1} of ${picked.length}: “${a.title}” — finding the best YouTube playlist…`);
+      try {
+        const m = await amFetch(`?action=match_album&artist=${encodeURIComponent(amIdent.artist_name)}&album=${encodeURIComponent(a.title)}` +
+          (a.rg ? `&rg=${encodeURIComponent(a.rg)}` : '') +
+          `&channel_id=${encodeURIComponent(amChannel.channel_id)}`);
+        if (m.match) {
+          matches.push({ id: m.match.playlist_id, title: a.title, release_date: a.date || undefined });
+          amLogLine('ok', `  ✓ “${a.title}” → “${m.match.title}” · ${m.match.track_count} tracks · ${fmtV(m.match.views)} views`);
+        } else {
+          amLogLine('err', `  ⚠ “${a.title}” — no good playlist found, skipped`);
+        }
+      } catch (e) {
+        amLogLine('err', `  ⚠ “${a.title}” — ${e.message}, skipped`);
+      }
+    }
+    if (!matches.length) throw new Error('No YouTube playlists matched the selected albums.');
+    amSetFooter(false, '<span class="m-spin"></span>Importing…', true);
+    amStepGo(3, `Importing ${matches.length} album${matches.length === 1 ? '' : 's'} from YouTube…`);
     const data = await amFetch('', {
       method: 'POST',
-      body: JSON.stringify({
-        channel_id: amChannel.channel_id,
-        artist_name: amChannel.title.replace(/ - Topic$/, ''),
-        playlists: picked,
-      }),
+      body: JSON.stringify({ channel_id: amChannel.channel_id, artist_name: amIdent.artist_name, playlists: matches }),
     });
     if (!data.success) throw new Error(data.error || 'Import failed');
     (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
     amArtistId = data.artist_id || null;
-    amAlbums.forEach(p => { if (amPicked.has(p.playlist_id)) p.already_imported = true; });
+    picked.forEach(a => { a.already = true; });
     amPicked.clear();
     if (IS_COMMUNITY) {
       allArtists = filterPageArtists(await dbGet('/artists?select=id,name,last_sync_id,is_community,color&order=name.asc'));
@@ -6466,7 +6355,7 @@ async function amImport() {
     amLogLine('err', `✗ ${e.message}`);
     amStepFail(e.message);
     statusEl.textContent = '✗ Error'; statusEl.style.color = '#ef4444';
-    amSetFooter(true, 'Retry Import ›', false);
+    amSetFooter(true, 'Retry ›', false);
   } finally {
     amBusy = false;
     amMiniSync();
@@ -6516,6 +6405,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-07-16', items: [
+    'Adding music is now nearly hands-free: search an artist and the jukebox identifies them with a Wikipedia summary, pulls their studio discography, and — after you confirm the albums — automatically finds the best YouTube playlist for each one (matched on expected track count and total views).',
     'The Add Music wizard can now be minimized while it works \u2014 a floating progress pill shows the import status, click it to reopen.',
     'The player\u2019s rating button now sits next to the song title.',
     'The album filter no longer forces one Silver Jews album to stay selected \u2014 hide them all to chart only your Other Artists.',
