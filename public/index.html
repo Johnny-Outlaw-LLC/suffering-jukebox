@@ -369,6 +369,12 @@ body:not(.light) .tt-num { color: var(--text); }
 .am-swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid #333; box-sizing: border-box; padding: 0; }
 .am-swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px #ffffff33; }
 .am-swatch-custom { width: 26px; height: 26px; border-radius: 50%; border: 2px dashed #555; background: none; cursor: pointer; padding: 0; }
+#am-minibar { position: fixed; bottom: 16px; right: 16px; z-index: 4900; display: none; align-items: center; gap: 8px; background: #141210; border: 1px solid var(--accent); border-radius: 999px; padding: .55rem .95rem; font-family: var(--mono); font-size: .55rem; color: var(--text); cursor: pointer; box-shadow: 0 4px 18px rgba(0,0,0,.55); max-width: min(430px, calc(100vw - 32px)); transition: background .15s; }
+#am-minibar:hover { background: #1d1815; }
+#am-minibar.done { border-color: #22c55e; }
+#am-minibar.err { border-color: #ef4444; }
+#am-minibar .am-mini-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { #am-minibar { bottom: 76px; right: 12px; } }
 .alb-added-by { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); padding: .45rem .75rem .25rem; letter-spacing: .05em; }
 .oa-menu { min-width: 340px; max-width: min(92vw, 460px); }
 .oa-artist { border-bottom: 1px solid var(--border); }
@@ -1450,6 +1456,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">Add Music from YouTube</span>
+      <button class="modal-close" onclick="amMinimize()" title="Minimize — keeps working in the background" style="font-size:1rem">–</button>
       <button class="modal-close" onclick="closeAddMusic()">✕</button>
     </div>
     <div class="modal-body">
@@ -1507,6 +1514,11 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <span class="mf-status" id="amFooterStatus"></span>
     </div>
   </div>
+</div>
+
+<!-- Add Music minimized progress pill -->
+<div id="am-minibar" onclick="amRestore()" title="Click to reopen Add Music">
+  <span class="m-spin"></span><span class="am-mini-txt">Adding music…</span>
 </div>
 
 <!-- MANAGE MY ARTISTS MODAL -->
@@ -5645,6 +5657,8 @@ let amArtistId = null;  // artist row id once the import lands
 let amImportOk = false; // import + lyric discovery finished
 let amFt       = null;  // fine-tune data from the edge function
 let amFtColor  = null;  // chosen chart color
+let amMinimized = false; // wizard hidden, work continuing in the background
+let _amLastStatus = ''; // last step-status line, mirrored on the minimized pill
 
 // ── OTHER ARTISTS — community artists surfaced on the main page ──
 let communityArtists = [];
@@ -5787,6 +5801,8 @@ function amStepGo(n, status) {
   });
   const st = document.getElementById('amStepStatus');
   st.style.display = ''; st.className = 'am-step-status'; st.textContent = status || '';
+  _amLastStatus = status || '';
+  amMiniSync();
 }
 function amStepDone(status) {
   const bar = document.getElementById('amSteps'); if (!bar) return;
@@ -5794,12 +5810,16 @@ function amStepDone(status) {
   bar.querySelectorAll('.am-step').forEach(el => { el.className = 'am-step done'; el.querySelector('.am-step-dot').textContent = '\u2713'; });
   const st = document.getElementById('amStepStatus');
   st.style.display = ''; st.className = 'am-step-status ok'; st.textContent = status || '';
+  _amLastStatus = status || '';
+  amMiniSync();
 }
 function amStepFail(msg) {
   const st = document.getElementById('amStepStatus'); if (!st) return;
   st.style.display = ''; st.className = 'am-step-status err'; st.textContent = '\u2717 ' + msg;
   const act = document.querySelector('#amSteps .am-step.active');
   if (act) act.classList.add('err');
+  _amLastStatus = '\u2717 ' + msg;
+  amMiniSync();
 }
 
 function renderCommunityEmpty() {
@@ -5819,8 +5839,40 @@ function openAddMusic() {
   setTimeout(() => document.getElementById('amSearchInput')?.focus(), 50);
 }
 function closeAddMusic() {
-  if (amBusy) return;
+  if (amBusy) { amMinimize(); return; }   // never kill a running import — tuck it away instead
+  amMinimized = false;
+  const mb = document.getElementById('am-minibar');
+  if (mb) mb.style.display = 'none';
   document.getElementById('addMusicOverlay').classList.remove('open');
+}
+
+function amMinimize() {
+  amMinimized = true;
+  document.getElementById('addMusicOverlay').classList.remove('open');
+  const mb = document.getElementById('am-minibar');
+  if (mb) mb.style.display = 'flex';
+  amMiniSync();
+}
+function amRestore() {
+  amMinimized = false;
+  const mb = document.getElementById('am-minibar');
+  if (mb) mb.style.display = 'none';
+  document.getElementById('addMusicOverlay').classList.add('open');
+}
+// Mirror wizard progress onto the minimized pill
+function amMiniSync() {
+  const mb = document.getElementById('am-minibar');
+  if (!mb || !amMinimized) return;
+  const spin = mb.querySelector('.m-spin');
+  const failed = !amBusy && _amLastStatus.startsWith('\u2717');
+  if (spin) spin.style.display = amBusy ? '' : 'none';
+  mb.classList.toggle('done', !amBusy && !failed && amImportOk);
+  mb.classList.toggle('err', failed);
+  mb.querySelector('.am-mini-txt').textContent =
+    amBusy ? 'Adding music \u2014 ' + (_amLastStatus || 'working\u2026')
+    : failed ? _amLastStatus + ' \u2014 click to reopen'
+    : amImportOk ? '\u2713 Music added \u2014 click to fine-tune'
+    : (_amLastStatus || 'Add Music \u2014 click to reopen');
 }
 document.getElementById('amSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') amSearch(); });
 
@@ -5900,6 +5952,9 @@ function amSetFooter(backVisible, nextLabel, nextDisabled) {
 function amResetWizard() {
   amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
   amArtistId = null; amImportOk = false; amFt = null; amFtColor = null;
+  amMinimized = false; _amLastStatus = '';
+  const mb = document.getElementById('am-minibar');
+  if (mb) mb.style.display = 'none';
   amStepReset(); amStepGo(1, '');
   amShowPane(1);
   document.getElementById('amResultsGrid').innerHTML = '';
@@ -6414,6 +6469,7 @@ async function amImport() {
     amSetFooter(true, 'Retry Import ›', false);
   } finally {
     amBusy = false;
+    amMiniSync();
   }
 }
 
@@ -6460,6 +6516,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-07-16', items: [
+    'The Add Music wizard can now be minimized while it works \u2014 a floating progress pill shows the import status, click it to reopen.',
     'The player\u2019s rating button now sits next to the song title.',
     'The album filter no longer forces one Silver Jews album to stay selected \u2014 hide them all to chart only your Other Artists.',
     'Community album names are now stored clean (no more \u201cArtist - Album (Full Album)\u201d), and albums can be renamed from Manage My Artists.',
