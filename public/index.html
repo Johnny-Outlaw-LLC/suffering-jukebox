@@ -1984,13 +1984,8 @@ function syncSJFilterMenu() {
 
 function toggleSJAlbumPending(albumId, show) {
   ensureSJFilterPending();
-  const sjAlbs = filterBarAlbums();
   if (show) sjFilterPending.delete(albumId);
-  else {
-    const visibleN = sjAlbs.filter(a => !sjFilterPending.has(a.id)).length;
-    if (visibleN <= 1) { syncSJFilterMenu(); return; }
-    sjFilterPending.add(albumId);
-  }
+  else sjFilterPending.add(albumId);
   syncSJFilterMenu();
 }
 
@@ -1999,10 +1994,6 @@ function toggleAllSJAlbumsPending(show) {
   const sjAlbs = filterBarAlbums();
   if (!sjAlbs.length) return;
   sjAlbs.forEach(a => show ? sjFilterPending.delete(a.id) : sjFilterPending.add(a.id));
-  if (!show) {
-    const visibleN = sjAlbs.filter(a => !sjFilterPending.has(a.id)).length;
-    if (visibleN === 0 && sjAlbs[0]) sjFilterPending.delete(sjAlbs[0].id);
-  }
   syncSJFilterMenu();
 }
 
@@ -2823,6 +2814,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       <div style="display:flex;align-items:center;gap:6px;padding:6px 8px 3px 10px">
         <span class="ytp-icon">▶</span>
         <span class="ytp-title" style="flex:1;min-width:0">${safeTitle}</span>
+        <button class="tvb-cycle" id="ytp-vote-btn" data-vote-track="${trackId||''}" onclick="ytpCycleVote();event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" title="Rate" style="flex-shrink:0;${trackId?'':'display:none'}">${trackId?(VOTE_LABELS[String(getMyVote(trackId))]||'-'):'-'}</button>
         <div class="ytp-titlebar-btns">
           <button class="ytp-win-btn ytp-minimize-btn" onclick="ytpToggleMinimize()" title="Minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.minimize}</button>
           <button class="ytp-win-btn ytp-fs-btn" onclick="ytpToggleFullscreen()" title="Maximize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.maximize}</button>
@@ -2835,7 +2827,6 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
-        <button class="tvb-cycle" id="ytp-vote-btn" data-vote-track="${trackId||''}" onclick="ytpCycleVote();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Rate" style="${trackId?'':'display:none'}">${trackId?(VOTE_LABELS[String(getMyVote(trackId))]||'-'):'-'}</button>
         <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
           <span style="font-size:.5rem">🔊</span>
@@ -4973,7 +4964,7 @@ function render() {
   const visTrackList = allTrackList.filter(t => isAlbumVisible(t.album_id));
 
   document.getElementById('main').innerHTML = `
-    ${viewMode !== 'alltracks' && viewMode !== 'playlists' ? `<div id="tl-wrap">${viewMode === 'list' ? renderListView(visAlbList) : (window.innerWidth <= 640 ? renderMobileChart(visAlbList, viewMode) : renderTimeline(visAlbList, viewMode))}</div>` : ''}
+    ${viewMode !== 'alltracks' && viewMode !== 'playlists' ? `<div id="tl-wrap">${!visAlbList.length ? `<div class="empty-state" style="padding:3.5rem 1rem;text-align:center;color:var(--text-muted)"><div class="big-glyph">♩</div><p style="margin-top:.6rem;font-size:.6rem">No albums selected.</p><p style="margin-top:.35rem;font-size:.55rem">Pick albums in the filter above, or add artists from the “Other Artists” menu.</p></div>` : viewMode === 'list' ? renderListView(visAlbList) : (window.innerWidth <= 640 ? renderMobileChart(visAlbList, viewMode) : renderTimeline(visAlbList, viewMode))}</div>` : ''}
     ${viewMode === 'playlists' ? `<div id="tl-wrap">${renderPlaylists()}</div>` : ''}
     ${(ttTrackCache = visTrackList, '')}
     ${viewMode === 'alltracks' ? `<div id="alltracks-wrap" class="alltracks-page">
@@ -6111,8 +6102,19 @@ function renderAmAlbums() {
 // Mirrors the edge function's cleanAlbumName so titles match the same way
 function amCleanAlbumTitle(title, artistName) {
   let t = title || '';
+  const nrm = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   const pfx = new RegExp('^' + artistName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[-–—:/]\\s*', 'i');
-  t = t.replace(pfx, '');
+  if (pfx.test(t)) t = t.replace(pfx, '');
+  else {
+    // fuzzy: strip the longest leading chunk that matches the artist name
+    // (handles channels like "Daniel Johnston Official" vs "Daniel Johnston - Album")
+    const na = nrm(artistName);
+    const seps = [...t.matchAll(/\s*[-–—:/]\s*/g)];
+    for (let i = seps.length - 1; i >= 0; i--) {
+      const np = nrm(t.slice(0, seps[i].index));
+      if (np && np.length >= 3 && (na.includes(np) || np.includes(na))) { t = t.slice(seps[i].index + seps[i][0].length); break; }
+    }
+  }
   t = t.replace(/\s*[\(\[][^\)\]]*(full\s+album|official|complete|hq|hd|remaster)[^\)\]]*[\)\]]\s*/gi, ' ');
   t = t.replace(/\s*(full\s+album|album\s+completo)\s*$/i, '');
   t = t.replace(/\s+/g, ' ').replace(/[\s\-–—/|]+$/g, '').trim();
@@ -6235,7 +6237,7 @@ function renderMyArtists(isAdmin) {
         <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444" onclick="maDeleteArtist('${a.id}')">✕ Remove</button>
       </div>
       <div class="oa-albs">
-        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div>`).join('')}
+        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Rename this album" onclick="maRenameAlbum('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div>`).join('')}
       </div>
     </div>`).join('');
 }
@@ -6253,6 +6255,20 @@ async function maRename(artistId) {
   try {
     await amFetch('?action=rename_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId, name: name.trim() }) });
     maBusy('✓ Renamed');
+    await maAfterChange();
+  } catch (e) { maBusy('✗ ' + e.message, true); }
+}
+
+async function maRenameAlbum(artistId, albumId) {
+  const a = _maData.find(x => x.id === artistId);
+  const al = a && a.albums.find(x => x.id === albumId);
+  if (!al) return;
+  const name = prompt('New album name:', al.name);
+  if (!name || !name.trim() || name.trim() === al.name) return;
+  maBusy('Renaming album…');
+  try {
+    await amFetch('?action=rename_album', { method: 'POST', body: JSON.stringify({ album_id: albumId, name: name.trim() }) });
+    maBusy('✓ Album renamed');
     await maAfterChange();
   } catch (e) { maBusy('✗ ' + e.message, true); }
 }
@@ -6444,6 +6460,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-07-16', items: [
+    'The player\u2019s rating button now sits next to the song title.',
+    'The album filter no longer forces one Silver Jews album to stay selected \u2014 hide them all to chart only your Other Artists.',
+    'Community album names are now stored clean (no more \u201cArtist - Album (Full Album)\u201d), and albums can be renamed from Manage My Artists.',
     'New Community page: sign in and add any artist to the jukebox straight from YouTube — search the artist, pick which albums to include, and their daily YouTube views get tracked automatically.',
     'After an import, the jukebox automatically looks up song lyrics (including synced lyrics where available) and confirms album release dates against music databases.',
     'Adding an artist is now a guided four-step wizard: find the artist, pick their albums, automatic lyrics & release-date lookup, then a fine-tune step to set album covers, names, years and the artist’s bar-chart color. Community albums display who added them and when.',
