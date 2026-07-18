@@ -4515,6 +4515,8 @@ function closeYTPlaylistDD() {
 
 async function playPlaylist(playlistId) {
   try {
+    const plMeta = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId) || pubPlaylists.find(p => p.id === playlistId);
+    await restorePlaylistContext(plMeta);
     const rows = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
     if (!rows.length) { alert('This playlist is empty.'); return; }
     const q = [];
@@ -4574,7 +4576,7 @@ async function doSavePlaylist() {
   const btn = document.getElementById('spl-save-btn');
   if (btn) { btn.disabled=true; btn.textContent='Saving…'; }
   try {
-    const [pl] = await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:googleUser.displayName||googleUser.name||'' });
+    const [pl] = await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:googleUser.displayName||googleUser.name||'', context:_playlistContext() });
     for (let i=0; i<ytQueue.length; i++) {
       if (ytQueue[i].trackId) await dbPost('/playlist_tracks', { playlist_id:pl.id, track_id:ytQueue[i].trackId, position:i });
     }
@@ -9205,9 +9207,62 @@ function playFavorites(shuffle = ytShuffle) {
   setYtShuffleEnabled(ytShuffle);
 }
 
-function playFromPlaylist(playlistId) {
+// ── Playlist jukebox context ──────────────────────────────────────────────
+// Saved with each playlist so loading it later can bring back the artists/
+// albums that were in the jukebox when it was made. Without this, tracks
+// from Other Artists can't resolve to videos on a page that hasn't loaded
+// those artists.
+function _playlistContext() {
+  return {
+    v: 1,
+    page: _SLUG_ARTIST?.slug
+      || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null),
+    otherArtists: [...addedCommunityIds],
+    selectedArtists: [...selectedIds],
+    excludedAlbumIds: [...excludedAlbumIds],
+  };
+}
+
+async function restorePlaylistContext(pl) {
+  const ctx = pl?.context;
+  if (!ctx) return;
+  let changed = false;
+  (Array.isArray(ctx.otherArtists) ? ctx.otherArtists : []).forEach(id => {
+    const a = oaFindArtist(id);
+    if (!a) return;
+    addedCommunityIds.add(id);
+    if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
+    if (!selectedIds.has(id)) { selectedIds.add(id); changed = true; }
+  });
+  (Array.isArray(ctx.selectedArtists) ? ctx.selectedArtists : []).forEach(id => {
+    if (selectedIds.has(id)) return;
+    const a = allArtists.find(x => x.id === id) || oaFindArtist(id);
+    if (!a) return;
+    if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
+    selectedIds.add(id); changed = true;
+  });
+  // Album visibility only restores when loading on the same page the playlist
+  // was saved on — on any other page we just add the missing artists so every
+  // track can resolve and their albums join the chart.
+  const curPage = _SLUG_ARTIST?.slug || (IS_COMMUNITY ? 'community' : null);
+  const savedPage = typeof ctx.page === 'string' ? ctx.page : null;
+  const featuredSlug = IS_COMMUNITY && FEATURED_ARTIST_ID ? allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug : null;
+  if ((savedPage === curPage || (featuredSlug && savedPage === featuredSlug)) && Array.isArray(ctx.excludedAlbumIds)) {
+    const next = new Set(ctx.excludedAlbumIds);
+    if (next.size !== excludedAlbumIds.size || [...next].some(id => !excludedAlbumIds.has(id))) {
+      excludedAlbumIds = next; changed = true;
+    }
+  }
+  if (!changed) return;
+  try { await loadData(); } catch (e) {}
+  Object.values(albums).flat().forEach(a => { if (isAlbumVisible(a.id)) expandedAlbumIds.add(a.id); });
+  try { updateFilterHeader(); } catch (e) {}
+}
+
+async function playFromPlaylist(playlistId) {
   const pl = _savedPlaylists.find(p => p.id === playlistId);
   if (!pl || !pl._tracks?.length) return;
+  await restorePlaylistContext(pl);
   const q = pl._tracks
     .sort((a, b) => a.position - b.position)
     .map(pt => {
@@ -9357,7 +9412,7 @@ async function confirmSavePlaylist() {
         'Content-Type': 'application/json', Prefer: 'return=representation',
         'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox'
       },
-      body: JSON.stringify({ name, user_email: googleUser.email, is_public: isPublic })
+      body: JSON.stringify({ name, user_email: googleUser.email, is_public: isPublic, context: _playlistContext() })
     });
     const plRows = await plResp.json();
     const plId = plRows[0]?.id;
@@ -9510,6 +9565,7 @@ function buildPlaylistsHTML(playlists) {
 async function loadAndAddPlaylistToQueue(playlistId) {
   const pl = _savedPlaylists.find(p => p.id === playlistId);
   if (!pl) return;
+  await restorePlaylistContext(pl);
   const sorted = (pl._tracks || []).sort((a, b) => a.position - b.position);
   sorted.forEach(pt => {
     const t = findTrackById(pt.track_id);
