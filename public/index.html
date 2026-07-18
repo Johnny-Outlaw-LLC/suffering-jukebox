@@ -4488,10 +4488,17 @@ function renderLyrics(trackId, lyric, source) {
 // ══════════════════════════════════════════════════════════════
 function ytPlaylistBarHTML() {
   const has = playlists.length > 0 || pubPlaylists.length > 0;
+  const _plItem = (p, meta) => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${meta}</span></div>`;
+  const _mySplit  = { ok: playlists.filter(p => !playlistNeedsOtherArtists(p)),    other: playlists.filter(p => playlistNeedsOtherArtists(p)) };
+  const _pubSplit = { ok: pubPlaylists.filter(p => !playlistNeedsOtherArtists(p)), other: pubPlaylists.filter(p => playlistNeedsOtherArtists(p)) };
   const items = [
-    ...playlists.map(p => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${p._tracks?.length||0} tracks</span></div>`),
+    ..._mySplit.ok.map(p => _plItem(p, `${p._tracks?.length||0} tracks`)),
+    _mySplit.other.length ? '<div class="yt-pl-dd-sep">Playlists with other artists</div>' : '',
+    ..._mySplit.other.map(p => _plItem(p, `${p._tracks?.length||0} tracks`)),
     pubPlaylists.length ? '<div class="yt-pl-dd-sep">Public Playlists</div>' : '',
-    ...pubPlaylists.map(p => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${(p.user_name||p.user_email||'').split('@')[0]}</span></div>`)
+    ..._pubSplit.ok.map(p => _plItem(p, (p.user_name||p.user_email||'').split('@')[0])),
+    _pubSplit.other.length ? '<div class="yt-pl-dd-sep">Public — with other artists</div>' : '',
+    ..._pubSplit.other.map(p => _plItem(p, (p.user_name||p.user_email||'').split('@')[0]))
   ].filter(Boolean).join('');
   return `<div class="yt-playlist-bar" id="yt-playlist-bar"><div class="yt-pl-dd-wrap" id="yt-pl-dd-wrap"><button class="yt-pl-dd-btn" onclick="toggleYTPlaylistDD(event)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">♪ ${has?'Load Playlist':'No Playlists'}</span><span>▾</span></button><div class="yt-pl-dd-menu" id="yt-pl-dd-menu" style="display:none">${has?items:'<div class="yt-pl-dd-item" style="color:#444;cursor:default">No playlists yet</div>'}</div></div>${googleUser?`<button class="yt-pl-save-btn" onclick="openSavePlaylistDialog()">💾 Save</button>`:''}</div>`;
 }
@@ -4516,7 +4523,7 @@ function closeYTPlaylistDD() {
 async function playPlaylist(playlistId) {
   try {
     const plMeta = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId) || pubPlaylists.find(p => p.id === playlistId);
-    await restorePlaylistContext(plMeta);
+    await ensurePlaylistPlayable(plMeta);
     const rows = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
     if (!rows.length) { alert('This playlist is empty.'); return; }
     const q = [];
@@ -5072,11 +5079,11 @@ function renderLWYTBHTML() {
       ${_hasFavs ? `<button class="ctrl-btn" onclick="shuffleFavorites()">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<select class="ctrl-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
         <option value="">▶ My Playlists</option>
-        ${_myPls.map(p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + '</option>').join('')}
+        ${_plSelectOptions(_myPls)}
       </select>` : ''}
       ${_pubPls.length ? `<select class="ctrl-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
         <option value="">▶ Public Playlists</option>
-        ${_pubPls.map(p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + '</option>').join('')}
+        ${_plSelectOptions(_pubPls)}
       </select>` : ''}
   </div>`;
 }
@@ -9259,10 +9266,65 @@ async function restorePlaylistContext(pl) {
   try { updateFilterHeader(); } catch (e) {}
 }
 
+// Track ids in a playlist that can't resolve to a loaded track + video yet.
+function _plUnresolvedTrackIds(pl) {
+  return (pl?._tracks || [])
+    .map(pt => pt.track_id)
+    .filter(tid => tid && (!findTrackById(tid) || !ytData[tid]?.video_id));
+}
+
+// True when playing this playlist needs artists/albums the jukebox hasn't loaded.
+function playlistNeedsOtherArtists(pl) {
+  return _plUnresolvedTrackIds(pl).length > 0;
+}
+
+function _plSelectOptions(arr) {
+  const opt = p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + '</option>';
+  const ok = arr.filter(p => !playlistNeedsOtherArtists(p));
+  const other = arr.filter(p => playlistNeedsOtherArtists(p));
+  return ok.map(opt).join('')
+    + (other.length ? '<option value="" disabled>── Playlists with other artists ──</option>' + other.map(opt).join('') : '');
+}
+
+// Make every track in the playlist resolvable before queueing: first restore
+// the saved jukebox context, then — for playlists saved without context (or
+// whose context didn't cover everything) — look the missing tracks up in the
+// DB, find the artists that own them, and pull those artists into the jukebox.
+async function ensurePlaylistPlayable(pl) {
+  if (!pl) return;
+  await restorePlaylistContext(pl);
+  const missing = _plUnresolvedTrackIds(pl);
+  if (!missing.length) return;
+  try {
+    let tRows = [];
+    for (let i = 0; i < missing.length; i += 50) {
+      tRows = tRows.concat(await dbGet(`/tracks?id=in.(${missing.slice(i, i + 50).join(',')})&select=id,album_id`));
+    }
+    const albIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
+    if (!albIds.length) return;
+    const aRows = await dbGet(`/albums?id=in.(${albIds.join(',')})&select=id,artist_id`);
+    let changed = false;
+    [...new Set(aRows.map(a => a.artist_id).filter(Boolean))].forEach(aid => {
+      if (selectedIds.has(aid)) return;
+      const a = oaFindArtist(aid);
+      if (!a) return;
+      if (communityArtists.find(c => c.id === aid)) addedCommunityIds.add(aid);
+      if (!allArtists.find(x => x.id === aid)) allArtists.push(a);
+      selectedIds.add(aid); changed = true;
+    });
+    // Un-hide the albums these tracks live on so they show in the chart too.
+    albIds.forEach(id => { if (excludedAlbumIds.has(id)) { excludedAlbumIds.delete(id); changed = true; } });
+    if (!changed) return;
+    await loadData();
+    Object.values(albums).flat().forEach(a => { if (isAlbumVisible(a.id)) expandedAlbumIds.add(a.id); });
+    try { updateFilterHeader(); } catch (e) {}
+  } catch (e) {}
+}
+
 async function playFromPlaylist(playlistId) {
   const pl = _savedPlaylists.find(p => p.id === playlistId);
   if (!pl || !pl._tracks?.length) return;
-  await restorePlaylistContext(pl);
+  await ensurePlaylistPlayable(pl);
   const q = pl._tracks
     .sort((a, b) => a.position - b.position)
     .map(pt => {
@@ -9271,7 +9333,7 @@ async function playFromPlaylist(playlistId) {
       if (!t || !vid) return null;
       return { videoId: vid, title: t.name, trackId: t.id };
     }).filter(Boolean);
-  if (!q.length) return;
+  if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
   _queueHasAdditions = false;
   const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
   setYtShuffleEnabled(doShuffle);
@@ -9565,7 +9627,7 @@ function buildPlaylistsHTML(playlists) {
 async function loadAndAddPlaylistToQueue(playlistId) {
   const pl = _savedPlaylists.find(p => p.id === playlistId);
   if (!pl) return;
-  await restorePlaylistContext(pl);
+  await ensurePlaylistPlayable(pl);
   const sorted = (pl._tracks || []).sort((a, b) => a.position - b.position);
   sorted.forEach(pt => {
     const t = findTrackById(pt.track_id);
