@@ -1481,6 +1481,16 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">We’ll identify the artist and pull their studio discography automatically.</div>
         </div>
         <div class="am-ident-card" id="amIdentCard" style="display:none"></div>
+        <div id="amManualLink" style="display:none;margin-top:.55rem">
+          <button type="button" class="m-btn ghost" style="font-size:.5rem" onclick="amShowManual()">Can’t find the artist? Add them manually ›</button>
+        </div>
+        <div id="amManualBox" style="display:none">
+          <div class="m-fl" style="margin-top:.6rem">Artist name</div>
+          <input type="text" class="m-input" id="amManName" maxlength="80" placeholder="Artist name…" autocomplete="off">
+          <div class="m-fl" style="margin-top:.6rem">YouTube playlist links — one per line, each becomes an album</div>
+          <textarea class="m-input" id="amManPls" rows="4" style="width:100%;resize:vertical;font-family:inherit;line-height:1.5" placeholder="https://www.youtube.com/playlist?list=OLAK5uy_…&#10;https://music.youtube.com/playlist?list=…"></textarea>
+          <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">Tip: open the album’s playlist on YouTube and copy the page URL. Lyrics, release dates and daily view tracking still happen automatically.</div>
+        </div>
       </div>
       <!-- STEP 2: album selection -->
       <div class="am-pane" id="amPane2">
@@ -1734,12 +1744,14 @@ const SYNC_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/music-syn
 const YT_FN   = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/youtube-sync';
 const COMMUNITY_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/community-import';
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
-const IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community';
-const FEATURED_ARTIST_ID = IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null;
+// Artist slug pages (e.g. /pavement) are served by the Next [slug] route, which injects window.__SLUG_ARTIST__
+const _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
+const IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community' || !!_SLUG_ARTIST;
+const FEATURED_ARTIST_ID = _SLUG_ARTIST ? _SLUG_ARTIST.id : (IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null);
 function filterPageArtists(rows) {
   if (IS_COMMUNITY) {
     let out = rows.filter(a => a.is_community);
-    const ap = new URLSearchParams(window.location.search).get('artist');
+    const ap = FEATURED_ARTIST_ID;
     if (ap) { const one = out.filter(a => a.id === ap); if (one.length) out = one; }
     return out;
   }
@@ -4771,19 +4783,22 @@ async function confirmDeletePlaylist(id, name) {
 
 async function init() {
   try {
-    const _artistRows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
+    const _artistRows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = _artistRows.filter(a => a.is_community);
     mainCatalogArtists = _artistRows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     allArtists = filterPageArtists(_artistRows);
     if (!IS_COMMUNITY) {
       restoreOtherArtists();
     } else {
-      const _ap = new URLSearchParams(window.location.search).get('artist');
+      const _ap = FEATURED_ARTIST_ID;
       const _one = _ap && allArtists.find(a => a.id === _ap);
       if (_one) {
         document.title = _one.name + ' Jukebox — Suffering Jukebox';
         const _tag = document.getElementById('brand-tagline');
         if (_tag) _tag.innerHTML = 'The <strong>' + (_one.name || '').replace(/</g, '&lt;') + '</strong> jukebox' + (_one.added_by_name ? ' — added to the community by ' + (_one.added_by_name || '').replace(/</g, '&lt;') : '');
+      }
+      if (_one && _one.slug && window.location.pathname.replace(/\/+$/, '') === '/community') {
+        try { history.replaceState(null, '', '/' + _one.slug); } catch (_) {}
       }
       if (_ap) restoreOtherArtists();
     }
@@ -5619,7 +5634,7 @@ async function runSync() {
     (data.log || []).forEach(l => mLog(l.startsWith('  ') ? 'ok' : '', l));
     mLog('ok', `✓ ${data.albums} albums · ${data.tracks} tracks`);
     statusEl.textContent = '✓ Done'; statusEl.style.color = '#22c55e';
-    const _rows2 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
+    const _rows2 = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = _rows2.filter(a => a.is_community);
     mainCatalogArtists = _rows2.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     allArtists = filterPageArtists(_rows2);
@@ -5657,6 +5672,7 @@ let amFtColor  = null;  // chosen chart color
 let amMinimized = false; // wizard hidden, work continuing in the background
 let _amLastStatus = ''; // last step-status line, mirrored on the minimized pill
 let amIdent = null;      // identify payload: wiki summary, discography, channel, existing flags
+let amManual = false;    // manual add mode — user supplies artist name + playlist links
 
 // ── OTHER ARTISTS — community artists surfaced on the main page ──
 let communityArtists = [];
@@ -5738,7 +5754,7 @@ function oaToggleAlbum(albumId, show) {
 function renderOtherArtistsBtn() {
   const esc = s => (s || '').replace(/</g, '&lt;');
   // On an artist jukebox page, list every community artist except the featured one
-  const _featuredId = IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null;
+  const _featuredId = FEATURED_ARTIST_ID;
   const _commList = _featuredId ? communityArtists.filter(a => a.id !== _featuredId) : communityArtists;
   // Community pages also list the main-jukebox artists (Silver Jews / Purple Mountains) up top
   const _mainSorted = [...mainCatalogArtists].sort((a, b) => /silver jews/i.test(b.name || '') - /silver jews/i.test(a.name || ''));
@@ -5762,7 +5778,7 @@ function renderOtherArtistsBtn() {
           <div class="oa-meta">${a.is_community === false ? 'main jukebox artist' : (a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist')}</div>
         </div>
         ${(!IS_COMMUNITY || _featuredId) ? `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>` : ''}
-        <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='${a.is_community === false ? '/' : `/community?artist=${a.id}`}'" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
+        <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='${a.is_community === false ? '/' : (a.slug ? '/' + a.slug : `/community?artist=${a.id}`)}'" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
     </div>`;
@@ -5888,6 +5904,8 @@ async function amSearch() {
   const btn = document.getElementById('amSearchBtn');
   btn.disabled = true; btn.textContent = '…';
   amIdent = null; amChannel = null; amAlbums = []; amPicked = new Set();
+  amManual = false;
+  const _mb = document.getElementById('amManualBox'); if (_mb) _mb.style.display = 'none';
   if (amStep !== 1) amShowPane(1);
   amStepGo(1, '');
   amSetFooter(false, 'Next: Choose Albums ›', true);
@@ -5905,12 +5923,15 @@ async function amSearch() {
     const blocked = d.existing && d.existing.is_community === false;
     amSetFooter(false, 'Next: Choose Albums ›', blocked || !amAlbums.length || !amChannel);
     if (blocked) amStepGo(1, `“${d.existing.name}” is already on the main jukebox.`);
-    else if (!amAlbums.length) amStepGo(1, 'No discography found — try a different spelling.');
-    else if (!amChannel) amStepGo(1, 'No YouTube channel found for this artist.');
+    else if (!amAlbums.length) amStepGo(1, 'No discography found — try a different spelling, or add them manually below.');
+    else if (!amChannel) amStepGo(1, 'No YouTube channel found for this artist — you can add them manually below.');
     else amStepGo(1, 'If this is the right artist, continue to choose albums.');
   } catch (e) {
     card.innerHTML = `<div style="color:#ef4444;font-size:.55rem">${e.message}</div>`;
-  } finally { btn.disabled = false; btn.textContent = 'Search'; }
+  } finally {
+    btn.disabled = false; btn.textContent = 'Search';
+    const ml = document.getElementById('amManualLink'); if (ml) ml.style.display = '';
+  }
 }
 
 function renderAmIdentCard() {
@@ -5937,6 +5958,60 @@ function renderAmIdentCard() {
     </div>`;
 }
 
+// ── Manual add — the fallback when identify can’t find the artist ───────────
+function amShowManual() {
+  amManual = true;
+  document.getElementById('amManualBox').style.display = '';
+  const nameEl = document.getElementById('amManName');
+  if (!nameEl.value.trim()) nameEl.value = (amIdent && amIdent.artist_name) || document.getElementById('amSearchInput').value.trim();
+  amStepGo(1, 'Paste YouTube playlist links — each playlist becomes an album.');
+  amSetFooter(false, 'Next: Check Playlists ›', false);
+  nameEl.focus();
+}
+function amParsePlaylistIds(text) {
+  const ids = [];
+  for (const tok of (text || '').split(/\s+/)) {
+    if (!tok) continue;
+    let id = null;
+    const m = tok.match(/[?&]list=([A-Za-z0-9_-]{10,60})/);
+    if (m) id = m[1];
+    else if (/^(PL|OLAK|RDCLAK|UU|FL)[A-Za-z0-9_-]{8,}$/.test(tok)) id = tok;
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+async function amManualLookup() {
+  if (amBusy) return;
+  const name = document.getElementById('amManName').value.trim();
+  const ids = amParsePlaylistIds(document.getElementById('amManPls').value);
+  if (!name) { amStepFail('Enter the artist name.'); return; }
+  if (!ids.length) { amStepFail('Paste at least one YouTube playlist link.'); return; }
+  amBusy = true;
+  amSetFooter(false, '<span class="m-spin"></span>Checking…', true);
+  amStepGo(1, `Checking ${ids.length} playlist${ids.length === 1 ? '' : 's'} on YouTube…`);
+  try {
+    const d = await amFetch(`?action=playlist_info&ids=${encodeURIComponent(ids.join(','))}`);
+    const found = d.results || [];
+    if (!found.length) throw new Error('None of those playlists could be found on YouTube — check the links.');
+    amAlbums = found.map(p => ({
+      title: p.title, date: '', rg: null,
+      playlist_id: p.playlist_id, track_count: p.track_count,
+      channel_id: p.channel_id, channel_title: p.channel_title,
+      already: !!p.already_imported,
+    }));
+    amPicked = new Set(amAlbums.map((a, i) => a.already ? -1 : i).filter(i => i >= 0));
+    amIdent = { artist_name: name, albums: amAlbums, manual: true };
+    amChannel = { channel_id: found[0].channel_id || '', title: found[0].channel_title || '' };
+    amBusy = false;
+    amGoAlbums();
+    if (d.missing && d.missing.length) amStepGo(2, `⚠ ${d.missing.length} link${d.missing.length === 1 ? '' : 's'} not found on YouTube — continuing with the rest.`);
+  } catch (e) {
+    amBusy = false;
+    amStepFail(e.message);
+    amSetFooter(false, 'Next: Check Playlists ›', false);
+  }
+}
+
 // ── Wizard controller ──────────────────────────────────────────────────────────
 function amShowPane(n) {
   amStep = n;
@@ -5958,9 +6033,13 @@ function amResetWizard() {
   if (mb) mb.style.display = 'none';
   amStepReset(); amStepGo(1, '');
   amShowPane(1);
-  amIdent = null;
+  amIdent = null; amManual = false;
   const ic = document.getElementById('amIdentCard');
   if (ic) { ic.style.display = 'none'; ic.innerHTML = ''; }
+  const _ml = document.getElementById('amManualLink'); if (_ml) _ml.style.display = 'none';
+  const _mx = document.getElementById('amManualBox'); if (_mx) _mx.style.display = 'none';
+  const _mn = document.getElementById('amManName'); if (_mn) _mn.value = '';
+  const _mp = document.getElementById('amManPls'); if (_mp) _mp.value = '';
   document.getElementById('amAlbumsList').innerHTML = '';
   const log = document.getElementById('amLog'); log.innerHTML = ''; log.classList.remove('open');
   document.getElementById('amFtBody').innerHTML = '';
@@ -5969,7 +6048,7 @@ function amResetWizard() {
 }
 async function amNext() {
   if (amBusy) return;
-  if (amStep === 1) { if (amIdent && amChannel && amAlbums.length && !(amIdent.existing && amIdent.existing.is_community === false)) amGoAlbums(); }
+  if (amStep === 1) { if (amManual) amManualLookup(); else if (amIdent && amChannel && amAlbums.length && !(amIdent.existing && amIdent.existing.is_community === false)) amGoAlbums(); }
   else if (amStep === 2) { if (amPicked.size) amImport(); }
   else if (amStep === 3) { if (amImportOk) amGoFinetune(); else if (amPicked.size) amImport(); }
   else if (amStep === 4) amFinish();
@@ -5978,7 +6057,8 @@ function amBack() {
   if (amBusy) return;
   if (amStep === 2) {
     amShowPane(1); amStepGo(1, '');
-    amSetFooter(false, 'Next: Choose Albums ›', !(amIdent && amChannel && amAlbums.length));
+    if (amManual) amSetFooter(false, 'Next: Check Playlists ›', false);
+    else amSetFooter(false, 'Next: Choose Albums ›', !(amIdent && amChannel && amAlbums.length));
   } else if (amStep === 3 && !amImportOk) {
     amShowPane(2); amStepGo(2, '');
     renderAmAlbums();
@@ -5988,11 +6068,15 @@ function amBack() {
 // ── Step 2: confirm the discography albums to import ──────────────────────
 function amGoAlbums() {
   amShowPane(2);
-  amStepGo(2, 'Uncheck anything you don’t want — the best YouTube playlist is found for each album.');
+  amStepGo(2, amIdent && amIdent.manual
+    ? 'These are your playlists — uncheck anything you don’t want to import.'
+    : 'Uncheck anything you don’t want — the best YouTube playlist is found for each album.');
   const img = (amIdent.wiki && amIdent.wiki.thumbnail) || (amChannel && amChannel.thumbnail) || null;
   document.getElementById('amSelImg2').innerHTML = img ? `<img src="${img}">` : '';
   document.getElementById('amSelName2').textContent = amIdent.artist_name;
-  document.getElementById('amSelMeta2').textContent = `${amAlbums.length} studio album${amAlbums.length === 1 ? '' : 's'} in the discography`;
+  document.getElementById('amSelMeta2').textContent = amIdent && amIdent.manual
+    ? `${amAlbums.length} playlist${amAlbums.length === 1 ? '' : 's'} from your links`
+    : `${amAlbums.length} studio album${amAlbums.length === 1 ? '' : 's'} in the discography`;
   renderAmAlbums();
 }
 
@@ -6088,7 +6172,7 @@ async function amFinish() {
     amStepDone('All set — your music is live on the jukebox.');
     // Refresh app state so new names, years, covers and colors show everywhere
     try {
-      const rows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
+      const rows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
       communityArtists = rows.filter(a => a.is_community);
       mainCatalogArtists = rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
       communityAlbumsCache = {};
@@ -6114,7 +6198,7 @@ function renderAmAlbums() {
       <input type="checkbox" ${amPicked.has(i) ? 'checked' : ''} ${a.already ? 'disabled' : ''} onclick="event.stopPropagation();amToggleAlbum(${i})">
       <div style="flex:1;min-width:0">
         <div class="am-alb-name">${esc(a.title)}</div>
-        <div class="am-alb-meta">${(a.date || '').slice(0, 4)}${a.already ? ' · already in jukebox' : ''}</div>
+        <div class="am-alb-meta">${a.playlist_id ? `${a.track_count} tracks · ${esc(a.channel_title || '')}` : (a.date || '').slice(0, 4)}${a.already ? ' · already in jukebox' : ''}</div>
       </div>
     </div>`).join('');
   if (amStep === 2 && !amBusy) amSetFooter(true, amPicked.size ? `Import ${amPicked.size} Album${amPicked.size === 1 ? '' : 's'} ›` : 'Import Albums ›', amPicked.size === 0);
@@ -6227,7 +6311,7 @@ async function maDeleteArtist(artistId) {
 // Refresh app state after a manage action, then re-render the modal list
 async function maAfterChange() {
   try {
-    const rows = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
+    const rows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = rows.filter(a => a.is_community);
     mainCatalogArtists = rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
     communityAlbumsCache = {};
@@ -6302,6 +6386,11 @@ async function amImport() {
       const a = picked[i];
       amStepGo(3, `Album ${i + 1} of ${picked.length}: “${a.title}” — finding the best YouTube playlist…`);
       try {
+        if (a.playlist_id) {
+          matches.push({ id: a.playlist_id, title: a.title });
+          amLogLine('ok', `  ✓ “${a.title}” — using your playlist (${a.track_count} tracks)`);
+          continue;
+        }
         const m = await amFetch(`?action=match_album&artist=${encodeURIComponent(amIdent.artist_name)}&album=${encodeURIComponent(a.title)}` +
           (a.rg ? `&rg=${encodeURIComponent(a.rg)}` : '') +
           `&channel_id=${encodeURIComponent(amChannel.channel_id)}`);
@@ -6328,12 +6417,12 @@ async function amImport() {
     picked.forEach(a => { a.already = true; });
     amPicked.clear();
     if (IS_COMMUNITY) {
-      allArtists = filterPageArtists(await dbGet('/artists?select=id,name,last_sync_id,is_community,color&order=name.asc'));
+      allArtists = filterPageArtists(await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,color&order=name.asc'));
       allArtists.forEach(a => selectedIds.add(a.id));
       await loadData();
     } else {
       try {
-        const _rows3 = await dbGet('/artists?select=id,name,last_sync_id,is_community,added_by_name,color&order=name.asc');
+        const _rows3 = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
         communityArtists = _rows3.filter(a => a.is_community);
         mainCatalogArtists = _rows3.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
         updateFilterHeader();
