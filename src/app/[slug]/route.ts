@@ -25,24 +25,27 @@ async function sb(path: string): Promise<any[]> {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  // Keep the query string on redirects so a shared-link ?s= still hydrates
+  // on the main page even when the artist slug no longer resolves.
+  const home = `${SITE_URL}/${req.nextUrl.search}`;
   const { slug: raw } = await params;
   const slug = (raw || "").toLowerCase();
   if (!/^[a-z0-9][a-z0-9-]{1,79}$/.test(slug)) {
-    return NextResponse.redirect(`${SITE_URL}/`, 302);
+    return NextResponse.redirect(home, 302);
   }
 
   const [artist] = await sb(
     `/artists?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug,is_community,added_by_name`
   );
   if (!artist) {
-    return NextResponse.redirect(`${SITE_URL}/`, 302);
+    return NextResponse.redirect(home, 302);
   }
   // Main-catalog artists live on the home page
   if (!artist.is_community) {
-    return NextResponse.redirect(`${SITE_URL}/`, 302);
+    return NextResponse.redirect(home, 302);
   }
 
   let art = "";

@@ -30,6 +30,7 @@ export async function GET(
   let by = "";
   let count = 0;
   let thumb = "";
+  let pagePath = ""; // artist slug page (or "community") the share was made on
   try {
     const r = await fetch(
       `${REST}/shared_links?slug=eq.${slug}&select=name,shared_by,payload`,
@@ -48,6 +49,8 @@ export async function GET(
       const idx = Math.min(Math.max(row.payload?.idx || 0, 0), Math.max(count - 1, 0));
       const vid = queue[idx]?.videoId || queue[0]?.videoId;
       if (vid) thumb = `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`;
+      const pg = typeof row.payload?.page === "string" ? row.payload.page : "";
+      if (/^[a-z0-9][a-z0-9-]{0,79}$/.test(pg)) pagePath = pg;
     }
   } catch {
     /* fall through — serve generic tags */
@@ -57,7 +60,9 @@ export async function GET(
   const desc = count
     ? `${by || "Someone"} shared ${count} track${count === 1 ? "" : "s"} of Silver Jews & Purple Mountains. Press play.`
     : "A shared Silver Jews & Purple Mountains playlist. Press play.";
-  const dest = `https://sufferingjukebox.stream/?s=${slug}`;
+  // Land on the page the share was made on (artist jukebox / community / main)
+  // so the app loads the same catalog before hydrating the shared state.
+  const dest = `https://sufferingjukebox.stream/${pagePath}?s=${slug}`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">

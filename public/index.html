@@ -8467,6 +8467,12 @@ async function plShareCreate() {
       lyrics: hasQueue && incLyrics ? { open: !!_ytpLyricsOpen, sync: !!_lyrSyncEnabled, size: globalLyricSize } : null,
       viewMode: viewMode,
       filters: { excludedAlbumIds: [...excludedAlbumIds], listSort: listSort },
+      // Page + artist context so the link reopens the same jukebox (artist
+      // slug page, /community, or the main page) with the same artists shown.
+      page: _SLUG_ARTIST?.slug
+        || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null),
+      otherArtists: [...addedCommunityIds],
+      selectedArtists: [...selectedIds],
     };
     const name = (document.getElementById('pls-name').value || '').trim();
     const by   = (document.getElementById('pls-by').value || '').trim();
@@ -8666,6 +8672,7 @@ function openManageShares() {
 function closeManageShares() { document.getElementById('manageSharesModalOverlay')?.classList.remove('open'); }
 
 // ── Opening a shared link (?s=SLUG) ──────────────────────────
+let _initPromise = null;  // set where init() is kicked off, awaited by hydrateSharedLink
 const _plShareIncomingSlug = new URLSearchParams(location.search).get('s');
 if (_plShareIncomingSlug) _pbRestoreDone = true;  // don't let sign-in restore clobber the shared queue
 
@@ -8678,6 +8685,43 @@ async function hydrateSharedLink() {
     const p = row?.payload;
     if (!p) { showToast('That share link has gone missing.'); return; }
 
+    // If the share was made on a different page (an artist jukebox like
+    // /early-lines, /community, or the main page), hop there so the recipient
+    // gets the same catalog the sharer was looking at. 'sp' guards against a
+    // redirect loop if that page no longer resolves.
+    const sharePage = typeof p.page === 'string' && /^[a-z0-9][a-z0-9-]{0,79}$/.test(p.page) ? p.page : null;
+    const curPage = _SLUG_ARTIST?.slug || (IS_COMMUNITY ? 'community' : null);
+    if (sharePage !== curPage && !new URLSearchParams(location.search).has('sp')) {
+      location.replace((sharePage ? '/' + sharePage : '/') + '?s=' + slug + '&sp=1');
+      return;
+    }
+
+    // Let the base catalog finish loading before layering the share on top -
+    // otherwise init()'s defaults (e.g. hiding Purple Mountains on a first
+    // visit) land after ours and clobber the shared filters.
+    try { await _initPromise; } catch (e) {}
+
+    // Restore any extra artists the sharer had added to the chart, and which
+    // artists were toggled on.
+    let artistsChanged = false;
+    if (Array.isArray(p.otherArtists)) {
+      p.otherArtists.forEach(id => {
+        const a = oaFindArtist(id);
+        if (!a) return;
+        addedCommunityIds.add(id);
+        if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
+        if (!selectedIds.has(id)) { selectedIds.add(id); artistsChanged = true; }
+      });
+    }
+    if (Array.isArray(p.selectedArtists) && p.selectedArtists.length) {
+      const avail = new Set(allArtists.map(a => a.id));
+      const sel = p.selectedArtists.filter(id => avail.has(id));
+      if (sel.length && (sel.length !== selectedIds.size || sel.some(id => !selectedIds.has(id)))) {
+        selectedIds = new Set(sel);
+        artistsChanged = true;
+      }
+    }
+
     // Restore filters + the top view mode (By Year / Timeline / By Views /
     // Albums List / All Tracks) so the recipient lands on the exact same
     // layout - this applies whether or not the share includes a playlist.
@@ -8687,7 +8731,12 @@ async function hydrateSharedLink() {
       if (p.filters.listSort) { listSort = p.filters.listSort; viewChanged = true; }
     }
     if (p.viewMode) { viewMode = p.viewMode; viewChanged = true; }
-    if (viewChanged && typeof render === 'function') { try { render(); } catch (e) {} }
+    if (artistsChanged) { try { await loadData(); } catch (e) {} }
+    if (viewChanged || artistsChanged) {
+      Object.values(albums).flat().forEach(a => { if (isAlbumVisible(a.id)) expandedAlbumIds.add(a.id); });
+      try { updateFilterHeader(); } catch (e) {}
+      if (typeof render === 'function') { try { render(); } catch (e) {} }
+    }
 
     const who = (row.shared_by || '').trim();
     const hasQueue = Array.isArray(p.queue) && p.queue.length > 0;
@@ -8769,7 +8818,7 @@ if (IS_COMMUNITY) {
   // Header ♪ Silver Jews link and toolbar Add Music intentionally stay hidden:
   // the logo click goes home and Add Music lives in the Other Artists dropdown.
 }
-init();
+_initPromise = init();
 </script>
 <footer style="text-align:center;padding:1.5rem 2rem 2rem;font-family:var(--mono);font-size:.46rem;color:var(--text-muted);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:2rem">
   a <a href="https://outlawapps.online" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">Johnny Outlaw</a> Project
