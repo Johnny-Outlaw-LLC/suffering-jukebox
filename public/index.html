@@ -9232,37 +9232,34 @@ function _playlistContext() {
   };
 }
 
+// Rebuild the jukebox to match the artist/album view saved with the playlist.
+// This is a full SWAP, not a merge: artists outside the saved view are
+// deselected and their albums leave the chart, so loading a playlist never
+// crowds the current view with leftovers.
 async function restorePlaylistContext(pl) {
   const ctx = pl?.context;
   if (!ctx) return;
-  let changed = false;
-  (Array.isArray(ctx.otherArtists) ? ctx.otherArtists : []).forEach(id => {
-    const a = oaFindArtist(id);
-    if (!a) return;
-    addedCommunityIds.add(id);
-    if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
-    if (!selectedIds.has(id)) { selectedIds.add(id); changed = true; }
-  });
-  (Array.isArray(ctx.selectedArtists) ? ctx.selectedArtists : []).forEach(id => {
-    if (selectedIds.has(id)) return;
+  const savedSel   = Array.isArray(ctx.selectedArtists) ? ctx.selectedArtists : [];
+  const savedOther = Array.isArray(ctx.otherArtists)    ? ctx.otherArtists    : [];
+  // Make sure every saved artist row is available before swapping.
+  [...new Set([...savedSel, ...savedOther])].forEach(id => {
     const a = allArtists.find(x => x.id === id) || oaFindArtist(id);
-    if (!a) return;
-    if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
-    selectedIds.add(id); changed = true;
+    if (a && !allArtists.find(x => x.id === a.id)) allArtists.push(a);
   });
-  // Album visibility only restores when loading on the same page the playlist
-  // was saved on — on any other page we just add the missing artists so every
-  // track can resolve and their albums join the chart.
-  const curPage = _SLUG_ARTIST?.slug || (IS_COMMUNITY ? 'community' : null);
-  const savedPage = typeof ctx.page === 'string' ? ctx.page : null;
-  const featuredSlug = IS_COMMUNITY && FEATURED_ARTIST_ID ? allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug : null;
-  if ((savedPage === curPage || (featuredSlug && savedPage === featuredSlug)) && Array.isArray(ctx.excludedAlbumIds)) {
-    const next = new Set(ctx.excludedAlbumIds);
-    if (next.size !== excludedAlbumIds.size || [...next].some(id => !excludedAlbumIds.has(id))) {
-      excludedAlbumIds = next; changed = true;
-    }
-  }
-  if (!changed) return;
+  const sel = savedSel.filter(id => allArtists.find(x => x.id === id));
+  if (!sel.length) return; // saved artists no longer exist - leave the view alone
+  const selSet = new Set(sel);
+  const nextEx = new Set(Array.isArray(ctx.excludedAlbumIds) ? ctx.excludedAlbumIds : []);
+  const sameSel = selSet.size === selectedIds.size && sel.every(id => selectedIds.has(id));
+  const sameEx  = nextEx.size === excludedAlbumIds.size && [...nextEx].every(id => excludedAlbumIds.has(id));
+  if (sameSel && sameEx) return; // already looking at the saved view
+  selectedIds = selSet;
+  excludedAlbumIds = nextEx;
+  addedCommunityIds.clear();
+  savedOther.forEach(id => { if (allArtists.find(x => x.id === id)) addedCommunityIds.add(id); });
+  // Drop community artists that aren't part of the saved view (keep the page's
+  // featured artist row - the page chrome needs it even when deselected).
+  allArtists = allArtists.filter(a => !a.is_community || a.id === FEATURED_ARTIST_ID || selectedIds.has(a.id) || addedCommunityIds.has(a.id));
   try { await loadData(); } catch (e) {}
   Object.values(albums).flat().forEach(a => { if (isAlbumVisible(a.id)) expandedAlbumIds.add(a.id); });
   try { updateFilterHeader(); } catch (e) {}
@@ -9288,38 +9285,49 @@ function _plSelectOptions(arr) {
     + (other.length ? '<option value="" disabled>── Playlists with other artists ──</option>' + other.map(opt).join('') : '');
 }
 
-// Make every track in the playlist resolvable before queueing: first restore
-// the saved jukebox context, then — for playlists saved without context (or
-// whose context didn't cover everything) — look the missing tracks up in the
-// DB, find the artists that own them, and pull those artists into the jukebox.
+// Make every track in the playlist resolvable before queueing. If the saved
+// context covers everything, the swap above is all we need. Otherwise (no
+// context, or it couldn't resolve every track) rebuild the jukebox from the
+// playlist itself: load exactly the artists its tracks belong to, show only
+// the albums the playlist touches, and drop everything else.
 async function ensurePlaylistPlayable(pl) {
   if (!pl) return;
   await restorePlaylistContext(pl);
-  const missing = _plUnresolvedTrackIds(pl);
-  if (!missing.length) return;
+  if (!_plUnresolvedTrackIds(pl).length) return;
+  const allIds = [...new Set((pl._tracks || []).map(pt => pt.track_id).filter(Boolean))];
+  if (!allIds.length) return;
   try {
     let tRows = [];
-    for (let i = 0; i < missing.length; i += 50) {
-      tRows = tRows.concat(await dbGet(`/tracks?id=in.(${missing.slice(i, i + 50).join(',')})&select=id,album_id`));
+    for (let i = 0; i < allIds.length; i += 50) {
+      tRows = tRows.concat(await dbGet(`/tracks?id=in.(${allIds.slice(i, i + 50).join(',')})&select=id,album_id`));
     }
     const albIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
     if (!albIds.length) return;
-    const aRows = await dbGet(`/albums?id=in.(${albIds.join(',')})&select=id,artist_id`);
-    let changed = false;
-    [...new Set(aRows.map(a => a.artist_id).filter(Boolean))].forEach(aid => {
-      if (selectedIds.has(aid)) return;
-      const a = oaFindArtist(aid);
-      if (!a) return;
-      if (communityArtists.find(c => c.id === aid)) addedCommunityIds.add(aid);
-      if (!allArtists.find(x => x.id === aid)) allArtists.push(a);
-      selectedIds.add(aid); changed = true;
+    let aRows = [];
+    for (let i = 0; i < albIds.length; i += 50) {
+      aRows = aRows.concat(await dbGet(`/albums?id=in.(${albIds.slice(i, i + 50).join(',')})&select=id,artist_id`));
+    }
+    const resolved = [...new Set(aRows.map(a => a.artist_id).filter(Boolean))].filter(id => {
+      const a = allArtists.find(x => x.id === id) || oaFindArtist(id);
+      if (!a) return false;
+      if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
+      return true;
     });
-    // Un-hide the albums these tracks live on so they show in the chart too.
-    albIds.forEach(id => { if (excludedAlbumIds.has(id)) { excludedAlbumIds.delete(id); changed = true; } });
-    if (!changed) return;
+    if (!resolved.length) return;
+    selectedIds = new Set(resolved);
+    addedCommunityIds.clear();
+    resolved.forEach(id => { if (communityArtists.find(c => c.id === id)) addedCommunityIds.add(id); });
+    allArtists = allArtists.filter(a => !a.is_community || a.id === FEATURED_ARTIST_ID || selectedIds.has(a.id));
+    excludedAlbumIds = new Set();
     await loadData();
-    Object.values(albums).flat().forEach(a => { if (isAlbumVisible(a.id)) expandedAlbumIds.add(a.id); });
+    // Show + expand only the albums the playlist touches; hide the rest.
+    const needed = new Set(albIds);
+    Object.values(albums).flat().forEach(a => {
+      if (needed.has(a.id)) expandedAlbumIds.add(a.id);
+      else excludedAlbumIds.add(a.id);
+    });
     try { updateFilterHeader(); } catch (e) {}
+    render();
   } catch (e) {}
 }
 
