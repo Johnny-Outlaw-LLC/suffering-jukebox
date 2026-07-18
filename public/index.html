@@ -399,6 +399,18 @@ body:not(.light) .tt-num { color: var(--text); }
 .oa-alb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oa-alb-yr { color: var(--text-muted); font-size: .48rem; }
 .oa-albs-note { font-family: var(--mono); font-size: .52rem; color: var(--text-muted); padding: 10px 12px; }
+.am-swatch-sm, .am-swatch-custom.am-swatch-sm { width: 16px; height: 16px; }
+.am-ft-albcolor-row { display: flex; align-items: center; gap: 8px; margin-top: .35rem; flex-wrap: wrap; }
+.am-ft-albcolor-lbl { font-family: var(--mono); font-size: .45rem; color: var(--text-muted); flex-shrink: 0; }
+.am-ft-albcolors { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.am-ft-albclear { background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 5px; padding: .12rem .4rem; font-size: .42rem; cursor: pointer; font-family: var(--mono); }
+.ma-trks { margin: 0 12px 6px 27px; border-left: 2px solid var(--border); padding: 2px 0 2px 8px; }
+.ma-trk { display: flex; align-items: center; gap: 8px; padding: 3px 4px; font-family: var(--mono); font-size: .52rem; color: var(--text); }
+.ma-trk-no { color: var(--text-muted); font-size: .45rem; width: 16px; text-align: right; flex-shrink: 0; }
+.ma-trk-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ma-trk-dur { color: var(--text-muted); font-size: .45rem; flex-shrink: 0; }
+.ma-trk-add { display: flex; gap: 6px; align-items: center; padding: 6px 4px 4px; }
+.ma-lyr-box { padding: 4px 4px 8px 28px; }
 @media (max-width: 640px) { .hdr-page-link .lbl, .hdr-add-music-btn .lbl { display: none; } }
 
 .footer-note { font-size: .48rem; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: .75rem; letter-spacing: .04em; }
@@ -1881,6 +1893,7 @@ const artColorCache = {};   // albumId -> hex
 // Album-specific color - this is what makes the bars pretty.
 // Featured artist jukebox: per-album color from its art; other artists: one color per artist.
 const albumColor = (alb) => {
+  if (alb.color) return alb.color;   // per-album override from the fine-tune step
   if (IS_COMMUNITY && FEATURED_ARTIST_ID) {
     if (alb.artist_id === FEATURED_ARTIST_ID)
       return artColorCache[alb.id] || ALBUM_COLORS[alb.name] || '#ff6b35';
@@ -6129,10 +6142,40 @@ function amFtRender() {
             </div>
             ${(al.art_options || []).length > 1 ? `<div class="am-ft-arts">${al.art_options.map(u =>
               `<img src="${esc(u)}" loading="lazy" class="${u === al.art_url ? 'sel' : ''}" data-u="${esc(u)}" onclick="amFtPickArt(${i}, this)">`).join('')}</div>` : ''}
+            <div class="am-ft-albcolor-row"><span class="am-ft-albcolor-lbl">Bar color</span><div class="am-swatches am-ft-albcolors" data-i="${i}">${OA_PALETTE.map(c =>
+              `<button type="button" class="am-swatch am-swatch-sm${(al.color || '') === c ? ' sel' : ''}" style="background:${c}" data-c="${c}" onclick="amFtPickAlbColor(${i},'${c}')" title="${c}"></button>`).join('')}<input type="color" class="am-swatch-custom am-swatch-sm" value="${al.color || cur}" title="Custom color" oninput="amFtPickAlbColor(${i}, this.value)"><button type="button" class="am-ft-albclear" id="amFtAlbClear${i}" style="${al.color ? '' : 'display:none'}" onclick="amFtPickAlbColor(${i}, null)">↺ artist color</button></div></div>
           </div>
         </div>`).join('')}
       </div>
-    </div>`;
+    </div>
+    <div class="am-ft-section" id="amFtActions" style="display:flex;gap:.5rem;flex-wrap:wrap">${amFtActionBtns()}</div>`;
+}
+function amFtActionBtns() {
+  const esc = s => (s || '').replace(/</g, '&lt;');
+  const a = amFt && amFt.artist;
+  if (!a) return '';
+  // On the artist's own jukebox page both buttons are pointless
+  if (IS_COMMUNITY && FEATURED_ARTIST_ID === a.id) return '';
+  const inJuke = addedCommunityIds.has(a.id) || selectedIds.has(a.id);
+  return (a.slug ? `<button type="button" class="oa-act" onclick="amGoToArtist()">Go to ${esc(a.name)} Jukebox →</button>` : '') +
+    `<button type="button" class="oa-act" id="amFtAddBtn" onclick="amAddToJukebox()"${inJuke ? ' disabled' : ''}>${inJuke ? '✓ In current jukebox' : '＋ Add ' + esc(a.name) + ' to current Jukebox'}</button>`;
+}
+async function amGoToArtist() {
+  if (!amFt?.artist?.slug) return;
+  try { await amFtSave(); } catch (_) {}   // keep any fine-tune edits before leaving
+  window.location.href = '/' + amFt.artist.slug;
+}
+async function amAddToJukebox() {
+  const a = amFt && amFt.artist;
+  if (!a || addedCommunityIds.has(a.id) || selectedIds.has(a.id)) return;
+  const btn = document.getElementById('amFtAddBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+  try {
+    await oaToggleJukebox(a.id);
+    if (btn) btn.textContent = '✓ In current jukebox';
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '＋ Add to current Jukebox'; }
+  }
 }
 function amFtPickColor(c) {
   amFtColor = c;
@@ -6145,30 +6188,44 @@ function amFtPickArt(i, el) {
   document.getElementById('amFtCover' + i).src = el.dataset.u;
   el.parentElement.querySelectorAll('img').forEach(x => x.classList.toggle('sel', x === el));
 }
+function amFtPickAlbColor(i, c) {
+  amFt.albums[i]._pickedColor = c;   // hex sets an override, null falls back to the artist color
+  const wrap = document.querySelector(`.am-ft-albcolors[data-i="${i}"]`);
+  if (!wrap) return;
+  wrap.querySelectorAll('.am-swatch').forEach(el => el.classList.toggle('sel', !!c && el.dataset.c === c));
+  const clr = document.getElementById('amFtAlbClear' + i);
+  if (clr) clr.style.display = c ? '' : 'none';
+  const custom = wrap.querySelector('.am-swatch-custom');
+  if (custom && c && custom.value !== c) { try { custom.value = c; } catch (_) {} }
+}
+
+async function amFtSave() {
+  if (!amFt || !amArtistId) return;
+  const payload = { artist_id: amArtistId, albums: [] };
+  const nm = (document.getElementById('amFtArtistName')?.value || '').trim();
+  if (nm && nm !== amFt.artist.name) payload.artist_name = nm;
+  if (amFtColor && amFtColor !== (amFt.artist.color || null)) payload.color = amFtColor;
+  amFt.albums.forEach((al, i) => {
+    const d = { id: al.id };
+    const nn = (document.getElementById('amFtName' + i)?.value || '').trim();
+    const yy = (document.getElementById('amFtYear' + i)?.value || '').trim();
+    if (nn && nn !== al.name) d.name = nn;
+    if (/^\d{4}$/.test(yy) && yy !== (al.release_date || '').slice(0, 4)) d.release_date = yy;
+    if (al._pickedArt && al._pickedArt !== al.art_url) d.art_url = al._pickedArt;
+    if (al._pickedColor !== undefined && al._pickedColor !== (al.color || null)) d.color = al._pickedColor;
+    if (Object.keys(d).length > 1) payload.albums.push(d);
+  });
+  if (payload.artist_name || payload.color || payload.albums.length) {
+    await amFetch('?action=finetune', { method: 'POST', body: JSON.stringify(payload) });
+  }
+}
 
 async function amFinish() {
   if (amBusy) return;
   const next = document.getElementById('amNextBtn');
   amBusy = true; next.disabled = true; next.innerHTML = '<span class="m-spin"></span>Saving…';
   try {
-    if (amFt && amArtistId) {
-      const payload = { artist_id: amArtistId, albums: [] };
-      const nm = (document.getElementById('amFtArtistName')?.value || '').trim();
-      if (nm && nm !== amFt.artist.name) payload.artist_name = nm;
-      if (amFtColor && amFtColor !== (amFt.artist.color || null)) payload.color = amFtColor;
-      amFt.albums.forEach((al, i) => {
-        const d = { id: al.id };
-        const nn = (document.getElementById('amFtName' + i)?.value || '').trim();
-        const yy = (document.getElementById('amFtYear' + i)?.value || '').trim();
-        if (nn && nn !== al.name) d.name = nn;
-        if (/^\d{4}$/.test(yy) && yy !== (al.release_date || '').slice(0, 4)) d.release_date = yy;
-        if (al._pickedArt && al._pickedArt !== al.art_url) d.art_url = al._pickedArt;
-        if (Object.keys(d).length > 1) payload.albums.push(d);
-      });
-      if (payload.artist_name || payload.color || payload.albums.length) {
-        await amFetch('?action=finetune', { method: 'POST', body: JSON.stringify(payload) });
-      }
-    }
+    await amFtSave();
     amStepDone('All set — your music is live on the jukebox.');
     // Refresh app state so new names, years, covers and colors show everywhere
     try {
@@ -6208,6 +6265,7 @@ function renderAmAlbums() {
 
 // ── MANAGE MY ARTISTS ────────────────────────────────────────────────────────
 let _maData = [];
+let _maTrkCache = {};   // albumId -> [{id,name,track_number,duration_ms,has_lyrics}]
 function openMyArtists() {
   if (!googleUser) {
     if (confirm('Sign in with Google to manage your artists. Sign in now?')) handleAuthClick();
@@ -6248,9 +6306,120 @@ function renderMyArtists(isAdmin) {
         <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444" onclick="maDeleteArtist('${a.id}')">✕ Remove</button>
       </div>
       <div class="oa-albs">
-        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Rename this album" onclick="maRenameAlbum('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div>`).join('')}
+        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Rename this album" onclick="maRenameAlbum('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div>`).join('')}
       </div>
     </div>`).join('');
+}
+
+async function maToggleTracks(artistId, albumId) {
+  const box = document.getElementById('ma-trks-' + albumId);
+  if (!box) return;
+  if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+  box.style.display = '';
+  if (!_maTrkCache[albumId]) {
+    box.innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
+    try {
+      const rows = await dbGet(`/tracks?album_id=eq.${albumId}&select=id,name,track_number,duration_ms&order=track_number`);
+      const ids = rows.map(t => t.id);
+      const have = new Set();
+      for (let i = 0; i < ids.length; i += 50) {
+        const lr = await dbGet(`/lyrics?track_id=in.(${ids.slice(i, i + 50).join(',')})&select=track_id`);
+        lr.forEach(r => have.add(r.track_id));
+      }
+      rows.forEach(t => { t.has_lyrics = have.has(t.id); });
+      _maTrkCache[albumId] = rows;
+    } catch (e) {
+      box.innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${e.message}</div>`;
+      return;
+    }
+  }
+  maRenderTracks(artistId, albumId);
+}
+
+function maRenderTracks(artistId, albumId) {
+  const esc = s => (s || '').replace(/</g, '&lt;');
+  const box = document.getElementById('ma-trks-' + albumId);
+  if (!box) return;
+  const rows = _maTrkCache[albumId] || [];
+  box.innerHTML = rows.map(t => `
+    <div class="ma-trk">
+      <span class="ma-trk-no">${t.track_number || ''}</span>
+      <span class="ma-trk-name">${esc(t.name)}</span>
+      <span class="ma-trk-dur">${t.duration_ms ? fmtDur(t.duration_ms) : ''}</span>
+      <button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="${t.has_lyrics ? 'Edit lyrics' : 'Add lyrics'}" onclick="maEditLyrics('${artistId}','${albumId}','${t.id}')">${t.has_lyrics ? '✎ Lyrics' : '＋ Lyrics'}</button>
+      <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this track" onclick="maDeleteTrack('${artistId}','${albumId}','${t.id}')">✕</button>
+    </div>
+    <div class="ma-lyr-box" id="ma-lyr-${t.id}" style="display:none"></div>`).join('') + `
+    <div class="ma-trk-add">
+      <input type="text" class="m-input" id="ma-addtrk-${albumId}" placeholder="Paste a YouTube video link to add a track…" style="flex:1;min-width:0" autocomplete="off">
+      <button type="button" class="oa-act" style="flex-shrink:0" onclick="maAddTrack('${artistId}','${albumId}')">＋ Add Track</button>
+    </div>`;
+}
+
+async function maDeleteTrack(artistId, albumId, trackId) {
+  const t = (_maTrkCache[albumId] || []).find(x => x.id === trackId); if (!t) return;
+  if (!confirm(`Remove "${t.name}" from this album? This cannot be undone.`)) return;
+  maBusy('Removing track…');
+  try {
+    await amFetch('?action=delete_track', { method: 'POST', body: JSON.stringify({ track_id: trackId }) });
+    _maTrkCache[albumId] = _maTrkCache[albumId].filter(x => x.id !== trackId);
+    const a = _maData.find(x => x.id === artistId);
+    if (a) a.track_count = Math.max(0, (a.track_count || 1) - 1);
+    maRenderTracks(artistId, albumId);
+    maBusy('✓ Track removed');
+    try { loadData(); } catch (_) {}
+  } catch (e) { maBusy('✗ ' + e.message, true); }
+}
+
+async function maAddTrack(artistId, albumId) {
+  const inp = document.getElementById('ma-addtrk-' + albumId);
+  const v = (inp?.value || '').trim();
+  if (!v) { maBusy('Paste a YouTube video link first.', true); return; }
+  maBusy('Adding track…');
+  try {
+    const d = await amFetch('?action=add_track', { method: 'POST', body: JSON.stringify({ album_id: albumId, video: v }) });
+    const t = d.track || {};
+    _maTrkCache[albumId] = [...(_maTrkCache[albumId] || []), { id: t.id, name: t.name, track_number: t.track_number, duration_ms: null, has_lyrics: !!d.lyrics_found }];
+    const a = _maData.find(x => x.id === artistId);
+    if (a) a.track_count = (a.track_count || 0) + 1;
+    maRenderTracks(artistId, albumId);
+    maBusy(`✓ Added “${t.name || 'track'}”${d.lyrics_found ? ' · lyrics found' : ''}`);
+    try { loadData(); } catch (_) {}
+  } catch (e) { maBusy('✗ ' + e.message, true); }
+}
+
+async function maEditLyrics(artistId, albumId, trackId) {
+  const box = document.getElementById('ma-lyr-' + trackId);
+  if (!box) return;
+  if (box.style.display !== 'none') { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  box.innerHTML = '<div class="oa-albs-note">Loading lyrics…</div>';
+  let existing = '';
+  try {
+    const rows = await dbGet(`/lyrics?track_id=eq.${trackId}&select=lyrics`);
+    existing = rows[0]?.lyrics || '';
+  } catch (_) {}
+  box.innerHTML = `
+    <textarea class="lyr-edit-area" id="ma-lyr-ta-${trackId}" placeholder="Paste or type the lyrics…">${existing.replace(/</g, '&lt;')}</textarea>
+    <div class="lyr-edit-row">
+      <button class="lyr-save-btn" onclick="maSaveLyrics('${artistId}','${albumId}','${trackId}')">Save</button>
+      <button class="lyr-cancel-btn" onclick="maEditLyrics('${artistId}','${albumId}','${trackId}')">Cancel</button>
+    </div>`;
+}
+
+async function maSaveLyrics(artistId, albumId, trackId) {
+  const ta = document.getElementById('ma-lyr-ta-' + trackId);
+  const lyr = (ta?.value || '').trim();
+  if (!lyr) { maBusy('Lyrics are empty — nothing saved.', true); return; }
+  maBusy('Saving lyrics…');
+  try {
+    await amFetch('?action=save_lyrics', { method: 'POST', body: JSON.stringify({ track_id: trackId, lyrics: lyr }) });
+    lyricsCache[trackId] = lyr;
+    const t = (_maTrkCache[albumId] || []).find(x => x.id === trackId);
+    if (t) t.has_lyrics = true;
+    maRenderTracks(artistId, albumId);
+    maBusy('✓ Lyrics saved');
+  } catch (e) { maBusy('✗ ' + e.message, true); }
 }
 
 function maBusy(msg, err) {
@@ -6310,6 +6479,7 @@ async function maDeleteArtist(artistId) {
 
 // Refresh app state after a manage action, then re-render the modal list
 async function maAfterChange() {
+  _maTrkCache = {};
   try {
     const rows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = rows.filter(a => a.is_community);
