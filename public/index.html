@@ -6905,7 +6905,8 @@ async function savePlaybackState() {
   } catch (e) { /* best-effort - never interrupt playback over a failed save */ }
 }
 
-// Restores the last queue + playhead position for the signed-in user, if any.
+// Restores the last queue + playhead position for the signed-in user, if any -
+// always PAUSED, never auto-playing.
 // Only runs once per sign-in and never clobbers a player the user already has open.
 // Skips the restore entirely if they'd already finished playing through the
 // queue (no music playing, sitting at the end) when they left.
@@ -6925,17 +6926,18 @@ async function restorePlaybackState() {
     ytQueueIdx = idx;
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
+    // Never auto-play on page load - it's disruptive and unexpected. Restore
+    // the queue at the saved position but leave the player paused; the user
+    // hits play when they actually want the music back.
     const resumeSec = Math.max(row.position_seconds || 0, 0);
-    if (resumeSec > 0) {
-      const seekWhenReady = (tries) => {
-        if (ytAPIPlayer && typeof ytAPIPlayer.seekTo === 'function') {
-          try { ytAPIPlayer.seekTo(resumeSec, true); ytAPIPlayer.pauseVideo(); ytpSetPlayPauseIcon(false); } catch (e) {}
-        } else if ((tries || 0) < 20) {
-          setTimeout(() => seekWhenReady((tries || 0) + 1), 300);
-        }
-      };
-      setTimeout(() => seekWhenReady(0), 800);
-    }
+    const pauseWhenReady = (tries) => {
+      if (ytAPIPlayer && typeof ytAPIPlayer.seekTo === 'function') {
+        try { if (resumeSec > 0) ytAPIPlayer.seekTo(resumeSec, true); ytAPIPlayer.pauseVideo(); ytpSetPlayPauseIcon(false); } catch (e) {}
+      } else if ((tries || 0) < 20) {
+        setTimeout(() => pauseWhenReady((tries || 0) + 1), 300);
+      }
+    };
+    setTimeout(() => pauseWhenReady(0), 800);
   } catch (e) { /* no saved state yet, or fetch failed - just start fresh */ }
 }
 
