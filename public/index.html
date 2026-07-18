@@ -4488,17 +4488,13 @@ function renderLyrics(trackId, lyric, source) {
 // ══════════════════════════════════════════════════════════════
 function ytPlaylistBarHTML() {
   const has = playlists.length > 0 || pubPlaylists.length > 0;
-  const _plItem = (p, meta) => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')} <span style="color:#666">\u00b7 ${_plArtistName(p).replace(/</g,'&lt;')}</span></span><span class="yt-pl-dd-item-meta">${meta}</span></div>`;
-  const _mySplit  = { ok: playlists.filter(p => !playlistNeedsOtherArtists(p)),    other: playlists.filter(p => playlistNeedsOtherArtists(p)) };
-  const _pubSplit = { ok: pubPlaylists.filter(p => !playlistNeedsOtherArtists(p)), other: pubPlaylists.filter(p => playlistNeedsOtherArtists(p)) };
+  const _plItem = (p, meta) => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${meta}</span></div>`;
+  const _plGroups = (arr, meta, tag) => _plGroupByJukebox(arr).map(([label, pls]) =>
+    `<div class="yt-pl-dd-sep">${tag}${label.replace(/</g,'&lt;')}</div>` + pls.map(p => _plItem(p, meta(p))).join('')
+  ).join('');
   const items = [
-    ..._mySplit.ok.map(p => _plItem(p, `${p._tracks?.length||0} tracks`)),
-    _mySplit.other.length ? '<div class="yt-pl-dd-sep">Playlists with other artists</div>' : '',
-    ..._mySplit.other.map(p => _plItem(p, `${p._tracks?.length||0} tracks`)),
-    pubPlaylists.length ? '<div class="yt-pl-dd-sep">Public Playlists</div>' : '',
-    ..._pubSplit.ok.map(p => _plItem(p, (p.user_name||p.user_email||'').split('@')[0])),
-    _pubSplit.other.length ? '<div class="yt-pl-dd-sep">Public — with other artists</div>' : '',
-    ..._pubSplit.other.map(p => _plItem(p, (p.user_name||p.user_email||'').split('@')[0]))
+    _plGroups(playlists, p => `${p._tracks?.length||0} tracks`, ''),
+    _plGroups(pubPlaylists, p => (p.user_name||p.user_email||'').split('@')[0], 'Public \u2014 ')
   ].filter(Boolean).join('');
   return `<div class="yt-playlist-bar" id="yt-playlist-bar"><div class="yt-pl-dd-wrap" id="yt-pl-dd-wrap"><button class="yt-pl-dd-btn" onclick="toggleYTPlaylistDD(event)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">♪ ${has?'Load Playlist':'No Playlists'}</span><span>▾</span></button><div class="yt-pl-dd-menu" id="yt-pl-dd-menu" style="display:none">${has?items:'<div class="yt-pl-dd-item" style="color:#444;cursor:default">No playlists yet</div>'}</div></div>${googleUser?`<button class="yt-pl-save-btn" onclick="openSavePlaylistDialog()">💾 Save</button>`:''}</div>`;
 }
@@ -9308,6 +9304,32 @@ function _plArtistName(p) {
   return (typeof pg === 'string' && pg) ? pg.replace(/-/g, ' ') : 'Silver Jews';
 }
 
+// Group label for the artist jukebox a playlist belongs to. Silver Jews and
+// Purple Mountains share the main page, so they count as one jukebox.
+function _plJukeboxGroup(p) {
+  const n = _plArtistName(p);
+  return (n === 'Silver Jews' || n === 'Purple Mountains') ? 'Silver Jews & Purple Mountains' : n;
+}
+
+function _plCurJukeboxGroup() {
+  const n = (IS_COMMUNITY && FEATURED_ARTIST_ID ? allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.name : null)
+    || _SLUG_ARTIST?.name || 'Silver Jews';
+  return (n === 'Silver Jews' || n === 'Purple Mountains') ? 'Silver Jews & Purple Mountains' : n;
+}
+
+// [label, playlists[]] pairs grouped by jukebox - the current page's jukebox
+// first, the rest alphabetically.
+function _plGroupByJukebox(arr) {
+  const groups = new Map();
+  arr.forEach(p => {
+    const k = _plJukeboxGroup(p);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  });
+  const cur = _plCurJukeboxGroup();
+  return [...groups.entries()].sort((a, b) => (b[0] === cur) - (a[0] === cur) || a[0].localeCompare(b[0]));
+}
+
 function _plCurPage() {
   return _SLUG_ARTIST?.slug || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null);
 }
@@ -9336,11 +9358,10 @@ function playlistNeedsOtherArtists(pl) {
 }
 
 function _plSelectOptions(arr) {
-  const opt = p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + ' \u2014 ' + _plArtistName(p).replace(/</g,'&lt;') + '</option>';
-  const ok = arr.filter(p => !playlistNeedsOtherArtists(p));
-  const other = arr.filter(p => playlistNeedsOtherArtists(p));
-  return ok.map(opt).join('')
-    + (other.length ? '<option value="" disabled>── Playlists with other artists ──</option>' + other.map(opt).join('') : '');
+  const opt = p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + '</option>';
+  return _plGroupByJukebox(arr).map(([label, pls]) =>
+    '<optgroup label="' + label.replace(/</g,'&lt;').replace(/"/g,'&quot;') + '">' + pls.map(opt).join('') + '</optgroup>'
+  ).join('');
 }
 
 // Make every track in the playlist resolvable before queueing. If the saved
