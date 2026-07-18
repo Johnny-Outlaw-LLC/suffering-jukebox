@@ -4488,7 +4488,7 @@ function renderLyrics(trackId, lyric, source) {
 // ══════════════════════════════════════════════════════════════
 function ytPlaylistBarHTML() {
   const has = playlists.length > 0 || pubPlaylists.length > 0;
-  const _plItem = (p, meta) => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${meta}</span></div>`;
+  const _plItem = (p, meta) => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')} <span style="color:#666">\u00b7 ${_plArtistName(p).replace(/</g,'&lt;')}</span></span><span class="yt-pl-dd-item-meta">${meta}</span></div>`;
   const _mySplit  = { ok: playlists.filter(p => !playlistNeedsOtherArtists(p)),    other: playlists.filter(p => playlistNeedsOtherArtists(p)) };
   const _pubSplit = { ok: pubPlaylists.filter(p => !playlistNeedsOtherArtists(p)), other: pubPlaylists.filter(p => playlistNeedsOtherArtists(p)) };
   const items = [
@@ -4523,6 +4523,7 @@ function closeYTPlaylistDD() {
 async function playPlaylist(playlistId) {
   try {
     const plMeta = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId) || pubPlaylists.find(p => p.id === playlistId);
+    if (plMeta && _plHopIfOtherJukebox(plMeta)) return;
     await ensurePlaylistPlayable(plMeta);
     const rows = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
     if (!rows.length) { alert('This playlist is empty.'); return; }
@@ -8982,6 +8983,38 @@ async function hydrateSharedLink() {
   } catch (e) { console.error('hydrateSharedLink', e); }
 }
 hydrateSharedLink();
+
+// ── Opening a playlist hop (?pl=PLAYLIST_ID) ──────────────────
+const _plIncomingId = new URLSearchParams(location.search).get('pl');
+if (_plIncomingId) _pbRestoreDone = true;  // arriving to play a playlist - don't resume the old queue
+
+async function hydratePlaylistLink() {
+  const id = _plIncomingId;
+  if (!id || _plShareIncomingSlug || !/^[0-9a-f-]{20,40}$/i.test(id)) return;
+  try { await _initPromise; } catch (e) {}
+  try {
+    const rows = await dbGetAuth(`/playlists?id=eq.${id}&limit=1`);
+    const pl = rows[0];
+    if (!pl) { showToast('That playlist has gone missing.'); return; }
+    pl._tracks = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${id}&order=position.asc`);
+    if (!pl._tracks?.length) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    await ensurePlaylistPlayable(pl);
+    const q = pl._tracks.map(pt => {
+      const t = findTrackById(pt.track_id);
+      const vid = ytData[pt.track_id]?.video_id;
+      return t && vid ? { videoId: vid, title: t.name, trackId: t.id } : null;
+    }).filter(Boolean);
+    if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
+    const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
+    setYtShuffleEnabled(doShuffle);
+    openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+    ytQueue = q; ytQueueIdx = 0;
+    updateYTQueueUI();
+    if (doShuffle && q.length > 1) _ytShuffleAfterReady = true;
+  } catch (e) {}
+}
+hydratePlaylistLink();
 syncManageSharesBtn();
 
 // Init Google auth after GIS script loads
@@ -9226,6 +9259,8 @@ function _playlistContext() {
     v: 1,
     page: _SLUG_ARTIST?.slug
       || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null),
+    pageName: (IS_COMMUNITY && FEATURED_ARTIST_ID ? allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.name : null)
+      || _SLUG_ARTIST?.name || (IS_COMMUNITY ? 'Community' : 'Silver Jews'),
     otherArtists: [...addedCommunityIds],
     selectedArtists: [...selectedIds],
     excludedAlbumIds: [...excludedAlbumIds],
@@ -9265,6 +9300,29 @@ async function restorePlaylistContext(pl) {
   try { updateFilterHeader(); } catch (e) {}
 }
 
+// Which artist jukebox a playlist belongs to (display name, saved at create time).
+function _plArtistName(p) {
+  const n = p?.context?.pageName;
+  if (typeof n === 'string' && n) return n;
+  const pg = p?.context?.page;
+  return (typeof pg === 'string' && pg) ? pg.replace(/-/g, ' ') : 'Silver Jews';
+}
+
+function _plCurPage() {
+  return _SLUG_ARTIST?.slug || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null);
+}
+
+// A playlist saved on a different artist jukebox plays best on that page -
+// hop there with ?pl= and let hydratePlaylistLink() take over. Returns true
+// when a hop was started (caller should bail out).
+function _plHopIfOtherJukebox(pl) {
+  const savedPage = (typeof pl?.context?.page === 'string' && pl.context.page) ? pl.context.page : null;
+  if (new URLSearchParams(location.search).has('pl')) return false; // already hopped once - play in place
+  if (savedPage === _plCurPage()) return false;
+  location.href = (savedPage ? '/' + savedPage : '/') + '?pl=' + pl.id;
+  return true;
+}
+
 // Track ids in a playlist that can't resolve to a loaded track + video yet.
 function _plUnresolvedTrackIds(pl) {
   return (pl?._tracks || [])
@@ -9278,7 +9336,7 @@ function playlistNeedsOtherArtists(pl) {
 }
 
 function _plSelectOptions(arr) {
-  const opt = p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + '</option>';
+  const opt = p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + ' \u2014 ' + _plArtistName(p).replace(/</g,'&lt;') + '</option>';
   const ok = arr.filter(p => !playlistNeedsOtherArtists(p));
   const other = arr.filter(p => playlistNeedsOtherArtists(p));
   return ok.map(opt).join('')
@@ -9334,6 +9392,7 @@ async function ensurePlaylistPlayable(pl) {
 async function playFromPlaylist(playlistId) {
   const pl = _savedPlaylists.find(p => p.id === playlistId);
   if (!pl || !pl._tracks?.length) return;
+  if (_plHopIfOtherJukebox(pl)) return;
   await ensurePlaylistPlayable(pl);
   const q = pl._tracks
     .sort((a, b) => a.position - b.position)
@@ -9589,7 +9648,7 @@ function buildPlaylistsHTML(playlists) {
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
         <div>
           <div style="font-size:.72rem;font-weight:700;color:var(--text);line-height:1.3">${(p.name||'').replace(/</g,'&lt;')}</div>
-          <div style="font-size:.48rem;color:var(--text-muted);margin-top:2px">${trackCount} track${trackCount===1?'':'s'}${!isOwner ? ` · by ${p.user_email.split('@')[0]}` : ''}</div>
+          <div style="font-size:.48rem;color:var(--text-muted);margin-top:2px">${trackCount} track${trackCount===1?'':'s'} · ${_plArtistName(p).replace(/</g,'&lt;')}${!isOwner ? ` · by ${p.user_email.split('@')[0]}` : ''}</div>
         </div>
         ${p.is_public ? `<span style="font-size:.38rem;letter-spacing:.08em;text-transform:uppercase;color:#888;border:1px solid #333;border-radius:4px;padding:1px 5px;flex-shrink:0">Public</span>` : `<span style="font-size:.38rem;letter-spacing:.08em;text-transform:uppercase;color:#555;flex-shrink:0">Private</span>`}
       </div>
