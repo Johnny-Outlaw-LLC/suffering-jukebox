@@ -221,6 +221,7 @@ main > * { min-width: 0; }
 .trk-line:hover { background: var(--bg-elevated); }
 .trk-n { color: var(--text-muted); width: 14px; text-align: right; flex-shrink: 0; font-size: .63rem; align-self: center; }
 .trk-name { flex: 1 1 80px; font-size: .63rem; font-weight: 500; min-width: 80px; line-height: 1.35; overflow-wrap: break-word; word-break: break-word; }
+.trk-line.trk-playing .trk-name { color: var(--accent); font-weight: 700; }
 .trk-bar-wrap { flex: 1; min-width: 0; display: flex; align-items: center; }
 .trk-bar-bg { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .trk-bar-fill { height: 100%; border-radius: 2px; transition: width .45s ease; }
@@ -1963,6 +1964,7 @@ let ytPlayerEl          = null;
 let ytVideoId           = null;
 let ytQueue             = [];   // [{videoId, title}]
 let ytQueueIdx          = -1;   // index of currently playing item
+let nowPlayingTrackId   = null;  // trackId of the row to highlight orange in track lists
 let ytShuffle           = false;
 let ytRepeat            = false;
 let ytAPIPlayer         = null; // YT.Player instance for state-change events
@@ -2971,6 +2973,7 @@ function closeYTPlayer() {
     else if (ytPlayerEl?.parentNode) ytPlayerEl.remove();
     _ytpContainerEl = null; ytPlayerEl = null; _ytpLyricsPaneEl = null;
     ytVideoId = null; ytQueue = []; ytQueueIdx = -1; _queueHasAdditions = false;
+    nowPlayingTrackId = null; applyNowPlayingHighlight();
   }, 140);
 }
 
@@ -4026,8 +4029,17 @@ let   _ytpLyrOffset        = 0;   // subtract from video time before matching LR
 
 // Called whenever the active video/track changes. Shows/hides the alt-version switcher
 // button and sets the lyric sync offset appropriately.
+function applyNowPlayingHighlight() {
+  document.querySelectorAll('.trk-line.trk-playing').forEach(el => el.classList.remove('trk-playing'));
+  if (nowPlayingTrackId) {
+    document.querySelectorAll('.trk-line[data-track-id="' + nowPlayingTrackId + '"]').forEach(el => el.classList.add('trk-playing'));
+  }
+}
+
 function ytpOnTrackChange(videoId, trackId, title) {
   schedulePlaybackStateSave(); // remember queue + position for signed-in users
+  nowPlayingTrackId = trackId || null;
+  applyNowPlayingHighlight();
   const t       = (title || '').toLowerCase();
   const isAMHIG = t.includes('all my happiness');
   const isRR    = t.includes('random rules');
@@ -4985,7 +4997,7 @@ function renderTrackLines(alb, mode = 'inline') {
       const parts = []; if (v) parts.push('\u25B6 ' + fmtV(v) + ' views'); if (l) parts.push('\u2665 ' + fmtV(l)); parts.push('\u266A ' + (t.track_number ? 'track ' + t.track_number : t.name));
       return parts.join('  ');
     })();
-    return `<div class="trk-line" data-track-id="${t.id}"
+    return `<div class="trk-line${t.id === nowPlayingTrackId ? ' trk-playing' : ''}" data-track-id="${t.id}"
       data-tip-name="${(t.name||'').replace(/"/g,'&quot;')}"
       data-tip-alb="${(alb.name||'').replace(/"/g,'&quot;')}${albYr ? ' · ' + albYr : ''}"
       data-tip-color="${color}"
