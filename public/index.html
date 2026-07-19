@@ -2846,9 +2846,8 @@ function openYTPlayer(videoId, title, trackId, ev) {
     <div class="sc-edge sc-edge-sw" onmousedown="ytpEdgeResize(event,'sw')"></div>
     <div class="yt-player-header" onmousedown="ytpDragStart(event)" style="flex-direction:column;gap:0;padding:0;align-items:stretch">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 8px 3px 10px">
-        <span class="ytp-icon">▶</span>
-        <span class="ytp-title" style="flex:1;min-width:0">${safeTitle}</span>
         <button class="tvb-cycle" id="ytp-vote-btn" data-vote-track="${trackId||''}" onclick="ytpCycleVote();event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" title="Rate" style="flex-shrink:0;${trackId?'':'display:none'}">${trackId?(VOTE_LABELS[String(getMyVote(trackId))]||'-'):'-'}</button>
+        <span class="ytp-title" style="flex:1;min-width:0">${safeTitle}</span>
         <div class="ytp-titlebar-btns">
           <button class="ytp-win-btn ytp-minimize-btn" onclick="ytpToggleMinimize()" title="Minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.minimize}</button>
           <button class="ytp-win-btn ytp-fs-btn" onclick="ytpToggleFullscreen()" title="Maximize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.maximize}</button>
@@ -3846,7 +3845,17 @@ function ytpToggleFullscreen() {
   _ytpFsRestore = null;
 }
 
-window.addEventListener('resize', () => { if (_ytpFs) ytpUpdateFsLayout(); }, { passive: true });
+function ytpClampToViewport() {
+  if (!_ytpContainerEl || _ytpFs || window.innerWidth <= 640) return;
+  const r = _ytpContainerEl.getBoundingClientRect();
+  const maxLeft = Math.max(0, window.innerWidth - r.width);
+  const maxTop = Math.max(0, window.innerHeight - r.height);
+  const left = Math.min(Math.max(r.left, 0), maxLeft);
+  const top = Math.min(Math.max(r.top, 0), maxTop);
+  if (left !== r.left) _ytpContainerEl.style.left = left + 'px';
+  if (top !== r.top) _ytpContainerEl.style.top = top + 'px';
+}
+window.addEventListener('resize', () => { if (_ytpFs) ytpUpdateFsLayout(); else ytpClampToViewport(); }, { passive: true });
 
 function ytpEdgeResize(e, dir) {
   if (e.button !== 0 || !ytPlayerEl || _ytpFs) return;
