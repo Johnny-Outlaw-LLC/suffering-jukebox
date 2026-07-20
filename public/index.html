@@ -975,7 +975,7 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .tvb-cycle{background:none;border:none;cursor:pointer;padding:1px 5px;line-height:1;font-size:.6rem;opacity:.45;transition:opacity .15s,color .15s;border-radius:4px;flex-shrink:0;color:var(--text-muted)}
 .tvb-cycle:hover{opacity:.9}
 .tvb-cycle.tvb-up{color:#22c55e;opacity:1}
-.tvb-cycle.tvb-down{color:#ef4444;opacity:1}
+
 
 
 /* volume control removed */
@@ -3403,7 +3403,7 @@ function updateYTQueueUI() {
       ${ytQueue.map((item, i) => `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" onclick="ytPlayQueueIdx(${i})">
         <span class="yt-queue-num">${i + 1}</span>
         <span class="yt-queue-title">${item.title.replace(/</g,'&lt;')}</span>
-        ${item.trackId ? `<button class="tvb-cycle${getMyVote(item.trackId)>0?' tvb-up':getMyVote(item.trackId)<0?' tvb-down':''}" data-vote-track="${item.trackId}" onclick="cycleVote('${item.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(getMyVote(item.trackId))]||'-'}</button>` : ''}
+        ${item.trackId ? `<button class="tvb-cycle${getMyVote(item.trackId)>0?' tvb-up':''}" data-vote-track="${item.trackId}" onclick="cycleVote('${item.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(getMyVote(item.trackId))]||'-'}</button>` : ''}
         <span style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
           <button onclick="event.stopPropagation();ytMoveQueue(${i},${i}-1)"
             class="yt-queue-move"
@@ -7729,14 +7729,13 @@ function loadLocalVotes() {
   try { localVotes = JSON.parse(localStorage.getItem('sj_votes') || '{}'); } catch(e) { localVotes = {}; }
 }
 function saveLocalVotes() { localStorage.setItem('sj_votes', JSON.stringify(localVotes)); }
-function normalizeVote(v) { return v === -2 ? -1 : (v || 0); }
+function normalizeVote(v) { return v > 0 ? v : 0; }
 function getMyVote(trackId) { return normalizeVote(localVotes[trackId]); }
 
 const _SVG_TH_UP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
-const _SVG_TH_DN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;transform:scaleY(-1);display:inline-block"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
-const VOTE_LABELS = {'2':'<span class="tvb-dbl">'+_SVG_TH_UP+_SVG_TH_UP+'</span>','1':_SVG_TH_UP,'0':'-','-1':_SVG_TH_DN};
+const VOTE_LABELS = {'2':'<span class="tvb-dbl">'+_SVG_TH_UP+_SVG_TH_UP+'</span>','1':_SVG_TH_UP,'0':'-'};
 function cycleVote(trackId) {
-  const cycle = [0,1,2,-1];
+  const cycle = [0,1,2];
   const cur   = getMyVote(trackId);
   const idx   = cycle.indexOf(cur);
   const next  = cycle[(idx === -1 ? 1 : idx + 1) % cycle.length];
@@ -7747,8 +7746,7 @@ function refreshVoteUI(trackId) {
   const lbl = VOTE_LABELS[String(v)] ?? '-';
   document.querySelectorAll('[data-vote-track="' + trackId + '"]').forEach(btn => {
     btn.innerHTML = lbl;
-    btn.classList.toggle('tvb-up',   v > 0);
-    btn.classList.toggle('tvb-down', v < 0);
+    btn.classList.toggle('tvb-up', v > 0);
   });
 }
 
