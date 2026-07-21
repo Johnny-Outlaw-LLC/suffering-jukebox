@@ -1002,6 +1002,8 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-queue-title { font-size:.55rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
 .yt-queue-row.active .yt-queue-title { color:var(--text); font-weight:600; }
 .yt-queue-move, .yt-queue-remove { background:none; border:none; color:var(--text-muted); cursor:pointer; padding:0; line-height:1; display:block; opacity:.65; }
+.yt-queue-clear { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.42rem; letter-spacing:.08em; text-transform:uppercase; font-weight:600; padding:0; opacity:.7; }
+.yt-queue-clear:hover { color:var(--text); opacity:1; }
 .yt-queue-move { font-size:.45rem; }
 .yt-queue-remove { font-size:.55rem; padding:0 2px; flex-shrink:0; }
 .yt-queue-move:hover, .yt-queue-remove:hover { color:var(--text); opacity:1; }
@@ -3050,8 +3052,13 @@ function showYTQueueChoice(videoId, title, trackId, triggerEl) {
     const btn = e.target.closest('[data-qaction]');
     if (!btn) return;
     e.stopPropagation();
-    if (btn.dataset.qaction === 'play') ytPlayNow(videoId, title, trackId);
-    else                                ytAddToQueue(videoId, title, trackId);
+    if (btn.dataset.qaction === 'play') {
+      const existingIdx = ytQueue.findIndex(item => trackId ? item.trackId === trackId : item.videoId === videoId);
+      if (existingIdx !== -1) ytPlayQueueIdx(existingIdx);
+      else ytPlayNow(videoId, title, trackId);
+    } else {
+      ytAddToQueue(videoId, title, trackId);
+    }
     dismissYTQueueChoice();
   });
 
@@ -3373,6 +3380,13 @@ function ytRemoveFromQueue(i) {
   }
 }
 
+function ytClearQueue() {
+  if (!confirm('Clear the entire queue?')) return;
+  ytQueue = [];
+  ytQueueIdx = -1;
+  closeYTPlayer();
+}
+
 function updateYTQueueUI() {
   if (!ytPlayerEl) return;
 
@@ -3399,6 +3413,7 @@ function updateYTQueueUI() {
     <div class="yt-queue-section">
       <div class="yt-queue-head">
         <span>Queue · ${ytQueue.length} tracks</span>
+        <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
       </div>
       ${ytQueue.map((item, i) => `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" onclick="ytPlayQueueIdx(${i})">
         <span class="yt-queue-num">${i + 1}</span>
