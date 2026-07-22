@@ -1448,23 +1448,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .landing-card-actions { display: none; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--border); margin-top: auto; }
 .landing-card.expanded .landing-card-actions { display: flex; }
 .landing-grid.detail-full .landing-card-actions { display: flex; }
-.landing-card.lc-minimizing {
-  transform: scale(.82); opacity: .12; pointer-events: none;
-  transition: transform .42s cubic-bezier(.4,0,.2,1), opacity .42s ease;
-}
-.landing-card.lc-enlarging {
-  transform: scale(1.14); z-index: 40; box-shadow: 0 30px 90px rgba(0,0,0,.55);
-  transition: transform .42s cubic-bezier(.34,1.56,.64,1), box-shadow .42s ease;
-}
-.landing-card.lc-enlarging .landing-card-stats,
-.landing-card.lc-enlarging .landing-card-actions,
-.landing-card.lc-enlarging .landing-added-by { opacity: 0; transition: opacity .15s ease; pointer-events: none; }
-.lc-grow-bars { display: flex; align-items: flex-end; gap: 6px; height: 64px; margin-top: 4px; }
-.lc-grow-bars .lc-bar {
-  flex: 1; background: var(--card-accent, var(--accent)); border-radius: 3px 3px 0 0;
-  transform: scaleY(0); transform-origin: bottom; transition: transform .38s cubic-bezier(.34,1.56,.64,1);
-}
-.lc-grow-bars .lc-bar.grown { transform: scaleY(var(--bar-h, 1)); }
 .landing-play-btn, .landing-explore-btn {
   font-family: var(--mono); font-size: .58rem; letter-spacing: .06em; text-transform: uppercase;
   padding: .55rem 1.05rem; border-radius: 8px; cursor: pointer; transition: all .15s;
@@ -5163,7 +5146,6 @@ function renderLanding() {
       <div class="landing-grid detail-${landingDetailLevel}">
         ${rows.map((r, i) => { const thumb = landingThumb(r); return `
           <div class="landing-card${landingExpandedId === r.artist_id ? ' expanded' : ''}"
-               id="landing-card-${r.artist_id}"
                style="--card-accent:${landingColor(r, i)}"
                onclick="toggleLandingCard('${r.artist_id}')">
             <div class="landing-card-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
@@ -5282,52 +5264,11 @@ function toggleLandingCard(artistId) {
 function landingExploreArtist(slug, artistId) {
   const row = artistId ? landingStats.find(r => r.artist_id === artistId) : null;
   if (row) {
-    enterArtistJukebox(
-      { id: row.artist_id, name: row.name, slug: row.slug, is_community: row.is_community, added_by_name: row.added_by_name },
-      { landingRow: row }
-    );
+    enterArtistJukebox({ id: row.artist_id, name: row.name, slug: row.slug, is_community: row.is_community, added_by_name: row.added_by_name });
     return;
   }
   if (!slug) return;
   window.location.href = '/' + slug;
-}
-
-// Minimizes every other card and "unfolds" the clicked one - its stat
-// numbers grow into a small bar chart, foreshadowing the real one about to
-// load. Resolves once the flourish has played, so the caller can then swap
-// in the real page content.
-function playLandingUnfoldTransition(clickedCard, row) {
-  return new Promise(resolve => {
-    const grid = document.querySelector('.landing-grid');
-    const cards = grid ? [...grid.querySelectorAll('.landing-card')] : [];
-    cards.forEach(c => { if (c !== clickedCard) c.classList.add('lc-minimizing'); });
-    clickedCard.classList.add('lc-enlarging');
-
-    // Reuse the numbers already on the card as a mini bar-chart preview -
-    // no extra fetch, and it's honest data rather than a fake animation.
-    const stats = [
-      Math.log10((row.total_views || 0) + 1),
-      Math.log10((row.total_plays || 0) + 1) * 1.3,
-      (row.album_count || 0),
-      Math.log10((row.track_count || 0) + 1) * 1.2,
-    ];
-    const maxStat = Math.max(...stats, 1);
-    const bars = document.createElement('div');
-    bars.className = 'lc-grow-bars';
-    stats.forEach((v, i) => {
-      const bar = document.createElement('div');
-      bar.className = 'lc-bar';
-      bar.style.setProperty('--bar-h', Math.max(0.08, v / maxStat).toFixed(3));
-      bar.style.transitionDelay = (i * 0.05) + 's';
-      bars.appendChild(bar);
-    });
-    const body = clickedCard.querySelector('.landing-card-body');
-    if (body) body.appendChild(bars);
-    void bars.offsetHeight; // force layout so the scaleY(0) start state is committed before we transition
-    bars.querySelectorAll('.lc-bar').forEach(b => b.classList.add('grown'));
-
-    setTimeout(resolve, 460);
-  });
 }
 
 function openManageJukebox() {
@@ -5512,9 +5453,7 @@ async function enterArtistJukebox(artist, opts) {
   try {
     closeSJDropdown();
     closeUserMenu();
-    const landingCard = opts.landingRow ? document.getElementById('landing-card-' + artist.id) : null;
-    if (landingCard) { await playLandingUnfoldTransition(landingCard, opts.landingRow); }
-    else { await fadeMainOut(); }
+    await fadeMainOut();
     _SLUG_ARTIST = { id: artist.id, name: artist.name, slug: artist.slug };
     IS_COMMUNITY = true;
     FEATURED_ARTIST_ID = artist.id;
