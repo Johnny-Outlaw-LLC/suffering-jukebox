@@ -1389,6 +1389,15 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .landing-grid.detail-name .landing-card-stats { display: none; }
 .landing-grid.detail-name .landing-card-body { padding: 12px 14px; gap: 8px; }
 .landing-grid.detail-name .landing-card-name { font-size: .8rem; }
+.landing-added-by { display: none; font-size: .46rem; color: var(--text-muted); letter-spacing: .02em; }
+.landing-grid.detail-full .landing-added-by { display: block; }
+.landing-action-btn {
+  background: none; border: 1px solid var(--accent); color: var(--accent);
+  font-family: var(--mono); font-size: .54rem; letter-spacing: .03em; padding: .42rem .8rem;
+  border-radius: 8px; cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.landing-action-btn:hover { background: var(--accent)18; }
+.landing-action-btn:disabled { opacity: .5; cursor: default; }
 .landing-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .12s;
@@ -4646,16 +4655,12 @@ function closeYTPlaylistDD() {
 
 async function playPlaylist(playlistId) {
   try {
-    const plMeta = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId) || pubPlaylists.find(p => p.id === playlistId);
-    if (plMeta && _plHopIfOtherJukebox(plMeta)) return;
-    await ensurePlaylistPlayable(plMeta);
     const rows = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
     if (!rows.length) { alert('This playlist is empty.'); return; }
-    const q = [];
-    for (const r of rows) {
-      const yt = ytData[r.track_id];
-      if (yt?.video_id) { const t = findTrackById(r.track_id); q.push({ videoId: yt.video_id, title: t?.name||'Track', trackId: r.track_id }); }
-    }
+    const info = await resolvePlaylistTracks(rows.map(r => r.track_id));
+    const q = rows.map(r => info[r.track_id]?.videoId
+      ? { videoId: info[r.track_id].videoId, title: info[r.track_id].name || 'Track', trackId: r.track_id }
+      : null).filter(Boolean);
     if (!q.length) { alert('No playable tracks found.'); return; }
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
@@ -4968,6 +4973,7 @@ async function initLanding() {
     if (!Array.isArray(rows) || !rows.length) { renderEmpty('No artists yet'); return; }
     landingStats = rows;
     renderLanding();
+    loadPlaylists().then(() => { if (isLandingMode) renderLanding(); });
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
@@ -5012,6 +5018,9 @@ function renderLanding() {
   main.classList.add('main-landing');
   const rows = getVisibleLandingStats();
   const sortOpt = (v, lbl) => `<option value="${v}"${landingSortMode === v ? ' selected' : ''}>${lbl}</option>`;
+  const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
+  const _myPls   = _savedPlaylists.filter(p => p.user_email === (googleUser && googleUser.email));
+  const _pubPls  = _savedPlaylists.filter(p => p.is_public);
   main.innerHTML = `
     <div class="landing-wrap">
       <p class="landing-intro">Pick an artist</p>
@@ -5035,6 +5044,18 @@ function renderLanding() {
             <button type="button" class="landing-size-btn${landingDetailLevel === 'full' ? ' active' : ''}" onclick="setLandingDetailLevel('full')">Full Details</button>
           </div>
         </div>
+        <div class="landing-control-group">
+          <button type="button" class="landing-action-btn" id="landing-shuffle-all-btn" onclick="landingShuffleAll()">▶ Shuffle All</button>
+          ${_hasFavs ? `<button type="button" class="landing-action-btn" id="landing-shuffle-favs-btn" onclick="landingShuffleFavorites()">▶ Shuffle Favorites</button>` : ''}
+          ${_myPls.length ? `<select class="landing-sort-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
+            <option value="">▶ My Playlists</option>
+            ${_plSelectOptions(_myPls)}
+          </select>` : ''}
+          ${_pubPls.length ? `<select class="landing-sort-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
+            <option value="">▶ Public Playlists</option>
+            ${_plSelectOptions(_pubPls)}
+          </select>` : ''}
+        </div>
       </div>
       <div class="landing-grid detail-${landingDetailLevel}">
         ${rows.map((r, i) => { const thumb = landingThumb(r); return `
@@ -5050,6 +5071,7 @@ function renderLanding() {
               <div class="landing-stat landing-stat-albums"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
               <div class="landing-stat landing-stat-tracks"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
             </div>
+            ${r.added_by_name ? `<div class="landing-added-by">Added by ${esc(r.added_by_name)}</div>` : ''}
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
               <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}')">Explore artist jukebox →</button>
@@ -5060,6 +5082,92 @@ function renderLanding() {
       </div>
     </div>
   `;
+}
+
+function landingPlayQueue(q) {
+  if (!q || !q.length) return;
+  const first = q[0];
+  // openYTPlayer() resets ytQueue internally to a single-track array, so when
+  // it's the one opening the player, ytQueue must be (re)assigned AFTER that
+  // call, not before - otherwise the full queue gets clobbered back to 1 item.
+  if (ytPlayerEl) {
+    ytQueue = q; ytQueueIdx = 0;
+    ytPlayQueueIdx(0);
+  } else {
+    openYTPlayer(first.videoId, first.title, first.trackId);
+    ytQueue = q; ytQueueIdx = 0;
+  }
+  updateYTQueueUI();
+}
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Resolves track name + YouTube video id directly from the DB, independent of
+// whatever artists happen to be loaded on the current page - used to play
+// playlists and favorites without forcing the visible jukebox to change.
+async function resolvePlaylistTracks(trackIds) {
+  const ids = [...new Set((trackIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  let tRows = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    tRows = tRows.concat(await dbGet(`/tracks?id=in.(${ids.slice(i, i + 50).join(',')})&select=id,name`));
+  }
+  const yt = await loadYT(ids);
+  const map = {};
+  tRows.forEach(t => { map[t.id] = { name: t.name, videoId: yt[t.id]?.video_id || null }; });
+  return map;
+}
+
+async function landingShuffleAll() {
+  const btn = document.getElementById('landing-shuffle-all-btn');
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
+  try {
+    const artistIds = getVisibleLandingStats().flatMap(r => (r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id]);
+    if (!artistIds.length) return;
+    let albRows = await dbGet(`/albums?artist_id=in.(${artistIds.join(',')})&order=release_date.asc`);
+    albRows = albRows.filter(a => !a.name.toLowerCase().includes('early times'));
+    if (!albRows.length) return;
+    const albumIds = albRows.map(a => a.id);
+    const chunks = [];
+    for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
+    const results = await Promise.all(chunks.map(c => dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name`)));
+    const trackRows = results.flat();
+    const yt = await loadYT(trackRows.map(t => t.id));
+    const q = shuffleInPlace(trackRows.filter(t => yt[t.id]?.video_id))
+      .map(t => ({ videoId: yt[t.id].video_id, title: t.name, trackId: t.id }));
+    if (!q.length) { alert('No playable tracks found.'); return; }
+    landingPlayQueue(q);
+  } catch (e) {
+    console.warn('landingShuffleAll error', e);
+  } finally {
+    if (btn) { btn.textContent = orig; btn.disabled = false; }
+  }
+}
+
+async function landingShuffleFavorites() {
+  const favIds = Object.keys(localVotes).filter(tid => (localVotes[tid] || 0) >= 1);
+  if (!favIds.length) { alert('No favorites yet - give tracks a thumbs up!'); return; }
+  const btn = document.getElementById('landing-shuffle-favs-btn');
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
+  try {
+    const info = await resolvePlaylistTracks(favIds);
+    const q = shuffleInPlace(favIds.filter(tid => info[tid]?.videoId))
+      .map(tid => ({ videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }));
+    if (!q.length) { alert('No favorited tracks have YouTube videos.'); return; }
+    landingPlayQueue(q);
+  } catch (e) {
+    console.warn('landingShuffleFavorites error', e);
+  } finally {
+    if (btn) { btn.textContent = orig; btn.disabled = false; }
+  }
 }
 
 function toggleLandingCard(artistId) {
@@ -5164,13 +5272,8 @@ async function landingPlayArtist(artistId) {
     memberIds.forEach(id => selectedIds.add(id));
     const playable = trackRows.filter(t => ytData[t.id]?.video_id);
     if (!playable.length) return;
-    const shuffled = [...playable].sort(() => Math.random() - 0.5);
-    const queue = shuffled.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
-    const first = queue[0];
-    ytQueue = queue;
-    ytQueueIdx = 0;
-    if (ytPlayerEl) { ytPlayQueueIdx(0); } else { openYTPlayer(first.videoId, first.title, first.trackId); }
-    updateYTQueueUI();
+    const queue = shuffleInPlace([...playable]).map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+    landingPlayQueue(queue);
   } catch (e) {
     console.warn('landingPlayArtist error', e);
   } finally {
@@ -9398,12 +9501,10 @@ async function hydratePlaylistLink() {
     pl._tracks = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${id}&order=position.asc`);
     if (!pl._tracks?.length) return;
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
-    await ensurePlaylistPlayable(pl);
-    const q = pl._tracks.map(pt => {
-      const t = findTrackById(pt.track_id);
-      const vid = ytData[pt.track_id]?.video_id;
-      return t && vid ? { videoId: vid, title: t.name, trackId: t.id } : null;
-    }).filter(Boolean);
+    const info = await resolvePlaylistTracks(pl._tracks.map(pt => pt.track_id));
+    const q = pl._tracks.map(pt => info[pt.track_id]?.videoId
+      ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
+      : null).filter(Boolean);
     if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
     const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
@@ -9673,39 +9774,6 @@ function _playlistContext() {
   };
 }
 
-// Rebuild the jukebox to match the artist/album view saved with the playlist.
-// This is a full SWAP, not a merge: artists outside the saved view are
-// deselected and their albums leave the chart, so loading a playlist never
-// crowds the current view with leftovers.
-async function restorePlaylistContext(pl) {
-  const ctx = pl?.context;
-  if (!ctx) return;
-  const savedSel   = Array.isArray(ctx.selectedArtists) ? ctx.selectedArtists : [];
-  const savedOther = Array.isArray(ctx.otherArtists)    ? ctx.otherArtists    : [];
-  // Make sure every saved artist row is available before swapping.
-  [...new Set([...savedSel, ...savedOther])].forEach(id => {
-    const a = allArtists.find(x => x.id === id) || oaFindArtist(id);
-    if (a && !allArtists.find(x => x.id === a.id)) allArtists.push(a);
-  });
-  const sel = savedSel.filter(id => allArtists.find(x => x.id === id));
-  if (!sel.length) return; // saved artists no longer exist - leave the view alone
-  const selSet = new Set(sel);
-  const nextEx = new Set(Array.isArray(ctx.excludedAlbumIds) ? ctx.excludedAlbumIds : []);
-  const sameSel = selSet.size === selectedIds.size && sel.every(id => selectedIds.has(id));
-  const sameEx  = nextEx.size === excludedAlbumIds.size && [...nextEx].every(id => excludedAlbumIds.has(id));
-  if (sameSel && sameEx) return; // already looking at the saved view
-  selectedIds = selSet;
-  excludedAlbumIds = nextEx;
-  addedCommunityIds.clear();
-  savedOther.forEach(id => { if (allArtists.find(x => x.id === id)) addedCommunityIds.add(id); });
-  // Drop community artists that aren't part of the saved view (keep the page's
-  // featured artist row - the page chrome needs it even when deselected).
-  allArtists = allArtists.filter(a => !a.is_community || a.id === FEATURED_ARTIST_ID || selectedIds.has(a.id) || addedCommunityIds.has(a.id));
-  try { await loadData(); } catch (e) {}
-  Object.values(albums).flat().forEach(a => { if (isAlbumVisible(a.id)) expandedAlbumIds.add(a.id); });
-  try { updateFilterHeader(); } catch (e) {}
-}
-
 // Which artist jukebox a playlist belongs to (display name, saved at create time).
 function _plArtistName(p) {
   const n = p?.context?.pageName;
@@ -9744,29 +9812,6 @@ function _plCurPage() {
   return _SLUG_ARTIST?.slug || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null);
 }
 
-// A playlist saved on a different artist jukebox plays best on that page -
-// hop there with ?pl= and let hydratePlaylistLink() take over. Returns true
-// when a hop was started (caller should bail out).
-function _plHopIfOtherJukebox(pl) {
-  const savedPage = (typeof pl?.context?.page === 'string' && pl.context.page) ? pl.context.page : null;
-  if (new URLSearchParams(location.search).has('pl')) return false; // already hopped once - play in place
-  if (savedPage === _plCurPage()) return false;
-  location.href = (savedPage ? '/' + savedPage : '/') + '?pl=' + pl.id;
-  return true;
-}
-
-// Track ids in a playlist that can't resolve to a loaded track + video yet.
-function _plUnresolvedTrackIds(pl) {
-  return (pl?._tracks || [])
-    .map(pt => pt.track_id)
-    .filter(tid => tid && (!findTrackById(tid) || !ytData[tid]?.video_id));
-}
-
-// True when playing this playlist needs artists/albums the jukebox hasn't loaded.
-function playlistNeedsOtherArtists(pl) {
-  return _plUnresolvedTrackIds(pl).length > 0;
-}
-
 function _plSelectOptions(arr) {
   const opt = p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + '</option>';
   return _plGroupByJukebox(arr).map(([label, pls]) =>
@@ -9774,65 +9819,14 @@ function _plSelectOptions(arr) {
   ).join('');
 }
 
-// Make every track in the playlist resolvable before queueing. If the saved
-// context covers everything, the swap above is all we need. Otherwise (no
-// context, or it couldn't resolve every track) rebuild the jukebox from the
-// playlist itself: load exactly the artists its tracks belong to, show only
-// the albums the playlist touches, and drop everything else.
-async function ensurePlaylistPlayable(pl) {
-  if (!pl) return;
-  await restorePlaylistContext(pl);
-  if (!_plUnresolvedTrackIds(pl).length) return;
-  const allIds = [...new Set((pl._tracks || []).map(pt => pt.track_id).filter(Boolean))];
-  if (!allIds.length) return;
-  try {
-    let tRows = [];
-    for (let i = 0; i < allIds.length; i += 50) {
-      tRows = tRows.concat(await dbGet(`/tracks?id=in.(${allIds.slice(i, i + 50).join(',')})&select=id,album_id`));
-    }
-    const albIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
-    if (!albIds.length) return;
-    let aRows = [];
-    for (let i = 0; i < albIds.length; i += 50) {
-      aRows = aRows.concat(await dbGet(`/albums?id=in.(${albIds.slice(i, i + 50).join(',')})&select=id,artist_id`));
-    }
-    const resolved = [...new Set(aRows.map(a => a.artist_id).filter(Boolean))].filter(id => {
-      const a = allArtists.find(x => x.id === id) || oaFindArtist(id);
-      if (!a) return false;
-      if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
-      return true;
-    });
-    if (!resolved.length) return;
-    selectedIds = new Set(resolved);
-    addedCommunityIds.clear();
-    resolved.forEach(id => { if (communityArtists.find(c => c.id === id)) addedCommunityIds.add(id); });
-    allArtists = allArtists.filter(a => !a.is_community || a.id === FEATURED_ARTIST_ID || selectedIds.has(a.id));
-    excludedAlbumIds = new Set();
-    await loadData();
-    // Show + expand only the albums the playlist touches; hide the rest.
-    const needed = new Set(albIds);
-    Object.values(albums).flat().forEach(a => {
-      if (needed.has(a.id)) expandedAlbumIds.add(a.id);
-      else excludedAlbumIds.add(a.id);
-    });
-    try { updateFilterHeader(); } catch (e) {}
-    render();
-  } catch (e) {}
-}
-
 async function playFromPlaylist(playlistId) {
   const pl = _savedPlaylists.find(p => p.id === playlistId);
   if (!pl || !pl._tracks?.length) return;
-  if (_plHopIfOtherJukebox(pl)) return;
-  await ensurePlaylistPlayable(pl);
-  const q = pl._tracks
-    .sort((a, b) => a.position - b.position)
-    .map(pt => {
-      const t = findTrackById(pt.track_id);
-      const vid = ytData[pt.track_id]?.video_id;
-      if (!t || !vid) return null;
-      return { videoId: vid, title: t.name, trackId: t.id };
-    }).filter(Boolean);
+  const sorted = [...pl._tracks].sort((a, b) => a.position - b.position);
+  const info = await resolvePlaylistTracks(sorted.map(pt => pt.track_id));
+  const q = sorted.map(pt => info[pt.track_id]?.videoId
+    ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
+    : null).filter(Boolean);
   if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
   _queueHasAdditions = false;
   const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
@@ -10127,12 +10121,11 @@ function buildPlaylistsHTML(playlists) {
 async function loadAndAddPlaylistToQueue(playlistId) {
   const pl = _savedPlaylists.find(p => p.id === playlistId);
   if (!pl) return;
-  await ensurePlaylistPlayable(pl);
   const sorted = (pl._tracks || []).sort((a, b) => a.position - b.position);
+  const info = await resolvePlaylistTracks(sorted.map(pt => pt.track_id));
   sorted.forEach(pt => {
-    const t = findTrackById(pt.track_id);
-    const vid = ytData[pt.track_id]?.video_id;
-    if (t && vid) ytAddToQueue(vid, t.name, t.id);
+    const inf = info[pt.track_id];
+    if (inf?.videoId) ytAddToQueue(inf.videoId, inf.name || 'Track', pt.track_id);
   });
   if (!ytPlayerEl && ytQueue.length) {
     const first = ytQueue[0];
