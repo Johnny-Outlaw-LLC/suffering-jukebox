@@ -1484,13 +1484,13 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <div class="hdr-r1">
     <div class="hdr-r1-left">
       <div class="brand-block">
-        <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="window.location.href='/'" title="Back to the Silver Jews jukebox">
+        <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="goHome()" title="Back to the Suffering Jukebox home page">
         <p class="brand-tagline" id="brand-tagline">An interactive <strong>Silver Jews</strong> &amp; <strong>Purple Mountains</strong> jukebox</p>
       </div>
       <div id="filter-header"></div>
     </div>
     <div class="brand-block hdr-brand-mobile">
-      <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="window.location.href='/'" title="Back to the Silver Jews jukebox">
+      <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="goHome()" title="Back to the Suffering Jukebox home page">
     </div>
     <div class="header-btns">
       <div class="hdr-search-wrap">
@@ -1891,9 +1891,9 @@ const YT_FN   = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/youtube-s
 const COMMUNITY_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/community-import';
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
 // Artist slug pages (e.g. /pavement) are served by the Next [slug] route, which injects window.__SLUG_ARTIST__
-const _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
-const IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community' || !!_SLUG_ARTIST;
-const FEATURED_ARTIST_ID = _SLUG_ARTIST ? _SLUG_ARTIST.id : (IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null);
+let _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
+let IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community' || !!_SLUG_ARTIST;
+let FEATURED_ARTIST_ID = _SLUG_ARTIST ? _SLUG_ARTIST.id : (IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null);
 function filterPageArtists(rows) {
   if (IS_COMMUNITY) {
     const ap = FEATURED_ARTIST_ID;
@@ -5159,7 +5159,7 @@ function renderLanding() {
             ${r.added_by_name ? `<div class="landing-added-by">Added by ${esc(r.added_by_name)}</div>` : ''}
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
-              <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}')">Explore artist jukebox →</button>
+              <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>
             </div>
             </div>
           </div>
@@ -5260,7 +5260,12 @@ function toggleLandingCard(artistId) {
   renderLanding();
 }
 
-function landingExploreArtist(slug) {
+function landingExploreArtist(slug, artistId) {
+  const row = artistId ? landingStats.find(r => r.artist_id === artistId) : null;
+  if (row) {
+    enterArtistJukebox({ id: row.artist_id, name: row.name, slug: row.slug, is_community: row.is_community, added_by_name: row.added_by_name });
+    return;
+  }
   if (!slug) return;
   window.location.href = '/' + slug;
 }
@@ -5366,39 +5371,160 @@ async function landingPlayArtist(artistId) {
   }
 }
 
+// Fetches the artist roster, resolves which one(s) this page/transition is
+// featuring, and loads their albums/tracks. Shared by init() (first load)
+// and enterArtistJukebox() (in-app transition, no reload) so both stay in sync.
+async function loadArtistPageData() {
+  const _artistRows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
+  communityArtists = _artistRows.filter(a => a.is_community);
+  mainCatalogArtists = _artistRows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
+  allArtists = filterPageArtists(_artistRows);
+  const _ap = FEATURED_ARTIST_ID;
+  const _one = _ap && allArtists.find(a => a.id === _ap);
+  if (_one) {
+    document.title = _one.name + ' Jukebox: Suffering Jukebox';
+    const _tag = document.getElementById('brand-tagline');
+    if (_tag) _tag.innerHTML = 'The <strong>' + (_one.name || '').replace(/</g, '&lt;') + '</strong> jukebox' + (_one.added_by_name ? ', added to the community by ' + (_one.added_by_name || '').replace(/</g, '&lt;') : '');
+  }
+  if (_one && _one.slug && window.location.pathname.replace(/\/+$/, '') === '/community') {
+    try { history.replaceState(null, '', '/' + _one.slug); } catch (_) {}
+  }
+  if (_ap) restoreOtherArtists();
+  const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
+  if (runIds.length) {
+    const runs = await dbGet(`/sync_runs?id=in.(${runIds.join(',')})&select=id,pulled_at,album_count,track_count`);
+    runs.forEach(r => { syncRuns[r.id] = r; });
+  }
+  allArtists.forEach(a => selectedIds.add(a.id));
+  if (!allArtists.length) { renderCommunityEmpty(); return; }
+  await loadData();
+}
+
+// ══════════════════════════════════════════════════════════════
+// IN-APP NAVIGATION (landing <-> artist jukebox, artist <-> artist) -
+// swaps the page's identity and re-renders in place instead of a full
+// reload, so the floating player keeps playing and the transition is a
+// single smooth fade instead of a hard cut. Sharable /<slug> URLs still
+// work exactly as before for direct loads and social previews - only
+// clicks that originate from inside an already-loaded page take this path.
+// ══════════════════════════════════════════════════════════════
+let _routeTransitionBusy = false;
+
+function fadeMainOut() {
+  return new Promise(resolve => {
+    const main = document.getElementById('main');
+    main.style.transition = 'opacity .18s ease';
+    main.style.opacity = '0';
+    setTimeout(resolve, 180);
+  });
+}
+
+function fadeMainIn() {
+  const main = document.getElementById('main');
+  requestAnimationFrame(() => {
+    main.style.transition = 'opacity .22s ease';
+    main.style.opacity = '1';
+    setTimeout(() => { main.style.transition = ''; }, 240);
+  });
+}
+
+function resetDashboardState() {
+  selectedIds = new Set();
+  excludedAlbumIds = new Set();
+  expandedAlbumIds = new Set();
+  addedCommunityIds.clear();
+  _initialExpansionSet = false;
+  allArtists = [];
+  tracks = {};
+  albums = {};
+  ytData = {};
+  viewMode = 'byyear';
+  listSort = 'views';
+}
+
+// artist: {id, name, slug, is_community?, added_by_name?}
+async function enterArtistJukebox(artist, opts) {
+  opts = opts || {};
+  if (!artist || !artist.id || !artist.slug) return;
+  if (IS_COMMUNITY && FEATURED_ARTIST_ID === artist.id) { closeSJDropdown(); closeUserMenu(); return; }
+  if (_routeTransitionBusy) return;
+  _routeTransitionBusy = true;
+  try {
+    closeSJDropdown();
+    closeUserMenu();
+    await fadeMainOut();
+    _SLUG_ARTIST = { id: artist.id, name: artist.name, slug: artist.slug };
+    IS_COMMUNITY = true;
+    FEATURED_ARTIST_ID = artist.id;
+    isLandingMode = false;
+    document.getElementById('main').classList.remove('main-landing');
+    resetDashboardState();
+    if (opts.pushHistory !== false) {
+      try { history.pushState({ slug: artist.slug }, '', '/' + artist.slug); } catch (e) {}
+    }
+    try { await loadArtistPageData(); } catch (e) { renderEmpty(`Error: ${e.message}`); }
+    fadeMainIn();
+  } finally {
+    _routeTransitionBusy = false;
+  }
+}
+
+async function goHome(opts) {
+  opts = opts || {};
+  if (!IS_COMMUNITY) return; // already home
+  if (_routeTransitionBusy) return;
+  _routeTransitionBusy = true;
+  try {
+    closeSJDropdown();
+    closeUserMenu();
+    await fadeMainOut();
+    _SLUG_ARTIST = null;
+    IS_COMMUNITY = false;
+    FEATURED_ARTIST_ID = null;
+    resetDashboardState();
+    // Landing mode doesn't use these header slots - clear out the previous
+    // artist's filter bar/shuffle controls so nothing lingers behind the grid.
+    ['filter-header', 'filter-header-mobile', 'view-controls-header', 'lwytb-header'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
+    if (opts.pushHistory !== false) {
+      try { history.pushState(null, '', '/'); } catch (e) {}
+    }
+    await initLanding();
+    fadeMainIn();
+  } finally {
+    _routeTransitionBusy = false;
+  }
+}
+
+function oaGoToArtist(artistId) {
+  const a = oaFindArtist(artistId);
+  if (a) enterArtistJukebox(a);
+}
+
+// Browser back/forward between transitioned pages. Unknown slugs (or the
+// /community index, not covered by this pass) fall back to a real reload -
+// the server route handles those correctly either way.
+window.addEventListener('popstate', () => {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/') { goHome({ pushHistory: false }); return; }
+  if (path === '/community') { window.location.reload(); return; }
+  const slug = path.slice(1);
+  if (IS_COMMUNITY && _SLUG_ARTIST && _SLUG_ARTIST.slug === slug) return;
+  dbGet(`/artists?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug,is_community,added_by_name`)
+    .then(rows => {
+      const artist = rows[0];
+      if (!artist) { window.location.reload(); return; }
+      enterArtistJukebox(artist, { pushHistory: false });
+    })
+    .catch(() => window.location.reload());
+});
+
 async function init() {
   try {
     if (!IS_COMMUNITY) { await initLanding(); return; }
-    const _artistRows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
-    communityArtists = _artistRows.filter(a => a.is_community);
-    mainCatalogArtists = _artistRows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
-    allArtists = filterPageArtists(_artistRows);
-    if (!IS_COMMUNITY) {
-      restoreOtherArtists();
-    } else {
-      const _ap = FEATURED_ARTIST_ID;
-      const _one = _ap && allArtists.find(a => a.id === _ap);
-      if (_one) {
-        document.title = _one.name + ' Jukebox: Suffering Jukebox';
-        const _tag = document.getElementById('brand-tagline');
-        if (_tag) _tag.innerHTML = 'The <strong>' + (_one.name || '').replace(/</g, '&lt;') + '</strong> jukebox' + (_one.added_by_name ? ', added to the community by ' + (_one.added_by_name || '').replace(/</g, '&lt;') : '');
-      }
-      if (_one && _one.slug && window.location.pathname.replace(/\/+$/, '') === '/community') {
-        try { history.replaceState(null, '', '/' + _one.slug); } catch (_) {}
-      }
-      if (_ap) restoreOtherArtists();
-    }
-    const runIds = [...new Set(allArtists.map(a => a.last_sync_id).filter(Boolean))];
-    if (runIds.length) {
-      const runs = await dbGet(`/sync_runs?id=in.(${runIds.join(',')})&select=id,pulled_at,album_count,track_count`);
-      runs.forEach(r => { syncRuns[r.id] = r; });
-    }
-    allArtists.forEach(a => selectedIds.add(a.id));
-    if (!allArtists.length) {
-      if (IS_COMMUNITY) { renderCommunityEmpty(); } else { renderEmpty('No artists yet - use ⚙ Sync to add one'); }
-      return;
-    }
-    await loadData();
+    await loadArtistPageData();
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
@@ -6365,12 +6491,12 @@ function renderOtherArtistsBtn() {
           <div class="oa-meta">${a.is_community === false ? 'main jukebox artist' : (a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist')}</div>
         </div>
         ${(!IS_COMMUNITY || _featuredId) ? `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>` : ''}
-        <button type="button" class="oa-act go" onclick="event.stopPropagation();window.location.href='${a.is_community === false ? '/' : (a.slug ? '/' + a.slug : `/community?artist=${a.id}`)}'" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
+        <button type="button" class="oa-act go" onclick="event.stopPropagation();oaGoToArtist('${a.id}')" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
     </div>`;
   }).join('');
-  return `<a href="/" class="ctrl-btn" title="Back to the Suffering Jukebox home page">🏠 Home</a>
+  return `<a href="/" class="ctrl-btn" onclick="event.preventDefault();goHome()" title="Back to the Suffering Jukebox home page">🏠 Home</a>
   <div class="filter-dd-wrap oa-wrap">
     <button class="ctrl-btn filter-dd-trigger${activeN ? ' ctrl-btn--accent' : ''}" onclick="toggleOADropdown(event)">
       Other Artists${activeN ? ` <span style="opacity:.75">(${activeN})</span>` : ''} <span class="filter-dd-caret">▾</span>
