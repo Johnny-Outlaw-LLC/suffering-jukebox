@@ -43,10 +43,6 @@ export async function GET(
   if (!artist) {
     return NextResponse.redirect(home, 302);
   }
-  // Main-catalog artists live on the home page
-  if (!artist.is_community) {
-    return NextResponse.redirect(home, 302);
-  }
 
   let art = "";
   try {

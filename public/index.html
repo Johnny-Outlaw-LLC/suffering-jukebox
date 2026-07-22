@@ -1357,6 +1357,37 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   max-height:200px; overflow-y:auto;
 }
 .srch-lyr-panel mark { background:transparent; color:var(--accent); font-weight:700; }
+
+/* ── Landing page (artist card grid) ── */
+.landing-wrap { padding: 20px clamp(16px,4vw,48px) 60px; max-width: 1600px; margin: 0 auto; }
+.landing-intro { font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 18px; }
+.landing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.landing-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid var(--card-accent, var(--accent));
+  border-radius: 14px; padding: 22px 22px 18px; cursor: pointer; transition: border-color .15s, transform .12s;
+  display: flex; flex-direction: column; gap: 14px; user-select: none;
+}
+.landing-card:hover { border-color: var(--card-accent, var(--accent)); transform: translateY(-2px); }
+.landing-card-name { font-size: 1.05rem; font-weight: 700; color: var(--text); letter-spacing: .01em; }
+.landing-card-stats { display: flex; gap: 20px; flex-wrap: wrap; }
+.landing-stat { display: flex; flex-direction: column; gap: 3px; }
+.landing-stat-val { font-family: var(--mono); font-size: .95rem; font-weight: 700; color: var(--text); }
+.landing-stat-lbl { font-size: .42rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.landing-card-actions { display: none; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--border); }
+.landing-card.expanded .landing-card-actions { display: flex; }
+.landing-play-btn, .landing-explore-btn {
+  font-family: var(--mono); font-size: .58rem; letter-spacing: .06em; text-transform: uppercase;
+  padding: .55rem 1.05rem; border-radius: 8px; cursor: pointer; transition: all .15s;
+}
+.landing-play-btn { background: var(--card-accent, var(--accent)); border: 1px solid var(--card-accent, var(--accent)); color: #0a0a0a; font-weight: 700; }
+.landing-play-btn:hover { filter: brightness(1.12); }
+.landing-explore-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); }
+.landing-explore-btn:hover { border-color: var(--text); color: var(--text); }
+@media (max-width: 640px) {
+  .landing-wrap { padding: 14px 14px 50px; }
+  .landing-grid { grid-template-columns: 1fr; }
+  .landing-card-name { font-size: .95rem; }
+}
 </style>
 </head>
 <body>
@@ -1765,8 +1796,19 @@ const IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/communit
 const FEATURED_ARTIST_ID = _SLUG_ARTIST ? _SLUG_ARTIST.id : (IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null);
 function filterPageArtists(rows) {
   if (IS_COMMUNITY) {
-    let out = rows.filter(a => a.is_community);
     const ap = FEATURED_ARTIST_ID;
+    if (ap) {
+      const target = rows.find(a => a.id === ap);
+      if (target && !target.is_community) {
+        // Main-catalog artist reached via its own slug (e.g. /silver-jews, /madonna) -
+        // Purple Mountains folds into the Silver Jews jukebox automatically.
+        if (/silver jews|purple mountains/i.test(target.name)) {
+          return rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name));
+        }
+        return [target];
+      }
+    }
+    let out = rows.filter(a => a.is_community);
     if (ap) { const one = out.filter(a => a.id === ap); if (one.length) out = one; }
     return out;
   }
@@ -4836,8 +4878,122 @@ async function confirmDeletePlaylist(id, name) {
   } catch(e) { alert('Error deleting: ' + e.message); }
 }
 
+// ══════════════════════════════════════════════════════════════
+// LANDING PAGE (root "/" - simple artist-card grid)
+// ══════════════════════════════════════════════════════════════
+let landingStats      = [];
+let landingExpandedId = null;
+
+function fmtScore(n) {
+  n = Number(n) || 0;
+  return n === 0 ? '0' : (n > 0 ? '+' : '') + n;
+}
+
+function landingColor(row, idx) {
+  const n = (row.name || '').toLowerCase();
+  if (n.includes('silver jews')) return '#6a8aa0';
+  if (row.color) return row.color;
+  return OA_PALETTE[idx % OA_PALETTE.length];
+}
+
+async function initLanding() {
+  try {
+    const tagline = document.getElementById('brand-tagline');
+    if (tagline) tagline.innerHTML = 'Pick an artist to start listening';
+    document.title = 'Suffering Jukebox';
+    const rows = await fetch(`${REST}/rpc/landing_stats`, {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`,
+        'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
+      body: '{}'
+    }).then(r => r.json());
+    if (!Array.isArray(rows) || !rows.length) { renderEmpty('No artists yet'); return; }
+    landingStats = rows;
+    renderLanding();
+  } catch (e) { renderEmpty(`Error: ${e.message}`); }
+}
+
+function renderLanding() {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <div class="landing-wrap">
+      <p class="landing-intro">Pick an artist</p>
+      <div class="landing-grid">
+        ${landingStats.map((r, i) => `
+          <div class="landing-card${landingExpandedId === r.artist_id ? ' expanded' : ''}"
+               style="--card-accent:${landingColor(r, i)}"
+               onclick="toggleLandingCard('${r.artist_id}')">
+            <div class="landing-card-name">${esc(r.name)}</div>
+            <div class="landing-card-stats">
+              <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_views)}</span><span class="landing-stat-lbl">YouTube Plays</span></div>
+              <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">Jukebox Plays</span></div>
+              <div class="landing-stat"><span class="landing-stat-val">${fmtScore(r.jukebox_score)}</span><span class="landing-stat-lbl">Jukebox Score</span></div>
+            </div>
+            <div class="landing-card-actions">
+              <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
+              <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}')">Explore artist jukebox →</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function toggleLandingCard(artistId) {
+  landingExpandedId = (landingExpandedId === artistId) ? null : artistId;
+  renderLanding();
+}
+
+function landingExploreArtist(slug) {
+  if (!slug) return;
+  window.location.href = '/' + slug;
+}
+
+async function landingPlayArtist(artistId) {
+  const row = landingStats.find(r => r.artist_id === artistId);
+  if (!row) return;
+  const cardBtn = document.querySelector(`.landing-card[onclick*="${artistId}"] .landing-play-btn`);
+  const origLabel = cardBtn ? cardBtn.textContent : null;
+  if (cardBtn) cardBtn.textContent = 'Loading…';
+  try {
+    const memberIds = (row.member_ids && row.member_ids.length) ? row.member_ids : [artistId];
+    let albRows = await dbGet(`/albums?artist_id=in.(${memberIds.join(',')})&order=release_date.asc`);
+    albRows = albRows.filter(a => !a.name.toLowerCase().includes('early times'));
+    if (!albRows.length) return;
+    albRows.forEach(a => { (albums[a.artist_id] = albums[a.artist_id] || []).push(a); });
+    const albumIds = albRows.map(a => a.id);
+    const chunks = [];
+    for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
+    const results = await Promise.all(chunks.map(c => dbGet(`/tracks?album_id=in.(${c.join(',')})&order=album_id,track_number`)));
+    const trackRows = results.flat();
+    const albumArtistMap = {};
+    albRows.forEach(a => { albumArtistMap[a.id] = a.artist_id; });
+    trackRows.forEach(t => { const aid = albumArtistMap[t.album_id]; (tracks[aid] = tracks[aid] || []).push(t); });
+    const yt = await loadYT(trackRows.map(t => t.id));
+    Object.assign(ytData, yt);
+    memberIds.forEach(id => selectedIds.add(id));
+    const playable = trackRows.filter(t => ytData[t.id]?.video_id);
+    if (!playable.length) return;
+    const shuffled = [...playable].sort(() => Math.random() - 0.5);
+    const queue = shuffled.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+    const first = queue[0];
+    if (ytPlayerEl) closeYTPlayer();
+    openYTPlayer(first.videoId, first.title, first.trackId);
+    ytQueue = queue;
+    ytQueueIdx = 0;
+    updateYTQueueUI();
+  } catch (e) {
+    console.warn('landingPlayArtist error', e);
+  } finally {
+    if (cardBtn && origLabel != null) cardBtn.textContent = origLabel;
+  }
+}
+
 async function init() {
   try {
+    if (!IS_COMMUNITY) { await initLanding(); return; }
     const _artistRows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = _artistRows.filter(a => a.is_community);
     mainCatalogArtists = _artistRows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
