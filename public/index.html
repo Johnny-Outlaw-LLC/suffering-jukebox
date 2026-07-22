@@ -1362,7 +1362,25 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 #main.main-landing { display: block; padding: 0; }
 .landing-wrap { padding: 20px clamp(16px,4vw,48px) 60px; max-width: 1600px; margin: 0 auto; }
 .landing-intro { font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 18px; }
-.landing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.landing-size-row { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; }
+.landing-size-lbl { font-size: .5rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+.landing-size-slider { flex: 0 0 160px; max-width: 160px; accent-color: var(--accent); cursor: pointer; }
+.landing-size-val { font-size: .5rem; letter-spacing: .06em; color: var(--text-muted); min-width: 3.5em; }
+.landing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--card-min, 300px), 1fr)); gap: 20px; }
+.landing-card-stats .landing-stat-tracks { display: none; }
+.landing-grid.size-xs .landing-card-body { padding: 8px 10px; gap: 6px; }
+.landing-grid.size-xs .landing-card-name { font-size: .56rem; }
+.landing-grid.size-xs .landing-card-stats { display: none; }
+.landing-grid.size-xs .landing-card-art { aspect-ratio: 1 / 1; border-bottom-width: 3px; }
+.landing-grid.size-sm .landing-card-body { padding: 12px 14px; gap: 8px; }
+.landing-grid.size-sm .landing-card-name { font-size: .74rem; }
+.landing-grid.size-sm .landing-card-stats .landing-stat:nth-child(n+2) { display: none; }
+.landing-grid.size-lg .landing-card-stats .landing-stat-tracks,
+.landing-grid.size-xl .landing-card-stats .landing-stat-tracks { display: flex; }
+.landing-grid.size-lg .landing-card-actions,
+.landing-grid.size-xl .landing-card-actions { display: flex; }
+.landing-grid.size-xl .landing-card-name { font-size: 1.35rem; }
+.landing-grid.size-xl .landing-card-art { aspect-ratio: 21 / 9; }
 .landing-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .12s;
@@ -1392,7 +1410,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .landing-explore-btn:hover { border-color: var(--text); color: var(--text); }
 @media (max-width: 640px) {
   .landing-wrap { padding: 14px 14px 50px; }
-  .landing-grid { grid-template-columns: 1fr; }
   .landing-card-name { font-size: .95rem; }
 }
 </style>
@@ -3005,6 +3022,7 @@ function ytpPlayInline() {
 
 function closeYTPlayer() {
   if (!ytPlayerEl) return;
+  markPlayerClosed();
   patchYTPlayDuration();
   _ytCurrentPlay = null;
   _ytUserWantsPlay = false;
@@ -4891,6 +4909,10 @@ async function confirmDeletePlaylist(id, name) {
 let landingStats      = [];
 let landingExpandedId = null;
 let isLandingMode      = false;  // true once initLanding() takes over root ("/")
+let landingCardSize    = (() => {
+  const v = parseInt(localStorage.getItem('sj_landing_card_size'), 10);
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
+})();
 
 function fmtScore(n) {
   n = Number(n) || 0;
@@ -4933,6 +4955,11 @@ function renderLanding() {
   main.innerHTML = `
     <div class="landing-wrap">
       <p class="landing-intro">Pick an artist</p>
+      <div class="landing-size-row">
+        <span class="landing-size-lbl">Card Size</span>
+        <input type="range" class="landing-size-slider" id="landing-size-slider" min="0" max="100" value="${landingCardSize}" oninput="setLandingCardSize(this.value)">
+        <span class="landing-size-val" id="landing-size-val"></span>
+      </div>
       <div class="landing-grid">
         ${landingStats.map((r, i) => { const thumb = landingThumb(r); return `
           <div class="landing-card${landingExpandedId === r.artist_id ? ' expanded' : ''}"
@@ -4945,6 +4972,7 @@ function renderLanding() {
               <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_views)}</span><span class="landing-stat-lbl">YouTube Plays</span></div>
               <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">Jukebox Plays</span></div>
               <div class="landing-stat"><span class="landing-stat-val">${fmtScore(r.jukebox_score)}</span><span class="landing-stat-lbl">Jukebox Score</span></div>
+              <div class="landing-stat landing-stat-tracks"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
             </div>
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
@@ -4956,7 +4984,54 @@ function renderLanding() {
       </div>
     </div>
   `;
+  applyLandingCardLayout();
 }
+
+function setLandingCardSize(v) {
+  landingCardSize = Math.max(0, Math.min(100, Number(v) || 0));
+  try { localStorage.setItem('sj_landing_card_size', String(landingCardSize)); } catch (e) {}
+  applyLandingCardLayout();
+}
+
+function applyLandingCardLayout() {
+  const grid = document.querySelector('.landing-grid');
+  if (!grid) return;
+  // Measure the grid itself (not .landing-wrap, which still carries its own
+  // padding in clientWidth) so the column math matches what CSS actually lays out.
+  const containerW = grid.clientWidth || window.innerWidth;
+  const isMobile = window.innerWidth <= 640;
+  const gap = 20;
+  const smallPx = isMobile ? Math.max(60, Math.floor((containerW - gap * 2) / 3)) : 300;
+  const maxCols = Math.max(1, Math.floor((containerW + gap) / (smallPx + gap)));
+  const t = landingCardSize / 100;
+  // Interpolate COLUMN COUNT (not raw pixel width) so the slider feels evenly
+  // graduated: v=0 -> maxCols (smallest cards), v=100 -> 1 column (full width).
+  const targetCols = Math.max(1, Math.round(maxCols - (maxCols - 1) * t));
+  const minPx = targetCols <= 1 ? containerW : Math.floor((containerW - gap * (targetCols - 1)) / targetCols);
+  grid.style.setProperty('--card-min', minPx + 'px');
+
+  // Estimate the resulting card width the same way CSS auto-fit would, so we
+  // can scale how much data each card shows without a ResizeObserver.
+  const cols = Math.max(1, Math.floor((containerW + gap) / (minPx + gap)));
+  const cardW = (containerW - (cols - 1) * gap) / cols;
+  let sizeClass, sizeLabel;
+  if (cardW <= 160) { sizeClass = 'size-xs'; sizeLabel = 'Tiny'; }
+  else if (cardW <= 230) { sizeClass = 'size-sm'; sizeLabel = 'Small'; }
+  else if (cardW <= 360) { sizeClass = 'size-md'; sizeLabel = 'Medium'; }
+  else if (cardW <= 560) { sizeClass = 'size-lg'; sizeLabel = 'Large'; }
+  else { sizeClass = 'size-xl'; sizeLabel = 'Full'; }
+  grid.classList.remove('size-xs', 'size-sm', 'size-md', 'size-lg', 'size-xl');
+  grid.classList.add(sizeClass);
+  const lbl = document.getElementById('landing-size-val');
+  if (lbl) lbl.textContent = sizeLabel;
+}
+
+let _landingResizeTimer;
+window.addEventListener('resize', () => {
+  if (!isLandingMode) return;
+  clearTimeout(_landingResizeTimer);
+  _landingResizeTimer = setTimeout(applyLandingCardLayout, 120);
+}, { passive: true });
 
 function toggleLandingCard(artistId) {
   landingExpandedId = (landingExpandedId === artistId) ? null : artistId;
@@ -4996,10 +5071,9 @@ async function landingPlayArtist(artistId) {
     const shuffled = [...playable].sort(() => Math.random() - 0.5);
     const queue = shuffled.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
     const first = queue[0];
-    if (ytPlayerEl) closeYTPlayer();
-    openYTPlayer(first.videoId, first.title, first.trackId);
     ytQueue = queue;
     ytQueueIdx = 0;
+    if (ytPlayerEl) { ytPlayQueueIdx(0); } else { openYTPlayer(first.videoId, first.title, first.trackId); }
     updateYTQueueUI();
   } catch (e) {
     console.warn('landingPlayArtist error', e);
@@ -7092,6 +7166,23 @@ function _pbIsFinishedEnd() {
   return false;
 }
 
+// Fire-and-forget: mark the saved session as "player closed" so a later
+// visit's restorePlaybackState() doesn't reopen it. Only meaningful for
+// signed-in users who already have a saved row - best-effort otherwise.
+async function markPlayerClosed() {
+  if (!googleUser) return;
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    if (!session?.user) return;
+    await dbUpsert('/playback_state', 'user_id', {
+      user_id: session.user.id,
+      user_email: session.user.email,
+      player_open: false,
+      updated_at: new Date().toISOString()
+    });
+  } catch (e) {}
+}
+
 async function savePlaybackState() {
   if (!googleUser || !ytQueue.length || ytQueueIdx < 0) return;
   try {
@@ -7107,6 +7198,7 @@ async function savePlaybackState() {
       shuffle: ytShuffle,
       position_seconds: posSec,
       ended: _pbIsFinishedEnd(),
+      player_open: true,
       updated_at: new Date().toISOString()
     });
   } catch (e) { /* best-effort - never interrupt playback over a failed save */ }
@@ -7121,10 +7213,11 @@ async function restorePlaybackState() {
   if (_pbRestoreDone || !googleUser || ytPlayerEl) return;
   _pbRestoreDone = true;
   try {
-    const rows = await dbGetAuth('/playback_state?select=queue,queue_idx,shuffle,position_seconds,ended&limit=1');
+    const rows = await dbGetAuth('/playback_state?select=queue,queue_idx,shuffle,position_seconds,ended,player_open&limit=1');
     const row = rows[0];
     if (!row || !Array.isArray(row.queue) || !row.queue.length) return;
     if (row.ended) return; // finished listening last time - don't reopen by default
+    if (row.player_open === false) return; // they closed the player before leaving - respect that
     const idx  = Math.min(Math.max(row.queue_idx || 0, 0), row.queue.length - 1);
     const item = row.queue[idx];
     if (!item?.videoId) return;
