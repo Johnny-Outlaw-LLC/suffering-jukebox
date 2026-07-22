@@ -2040,12 +2040,12 @@ const artColorCache = {};   // albumId -> hex
 // Featured artist jukebox: per-album color from its art; other artists: one color per artist.
 const albumColor = (alb) => {
   if (alb.color) return alb.color;   // per-album override from the fine-tune step
+  if (ALBUM_COLORS[alb.name]) return ALBUM_COLORS[alb.name];   // curated SJ/PM catalog color - keep it no matter which of the two is "featured"
   if (IS_COMMUNITY && FEATURED_ARTIST_ID) {
-    if (alb.artist_id === FEATURED_ARTIST_ID)
-      return artColorCache[alb.id] || ALBUM_COLORS[alb.name] || '#ff6b35';
+    if (alb.artist_id === FEATURED_ARTIST_ID) return artColorCache[alb.id] || '#ff6b35';
     return colorOf(alb.artist_id);
   }
-  return ALBUM_COLORS[alb.name] || colorOf(alb.artist_id);
+  return colorOf(alb.artist_id);
 };
 
 // ── Dominant color extraction from album art ──
@@ -2214,6 +2214,34 @@ function togglePMFilter() {
   const allHidden = pmAlbs.length > 0 && pmAlbs.every(a => !isAlbumVisible(a.id));
   pmAlbs.forEach(a => allHidden ? excludedAlbumIds.delete(a.id) : excludedAlbumIds.add(a.id));
   render();
+}
+
+function toggleSJArtistFilter() {
+  const sjArtist = allArtists.find(a => a.name.toLowerCase().includes('silver jews'));
+  if (!sjArtist) return;
+  const sjAlbs = albums[sjArtist.id] || [];
+  const allHidden = sjAlbs.length > 0 && sjAlbs.every(a => !isAlbumVisible(a.id));
+  sjAlbs.forEach(a => allHidden ? excludedAlbumIds.delete(a.id) : excludedAlbumIds.add(a.id));
+  render();
+}
+
+// Silver Jews and Purple Mountains are the same songwriter's two projects and
+// always share this combined jukebox regardless of which one's slug loaded
+// it - so both get a quick one-click toggle pill, not just whichever one
+// happens to be "featured".
+function renderSJPMSpecialButtons() {
+  const sjArtist = allArtists.find(a => a.name.toLowerCase().includes('silver jews'));
+  const pmArtist = allArtists.find(a => a.name.toLowerCase().includes('purple mountains'));
+  if (!sjArtist || !pmArtist) return '';
+  const sjAlbs = albums[sjArtist.id] || [];
+  const pmAlbs = albums[pmArtist.id] || [];
+  const sjAllHidden = sjAlbs.length > 0 && sjAlbs.every(a => !isAlbumVisible(a.id));
+  const pmAllHidden = pmAlbs.length > 0 && pmAlbs.every(a => !isAlbumVisible(a.id));
+  const pill = (label, color, allHidden, onclick) => `<button type="button" class="ctrl-btn filter-pm-btn ${allHidden ? '' : 'ctrl-btn--accent'}" onclick="${onclick}"
+    style="${!allHidden ? `border-color:${color}44;background:${color}18;color:${color}` : ''}">
+    <span class="pill-dot" style="background:${allHidden ? 'var(--text-muted)' : color}"></span>${label}
+  </button>`;
+  return pill('Silver Jews', '#6a8aa0', sjAllHidden, 'toggleSJArtistFilter()') + pill('Purple Mountains', '#7040a8', pmAllHidden, 'togglePMFilter()');
 }
 
 function setViewMode(mode)  {
@@ -5887,6 +5915,7 @@ function renderCommunityFilterBar() {
         </div>
       </div>
     </div>
+    ${renderSJPMSpecialButtons()}
     ${renderOtherArtistsBtn()}
   </div>`;
 }
@@ -6497,8 +6526,7 @@ function renderOtherArtistsBtn() {
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
     </div>`;
   }).join('');
-  return `<a href="/" class="ctrl-btn" onclick="event.preventDefault();goHome()" title="Back to the Suffering Jukebox home page">🏠 Home</a>
-  <div class="filter-dd-wrap oa-wrap">
+  return `<div class="filter-dd-wrap oa-wrap">
     <button class="ctrl-btn filter-dd-trigger${activeN ? ' ctrl-btn--accent' : ''}" onclick="toggleOADropdown(event)">
       Other Artists${activeN ? ` <span style="opacity:.75">(${activeN})</span>` : ''} <span class="filter-dd-caret">▾</span>
     </button>
@@ -6510,7 +6538,8 @@ function renderOtherArtistsBtn() {
         <button type="button" class="ctrl-btn" onclick="event.stopPropagation();closeSJDropdown();openAddMusic()">＋ Add Music</button>
       </div>
     </div>
-  </div>`;
+  </div>
+  <a href="/" class="ctrl-btn" onclick="event.preventDefault();goHome()" title="Back to the Suffering Jukebox home page">Home</a>`;
 }
 
 function amStepReset() {
