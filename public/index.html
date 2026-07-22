@@ -1447,17 +1447,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .landing-stat-lbl { font-size: .42rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 .landing-card-actions { display: none; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--border); margin-top: auto; }
 .landing-card.expanded .landing-card-actions { display: flex; }
-.landing-card.lc-unfolding {
-  transform: scale(1.06); z-index: 30; box-shadow: 0 24px 70px rgba(0,0,0,.55);
-  transition: transform .5s ease, box-shadow .5s ease;
-}
-.landing-card.lc-unfolding .landing-card-stats,
-.landing-card.lc-unfolding .landing-added-by,
-.landing-card.lc-unfolding .landing-card-actions { opacity: 0; transition: opacity .2s ease; }
-.landing-card.lc-fading-out { transform: scale(.88); opacity: 0; transition: transform .4s ease, opacity .4s ease; pointer-events: none; }
-.lc-unfold-bars { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; align-items: flex-end; gap: 4px; height: 70px; pointer-events: none; }
-.lc-unfold-bars .lc-bar { flex: 1; background: var(--card-accent, var(--accent)); border-radius: 3px 3px 0 0; transform: scaleY(0); transform-origin: bottom; animation: lcBarGrow .45s ease forwards; }
-@keyframes lcBarGrow { to { transform: scaleY(1); } }
 .landing-play-btn, .landing-explore-btn {
   font-family: var(--mono); font-size: .58rem; letter-spacing: .06em; text-transform: uppercase;
   padding: .55rem 1.05rem; border-radius: 8px; cursor: pointer; transition: all .15s;
@@ -5156,8 +5145,7 @@ function renderLanding() {
       <div class="landing-grid detail-${landingDetailLevel}">
         ${rows.map((r, i) => { const thumb = landingThumb(r); return `
           <div class="landing-card${landingExpandedId === r.artist_id ? ' expanded' : ''}"
-               id="landing-card-${r.artist_id}"
-               style="--card-accent:${landingColor(r, i)}; position:relative"
+               style="--card-accent:${landingColor(r, i)}"
                onclick="toggleLandingCard('${r.artist_id}')">
             <div class="landing-card-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
             <div class="landing-card-body">
@@ -5171,7 +5159,7 @@ function renderLanding() {
             ${r.added_by_name ? `<div class="landing-added-by">Added by ${esc(r.added_by_name)}</div>` : ''}
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
-              <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>
+              <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}')">Explore artist jukebox →</button>
             </div>
             </div>
           </div>
@@ -5272,32 +5260,9 @@ function toggleLandingCard(artistId) {
   renderLanding();
 }
 
-let _landingNavigating = false;
-function landingExploreArtist(slug, artistId) {
-  if (!slug || _landingNavigating) return;
-  const go = () => { window.location.href = '/' + slug; };
-  const clicked = artistId ? document.getElementById('landing-card-' + artistId) : null;
-  if (!clicked) { go(); return; }
-  _landingNavigating = true;
-  document.querySelectorAll('.landing-card').forEach(c => {
-    if (c === clicked) {
-      c.classList.add('lc-unfolding');
-      const bars = document.createElement('div');
-      bars.className = 'lc-unfold-bars';
-      for (let i = 0; i < 7; i++) {
-        const bar = document.createElement('div');
-        bar.className = 'lc-bar';
-        bar.style.height = (28 + Math.round(Math.random() * 72)) + '%';
-        bar.style.animationDelay = (i * 0.035) + 's';
-        bars.appendChild(bar);
-      }
-      const body = c.querySelector('.landing-card-body');
-      if (body) body.appendChild(bars);
-    } else {
-      c.classList.add('lc-fading-out');
-    }
-  });
-  setTimeout(go, 520);
+function landingExploreArtist(slug) {
+  if (!slug) return;
+  window.location.href = '/' + slug;
 }
 
 function openManageJukebox() {
