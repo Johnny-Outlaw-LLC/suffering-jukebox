@@ -1359,21 +1359,28 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .srch-lyr-panel mark { background:transparent; color:var(--accent); font-weight:700; }
 
 /* ── Landing page (artist card grid) ── */
+#main.main-landing { display: block; padding: 0; }
 .landing-wrap { padding: 20px clamp(16px,4vw,48px) 60px; max-width: 1600px; margin: 0 auto; }
 .landing-intro { font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 18px; }
-.landing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.landing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
 .landing-card {
-  background: var(--bg-card); border: 1px solid var(--border); border-top: 4px solid var(--card-accent, var(--accent));
-  border-radius: 14px; padding: 22px 22px 18px; cursor: pointer; transition: border-color .15s, transform .12s;
-  display: flex; flex-direction: column; gap: 14px; user-select: none;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .12s;
+  display: flex; flex-direction: column; user-select: none;
 }
 .landing-card:hover { border-color: var(--card-accent, var(--accent)); transform: translateY(-2px); }
-.landing-card-name { font-size: 1.05rem; font-weight: 700; color: var(--text); letter-spacing: .01em; }
+.landing-card-art {
+  width: 100%; aspect-ratio: 4 / 3; background-size: cover; background-position: center;
+  background-color: var(--bg-elevated); border-bottom: 4px solid var(--card-accent, var(--accent)); flex-shrink: 0;
+}
+.landing-card-art.no-art { display: flex; align-items: center; justify-content: center; font-size: 2.4rem; color: var(--card-accent, var(--accent)); }
+.landing-card-body { padding: 20px 22px 18px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.landing-card-name { font-size: 1.1rem; font-weight: 700; color: var(--text); letter-spacing: .01em; }
 .landing-card-stats { display: flex; gap: 20px; flex-wrap: wrap; }
 .landing-stat { display: flex; flex-direction: column; gap: 3px; }
 .landing-stat-val { font-family: var(--mono); font-size: .95rem; font-weight: 700; color: var(--text); }
 .landing-stat-lbl { font-size: .42rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
-.landing-card-actions { display: none; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--border); }
+.landing-card-actions { display: none; gap: 10px; flex-wrap: wrap; padding-top: 8px; border-top: 1px solid var(--border); margin-top: auto; }
 .landing-card.expanded .landing-card-actions { display: flex; }
 .landing-play-btn, .landing-explore-btn {
   font-family: var(--mono); font-size: .58rem; letter-spacing: .06em; text-transform: uppercase;
@@ -4897,6 +4904,10 @@ function landingColor(row, idx) {
   return OA_PALETTE[idx % OA_PALETTE.length];
 }
 
+function landingThumb(row) {
+  return ALBUM_ART[row.top_album_name] || row.top_album_art_url || row.top_album_thumb || null;
+}
+
 async function initLanding() {
   isLandingMode = true;
   try {
@@ -4918,14 +4929,17 @@ async function initLanding() {
 function renderLanding() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const main = document.getElementById('main');
+  main.classList.add('main-landing');
   main.innerHTML = `
     <div class="landing-wrap">
       <p class="landing-intro">Pick an artist</p>
       <div class="landing-grid">
-        ${landingStats.map((r, i) => `
+        ${landingStats.map((r, i) => { const thumb = landingThumb(r); return `
           <div class="landing-card${landingExpandedId === r.artist_id ? ' expanded' : ''}"
                style="--card-accent:${landingColor(r, i)}"
                onclick="toggleLandingCard('${r.artist_id}')">
+            <div class="landing-card-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
+            <div class="landing-card-body">
             <div class="landing-card-name">${esc(r.name)}</div>
             <div class="landing-card-stats">
               <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_views)}</span><span class="landing-stat-lbl">YouTube Plays</span></div>
@@ -4936,8 +4950,9 @@ function renderLanding() {
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
               <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}')">Explore artist jukebox →</button>
             </div>
+            </div>
           </div>
-        `).join('')}
+        `; }).join('')}
       </div>
     </div>
   `;
