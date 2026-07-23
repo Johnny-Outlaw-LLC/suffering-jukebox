@@ -1463,6 +1463,62 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .landing-play-btn:hover { filter: brightness(1.12); }
 .landing-explore-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); }
 .landing-explore-btn:hover { border-color: var(--text); color: var(--text); }
+/* ── Landing card expander (magic-move artist explorer) ───────── */
+.landing-card.la-expanded {
+  grid-column: 1 / -1;
+  cursor: default;
+  border-color: var(--card-accent, var(--accent));
+  box-shadow: 0 24px 70px -28px rgba(0,0,0,.9);
+}
+.landing-card.la-expanded:hover { transform: none; }
+.landing-grid.la-has-open .landing-card:not(.la-expanded) { opacity: .5; filter: saturate(.55); transition: opacity .25s, filter .25s, border-color .15s, transform .12s; }
+.landing-grid.la-has-open .landing-card:not(.la-expanded):hover { opacity: 1; filter: none; }
+.la-hero {
+  position: relative; display: flex; gap: 22px; align-items: flex-start;
+  padding: 22px 24px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(155deg, rgba(255,255,255,.045), rgba(255,255,255,0) 55%);
+}
+.la-expanded .la-hero, .la-expanded .la-albums { animation: laFadeUp .45s cubic-bezier(.22,1,.36,1) .1s both; }
+.la-hero-art {
+  width: 132px; height: 132px; border-radius: 12px; flex-shrink: 0;
+  background-size: cover; background-position: center; background-color: var(--bg-elevated);
+  box-shadow: 0 12px 32px -14px rgba(0,0,0,.85); border: 1px solid var(--border);
+}
+.la-hero-art.no-art { display: flex; align-items: center; justify-content: center; font-size: 2.6rem; color: var(--card-accent, var(--accent)); }
+.la-hero-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.la-hero-eyebrow { font-size: .42rem; letter-spacing: .24em; text-transform: uppercase; color: var(--card-accent, var(--accent)); font-family: var(--mono); }
+.la-hero-name { font-size: 1.5rem; font-weight: 800; line-height: 1.1; color: var(--text); }
+.la-hero-stats { display: flex; gap: 26px; flex-wrap: wrap; }
+.la-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
+.la-close {
+  position: absolute; top: 14px; right: 14px; width: 30px; height: 30px;
+  background: none; border: 1px solid var(--border); border-radius: 50%;
+  color: var(--text-muted); font-size: .95rem; line-height: 1; cursor: pointer;
+  transition: color .15s, border-color .15s, transform .25s;
+}
+.la-close:hover { color: var(--text); border-color: var(--card-accent, var(--accent)); transform: rotate(90deg); }
+.la-albums { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+.la-alb { animation: laFadeUp .5s cubic-bezier(.22,1,.36,1) both; }
+.la-alb-row { background: var(--bg-elevated); }
+.la-alb-tracks { overflow: hidden; height: 0; transition: height .32s cubic-bezier(.4,0,.2,1); }
+.la-alb-tracks.open { height: auto; }
+.la-list-tracks { animation: none; background: var(--bg-card); }
+.la-loading { display: flex; flex-direction: column; gap: 10px; }
+.la-skel {
+  height: 76px; border-radius: 10px;
+  background: linear-gradient(100deg, var(--bg-elevated) 40%, var(--bg-card) 50%, var(--bg-elevated) 60%);
+  background-size: 200% 100%; animation: laShimmer 1.2s linear infinite;
+}
+.la-note { font-size: .55rem; color: var(--text-muted); padding: 8px 4px; }
+@keyframes laFadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes laShimmer { from { background-position: 180% 0; } to { background-position: -20% 0; } }
+@media (max-width: 640px) {
+  .la-hero { flex-direction: column; gap: 14px; padding: 16px; }
+  .la-hero-art { width: 96px; height: 96px; }
+  .la-hero-name { font-size: 1.15rem; }
+  .la-hero-stats { gap: 18px; }
+  .la-albums { padding: 12px 12px 16px; }
+}
 @media (max-width: 640px) {
   .landing-wrap { padding: 14px 14px 50px; }
   .landing-card-name { font-size: .95rem; }
@@ -5178,9 +5234,9 @@ function renderLanding() {
           </div>
         </div>
       </div>
-      <div class="landing-grid detail-${landingDetailLevel}">
-        ${rows.map((r, i) => { const thumb = landingThumb(r); return `
-          <div class="landing-card${landingExpandedId === r.artist_id ? ' expanded' : ''}"
+      <div class="landing-grid detail-${landingDetailLevel}${landingExpandedId ? ' la-has-open' : ''}">
+        ${rows.map((r, i) => { if (landingExpandedId === r.artist_id) return laExpandedCardHTML(r, i); const thumb = landingThumb(r); return `
+          <div class="landing-card" data-artist-id="${r.artist_id}"
                style="--card-accent:${landingColor(r, i)}"
                onclick="toggleLandingCard('${r.artist_id}')">
             <div class="landing-card-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
@@ -5204,6 +5260,7 @@ function renderLanding() {
     </div>
   `;
   updateLandingActionsHeader();
+  if (landingExpandedId) laPopulateAlbums(landingExpandedId);
 }
 
 function landingPlayQueue(q) {
@@ -5293,10 +5350,218 @@ async function landingShuffleFavorites() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// LANDING ARTIST EXPLORER - click a card and it magic-moves into a
+// full-row panel with the artist's albums; drill into tracks + lyrics
+// using the same accordion machinery as the Albums List view.
+// ══════════════════════════════════════════════════════════════
+const _laLoadedArtists = new Set();  // artist ids whose catalog is in the globals
+const laOpenAlbumIds   = new Set();  // albums open inside the expanded card
+const _laReduceMotion  = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
 function toggleLandingCard(artistId) {
-  landingExpandedId = (landingExpandedId === artistId) ? null : artistId;
-  renderLanding();
+  const next = (landingExpandedId === artistId) ? null : artistId;
+  if (next !== landingExpandedId) laOpenAlbumIds.clear();
+  laFlipRender(() => { landingExpandedId = next; renderLanding(); }, artistId);
+  if (next) {
+    setTimeout(() => {
+      const el = document.querySelector('.landing-card.la-expanded');
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.top < 0 || r.top > window.innerHeight * 0.5) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  }
 }
+
+// FLIP: measure every card, swap the DOM, then animate each card from its old
+// rect to its new one - a real width/height morph for the card that changed
+// size, a distance-staggered glide for the neighbors that reflowed.
+function laFlipRender(mutate, focusId) {
+  const before = {};
+  document.querySelectorAll('.landing-grid .landing-card').forEach(el => {
+    const id = el.getAttribute('data-artist-id');
+    if (id) before[id] = el.getBoundingClientRect();
+  });
+  const focusRect = focusId ? before[focusId] : null;
+  mutate();
+  if (_laReduceMotion || !Object.keys(before).length) return;
+  document.querySelectorAll('.landing-grid .landing-card').forEach(el => {
+    const id = el.getAttribute('data-artist-id');
+    const b = id && before[id];
+    if (!b) return;
+    const a = el.getBoundingClientRect();
+    const dx = b.left - a.left, dy = b.top - a.top;
+    const resized = Math.abs(b.width - a.width) > 1 || Math.abs(b.height - a.height) > 1;
+    if (!resized && Math.abs(dx) < .5 && Math.abs(dy) < .5) return;
+    if (resized) {
+      el.animate([
+        { transform: `translate(${dx}px,${dy}px)`, width: b.width + 'px', height: b.height + 'px' },
+        { transform: 'none', width: a.width + 'px', height: a.height + 'px' }
+      ], { duration: 480, easing: 'cubic-bezier(.22,1,.36,1)' });
+    } else {
+      let delay = 0;
+      if (focusRect) {
+        const dist = Math.hypot(
+          (a.left + a.width / 2)  - (focusRect.left + focusRect.width / 2),
+          (a.top  + a.height / 2) - (focusRect.top  + focusRect.height / 2));
+        delay = Math.min(dist / 7, 130);
+      }
+      el.animate([
+        { transform: `translate(${dx}px,${dy}px)` },
+        { transform: 'none' }
+      ], { duration: 430, delay, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' });
+    }
+  });
+}
+
+function laExpandedCardHTML(r, i) {
+  const esc   = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const color = landingColor(r, i);
+  const thumb = landingThumb(r);
+  return `
+    <div class="landing-card la-expanded" data-artist-id="${r.artist_id}" style="--card-accent:${color}">
+      <div class="la-hero">
+        <div class="la-hero-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
+        <div class="la-hero-info">
+          <div class="la-hero-eyebrow">Artist Jukebox</div>
+          <div class="la-hero-name">${esc(r.name)}</div>
+          <div class="la-hero-stats">
+            <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_views)}</span><span class="landing-stat-lbl">YouTube Plays</span></div>
+            <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">Jukebox Plays</span></div>
+            <div class="landing-stat"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
+            <div class="landing-stat"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
+          </div>
+          ${r.added_by_name ? `<div class="landing-added-by" style="display:block">Added by ${esc(r.added_by_name)}</div>` : ''}
+          <div class="la-hero-actions">
+            <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
+            <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>
+          </div>
+        </div>
+        <button type="button" class="la-close" onclick="event.stopPropagation();toggleLandingCard('${r.artist_id}')" title="Collapse" aria-label="Collapse artist card">×</button>
+      </div>
+      <div class="la-albums" id="la-albums-${r.artist_id}">
+        <div class="la-loading">${'<div class="la-skel"></div>'.repeat(Math.min(Math.max(r.album_count || 3, 1), 5))}</div>
+      </div>
+    </div>`;
+}
+
+// Loads albums + tracks + YouTube data for a landing row into the same
+// globals the artist pages use, so the existing album/track/lyrics machinery
+// (renderTrackLines, toggleTrackAccordion, playAlbum, voting) works from the
+// landing page unchanged. Idempotent per artist; wiped by resetDashboardState.
+async function laEnsureArtistData(row) {
+  const memberIds = (row.member_ids && row.member_ids.length) ? row.member_ids : [row.artist_id];
+  if (memberIds.every(id => _laLoadedArtists.has(id))) {
+    memberIds.forEach(id => selectedIds.add(id));
+    return memberIds;
+  }
+  const albRows = await dbGet(`/albums?artist_id=in.(${memberIds.join(',')})&order=release_date.asc`);
+  const albumIds = albRows.map(a => a.id);
+  const chunks = [];
+  for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
+  const results = await Promise.all(chunks.map(c => dbGet(`/tracks?album_id=in.(${c.join(',')})&order=album_id,track_number`)));
+  const trackRows = results.flat();
+  const albumArtistMap = {};
+  albRows.forEach(a => { albumArtistMap[a.id] = a.artist_id; });
+  memberIds.forEach(id => { albums[id] = []; tracks[id] = []; });
+  albRows.forEach(a => { if (albums[a.artist_id]) albums[a.artist_id].push(a); });
+  trackRows.forEach(t => { const aid = albumArtistMap[t.album_id]; if (tracks[aid]) tracks[aid].push(t); });
+  const yt = await loadYT(trackRows.map(t => t.id));
+  Object.assign(ytData, yt);
+  memberIds.forEach(id => { selectedIds.add(id); _laLoadedArtists.add(id); });
+  return memberIds;
+}
+
+async function laPopulateAlbums(artistId) {
+  const row = landingStats.find(r => r.artist_id === artistId);
+  const box = document.getElementById('la-albums-' + artistId);
+  if (!row || !box) return;
+  try {
+    const memberIds = await laEnsureArtistData(row);
+    if (landingExpandedId !== artistId) return; // collapsed or switched mid-fetch
+    const target = document.getElementById('la-albums-' + artistId);
+    if (!target) return;
+    const albList = memberIds.flatMap(aid => albums[aid] || [])
+      .sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
+    if (!albList.length) { target.innerHTML = '<div class="la-note">No albums here yet.</div>'; return; }
+    target.innerHTML = albList.map((alb, idx) => laAlbumHTML(alb, idx)).join('');
+    Object.keys(localVotes).forEach(refreshVoteUI);
+    laOpenAlbumIds.forEach(id => { if (albList.some(a => a.id === id)) laToggleAlbum(id, true); });
+  } catch (e) {
+    console.warn('laPopulateAlbums error', e);
+    box.innerHTML = '<div class="la-note">Could not load albums - try again in a moment.</div>';
+  }
+}
+
+function laAlbumHTML(alb, idx) {
+  const color     = albumColor(alb);
+  const thumb     = albumThumb(alb);
+  const yr        = (alb.release_date || '').slice(0, 4);
+  const albTracks = (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id);
+  const views     = albTracks.reduce((s, t) => s + (ytData[t.id]?.views || 0), 0);
+  const hasVids   = albTracks.some(t => ytData[t.id]?.video_id);
+  const isOpen    = laOpenAlbumIds.has(alb.id);
+  return `<div class="la-alb" style="animation-delay:${Math.min(idx * 50, 500)}ms">
+    <div class="list-album-row la-alb-row${isOpen ? ' expanded' : ''}" data-la-alb="${alb.id}" style="border-left:3px solid ${color}" onclick="laToggleAlbum('${alb.id}')">
+      ${thumb ? `<img src="${thumb}" loading="lazy" class="list-art">` : `<div class="list-art-ph" style="background:${color}22;color:${color}">${(alb.name || '?').charAt(0)}</div>`}
+      <div class="list-info">
+        <div class="list-name">${(alb.name || '').replace(/</g, '&lt;')}</div>
+        <div class="list-meta">${yr}${yr ? ' · ' : ''}${albTracks.length} track${albTracks.length === 1 ? '' : 's'}</div>
+      </div>
+      <div class="list-views-block">
+        <div class="list-views" style="color:${color}">${fmtV(views)}</div>
+        <div class="list-views-lbl">yt views</div>
+      </div>
+      ${hasVids ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)" title="Play album">▶ Play</button>` : ''}
+      <div class="list-chevron" data-la-chev="${alb.id}">${isOpen ? '▲' : '▼'}</div>
+    </div>
+    <div class="la-alb-tracks" data-la-tracks="${alb.id}"></div>
+  </div>`;
+}
+
+function laToggleAlbum(albumId, restoring) {
+  const holder = document.querySelector(`.la-alb-tracks[data-la-tracks="${albumId}"]`);
+  const rowEl  = document.querySelector(`.la-alb-row[data-la-alb="${albumId}"]`);
+  if (!holder || !rowEl) return;
+  const chev   = document.querySelector(`[data-la-chev="${albumId}"]`);
+  const isOpen = holder.classList.contains('open');
+  if (isOpen && !restoring) {
+    laOpenAlbumIds.delete(albumId);
+    rowEl.classList.remove('expanded');
+    if (chev) chev.textContent = '▼';
+    holder.style.height = holder.scrollHeight + 'px';
+    requestAnimationFrame(() => { holder.style.height = '0px'; });
+    holder.addEventListener('transitionend', function () {
+      if (!laOpenAlbumIds.has(albumId)) { holder.classList.remove('open'); holder.style.height = ''; }
+    }, { once: true });
+    return;
+  }
+  if (isOpen) return;
+  let alb = null;
+  Object.keys(albums).forEach(aid => (albums[aid] || []).forEach(a => { if (a.id === albumId) alb = a; }));
+  if (!alb) return;
+  laOpenAlbumIds.add(albumId);
+  if (!holder.innerHTML) holder.innerHTML = `<div class="list-tracks la-list-tracks">${renderTrackLines(alb, 'inline')}</div>`;
+  rowEl.classList.add('expanded');
+  if (chev) chev.textContent = '▲';
+  holder.classList.add('open');
+  Object.keys(localVotes).forEach(refreshVoteUI);
+  if (restoring) { holder.style.height = ''; return; }
+  holder.style.height = '0px';
+  requestAnimationFrame(() => { holder.style.height = holder.scrollHeight + 'px'; });
+  holder.addEventListener('transitionend', function () {
+    if (laOpenAlbumIds.has(albumId)) holder.style.height = '';
+  }, { once: true });
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !isLandingMode || !landingExpandedId) return;
+  const ae = document.activeElement;
+  if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
+  const srch = document.getElementById('srch-overlay');
+  if (srch && srch.classList.contains('open')) return;
+  toggleLandingCard(landingExpandedId);
+});
 
 function landingExploreArtist(slug, artistId) {
   const row = artistId ? landingStats.find(r => r.artist_id === artistId) : null;
@@ -5378,26 +5643,16 @@ function toggleArtistHidden(artistId) {
 async function landingPlayArtist(artistId) {
   const row = landingStats.find(r => r.artist_id === artistId);
   if (!row) return;
-  const cardBtn = document.querySelector(`.landing-card[onclick*="${artistId}"] .landing-play-btn`);
+  const cardBtn = document.querySelector(`.landing-card[data-artist-id="${artistId}"] .landing-play-btn`);
   const origLabel = cardBtn ? cardBtn.textContent : null;
   if (cardBtn) cardBtn.textContent = 'Loading…';
   try {
-    const memberIds = (row.member_ids && row.member_ids.length) ? row.member_ids : [artistId];
-    let albRows = await dbGet(`/albums?artist_id=in.(${memberIds.join(',')})&order=release_date.asc`);
-    albRows = albRows.filter(a => !a.name.toLowerCase().includes('early times'));
+    const memberIds = await laEnsureArtistData(row);
+    const albRows = memberIds.flatMap(aid => albums[aid] || [])
+      .filter(a => !(a.name || '').toLowerCase().includes('early times'));
     if (!albRows.length) return;
-    albRows.forEach(a => { (albums[a.artist_id] = albums[a.artist_id] || []).push(a); });
-    const albumIds = albRows.map(a => a.id);
-    const chunks = [];
-    for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
-    const results = await Promise.all(chunks.map(c => dbGet(`/tracks?album_id=in.(${c.join(',')})&order=album_id,track_number`)));
-    const trackRows = results.flat();
-    const albumArtistMap = {};
-    albRows.forEach(a => { albumArtistMap[a.id] = a.artist_id; });
-    trackRows.forEach(t => { const aid = albumArtistMap[t.album_id]; (tracks[aid] = tracks[aid] || []).push(t); });
-    const yt = await loadYT(trackRows.map(t => t.id));
-    Object.assign(ytData, yt);
-    memberIds.forEach(id => selectedIds.add(id));
+    const okAlbIds = new Set(albRows.map(a => a.id));
+    const trackRows = memberIds.flatMap(aid => tracks[aid] || []).filter(t => okAlbIds.has(t.album_id));
     const playable = trackRows.filter(t => ytData[t.id]?.video_id);
     if (!playable.length) return;
     const queue = shuffleInPlace([...playable]).map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
@@ -5478,6 +5733,9 @@ function resetDashboardState() {
   ytData = {};
   viewMode = 'byyear';
   listSort = 'views';
+  landingExpandedId = null;
+  _laLoadedArtists.clear();
+  laOpenAlbumIds.clear();
 }
 
 // artist: {id, name, slug, is_community?, added_by_name?}
