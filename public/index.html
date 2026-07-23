@@ -4062,18 +4062,29 @@ function ytpToggleFullscreen() {
     ytpSetWinIcon(fsBtn, 'restore');
     if (fsBtn) fsBtn.title = 'Restore down';
     ytpUpdateFsLayout();
+    // Fullscreen is the read-along view, so open the lyrics pane by default.
+    // Remembered so leaving fullscreen puts it back the way we found it.
+    if (!_ytpLyricsOpen) {
+      _ytpFsAutoLyrics = true;
+      const lyrChk = document.getElementById('ytp-lyrics-chk');
+      if (lyrChk) lyrChk.checked = true;
+      ytpToggleLyrics(true);
+    }
     return;
   }
 
-  _ytpFs = false;
-  _ytpContainerEl.classList.remove('ytp-fs');
-  ytpSetWinIcon(fsBtn, 'maximize');
-  if (fsBtn) fsBtn.title = 'Maximize';
-  if (ytpIsMob() && _ytpLyricsOpen) {
+  // Close the pane while _ytpFs is still true so ytpToggleLyrics() takes the
+  // fullscreen path instead of trying to shift the floating container back.
+  if (_ytpLyricsOpen && (ytpIsMob() || _ytpFsAutoLyrics)) {
     const chk = document.getElementById('ytp-lyrics-chk');
     if (chk) chk.checked = false;
     ytpToggleLyrics(false);
   }
+  _ytpFsAutoLyrics = false;
+  _ytpFs = false;
+  _ytpContainerEl.classList.remove('ytp-fs');
+  ytpSetWinIcon(fsBtn, 'maximize');
+  if (fsBtn) fsBtn.title = 'Maximize';
   if (ytpIsMob()) {
     const frame  = ytPlayerEl.querySelector('.yt-player-frame');
     const iframe = frame?.querySelector('iframe');
@@ -4140,6 +4151,7 @@ let _ytpContainerEl = null;
 let _ytpLyrResizeHandleEl = null;
 let _ytpLyricsOpen = false;
 let _ytpLyricsPaneEl = null;
+let _ytpFsAutoLyrics = false;  // true when fullscreen auto-opened the lyrics pane
 
 function ytpToggleLyrics(open) {
   _ytpLyricsOpen = open;
@@ -7411,6 +7423,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-07-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-07-23', items: [
+    'Maximizing the player now opens the lyrics pane automatically — restoring it down puts the pane back the way you had it.',
     'New “Never Again” button in the player: signed-in users can block a song for good. Blocked songs are skipped by every shuffle, playlist and album play, and stay in the track lists struck through with an Unblock button.',
     'The Shuffle All / Shuffle Favorites buttons and playlist dropdowns moved up into the header bar on the home page, matching the artist jukebox pages.',
   ]},
