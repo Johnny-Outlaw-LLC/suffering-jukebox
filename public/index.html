@@ -232,6 +232,12 @@ main > * { min-width: 0; }
 .trk-unblock { display: none; }
 .trk-line.trk-blocked .trk-unblock { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 4px; font-size: .48rem; line-height: 1; padding: 3px 5px; cursor: pointer; font-family: var(--mono); white-space: nowrap; }
 .trk-line.trk-blocked .trk-unblock:hover { color: var(--accent); border-color: var(--accent); }
+/* Inline per-track play - only where the row has room (wide list layouts);
+   tight layouts (timeline panels, mobile) keep Play inside the accordion */
+.trk-play-inline { display: none; flex: 0 0 auto; align-items: center; gap: 3px; background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 5px; font-size: .48rem; line-height: 1; padding: 3px 7px; cursor: pointer; font-family: var(--mono); white-space: nowrap; transition: color .12s, border-color .12s; }
+.trk-play-inline:hover { color: var(--accent); border-color: var(--accent); }
+.list-tracks .trk-play-inline { display: inline-flex; }
+@media (max-width: 700px) { .trk-play-inline { display: none !important; } }
 /* metrics: always fills remaining space; when wrapping, fills 100% of its row */
 .trk-metrics { display: flex; align-items: center; gap: 4px; flex: 1 0 80px; min-width: 0; }
 .trk-bar-group { display: flex; align-items: center; flex: 1; min-width: 0; }
@@ -5129,7 +5135,7 @@ async function confirmDeletePlaylist(id, name) {
 // LANDING PAGE (root "/" - simple artist-card grid)
 // ══════════════════════════════════════════════════════════════
 let landingStats       = [];
-let landingExpandedId  = null;
+const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
@@ -5234,8 +5240,8 @@ function renderLanding() {
           </div>
         </div>
       </div>
-      <div class="landing-grid detail-${landingDetailLevel}${landingExpandedId ? ' la-has-open' : ''}">
-        ${rows.map((r, i) => { if (landingExpandedId === r.artist_id) return laExpandedCardHTML(r, i); const thumb = landingThumb(r); return `
+      <div class="landing-grid detail-${landingDetailLevel}${landingExpandedIds.size ? ' la-has-open' : ''}">
+        ${rows.map((r, i) => { if (landingExpandedIds.has(r.artist_id)) return laExpandedCardHTML(r, i); const thumb = landingThumb(r); return `
           <div class="landing-card" data-artist-id="${r.artist_id}"
                style="--card-accent:${landingColor(r, i)}"
                onclick="toggleLandingCard('${r.artist_id}')">
@@ -5260,7 +5266,7 @@ function renderLanding() {
     </div>
   `;
   updateLandingActionsHeader();
-  if (landingExpandedId) laPopulateAlbums(landingExpandedId);
+  landingExpandedIds.forEach(id => laPopulateAlbums(id));
 }
 
 function landingPlayQueue(q) {
@@ -5360,12 +5366,14 @@ const laOpenAlbumIds   = new Set();  // albums open inside the expanded card
 const _laReduceMotion  = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 function toggleLandingCard(artistId) {
-  const next = (landingExpandedId === artistId) ? null : artistId;
-  if (next !== landingExpandedId) laOpenAlbumIds.clear();
-  laFlipRender(() => { landingExpandedId = next; renderLanding(); }, artistId);
-  if (next) {
+  const opening = !landingExpandedIds.has(artistId);
+  laFlipRender(() => {
+    if (opening) landingExpandedIds.add(artistId); else landingExpandedIds.delete(artistId);
+    renderLanding();
+  }, artistId);
+  if (opening) {
     setTimeout(() => {
-      const el = document.querySelector('.landing-card.la-expanded');
+      const el = document.querySelector(`.landing-card.la-expanded[data-artist-id="${artistId}"]`);
       if (!el) return;
       const r = el.getBoundingClientRect();
       if (r.top < 0 || r.top > window.innerHeight * 0.5) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -5478,7 +5486,7 @@ async function laPopulateAlbums(artistId) {
   if (!row || !box) return;
   try {
     const memberIds = await laEnsureArtistData(row);
-    if (landingExpandedId !== artistId) return; // collapsed or switched mid-fetch
+    if (!landingExpandedIds.has(artistId)) return; // collapsed mid-fetch
     const target = document.getElementById('la-albums-' + artistId);
     if (!target) return;
     const albList = memberIds.flatMap(aid => albums[aid] || [])
@@ -5555,12 +5563,12 @@ function laToggleAlbum(albumId, restoring) {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || !isLandingMode || !landingExpandedId) return;
+  if (e.key !== 'Escape' || !isLandingMode || !landingExpandedIds.size) return;
   const ae = document.activeElement;
   if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
   const srch = document.getElementById('srch-overlay');
   if (srch && srch.classList.contains('open')) return;
-  toggleLandingCard(landingExpandedId);
+  laFlipRender(() => { landingExpandedIds.clear(); renderLanding(); });
 });
 
 function landingExploreArtist(slug, artistId) {
@@ -5733,7 +5741,7 @@ function resetDashboardState() {
   ytData = {};
   viewMode = 'byyear';
   listSort = 'views';
-  landingExpandedId = null;
+  landingExpandedIds.clear();
   _laLoadedArtists.clear();
   laOpenAlbumIds.clear();
 }
@@ -5937,7 +5945,7 @@ function renderTrackLines(alb, mode = 'inline') {
     const totPl  = inAppPlays[t.id]      || 0;
     const sc     = trackVoteScores[t.id] || 0;
     const vid    = ytData[t.id]?.video_id;
-    const safeN  = (t.name||'').replace(/'/g, "\'");
+    const safeN  = (t.name||'').replace(/'/g, "\\'");
     const ytLink = vid ? `<a href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)">▶</a>` : '';
 
     const showBar = barChartMode !== 'hidden';
@@ -5975,6 +5983,7 @@ function renderTrackLines(alb, mode = 'inline') {
       <button class="tvb-cycle" data-vote-track="${t.id}" onclick="cycleVote('${t.id}');event.stopPropagation()" title="Rate">-</button>
       <span class="trk-n">${t.track_number || '·'}</span>
       <span class="trk-name">${t.name}</span>
+      ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ Play</button>` : ''}
       <button class="trk-unblock" onclick="toggleBlockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
     </div>
@@ -7984,24 +7993,31 @@ function initGoogleAuth() {
   sbAuth.auth.onAuthStateChange((event, session) => {
     if (session?.user) {
       const u = session.user;
+      // supabase-js re-fires SIGNED_IN / TOKEN_REFRESHED every time the tab
+      // regains focus (alt-tab, screenshot overlays). Only run the sign-in
+      // setup - which refetches data and re-renders the page - when the
+      // signed-in user actually changed.
+      const _prevAuthEmail = googleUser?.email || null;
       googleUser = {
         name    : u.user_metadata?.full_name || u.email,
         email   : u.email,
         picture : u.user_metadata?.avatar_url || null
       };
-      loadMyPlayCounts();
-      loadMyVotes();
-      loadMyBlockedTracks();
-      refreshSjAdminState().then(updateAuthBtn);
-      restorePlaybackState();
-      if (isLandingMode) initLanding();
-      try {
-        const rp = localStorage.getItem('auth_return_path');
-        if (rp) {
-          localStorage.removeItem('auth_return_path');
-          if (rp !== window.location.pathname + window.location.search) { window.location.replace(rp); return; }
-        }
-      } catch (e) {}
+      if (_prevAuthEmail !== u.email) {
+        loadMyPlayCounts();
+        loadMyVotes();
+        loadMyBlockedTracks();
+        refreshSjAdminState().then(updateAuthBtn);
+        restorePlaybackState();
+        if (isLandingMode) initLanding();
+        try {
+          const rp = localStorage.getItem('auth_return_path');
+          if (rp) {
+            localStorage.removeItem('auth_return_path');
+            if (rp !== window.location.pathname + window.location.search) { window.location.replace(rp); return; }
+          }
+        } catch (e) {}
+      }
     } else {
       googleUser = null;
       sjIsAdmin = false;
