@@ -226,6 +226,12 @@ main > * { min-width: 0; }
 .trk-bar-bg { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .trk-bar-fill { height: 100%; border-radius: 2px; transition: width .45s ease; }
 .trk-v { color: var(--text-muted); flex-shrink: 0; font-size: .63rem; white-space: nowrap; min-width: 28px; text-align: right; align-self: center; }
+/* Blocked ("never play again") tracks stay listed but struck through, with an inline unblock button. */
+.trk-line.trk-blocked .trk-name { text-decoration: line-through; opacity: .45; }
+.trk-line.trk-blocked .trk-metrics { opacity: .35; }
+.trk-unblock { display: none; }
+.trk-line.trk-blocked .trk-unblock { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 4px; font-size: .48rem; line-height: 1; padding: 3px 5px; cursor: pointer; font-family: var(--mono); white-space: nowrap; }
+.trk-line.trk-blocked .trk-unblock:hover { color: var(--accent); border-color: var(--accent); }
 /* metrics: always fills remaining space; when wrapping, fills 100% of its row */
 .trk-metrics { display: flex; align-items: center; gap: 4px; flex: 1 0 80px; min-width: 0; }
 .trk-bar-group { display: flex; align-items: center; flex: 1; min-width: 0; }
@@ -863,6 +869,7 @@ body:not(.light) .tt-num { color: var(--text); }
 .ytp-btn:hover { color: var(--text); border-color: var(--text-muted); }
 .ytp-playpause-btn { padding: 2px 8px; font-size: .65rem; }
 #ytp-vote-btn { font-size: .6rem; }
+.ytp-block-btn:hover { color: #ef4444; border-color: #ef4444; }
 .ytp-titlebar-btns { display: flex; align-items: center; flex-shrink: 0; }
 .ytp-win-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -3042,6 +3049,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
             oninput="ytpSetVolume(this.valueAsNumber)" onmousedown="event.stopPropagation()"
             style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer">
         </label>
+        <button class="ytp-btn ytp-block-btn" id="ytp-block-btn" onclick="ytpBlockCurrent();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Never play this song again" style="display:none">⊘ Never Again</button>
       </div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
@@ -3464,7 +3472,8 @@ function playAlbum(albumId, e) {
     .filter(t => t.album_id === albumId && ytData[t.id]?.video_id)
     .sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
   if (!albTracks.length) return;
-  const fullQueue = albTracks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+  const fullQueue = sjNoBlocked(albTracks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
+  if (!fullQueue.length) { showToast('Every track on this album is blocked.'); return; }
   const first = fullQueue[0];
   if (!ytPlayerEl) {
     openYTPlayer(first.videoId, first.title, first.trackId);
@@ -4268,6 +4277,7 @@ function applyNowPlayingHighlight() {
 function ytpOnTrackChange(videoId, trackId, title) {
   schedulePlaybackStateSave(); // remember queue + position for signed-in users
   nowPlayingTrackId = trackId || null;
+  ytpSyncBlockBtn(trackId || null);
   applyNowPlayingHighlight();
   ytpUpdateMiniFooter();
   const t       = (title || '').toLowerCase();
@@ -4774,7 +4784,7 @@ async function playPlaylist(playlistId) {
     const info = await resolvePlaylistTracks(rows.map(r => r.track_id));
     const q = rows.map(r => info[r.track_id]?.videoId
       ? { videoId: info[r.track_id].videoId, title: info[r.track_id].name || 'Track', trackId: r.track_id }
-      : null).filter(Boolean);
+      : null).filter(Boolean).filter(it => !isTrackBlocked(it.trackId));
     if (!q.length) { alert('No playable tracks found.'); return; }
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
@@ -5132,9 +5142,6 @@ function renderLanding() {
   main.classList.add('main-landing');
   const rows = getVisibleLandingStats();
   const sortOpt = (v, lbl) => `<option value="${v}"${landingSortMode === v ? ' selected' : ''}>${lbl}</option>`;
-  const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
-  const _myPls   = _savedPlaylists.filter(p => p.user_email === (googleUser && googleUser.email));
-  const _pubPls  = _savedPlaylists.filter(p => p.is_public);
   main.innerHTML = `
     <div class="landing-wrap">
       <p class="landing-intro">Pick an artist</p>
@@ -5157,18 +5164,6 @@ function renderLanding() {
             <button type="button" class="landing-size-btn${landingDetailLevel === 'yt' ? ' active' : ''}" onclick="setLandingDetailLevel('yt')">Total YT Plays</button>
             <button type="button" class="landing-size-btn${landingDetailLevel === 'full' ? ' active' : ''}" onclick="setLandingDetailLevel('full')">Full Details</button>
           </div>
-        </div>
-        <div class="landing-control-group">
-          <button type="button" class="landing-action-btn" id="landing-shuffle-all-btn" onclick="landingShuffleAll()">▶ Shuffle All</button>
-          ${_hasFavs ? `<button type="button" class="landing-action-btn" id="landing-shuffle-favs-btn" onclick="landingShuffleFavorites()">▶ Shuffle Favorites</button>` : ''}
-          ${_myPls.length ? `<select class="landing-sort-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
-            <option value="">▶ My Playlists</option>
-            ${_plSelectOptions(_myPls)}
-          </select>` : ''}
-          ${_pubPls.length ? `<select class="landing-sort-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
-            <option value="">▶ Public Playlists</option>
-            ${_plSelectOptions(_pubPls)}
-          </select>` : ''}
         </div>
       </div>
       <div class="landing-grid detail-${landingDetailLevel}">
@@ -5196,10 +5191,12 @@ function renderLanding() {
       </div>
     </div>
   `;
+  updateLandingActionsHeader();
 }
 
 function landingPlayQueue(q) {
-  if (!q || !q.length) return;
+  q = sjNoBlocked(q);
+  if (!q.length) return;
   const first = q[0];
   // openYTPlayer() resets ytQueue internally to a single-track array, so when
   // it's the one opening the player, ytQueue must be (re)assigned AFTER that
@@ -5698,7 +5695,7 @@ function renderTrackLines(alb, mode = 'inline') {
       const parts = []; if (v) parts.push('\u25B6 ' + fmtV(v) + ' views'); if (l) parts.push('\u2665 ' + fmtV(l)); parts.push('\u266A ' + (t.track_number ? 'track ' + t.track_number : t.name));
       return parts.join('  ');
     })();
-    return `<div class="trk-line${t.id === nowPlayingTrackId ? ' trk-playing' : ''}" data-track-id="${t.id}"
+    return `<div class="trk-line${t.id === nowPlayingTrackId ? ' trk-playing' : ''}${isTrackBlocked(t.id) ? ' trk-blocked' : ''}" data-track-id="${t.id}"
       data-tip-name="${(t.name||'').replace(/"/g,'&quot;')}"
       data-tip-alb="${(alb.name||'').replace(/"/g,'&quot;')}${albYr ? ' · ' + albYr : ''}"
       data-tip-color="${color}"
@@ -5708,6 +5705,7 @@ function renderTrackLines(alb, mode = 'inline') {
       <button class="tvb-cycle" data-vote-track="${t.id}" onclick="cycleVote('${t.id}');event.stopPropagation()" title="Rate">-</button>
       <span class="trk-n">${t.track_number || '·'}</span>
       <span class="trk-name">${t.name}</span>
+      <button class="trk-unblock" onclick="toggleBlockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
     </div>
     <div class="trk-accordion" data-acc="${t.id}"></div>`;
@@ -5790,13 +5788,18 @@ function updateFilterHeader() {
 }
 // LISTEN WHILE YOU BROWSE - renders into header #lwytb-header
 // ══════════════════════════════════════════════════════════════
-function renderLWYTBHTML() {
+function renderLWYTBHTML(landing) {
   const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
   const _myPls  = _savedPlaylists.filter(p => p.user_email === (googleUser && googleUser.email));
   const _pubPls = _savedPlaylists.filter(p => p.is_public);
+  // The landing page uses the same bar but its own catalogue-wide shuffles.
+  const _shufAll = landing ? 'landingShuffleAll()' : 'shuffleAllVisible()';
+  const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
+  const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
+  const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
   return `<div class="lwytb-row">
-      <button class="ctrl-btn" onclick="shuffleAllVisible()">▶ Shuffle All</button>
-      ${_hasFavs ? `<button class="ctrl-btn" onclick="shuffleFavorites()">▶ Shuffle Favorites</button>` : ''}
+      <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
+      ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<select class="ctrl-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
         <option value="">▶ My Playlists</option>
         ${_plSelectOptions(_myPls)}
@@ -5818,6 +5821,19 @@ function updateLWYTBHeader() {
   }
   el.style.display = 'block';
   el.innerHTML = renderLWYTBHTML();
+}
+
+// Landing page equivalent of updateLWYTBHeader() - same header slot, same
+// markup, but wired to the catalogue-wide shuffles.
+function updateLandingActionsHeader() {
+  const el = document.getElementById('lwytb-header');
+  if (!el) return;
+  if (!_playlistsLoaded && !_playlistsLoading) {
+    _playlistsLoading = true;
+    loadPlaylists().then(() => { _playlistsLoading = false; _playlistsLoaded = true; if (isLandingMode) updateLandingActionsHeader(); });
+  }
+  el.style.display = 'block';
+  el.innerHTML = renderLWYTBHTML(true);
 }
 
 function updateViewControlsHeader() {
@@ -7389,11 +7405,15 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-06-24';
+const SJ_APP_UPDATED_FALLBACK = '2026-07-23';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-07-23', items: [
+    'New “Never Again” button in the player: signed-in users can block a song for good. Blocked songs are skipped by every shuffle, playlist and album play, and stay in the track lists struck through with an Unblock button.',
+    'The Shuffle All / Shuffle Favorites buttons and playlist dropdowns moved up into the header bar on the home page, matching the artist jukebox pages.',
+  ]},
   { date: '2026-07-16', items: [
     'Adding music is now nearly hands-free: search an artist and the jukebox identifies them with a Wikipedia summary, pulls their studio discography, and, after you confirm the albums, automatically finds the best YouTube playlist for each one (matched on expected track count and total views).',
     'The Add Music wizard can now be minimized while it works \u2014 a floating progress pill shows the import status, click it to reopen.',
@@ -7584,6 +7604,7 @@ async function handleLogout() {
   googleUser = null;
   sjIsAdmin = false;
   _pbRestoreDone = false; // allow restore again next time someone signs in
+  blockedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
   updateAuthBtn();
 }
 
@@ -7663,6 +7684,8 @@ async function restorePlaybackState() {
     if (!row || !Array.isArray(row.queue) || !row.queue.length) return;
     if (row.ended) return; // finished listening last time - don't reopen by default
     if (row.player_open === false) return; // they closed the player before leaving - respect that
+    row.queue = sjNoBlocked(row.queue);
+    if (!row.queue.length) return;
     const idx  = Math.min(Math.max(row.queue_idx || 0, 0), row.queue.length - 1);
     const item = row.queue[idx];
     if (!item?.videoId) return;
@@ -7697,6 +7720,7 @@ function initGoogleAuth() {
       };
       loadMyPlayCounts();
       loadMyVotes();
+      loadMyBlockedTracks();
       refreshSjAdminState().then(updateAuthBtn);
       restorePlaybackState();
       if (isLandingMode) initLanding();
@@ -7711,6 +7735,7 @@ function initGoogleAuth() {
       googleUser = null;
       sjIsAdmin = false;
       myInAppPlays = {};
+      blockedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
     }
     updateAuthBtn();
   });
@@ -7727,6 +7752,7 @@ function initGoogleAuth() {
         updateAuthBtn();
         loadMyPlayCounts();
         loadMyVotes();
+        loadMyBlockedTracks();
       });
       restorePlaybackState();
       if (isLandingMode) initLanding();
@@ -8461,6 +8487,101 @@ function saveLocalVotes() { localStorage.setItem('sj_votes', JSON.stringify(loca
 function normalizeVote(v) { return v > 0 ? v : 0; }
 function getMyVote(trackId) { return normalizeVote(localVotes[trackId]); }
 
+// ══════════════════════════════════════════════════════════════
+// BLOCKED TRACKS - "never play this song again", per signed-in account
+// (jukebox.blocked_tracks, mirrored into localStorage as a cache).
+// Blocked songs stay visible in the album track lists, struck through,
+// with an inline Unblock button; they're filtered out of every queue.
+// ══════════════════════════════════════════════════════════════
+let blockedTracks = {};
+
+function loadLocalBlocked() {
+  try { blockedTracks = JSON.parse(localStorage.getItem('sj_blocked') || '{}'); } catch (e) { blockedTracks = {}; }
+}
+function saveLocalBlocked() {
+  try { localStorage.setItem('sj_blocked', JSON.stringify(blockedTracks)); } catch (e) {}
+}
+// Blocking is an account-level setting, so it only applies while signed in.
+function isTrackBlocked(trackId) { return !!(trackId && googleUser && blockedTracks[trackId]); }
+function sjNoBlocked(q) { return (q || []).filter(it => it && !isTrackBlocked(it.trackId)); }
+
+function refreshBlockedUI(trackId) {
+  const apply = tid => {
+    const on = isTrackBlocked(tid);
+    document.querySelectorAll('.trk-line[data-track-id="' + tid + '"]').forEach(el => el.classList.toggle('trk-blocked', on));
+  };
+  if (trackId) apply(trackId);
+  else document.querySelectorAll('.trk-line[data-track-id]').forEach(el => {
+    el.classList.toggle('trk-blocked', isTrackBlocked(el.getAttribute('data-track-id')));
+  });
+  ytpSyncBlockBtn(nowPlayingTrackId);
+}
+
+async function loadMyBlockedTracks() {
+  if (!googleUser) { blockedTracks = {}; saveLocalBlocked(); refreshBlockedUI(); return; }
+  try {
+    const rows = await dbGetAuth('/blocked_tracks?select=track_id');  // RLS scopes this to the signed-in user
+    blockedTracks = {};
+    (rows || []).forEach(r => { if (r.track_id) blockedTracks[r.track_id] = true; });
+    saveLocalBlocked();
+    refreshBlockedUI();
+  } catch (e) { console.warn('loadMyBlockedTracks error', e); }
+}
+
+// Drops a newly blocked track out of the live queue. If it's the one
+// currently playing, moves on to the next track instead of stopping dead.
+function pruneBlockedFromQueue(trackId) {
+  if (!ytQueue.length) return;
+  const wasPlaying = ytQueue[ytQueueIdx] && ytQueue[ytQueueIdx].trackId === trackId;
+  const cur  = ytQueue[ytQueueIdx];
+  const rest = ytQueue.filter(it => it.trackId !== trackId);
+  if (rest.length === ytQueue.length) return;
+  _ytShuffleBag = []; _ytShuffleBagQueue = null;
+  if (!rest.length) { ytQueue = rest; ytQueueIdx = -1; closeYTPlayer(); return; }
+  if (wasPlaying) {
+    // The blocked track vacated its slot, so that index now holds the next one.
+    let ni = ytQueueIdx > rest.length - 1 ? 0 : ytQueueIdx;
+    ytQueue = rest;
+    ytQueueIdx = ni;
+    ytPlayQueueIdx(ytShuffle && rest.length > 1 ? _ytShuffleNextIdx() : ni);
+  } else {
+    const keepIdx = rest.indexOf(cur);
+    ytQueue = rest;
+    ytQueueIdx = keepIdx === -1 ? Math.min(ytQueueIdx, rest.length - 1) : keepIdx;
+    updateYTQueueUI();
+  }
+}
+
+async function toggleBlockTrack(trackId) {
+  if (!trackId) return;
+  if (!googleUser) { showToast('Sign in to block songs.'); return; }
+  const wasBlocked = !!blockedTracks[trackId];
+  if (wasBlocked) delete blockedTracks[trackId]; else blockedTracks[trackId] = true;
+  saveLocalBlocked();
+  refreshBlockedUI(trackId);
+  if (!wasBlocked) { pruneBlockedFromQueue(trackId); showToast('Blocked - this song won\u2019t play again.'); }
+  else showToast('Unblocked.');
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    if (wasBlocked) await dbDelete('/blocked_tracks?track_id=eq.' + trackId);
+    else await dbPost('/blocked_tracks', { user_id: userId, user_email: googleUser.email, track_id: trackId });
+  } catch (e) { console.warn('toggleBlockTrack sync error', e); }
+}
+
+function ytpBlockCurrent() {
+  const item = ytQueue[ytQueueIdx];
+  if (!item || !item.trackId) return;
+  toggleBlockTrack(item.trackId);
+}
+
+function ytpSyncBlockBtn(trackId) {
+  const btn = document.getElementById('ytp-block-btn');
+  if (!btn) return;
+  btn.style.display = (trackId && googleUser) ? '' : 'none';
+}
+
 const _SVG_TH_UP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
 const VOTE_LABELS = {'2':'<span class="tvb-dbl">'+_SVG_TH_UP+_SVG_TH_UP+'</span>','1':_SVG_TH_UP,'0':'-'};
 function cycleVote(trackId) {
@@ -9078,6 +9199,7 @@ async function logRatingChange(trackId, oldRating, newRating) {
 }
 
 loadLocalVotes();
+loadLocalBlocked();
 
 let _sjPageViewId = null;
 let _sjPageOpenedAt = Date.now();
@@ -9746,7 +9868,7 @@ async function hydratePlaylistLink() {
     const info = await resolvePlaylistTracks(pl._tracks.map(pt => pt.track_id));
     const q = pl._tracks.map(pt => info[pt.track_id]?.videoId
       ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
-      : null).filter(Boolean);
+      : null).filter(Boolean).filter(it => !isTrackBlocked(it.trackId));
     if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
     const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
@@ -9920,7 +10042,7 @@ function getVisibleTracksWithVideo(shuffle) {
       [tks[i], tks[j]] = [tks[j], tks[i]];
     }
   }
-  return tks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+  return sjNoBlocked(tks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
 }
 
 function setYtShuffleEnabled(on) {
@@ -9962,7 +10084,8 @@ function shuffleFavorites() {
     if (favIds.has(t.id) && ytData[t.id]?.video_id) allTks.push(t);
   }));
   if (!allTks.length) { alert('No favorited tracks have YouTube videos.'); return; }
-  const q = allTks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+  const q = sjNoBlocked(allTks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
+  if (!q.length) { alert('Every favorited track is blocked.'); return; }
   loadQueueForShuffle(q);
 }
 
@@ -9990,7 +10113,8 @@ function playFavorites(shuffle = ytShuffle) {
       [allTks[i], allTks[j]] = [allTks[j], allTks[i]];
     }
   }
-  const q = allTks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+  const q = sjNoBlocked(allTks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
+  if (!q.length) { alert('Every favorited track is blocked.'); return; }
   _queueHasAdditions = false;
   if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
   else { ytPlayNow(q[0].videoId, q[0].title, q[0].trackId); }
@@ -10068,7 +10192,7 @@ async function playFromPlaylist(playlistId) {
   const info = await resolvePlaylistTracks(sorted.map(pt => pt.track_id));
   const q = sorted.map(pt => info[pt.track_id]?.videoId
     ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
-    : null).filter(Boolean);
+    : null).filter(Boolean).filter(it => !isTrackBlocked(it.trackId));
   if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
   _queueHasAdditions = false;
   const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
