@@ -4515,7 +4515,8 @@ function lyrSyncStop() {
 }
 
 function lyrSyncTick() {
-  const sync = syncedLyricsCache[_ytpCurrentTrackId];
+  if (!_anySyncedLyricViewOpen()) { lyrSyncStop(); return; }
+  const sync = syncedLyricsCache[nowPlayingTrackId];
   if (!sync || !_lyrSyncEnabled || !ytAPIPlayer || typeof ytAPIPlayer.getCurrentTime !== 'function') return;
   let t;
   try { t = ytAPIPlayer.getCurrentTime(); } catch(e) { return; }
@@ -4525,18 +4526,81 @@ function lyrSyncTick() {
   for (let i = 0; i < sync.length; i++) { if (sync[i].t <= tAdj + 0.3) idx = i; else break; }
   if (idx === _lyrSyncActiveIdx) return;
   _lyrSyncActiveIdx = idx;
-  const body = document.getElementById('ytp-lyr-text');
-  if (!body) return;
-  body.querySelectorAll('.lyr-line.lyr-active').forEach(el => el.classList.remove('lyr-active'));
-  if (idx >= 0) {
-    const el = body.querySelector('.lyr-line[data-i="' + idx + '"]');
-    if (el) {
-      el.classList.add('lyr-active');
-      if (Date.now() > _lyrSyncScrollHold) {
-        try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(e) { el.scrollIntoView(); }
+  // Main player pane, plus any track-card/accordion lyrics panel currently showing the synced view.
+  const bodies = [document.getElementById('ytp-lyr-text')].concat(_lyricCardEls(nowPlayingTrackId).filter(el => el.dataset.lyrSynced === '1'));
+  bodies.forEach(body => {
+    if (!body) return;
+    body.querySelectorAll('.lyr-line.lyr-active').forEach(el => el.classList.remove('lyr-active'));
+    if (idx >= 0) {
+      const el = body.querySelector('.lyr-line[data-i="' + idx + '"]');
+      if (el) {
+        el.classList.add('lyr-active');
+        if (body.id === 'ytp-lyr-text' && Date.now() > _lyrSyncScrollHold) {
+          try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(e) { el.scrollIntoView(); }
+        }
       }
     }
-  }
+  });
+}
+
+// True while the main player's lyrics pane is open OR any track-card/accordion panel
+// is currently showing a synced (karaoke-style) view - keeps the tick loop alive for either.
+function _anySyncedLyricViewOpen() {
+  if (_ytpLyricsOpen) return true;
+  return !!document.querySelector('[data-lyr-synced="1"]');
+}
+
+// All lyric-panel elements (song card + inline/table accordions) for a given track id.
+function _lyricCardEls(trackId) {
+  const els = [];
+  if (!trackId) return els;
+  const sc = document.getElementById('sc-lyrics-' + trackId);
+  if (sc) els.push(sc);
+  document.querySelectorAll('[data-acc-lyric="' + trackId + '"]').forEach(el => els.push(el));
+  return els;
+}
+
+// A lyric-panel element counts as "visible" if it isn't sitting inside a collapsed accordion.
+function _lyricCardVisible(el) {
+  const acc = el.closest('.trk-accordion');
+  return acc ? acc.classList.contains('open') : true;
+}
+
+function _revertLyricCardSync(el) {
+  const trackId = el.id && el.id.indexOf('sc-lyrics-') === 0 ? el.id.slice(10) : el.getAttribute('data-acc-lyric');
+  delete el.dataset.lyrSynced;
+  const lyric = lyricsCache[trackId];
+  el.className = lyric ? 'sc-lyrics-text' : 'sc-lyrics-ph';
+  el.textContent = lyric || 'Lyrics not in database.';
+  if (lyricsFontAll && globalLyricSize !== 11) el.style.fontSize = globalLyricSize + 'px';
+}
+
+// Applies the karaoke-style synced view to any track-card/accordion lyrics panel that is
+// ALREADY open for the currently playing track - never opens one that isn't already shown.
+function refreshLyricCardSync() {
+  const curId = nowPlayingTrackId;
+  // Revert stale synced panels left over from a track that's no longer playing.
+  document.querySelectorAll('[data-lyr-synced="1"]').forEach(el => {
+    const tid = el.id && el.id.indexOf('sc-lyrics-') === 0 ? el.id.slice(10) : el.getAttribute('data-acc-lyric');
+    if (tid !== curId) _revertLyricCardSync(el);
+  });
+  if (!curId) return;
+  const sync = syncedLyricsCache[curId];
+  let anySynced = false;
+  _lyricCardEls(curId).forEach(el => {
+    if (!_lyricCardVisible(el)) return;
+    if (sync && _lyrSyncEnabled) {
+      el.className = 'sc-lyrics-text';
+      el.innerHTML = sync.map((l, i) =>
+        '<div class="lyr-line" data-i="' + i + '" onclick="lyrSeek(' + l.t + ')">' + (escHtml(l.text) || '&nbsp;') + '</div>').join('');
+      el.dataset.lyrSynced = '1';
+      if (lyricsFontAll && globalLyricSize !== 11) el.style.fontSize = globalLyricSize + 'px';
+      anySynced = true;
+    } else if (el.dataset.lyrSynced === '1') {
+      _revertLyricCardSync(el);
+    }
+  });
+  if (anySynced && !_lyrSyncTimer) lyrSyncStart();
 }
 
 function lyrSeek(t) {
@@ -4598,6 +4662,7 @@ function toggleTrackAccordion(trackId, e) {
   const isOpen = acc.classList.contains('open');
   if (isOpen) {
     acc.classList.remove('open');
+    acc.querySelectorAll('[data-acc-lyric][data-lyr-synced="1"]').forEach(_revertLyricCardSync);
     // Cancel the play timer if closed before 10 seconds
     if (_cardPlayTimers[trackId]) { clearTimeout(_cardPlayTimers[trackId]); delete _cardPlayTimers[trackId]; }
     return;
@@ -4659,6 +4724,7 @@ async function fetchLyricsForAcc(trackId) {
       el.textContent = lyricsCache[trackId] || 'Lyrics not in database.';
       if (lyricsFontAll && globalLyricSize !== 11) el.style.fontSize = globalLyricSize + 'px';
     });
+    if (trackId === nowPlayingTrackId) fetchSyncedLyrics(trackId).then(refreshLyricCardSync);
   };
   if (lyricsCache[trackId] !== undefined) { update(); return; }
   try {
@@ -4828,6 +4894,7 @@ function renderLyrics(trackId, lyric, source) {
     textEl.className = 'sc-lyrics-ph';
     textEl.textContent = 'Lyrics not in database - try the Genius link above.';
   }
+  if (trackId === nowPlayingTrackId) fetchSyncedLyrics(trackId).then(refreshLyricCardSync);
 }
 
 // ── Init ─────────────────────────────────────────────────────
