@@ -3181,7 +3181,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
         <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
-        <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">🎧 Audio</button>
+        <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Audio</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
           <span style="font-size:.5rem">🔊</span>
           <input type="range" id="ytp-vol-slider" min="0" max="100" value="100" step="5"
@@ -4222,6 +4222,28 @@ function taEnsureAudioEl() {
 // The 🎧 Audio button moves the sound onto the real <audio> element during
 // the tap gesture, which is exactly what mobile browsers require to keep
 // playing with the screen off / app switched. Tapping again returns to video.
+function taIsMobileDevice() {
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+      || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.userAgent)); // iPadOS reports a Mac UA
+}
+
+// Gray out the video while audio-only mode has the sound.
+function taSyncBgOverlay() {
+  const on = _taManualAudio && _taBgActive;
+  const ov = document.getElementById('ta-bg-overlay');
+  if (!on) { if (ov) ov.remove(); return; }
+  const frame = ytPlayerEl?.querySelector('.yt-player-frame');
+  if (!frame) return;
+  const el = ov || document.createElement('div');
+  if (!ov) {
+    el.id = 'ta-bg-overlay';
+    el.style.cssText = 'position:absolute;inset:0;z-index:6;background:rgba(10,10,10,.85);display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;cursor:default';
+    el.innerHTML = '<div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;line-height:1.7"><div style="color:var(--accent)">background play enabled</div><div style="color:#999">safe to close window</div></div>';
+  }
+  if (getComputedStyle(frame).position === 'static') frame.style.position = 'relative';
+  if (el.parentNode !== frame) frame.appendChild(el);
+}
+
 function taToggleAudioMode() {
   if (_taManualAudio && _taBgActive) {
     taExitBgAudio(); // also clears _taManualAudio + resyncs the button
@@ -4240,12 +4262,13 @@ function taToggleAudioMode() {
 // Show the button only when the current track has uploaded audio; highlight
 // it while audio-only mode is on.
 function taSyncAudioBtn() {
+  taSyncBgOverlay();
   const btn = document.getElementById('ytp-audio-btn');
   if (!btn) return;
-  const has = !!taTrackAudio(ytQueue[ytQueueIdx]?.trackId);
+  const has = taIsMobileDevice() && !!taTrackAudio(ytQueue[ytQueueIdx]?.trackId);
   btn.style.display = has ? '' : 'none';
   const on = _taManualAudio && _taBgActive;
-  btn.textContent = on ? '🎧 Audio ✓' : '🎧 Audio';
+  btn.textContent = on ? 'Audio ✓' : 'Audio';
   btn.style.color = on ? 'var(--accent)' : '';
   btn.style.borderColor = on ? 'var(--accent)' : '';
   btn.title = on ? 'Audio-only mode is on - tap to go back to video'
