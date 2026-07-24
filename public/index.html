@@ -2206,8 +2206,6 @@ let _ytBgAudio          = null;  // silent keepalive for mobile background playb
 let _ytBgResumeTimer    = null;  // retries playVideo while tab is hidden
 let _ytMediaPosTimer    = null;  // media session position updates
 let _ytMediaSessionReady = false;
-let _ytWakeLock         = null;  // screen WakeLockSentinel while Road Trip mode is active
-let _ytRoadTrip         = (() => { try { return localStorage.getItem('sjRoadTrip') === '1'; } catch (_) { return false; } })();
 
 const isAlbumVisible = (albumId) => !excludedAlbumIds.has(albumId);
 
@@ -3119,7 +3117,6 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
-        <button class="ytp-btn" id="ytp-roadtrip-btn" onclick="ytpToggleRoadTrip();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Road Trip mode: keep the screen awake so playback never stops">🚗 Road Trip</button>
         <button class="ytp-btn" onclick="ytpOpenInYouTube();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Send the queue to the YouTube app - supports lock-screen/background play (YouTube Premium) and CarPlay/Android Auto">▶ YouTube</button>
         <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
@@ -3143,7 +3140,6 @@ function openYTPlayer(videoId, title, trackId, ev) {
   if (_shChk0) _shChk0.checked = ytShuffle;
   const _rpChk0 = ytPlayerEl.querySelector('#ytp-repeat-chk');
   if (_rpChk0) _rpChk0.checked = ytRepeat;
-  ytpSyncRoadTripBtn();
 
   // Initialize queue with this first track
   ytQueue = [{videoId, title, trackId: trackId || null}];
@@ -3221,7 +3217,6 @@ function closeYTPlayer() {
   _ytCurrentPlay = null;
   _ytUserWantsPlay = false;
   ytpStopBgKeepalive();
-  ytpReleaseWakeLock();
   ytpClearMediaSession();
   dismissYTQueueChoice();
   // Destroy YT API player
@@ -3424,7 +3419,6 @@ function ytTogglePlayPause() {
   const st = ytAPIPlayer.getPlayerState();
   if (st === 1) { _ytUserWantsPlay = false; ytAPIPlayer.pauseVideo(); }
   else { _ytUserWantsPlay = true; ytAPIPlayer.playVideo(); ytpStartBgKeepalive(); }
-  ytpSyncWakeLock();
 }
 
 function ytpSetVolume(val) {
@@ -3503,7 +3497,6 @@ function attachYTAPIPlayer() {
           ytpSetPlayPauseIcon(true);
           ytpStartBgKeepalive();
           ytpUpdateMediaSession();
-          ytpSyncWakeLock();
           if (_lyrSyncEnabled && _ytpCurrentTrackId && syncedLyricsCache[_ytpCurrentTrackId]) lyrSyncStart();
           if (_ytCurrentPlay && !_ytCurrentPlay.playbackStarted) _ytCurrentPlay.playbackStarted = Date.now();
           // Start 10-second play threshold timer
@@ -3533,7 +3526,6 @@ function attachYTAPIPlayer() {
           }
           _ytUserWantsPlay = false;
           ytpStopBgKeepalive();
-          ytpSyncWakeLock();
         } else if (ev.data === 0) { // ENDED
           lyrSyncStop();
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
@@ -3941,13 +3933,11 @@ function ytpInitMediaSession() {
       _ytUserWantsPlay = true;
       ytAPIPlayer?.playVideo?.();
       ytpStartBgKeepalive();
-      ytpSyncWakeLock();
     });
     navigator.mediaSession.setActionHandler('pause', () => {
       _ytUserWantsPlay = false;
       ytAPIPlayer?.pauseVideo?.();
       ytpStopBgKeepalive();
-      ytpSyncWakeLock();
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => ytNextTrack());
     navigator.mediaSession.setActionHandler('previoustrack', () => ytPrevTrack());
@@ -4062,59 +4052,6 @@ function ytpOnVisibilityChange() {
       setTimeout(ytpKickBackgroundPlay, 100);
       setTimeout(ytpKickBackgroundPlay, 500);
     }
-    ytpSyncWakeLock(); // wake locks auto-release on hide - re-acquire on return
-  }
-}
-
-// ── Road Trip mode (screen wake lock) ──────────────────────────
-// YouTube embeds hard-pause whenever the page is hidden, so true background
-// audio is off the table; keeping the screen awake while playing is the
-// reliable in-car answer (phone mounted / plugged in).
-function ytpToggleRoadTrip() {
-  _ytRoadTrip = !_ytRoadTrip;
-  try { localStorage.setItem('sjRoadTrip', _ytRoadTrip ? '1' : '0'); } catch (_) {}
-  ytpSyncRoadTripBtn();
-  if (_ytRoadTrip) {
-    if (!('wakeLock' in navigator)) {
-      showToast('This browser can\'t keep the screen awake - try "▶ YouTube" instead');
-    } else {
-      showToast(_ytUserWantsPlay ? 'Road Trip mode on - screen stays awake while playing'
-                                 : 'Road Trip mode on - screen stays awake once playing');
-    }
-  } else {
-    showToast('Road Trip mode off');
-  }
-  ytpSyncWakeLock();
-}
-
-function ytpSyncRoadTripBtn() {
-  const b = document.getElementById('ytp-roadtrip-btn');
-  if (!b) return;
-  b.style.color = _ytRoadTrip ? 'var(--accent)' : '';
-  b.style.borderColor = _ytRoadTrip ? 'var(--accent)' : '';
-}
-
-async function ytpAcquireWakeLock() {
-  if (_ytWakeLock || !('wakeLock' in navigator)) return;
-  try {
-    const wl = await navigator.wakeLock.request('screen');
-    // The OS auto-releases on tab hide; ytpSyncWakeLock re-acquires on return.
-    wl.addEventListener('release', () => { if (_ytWakeLock === wl) _ytWakeLock = null; });
-    _ytWakeLock = wl;
-  } catch (_) { _ytWakeLock = null; }
-}
-
-function ytpReleaseWakeLock() {
-  const wl = _ytWakeLock;
-  _ytWakeLock = null;
-  try { wl?.release?.(); } catch (_) {}
-}
-
-function ytpSyncWakeLock() {
-  if (_ytRoadTrip && _ytUserWantsPlay && ytPlayerEl && document.visibilityState === 'visible') {
-    ytpAcquireWakeLock();
-  } else {
-    ytpReleaseWakeLock();
   }
 }
 
@@ -4135,7 +4072,6 @@ function ytpOpenInYouTube() {
   _ytUserWantsPlay = false;
   try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
   ytpStopBgKeepalive();
-  ytpSyncWakeLock();
   window.open(url, '_blank', 'noopener');
 }
 
