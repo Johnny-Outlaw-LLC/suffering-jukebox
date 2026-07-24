@@ -2268,6 +2268,7 @@ let _taBgStartPos       = 0;     // where background audio started (for the 10s 
 let _taConsentOk        = false; // rights-ownership notice acknowledged this session
 let _taConsentResolve   = null;  // pending in-app consent modal resolver
 let _taBatch            = null;  // { artistId, albumId, tracks, files, assign } for the batch uploader
+let _taManualAudio      = false; // audio-only mode toggled from the player toolbar
 
 const isAlbumVisible = (albumId) => !excludedAlbumIds.has(albumId);
 
@@ -3180,6 +3181,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
         <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
+        <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">🎧 Audio</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
           <span style="font-size:.5rem">🔊</span>
           <input type="range" id="ytp-vol-slider" min="0" max="100" value="100" step="5"
@@ -3278,6 +3280,7 @@ function closeYTPlayer() {
   _ytCurrentPlay = null;
   _ytUserWantsPlay = false;
   ytpStopBgKeepalive();
+  _taManualAudio = false;
   _taBgActive = false;
   try { _taAudioEl?.pause(); } catch (_) {}
   ytpClearMediaSession();
@@ -3393,7 +3396,19 @@ function ytPlayNow(videoId, title, trackId) {
   ytVideoId = videoId;
   // play will be logged by onStateChange after 10 seconds
   if (!ytPlayerEl) { openYTPlayer(videoId, title, trackId); return; }
-  if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
+  const _useTa = _taManualAudio && !!taTrackAudio(trackId);
+  if (_taBgActive && !_useTa) {
+    _taManualAudio = false; _taBgActive = false;
+    try { _taAudioEl?.pause(); } catch (_) {}
+    taSyncAudioBtn();
+  }
+  if (_useTa) {
+    _ytUserWantsPlay = true;
+    _taBgActive = true;
+    taPlayBgIdx(0);
+    try { ytAPIPlayer?.cueVideoById?.(videoId); } catch (_) {}
+    ytpSetPlayPauseIcon(true);
+  } else if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
     ytAPIPlayer.loadVideoById(videoId);
     ytKickMobilePlay();
   } else {
@@ -3429,11 +3444,25 @@ function ytPlayQueueIdx(idx) {
     if (bagPos !== -1) _ytShuffleBag.splice(bagPos, 1);
   }
   ytQueueIdx = idx;
-  taPrimeAudioEl(ytQueue[idx]);
   const item = ytQueue[idx];
   ytVideoId = item.videoId;
+  const _useTa = _taManualAudio && !!taTrackAudio(item.trackId);
+  if (_taBgActive && !_useTa) {
+    // Leaving audio-only mode: this track has no uploaded audio
+    _taManualAudio = false; _taBgActive = false;
+    try { _taAudioEl?.pause(); } catch (_) {}
+    taSyncAudioBtn();
+  }
+  if (!_useTa) taPrimeAudioEl(item);
   // play will be logged by onStateChange after 10 seconds
-  if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
+  if (_useTa) {
+    // Audio-only mode: the audio element keeps the sound; just cue the video
+    _ytUserWantsPlay = true;
+    _taBgActive = true;
+    taPlayBgIdx(idx);
+    try { ytAPIPlayer?.cueVideoById?.(item.videoId); } catch (_) {}
+    ytpSetPlayPauseIcon(true);
+  } else if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
     ytAPIPlayer.loadVideoById(item.videoId);
     ytKickMobilePlay();
   } else {
@@ -3479,6 +3508,12 @@ function ytPrevTrack() {
 
 // ── Mini-player play/pause toggle ──────────────────────────────
 function ytTogglePlayPause() {
+  if (_taBgActive && _taAudioEl) {
+    // Audio-only mode: toggle the audio element, not the embed
+    if (_taAudioEl.paused) { _ytUserWantsPlay = true; _taAudioEl.play().catch(() => {}); ytpSetPlayPauseIcon(true); ytpSetMediaPlaybackState('playing'); }
+    else { _ytUserWantsPlay = false; _taAudioEl.pause(); ytpSetPlayPauseIcon(false); ytpSetMediaPlaybackState('paused'); }
+    return;
+  }
   if (!ytAPIPlayer || typeof ytAPIPlayer.getPlayerState !== 'function') return;
   const st = ytAPIPlayer.getPlayerState();
   if (st === 1) { _ytUserWantsPlay = false; ytAPIPlayer.pauseVideo(); }
@@ -3487,6 +3522,7 @@ function ytTogglePlayPause() {
 
 function ytpSetVolume(val) {
   if (ytAPIPlayer && typeof ytAPIPlayer.setVolume === 'function') ytAPIPlayer.setVolume(val);
+  if (_taAudioEl) { try { _taAudioEl.volume = Math.max(0, Math.min(1, val / 100)); } catch (_) {} }
 }
 
 function ytpSyncVolumeSlider() {
@@ -3557,6 +3593,12 @@ function attachYTAPIPlayer() {
       },
       onStateChange: function(ev) {
         if (ev.data === 1) { // PLAYING
+          if (_taManualAudio && _taBgActive) {
+            // User started the video itself - hand the sound back to the embed
+            _taManualAudio = false; _taBgActive = false;
+            try { _taAudioEl?.pause(); } catch (_) {}
+            taSyncAudioBtn();
+          }
           _ytUserWantsPlay = true;
           ytpSetPlayPauseIcon(true);
           ytpStartBgKeepalive();
@@ -4007,8 +4049,8 @@ function ytpInitMediaSession() {
       ytAPIPlayer?.pauseVideo?.();
       ytpStopBgKeepalive();
     });
-    navigator.mediaSession.setActionHandler('nexttrack', () => { if (_taBgActive) taAdvanceBg(); else ytNextTrack(); });
-    navigator.mediaSession.setActionHandler('previoustrack', () => { if (_taBgActive) taPrevBg(); else ytPrevTrack(); });
+    navigator.mediaSession.setActionHandler('nexttrack', () => { if (_taBgActive && document.visibilityState === 'hidden') taAdvanceBg(); else ytNextTrack(); });
+    navigator.mediaSession.setActionHandler('previoustrack', () => { if (_taBgActive && document.visibilityState === 'hidden') taPrevBg(); else ytPrevTrack(); });
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       if (details.seekTime == null) return;
       if (_taBgActive) { try { _taAudioEl.currentTime = details.seekTime; } catch (_) {} return; }
@@ -4112,6 +4154,7 @@ function ytpKickBackgroundPlay() {
 function ytpOnVisibilityChange() {
   if (document.visibilityState === 'hidden') {
     if (!_ytUserWantsPlay) return;
+    if (_taBgActive) { ytpUpdateMediaSession(); return; } // audio-only mode already carries the sound
     if (taEnterBgAudio()) { ytpUpdateMediaSession(); return; } // uploaded audio carries the sound - no embed kicks
     ytpStartBgKeepalive();
     ytpUpdateMediaSession();
@@ -4120,7 +4163,10 @@ function ytpOnVisibilityChange() {
     _ytBgResumeTimer = setInterval(ytpKickBackgroundPlay, 2000);
   } else {
     if (_ytBgResumeTimer) { clearInterval(_ytBgResumeTimer); _ytBgResumeTimer = null; }
-    if (_taBgActive) { taExitBgAudio(); return; }
+    if (_taBgActive) {
+      if (_taManualAudio) { taManualResync(); return; } // stay in audio-only mode
+      taExitBgAudio(); return;
+    }
     if (_ytUserWantsPlay) {
       setTimeout(ytpKickBackgroundPlay, 100);
       setTimeout(ytpKickBackgroundPlay, 500);
@@ -4172,6 +4218,58 @@ function taEnsureAudioEl() {
   return _taAudioEl;
 }
 
+// ── Audio-only mode (manual toggle) ────────────────────────────────
+// The 🎧 Audio button moves the sound onto the real <audio> element during
+// the tap gesture, which is exactly what mobile browsers require to keep
+// playing with the screen off / app switched. Tapping again returns to video.
+function taToggleAudioMode() {
+  if (_taManualAudio && _taBgActive) {
+    taExitBgAudio(); // also clears _taManualAudio + resyncs the button
+    return;
+  }
+  const item = ytQueue[ytQueueIdx];
+  if (!taTrackAudio(item?.trackId)) { taSyncAudioBtn(); return; }
+  _ytUserWantsPlay = true;
+  _taManualAudio = true;
+  if (!taEnterBgAudio()) { _taManualAudio = false; taSyncAudioBtn(); return; }
+  ytpUpdateMediaSession();
+  ytpSetPlayPauseIcon(true);
+  taSyncAudioBtn();
+}
+
+// Show the button only when the current track has uploaded audio; highlight
+// it while audio-only mode is on.
+function taSyncAudioBtn() {
+  const btn = document.getElementById('ytp-audio-btn');
+  if (!btn) return;
+  const has = !!taTrackAudio(ytQueue[ytQueueIdx]?.trackId);
+  btn.style.display = has ? '' : 'none';
+  const on = _taManualAudio && _taBgActive;
+  btn.textContent = on ? '🎧 Audio ✓' : '🎧 Audio';
+  btn.style.color = on ? 'var(--accent)' : '';
+  btn.style.borderColor = on ? 'var(--accent)' : '';
+  btn.title = on ? 'Audio-only mode is on - tap to go back to video'
+                 : 'Audio-only mode - keeps playing with the screen off or in the background';
+}
+
+// Queue moved while audio-only mode had the sound: line the on-screen player
+// back up without stealing the sound from the audio element.
+function taManualResync() {
+  const item = ytQueue[ytQueueIdx];
+  if (!item || !ytAPIPlayer) return;
+  try {
+    const cur = ytAPIPlayer.getVideoData?.()?.video_id;
+    if (cur && item.videoId && cur !== item.videoId) {
+      ytAPIPlayer.cueVideoById(item.videoId);
+      const titleEl = ytPlayerEl?.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = item.title || '';
+      if (_ytpLyricsOpen && item.trackId) ytpUpdateLyrics(item.trackId);
+      ytpOnTrackChange(item.videoId, item.trackId, item.title);
+      updateYTQueueUI();
+    }
+  } catch (_) {}
+}
+
 // Prime the audio element during a user gesture so iOS will allow background play.
 // Must be called in response to a tap/click before the page is hidden.
 function taPrimeAudioEl(item) {
@@ -4215,6 +4313,8 @@ function taEnterBgAudio() {
 function taExitBgAudio() {
   if (!_taBgActive) return;
   _taBgActive = false;
+  _taManualAudio = false;
+  taSyncAudioBtn();
   const a = _taAudioEl;
   const pos = a ? (a.currentTime || 0) : 0;
   try { a?.pause(); } catch (_) {}
@@ -4259,6 +4359,9 @@ function taPlayBgIdx(idx) {
   ytVideoId = item.videoId;
   nowPlayingTrackId = item.trackId || null;
   ytpUpdateMediaSession();
+  if (_lyrSyncEnabled && item.trackId && syncedLyricsCache[item.trackId]) lyrSyncStart();
+  if (_taManualAudio && document.visibilityState === 'visible') taManualResync();
+  taSyncAudioBtn();
   return true;
 }
 
@@ -4288,10 +4391,13 @@ function taPrevBg() {
 }
 
 function taStopBg() {
+  _taManualAudio = false;
   _taBgActive = false;
   try { _taAudioEl?.pause(); } catch (_) {}
   _ytUserWantsPlay = false;
   ytpSetMediaPlaybackState('paused');
+  ytpSetPlayPauseIcon(false);
+  taSyncAudioBtn();
 }
 
 function taOnAudioEnded() {
@@ -4880,6 +4986,7 @@ function ytpOnTrackChange(videoId, trackId, title) {
   ytpSyncBlockBtn(trackId || null);
   applyNowPlayingHighlight();
   ytpUpdateMiniFooter();
+  taSyncAudioBtn();
   const t       = (title || '').toLowerCase();
   const isAMHIG = t.includes('all my happiness');
   const isRR    = t.includes('random rules');
@@ -5030,9 +5137,13 @@ function lyrSyncStop() {
 function lyrSyncTick() {
   if (!_anySyncedLyricViewOpen()) { lyrSyncStop(); return; }
   const sync = syncedLyricsCache[nowPlayingTrackId];
-  if (!sync || !_lyrSyncEnabled || !ytAPIPlayer || typeof ytAPIPlayer.getCurrentTime !== 'function') return;
+  if (!sync || !_lyrSyncEnabled) return;
   let t;
-  try { t = ytAPIPlayer.getCurrentTime(); } catch(e) { return; }
+  if (_taBgActive && _taAudioEl) { t = _taAudioEl.currentTime || 0; }
+  else {
+    if (!ytAPIPlayer || typeof ytAPIPlayer.getCurrentTime !== 'function') return;
+    try { t = ytAPIPlayer.getCurrentTime(); } catch(e) { return; }
+  }
   if (typeof t !== 'number' || isNaN(t)) return;
   const tAdj = t - _ytpLyrOffset; // adjust for any per-video intro offset
   let idx = -1;
@@ -6528,6 +6639,7 @@ async function loadTrackAudio(trackIds) {
     results.flat().forEach(r => {
       taData[r.track_id] = { url: taPublicUrl(r.storage_path), duration: Number(r.duration_seconds) || null };
     });
+    taSyncAudioBtn();
   } catch (_) {}
 }
 
@@ -8694,7 +8806,7 @@ async function savePlaybackState() {
     const { data: { session } } = await sbAuth.auth.getSession();
     if (!session?.user) return;
     let posSec = 0;
-    try { if (ytAPIPlayer && typeof ytAPIPlayer.getCurrentTime === 'function') posSec = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
+    try { if (_taBgActive && _taAudioEl) posSec = Math.floor(_taAudioEl.currentTime || 0); else if (ytAPIPlayer && typeof ytAPIPlayer.getCurrentTime === 'function') posSec = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
     await dbUpsert('/playback_state', 'user_id', {
       user_id: session.user.id,
       user_email: session.user.email,
