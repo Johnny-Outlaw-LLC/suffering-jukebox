@@ -3430,6 +3430,7 @@ function ytPlayQueueIdx(idx) {
     if (bagPos !== -1) _ytShuffleBag.splice(bagPos, 1);
   }
   ytQueueIdx = idx;
+  taPrimeAudioEl(ytQueue[idx]);
   const item = ytQueue[idx];
   ytVideoId = item.videoId;
   // play will be logged by onStateChange after 10 seconds
@@ -3482,7 +3483,7 @@ function ytTogglePlayPause() {
   if (!ytAPIPlayer || typeof ytAPIPlayer.getPlayerState !== 'function') return;
   const st = ytAPIPlayer.getPlayerState();
   if (st === 1) { _ytUserWantsPlay = false; ytAPIPlayer.pauseVideo(); }
-  else { _ytUserWantsPlay = true; ytAPIPlayer.playVideo(); ytpStartBgKeepalive(); }
+  else { _ytUserWantsPlay = true; taPrimeAudioEl(ytQueue[ytQueueIdx]); ytAPIPlayer.playVideo(); ytpStartBgKeepalive(); }
 }
 
 function ytpSetVolume(val) {
@@ -4170,6 +4171,23 @@ function taEnsureAudioEl() {
   _taAudioEl.addEventListener('timeupdate', taOnAudioTime);
   document.body.appendChild(_taAudioEl);
   return _taAudioEl;
+}
+
+// Prime the audio element during a user gesture so iOS will allow background play.
+// Must be called in response to a tap/click before the page is hidden.
+function taPrimeAudioEl(item) {
+  if (!item) return;
+  const ta = taTrackAudio(item.trackId);
+  if (!ta) return;
+  const a = taEnsureAudioEl();
+  if (a.dataset.trackId !== String(item.trackId)) {
+    a.src = ta.url;
+    a.dataset.trackId = String(item.trackId);
+  }
+  a.load();
+  // iOS requires a play() in user-gesture context to unlock the element for background play.
+  const v = a.volume; a.volume = 0;
+  a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = v; }).catch(() => { a.volume = v; });
 }
 
 // Page just hid: take over from the embed if the current track has audio.
