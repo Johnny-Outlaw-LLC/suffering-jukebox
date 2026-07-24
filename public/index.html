@@ -1758,6 +1758,60 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   </div>
 </div>
 
+<!-- BACKGROUND-AUDIO RIGHTS CONSENT (in-app, replaces the native confirm) -->
+<div class="modal-overlay" id="audioConsentOverlay" onclick="if(event.target===this)taConsentDecide(false)">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <span class="modal-title">Background-play audio</span>
+      <button class="modal-close" onclick="taConsentDecide(false)">✕</button>
+    </div>
+    <div class="modal-body" style="gap:.9rem">
+      <div style="font-size:.6rem;line-height:1.6">
+        Upload audio only if <strong>you own the rights to this music</strong>. This must not be used
+        for copyrighted music you do not own the rights to.
+      </div>
+      <div style="font-size:.52rem;color:var(--text-muted);line-height:1.6">
+        Your account and the date of this consent are recorded with every uploaded file, and all plays are logged.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="taConsentDecide(false)">Cancel</button>
+      <button class="m-btn" onclick="taConsentDecide(true)">I own the rights — continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- BATCH BACKGROUND-AUDIO UPLOAD (per album or artist, auto-matched by name) -->
+<div class="modal-overlay" id="audioBatchOverlay" onclick="if(event.target===this)taBatchClose()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="taBatchTitle">Batch background audio</span>
+      <button class="modal-close" onclick="taBatchClose()">✕</button>
+    </div>
+    <div class="modal-body" style="gap:.9rem">
+      <div style="border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
+        ⚠ Only upload audio you own the rights to. It must not be applied to copyrighted music you do not
+        own. Your account and consent date are recorded with every file, and all plays are logged.
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none">
+        <input type="checkbox" id="taBatchConsent" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
+        <span>I own the rights to this music and consent to it being stored for background play.</span>
+      </label>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <label class="m-btn" style="cursor:pointer;margin:0">＋ Select files<input type="file" accept="audio/*" multiple style="display:none" onchange="taBatchAddFiles(this)"></label>
+        <label class="m-btn ghost" style="cursor:pointer;margin:0">📁 Select a folder<input type="file" accept="audio/*" multiple webkitdirectory style="display:none" onchange="taBatchAddFiles(this)"></label>
+        <span style="font-size:.48rem;color:var(--text-muted)">Pick a whole album at once — files are matched to tracks by name.</span>
+      </div>
+      <div id="taBatchList"><div class="oa-albs-note">Loading tracks…</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="taBatchClose()">Close</button>
+      <button class="m-btn" id="taBatchUploadBtn" onclick="taBatchUpload()" disabled>Upload matched</button>
+      <span class="mf-status" id="taBatchStatus"></span>
+    </div>
+  </div>
+</div>
+
 <!-- MANAGE MY JUKEBOX MODAL (hide artists from the landing page, rate them) -->
 <div class="modal-overlay" id="manageJukeboxOverlay" onclick="if(event.target===this)closeManageJukebox()">
   <div class="modal">
@@ -2212,6 +2266,8 @@ let _taBgActive         = false; // sound is currently coming from the uploaded 
 let _taBgLogged         = false; // play_event already logged for the current background track
 let _taBgStartPos       = 0;     // where background audio started (for the 10s play threshold)
 let _taConsentOk        = false; // rights-ownership notice acknowledged this session
+let _taConsentResolve   = null;  // pending in-app consent modal resolver
+let _taBatch            = null;  // { artistId, albumId, tracks, files, assign } for the batch uploader
 
 const isAlbumVisible = (albumId) => !excludedAlbumIds.has(albumId);
 
@@ -4246,14 +4302,28 @@ function taOnAudioTime() {
 }
 
 // ── Audio upload (rights holders only) ─────────────────────────
-function taConsentGate() {
-  if (_taConsentOk) return true;
-  _taConsentOk = confirm(
-    'Upload audio for background play?\n\n' +
-    'Only do this if you own the rights to this music. This must not be used for ' +
-    'copyrighted music you do not own the rights to.\n\n' +
-    'Your account and the date of this consent are recorded with every uploaded file.');
-  return _taConsentOk;
+// In-app rights-consent modal (once per session). Resolves true if accepted.
+function taConsentModal() {
+  if (_taConsentOk) return Promise.resolve(true);
+  return new Promise(res => {
+    _taConsentResolve = res;
+    document.getElementById('audioConsentOverlay').classList.add('open');
+  });
+}
+function taConsentDecide(ok) {
+  document.getElementById('audioConsentOverlay').classList.remove('open');
+  if (ok) _taConsentOk = true;
+  const r = _taConsentResolve; _taConsentResolve = null;
+  if (r) r(ok);
+}
+
+// Per-track quick upload: confirm rights in-app, then open a file picker.
+async function taQuickUpload(trackId, expectMs) {
+  if (!(await taConsentModal())) return;
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'audio/*';
+  inp.onchange = () => taUploadFile(trackId, inp, expectMs);
+  inp.click();
 }
 
 function taProbeDuration(file) {
@@ -4270,19 +4340,16 @@ function taProbeDuration(file) {
   });
 }
 
-async function taUploadFile(trackId, inputEl, expectMs) {
-  const file = inputEl.files?.[0];
-  if (!file) return;
-  inputEl.value = '';
-  const st = document.getElementById('ta-st-' + trackId);
-  const setSt = (t, color) => { if (st) { st.textContent = t; st.style.color = color || ''; } };
-  if (file.size > 30 * 1024 * 1024) { setSt('Too big (max 30 MB)', '#ef4444'); return; }
-  setSt('Uploading…', '');
+// Upload one File for one track. Returns {ok, msg, warn} - no DOM side effects,
+// so both the per-track inputs and the batch uploader can share it.
+async function taUploadOneFile(trackId, file, expectMs) {
+  if (!file) return { ok: false, msg: 'No file' };
+  if (file.size > 30 * 1024 * 1024) return { ok: false, msg: 'Too big (max 30 MB)' };
   try {
     const { data: { session } } = await sbAuth.auth.getSession();
-    if (!session) throw new Error('Not signed in');
+    if (!session) return { ok: false, msg: 'Not signed in' };
     const ext = ((file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'mp3';
-    const path = `${trackId}/${Date.now()}.${ext}`;
+    const path = `${trackId}/${Date.now()}-${Math.floor(performance.now())}.${ext}`;
     const dur = await taProbeDuration(file);
     const { error } = await sbAuth.storage.from('jukebox-audio')
       .upload(path, file, { contentType: file.type || 'audio/mpeg', upsert: false });
@@ -4299,13 +4366,181 @@ async function taUploadFile(trackId, inputEl, expectMs) {
     });
     taData[trackId] = { url: taPublicUrl(path), duration: dur };
     const diff = (expectMs && dur) ? Math.abs(dur - expectMs / 1000) : 0;
-    if (diff > 3) setSt(`✓ Uploaded - length differs from the video by ${Math.round(diff)}s`, '#f59e0b');
-    else setSt('✓ Ready for background play', '#22c55e');
+    return { ok: true, warn: diff > 3 ? Math.round(diff) : 0,
+             msg: diff > 3 ? `✓ Uploaded - ${Math.round(diff)}s off the video` : '✓ Ready for background play' };
   } catch (e) {
     const msg = /policy|denied|row-level|duplicate/i.test(e.message || '')
       ? 'Audio for this track was uploaded by someone else' : (e.message || 'Upload failed');
-    setSt('✗ ' + msg, '#ef4444');
+    return { ok: false, msg };
   }
+}
+
+async function taUploadFile(trackId, inputEl, expectMs) {
+  const file = inputEl.files?.[0];
+  if (!file) return;
+  inputEl.value = '';
+  const st = document.getElementById('ta-st-' + trackId);
+  const setSt = (t, color) => { if (st) { st.textContent = t; st.style.color = color || ''; } };
+  setSt('Uploading…', '');
+  const r = await taUploadOneFile(trackId, file, expectMs);
+  setSt(r.ok ? r.msg : '✗ ' + r.msg, r.ok ? (r.warn ? '#f59e0b' : '#22c55e') : '#ef4444');
+}
+
+// ── Batch audio uploader (per album or artist, auto-matched by name) ──
+// Filename normalizer: drop extension, leading track number, bracketed junk,
+// and common "official audio / remaster / lyrics" noise for name matching.
+function taNormName(s) {
+  return (s || '')
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/, '')
+    .replace(/^\s*\d+\s*[-._).]*\s*/, '')
+    .replace(/\(.*?\)|\[.*?\]/g, ' ')
+    .replace(/official\s*(music\s*)?(audio|video|lyric video|visualizer)?/g, ' ')
+    .replace(/\b(hd|hq|4k|remaster(ed)?( \d{4})?|lyrics?|audio|mv)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+function taSim(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const ta = a.split(' ').filter(Boolean), tb = b.split(' ').filter(Boolean);
+  const sb = new Set(tb);
+  let inter = 0; new Set(ta).forEach(x => { if (sb.has(x)) inter++; });
+  const dice = (2 * inter) / (ta.length + tb.length || 1);
+  const sub = (a.includes(b) || b.includes(a)) ? 0.3 : 0;
+  return Math.min(1, dice + sub);
+}
+
+async function taBatchOpen(artistId, albumId) {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to upload audio. Sign in now?')) handleAuthClick();
+    return;
+  }
+  const artist = _maData.find(a => a.id === artistId);
+  const album  = albumId ? (artist?.albums || []).find(x => x.id === albumId) : null;
+  _taBatch = { artistId, albumId: albumId || null, tracks: [], files: [], assign: {} };
+  document.getElementById('taBatchTitle').textContent =
+    'Background audio · ' + (artist?.name || '') + (album ? ' · ' + album.name : ' · all albums');
+  document.getElementById('taBatchConsent').checked = _taConsentOk;
+  document.getElementById('taBatchStatus').textContent = '';
+  document.getElementById('taBatchUploadBtn').disabled = true;
+  document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
+  document.getElementById('audioBatchOverlay').classList.add('open');
+  try {
+    const albumIds = albumId ? [albumId] : (artist?.albums || []).map(a => a.id);
+    const rows = [];
+    for (let i = 0; i < albumIds.length; i += 50) {
+      const chunk = albumIds.slice(i, i + 50);
+      rows.push(...await dbGet(`/tracks?album_id=in.(${chunk.join(',')})&select=id,name,album_id,track_number,duration_ms&order=album_id,track_number`));
+    }
+    await loadTrackAudio(rows.map(t => t.id));
+    _taBatch.tracks = rows;
+    taBatchRender();
+  } catch (e) {
+    document.getElementById('taBatchList').innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${(e.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
+  }
+}
+function taBatchClose() { document.getElementById('audioBatchOverlay').classList.remove('open'); _taBatch = null; }
+
+function taBatchAddFiles(inputEl) {
+  const picked = [...(inputEl.files || [])].filter(f =>
+    /^audio\//.test(f.type) || /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|webm)$/i.test(f.name));
+  inputEl.value = '';
+  if (!picked.length || !_taBatch) return;
+  const seen = new Set();
+  _taBatch.files = _taBatch.files.concat(picked).filter(f => {
+    const k = f.name + ':' + f.size; if (seen.has(k)) return false; seen.add(k); return true;
+  });
+  taBatchAutoMatch();
+  taBatchRender();
+}
+
+function taBatchAutoMatch() {
+  const { tracks, files } = _taBatch;
+  const normTracks = tracks.map(t => taNormName(t.name));
+  const pairs = [];
+  files.forEach((f, fi) => {
+    const fn = taNormName(f.name);
+    tracks.forEach((t, ti) => {
+      const s = taSim(fn, normTracks[ti]);
+      if (s >= 0.34) pairs.push({ fi, tid: t.id, s });
+    });
+  });
+  pairs.sort((a, b) => b.s - a.s);
+  const usedFile = new Set(), assign = {};
+  pairs.forEach(p => {
+    if (assign[p.tid] != null || usedFile.has(p.fi)) return;
+    assign[p.tid] = p.fi; usedFile.add(p.fi);
+  });
+  _taBatch.assign = assign;
+}
+
+function taBatchRender() {
+  const box = document.getElementById('taBatchList');
+  if (!box || !_taBatch) return;
+  const { tracks, files, assign } = _taBatch;
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  if (!tracks.length) { box.innerHTML = '<div class="oa-albs-note">No tracks in this selection.</div>'; taBatchSync(); return; }
+  const matched = Object.values(assign).filter(v => v != null).length;
+  const usedFiles = new Set(Object.values(assign).filter(v => v != null));
+  const opts = sel => '<option value="">— none —</option>' +
+    files.map((f, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${esc(f.name)}</option>`).join('');
+  let html = files.length
+    ? `<div style="font-size:.5rem;color:var(--text-muted);margin-bottom:.4rem">${matched} of ${tracks.length} track${tracks.length === 1 ? '' : 's'} matched from ${files.length} file${files.length === 1 ? '' : 's'}. Adjust any pairing below.</div>`
+    : '<div class="oa-albs-note">Add audio files above — they’ll be auto-matched to these tracks by name.</div>';
+  html += tracks.map(t => `
+    <div style="display:flex;align-items:center;gap:.45rem;font-size:.52rem;padding:.22rem 0;border-bottom:1px solid #ffffff10">
+      <span style="opacity:.5;width:1.2rem;text-align:right;flex-shrink:0">${t.track_number || ''}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}${taData[t.id] ? ' <span style="color:#22c55e" title="already has background audio">🎧</span>' : ''}</span>
+      <select class="m-input" style="flex:1.4;min-width:0;font-size:.5rem;padding:.15rem .3rem"${files.length ? '' : ' disabled'} onchange="taBatchReassign('${t.id}', this.value)">${opts(assign[t.id])}</select>
+      <span id="tabx-${t.id}" style="width:5rem;font-size:.45rem;flex-shrink:0;text-align:right;color:var(--text-muted)">${taData[t.id] ? 'has audio' : ''}</span>
+    </div>`).join('');
+  const unused = files.map((f, i) => usedFiles.has(i) ? null : f).filter(Boolean);
+  if (unused.length) html += `<div style="font-size:.46rem;color:var(--text-muted);margin-top:.5rem">${unused.length} file${unused.length === 1 ? '' : 's'} not matched to any track: ${unused.map(f => esc(f.name)).join(', ')}</div>`;
+  box.innerHTML = html;
+  taBatchSync();
+}
+
+function taBatchReassign(tid, val) {
+  if (!_taBatch) return;
+  if (val === '') delete _taBatch.assign[tid];
+  else _taBatch.assign[tid] = Number(val);
+  taBatchRender();   // re-render so the "not matched" list and counts stay honest
+}
+
+function taBatchSync() {
+  const consent = document.getElementById('taBatchConsent')?.checked;
+  const n = _taBatch ? Object.values(_taBatch.assign).filter(v => v != null).length : 0;
+  const btn = document.getElementById('taBatchUploadBtn');
+  if (btn) { btn.disabled = !(consent && n > 0); btn.textContent = n > 0 ? `Upload ${n} file${n === 1 ? '' : 's'}` : 'Upload matched'; }
+}
+
+async function taBatchUpload() {
+  if (!_taBatch || !document.getElementById('taBatchConsent').checked) return;
+  _taConsentOk = true;
+  const entries = Object.entries(_taBatch.assign).filter(([, fi]) => fi != null);
+  if (!entries.length) return;
+  const btn = document.getElementById('taBatchUploadBtn');
+  const status = document.getElementById('taBatchStatus');
+  btn.disabled = true;
+  let done = 0, ok = 0;
+  for (const [tid, fi] of entries) {
+    const cell = document.getElementById('tabx-' + tid);
+    if (cell) { cell.textContent = 'uploading…'; cell.style.color = ''; }
+    const t = _taBatch.tracks.find(x => x.id === tid);
+    const r = await taUploadOneFile(tid, _taBatch.files[fi], t?.duration_ms);
+    done++; if (r.ok) ok++;
+    if (cell) {
+      cell.textContent = r.ok ? (r.warn ? `±${r.warn}s` : '✓ done') : '✗ ' + r.msg;
+      cell.style.color = r.ok ? (r.warn ? '#f59e0b' : '#22c55e') : '#ef4444';
+    }
+    status.textContent = `${done}/${entries.length} uploaded`;
+  }
+  status.textContent = `Done — ${ok}/${entries.length} uploaded`;
+  taBatchSync();
+  // Refresh any open track list for the affected album(s) so the 🎧 badges update.
+  const albs = new Set(_taBatch.tracks.map(t => t.album_id));
+  albs.forEach(aid => { if (_maTrkCache[aid]) maRenderTracks(_taBatch.artistId, aid); });
 }
 
 function ytpPlayerChromeH() {
@@ -7792,11 +8027,12 @@ function renderMyArtists(isAdmin) {
           <div class="oa-name">${esc(a.name)}</div>
           <div class="oa-meta">${a.albums.length} album${a.albums.length===1?'':'s'} · ${a.track_count} track${a.track_count===1?'':'s'}${isAdmin && !a.mine ? ' · added by ' + esc(a.added_by_name || '?') : ''}</div>
         </div>
+        <button type="button" class="oa-act" title="Batch-upload background-play audio for this artist (rights holders only)" onclick="taBatchOpen('${a.id}', null)">🎧 Audio</button>
         <button type="button" class="oa-act" onclick="maRename('${a.id}')">✎ Rename</button>
         <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444" onclick="maDeleteArtist('${a.id}')">✕ Remove</button>
       </div>
       <div class="oa-albs">
-        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Rename this album" onclick="maRenameAlbum('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div>`).join('')}
+        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio for this album (rights holders only)" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Rename this album" onclick="maRenameAlbum('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div>`).join('')}
       </div>
     </div>`).join('');
 }
@@ -7838,7 +8074,7 @@ function maRenderTracks(artistId, albumId) {
       <span class="ma-trk-name">${esc(t.name)}</span>
       <span class="ma-trk-dur">${t.duration_ms ? fmtDur(t.duration_ms) : ''}</span>
       <span id="ta-st-${t.id}" style="font-size:.42rem;flex-shrink:0;${taData[t.id] ? 'color:#22c55e' : ''}">${taData[t.id] ? '🎧' : ''}</span>
-      <label class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0;cursor:pointer" title="${taData[t.id] ? 'Replace the background-play audio file' : 'Upload an audio file for background play (rights holders only)'}" onclick="if(!taConsentGate()){event.preventDefault();return false}">${taData[t.id] ? '↻ Audio' : '＋ Audio'}<input type="file" accept="audio/*" style="display:none" onchange="taUploadFile('${t.id}', this, ${t.duration_ms || null})"></label>
+      <button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="${taData[t.id] ? 'Replace the background-play audio file' : 'Upload an audio file for background play (rights holders only)'}" onclick="taQuickUpload('${t.id}', ${t.duration_ms || null})">${taData[t.id] ? '↻ Audio' : '＋ Audio'}</button>
       <button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="${t.has_lyrics ? 'Edit lyrics' : 'Add lyrics'}" onclick="maEditLyrics('${artistId}','${albumId}','${t.id}')">${t.has_lyrics ? '✎ Lyrics' : '＋ Lyrics'}</button>
       <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this track" onclick="maDeleteTrack('${artistId}','${albumId}','${t.id}')">✕</button>
     </div>
