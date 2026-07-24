@@ -2206,6 +2206,12 @@ let _ytBgAudio          = null;  // silent keepalive for mobile background playb
 let _ytBgResumeTimer    = null;  // retries playVideo while tab is hidden
 let _ytMediaPosTimer    = null;  // media session position updates
 let _ytMediaSessionReady = false;
+let taData              = {};    // trackId -> {url, duration}: rights-holder audio for background play
+let _taAudioEl          = null;  // real <audio> element that plays while the page is hidden
+let _taBgActive         = false; // sound is currently coming from the uploaded audio, not the embed
+let _taBgLogged         = false; // play_event already logged for the current background track
+let _taBgStartPos       = 0;     // where background audio started (for the 10s play threshold)
+let _taConsentOk        = false; // rights-ownership notice acknowledged this session
 
 const isAlbumVisible = (albumId) => !excludedAlbumIds.has(albumId);
 
@@ -3217,6 +3223,8 @@ function closeYTPlayer() {
   _ytCurrentPlay = null;
   _ytUserWantsPlay = false;
   ytpStopBgKeepalive();
+  _taBgActive = false;
+  try { _taAudioEl?.pause(); } catch (_) {}
   ytpClearMediaSession();
   dismissYTQueueChoice();
   // Destroy YT API player
@@ -3512,6 +3520,7 @@ function attachYTAPIPlayer() {
             }, 10000);
           }
         } else if (ev.data === 2) { // PAUSED
+          if (_taBgActive) return; // our own pause - uploaded audio has the sound
           ytpSetPlayPauseIcon(false);
           ytpSetMediaPlaybackState('paused');
           lyrSyncStop();
@@ -3931,18 +3940,23 @@ function ytpInitMediaSession() {
   try {
     navigator.mediaSession.setActionHandler('play', () => {
       _ytUserWantsPlay = true;
+      if (_taBgActive) { _taAudioEl?.play?.().catch(() => {}); ytpSetMediaPlaybackState('playing'); return; }
+      if (document.visibilityState === 'hidden' && taEnterBgAudio()) return;
       ytAPIPlayer?.playVideo?.();
       ytpStartBgKeepalive();
     });
     navigator.mediaSession.setActionHandler('pause', () => {
       _ytUserWantsPlay = false;
+      if (_taBgActive) { try { _taAudioEl?.pause(); } catch (_) {} ytpSetMediaPlaybackState('paused'); return; }
       ytAPIPlayer?.pauseVideo?.();
       ytpStopBgKeepalive();
     });
-    navigator.mediaSession.setActionHandler('nexttrack', () => ytNextTrack());
-    navigator.mediaSession.setActionHandler('previoustrack', () => ytPrevTrack());
+    navigator.mediaSession.setActionHandler('nexttrack', () => { if (_taBgActive) taAdvanceBg(); else ytNextTrack(); });
+    navigator.mediaSession.setActionHandler('previoustrack', () => { if (_taBgActive) taPrevBg(); else ytPrevTrack(); });
     navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime != null && ytAPIPlayer?.seekTo) {
+      if (details.seekTime == null) return;
+      if (_taBgActive) { try { _taAudioEl.currentTime = details.seekTime; } catch (_) {} return; }
+      if (ytAPIPlayer?.seekTo) {
         ytAPIPlayer.seekTo(details.seekTime, true);
         if (_ytUserWantsPlay) ytAPIPlayer.playVideo();
       }
@@ -3978,6 +3992,7 @@ function ytpUpdateMediaSession() {
 
 function ytpUpdateMediaPosition() {
   if (!('setPositionState' in navigator.mediaSession) || !ytAPIPlayer) return;
+  if (_taBgActive) return; // taOnAudioTime feeds positions from the audio element
   try {
     const dur = ytAPIPlayer.getDuration?.() || 0;
     const pos = ytAPIPlayer.getCurrentTime?.() || 0;
@@ -4041,6 +4056,7 @@ function ytpKickBackgroundPlay() {
 function ytpOnVisibilityChange() {
   if (document.visibilityState === 'hidden') {
     if (!_ytUserWantsPlay) return;
+    if (taEnterBgAudio()) { ytpUpdateMediaSession(); return; } // uploaded audio carries the sound - no embed kicks
     ytpStartBgKeepalive();
     ytpUpdateMediaSession();
     ytpKickBackgroundPlay();
@@ -4048,6 +4064,7 @@ function ytpOnVisibilityChange() {
     _ytBgResumeTimer = setInterval(ytpKickBackgroundPlay, 2000);
   } else {
     if (_ytBgResumeTimer) { clearInterval(_ytBgResumeTimer); _ytBgResumeTimer = null; }
+    if (_taBgActive) { taExitBgAudio(); return; }
     if (_ytUserWantsPlay) {
       setTimeout(ytpKickBackgroundPlay, 100);
       setTimeout(ytpKickBackgroundPlay, 500);
@@ -4073,6 +4090,222 @@ function ytpOpenInYouTube() {
   try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
   ytpStopBgKeepalive();
   window.open(url, '_blank', 'noopener');
+}
+
+// ── True background play via rights-holder-uploaded audio ──────
+// The YouTube embed can't sound while the page is hidden, but tracks whose
+// rights holder uploaded an audio file (jukebox.track_audio) can: on hide we
+// hand the sound to a real <audio> element at the same position, and on
+// return we hand it back to the embed. The OS media pipeline owns the audio
+// element, so lock-screen play/pause/next/prev and screen-off playback work.
+function taPublicUrl(path) {
+  return `${SB_AUTH_URL}/storage/v1/object/public/jukebox-audio/${path}`;
+}
+
+function taTrackAudio(trackId) { return (trackId && taData[trackId]) || null; }
+
+function taEnsureAudioEl() {
+  if (_taAudioEl) return _taAudioEl;
+  _taAudioEl = document.createElement('audio');
+  _taAudioEl.id = 'ta-bg-audio';
+  _taAudioEl.preload = 'auto';
+  _taAudioEl.setAttribute('playsinline', '');
+  _taAudioEl.addEventListener('ended', taOnAudioEnded);
+  _taAudioEl.addEventListener('timeupdate', taOnAudioTime);
+  document.body.appendChild(_taAudioEl);
+  return _taAudioEl;
+}
+
+// Page just hid: take over from the embed if the current track has audio.
+// Returns true when background audio is now carrying the sound.
+function taEnterBgAudio() {
+  const item = ytQueue[ytQueueIdx];
+  const ta = taTrackAudio(item?.trackId);
+  if (!ta || !_ytUserWantsPlay) return false;
+  let pos = 0;
+  try { pos = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
+  const a = taEnsureAudioEl();
+  if (a.dataset.trackId !== String(item.trackId)) { a.src = ta.url; a.dataset.trackId = String(item.trackId); }
+  _taBgActive = true;
+  _taBgLogged = true;   // the embed already logged this play - don't double count
+  _taBgStartPos = pos;
+  try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+  ytpStopBgKeepalive(); // real audio holds the media pipeline now
+  try { a.currentTime = pos; } catch (_) {}
+  a.play().then(() => ytpSetMediaPlaybackState('playing'))
+          .catch(() => { _taBgActive = false; ytpStartBgKeepalive(); });
+  return _taBgActive;
+}
+
+// Page visible again: hand the sound back to the embed at the audio position.
+function taExitBgAudio() {
+  if (!_taBgActive) return;
+  _taBgActive = false;
+  const a = _taAudioEl;
+  const pos = a ? (a.currentTime || 0) : 0;
+  try { a?.pause(); } catch (_) {}
+  const item = ytQueue[ytQueueIdx];
+  if (!ytAPIPlayer || !item) return;
+  try {
+    const cur = ytAPIPlayer.getVideoData?.()?.video_id;
+    if (cur && item.videoId && cur !== item.videoId) {
+      // Queue advanced while backgrounded - bring the embed to the right track
+      ytAPIPlayer.loadVideoById({ videoId: item.videoId, startSeconds: pos });
+      const titleEl = ytPlayerEl?.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = item.title || '';
+      if (_ytpLyricsOpen && item.trackId) ytpUpdateLyrics(item.trackId);
+      ytpOnTrackChange(item.videoId, item.trackId, item.title);
+      updateYTQueueUI();
+    } else {
+      ytAPIPlayer.seekTo(pos, true);
+    }
+    if (_ytUserWantsPlay) ytAPIPlayer.playVideo();
+  } catch (_) {}
+}
+
+// Start queue index `idx` on background audio. Returns false if that track
+// has no uploaded audio file.
+function taPlayBgIdx(idx) {
+  // Manual/auto jump counts as "played" for the no-repeat shuffle bag
+  if (_ytShuffleBagQueue === ytQueue) {
+    const bagPos = _ytShuffleBag.indexOf(idx);
+    if (bagPos !== -1) _ytShuffleBag.splice(bagPos, 1);
+  }
+  ytQueueIdx = idx;
+  const item = ytQueue[idx];
+  const ta = taTrackAudio(item?.trackId);
+  if (!ta) return false;
+  const a = taEnsureAudioEl();
+  a.src = ta.url;
+  a.dataset.trackId = String(item.trackId);
+  try { a.currentTime = 0; } catch (_) {}
+  _taBgLogged = false;
+  _taBgStartPos = 0;
+  a.play().catch(() => {});
+  ytVideoId = item.videoId;
+  nowPlayingTrackId = item.trackId || null;
+  ytpUpdateMediaSession();
+  return true;
+}
+
+// Advance while backgrounded. Tracks without uploaded audio can't sound with
+// the page hidden, so they're passed over (the queue index still moves so the
+// embed resumes in the right place); if nothing ahead has audio, stop.
+function taAdvanceBg() {
+  if (!ytQueue.length) { taStopBg(); return; }
+  for (let hops = 0; hops < ytQueue.length; hops++) {
+    let ni;
+    if (ytShuffle && ytQueue.length > 1) ni = _ytShuffleNextIdx();
+    else if (ytQueueIdx < ytQueue.length - 1) ni = ytQueueIdx + 1;
+    else if (ytRepeat) ni = 0;
+    else { taStopBg(); return; }
+    if (taPlayBgIdx(ni)) return;
+  }
+  taStopBg();
+}
+
+function taPrevBg() {
+  const a = _taAudioEl;
+  if (a && a.currentTime > 3) { try { a.currentTime = 0; } catch (_) {} return; }
+  let ni = ytQueueIdx > 0 ? ytQueueIdx - 1 : (ytRepeat ? ytQueue.length - 1 : -1);
+  while (ni >= 0 && !taTrackAudio(ytQueue[ni]?.trackId)) ni--;
+  if (ni < 0) { if (a) { try { a.currentTime = 0; } catch (_) {} } return; }
+  taPlayBgIdx(ni);
+}
+
+function taStopBg() {
+  _taBgActive = false;
+  try { _taAudioEl?.pause(); } catch (_) {}
+  _ytUserWantsPlay = false;
+  ytpSetMediaPlaybackState('paused');
+}
+
+function taOnAudioEnded() {
+  if (!_taBgActive) return;
+  taAdvanceBg();
+}
+
+function taOnAudioTime() {
+  if (!_taBgActive || !_taAudioEl) return;
+  // Lock-screen position readout (interval timers are throttled while hidden;
+  // timeupdate keeps firing because the audio pipeline is live)
+  if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
+    try {
+      const dur = _taAudioEl.duration;
+      if (dur > 0 && isFinite(dur)) {
+        navigator.mediaSession.setPositionState({ duration: dur, playbackRate: 1, position: Math.min(_taAudioEl.currentTime, dur) });
+      }
+    } catch (_) {}
+  }
+  // Same 10-second play threshold the embed uses
+  if (!_taBgLogged && _taAudioEl.currentTime - _taBgStartPos >= 10) {
+    _taBgLogged = true;
+    const item = ytQueue[ytQueueIdx];
+    if (item?.trackId) logYTPlay(item.videoId, item.trackId, 'play', 'audio');
+  }
+}
+
+// ── Audio upload (rights holders only) ─────────────────────────
+function taConsentGate() {
+  if (_taConsentOk) return true;
+  _taConsentOk = confirm(
+    'Upload audio for background play?\n\n' +
+    'Only do this if you own the rights to this music. This must not be used for ' +
+    'copyrighted music you do not own the rights to.\n\n' +
+    'Your account and the date of this consent are recorded with every uploaded file.');
+  return _taConsentOk;
+}
+
+function taProbeDuration(file) {
+  return new Promise(res => {
+    try {
+      const url = URL.createObjectURL(file);
+      const a = new Audio();
+      const done = d => { URL.revokeObjectURL(url); res(d); };
+      const t = setTimeout(() => done(null), 8000);
+      a.onloadedmetadata = () => { clearTimeout(t); done(isFinite(a.duration) ? Math.round(a.duration * 10) / 10 : null); };
+      a.onerror = () => { clearTimeout(t); done(null); };
+      a.src = url;
+    } catch (_) { res(null); }
+  });
+}
+
+async function taUploadFile(trackId, inputEl, expectMs) {
+  const file = inputEl.files?.[0];
+  if (!file) return;
+  inputEl.value = '';
+  const st = document.getElementById('ta-st-' + trackId);
+  const setSt = (t, color) => { if (st) { st.textContent = t; st.style.color = color || ''; } };
+  if (file.size > 30 * 1024 * 1024) { setSt('Too big (max 30 MB)', '#ef4444'); return; }
+  setSt('Uploading…', '');
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    if (!session) throw new Error('Not signed in');
+    const ext = ((file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'mp3';
+    const path = `${trackId}/${Date.now()}.${ext}`;
+    const dur = await taProbeDuration(file);
+    const { error } = await sbAuth.storage.from('jukebox-audio')
+      .upload(path, file, { contentType: file.type || 'audio/mpeg', upsert: false });
+    if (error) throw new Error(error.message);
+    await dbUpsert('/track_audio', 'track_id', {
+      track_id: trackId,
+      storage_path: path,
+      source_video_id: ytData[trackId]?.video_id || null,
+      duration_seconds: dur,
+      uploaded_by: session.user.id,
+      uploader_email: session.user.email || null,
+      uploader_name: googleUser?.name || null,
+      consent_at: new Date().toISOString(),
+    });
+    taData[trackId] = { url: taPublicUrl(path), duration: dur };
+    const diff = (expectMs && dur) ? Math.abs(dur - expectMs / 1000) : 0;
+    if (diff > 3) setSt(`✓ Uploaded - length differs from the video by ${Math.round(diff)}s`, '#f59e0b');
+    else setSt('✓ Ready for background play', '#22c55e');
+  } catch (e) {
+    const msg = /policy|denied|row-level|duplicate/i.test(e.message || '')
+      ? 'Audio for this track was uploaded by someone else' : (e.message || 'Upload failed');
+    setSt('✗ ' + msg, '#ef4444');
+  }
 }
 
 function ytpPlayerChromeH() {
@@ -6027,7 +6260,22 @@ async function loadYT(trackIds) {
     if (row.metric_name === 'youtube_video_id')  map[tid].video_id  = row.metric_text_value;
     if (row.metric_name === 'youtube_thumbnail') map[tid].thumbnail = row.metric_text_value;
   }
+  loadTrackAudio(trackIds);   // non-blocking - background-play audio availability
   return map;
+}
+
+// Rights-holder-uploaded audio files (background play) for these tracks.
+async function loadTrackAudio(trackIds) {
+  if (!trackIds.length) return;
+  try {
+    const chunks = [];
+    for (let i = 0; i < trackIds.length; i += 50) chunks.push(trackIds.slice(i, i + 50));
+    const results = await Promise.all(chunks.map(c =>
+      dbGet(`/track_audio?track_id=in.(${c.join(',')})&select=track_id,storage_path,duration_seconds`)));
+    results.flat().forEach(r => {
+      taData[r.track_id] = { url: taPublicUrl(r.storage_path), duration: Number(r.duration_seconds) || null };
+    });
+  } catch (_) {}
 }
 
 // ── Album helpers ─────────────────────────────────────────────
@@ -7306,9 +7554,54 @@ function amFtRender() {
           </div>
         </div>`).join('')}
       </div>
+    </div>
+    <div class="am-ft-section">
+      <div class="m-fl">Background play (optional)</div>
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none">
+        <input type="checkbox" id="amTaChk" onchange="amTaToggle(this.checked)" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
+        <span>Upload audio files for these tracks so the music keeps playing when the phone screen is off or the app is in the background.</span>
+      </label>
+      <div id="amTaBody" style="display:none;margin-top:.6rem"></div>
     </div>`;
   amBgSync();
   amFtDedupArts();   // fire-and-forget: hide duplicate cover options as hashes come in
+}
+
+async function amTaToggle(checked) {
+  const body = document.getElementById('amTaBody');
+  if (!body) return;
+  if (!checked) { body.style.display = 'none'; return; }
+  _taConsentOk = true;   // the rights notice is displayed right below the checkbox
+  body.style.display = '';
+  const warn = `<div style="border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.5rem;padding:.5rem .6rem;border-radius:6px;margin-bottom:.6rem;line-height:1.5">
+    ⚠ Only check this option if you own the rights to this music. It must not be applied to copyrighted
+    music you do not own the rights to. Your account and the date of this consent are recorded with every
+    uploaded file, and all plays are logged.</div>`;
+  body.innerHTML = warn + '<div class="oa-albs-note">Loading tracks…</div>';
+  try {
+    const albumIds = (amFt?.albums || []).map(a => a.id);
+    if (!albumIds.length) throw new Error('No albums to load tracks for');
+    const rows = await dbGet(`/tracks?album_id=in.(${albumIds.join(',')})&select=id,name,album_id,track_number,duration_ms&order=album_id,track_number`);
+    const yt = await loadYT(rows.map(t => t.id));   // also refreshes taData + video ids
+    Object.assign(ytData, yt);
+    const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const albName = {};
+    (amFt.albums || []).forEach(a => { albName[a.id] = a.name; });
+    body.innerHTML = warn + albumIds.map(aid => {
+      const trs = rows.filter(t => t.album_id === aid);
+      if (!trs.length) return '';
+      return `<div style="font-size:.5rem;font-weight:600;margin:.5rem 0 .25rem;opacity:.8">${esc(albName[aid] || '')}</div>` +
+        trs.map(t => `
+        <div style="display:flex;align-items:center;gap:.45rem;font-size:.52rem;padding:.18rem 0">
+          <span style="opacity:.5;width:1.1rem;text-align:right;flex-shrink:0">${t.track_number || ''}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</span>
+          <span id="ta-st-${t.id}" style="font-size:.46rem;flex-shrink:0;${taData[t.id] ? 'color:#22c55e' : 'opacity:.7'}">${taData[t.id] ? '✓ Ready' : ''}</span>
+          <label class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0;cursor:pointer">${taData[t.id] ? '↻ Replace' : '＋ Audio'}<input type="file" accept="audio/*" style="display:none" onchange="taUploadFile('${t.id}', this, ${t.duration_ms || null})"></label>
+        </div>`).join('');
+    }).join('');
+  } catch (e) {
+    body.innerHTML = warn + `<div style="color:#ef4444;font-size:.55rem">${(e.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
+  }
 }
 // Hide visually-duplicate cover options (same art served from different video thumbnails).
 // Tiny 8x8 average-hash per image; CORS-blocked images are kept visible.
@@ -7524,6 +7817,7 @@ async function maToggleTracks(artistId, albumId) {
         lr.forEach(r => have.add(r.track_id));
       }
       rows.forEach(t => { t.has_lyrics = have.has(t.id); });
+      await loadTrackAudio(ids);   // background-play audio availability -> taData
       _maTrkCache[albumId] = rows;
     } catch (e) {
       box.innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${e.message}</div>`;
@@ -7543,6 +7837,8 @@ function maRenderTracks(artistId, albumId) {
       <span class="ma-trk-no">${t.track_number || ''}</span>
       <span class="ma-trk-name">${esc(t.name)}</span>
       <span class="ma-trk-dur">${t.duration_ms ? fmtDur(t.duration_ms) : ''}</span>
+      <span id="ta-st-${t.id}" style="font-size:.42rem;flex-shrink:0;${taData[t.id] ? 'color:#22c55e' : ''}">${taData[t.id] ? '🎧' : ''}</span>
+      <label class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0;cursor:pointer" title="${taData[t.id] ? 'Replace the background-play audio file' : 'Upload an audio file for background play (rights holders only)'}" onclick="if(!taConsentGate()){event.preventDefault();return false}">${taData[t.id] ? '↻ Audio' : '＋ Audio'}<input type="file" accept="audio/*" style="display:none" onchange="taUploadFile('${t.id}', this, ${t.duration_ms || null})"></label>
       <button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="${t.has_lyrics ? 'Edit lyrics' : 'Add lyrics'}" onclick="maEditLyrics('${artistId}','${albumId}','${t.id}')">${t.has_lyrics ? '✎ Lyrics' : '＋ Lyrics'}</button>
       <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this track" onclick="maDeleteTrack('${artistId}','${albumId}','${t.id}')">✕</button>
     </div>
@@ -9288,7 +9584,7 @@ function patchYTPlayDuration() {
 }
 
 // ── Log actual YouTube play or queue event ──────────────────────────────────
-async function logYTPlay(videoId, trackId, eventType) {
+async function logYTPlay(videoId, trackId, eventType, source) {
   const track = findTrackById(trackId);
   if (!track) return;
   const ip    = await getClientIP();
@@ -9304,6 +9600,7 @@ async function logYTPlay(videoId, trackId, eventType) {
         artist_id:      track.artist_id  || null,
         album_id:       track.album_id   || null,
         event_type:     eventType,
+        source:         source || (eventType === 'play' ? 'video' : null),
         ip_address:     ip,
         device_id:      getDeviceId(),
         user_email:     googleUser?.email || null,
