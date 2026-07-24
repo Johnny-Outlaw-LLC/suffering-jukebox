@@ -1729,6 +1729,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closeAddMusic()">Cancel</button>
       <button class="m-btn ghost" id="amBackBtn" onclick="amBack()" style="display:none">‹ Back</button>
+      <button class="m-btn ghost" id="amGoBtn" onclick="amGoToArtist()" style="display:none"></button>
       <button class="m-btn" id="amNextBtn" onclick="amNext()" disabled>Next: Choose Albums ›</button>
       <span class="mf-status" id="amFooterStatus"></span>
     </div>
@@ -5187,6 +5188,20 @@ async function initLanding() {
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
+// Re-fetch landing stats and re-render the artist grid (e.g. right after an import)
+async function refreshLandingStats() {
+  if (!isLandingMode) return;
+  try {
+    const rows = await fetch(`${REST}/rpc/landing_stats`, {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`,
+        'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
+      body: JSON.stringify({ p_user_email: googleUser?.email || null })
+    }).then(r => r.json());
+    if (Array.isArray(rows) && rows.length) { landingStats = rows; renderLanding(); }
+  } catch (_) {}
+}
+
 function defaultLandingCompare(a, b) {
   const pinned = ['silver jews', 'purple mountains', 'pavement'];
   const ai = pinned.indexOf((a.name || '').toLowerCase());
@@ -7081,6 +7096,8 @@ function amSetFooter(backVisible, nextLabel, nextDisabled) {
   const back = document.getElementById('amBackBtn'), next = document.getElementById('amNextBtn');
   if (back) back.style.display = backVisible ? '' : 'none';
   if (next) { next.innerHTML = nextLabel; next.disabled = !!nextDisabled; }
+  const go = document.getElementById('amGoBtn');
+  if (go) go.style.display = 'none';
 }
 function amResetWizard() {
   amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
@@ -7157,6 +7174,7 @@ async function amGoFinetune() {
   } finally {
     amBusy = false;
     amSetFooter(false, '✓ Finish', false);
+    amShowGoBtn();
   }
 }
 
@@ -7194,8 +7212,7 @@ function amFtRender() {
           </div>
         </div>`).join('')}
       </div>
-    </div>
-    <div class="am-ft-section" id="amFtActions" style="display:flex;gap:.5rem;flex-wrap:wrap">${amFtActionBtns()}</div>`;
+    </div>`;
   amBgSync();
   amFtDedupArts();   // fire-and-forget: hide duplicate cover options as hashes come in
 }
@@ -7238,33 +7255,20 @@ function amArtHash(u) {
   });
 }
 function amHashDist(a, b) { let n = 0; for (let i = 0; i < a.length; i++) n += a[i] ^ b[i]; return n; }
-function amFtActionBtns() {
-  const esc = s => (s || '').replace(/</g, '&lt;');
+function amShowGoBtn() {
+  const go = document.getElementById('amGoBtn');
+  if (!go) return;
   const a = amFt && amFt.artist;
-  if (!a) return '';
-  // On the artist's own jukebox page both buttons are pointless
-  if (IS_COMMUNITY && FEATURED_ARTIST_ID === a.id) return '';
-  const inJuke = addedCommunityIds.has(a.id) || selectedIds.has(a.id);
-  return (a.slug ? `<button type="button" class="oa-act" onclick="amGoToArtist()">Go to ${esc(a.name)} Jukebox →</button>` : '') +
-    `<button type="button" class="oa-act" id="amFtAddBtn" onclick="amAddToJukebox()"${inJuke ? ' disabled' : ''}>${inJuke ? '✓ In current jukebox' : '＋ Add ' + esc(a.name) + ' to current Jukebox'}</button>`;
+  // On the artist's own jukebox page the button is pointless
+  const show = !!(a && a.slug && !(IS_COMMUNITY && FEATURED_ARTIST_ID === a.id));
+  go.style.display = show ? '' : 'none';
+  if (show) go.textContent = `Go to ${a.name} Jukebox →`;
 }
 async function amGoToArtist() {
   if (!amFt?.artist?.slug) return;
-  if (amBgBusy && !confirm('Lyrics & release dates are still loading in the background — leaving this page will stop that. Leave anyway?')) return;
-  try { await amFtSave(); } catch (_) {}   // keep any fine-tune edits before leaving
-  window.location.href = '/' + amFt.artist.slug;
-}
-async function amAddToJukebox() {
-  const a = amFt && amFt.artist;
-  if (!a || addedCommunityIds.has(a.id) || selectedIds.has(a.id)) return;
-  const btn = document.getElementById('amFtAddBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
-  try {
-    await oaToggleJukebox(a.id);
-    if (btn) btn.textContent = '✓ In current jukebox';
-  } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = '＋ Add to current Jukebox'; }
-  }
+  try { await amFtSave(); } catch (_) {}   // keep any fine-tune edits
+  // New tab, so background lyrics & release dates keep loading in this one
+  window.open('/' + amFt.artist.slug, '_blank');
 }
 function amFtPickColor(c) {
   amFtColor = c;
@@ -7327,6 +7331,7 @@ async function amFinish() {
       selectedIds = new Set(allArtists.map(a => a.id));
       await loadData();
       updateFilterHeader();
+      await refreshLandingStats();
     } catch (_) {}
     amBusy = false;
     if (amBgBusy) {
@@ -7735,6 +7740,7 @@ async function amImport() {
         updateFilterHeader();
       } catch (_) {}
       amLogLine('ok', 'Added. Find it under “Other Artists” in the filter bar.');
+      refreshLandingStats();   // new artist card appears on the landing grid right away
     }
     if (data.artist_id) delete communityAlbumsCache[data.artist_id];
     amImportOk = true;
