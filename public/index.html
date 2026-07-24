@@ -347,6 +347,8 @@ body:not(.light) .tt-num { color: var(--text); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)} }
 /* ── Community / Add Music ── */
+.am-bg-note { display: flex; align-items: center; gap: .45rem; font-size: .52rem; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .65rem; margin-bottom: .7rem; }
+.am-bg-note.done { color: #22c55e; border-color: rgba(34,197,94,.35); }
 .hdr-page-link { text-decoration: none; white-space: nowrap; }
 .hdr-add-music-btn { white-space: nowrap; }
 .am-albums { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: .4rem; background: var(--bg-card); }
@@ -1675,7 +1677,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div class="am-steps" id="amSteps">
         <div class="am-step"><span class="am-step-dot">1</span>Find the artist</div>
         <div class="am-step"><span class="am-step-dot">2</span>Pick albums</div>
-        <div class="am-step"><span class="am-step-dot">3</span>Lyrics &amp; dates</div>
+        <div class="am-step"><span class="am-step-dot">3</span>Import</div>
         <div class="am-step"><span class="am-step-dot">4</span>Fine-tune</div>
       </div>
       <div class="am-step-status" id="amStepStatus" style="display:none"></div>
@@ -1720,6 +1722,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       </div>
       <!-- STEP 4: fine-tuning -->
       <div class="am-pane" id="amPane4">
+        <div class="am-bg-note" id="amBgNote" style="display:none"></div>
         <div id="amFtBody"></div>
       </div>
     </div>
@@ -6719,6 +6722,9 @@ let amFt       = null;  // fine-tune data from the edge function
 let amFtColor  = null;  // chosen chart color
 let amMinimized = false; // wizard hidden, work continuing in the background
 let _amLastStatus = ''; // last step-status line, mirrored on the minimized pill
+let amBgBusy = false;      // background lyrics/date enrichment in flight
+let _amBgStatus = '';      // background enrichment status (pill + fine-tune banner + details)
+let _amWizardDone = false; // user hit Finish while enrichment was still running
 let amIdent = null;      // identify payload: wiki summary, discography, channel, existing flags
 let amManual = false;    // manual add mode: user supplies artist name + playlist links
 
@@ -6897,12 +6903,13 @@ function openAddMusic() {
     if (confirm('Sign in with Google to add music to the jukebox. Sign in now?')) handleAuthClick();
     return;
   }
+  if (amBusy || amBgBusy) { amRestore(); return; }   // a job is still running — reopen it instead of resetting
   amResetWizard();
   document.getElementById('addMusicOverlay').classList.add('open');
   setTimeout(() => document.getElementById('amSearchInput')?.focus(), 50);
 }
 function closeAddMusic() {
-  if (amBusy) { amMinimize(); return; }   // never kill a running import, tuck it away instead
+  if (amBusy || amBgBusy) { amMinimize(); return; }   // never kill running work, tuck it away instead
   amMinimized = false;
   const mb = document.getElementById('am-minibar');
   if (mb) mb.style.display = 'none';
@@ -6927,12 +6934,13 @@ function amMiniSync() {
   const mb = document.getElementById('am-minibar');
   if (!mb || !amMinimized) return;
   const spin = mb.querySelector('.m-spin');
-  const failed = !amBusy && _amLastStatus.startsWith('\u2717');
-  if (spin) spin.style.display = amBusy ? '' : 'none';
-  mb.classList.toggle('done', !amBusy && !failed && amImportOk);
+  const failed = !amBusy && !amBgBusy && _amLastStatus.startsWith('\u2717');
+  if (spin) spin.style.display = (amBusy || amBgBusy) ? '' : 'none';
+  mb.classList.toggle('done', !amBusy && !amBgBusy && !failed && amImportOk);
   mb.classList.toggle('err', failed);
   mb.querySelector('.am-mini-txt').textContent =
     amBusy ? 'Adding music \u2014 ' + (_amLastStatus || 'working\u2026')
+    : amBgBusy ? (_amBgStatus || 'Adding lyrics & dates\u2026') + ' \u2014 click for details'
     : failed ? _amLastStatus + ' \u2014 click to reopen'
     : amImportOk ? '\u2713 Music added \u2014 click to fine-tune'
     : (_amLastStatus || 'Add Music \u2014 click to reopen');
@@ -7078,8 +7086,11 @@ function amResetWizard() {
   amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
   amArtistId = null; amImportOk = false; amFt = null; amFtColor = null;
   amMinimized = false; _amLastStatus = '';
+  _amWizardDone = false; _amBgStatus = '';
   const mb = document.getElementById('am-minibar');
   if (mb) mb.style.display = 'none';
+  const bn = document.getElementById('amBgNote');
+  if (bn) { bn.style.display = 'none'; bn.classList.remove('done'); bn.innerHTML = ''; }
   amStepReset(); amStepGo(1, '');
   amShowPane(1);
   amIdent = null; amManual = false;
@@ -7185,7 +7196,48 @@ function amFtRender() {
       </div>
     </div>
     <div class="am-ft-section" id="amFtActions" style="display:flex;gap:.5rem;flex-wrap:wrap">${amFtActionBtns()}</div>`;
+  amBgSync();
+  amFtDedupArts();   // fire-and-forget: hide duplicate cover options as hashes come in
 }
+// Hide visually-duplicate cover options (same art served from different video thumbnails).
+// Tiny 8x8 average-hash per image; CORS-blocked images are kept visible.
+async function amFtDedupArts() {
+  for (const wrap of document.querySelectorAll('#amFtBody .am-ft-arts')) {
+    const imgs = [...wrap.querySelectorAll('img')];
+    // hash the currently-selected cover first so it always survives dedup
+    imgs.sort((a, b) => (b.classList.contains('sel') ? 1 : 0) - (a.classList.contains('sel') ? 1 : 0));
+    await Promise.all(imgs.map(async im => { im._h = await amArtHash(im.dataset.u || im.src); }));
+    const kept = [];
+    for (const im of imgs) {
+      if (im._h && kept.some(k => amHashDist(k, im._h) <= 4)) im.style.display = 'none';
+      else if (im._h) kept.push(im._h);
+    }
+    if (imgs.filter(im => im.style.display !== 'none').length < 2) wrap.style.display = 'none';
+  }
+}
+function amArtHash(u) {
+  return new Promise(res => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const t = setTimeout(() => res(null), 8000);
+    img.onload = () => {
+      clearTimeout(t);
+      try {
+        const N = 8, c = document.createElement('canvas'); c.width = N; c.height = N;
+        const x = c.getContext('2d', { willReadFrequently: true });
+        x.drawImage(img, 0, 0, N, N);
+        const d = x.getImageData(0, 0, N, N).data;
+        const lum = [];
+        for (let p = 0; p < d.length; p += 4) lum.push(d[p] * .299 + d[p + 1] * .587 + d[p + 2] * .114);
+        const avg = lum.reduce((a, b) => a + b, 0) / lum.length;
+        res(lum.map(v => (v > avg ? 1 : 0)));
+      } catch (_) { res(null); }
+    };
+    img.onerror = () => { clearTimeout(t); res(null); };
+    img.src = u;
+  });
+}
+function amHashDist(a, b) { let n = 0; for (let i = 0; i < a.length; i++) n += a[i] ^ b[i]; return n; }
 function amFtActionBtns() {
   const esc = s => (s || '').replace(/</g, '&lt;');
   const a = amFt && amFt.artist;
@@ -7198,6 +7250,7 @@ function amFtActionBtns() {
 }
 async function amGoToArtist() {
   if (!amFt?.artist?.slug) return;
+  if (amBgBusy && !confirm('Lyrics & release dates are still loading in the background — leaving this page will stop that. Leave anyway?')) return;
   try { await amFtSave(); } catch (_) {}   // keep any fine-tune edits before leaving
   window.location.href = '/' + amFt.artist.slug;
 }
@@ -7276,7 +7329,16 @@ async function amFinish() {
       updateFilterHeader();
     } catch (_) {}
     amBusy = false;
-    closeAddMusic();
+    if (amBgBusy) {
+      // Lyrics & dates still loading — leave the details view parked behind the pill
+      _amWizardDone = true;
+      amShowPane(3);
+      amSetFooter(false, 'Fine-tune ›', false);
+      amMinimize();
+      amBgSync();
+    } else {
+      closeAddMusic();
+    }
   } catch (e) {
     amBusy = false;
     amStepFail(e.message);
@@ -7552,13 +7614,17 @@ function amLogLine(type, text) {
   b.appendChild(d); b.scrollTop = b.scrollHeight;
 }
 
-async function amEnrich(albumList) {
+// Slow enrichment (lyrics + release dates) — runs in the BACKGROUND after import.
+// Log lines stream into the pane-3 details view; the pill and fine-tune banner mirror progress.
+async function amEnrichBg(albumList) {
+  if (!albumList.length) { amBgFinished(null); return; }
+  amBgBusy = true;
   const out = { lyrics: 0, synced: 0, dates: 0 };
-  if (!albumList.length) return out;
   amLogLine('head', `▶ Looking up lyrics & album dates (${albumList.length} album${albumList.length===1?'':'s'})…`);
   for (let i = 0; i < albumList.length; i++) {
     const alb = albumList[i];
-    amStepGo(3, `Album ${i + 1} of ${albumList.length}: “${alb.name}”: fetching lyrics & release date…`);
+    _amBgStatus = `Adding lyrics & dates — album ${i + 1} of ${albumList.length}: “${alb.name}”`;
+    amBgSync();
     try {
       const data = await amFetch('?action=enrich', { method: 'POST', body: JSON.stringify({ album_id: alb.id }) });
       (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
@@ -7571,7 +7637,42 @@ async function amEnrich(albumList) {
   }
   amLogLine('ok', '✓ Lyrics & dates lookup complete.');
   if (IS_COMMUNITY) { try { await loadData(); } catch(_) {} }
-  return out;
+  amBgFinished(out);
+}
+function amBgFinished(out) {
+  amBgBusy = false;
+  _amBgStatus = out
+    ? `✓ Lyrics & dates added — lyrics for ${out.lyrics} track${out.lyrics === 1 ? '' : 's'}` +
+      (out.dates ? `, ${out.dates} release date${out.dates === 1 ? '' : 's'} corrected` : '')
+    : '✓ Lyrics & dates added';
+  amBgSync();
+  // Wizard already finished and nobody is mid-edit → tidy up automatically
+  if (_amWizardDone && (amMinimized || amStep === 3)) {
+    amMinimized = false;
+    const mb = document.getElementById('am-minibar');
+    if (mb) mb.style.display = 'none';
+    document.getElementById('addMusicOverlay').classList.remove('open');
+  }
+}
+// Mirror background progress onto the pill, the fine-tune banner and the details status line
+function amBgSync() {
+  amMiniSync();
+  const note = document.getElementById('amBgNote');
+  if (note) {
+    if (amBgBusy) {
+      note.style.display = 'flex'; note.classList.remove('done');
+      note.innerHTML = '<span class="m-spin"></span><span class="am-bg-note-txt"></span>';
+      note.querySelector('.am-bg-note-txt').textContent =
+        (_amBgStatus || 'Looking up lyrics & release dates…') + ' — keeps running while you fine-tune.';
+    } else if (_amBgStatus) {
+      note.style.display = 'flex'; note.classList.add('done');
+      note.textContent = _amBgStatus;
+    }
+  }
+  if (_amWizardDone) {
+    const st = document.getElementById('amStepStatus');
+    if (st) { st.style.display = ''; st.textContent = _amBgStatus; }
+  }
 }
 
 async function amImport() {
@@ -7636,16 +7737,11 @@ async function amImport() {
       amLogLine('ok', 'Added. Find it under “Other Artists” in the filter bar.');
     }
     if (data.artist_id) delete communityAlbumsCache[data.artist_id];
-    amSetFooter(false, '<span class="m-spin"></span>Finding lyrics…', true);
-    amStepGo(3, 'Looking up lyrics & release dates…');
-    const enr = await amEnrich(data.albums_detail || []);
     amImportOk = true;
-    amStepGo(4, `✓ ${data.tracks} track${data.tracks === 1 ? '' : 's'} live` +
-      (enr && enr.lyrics ? ` · lyrics for ${enr.lyrics}` : '') +
-      (enr && enr.dates ? ` · ${enr.dates} release date${enr.dates === 1 ? '' : 's'} corrected` : '') +
-      '. One last step: fine-tune how it looks.');
-    statusEl.textContent = '✓ Added'; statusEl.style.color = '#22c55e';
-    amSetFooter(false, 'Fine-tune ›', false);
+    statusEl.textContent = `✓ ${data.tracks} track${data.tracks === 1 ? '' : 's'} live`; statusEl.style.color = '#22c55e';
+    // Slow work (lyrics + release dates) continues in the background while the user fine-tunes
+    amEnrichBg(data.albums_detail || []);
+    await amGoFinetune();
   } catch (e) {
     amLogLine('err', `✗ ${e.message}`);
     amStepFail(e.message);
@@ -7700,6 +7796,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-07-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-07-23', items: [
+    'Adding an artist is much faster: your music goes live and the fine-tune step opens right after import, while lyrics & release dates keep loading in the background — the floating pill shows progress (click it for details) and closes itself when done.',
+    'The fine-tune step no longer shows duplicate album-cover options.',
+    'New “＋ Add Artist to the Jukebox” button on the home page, right on the Sort / Card Size row.',
     'Maximizing the player now opens the lyrics pane automatically — restoring it down puts the pane back the way you had it.',
     'New “Never Again” button in the player: signed-in users can block a song for good. Blocked songs are skipped by every shuffle, playlist and album play, and stay in the track lists struck through with an Unblock button.',
     'The Shuffle All / Shuffle Favorites buttons and playlist dropdowns moved up into the header bar on the home page, matching the artist jukebox pages.',
