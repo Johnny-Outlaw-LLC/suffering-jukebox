@@ -1449,6 +1449,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 }
 .landing-size-btn.active { border-color: var(--accent); color: var(--accent); }
 .landing-submitter-dd { position: relative; }
+.landing-artists-dd { position: relative; }
 .landing-submitter-btn {
   background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
   font-family: var(--mono); font-size: .56rem; padding: .42rem .6rem; border-radius: 8px; cursor: pointer;
@@ -1670,7 +1671,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
-          <button type="button" class="user-menu-item" id="user-menu-myjukebox" onclick="userMenuAction('myjukebox')">Manage My Jukebox</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">FAQ / How-To Guide</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
@@ -6257,6 +6257,8 @@ let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 let landingSubmitterFilter = new Set(JSON.parse(localStorage.getItem('sj_landing_submitters') || '[]'));
 let _landingSubmitterKeys = [];
 let _submitterMenuOpen = false;
+let _landingArtistKeys = [];
+let _artistsMenuOpen = false;
 
 function fmtScore(n) {
   n = Number(n) || 0;
@@ -6410,6 +6412,54 @@ function clearSubmitterFilter(e) {
   renderLanding();
 }
 
+// ── Artists include/exclude multi-select (landing) — replaces Manage My Jukebox.
+// Checkbox checked = included; unchecking hides the artist (persists to the
+// user's account). Any hide elsewhere re-renders the landing, so a hidden
+// artist's box automatically unchecks here.
+function landingArtistOptions() {
+  return [...landingStats].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+function artistsBtnLabel() {
+  const total = landingStats.length;
+  const hidden = landingStats.filter(r => r.hidden).length;
+  if (!hidden) return 'All artists';
+  return (total - hidden) + ' of ' + total + ' shown';
+}
+
+function toggleArtistsDD(e) {
+  if (e) e.stopPropagation();
+  _artistsMenuOpen = !_artistsMenuOpen;
+  const menu = document.getElementById('landing-artists-menu');
+  if (menu) menu.style.display = _artistsMenuOpen ? 'block' : 'none';
+  document.removeEventListener('click', _artistsOutside);
+  if (_artistsMenuOpen) setTimeout(() => document.addEventListener('click', _artistsOutside), 0);
+}
+
+function _artistsOutside(e) {
+  if (e.target.closest && e.target.closest('.landing-artists-dd')) return;
+  closeArtistsDD();
+}
+
+function closeArtistsDD() {
+  _artistsMenuOpen = false;
+  const menu = document.getElementById('landing-artists-menu');
+  if (menu) menu.style.display = 'none';
+  document.removeEventListener('click', _artistsOutside);
+}
+
+function toggleArtistInclude(idx) {
+  const id = _landingArtistKeys[idx];
+  if (!id) return;
+  const row = landingStats.find(r => r.artist_id === id);
+  if (!row) return;
+  if (!googleUser) { showToast('Sign in to customize your jukebox.'); renderLanding(); return; }
+  row.hidden = !row.hidden;
+  if (row.hidden) landingExpandedIds.delete(id);
+  saveArtistFeedback(id, { hidden: row.hidden });
+  renderLanding();
+}
+
 function renderLanding() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const main = document.getElementById('main');
@@ -6420,6 +6470,9 @@ function renderLanding() {
   const _subOpts = landingSubmitterOptions();
   _landingSubmitterKeys = _subOpts.map(o => o[0]);
   const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
+  const _artistOpts = landingArtistOptions();
+  _landingArtistKeys = _artistOpts.map(o => o.artist_id);
+  const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
       <p class="landing-intro">Pick an artist</p>
@@ -6451,6 +6504,15 @@ function renderLanding() {
             <div class="landing-submitter-menu" id="landing-submitter-menu" style="display:${_submitterMenuOpen ? 'block' : 'none'}">
               ${_subMenuItems || '<div class="lsm-empty">No submitters yet</div>'}
               ${landingSubmitterFilter.size ? `<button type="button" class="lsm-clear" onclick="clearSubmitterFilter(event)">Clear filter</button>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="landing-control-group">
+          <span class="landing-control-lbl">Artists</span>
+          <div class="landing-artists-dd">
+            <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
+            <div class="landing-submitter-menu" id="landing-artists-menu" style="display:${_artistsMenuOpen ? 'block' : 'none'}">
+              ${_artistMenuItems || '<div class="lsm-empty">No artists yet</div>'}
             </div>
           </div>
         </div>
@@ -6876,7 +6938,7 @@ function hideArtistFromCard(artistId) {
   landingExpandedIds.delete(artistId);
   renderLanding();
   if (typeof renderManageJukeboxList === 'function') renderManageJukeboxList();
-  showToast('Hidden — restore it anytime under Manage My Jukebox.');
+  showToast('Hidden — restore it anytime from the Artists filter.');
 }
 
 function openFaq() {
@@ -9257,10 +9319,6 @@ async function userMenuAction(action) {
   }
   if (action === 'myartists') {
     openMyArtists();
-    return;
-  }
-  if (action === 'myjukebox') {
-    openManageJukebox();
     return;
   }
   if (action === 'faq') {
