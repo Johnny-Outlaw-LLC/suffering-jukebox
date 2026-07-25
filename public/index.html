@@ -1474,6 +1474,8 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 }
 .lsm-clear:hover { border-color: var(--accent); color: var(--accent); }
 .lsm-empty { padding: .5rem; font-family: var(--mono); font-size: .54rem; color: var(--text-muted); }
+.lsm-name { flex: 1 1 auto; }
+.lsm-count { flex: 0 0 auto; color: var(--text-muted); font-size: .52rem; padding-left: 10px; }
 .landing-add-artist-btn {
   margin-left: auto; background: none; border: 1px solid var(--accent); color: var(--accent);
   font-family: var(--mono); font-size: .54rem; letter-spacing: .03em; padding: .42rem .8rem;
@@ -6346,12 +6348,14 @@ function setLandingDetailLevel(level) {
 
 // ── Submitted By multi-select filter (landing) ──────────────────────────────
 function landingSubmitterOptions() {
-  const seen = new Map(); // key -> label
+  const counts = new Map(); // key -> { label, n }
   landingStats.forEach(r => {
+    if (r.hidden) return;
     const key = r.added_by_name || '__official__';
-    if (!seen.has(key)) seen.set(key, r.added_by_name ? r.added_by_name : 'Suffering Jukebox (official)');
+    if (!counts.has(key)) counts.set(key, { label: r.added_by_name ? r.added_by_name : 'Suffering Jukebox (official)', n: 0 });
+    counts.get(key).n++;
   });
-  return [...seen.entries()].sort((a, b) => {
+  return [...counts.entries()].map(([key, v]) => [key, v.label, v.n]).sort((a, b) => {
     if (a[0] === '__official__') return -1;
     if (b[0] === '__official__') return 1;
     return a[1].localeCompare(b[1]);
@@ -6415,7 +6419,7 @@ function renderLanding() {
   const sizeOpt = (v, lbl) => `<option value="${v}"${landingDetailLevel === v ? ' selected' : ''}>${lbl}</option>`;
   const _subOpts = landingSubmitterOptions();
   _landingSubmitterKeys = _subOpts.map(o => o[0]);
-  const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})">${esc(o[1])}</label>`).join('');
+  const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
       <p class="landing-intro">Pick an artist</p>
