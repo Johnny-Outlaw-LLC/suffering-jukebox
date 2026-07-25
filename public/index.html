@@ -877,6 +877,31 @@ body:not(.light) .tt-num { color: var(--text); }
 .ytp-title { flex: 1; font-size: .55rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ytp-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; font-size: .6rem; padding: 2px 7px; border-radius: 5px; transition: color .1s, border-color .1s; line-height: 1.5; white-space: nowrap; font-family: var(--mono); }
 .ytp-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.ytp-report-btn { }
+.ytp-title-artist { font-size:.46rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.yt-queue-title { display:flex; flex-direction:column; gap:0; line-height:1.15; }
+.yt-queue-track { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.yt-queue-artist { font-size:.45rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.report-ctx { font-size:.58rem; color:var(--text-muted); background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px; line-height:1.5; }
+.report-label { display:block; font-size:.5rem; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); margin:12px 0 5px; font-weight:600; }
+.report-input { width:100%; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 10px; font-family:inherit; font-size:.62rem; box-sizing:border-box; }
+.report-input:focus { outline:none; border-color:var(--accent); }
+textarea.report-input { resize:vertical; }
+.report-status { font-size:.58rem; margin-top:8px; min-height:1em; }
+.ai-filters { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+.ai-fbtn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.5rem; letter-spacing:.05em; padding:.3rem .6rem; border-radius:6px; cursor:pointer; }
+.ai-fbtn.active { color:var(--text); border-color:var(--accent); }
+.ai-list { display:flex; flex-direction:column; gap:10px; }
+.ai-card { background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+.ai-card.resolved { opacity:.6; }
+.ai-card-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ai-cat { font-size:.5rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:.15rem .45rem; border-radius:5px; background:var(--accent); color:#111; }
+.ai-date { font-size:.52rem; color:var(--text-muted); }
+.ai-resolve { margin-left:auto; background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.5rem; padding:.25rem .55rem; border-radius:6px; cursor:pointer; }
+.ai-resolve:hover { color:var(--text); border-color:var(--text-muted); }
+.ai-ctx { font-size:.56rem; color:var(--text-muted); margin-top:6px; }
+.ai-desc { font-size:.62rem; color:var(--text); margin-top:6px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.ai-who { font-size:.52rem; color:var(--text-muted); margin-top:6px; }
 .ytp-playpause-btn { padding: 2px 8px; font-size: .65rem; }
 #ytp-vote-btn { font-size: .6rem; }
 .ytp-block-btn:hover { color: #ef4444; border-color: #ef4444; }
@@ -1621,6 +1646,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">FAQ / How-To Guide</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
+          <button type="button" class="user-menu-item admin-only" id="user-menu-issues" onclick="userMenuAction('issues')">Issue Reports</button>
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
         </div>
       </div>
@@ -1912,6 +1938,51 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closeFaq()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="reportOverlay" onclick="if(event.target===this)closeReportModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title">⚑ Report a problem</span>
+      <button class="modal-close" onclick="closeReportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="report-context" class="report-ctx"></div>
+      <label class="report-label" for="report-category">What is the problem with?</label>
+      <select id="report-category" class="report-input">
+        <option value="playback">Playback (won't play, wrong video, audio issue)</option>
+        <option value="artist">Artist information</option>
+        <option value="album">Album information</option>
+        <option value="track">Track information</option>
+      </select>
+      <label class="report-label" for="report-desc">Describe the issue</label>
+      <textarea id="report-desc" class="report-input" rows="4" placeholder="Tell us what's wrong…"></textarea>
+      <label class="report-anon-row" id="report-anon-row" style="display:none;align-items:center;gap:7px;margin-top:10px;cursor:pointer;font-size:.6rem;color:var(--text-muted)">
+        <input type="checkbox" id="report-anon-chk" style="width:13px;height:13px;accent-color:var(--accent);cursor:pointer">
+        Report anonymously (don't attach my name or email)
+      </label>
+      <div id="report-status" class="report-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeReportModal()">Cancel</button>
+      <button class="m-btn" onclick="submitReport()">Send report</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="adminIssuesOverlay" onclick="if(event.target===this)closeAdminIssues()">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <span class="modal-title">Issue Reports</span>
+      <button class="modal-close" onclick="closeAdminIssues()">✕</button>
+    </div>
+    <div class="modal-body" id="admin-issues-body">
+      <div class="admin-metrics-loading">Loading reports…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeAdminIssues()">Close</button>
     </div>
   </div>
 </div>
@@ -3255,7 +3326,10 @@ function openYTPlayer(videoId, title, trackId, ev) {
     <div class="yt-player-header" onmousedown="ytpDragStart(event)" style="flex-direction:column;gap:0;padding:0;align-items:stretch">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 8px 3px 10px">
         <button class="tvb-cycle" id="ytp-vote-btn" data-vote-track="${trackId||''}" onclick="ytpCycleVote();event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" title="Rate" style="flex-shrink:0;${trackId?'':'display:none'}">${trackId?(VOTE_LABELS[String(getMyVote(trackId))]||'-'):'-'}</button>
-        <span class="ytp-title" style="flex:1;min-width:0">${safeTitle}</span>
+        <span style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;overflow:hidden;line-height:1.15">
+          <span class="ytp-title" style="flex:0 0 auto;min-width:0">${safeTitle}</span>
+          <span class="ytp-title-artist" id="ytp-title-artist">${trackId ? (ytpTrackMeta(trackId, title).artist || '').replace(/</g, '&lt;') : ''}</span>
+        </span>
         <div class="ytp-titlebar-btns">
           <button class="ytp-win-btn ytp-minimize-btn" onclick="ytpToggleMinimize()" title="Minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.minimize}</button>
           <button class="ytp-win-btn ytp-fs-btn" onclick="ytpToggleFullscreen()" title="Maximize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.maximize}</button>
@@ -3277,6 +3351,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
             style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer">
         </label>
         <button class="ytp-btn ytp-block-btn" id="ytp-block-btn" onclick="ytpBlockCurrent();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Never play this song again" style="display:none">⊘ Never Again</button>
+        <button class="ytp-btn ytp-report-btn" id="ytp-report-btn" onclick="openReportModal();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Report a problem with this track">⚑ Report a problem</button>
       </div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
@@ -3867,6 +3942,14 @@ function updateYTQueueUI() {
 
   // (queue height is now fixed - no drag handle)
 
+  const _qArtistIdx = new Map();
+  try {
+    for (const aid of Object.keys(tracks)) {
+      const _art = (typeof allArtists !== 'undefined' && allArtists) ? allArtists.find(a => a.id === aid) : null;
+      const _nm = _art ? _art.name : '';
+      for (const t of (tracks[aid] || [])) _qArtistIdx.set(t.id, _nm);
+    }
+  } catch (_) {}
   const queueHTML = `<div class="yt-queue-wrap" style="display:flex;flex-direction:column;flex-shrink:0">
     ${ytPlaylistBarHTML()}
     <div class="yt-queue-section">
@@ -3876,7 +3959,7 @@ function updateYTQueueUI() {
       </div>
       ${ytQueue.map((item, i) => `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" onclick="ytPlayQueueIdx(${i})">
         <span class="yt-queue-num">${i + 1}</span>
-        <span class="yt-queue-title">${item.title.replace(/</g,'&lt;')}</span>
+        <span class="yt-queue-title"><span class="yt-queue-track">${item.title.replace(/</g,'&lt;')}</span>${item.trackId && _qArtistIdx.get(item.trackId) ? `<span class="yt-queue-artist">${_qArtistIdx.get(item.trackId).replace(/</g,'&lt;')}</span>` : ''}</span>
         ${item.trackId ? `<button class="tvb-cycle${getMyVote(item.trackId)>0?' tvb-up':''}" data-vote-track="${item.trackId}" onclick="cycleVote('${item.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(getMyVote(item.trackId))]||'-'}</button>` : ''}
         <span style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
           <button onclick="event.stopPropagation();ytMoveQueue(${i},${i}-1)"
@@ -4060,7 +4143,10 @@ function ytpUpdateMiniFooter() {
   if (!el || !el.classList.contains('open')) return;
   const item = ytQueue[ytQueueIdx];
   const titleEl = document.getElementById('ytp-mf-title');
-  if (titleEl) titleEl.textContent = item?.title || '-';
+  if (titleEl) {
+    const _mfArtist = item?.trackId ? (ytpTrackMeta(item.trackId, null).artist || '') : '';
+    titleEl.textContent = item ? (item.title + (_mfArtist ? '  ·  ' + _mfArtist : '')) : '-';
+  }
   const prevBtn = document.getElementById('ytp-mf-prev');
   if (prevBtn) prevBtn.style.visibility = (ytQueue.length > 1 && ytQueueIdx > 0) ? 'visible' : 'hidden';
   const nextBtn = document.getElementById('ytp-mf-next');
@@ -4118,6 +4204,179 @@ function ytpTrackMeta(trackId, fallbackTitle) {
     album: album?.name || '',
     artwork: art,
   };
+}
+
+// Show the current track's artist on the second line of the player header.
+function ytpSetHeaderArtist(trackId) {
+  if (!ytPlayerEl) return;
+  const el = ytPlayerEl.querySelector('#ytp-title-artist');
+  if (!el) return;
+  const artist = trackId ? (ytpTrackMeta(trackId, null).artist || '') : '';
+  el.textContent = artist;
+}
+
+// ── Report a problem ───────────────────────────────────────────
+let _reportCtx = null;
+function reportCurrentContext() {
+  const item = ytQueue[ytQueueIdx] || null;
+  const trackId = (item && item.trackId) || nowPlayingTrackId || null;
+  const meta = ytpTrackMeta(trackId, item ? item.title : null);
+  return {
+    track_id: trackId,
+    video_id: (item && item.videoId) || ytVideoId || null,
+    track_name: (trackId ? meta.title : (item ? item.title : '')) || '',
+    album_name: trackId ? (meta.album || '') : '',
+    artist_name: trackId ? (meta.artist || '') : '',
+  };
+}
+function openReportModal() {
+  _reportCtx = reportCurrentContext();
+  const ov = document.getElementById('reportOverlay');
+  if (!ov) return;
+  const ctxEl = document.getElementById('report-context');
+  if (ctxEl) {
+    const bits = [];
+    if (_reportCtx.artist_name) bits.push('Artist: ' + _reportCtx.artist_name);
+    if (_reportCtx.album_name)  bits.push('Album: ' + _reportCtx.album_name);
+    if (_reportCtx.track_name)  bits.push('Track: ' + _reportCtx.track_name);
+    ctxEl.textContent = bits.length ? bits.join('  ·  ') : 'No track is currently playing — this will be logged as a general report.';
+  }
+  const cat = document.getElementById('report-category'); if (cat) cat.value = 'playback';
+  const desc = document.getElementById('report-desc'); if (desc) desc.value = '';
+  const anonRow = document.getElementById('report-anon-row');
+  const anonChk = document.getElementById('report-anon-chk');
+  if (googleUser) {
+    if (anonRow) anonRow.style.display = 'flex';
+    if (anonChk) anonChk.checked = false;
+  } else {
+    if (anonRow) anonRow.style.display = 'none';
+    if (anonChk) anonChk.checked = true;
+  }
+  const st = document.getElementById('report-status'); if (st) st.textContent = '';
+  ov.classList.add('open');
+}
+function closeReportModal() { document.getElementById('reportOverlay')?.classList.remove('open'); }
+async function submitReport() {
+  const category = document.getElementById('report-category')?.value || 'playback';
+  const description = (document.getElementById('report-desc')?.value || '').trim();
+  const anon = !!document.getElementById('report-anon-chk')?.checked;
+  const statusEl = document.getElementById('report-status');
+  if (!description) { if (statusEl) { statusEl.style.color = 'var(--accent)'; statusEl.textContent = 'Please describe the problem first.'; } return; }
+  const ctx = _reportCtx || reportCurrentContext();
+  const row = {
+    category: category,
+    description: description,
+    artist_name: ctx.artist_name || null,
+    album_name: ctx.album_name || null,
+    track_name: ctx.track_name || null,
+    track_id: ctx.track_id || null,
+    video_id: ctx.video_id || null,
+  };
+  let tok = ANON;
+  if (googleUser && !anon) {
+    try {
+      const { data: { session } } = await sbAuth.auth.getSession();
+      if (session) { tok = session.access_token; row.user_id = session.user.id; }
+    } catch (_) {}
+    row.user_email = googleUser.email || null;
+    row.reporter_name = googleUser.name || null;
+  }
+  if (statusEl) { statusEl.style.color = 'var(--text-muted)'; statusEl.textContent = 'Sending…'; }
+  try {
+    const res = await fetch(REST + '/issues', {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json',
+        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=minimal' },
+      body: JSON.stringify(row)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    closeReportModal();
+    showToast('Thanks — your report was sent.');
+  } catch (e) {
+    if (statusEl) { statusEl.style.color = 'var(--accent)'; statusEl.textContent = 'Could not send. Please try again.'; }
+  }
+}
+
+// ── Admin: Issue Reports ───────────────────────────────────────
+let _adminIssues = [];
+let _adminIssuesFilter = 'open';
+function openAdminIssues() {
+  if (!sjIsAdmin) return;
+  document.getElementById('adminIssuesOverlay')?.classList.add('open');
+  loadAdminIssues();
+}
+function closeAdminIssues() { document.getElementById('adminIssuesOverlay')?.classList.remove('open'); }
+async function loadAdminIssues() {
+  const body = document.getElementById('admin-issues-body');
+  if (!body) return;
+  body.innerHTML = '<div class="admin-metrics-loading">Loading reports…</div>';
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    const tok = session?.access_token || ANON;
+    const rows = await fetch(REST + '/rpc/admin_list_issues', {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json',
+        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
+      body: '{}'
+    }).then(r => r.json());
+    if (!Array.isArray(rows)) throw new Error('bad response');
+    _adminIssues = rows;
+    renderAdminIssues();
+  } catch (e) {
+    body.innerHTML = '<div class="admin-metrics-loading">Could not load reports.</div>';
+  }
+}
+function setAdminIssuesFilter(f) { _adminIssuesFilter = f; renderAdminIssues(); }
+function renderAdminIssues() {
+  const body = document.getElementById('admin-issues-body');
+  if (!body) return;
+  const esc = v => (v == null ? '' : String(v)).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const CATLBL = { playback: 'Playback', artist: 'Artist Info', album: 'Album Info', track: 'Track Info' };
+  let rows = _adminIssues;
+  if (_adminIssuesFilter === 'open') rows = rows.filter(r => !r.resolved);
+  else if (_adminIssuesFilter === 'resolved') rows = rows.filter(r => r.resolved);
+  const openCount = _adminIssues.filter(r => !r.resolved).length;
+  const head = `<div class="ai-filters">
+    <button class="ai-fbtn${_adminIssuesFilter === 'open' ? ' active' : ''}" onclick="setAdminIssuesFilter('open')">Open (${openCount})</button>
+    <button class="ai-fbtn${_adminIssuesFilter === 'resolved' ? ' active' : ''}" onclick="setAdminIssuesFilter('resolved')">Resolved</button>
+    <button class="ai-fbtn${_adminIssuesFilter === 'all' ? ' active' : ''}" onclick="setAdminIssuesFilter('all')">All</button>
+  </div>`;
+  if (!rows.length) { body.innerHTML = head + '<div class="admin-metrics-loading">No reports here.</div>'; return; }
+  const fmtDate = v => { try { return new Date(v).toLocaleString(); } catch (_) { return v; } };
+  body.innerHTML = head + '<div class="ai-list">' + rows.map(r => {
+    const who = r.user_email ? (esc(r.reporter_name || r.user_email) + ' &lt;' + esc(r.user_email) + '&gt;') : 'Anonymous';
+    const ctx = [
+      r.artist_name && ('Artist: ' + esc(r.artist_name)),
+      r.album_name && ('Album: ' + esc(r.album_name)),
+      r.track_name && ('Track: ' + esc(r.track_name)),
+    ].filter(Boolean).join('  ·  ');
+    return `<div class="ai-card${r.resolved ? ' resolved' : ''}">
+      <div class="ai-card-top">
+        <span class="ai-cat">${CATLBL[r.category] || esc(r.category)}</span>
+        <span class="ai-date">${fmtDate(r.created_at)}</span>
+        <button class="ai-resolve" onclick="toggleIssueResolved('${r.id}', ${r.resolved ? 'false' : 'true'})">${r.resolved ? 'Reopen' : 'Mark resolved'}</button>
+      </div>
+      ${ctx ? `<div class="ai-ctx">${ctx}</div>` : ''}
+      <div class="ai-desc">${esc(r.description) || '<span style=\'opacity:.5\'>(no description)</span>'}</div>
+      <div class="ai-who">Reported by ${who}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+async function toggleIssueResolved(id, resolved) {
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    const tok = session?.access_token || ANON;
+    const res = await fetch(REST + '/rpc/admin_resolve_issue', {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json',
+        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
+      body: JSON.stringify({ p_id: id, p_resolved: resolved })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const it = _adminIssues.find(x => x.id === id);
+    if (it) { it.resolved = resolved; it.resolved_at = resolved ? new Date().toISOString() : null; }
+    renderAdminIssues();
+  } catch (e) { showToast('Could not update. Try again.'); }
 }
 
 function ytpInitMediaSession() {
@@ -4404,6 +4663,7 @@ function taPrimeAudioEl(item) {
 function taEnterBgAudio() {
   const item = ytQueue[ytQueueIdx];
   const ta = taTrackAudio(item?.trackId);
+  if (!_taManualAudio) return false; // audio-only mode is button-only; never auto-switch (e.g. Early Lines) on hide/minimize
   if (!ta || !_ytUserWantsPlay) return false;
   let pos = 0;
   try { pos = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
@@ -5094,6 +5354,7 @@ function applyNowPlayingHighlight() {
 function ytpOnTrackChange(videoId, trackId, title) {
   schedulePlaybackStateSave(); // remember queue + position for signed-in users
   nowPlayingTrackId = trackId || null;
+  ytpSetHeaderArtist(trackId || null);
   ytpSyncBlockBtn(trackId || null);
   applyNowPlayingHighlight();
   ytpUpdateMiniFooter();
@@ -8882,6 +9143,11 @@ async function userMenuAction(action) {
   if (action === 'users') {
     if (!sjIsAdmin) return;
     openAdminUsers();
+    return;
+  }
+  if (action === 'issues') {
+    if (!sjIsAdmin) return;
+    openAdminIssues();
     return;
   }
 }
