@@ -1780,7 +1780,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closeAddMusic()">Cancel</button>
       <button class="m-btn ghost" id="amBackBtn" onclick="amBack()" style="display:none">‹ Back</button>
-      <button class="m-btn ghost" id="amGoBtn" onclick="amGoToArtist()" style="display:none"></button>
       <button class="m-btn" id="amNextBtn" onclick="amNext()" disabled>Next: Choose Albums ›</button>
       <span class="mf-status" id="amFooterStatus"></span>
     </div>
@@ -3326,14 +3325,11 @@ function openYTPlayer(videoId, title, trackId, ev) {
     <div class="yt-player-header" onmousedown="ytpDragStart(event)" style="flex-direction:column;gap:0;padding:0;align-items:stretch">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 8px 3px 10px">
         <button class="tvb-cycle" id="ytp-vote-btn" data-vote-track="${trackId||''}" onclick="ytpCycleVote();event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" title="Rate" style="flex-shrink:0;${trackId?'':'display:none'}">${trackId?(VOTE_LABELS[String(getMyVote(trackId))]||'-'):'-'}</button>
-        <span style="flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;overflow:hidden;line-height:1.15">
-          <span class="ytp-title" style="flex:0 0 auto;min-width:0">${safeTitle}</span>
-          <span class="ytp-title-artist" id="ytp-title-artist">${trackId ? (ytpTrackMeta(trackId, title).artist || '').replace(/</g, '&lt;') : ''}</span>
-        </span>
+        <span class="ytp-title" style="flex:1;min-width:0">${trackId && ytpTrackMeta(trackId, title).artist ? (ytpTrackMeta(trackId, title).artist.replace(/</g, '&lt;') + ' - ') : ''}${safeTitle}</span>
         <div class="ytp-titlebar-btns">
           <button class="ytp-win-btn ytp-minimize-btn" onclick="ytpToggleMinimize()" title="Minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.minimize}</button>
           <button class="ytp-win-btn ytp-fs-btn" onclick="ytpToggleFullscreen()" title="Maximize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.maximize}</button>
-          <button class="sc-close" onclick="closeYTPlayer()" title="Close" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">✕</button>
+          <button class="sc-close" onclick="ytpCloseToMini()" title="Pause &amp; minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">✕</button>
         </div>
       </div>
       <div style="display:flex;align-items:center;flex-wrap:wrap;row-gap:4px;gap:5px;padding:2px 8px 6px 10px">
@@ -3433,6 +3429,20 @@ function ytpPlayInline() {
   frame.onclick = null; // prevent double-fire
   frame.innerHTML = ytpIframeHTML(ytVideoId, h);
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
+}
+
+// Header X: stop the music and drop the player to the minimized bar (keeps the
+// queue alive so the listener can reopen it and resume). Full dismiss is still
+// available from the X on the minimized bar (closeYTPlayer).
+function ytpCloseToMini() {
+  if (!ytPlayerEl) return;
+  _ytUserWantsPlay = false;
+  try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+  try { _taAudioEl?.pause(); } catch (_) {}
+  ytpStopBgKeepalive();
+  ytpSetPlayPauseIcon(false);
+  ytpSetMediaPlaybackState('paused');
+  if (!_ytpMinimized) ytpToggleMinimize();
 }
 
 function closeYTPlayer() {
@@ -4145,7 +4155,7 @@ function ytpUpdateMiniFooter() {
   const titleEl = document.getElementById('ytp-mf-title');
   if (titleEl) {
     const _mfArtist = item?.trackId ? (ytpTrackMeta(item.trackId, null).artist || '') : '';
-    titleEl.textContent = item ? (item.title + (_mfArtist ? '  ·  ' + _mfArtist : '')) : '-';
+    titleEl.textContent = item ? ((_mfArtist ? _mfArtist + ' - ' : '') + item.title) : '-';
   }
   const prevBtn = document.getElementById('ytp-mf-prev');
   if (prevBtn) prevBtn.style.visibility = (ytQueue.length > 1 && ytQueueIdx > 0) ? 'visible' : 'hidden';
@@ -4206,13 +4216,14 @@ function ytpTrackMeta(trackId, fallbackTitle) {
   };
 }
 
-// Show the current track's artist on the second line of the player header.
-function ytpSetHeaderArtist(trackId) {
+// Player header title on one line: "Artist - Song".
+function ytpApplyTitle(trackId, rawTitle) {
   if (!ytPlayerEl) return;
-  const el = ytPlayerEl.querySelector('#ytp-title-artist');
+  const el = ytPlayerEl.querySelector('.ytp-title');
   if (!el) return;
   const artist = trackId ? (ytpTrackMeta(trackId, null).artist || '') : '';
-  el.textContent = artist;
+  const title = rawTitle || '';
+  el.textContent = artist ? (artist + ' - ' + title) : title;
 }
 
 // ── Report a problem ───────────────────────────────────────────
@@ -5354,7 +5365,7 @@ function applyNowPlayingHighlight() {
 function ytpOnTrackChange(videoId, trackId, title) {
   schedulePlaybackStateSave(); // remember queue + position for signed-in users
   nowPlayingTrackId = trackId || null;
-  ytpSetHeaderArtist(trackId || null);
+  ytpApplyTitle(trackId || null, title);
   ytpSyncBlockBtn(trackId || null);
   applyNowPlayingHighlight();
   ytpUpdateMiniFooter();
@@ -8479,8 +8490,10 @@ async function amFinish() {
       await refreshLandingStats();
     } catch (_) {}
     amBusy = false;
+    const _goSlug = amFt?.artist?.slug || null;
+    const _goId   = amArtistId || null;
     if (amBgBusy) {
-      // Lyrics & dates still loading — leave the details view parked behind the pill
+      // Lyrics & dates still loading — keep the progress pill running in this context
       _amWizardDone = true;
       amShowPane(3);
       amSetFooter(false, 'Fine-tune ›', false);
@@ -8489,6 +8502,9 @@ async function amFinish() {
     } else {
       closeAddMusic();
     }
+    // Last step: take the listener straight to the artist's jukebox. In-app when
+    // possible (landingStats has the row) so background enrichment keeps running.
+    if (_goSlug) landingExploreArtist(_goSlug, _goId);
   } catch (e) {
     amBusy = false;
     amStepFail(e.message);
