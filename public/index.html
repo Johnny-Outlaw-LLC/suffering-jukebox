@@ -1448,6 +1448,32 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   border-radius: 8px; cursor: pointer; transition: all .15s; white-space: nowrap;
 }
 .landing-size-btn.active { border-color: var(--accent); color: var(--accent); }
+.landing-submitter-dd { position: relative; }
+.landing-submitter-btn {
+  background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--mono); font-size: .56rem; padding: .42rem .6rem; border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.landing-submitter-btn .lsb-caret { color: var(--text-muted); font-size: .5rem; }
+.landing-submitter-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px; min-width: 210px; max-height: 340px; overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+}
+.lsm-item {
+  display: flex; align-items: center; gap: 8px; padding: .4rem .5rem; border-radius: 6px;
+  font-family: var(--mono); font-size: .58rem; color: var(--text); cursor: pointer; white-space: nowrap;
+}
+.lsm-item:hover { background: rgba(255,255,255,.06); }
+.lsm-item input { accent-color: var(--accent); cursor: pointer; margin: 0; }
+.lsm-clear {
+  width: 100%; margin-top: 4px; background: none; border: 1px solid var(--border);
+  color: var(--text-muted); font-family: var(--mono); font-size: .52rem; padding: .38rem;
+  border-radius: 6px; cursor: pointer;
+}
+.lsm-clear:hover { border-color: var(--accent); color: var(--accent); }
+.lsm-empty { padding: .5rem; font-family: var(--mono); font-size: .54rem; color: var(--text-muted); }
 .landing-add-artist-btn {
   margin-left: auto; background: none; border: 1px solid var(--accent); color: var(--accent);
   font-family: var(--mono); font-size: .54rem; letter-spacing: .03em; padding: .42rem .8rem;
@@ -6226,6 +6252,9 @@ const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
+let landingSubmitterFilter = new Set(JSON.parse(localStorage.getItem('sj_landing_submitters') || '[]'));
+let _landingSubmitterKeys = [];
+let _submitterMenuOpen = false;
 
 function fmtScore(n) {
   n = Number(n) || 0;
@@ -6288,13 +6317,17 @@ function defaultLandingCompare(a, b) {
 }
 
 function getVisibleLandingStats() {
-  const visible = landingStats.filter(r => !r.hidden);
+  let visible = landingStats.filter(r => !r.hidden);
+  if (landingSubmitterFilter.size) {
+    visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
+  }
   const sorted = [...visible];
   if (landingSortMode === 'date_desc') sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   else if (landingSortMode === 'date_asc') sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   else if (landingSortMode === 'plays_desc') sorted.sort((a, b) => (b.total_plays || 0) - (a.total_plays || 0));
   else if (landingSortMode === 'my_plays_desc') sorted.sort((a, b) => (b.my_plays || 0) - (a.my_plays || 0));
   else if (landingSortMode === 'score_desc') sorted.sort((a, b) => (b.jukebox_score || 0) - (a.jukebox_score || 0));
+  else if (landingSortMode === 'yt_desc') sorted.sort((a, b) => (b.total_views || 0) - (a.total_views || 0));
   else sorted.sort(defaultLandingCompare);
   return sorted;
 }
@@ -6311,12 +6344,78 @@ function setLandingDetailLevel(level) {
   renderLanding();
 }
 
+// ── Submitted By multi-select filter (landing) ──────────────────────────────
+function landingSubmitterOptions() {
+  const seen = new Map(); // key -> label
+  landingStats.forEach(r => {
+    const key = r.added_by_name || '__official__';
+    if (!seen.has(key)) seen.set(key, r.added_by_name ? r.added_by_name : 'Suffering Jukebox (official)');
+  });
+  return [...seen.entries()].sort((a, b) => {
+    if (a[0] === '__official__') return -1;
+    if (b[0] === '__official__') return 1;
+    return a[1].localeCompare(b[1]);
+  });
+}
+
+function submitterBtnLabel() {
+  const n = landingSubmitterFilter.size;
+  if (!n) return 'All submitters';
+  if (n === 1) {
+    const key = [...landingSubmitterFilter][0];
+    const opt = landingSubmitterOptions().find(o => o[0] === key);
+    return opt ? opt[1] : '1 selected';
+  }
+  return n + ' selected';
+}
+
+function toggleSubmitterDD(e) {
+  if (e) e.stopPropagation();
+  _submitterMenuOpen = !_submitterMenuOpen;
+  const menu = document.getElementById('landing-submitter-menu');
+  if (menu) menu.style.display = _submitterMenuOpen ? 'block' : 'none';
+  document.removeEventListener('click', _submitterOutside);
+  if (_submitterMenuOpen) setTimeout(() => document.addEventListener('click', _submitterOutside), 0);
+}
+
+function _submitterOutside(e) {
+  if (e.target.closest && e.target.closest('.landing-submitter-dd')) return;
+  closeSubmitterDD();
+}
+
+function closeSubmitterDD() {
+  _submitterMenuOpen = false;
+  const menu = document.getElementById('landing-submitter-menu');
+  if (menu) menu.style.display = 'none';
+  document.removeEventListener('click', _submitterOutside);
+}
+
+function toggleSubmitterFilter(idx) {
+  const key = _landingSubmitterKeys[idx];
+  if (key === undefined) return;
+  if (landingSubmitterFilter.has(key)) landingSubmitterFilter.delete(key);
+  else landingSubmitterFilter.add(key);
+  try { localStorage.setItem('sj_landing_submitters', JSON.stringify([...landingSubmitterFilter])); } catch (e) {}
+  renderLanding();
+}
+
+function clearSubmitterFilter(e) {
+  if (e) e.stopPropagation();
+  landingSubmitterFilter.clear();
+  try { localStorage.setItem('sj_landing_submitters', JSON.stringify([])); } catch (e) {}
+  renderLanding();
+}
+
 function renderLanding() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const main = document.getElementById('main');
   main.classList.add('main-landing');
   const rows = getVisibleLandingStats();
   const sortOpt = (v, lbl) => `<option value="${v}"${landingSortMode === v ? ' selected' : ''}>${lbl}</option>`;
+  const sizeOpt = (v, lbl) => `<option value="${v}"${landingDetailLevel === v ? ' selected' : ''}>${lbl}</option>`;
+  const _subOpts = landingSubmitterOptions();
+  _landingSubmitterKeys = _subOpts.map(o => o[0]);
+  const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})">${esc(o[1])}</label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
       <p class="landing-intro">Pick an artist</p>
@@ -6328,16 +6427,27 @@ function renderLanding() {
             ${sortOpt('date_desc', 'Date Added: Newest First')}
             ${sortOpt('date_asc', 'Date Added: Oldest First')}
             ${sortOpt('plays_desc', 'Total Jukebox Plays')}
+            ${sortOpt('yt_desc', 'Total YouTube Plays')}
             ${sortOpt('my_plays_desc', 'My Jukebox Plays')}
             ${sortOpt('score_desc', 'Jukebox Score')}
           </select>
         </div>
         <div class="landing-control-group">
           <span class="landing-control-lbl">Card Size</span>
-          <div class="landing-size-btns">
-            <button type="button" class="landing-size-btn${landingDetailLevel === 'name' ? ' active' : ''}" onclick="setLandingDetailLevel('name')">Artist Name Only</button>
-            <button type="button" class="landing-size-btn${landingDetailLevel === 'yt' ? ' active' : ''}" onclick="setLandingDetailLevel('yt')">Total YT Plays</button>
-            <button type="button" class="landing-size-btn${landingDetailLevel === 'full' ? ' active' : ''}" onclick="setLandingDetailLevel('full')">Full Details</button>
+          <select class="landing-sort-select" id="landing-size-select" onchange="setLandingDetailLevel(this.value)">
+            ${sizeOpt('name', 'Artist Name Only')}
+            ${sizeOpt('yt', 'Total YT Plays')}
+            ${sizeOpt('full', 'Full Details')}
+          </select>
+        </div>
+        <div class="landing-control-group">
+          <span class="landing-control-lbl">Submitted By</span>
+          <div class="landing-submitter-dd">
+            <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
+            <div class="landing-submitter-menu" id="landing-submitter-menu" style="display:${_submitterMenuOpen ? 'block' : 'none'}">
+              ${_subMenuItems || '<div class="lsm-empty">No submitters yet</div>'}
+              ${landingSubmitterFilter.size ? `<button type="button" class="lsm-clear" onclick="clearSubmitterFilter(event)">Clear filter</button>` : ''}
+            </div>
           </div>
         </div>
         <button type="button" class="landing-add-artist-btn" onclick="openAddMusic()">＋ Add Artist to the Jukebox</button>
@@ -6359,7 +6469,7 @@ function renderLanding() {
             </div>
             ${r.added_by_name ? `<div class="landing-added-by">Added by ${esc(r.added_by_name)}</div>` : ''}
             <div class="landing-card-actions">
-              <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
+              <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
               <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>
             </div>
             </div>
@@ -6544,7 +6654,7 @@ function laExpandedCardHTML(r, i) {
           </div>
           ${r.added_by_name ? `<div class="landing-added-by" style="display:block">Added by ${esc(r.added_by_name)}</div>` : ''}
           <div class="la-hero-actions">
-            <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}')">▶ Play</button>
+            <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
             <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>
           </div>
         </div>
@@ -6771,7 +6881,7 @@ function openFaq() {
 }
 function closeFaq() { document.getElementById('faqOverlay')?.classList.remove('open'); }
 
-async function landingPlayArtist(artistId) {
+async function landingPlayArtist(artistId, ev) {
   const row = landingStats.find(r => r.artist_id === artistId);
   if (!row) return;
   const cardBtn = document.querySelector(`.landing-card[data-artist-id="${artistId}"] .landing-play-btn`);
@@ -6787,7 +6897,13 @@ async function landingPlayArtist(artistId) {
     const playable = trackRows.filter(t => ytData[t.id]?.video_id);
     if (!playable.length) return;
     const queue = shuffleInPlace([...playable]).map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
-    landingPlayQueue(queue);
+    // If music is already playing, let the user choose Play Now vs Add All to Queue
+    // (same popup the album/track Play buttons use); otherwise just start playback.
+    if (ytPlayerEl) {
+      showAlbumQueueChoice({ name: row.name }, queue, ev);
+    } else {
+      landingPlayQueue(queue);
+    }
   } catch (e) {
     console.warn('landingPlayArtist error', e);
   } finally {
