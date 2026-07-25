@@ -501,7 +501,7 @@ body:not(.light) .tt-num { color: var(--text); }
   .hdr-share-icon-btn { order: -1; }
   .hdr-icon-btns {
     grid-column: 2;
-    grid-row: 1;
+    grid-row: 2;
     justify-self: end;
     display: flex;
     align-items: center;
@@ -515,13 +515,15 @@ body:not(.light) .tt-num { color: var(--text); }
   }
   #auth-btn {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 1;
     justify-self: end;
+    align-self: center;
   }
   #user-menu-wrap {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 1;
     justify-self: end;
+    align-self: center;
   }
   .hdr-r1-filters {
     display: contents !important;
@@ -1480,6 +1482,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   border-radius: 6px; cursor: pointer;
 }
 .lsm-clear:hover { border-color: var(--accent); color: var(--accent); }
+.lsm-all { font-weight: 700; border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; margin-bottom: 2px; }
 .lsm-empty { padding: .5rem; font-family: var(--mono); font-size: .54rem; color: var(--text-muted); }
 .lsm-name { flex: 1 1 auto; }
 .lsm-count { flex: 0 0 auto; color: var(--text-muted); font-size: .52rem; padding-left: 10px; }
@@ -6423,6 +6426,7 @@ function submitterBtnLabel() {
 
 function toggleSubmitterDD(e) {
   if (e) e.stopPropagation();
+  closeArtistsDD();   // never leave two menus open at once
   _submitterMenuOpen = !_submitterMenuOpen;
   const menu = document.getElementById('landing-submitter-menu');
   if (menu) menu.style.display = _submitterMenuOpen ? 'block' : 'none';
@@ -6445,10 +6449,28 @@ function closeSubmitterDD() {
 function toggleSubmitterFilter(idx) {
   const key = _landingSubmitterKeys[idx];
   if (key === undefined) return;
+  // An empty set means "all submitters", and every box renders checked, so the
+  // first uncheck has to start from everything-selected.
+  if (!landingSubmitterFilter.size) _landingSubmitterKeys.forEach(k => landingSubmitterFilter.add(k));
   if (landingSubmitterFilter.has(key)) landingSubmitterFilter.delete(key);
   else landingSubmitterFilter.add(key);
+  // Everything selected (or nothing left) is the same as no filter at all.
+  if (!landingSubmitterFilter.size || landingSubmitterFilter.size === _landingSubmitterKeys.length) landingSubmitterFilter.clear();
   try { localStorage.setItem('sj_landing_submitters', JSON.stringify([...landingSubmitterFilter])); } catch (e) {}
   renderLanding();
+}
+
+// The "All" row at the top of each menu: checked means nothing is filtered out.
+// Clicking it when it is already checked is a no-op (it stays checked) so the
+// grid can never end up empty.
+function selectAllSubmitters(el) {
+  if (el && !el.checked) { el.checked = true; return; }
+  clearSubmitterFilter();
+}
+
+function selectAllArtists(el) {
+  if (el && !el.checked) { el.checked = true; return; }
+  clearArtistsFilter();
 }
 
 function clearSubmitterFilter(e) {
@@ -6475,6 +6497,7 @@ function artistsBtnLabel() {
 
 function toggleArtistsDD(e) {
   if (e) e.stopPropagation();
+  closeSubmitterDD();   // never leave two menus open at once
   _artistsMenuOpen = !_artistsMenuOpen;
   const menu = document.getElementById('landing-artists-menu');
   if (menu) menu.style.display = _artistsMenuOpen ? 'block' : 'none';
@@ -6525,9 +6548,12 @@ function renderLanding() {
   const sizeOpt = (v, lbl) => `<option value="${v}"${landingDetailLevel === v ? ' selected' : ''}>${lbl}</option>`;
   const _subOpts = landingSubmitterOptions();
   _landingSubmitterKeys = _subOpts.map(o => o[0]);
-  const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
+  const _subAllOn = landingSubmitterFilter.size === 0;
+  const _subAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_subAllOn ? ' checked' : ''} onchange="selectAllSubmitters(this)"><span class="lsm-name">All</span></label>`;
+  const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${_subAllOn || landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
   const _artistOpts = landingArtistOptions();
   _landingArtistKeys = _artistOpts.map(o => o.artist_id);
+  const _artistAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${landingStats.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists(this)"><span class="lsm-name">All</span></label>`;
   const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
@@ -6538,8 +6564,8 @@ function renderLanding() {
           <div class="landing-artists-dd">
             <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
             <div class="landing-submitter-menu" id="landing-artists-menu" style="display:${_artistsMenuOpen ? 'block' : 'none'}">
+              ${_artistOpts.length ? _artistAllRow : ''}
               ${_artistMenuItems || '<div class="lsm-empty">No artists yet</div>'}
-              ${landingStats.some(r => r.hidden) ? `<button type="button" class="lsm-clear" onclick="clearArtistsFilter(event)">Clear filter (show all)</button>` : ''}
             </div>
           </div>
         </div>
@@ -6548,8 +6574,8 @@ function renderLanding() {
           <div class="landing-submitter-dd">
             <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
             <div class="landing-submitter-menu" id="landing-submitter-menu" style="display:${_submitterMenuOpen ? 'block' : 'none'}">
+              ${_subOpts.length ? _subAllRow : ''}
               ${_subMenuItems || '<div class="lsm-empty">No submitters yet</div>'}
-              ${landingSubmitterFilter.size ? `<button type="button" class="lsm-clear" onclick="clearSubmitterFilter(event)">Clear filter</button>` : ''}
             </div>
           </div>
         </div>
