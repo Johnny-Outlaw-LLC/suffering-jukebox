@@ -549,6 +549,9 @@ body:not(.light) .tt-num { color: var(--text); }
   #lwytb-header .lwytb-row {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem; width: 100%;
   }
+  /* Odd item count - the trailing control spans the row instead of sitting
+     half-width next to empty space. */
+  #lwytb-header .lwytb-row > :last-child:nth-child(odd) { grid-column: 1 / -1; }
   #lwytb-header .ctrl-btn, #lwytb-header .ctrl-select {
     width: 100%; max-width: none; font-size: .5rem !important;
     padding: 3px 6px !important; min-height: 26px !important;
@@ -1455,7 +1458,8 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   font-family: var(--mono); font-size: .56rem; padding: .42rem .6rem; border-radius: 8px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
 }
-.landing-submitter-btn .lsb-caret { color: var(--text-muted); font-size: .5rem; }
+.landing-submitter-btn .lsb-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.landing-submitter-btn .lsb-caret { color: var(--text-muted); font-size: .5rem; flex: 0 0 auto; }
 .landing-submitter-menu {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
@@ -1483,7 +1487,35 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   border-radius: 8px; cursor: pointer; transition: all .15s; white-space: nowrap;
 }
 .landing-add-artist-btn:hover { background: var(--accent); color: #0a0a0a; }
-@media (max-width: 640px) { .landing-add-artist-btn { margin-left: 0; } }
+/* Mobile: the filter row becomes a tidy 2-up grid - label stacked over a
+   full-width control - instead of four ragged label/control lines. */
+@media (max-width: 640px) {
+  .landing-intro { margin: 0 0 10px; }
+  .landing-controls {
+    display: grid; grid-template-columns: 1.15fr 1fr; align-items: end;
+    gap: 10px 8px; margin: 0 0 16px;
+  }
+  .landing-control-group { flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; }
+  .landing-control-lbl { font-size: .46rem; }
+  .landing-sort-select,
+  .landing-submitter-btn {
+    width: 100%; min-height: 34px; font-size: .54rem; padding: .3rem .5rem;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .landing-submitter-btn { justify-content: space-between; }
+  .landing-submitter-dd, .landing-artists-dd { min-width: 0; }
+  /* Menus size to their content but stay inside the viewport; the right-hand
+     column opens leftwards so it can't run off the screen edge. */
+  .landing-submitter-menu {
+    min-width: 100%; width: max-content; max-width: calc(100vw - 28px);
+  }
+  .landing-control-group:nth-child(even) .landing-submitter-menu { left: auto; right: 0; }
+  .lsm-item { white-space: normal; padding: .5rem; }
+  .lsm-name { overflow-wrap: anywhere; }
+  .landing-add-artist-btn {
+    margin-left: 0; grid-column: 1 / -1; width: 100%; min-height: 34px; padding: .42rem .6rem;
+  }
+}
 .landing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--card-min, 240px), 1fr)); gap: 20px; }
 .landing-grid.detail-name { --card-min: 160px; }
 .landing-grid.detail-yt   { --card-min: 220px; }
@@ -6510,7 +6542,7 @@ function renderLanding() {
         <div class="landing-control-group">
           <span class="landing-control-lbl">Submitted By</span>
           <div class="landing-submitter-dd">
-            <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
+            <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)"><span class="lsb-txt">${esc(submitterBtnLabel())}</span> <span class="lsb-caret">▾</span></button>
             <div class="landing-submitter-menu" id="landing-submitter-menu" style="display:${_submitterMenuOpen ? 'block' : 'none'}">
               ${_subMenuItems || '<div class="lsm-empty">No submitters yet</div>'}
               ${landingSubmitterFilter.size ? `<button type="button" class="lsm-clear" onclick="clearSubmitterFilter(event)">Clear filter</button>` : ''}
@@ -6520,7 +6552,7 @@ function renderLanding() {
         <div class="landing-control-group">
           <span class="landing-control-lbl">Artists</span>
           <div class="landing-artists-dd">
-            <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
+            <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)"><span class="lsb-txt">${esc(artistsBtnLabel())}</span> <span class="lsb-caret">▾</span></button>
             <div class="landing-submitter-menu" id="landing-artists-menu" style="display:${_artistsMenuOpen ? 'block' : 'none'}">
               ${_artistMenuItems || '<div class="lsm-empty">No artists yet</div>'}
               ${landingStats.some(r => r.hidden) ? `<button type="button" class="lsm-clear" onclick="clearArtistsFilter(event)">Clear filter (show all)</button>` : ''}
