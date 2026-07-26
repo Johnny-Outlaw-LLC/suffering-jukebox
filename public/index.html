@@ -8726,20 +8726,40 @@ function amArtHash(u) {
   });
 }
 function amHashDist(a, b) { let n = 0; for (let i = 0; i < a.length; i++) n += a[i] ^ b[i]; return n; }
+// The just-imported artist, from whichever source has it. amFt is the richest
+// but it's null when finetune_data failed, so fall back to the refreshed lists.
+function amNewArtist() {
+  if (amFt && amFt.artist && amFt.artist.slug) return { id: amFt.artist.id, name: amFt.artist.name, slug: amFt.artist.slug };
+  if (!amArtistId) return null;
+  const hit =
+    (typeof landingStats !== 'undefined' && Array.isArray(landingStats) && landingStats.find(r => r.artist_id === amArtistId)) ||
+    (Array.isArray(communityArtists) && communityArtists.find(a => a.id === amArtistId)) ||
+    (Array.isArray(allArtists) && allArtists.find(a => a.id === amArtistId)) || null;
+  if (!hit || !hit.slug) return null;
+  return { id: amArtistId, name: hit.name || (amIdent && amIdent.artist_name) || 'artist', slug: hit.slug };
+}
+// Tuck the wizard away without cancelling the background lyrics/date work
+function amStowWizard() {
+  if (amBgBusy) { _amWizardDone = true; amShowPane(3); amSetFooter(false, 'Fine-tune ›', false); amMinimize(); amBgSync(); }
+  else closeAddMusic();
+}
 function amShowGoBtn() {
   const go = document.getElementById('amGoBtn');
   if (!go) return;
-  const a = amFt && amFt.artist;
+  const a = amNewArtist();
   // On the artist's own jukebox page the button is pointless
-  const show = !!(a && a.slug && !(IS_COMMUNITY && FEATURED_ARTIST_ID === a.id));
+  const show = !!(a && !(IS_COMMUNITY && FEATURED_ARTIST_ID === a.id));
   go.style.display = show ? '' : 'none';
   if (show) go.textContent = `Go to ${a.name} Jukebox →`;
 }
 async function amGoToArtist() {
-  if (!amFt?.artist?.slug) return;
+  const a = amNewArtist();
+  if (!a) return;
   try { await amFtSave(); } catch (_) {}   // keep any fine-tune edits
-  // New tab, so background lyrics & release dates keep loading in this one
-  window.open('/' + amFt.artist.slug, '_blank');
+  // Same tab, in-app: mobile browsers block window.open() once the handler has
+  // awaited, and the in-app route keeps background enrichment running.
+  amStowWizard();
+  landingExploreArtist(a.slug, a.id);
 }
 function amFtPickColor(c) {
   amFtColor = c;
@@ -8805,21 +8825,12 @@ async function amFinish() {
       await refreshLandingStats();
     } catch (_) {}
     amBusy = false;
-    const _goSlug = amFt?.artist?.slug || null;
-    const _goId   = amArtistId || null;
-    if (amBgBusy) {
-      // Lyrics & dates still loading — keep the progress pill running in this context
-      _amWizardDone = true;
-      amShowPane(3);
-      amSetFooter(false, 'Fine-tune ›', false);
-      amMinimize();
-      amBgSync();
-    } else {
-      closeAddMusic();
-    }
+    const _go = amNewArtist();
+    amStowWizard();
     // Last step: take the listener straight to the artist's jukebox. In-app when
     // possible (landingStats has the row) so background enrichment keeps running.
-    if (_goSlug) landingExploreArtist(_goSlug, _goId);
+    if (_go) landingExploreArtist(_go.slug, _go.id);
+    else if (amArtistId) { try { await refreshLandingStats(); } catch (_) {} const _r = amNewArtist(); if (_r) landingExploreArtist(_r.slug, _r.id); }
   } catch (e) {
     amBusy = false;
     amStepFail(e.message);
