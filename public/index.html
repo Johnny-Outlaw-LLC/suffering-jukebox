@@ -1842,12 +1842,12 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 </div>
 
 <!-- ADD MUSIC MODAL (community imports from YouTube) -->
-<div class="modal-overlay" id="addMusicOverlay" onclick="if(event.target===this)closeAddMusic()">
+<div class="modal-overlay" id="addMusicOverlay" onclick="if(event.target===this)amDismiss()">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">Add Music from YouTube</span>
       <button class="modal-close" onclick="amMinimize()" title="Minimize (keeps working in the background)" style="font-size:1rem">–</button>
-      <button class="modal-close" onclick="closeAddMusic()">✕</button>
+      <button class="modal-close" onclick="amDismiss()">✕</button>
     </div>
     <div class="modal-body">
       <div class="am-steps" id="amSteps">
@@ -1913,7 +1913,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       </div>
     </div>
     <div class="modal-footer">
-      <button class="m-btn ghost" onclick="closeAddMusic()">Cancel</button>
+      <button class="m-btn ghost" onclick="amDismiss()">Cancel</button>
       <button class="m-btn ghost" id="amBackBtn" onclick="amBack()" style="display:none">‹ Back</button>
       <button class="m-btn" id="amNextBtn" onclick="amNext()" disabled>Next: Choose Albums ›</button>
       <span class="mf-status" id="amFooterStatus"></span>
@@ -8359,6 +8359,15 @@ function openAddMusic() {
   document.getElementById('addMusicOverlay').classList.add('open');
   setTimeout(() => document.getElementById('amSearchInput')?.focus(), 50);
 }
+// Leaving the wizard by ✕, backdrop or Cancel. If the import already landed,
+// the listener still gets the jukebox they just built rather than being dropped
+// back on whatever page they happened to open Add Music from.
+function amDismiss() {
+  const a = amImportOk ? amNewArtist() : null;
+  amStowWizard();
+  if (a) landingExploreArtist(a.slug, a.id);
+}
+
 function closeAddMusic() {
   if (amBusy || amBgBusy) { amMinimize(); return; }   // never kill running work, tuck it away instead
   amMinimized = false;
@@ -8882,17 +8891,15 @@ async function amFinish() {
   try {
     await amFtSave();
     amStepDone('All set. Your music is live on the jukebox.');
-    // Refresh app state so new names, years, covers and colors show everywhere
+    // New names, years, covers and colors everywhere. Not allArtists/selectedIds:
+    // we're leaving for the new artist's jukebox, and enterArtistJukebox rebuilds
+    // both from scratch - touching them here just churns the view being left.
+    let _rows = null;
     try {
-      const rows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
-      communityArtists = rows.filter(a => a.is_community);
-      mainCatalogArtists = rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
+      _rows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
+      communityArtists = _rows.filter(a => a.is_community);
+      mainCatalogArtists = _rows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
       communityAlbumsCache = {};
-      allArtists = filterPageArtists(rows);
-      restoreOtherArtists();
-      selectedIds = new Set(allArtists.map(a => a.id));
-      await loadData();
-      updateFilterHeader();
       await refreshLandingStats();
     } catch (_) {}
     amBusy = false;
@@ -8900,8 +8907,16 @@ async function amFinish() {
     amStowWizard();
     // Last step: take the listener straight to the artist's jukebox. In-app when
     // possible (landingStats has the row) so background enrichment keeps running.
-    if (_go) landingExploreArtist(_go.slug, _go.id);
-    else if (amArtistId) { try { await refreshLandingStats(); } catch (_) {} const _r = amNewArtist(); if (_r) landingExploreArtist(_r.slug, _r.id); }
+    if (_go) { landingExploreArtist(_go.slug, _go.id); return; }
+    // No slug to jump to - fall back to folding the import into the current page
+    try {
+      const rows = _rows || await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
+      allArtists = filterPageArtists(rows);
+      restoreOtherArtists();
+      selectedIds = new Set(allArtists.map(a => a.id));
+      await loadData();
+      updateFilterHeader();
+    } catch (_) {}
   } catch (e) {
     amBusy = false;
     amStepFail(e.message);
@@ -9302,20 +9317,20 @@ async function amImport() {
     amArtistId = data.artist_id || null;
     picked.forEach(a => { a.already = true; });
     amPicked.clear();
-    if (IS_COMMUNITY) {
-      allArtists = filterPageArtists(await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,color&order=name.asc'));
-      allArtists.forEach(a => selectedIds.add(a.id));
-      await loadData();
-    } else {
-      try {
-        const _rows3 = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
-        communityArtists = _rows3.filter(a => a.is_community);
-        mainCatalogArtists = _rows3.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
-        updateFilterHeader();
-      } catch (_) {}
-      amLogLine('ok', 'Added. Find it under “Other Artists” in the filter bar.');
-      refreshLandingStats();   // new artist card appears on the landing grid right away
-    }
+    // Refresh the artist lists so the new artist is findable everywhere, but
+    // leave the current jukebox's selection alone. Folding a fresh import into
+    // the chart already on screen buries it in someone else's discography, and
+    // we hand the listener their own jukebox at the end of the wizard anyway.
+    try {
+      const _rows3 = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
+      communityArtists = _rows3.filter(a => a.is_community);
+      mainCatalogArtists = _rows3.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
+      if (!IS_COMMUNITY) updateFilterHeader();
+    } catch (_) {}
+    amLogLine('ok', IS_COMMUNITY
+      ? 'Added. Finish to open their jukebox.'
+      : 'Added. Find it under “Other Artists” in the filter bar.');
+    refreshLandingStats();   // new artist card appears on the landing grid right away
     if (data.artist_id) delete communityAlbumsCache[data.artist_id];
     amImportOk = true;
     statusEl.textContent = `✓ ${data.tracks} track${data.tracks === 1 ? '' : 's'} live`; statusEl.style.color = '#22c55e';
