@@ -2443,7 +2443,8 @@ const dbRpcAuth = async (path, body) => {
     body: JSON.stringify(body || {})
   });
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;   // void RPCs answer 204 with no body
 };
 
 const dbGetAuth = async (path) => {
@@ -10980,15 +10981,9 @@ function applyGlobalLyricSize(size) {
 // ══════════════════════════════════════════════════════════════
 // PLAY & RATING TRACKING
 // ══════════════════════════════════════════════════════════════
-let _cachedIP = null;
-async function getClientIP() {
-  if (_cachedIP) return _cachedIP;
-  try {
-    const r = await fetch('https://api.ipify.org?format=json');
-    _cachedIP = (await r.json()).ip;
-  } catch(e) { _cachedIP = '0.0.0.0'; }
-  return _cachedIP;
-}
+// The visitor's IP and identity are stamped by jukebox.log_play_event /
+// log_rating_change from the request headers and the verified JWT. The browser
+// no longer looks up or sends either, so votes cannot be attributed at will.
 
 const _activeCards = {};  // trackId → { playEventId, openedAt, ratingAtOpen, currentRating }
 let inAppPlays    = {};  // trackId → play count (loaded from DB)
@@ -11009,21 +11004,13 @@ let pubPlaylists = []; // public playlists by others
 let _ytCurrentPlay = null;  // { eventId, trackId, playbackStarted }
 
 async function logPlayStart(trackId, currentRating) {
-  const ip    = await getClientIP();
-  const uMeta = googleUser?.user_metadata || {};
   try {
-    const res = await fetch(`${REST}/play_events?select=id`, {
-      method: 'POST',
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
-        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=representation' },
-      body: JSON.stringify({ track_id: trackId, ip_address: ip,
-        device_id: getDeviceId(),
-        user_email: googleUser?.email || null, user_name: uMeta.full_name || null,
-        rating_at_play: currentRating || null })
+    const id = await dbRpcAuth('/rpc/log_play_event', {
+      p_track_id:       trackId,
+      p_device_id:      getDeviceId(),
+      p_rating_at_play: currentRating || null
     });
-    const rows = await res.json();
-    const id   = Array.isArray(rows) ? rows[0]?.id : null;
-    _activeCards[trackId] = { playEventId: id, openedAt: Date.now(),
+    _activeCards[trackId] = { playEventId: id || null, openedAt: Date.now(),
       ratingAtOpen: currentRating || 0, currentRating: currentRating || 0 };
   } catch(e) {
     _activeCards[trackId] = { playEventId: null, openedAt: Date.now(),
@@ -11065,29 +11052,16 @@ function patchYTPlayDuration() {
 async function logYTPlay(videoId, trackId, eventType, source) {
   const track = findTrackById(trackId);
   if (!track) return;
-  const ip    = await getClientIP();
-  const uMeta = googleUser?.user_metadata || {};
   try {
-    const res = await fetch(`${REST}/play_events?select=id`, {
-      method: 'POST',
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
-        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox',
-        Prefer: 'return=representation' },
-      body: JSON.stringify({
-        track_id:       trackId,
-        artist_id:      track.artist_id  || null,
-        album_id:       track.album_id   || null,
-        event_type:     eventType,
-        source:         source || (eventType === 'play' ? 'video' : null),
-        ip_address:     ip,
-        device_id:      getDeviceId(),
-        user_email:     googleUser?.email || null,
-        user_name:      uMeta.full_name  || null,
-        rating_at_play: getMyVote(trackId) || null
-      })
+    const eventId = await dbRpcAuth('/rpc/log_play_event', {
+      p_track_id:       trackId,
+      p_artist_id:      track.artist_id || null,
+      p_album_id:       track.album_id  || null,
+      p_event_type:     eventType,
+      p_source:         source || (eventType === 'play' ? 'video' : null),
+      p_device_id:      getDeviceId(),
+      p_rating_at_play: getMyVote(trackId) || null
     });
-    const rows    = await res.json();
-    const eventId = Array.isArray(rows) ? rows[0]?.id : null;
     if (eventType === 'play') {
       _ytCurrentPlay = { eventId, trackId, playbackStarted: null };
       inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
@@ -11478,21 +11452,18 @@ function refreshInAppPlayUI(trackId) {
 
 async function logRatingChange(trackId, oldRating, newRating) {
   if (oldRating === newRating) return;
-  const ip    = await getClientIP();
   const s     = _activeCards[trackId];
   const track = findTrackById(trackId);
   if (s) s.currentRating = newRating;
   try {
-    await fetch(`${REST}/rating_events`, {
-      method: 'POST',
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
-        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
-      body: JSON.stringify({ track_id: trackId,
-        artist_id: track?.artist_id || null, album_id: track?.album_id || null,
-        old_rating: oldRating, new_rating: newRating,
-        ip_address: ip, user_email: googleUser?.email || null,
-        user_name: googleUser?.user_metadata?.full_name || null,
-        card_open: !!s, play_event_id: s?.playEventId || null })
+    await dbRpcAuth('/rpc/log_rating_change', {
+      p_track_id:      trackId,
+      p_artist_id:     track?.artist_id || null,
+      p_album_id:      track?.album_id  || null,
+      p_old_rating:    oldRating,
+      p_new_rating:    newRating,
+      p_card_open:     !!s,
+      p_play_event_id: s?.playEventId || null
     });
   } catch(e) {}
 }
