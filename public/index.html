@@ -2412,6 +2412,17 @@ const dbGet = async (path) => {
   return r.json();
 };
 
+const dbRpc = async (path, body) => {
+  const r = await fetch(`${REST}${path}`, {
+    method: 'POST',
+    headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
+      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
+    body: JSON.stringify(body || {})
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+};
+
 const dbGetAuth = async (path) => {
   const { data: { session } } = await sbAuth.auth.getSession();
   const tok = session?.access_token || ANON;
@@ -10795,7 +10806,7 @@ async function instantVote(trackId, vote) {
       'Content-Type': 'application/json',
       'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox'
     };
-    const existing = (feedbackCache[key] || []).find(r => r.user_email === googleUser.email);
+    const existing = (feedbackCache[key] || []).find(r => r.mine);
     if (existing) {
       await fetch(REST + '/feedback?id=eq.' + existing.id,
         { method: 'PATCH', headers: hdrs, body: JSON.stringify({ vote: next || null }) });
@@ -10803,11 +10814,11 @@ async function instantVote(trackId, vote) {
     } else if (next) {
       const body = { user_id: userId, user_email: googleUser.email,
         target_type: 'track', track_id: trackId, vote: next };
-      const res = await fetch(REST + '/feedback',
+      const res = await fetch(REST + '/feedback?select=id,track_id,target_type,vote',
         { method: 'POST', headers: Object.assign({ Prefer: 'return=representation' }, hdrs),
           body: JSON.stringify(body) });
       if (res.ok) {
-        const newRow = (await res.json())[0] || body;
+        const newRow = Object.assign({ mine: true }, (await res.json())[0] || body);
         if (!feedbackCache[key]) feedbackCache[key] = [];
         feedbackCache[key].push(newRow);
       }
@@ -10819,13 +10830,13 @@ async function loadTrackComments(trackId) {
   const key = 'track:' + trackId;
   if (!feedbackCache[key]) {
     try {
-      const rows = await dbGet(
-        '/feedback?track_id=eq.' + trackId +
-        '&select=id,user_email,vote,comment,created_at&order=created_at.asc'
-      );
+      const rows = await dbRpc('/rpc/track_feedback', {
+        p_track_id: trackId,
+        p_email: googleUser?.email || null
+      });
       feedbackCache[key] = Array.isArray(rows) ? rows : [];
       if (googleUser) {
-        const mine = feedbackCache[key].find(r => r.user_email === googleUser.email);
+        const mine = feedbackCache[key].find(r => r.mine);
         if (mine && mine.vote) { localVotes[trackId] = mine.vote; saveLocalVotes(); refreshVoteUI(trackId); }
       }
     } catch(e) { feedbackCache[key] = []; }
@@ -10912,7 +10923,7 @@ async function logPlayStart(trackId, currentRating) {
   const ip    = await getClientIP();
   const uMeta = googleUser?.user_metadata || {};
   try {
-    const res = await fetch(`${REST}/play_events`, {
+    const res = await fetch(`${REST}/play_events?select=id`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
         'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=representation' },
@@ -10968,7 +10979,7 @@ async function logYTPlay(videoId, trackId, eventType, source) {
   const ip    = await getClientIP();
   const uMeta = googleUser?.user_metadata || {};
   try {
-    const res = await fetch(`${REST}/play_events`, {
+    const res = await fetch(`${REST}/play_events?select=id`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
         'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox',
@@ -11192,9 +11203,7 @@ function getAlbumDailySparkPoints(albId) {
 async function loadMyVotes() {
   if (!googleUser?.email) return;
   try {
-    const rows = await dbGet(
-      '/feedback?select=track_id,vote&target_type=eq.track&user_email=eq.' + encodeURIComponent(googleUser.email)
-    );
+    const rows = await dbRpc('/rpc/my_track_votes', { p_email: googleUser.email });
     const affected = new Set(Object.keys(localVotes));
     localVotes = {};
     rows.forEach(r => { if (r.track_id && r.vote) { localVotes[r.track_id] = normalizeVote(r.vote); affected.add(r.track_id); } });
@@ -11207,14 +11216,9 @@ async function loadMyVotes() {
 async function loadMyPlayCounts() {
   if (!googleUser?.email) { myInAppPlays = {}; return; }
   try {
-    const resp = await fetch(
-      `${REST}/play_events?select=track_id&event_type=eq.play&user_email=eq.${encodeURIComponent(googleUser.email)}`,
-      { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } }
-    );
-    if (!resp.ok) return;
-    const rows = await resp.json();
+    const rows = await dbRpc('/rpc/my_play_counts', { p_email: googleUser.email });
     myInAppPlays = {};
-    rows.forEach(r => { if (r.track_id) myInAppPlays[r.track_id] = (myInAppPlays[r.track_id] || 0) + 1; });
+    rows.forEach(r => { if (r.track_id) myInAppPlays[r.track_id] = Number(r.plays) || 0; });
     Object.keys(myInAppPlays).forEach(tid => refreshMyPlayUI(tid));
   } catch(e) { console.warn('loadMyPlayCounts error', e); }
 }
@@ -11581,11 +11585,11 @@ async function _plShareInsert(body) {
   const tok = session?.access_token || ANON;
   const r = await fetch(`${REST}/shared_links`, {
     method: 'POST',
-    headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=representation' },
+    headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=minimal' },
     body: JSON.stringify(body)
   });
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return [{ slug: body.slug, name: body.name }];
 }
 
 function _plShareFmtTime(sec) {
@@ -11763,7 +11767,7 @@ async function _fetchSharePayload(slug) {
   if (cached === 'loading') return null;
   _sharePayloadCache[slug] = 'loading';
   try {
-    const rows = await dbGet(`/shared_links?slug=eq.${slug}&select=payload`);
+    const rows = await dbRpc('/rpc/get_shared_link', { p_slug: slug });
     const payload = rows[0]?.payload || null;
     _sharePayloadCache[slug] = payload;
     return payload;
@@ -11821,12 +11825,15 @@ function toggleExpandShare(slug) {
 async function confirmDeleteShare(slug, name) {
   if (!confirm(`Delete the share link "${name || slug}"? Anyone who has it will no longer be able to open it.`)) return;
   try {
-    await fetch(`${REST}/rpc/delete_shared_link`, {
+    const { data: { session } } = await sbAuth.auth.getSession().catch(() => ({ data: {} }));
+    const r = await fetch(`${REST}/rpc/delete_shared_link`, {
       method: 'POST',
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
+      headers: { apikey: ANON, Authorization: `Bearer ${session?.access_token || ANON}`,
+        'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
       body: JSON.stringify({ p_slug: slug })
     });
-  } catch (e) { console.error('confirmDeleteShare', e); }
+    if (!r.ok) { showShareToast('That share belongs to another account.'); return; }
+  } catch (e) { console.error('confirmDeleteShare', e); return; }
   try {
     const mine = _plShareMyShares().filter(m => m.slug !== slug);
     localStorage.setItem('sj_my_shares', JSON.stringify(mine));
@@ -11851,8 +11858,7 @@ async function _plShareRenderMine() {
   wrap.style.display = '';
   list.innerHTML = mine.map(m => buildShareCard(m)).join('');
   try {
-    const slugs = mine.map(m => m.slug).join(',');
-    const rows = await dbGet(`/shared_links?slug=in.(${slugs})&select=slug,open_count`);
+    const rows = await dbRpc('/rpc/shared_link_opens', { p_slugs: mine.map(m => m.slug) });
     rows.forEach(r => {
       const el = list.querySelector(`[data-share-opens="${r.slug}"]`);
       if (el) el.textContent = r.open_count === 1 ? '1 open' : `${r.open_count} opens`;
@@ -11872,8 +11878,7 @@ function renderManageSharesList() {
   const mine = _plShareMyShares();
   if (!mine.length) { section.innerHTML = '<div class="pl-empty">No shared playlists yet.</div>'; return; }
   section.innerHTML = mine.map(m => buildShareCard(m)).join('');
-  const slugs = mine.map(m => m.slug).join(',');
-  dbGet(`/shared_links?slug=in.(${slugs})&select=slug,open_count`).then(rows => {
+  dbRpc('/rpc/shared_link_opens', { p_slugs: mine.map(m => m.slug) }).then(rows => {
     rows.forEach(r => {
       const el = section.querySelector(`[data-share-opens="${r.slug}"]`);
       if (el) el.textContent = r.open_count === 1 ? '1 open' : `${r.open_count} opens`;
@@ -11899,7 +11904,7 @@ async function hydrateSharedLink() {
   const slug = _plShareIncomingSlug;
   if (!slug || !/^[A-Za-z0-9]{6,12}$/.test(slug)) return;
   try {
-    const rows = await dbGet(`/shared_links?slug=eq.${slug}&select=name,payload,shared_by,created_at`);
+    const rows = await dbRpc('/rpc/get_shared_link', { p_slug: slug });
     const row = rows[0];
     const p = row?.payload;
     if (!p) { showToast('That share link has gone missing.'); return; }
