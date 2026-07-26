@@ -3378,13 +3378,8 @@ function openSongCard(trackId) {
     delete _cardPlayTimers[trackId];
     logPlayStart(trackId, getMyVote(trackId));
     inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
-    refreshInAppPlayUI(trackId);
-    if (barChartMode === 'total') refreshTrackBarUI(trackId);
-    if (googleUser) {
-      myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
-      refreshMyPlayUI(trackId);
-      if (barChartMode === 'mine') refreshTrackBarUI(trackId);
-    }
+    if (googleUser) myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
+    refreshTrackAggregates(trackId);
   }, 10000);
 }
 
@@ -5871,17 +5866,8 @@ function toggleTrackAccordion(trackId, e) {
     delete _cardPlayTimers[trackId];
     logPlayStart(trackId, getMyVote(trackId));
     inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
-    refreshInAppPlayUI(trackId);
-    const _trk = findTrackById(trackId);
-    const _alb = _trk ? getAlbumForTrack(_trk) : null;
-    if (barChartMode === 'total') { refreshTrackBarUI(trackId); }
-    else if (_alb) refreshAlbumMetricUI(_alb.id);  // bar not shown but album total still updates
-    if (googleUser) {
-      myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
-      refreshMyPlayUI(trackId);
-      if (barChartMode === 'mine') { refreshTrackBarUI(trackId); }
-      else if (_alb && barChartMode !== 'total') refreshAlbumMetricUI(_alb.id);
-    }
+    if (googleUser) myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
+    refreshTrackAggregates(trackId);
   }, 10000);
   // Grow the timeline stage if this panel now overflows its bottom edge
   requestAnimationFrame(() => {
@@ -10794,7 +10780,7 @@ async function instantVote(trackId, vote) {
   const _voteDelta = next - cur;
   if (_voteDelta !== 0) {
     trackVoteScores[trackId] = (trackVoteScores[trackId] || 0) + _voteDelta;
-    refreshTrackBarUI(trackId);
+    refreshTrackAggregates(trackId);
   }
   if (!googleUser) return;
   try {
@@ -11004,13 +10990,8 @@ async function logYTPlay(videoId, trackId, eventType, source) {
     if (eventType === 'play') {
       _ytCurrentPlay = { eventId, trackId, playbackStarted: null };
       inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
-      refreshInAppPlayUI(trackId);
-      if (barChartMode === 'total') refreshTrackBarUI(trackId);
-      if (googleUser) {
-        myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
-        refreshMyPlayUI(trackId);
-        if (barChartMode === 'mine') refreshTrackBarUI(trackId);
-      }
+      if (googleUser) myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
+      refreshTrackAggregates(trackId);
     }
   } catch(e) {}
 }
@@ -11241,10 +11222,20 @@ async function loadTrackVoteScores() {
   } catch(e) { console.warn('loadTrackVoteScores error', e); }
 }
 
-function refreshTrackBarUI(trackId) {
+function refreshTrackBarUI(trackId, skipCascade) {
   const fills = document.querySelectorAll(`[data-bar-fill="${trackId}"]`);
   const vals  = document.querySelectorAll(`[data-bar-val="${trackId}"]`);
-  if (!fills.length && !vals.length) return;
+  if (!fills.length && !vals.length) {
+    // This album's rows are collapsed, but its header total and the timeline
+    // bars still have to move, so run the cascade before bailing out.
+    if (!skipCascade) {
+      const _t = findTrackById(trackId);
+      const _a = _t ? getAlbumForTrack(_t) : null;
+      if (_a) refreshAlbumMetricUI(_a.id);
+      refreshAllAlbumBarsUI();
+    }
+    return;
+  }
   const track     = findTrackById(trackId);
   const alb       = track ? getAlbumForTrack(track) : null;
   const color     = alb ? albumColor(alb) : '#888';
@@ -11277,9 +11268,39 @@ function refreshTrackBarUI(trackId) {
   }
   fills.forEach(el => { el.style.width = barPct + '%'; el.style.background = barColor; el.style.opacity = barOp; });
   vals.forEach(el => { el.textContent = barDisplay; });
-  // Also refresh the album header total
+  if (!skipCascade) {
+    if (alb) refreshAlbumMetricUI(alb.id);
+    refreshAllAlbumBarsUI();
+  }
+}
+
+// A vote or a play moves numbers that several views aggregate: the track's own
+// bar, every sibling bar in the album (the album maximum may have shifted), the
+// album header total, and the timeline album bars. Refresh all of them no
+// matter which bar mode is on screen or whether the album is expanded.
+function refreshTrackAggregates(trackId) {
+  const trk  = findTrackById(trackId);
+  const alb  = trk ? getAlbumForTrack(trk) : null;
+  const sibs = alb ? (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id) : [];
+  if (sibs.length) sibs.forEach(t => refreshTrackBarUI(t.id, true));
+  else refreshTrackBarUI(trackId, true);
+  refreshMyPlayUI(trackId);
+  refreshInAppPlayUI(trackId);
   if (alb) refreshAlbumMetricUI(alb.id);
   refreshAllAlbumBarsUI();
+  scheduleAggregateSync();
+}
+
+// The updates above are optimistic and local. Once the user stops acting,
+// reconcile with the server so the score also reflects other people's votes
+// and anything logged on another device.
+let _aggSyncTimer = null;
+function scheduleAggregateSync() {
+  clearTimeout(_aggSyncTimer);
+  _aggSyncTimer = setTimeout(() => {
+    loadTrackVoteScores();
+    if (googleUser) loadMyPlayCounts();
+  }, 5000);
 }
 
 function refreshAlbumMetricUI(albumId) {
