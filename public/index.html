@@ -2423,6 +2423,22 @@ const dbRpc = async (path, body) => {
   return r.json();
 };
 
+// Same as dbRpc, but sends the signed-in user's access token. SECURITY DEFINER
+// functions read the caller's identity from that verified JWT; passing an email
+// in the request body would let anyone read anyone else's data.
+const dbRpcAuth = async (path, body) => {
+  const sess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+  const r = await fetch(`${REST}${path}`, {
+    method: 'POST',
+    headers: { apikey: ANON, Authorization: `Bearer ${sess?.access_token || ANON}`,
+      'Content-Type': 'application/json',
+      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
+    body: JSON.stringify(body || {})
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+};
+
 const dbGetAuth = async (path) => {
   const { data: { session } } = await sbAuth.auth.getSession();
   const tok = session?.access_token || ANON;
@@ -10818,9 +10834,8 @@ async function loadTrackComments(trackId) {
   const key = 'track:' + trackId;
   if (!feedbackCache[key]) {
     try {
-      const rows = await dbRpc('/rpc/track_feedback', {
-        p_track_id: trackId,
-        p_email: googleUser?.email || null
+      const rows = await dbRpcAuth('/rpc/track_feedback', {
+        p_track_id: trackId
       });
       feedbackCache[key] = Array.isArray(rows) ? rows : [];
       if (googleUser) {
@@ -11186,7 +11201,7 @@ function getAlbumDailySparkPoints(albId) {
 async function loadMyVotes() {
   if (!googleUser?.email) return;
   try {
-    const rows = await dbRpc('/rpc/my_track_votes', { p_email: googleUser.email });
+    const rows = await dbRpcAuth('/rpc/my_track_votes', {});
     const affected = new Set(Object.keys(localVotes));
     localVotes = {};
     rows.forEach(r => { if (r.track_id && r.vote) { localVotes[r.track_id] = normalizeVote(r.vote); affected.add(r.track_id); } });
@@ -11199,7 +11214,7 @@ async function loadMyVotes() {
 async function loadMyPlayCounts() {
   if (!googleUser?.email) { myInAppPlays = {}; return; }
   try {
-    const rows = await dbRpc('/rpc/my_play_counts', { p_email: googleUser.email });
+    const rows = await dbRpcAuth('/rpc/my_play_counts', {});
     myInAppPlays = {};
     rows.forEach(r => { if (r.track_id) myInAppPlays[r.track_id] = Number(r.plays) || 0; });
     Object.keys(myInAppPlays).forEach(tid => refreshMyPlayUI(tid));
