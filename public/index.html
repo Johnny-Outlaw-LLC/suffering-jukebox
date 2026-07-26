@@ -1870,15 +1870,23 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
         </div>
         <div class="am-ident-card" id="amIdentCard" style="display:none"></div>
         <div id="amManualLink" style="display:none;margin-top:.55rem">
-          <button type="button" class="m-btn ghost" style="font-size:.5rem" onclick="amShowManual()">Can’t find the artist? Add them manually ›</button>
+          <button type="button" class="m-btn ghost" style="font-size:.5rem" onclick="amShowManual()">Can’t find the artist? Add them from their YouTube channel ›</button>
         </div>
         <div id="amManualBox" style="display:none">
-          <div class="m-fl" style="margin-top:.6rem">Artist name</div>
-          <input type="text" class="m-input" id="amManName" maxlength="80" placeholder="Artist name…" autocomplete="off"
-                 autocorrect="off" autocapitalize="words" spellcheck="false">
-          <div class="m-fl" style="margin-top:.6rem">YouTube playlist links, one per line, each becomes an album</div>
-          <textarea class="m-input" id="amManPls" rows="4" inputmode="url" autocorrect="off" autocapitalize="none" spellcheck="false" style="width:100%;resize:vertical;font-family:inherit;line-height:1.5" placeholder="https://www.youtube.com/playlist?list=OLAK5uy_…&#10;https://music.youtube.com/playlist?list=…"></textarea>
-          <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">Tip: open the album’s playlist on YouTube and copy the page URL. Lyrics, release dates and daily view tracking still happen automatically.</div>
+          <div class="m-fl" style="margin-top:.6rem">Their YouTube channel, or any video of theirs</div>
+          <div class="m-search-row">
+            <input type="text" class="m-input" id="amManUrl" inputmode="url" autocomplete="off" autocorrect="off"
+                   autocapitalize="none" spellcheck="false" enterkeyhint="search"
+                   placeholder="youtube.com/@artist, or a video link">
+            <button class="m-btn" id="amManFindBtn" onclick="amManualLookup()">Find</button>
+          </div>
+          <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">Paste the channel URL, their @handle, or a link to one of their videos. We’ll pull every playlist on the channel and you pick which ones to import.</div>
+          <div class="am-ident-card" id="amManChanCard" style="display:none"></div>
+          <div id="amManNameWrap" style="display:none">
+            <div class="m-fl" style="margin-top:.6rem">Artist name</div>
+            <input type="text" class="m-input" id="amManName" maxlength="80" placeholder="Artist name…" autocomplete="off"
+                   autocorrect="off" autocapitalize="words" spellcheck="false">
+          </div>
         </div>
       </div>
       <!-- STEP 2: album selection -->
@@ -2311,6 +2319,8 @@ const ANON    = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsIn
 const SYNC_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/music-sync';
 const YT_FN   = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/youtube-sync';
 const COMMUNITY_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/community-import';
+let amMaxPl = 20;   // playlists the edge function will accept in one import
+let amMaxTrk = 60;  // tracks it takes from any single playlist
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
 // Artist slug pages (e.g. /pavement) are served by the Next [slug] route, which injects window.__SLUG_ARTIST__
 let _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
@@ -8387,6 +8397,7 @@ function amMiniSync() {
     : (_amLastStatus || 'Add Music \u2014 click to reopen');
 }
 document.getElementById('amSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') amSearch(); });
+document.getElementById('amManUrl').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); amManualLookup(); } });
 
 async function amFetch(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await sjAuthHeaders()), ...(opts.headers || {}) };
@@ -8404,6 +8415,8 @@ async function amSearch() {
   amIdent = null; amChannel = null; amAlbums = []; amPicked = new Set();
   amManual = false;
   const _mb = document.getElementById('amManualBox'); if (_mb) _mb.style.display = 'none';
+  const _mc2 = document.getElementById('amManChanCard'); if (_mc2) _mc2.style.display = 'none';
+  const _mw2 = document.getElementById('amManNameWrap'); if (_mw2) _mw2.style.display = 'none';
   if (amStep !== 1) amShowPane(1);
   amStepGo(1, '');
   amSetFooter(false, 'Next: Choose Albums ›', true);
@@ -8459,55 +8472,98 @@ function renderAmIdentCard() {
 // Manual add: the fallback when identify can’t find the artist
 function amShowManual() {
   amManual = true;
+  amAlbums = []; amPicked = new Set(); amChannel = null;
   document.getElementById('amManualBox').style.display = '';
-  const nameEl = document.getElementById('amManName');
-  if (!nameEl.value.trim()) nameEl.value = (amIdent && amIdent.artist_name) || document.getElementById('amSearchInput').value.trim();
-  amStepGo(1, 'Paste YouTube playlist links. Each playlist becomes an album.');
-  amSetFooter(false, 'Next: Check Playlists ›', false);
-  nameEl.focus();
+  document.getElementById('amManChanCard').style.display = 'none';
+  document.getElementById('amManNameWrap').style.display = 'none';
+  const urlEl = document.getElementById('amManUrl');
+  amStepGo(1, 'Paste their YouTube channel, or a link to any video on it.');
+  amSetFooter(false, 'Find Playlists ›', false);
+  urlEl.focus();
 }
-function amParsePlaylistIds(text) {
-  const ids = [];
-  for (const tok of (text || '').split(/\s+/)) {
-    if (!tok) continue;
-    let id = null;
-    const m = tok.match(/[?&]list=([A-Za-z0-9_-]{10,60})/);
-    if (m) id = m[1];
-    else if (/^(PL|OLAK|RDCLAK|UU|FL)[A-Za-z0-9_-]{8,}$/.test(tok)) id = tok;
-    if (id && !ids.includes(id)) ids.push(id);
-  }
-  return ids;
-}
+// Step 1 (manual): one link in, the whole channel's playlists out
 async function amManualLookup() {
   if (amBusy) return;
-  const name = document.getElementById('amManName').value.trim();
-  const ids = amParsePlaylistIds(document.getElementById('amManPls').value);
-  if (!name) { amStepFail('Enter the artist name.'); return; }
-  if (!ids.length) { amStepFail('Paste at least one YouTube playlist link.'); return; }
+  const q = document.getElementById('amManUrl').value.trim();
+  if (!q) { amStepFail('Paste their YouTube channel or a link to one of their videos.'); return; }
+  const btn = document.getElementById('amManFindBtn');
   amBusy = true;
-  amSetFooter(false, '<span class="m-spin"></span>Checking…', true);
-  amStepGo(1, `Checking ${ids.length} playlist${ids.length === 1 ? '' : 's'} on YouTube…`);
+  btn.disabled = true; btn.textContent = '…';
+  amSetFooter(false, '<span class="m-spin"></span>Looking up…', true);
+  amStepGo(1, 'Finding the channel and its playlists on YouTube…');
+  document.getElementById('amManChanCard').style.display = 'none';
+  document.getElementById('amManNameWrap').style.display = 'none';
   try {
-    const d = await amFetch(`?action=playlist_info&ids=${encodeURIComponent(ids.join(','))}`);
-    const found = d.results || [];
-    if (!found.length) throw new Error('None of those playlists could be found on YouTube. Check the links.');
-    amAlbums = found.map(p => ({
-      title: p.title, date: '', rg: null,
+    const d = await amFetch(`?action=channel_playlists&q=${encodeURIComponent(q)}`);
+    const pls = d.playlists || [];
+    amChannel = {
+      channel_id: d.channel.channel_id, title: d.channel.title,
+      thumbnail: d.channel.thumbnail || null,
+    };
+    amAlbums = pls.map(p => ({
+      title: p.title, date: (p.published_at || '').slice(0, 10), rg: null,
       playlist_id: p.playlist_id, track_count: p.track_count,
       channel_id: p.channel_id, channel_title: p.channel_title,
+      thumbnail: p.thumbnail || null,
+      featured: !!p.featured, is_uploads: !!p.is_uploads,
       already: !!p.already_imported,
     }));
-    amPicked = new Set(amAlbums.map((a, i) => a.already ? -1 : i).filter(i => i >= 0));
-    amIdent = { artist_name: name, albums: amAlbums, manual: true };
-    amChannel = { channel_id: found[0].channel_id || '', title: found[0].channel_title || '' };
+    // Albums on by default; the catch-all uploads feed is opt-in
+    amPicked = new Set(amAlbums.map((a, i) => (a.already || a.is_uploads) ? -1 : i).filter(i => i >= 0));
+    amMaxPl = d.max_playlists || amMaxPl;
+    amMaxTrk = d.max_tracks_per_playlist || amMaxTrk;
+    amIdent = {
+      artist_name: d.channel.artist_name || d.channel.title,
+      albums: amAlbums, manual: true, from_channel: true,
+      existing: d.existing || null,
+      wiki: null,
+    };
+    const nameEl = document.getElementById('amManName');
+    nameEl.value = amIdent.artist_name;
+    document.getElementById('amManNameWrap').style.display = '';
+    amRenderManChanCard(d);
+    const blocked = d.existing && d.existing.is_community === false;
     amBusy = false;
-    amGoAlbums();
-    if (d.missing && d.missing.length) amStepGo(2, `⚠ ${d.missing.length} link${d.missing.length === 1 ? '' : 's'} not found on YouTube, continuing with the rest.`);
+    if (blocked) {
+      amStepGo(1, `“${d.existing.name}” is already on the main jukebox.`);
+      amSetFooter(false, 'Next: Choose Playlists ›', true);
+    } else if (!amAlbums.length) {
+      amStepGo(1, 'That channel has no playlists or videos we can import. Try their other channel.');
+      amSetFooter(false, 'Next: Choose Playlists ›', true);
+    } else {
+      amStepGo(1, 'Check the artist name, then continue to pick playlists.');
+      amSetFooter(false, 'Next: Choose Playlists ›', false);
+    }
   } catch (e) {
     amBusy = false;
     amStepFail(e.message);
-    amSetFooter(false, 'Next: Check Playlists ›', false);
+    amSetFooter(false, 'Find Playlists ›', false);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Find';
   }
+}
+
+function amRenderManChanCard(d) {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const card = document.getElementById('amManChanCard');
+  const ch = d.channel;
+  const n = (d.playlists || []).length;
+  const albums = (d.playlists || []).filter(p => !p.is_uploads).length;
+  const bits = [
+    albums ? `${albums} playlist${albums === 1 ? '' : 's'}` : 'no playlists',
+    `${ch.video_count.toLocaleString()} video${ch.video_count === 1 ? '' : 's'}`,
+  ];
+  if (ch.subscribers) bits.push(`${fmtV(ch.subscribers)} subscribers`);
+  if (d.featured_count) bits.push(`${d.featured_count} featured on their channel page`);
+  if (d.existing && d.existing.is_community) bits.push('already in the jukebox, missing albums can be added');
+  card.style.display = '';
+  card.innerHTML = `
+    ${ch.thumbnail ? `<img src="${esc(ch.thumbnail)}" alt="">` : ''}
+    <div style="flex:1;min-width:0">
+      <div class="m-sel-name">${esc(ch.title)}</div>
+      <div class="m-sel-meta" style="margin-top:.35rem">${bits.join(' · ')} · <a href="https://www.youtube.com/channel/${esc(ch.channel_id)}" target="_blank" rel="noopener" style="color:var(--accent)">Open on YouTube ↗</a></div>
+      <div style="color:var(--text-muted);font-size:.48rem;margin-top:.35rem">${n ? 'Wrong channel? Paste a different link above.' : 'Nothing importable found on this channel.'}</div>
+    </div>`;
 }
 
 // ── Wizard controller ──────────────────────────────────────────────────────────
@@ -8542,7 +8598,10 @@ function amResetWizard() {
   const _ml = document.getElementById('amManualLink'); if (_ml) _ml.style.display = 'none';
   const _mx = document.getElementById('amManualBox'); if (_mx) _mx.style.display = 'none';
   const _mn = document.getElementById('amManName'); if (_mn) _mn.value = '';
-  const _mp = document.getElementById('amManPls'); if (_mp) _mp.value = '';
+  const _mu = document.getElementById('amManUrl'); if (_mu) _mu.value = '';
+  const _mw = document.getElementById('amManNameWrap'); if (_mw) _mw.style.display = 'none';
+  const _mc = document.getElementById('amManChanCard'); if (_mc) { _mc.style.display = 'none'; _mc.innerHTML = ''; }
+  amMaxPl = 20; amMaxTrk = 60;
   document.getElementById('amAlbumsList').innerHTML = '';
   const log = document.getElementById('amLog'); log.innerHTML = ''; log.classList.remove('open');
   document.getElementById('amFtBody').innerHTML = '';
@@ -8551,7 +8610,11 @@ function amResetWizard() {
 }
 async function amNext() {
   if (amBusy) return;
-  if (amStep === 1) { if (amManual) amManualLookup(); else if (amIdent && amChannel && amAlbums.length && !(amIdent.existing && amIdent.existing.is_community === false)) amGoAlbums(); }
+  if (amStep === 1) {
+    const blocked = amIdent && amIdent.existing && amIdent.existing.is_community === false;
+    if (amManual) { if (amAlbums.length && !blocked) amGoAlbums(); else amManualLookup(); }
+    else if (amIdent && amChannel && amAlbums.length && !blocked) amGoAlbums();
+  }
   else if (amStep === 2) { if (amPicked.size) amImport(); }
   else if (amStep === 3) { if (amImportOk) amGoFinetune(); else if (amPicked.size) amImport(); }
   else if (amStep === 4) amFinish();
@@ -8560,7 +8623,7 @@ function amBack() {
   if (amBusy) return;
   if (amStep === 2) {
     amShowPane(1); amStepGo(1, '');
-    if (amManual) amSetFooter(false, 'Next: Check Playlists ›', false);
+    if (amManual) amSetFooter(false, amAlbums.length ? 'Next: Choose Playlists ›' : 'Find Playlists ›', false);
     else amSetFooter(false, 'Next: Choose Albums ›', !(amIdent && amChannel && amAlbums.length));
   } else if (amStep === 3 && !amImportOk) {
     amShowPane(2); amStepGo(2, '');
@@ -8571,13 +8634,21 @@ function amBack() {
 // ── Step 2: confirm the discography albums to import ──────────────────────
 function amGoAlbums() {
   amShowPane(2);
-  amStepGo(2, amIdent && amIdent.manual
+  if (amIdent && amIdent.from_channel) {
+    const nm = (document.getElementById('amManName')?.value || '').trim();
+    if (nm) amIdent.artist_name = nm;
+  }
+  amStepGo(2, amIdent && amIdent.from_channel
+    ? 'Everything on the channel. Check the ones to import as albums.'
+    : amIdent && amIdent.manual
     ? 'These are your playlists. Uncheck anything you don’t want to import.'
     : 'Uncheck anything you don’t want. The best YouTube playlist is found for each album.');
   const img = (amIdent.wiki && amIdent.wiki.thumbnail) || (amChannel && amChannel.thumbnail) || null;
   document.getElementById('amSelImg2').innerHTML = img ? `<img src="${img}">` : '';
   document.getElementById('amSelName2').textContent = amIdent.artist_name;
-  document.getElementById('amSelMeta2').textContent = amIdent && amIdent.manual
+  document.getElementById('amSelMeta2').textContent = amIdent && amIdent.from_channel
+    ? `${amAlbums.length} playlist${amAlbums.length === 1 ? '' : 's'} on ${amChannel && amChannel.title ? amChannel.title : 'the channel'}`
+    : amIdent && amIdent.manual
     ? `${amAlbums.length} playlist${amAlbums.length === 1 ? '' : 's'} from your links`
     : `${amAlbums.length} studio album${amAlbums.length === 1 ? '' : 's'} in the discography`;
   renderAmAlbums();
@@ -8840,15 +8911,27 @@ async function amFinish() {
 
 function renderAmAlbums() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  document.getElementById('amAlbumsList').innerHTML = amAlbums.map((a, i) => `
+  document.getElementById('amAlbumsList').innerHTML = amAlbums.map((a, i) => {
+    const meta = a.playlist_id
+      ? `${a.track_count} track${a.track_count === 1 ? '' : 's'}` +
+        (a.is_uploads ? ` · every video, not an album · newest ${Math.min(a.track_count, amMaxTrk)} imported` : a.featured ? ` · featured · ${esc(a.channel_title || '')}` : ` · ${esc(a.channel_title || '')}`)
+      : (a.date || '').slice(0, 4);
+    return `
     <div class="am-alb-row${a.already ? ' done' : ''}" onclick="amToggleAlbum(${i})">
       <input type="checkbox" ${amPicked.has(i) ? 'checked' : ''} ${a.already ? 'disabled' : ''} onclick="event.stopPropagation();amToggleAlbum(${i})">
       <div style="flex:1;min-width:0">
         <div class="am-alb-name">${esc(a.title)}</div>
-        <div class="am-alb-meta">${a.playlist_id ? `${a.track_count} tracks · ${esc(a.channel_title || '')}` : (a.date || '').slice(0, 4)}${a.already ? ' · already in jukebox' : ''}</div>
+        <div class="am-alb-meta">${meta}${a.already ? ' · already in jukebox' : ''}</div>
       </div>
-    </div>`).join('');
-  if (amStep === 2 && !amBusy) amSetFooter(true, amPicked.size ? `Import ${amPicked.size} Album${amPicked.size === 1 ? '' : 's'} ›` : 'Import Albums ›', amPicked.size === 0);
+    </div>`;
+  }).join('');
+  const over = amPicked.size - amMaxPl;
+  const st = document.getElementById('amFooterStatus');
+  if (amStep === 2 && st) {
+    if (over > 0) { st.textContent = `⚠ ${amMaxPl} playlists max per import — uncheck ${over} more, or import these and run it again.`; st.style.color = '#f59e0b'; }
+    else { st.textContent = ''; st.style.color = ''; }
+  }
+  if (amStep === 2 && !amBusy) amSetFooter(true, amPicked.size ? `Import ${amPicked.size} Album${amPicked.size === 1 ? '' : 's'} ›` : 'Import Albums ›', amPicked.size === 0 || over > 0);
 }
 
 // (Wikipedia/MusicBrainz discography matching now happens in the edge function)
@@ -9096,7 +9179,7 @@ function amToggleAlbum(i) {
 }
 function amToggleAll() {
   if (amBusy) return;
-  const avail = amAlbums.map((a, i) => a.already ? -1 : i).filter(i => i >= 0);
+  const avail = amAlbums.map((a, i) => (a.already || a.is_uploads) ? -1 : i).filter(i => i >= 0);
   if (amPicked.size < avail.length) avail.forEach(i => amPicked.add(i));
   else amPicked.clear();
   renderAmAlbums();
@@ -9212,7 +9295,7 @@ async function amImport() {
     amStepGo(3, `Importing ${matches.length} album${matches.length === 1 ? '' : 's'} from YouTube…`);
     const data = await amFetch('', {
       method: 'POST',
-      body: JSON.stringify({ channel_id: amChannel.channel_id, artist_name: amIdent.artist_name, playlists: matches, manual: amIdent.manual === true }),
+      body: JSON.stringify({ channel_id: amChannel.channel_id, artist_name: amIdent.artist_name, playlists: matches, manual: amIdent.manual === true && amIdent.from_channel !== true }),
     });
     if (!data.success) throw new Error(data.error || 'Import failed');
     (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
