@@ -6443,11 +6443,12 @@ async function initLanding() {
     const tagline = document.getElementById('brand-tagline');
     if (tagline) tagline.innerHTML = 'Pick an artist to start listening';
     document.title = 'Suffering Jukebox';
+    const _lsSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`,
+      headers: { apikey: ANON, Authorization: `Bearer ${_lsSess?.access_token || ANON}`,
         'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
-      body: JSON.stringify({ p_user_email: googleUser?.email || null })
+      body: JSON.stringify({ p_user_email: null })
     }).then(r => r.json());
     if (!Array.isArray(rows) || !rows.length) { renderEmpty('No artists yet'); return; }
     landingStats = rows;
@@ -6460,11 +6461,12 @@ async function initLanding() {
 async function refreshLandingStats() {
   if (!isLandingMode) return;
   try {
+    const _lsSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`,
+      headers: { apikey: ANON, Authorization: `Bearer ${_lsSess?.access_token || ANON}`,
         'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
-      body: JSON.stringify({ p_user_email: googleUser?.email || null })
+      body: JSON.stringify({ p_user_email: null })
     }).then(r => r.json());
     if (Array.isArray(rows) && rows.length) { landingStats = rows; renderLanding(); }
   } catch (_) {}
@@ -11392,7 +11394,7 @@ function sendSjPageDuration() {
     event: 'end',
     view_id: _sjPageViewId,
     duration_ms: Date.now() - _sjPageOpenedAt,
-    user_email: googleUser?.email || null,
+    session_id: getOrCreateSjSessionId(),
   });
   if (navigator.sendBeacon) {
     navigator.sendBeacon('/api/track-sj', new Blob([payload], { type: 'application/json' }));
@@ -11428,14 +11430,15 @@ function getSjTrackingReferrer() {
 async function trackPageView() {
   _sjPageOpenedAt = Date.now();
   try {
+    const _tvSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
     const res = await fetch(sjApiUrl('/api/track-sj'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' },
+        _tvSess?.access_token ? { Authorization: 'Bearer ' + _tvSess.access_token } : {}),
       body: JSON.stringify({
         page_path: location.pathname || '/',
         referrer: getSjTrackingReferrer(),
         session_id: getOrCreateSjSessionId(),
-        user_email: googleUser?.email || null,
       }),
       keepalive: true,
     });
@@ -12937,7 +12940,7 @@ async function openLyricsHistory(trackId) {
   modal.classList.add('open');
   body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem">Loading…</p>';
   try {
-    const rows = await fetch(REST + '/lyrics_edits?track_id=eq.' + trackId + '&order=edited_at.desc&limit=50', {
+    const rows = await fetch(REST + '/lyrics_edits?track_id=eq.' + trackId + '&select=id,track_id,old_lyrics,new_lyrics,editor_name,edited_at&order=edited_at.desc&limit=50', {
       headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Accept-Profile': 'jukebox' }
     }).then(r => r.json());
     if (!rows.length) { body.innerHTML = '<p style="color:var(--text-muted);font-size:.6rem;padding:8px">No edits recorded yet.</p>'; return; }
@@ -12945,7 +12948,7 @@ async function openLyricsHistory(trackId) {
       const dt   = new Date(r.edited_at).toLocaleString();
       const diff = computeLyricsDiff(r.old_lyrics || '', r.new_lyrics);
       return `<div class="lyr-hist-entry">
-        <div class="lyr-hist-meta"><strong>${r.editor_name || r.editor_email || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
+        <div class="lyr-hist-meta"><strong>${escHtml(r.editor_name) || 'Unknown'}</strong> &nbsp;·&nbsp; ${dt}</div>
         <div class="lyr-hist-diff">${diff}</div>
       </div>`;
     }).join('');
