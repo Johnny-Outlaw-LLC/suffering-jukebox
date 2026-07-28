@@ -1032,6 +1032,21 @@ textarea.report-input { resize:vertical; }
   display: flex; align-items: center; justify-content: center; transition: all .15s; flex-shrink: 0;
 }
 .ytp-mf-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ytp-mf-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.14); }
+/* Single-line "now singing" strip that rides directly above the mini footer.
+   bottom:100% anchors it to the footer's top edge so it slides with the bar. */
+#ytp-mf-lyric-strip {
+  position: absolute; left: 0; right: 0; bottom: 100%;
+  display: none; padding: 7px 16px; text-align: center;
+  background: linear-gradient(to top, var(--bg-card), rgba(20,18,16,.94));
+  border-top: 1px solid var(--border);
+  font-size: .62rem; font-weight: 600; line-height: 1.35; color: var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none; min-height: 1.35em;
+}
+#ytp-mf-lyric-strip.show { display: block; }
+#ytp-mf-lyric-strip .lyr-strip-line { transition: opacity .18s ease; }
+#ytp-mf-lyric-strip.blank .lyr-strip-line { opacity: .3; }
 .ytp-mf-block:hover { border-color: #ef4444; color: #ef4444; }
 #ytp-mini-footer .tvb-up { color: #22c55e; }
 @media (max-width: 640px) {
@@ -1045,6 +1060,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-title { font-size: .58rem; }
   .ytp-mf-sub { font-size: .44rem; }
   .ytp-mf-btn { width: 27px; height: 27px; }
+  #ytp-mf-lyric-strip { font-size: .55rem; padding: 6px 12px; }
 }
 .ytp-play-overlay {
   position: absolute; inset: 0;
@@ -1764,12 +1780,15 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <span class="ytp-mf-title" id="ytp-mf-title">-</span>
   <div class="ytp-mf-controls">
     <button class="ytp-mf-btn ytp-mf-block" onclick="event.stopPropagation();ytpBlockCurrent()" title="Never play this song again" id="ytp-mf-block" style="display:none">⊘</button>
+    <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleLyricStrip()" title="Show lyrics" id="ytp-mf-lyrics" style="display:none">♫</button>
+    <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleShuffle()" title="Shuffle" id="ytp-mf-shuffle">⇄</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytPrevTrack()" title="Previous" id="ytp-mf-prev">⏮</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
   </div>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Expand" id="ytp-mf-restore"></button>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close">✕</button>
+  <div id="ytp-mf-lyric-strip"><span class="lyr-strip-line"></span></div>
 </div>
 
 <header>
@@ -3533,7 +3552,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭ Next</button>
         <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">⏸</button>
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
-        <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="ytShuffle=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
+        <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="setYtShuffleEnabled(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
         <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
         <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
@@ -4329,6 +4348,7 @@ function showYtpMiniFooter() {
   const restoreBtn = document.getElementById('ytp-mf-restore');
   if (restoreBtn) ytpSetWinIcon(restoreBtn, 'maximize');
   ytpUpdateMiniFooter();
+  ytpMfApplyLyricStrip();
   const titleEl = document.getElementById('ytp-mf-title');
   if (titleEl) {
     setTimeout(() => {
@@ -4343,6 +4363,62 @@ function showYtpMiniFooter() {
 function hideYtpMiniFooter() {
   const el = document.getElementById('ytp-mini-footer');
   if (el) el.classList.remove('open');
+  const strip = document.getElementById('ytp-mf-lyric-strip');
+  if (strip) strip.classList.remove('show');
+}
+
+// ── Mini-footer lyric strip ────────────────────────────────────────────────
+// Shows ONLY the line currently being sung, on a single row above the bar.
+// The ♫ button appears only for tracks that have LRC data in the database.
+let _mfLyricStripOn = false;
+try { _mfLyricStripOn = localStorage.getItem('sj_mf_lyric_strip') === '1'; } catch(e) {}
+
+function ytpMfToggleLyricStrip() {
+  _mfLyricStripOn = !_mfLyricStripOn;
+  try { localStorage.setItem('sj_mf_lyric_strip', _mfLyricStripOn ? '1' : '0'); } catch(e) {}
+  ytpMfApplyLyricStrip();
+}
+
+// Reflects _mfLyricStripOn + "do we actually have synced lyrics" onto the DOM.
+function ytpMfApplyLyricStrip() {
+  const strip  = document.getElementById('ytp-mf-lyric-strip');
+  const btn    = document.getElementById('ytp-mf-lyrics');
+  const footer = document.getElementById('ytp-mini-footer');
+  const hasSync = !!(nowPlayingTrackId && syncedLyricsCache[nowPlayingTrackId]);
+  const visible = hasSync && _mfLyricStripOn && !!footer && footer.classList.contains('open');
+  if (btn) {
+    btn.classList.toggle('on', _mfLyricStripOn);
+    btn.title = _mfLyricStripOn ? 'Hide lyrics' : 'Show lyrics';
+  }
+  if (strip) strip.classList.toggle('show', visible);
+  ytpMfSetLyricLine('');
+  if (visible) {
+    _lyrSyncActiveIdx = -1;   // force the next tick to repaint the line
+    if (!_lyrSyncTimer) lyrSyncStart(); else lyrSyncTick();
+  }
+}
+
+function ytpMfSetLyricLine(text) {
+  const strip = document.getElementById('ytp-mf-lyric-strip');
+  if (!strip) return;
+  const line = strip.querySelector('.lyr-strip-line');
+  if (!line) return;
+  line.textContent = text || '\u266a';
+  strip.classList.toggle('blank', !text);
+}
+
+// Fetches LRC for the current track (cached) and shows/hides the ♫ button.
+function ytpMfRefreshLyricBtn(trackId) {
+  const btn = document.getElementById('ytp-mf-lyrics');
+  if (!btn) return;
+  ytpMfSetLyricLine(''); // don't carry the outgoing track's line across the fetch
+  if (!trackId) { btn.style.display = 'none'; ytpMfApplyLyricStrip(); return; }
+  if (syncedLyricsCache[trackId] === undefined) btn.style.display = 'none';
+  fetchSyncedLyrics(trackId).then(sync => {
+    if (nowPlayingTrackId !== trackId) return; // track changed while we fetched
+    btn.style.display = sync ? '' : 'none';
+    ytpMfApplyLyricStrip();
+  }).catch(() => {});
 }
 
 function ytpUpdateMiniFooter() {
@@ -4362,6 +4438,8 @@ function ytpUpdateMiniFooter() {
   if (nextBtn) nextBtn.style.visibility = (ytQueue.length > 1 && ytQueueIdx < ytQueue.length - 1) ? 'visible' : 'hidden';
   ytpSyncVoteBtn(item?.trackId || null);
   ytpSyncBlockBtn(item?.trackId || null);
+  setYtShuffleEnabled(ytShuffle); // paints the mini-footer shuffle button state
+  ytpMfRefreshLyricBtn(item?.trackId || null);
 }
 
 let _ytpFs = false;
@@ -5726,7 +5804,9 @@ function lyrSyncStop() {
 function lyrSyncTick() {
   if (!_anySyncedLyricViewOpen()) { lyrSyncStop(); return; }
   const sync = syncedLyricsCache[nowPlayingTrackId];
-  if (!sync || !_lyrSyncEnabled) return;
+  if (!sync) return;
+  const stripOn = _mfLyricStripOn && !!document.querySelector('#ytp-mf-lyric-strip.show');
+  if (!_lyrSyncEnabled && !stripOn) return;
   let t;
   if (_taBgActive && _taAudioEl) { t = _taAudioEl.currentTime || 0; }
   else {
@@ -5739,6 +5819,8 @@ function lyrSyncTick() {
   for (let i = 0; i < sync.length; i++) { if (sync[i].t <= tAdj + 0.3) idx = i; else break; }
   if (idx === _lyrSyncActiveIdx) return;
   _lyrSyncActiveIdx = idx;
+  if (stripOn) ytpMfSetLyricLine(idx >= 0 ? sync[idx].text : '');
+  if (!_lyrSyncEnabled) return; // strip-only mode - leave the full panes alone
   // Main player pane, plus any track-card/accordion lyrics panel currently showing the synced view.
   const bodies = [document.getElementById('ytp-lyr-text')].concat(_lyricCardEls(nowPlayingTrackId).filter(el => el.dataset.lyrSynced === '1'));
   bodies.forEach(body => {
@@ -5760,6 +5842,7 @@ function lyrSyncTick() {
 // is currently showing a synced (karaoke-style) view - keeps the tick loop alive for either.
 function _anySyncedLyricViewOpen() {
   if (_ytpLyricsOpen) return true;
+  if (_mfLyricStripOn && document.querySelector('#ytp-mf-lyric-strip.show')) return true;
   return !!document.querySelector('[data-lyr-synced="1"]');
 }
 
@@ -12321,6 +12404,17 @@ function setYtShuffleEnabled(on) {
   ytShuffle = !!on;
   const chk = document.getElementById('ytp-shuffle-chk');
   if (chk) chk.checked = ytShuffle;
+  const mfBtn = document.getElementById('ytp-mf-shuffle');
+  if (mfBtn) {
+    mfBtn.classList.toggle('on', ytShuffle);
+    mfBtn.title = ytShuffle ? 'Shuffle on' : 'Shuffle off';
+  }
+}
+
+// Mini-footer shuffle toggle - same state the player window's checkbox drives.
+function ytpMfToggleShuffle() {
+  setYtShuffleEnabled(!ytShuffle);
+  _ytShuffleBag = []; _ytShuffleBagQueue = null; // start a fresh no-repeat cycle
 }
 
 function loadQueueForShuffle(q) {
