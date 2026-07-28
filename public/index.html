@@ -1037,7 +1037,7 @@ textarea.report-input { resize:vertical; }
    bottom:100% anchors it to the footer's top edge so it slides with the bar. */
 #ytp-mf-lyric-strip {
   position: absolute; left: 0; right: 0; bottom: 100%;
-  display: none; padding: 7px 16px; text-align: center;
+  display: none; padding: 7px 16px; text-align: left;
   background: linear-gradient(to top, var(--bg-card), rgba(20,18,16,.94));
   border-top: 1px solid var(--border);
   font-size: .62rem; font-weight: 600; line-height: 1.35; color: var(--accent);
@@ -1045,8 +1045,14 @@ textarea.report-input { resize:vertical; }
   pointer-events: none; min-height: 1.35em;
 }
 #ytp-mf-lyric-strip.show { display: block; }
-#ytp-mf-lyric-strip .lyr-strip-line { transition: opacity .18s ease; }
+#ytp-mf-lyric-strip .lyr-strip-line { display: inline-block; transition: opacity .17s ease; }
 #ytp-mf-lyric-strip.blank .lyr-strip-line { opacity: .3; }
+/* Must follow .blank - equal specificity, so source order decides the winner. */
+#ytp-mf-lyric-strip .lyr-strip-line.fading { opacity: 0; }
+/* Separator between the transport controls and the window buttons. */
+.ytp-mf-sep { width: 1px; align-self: stretch; margin: 2px 0; background: var(--border); flex-shrink: 0; }
+/* Match the restore glyph's square fill to the bar, not the player window. */
+#ytp-mf-restore svg rect { fill: var(--bg-card); }
 .ytp-mf-block:hover { border-color: #ef4444; color: #ef4444; }
 #ytp-mini-footer .tvb-up { color: #22c55e; }
 @media (max-width: 640px) {
@@ -1061,6 +1067,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-sub { font-size: .44rem; }
   .ytp-mf-btn { width: 27px; height: 27px; }
   #ytp-mf-lyric-strip { font-size: .55rem; padding: 6px 12px; }
+  .ytp-mf-sep { margin: 3px 0; }
 }
 .ytp-play-overlay {
   position: absolute; inset: 0;
@@ -1786,6 +1793,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
   </div>
+  <span class="ytp-mf-sep" aria-hidden="true"></span>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Expand" id="ytp-mf-restore"></button>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close">✕</button>
   <div id="ytp-mf-lyric-strip"><span class="lyr-strip-line"></span></div>
@@ -4346,7 +4354,7 @@ function showYtpMiniFooter() {
   if (!el) return;
   el.classList.add('open');
   const restoreBtn = document.getElementById('ytp-mf-restore');
-  if (restoreBtn) ytpSetWinIcon(restoreBtn, 'maximize');
+  if (restoreBtn) ytpSetWinIcon(restoreBtn, 'restore');
   ytpUpdateMiniFooter();
   ytpMfApplyLyricStrip();
   const titleEl = document.getElementById('ytp-mf-title');
@@ -4398,13 +4406,25 @@ function ytpMfApplyLyricStrip() {
   }
 }
 
+let _mfLyricFadeTimer = null;
 function ytpMfSetLyricLine(text) {
   const strip = document.getElementById('ytp-mf-lyric-strip');
   if (!strip) return;
   const line = strip.querySelector('.lyr-strip-line');
   if (!line) return;
-  line.textContent = text || '\u266a';
-  strip.classList.toggle('blank', !text);
+  const next = text || '\u266a';
+  if (line.textContent === next && !_mfLyricFadeTimer) {
+    strip.classList.toggle('blank', !text);
+    return;
+  }
+  if (_mfLyricFadeTimer) clearTimeout(_mfLyricFadeTimer);
+  line.classList.add('fading');           // fade the outgoing line out...
+  _mfLyricFadeTimer = setTimeout(() => {
+    _mfLyricFadeTimer = null;
+    line.textContent = next;
+    strip.classList.toggle('blank', !text);
+    line.classList.remove('fading');      // ...and the incoming line back in
+  }, 170);
 }
 
 // Fetches LRC for the current track (cached) and shows/hides the ♫ button.
