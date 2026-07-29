@@ -1316,6 +1316,10 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sjd-minis { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }
 .sjd-mini-title { font-family:var(--sjd-mono); font-size:.36rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); opacity:.75; margin:.15rem 0 .35rem; }
 .sjd-table { width:100%; border-collapse:collapse; font-size:.46rem; }
+.sjd-users-scroll { max-height:340px; overflow-y:auto; }
+.sjd-users-scroll thead th { position:sticky; top:0; background:var(--bg-card); z-index:1; }
+.sjd-table th.sjd-sort { cursor:pointer; user-select:none; white-space:nowrap; }
+.sjd-table th.sjd-sort:hover { color:var(--accent); }
 .sjd-table th { text-align:left; font-family:var(--sjd-mono); font-weight:500; font-size:.36rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); padding:.28rem .35rem; border-bottom:1px solid var(--border); }
 .sjd-table th.num, .sjd-table td.num { text-align:right; }
 .sjd-table td { padding:.36rem .35rem; border-bottom:1px solid var(--border); color:var(--text); vertical-align:middle; }
@@ -2638,6 +2642,8 @@ let ytPlayerEl          = null;
 let ytVideoId           = null;
 let ytQueue             = [];   // [{videoId, title}]
 let ytQueueIdx          = -1;   // index of currently playing item
+let SJ_TRACK_META = {}; // trackId -> {artist, album, year}; populated as data loads so community/landing playback resolves the title
+let _sjBaseTitle = 'Suffering Jukebox'; // tab title to restore to when the player closes
 let nowPlayingTrackId   = null;  // trackId of the row to highlight orange in track lists
 let ytShuffle           = false;
 let ytRepeat            = false;
@@ -3702,6 +3708,7 @@ function closeYTPlayer() {
     _ytpContainerEl = null; ytPlayerEl = null; _ytpLyricsPaneEl = null;
     ytVideoId = null; ytQueue = []; ytQueueIdx = -1; _queueHasAdditions = false;
     nowPlayingTrackId = null; applyNowPlayingHighlight();
+    document.title = _sjBaseTitle || 'Suffering Jukebox';
   }, 140);
 }
 
@@ -4523,26 +4530,35 @@ function ytpTrackMeta(trackId, fallbackTitle) {
       break;
     }
   }
-  const art = album ? (ALBUM_ART[album.name] || '/favicon.png') : '/favicon.png';
+  // Community/landing artists never land in allArtists, and a restored queue has
+  // no loaded data at all - so fall back to the play-time cache, then to the
+  // current queue item (which we stamp + persist), so the title never goes bare.
+  const cache = SJ_TRACK_META[trackId] || null;
+  const qItem = (typeof ytQueue !== 'undefined' && Array.isArray(ytQueue))
+    ? ytQueue.find(q => q && q.trackId === trackId) : null;
+  const artistName = (artist && artist.name) || (cache && cache.artist) || (qItem && qItem.artist) || '';
+  const albumName  = (album && album.name)   || (cache && cache.album)  || (qItem && qItem.album)  || '';
+  const year       = (album && (album.release_date || '').slice(0, 4)) || (cache && cache.year) || (qItem && qItem.year) || '';
+  const art = albumName ? (ALBUM_ART[albumName] || '/favicon.png') : '/favicon.png';
   return {
-    title: track?.name || fallbackTitle || 'Unknown',
-    artist: artist?.name || '', // no confident match -> no artist prefix (don't mislabel as Silver Jews)
-    album: album?.name || '',
-    year: (album?.release_date || '').slice(0, 4),
+    title: (track && track.name) || fallbackTitle || 'Unknown',
+    artist: artistName,
+    album: albumName,
+    year: year,
     artwork: art,
   };
 }
 
-// The "(Album - Year)" tail that trails the song title in a smaller muted font.
+// The "(Album Year)" tail that trails the song title in a smaller muted font.
 function ytpAlbumYearHTML(trackId, cls) {
   if (!trackId) return '';
   const m = ytpTrackMeta(trackId, null);
   const bits = [m.album, m.year].filter(Boolean);
   if (!bits.length) return '';
-  return ' <span class="' + cls + '">(' + escHtml(bits.join(' - ')) + ')</span>';
+  return ' <span class="' + cls + '">(' + escHtml(bits.join(' ')) + ')</span>';
 }
 
-// Player header title on one line: "Artist - Song (Album - Year)".
+// Player header title on one line: "Artist - Song (Album Year)".
 function ytpApplyTitle(trackId, rawTitle) {
   if (!ytPlayerEl) return;
   const el = ytPlayerEl.querySelector('.ytp-title');
@@ -4550,6 +4566,27 @@ function ytpApplyTitle(trackId, rawTitle) {
   const artist = trackId ? (ytpTrackMeta(trackId, null).artist || '') : '';
   const title = rawTitle || '';
   el.innerHTML = escHtml(artist ? (artist + ' - ' + title) : title) + ytpAlbumYearHTML(trackId, 'ytp-title-sub');
+}
+
+// Browser tab title: "Artist - Song" while a track is loaded.
+function ytpUpdateTabTitle(trackId, rawTitle) {
+  const m = trackId ? ytpTrackMeta(trackId, rawTitle) : null;
+  const song = (m && m.title) || rawTitle || '';
+  if (!song) return;
+  const artist = (m && m.artist) || '';
+  document.title = artist ? artist + ' - ' + song : song;
+}
+
+// Once a track resolves, stamp artist/album/year onto its queue item so the
+// title survives a reload (playback_state serializes the queue verbatim).
+function ytpStampQueueMeta(trackId) {
+  if (!trackId || typeof ytQueue === 'undefined') return;
+  const item = (ytQueue || []).find(q => q && q.trackId === trackId);
+  if (!item) return;
+  const m = ytpTrackMeta(trackId, item.title);
+  if (m.artist) item.artist = m.artist;
+  if (m.album)  item.album  = m.album;
+  if (m.year)   item.year   = m.year;
 }
 
 // ── Report a problem ───────────────────────────────────────────
@@ -5691,6 +5728,8 @@ function ytpOnTrackChange(videoId, trackId, title) {
   schedulePlaybackStateSave(); // remember queue + position for signed-in users
   nowPlayingTrackId = trackId || null;
   ytpApplyTitle(trackId || null, title);
+  ytpUpdateTabTitle(trackId || null, title);
+  ytpStampQueueMeta(trackId || null);
   ytpSyncBlockBtn(trackId || null);
   applyNowPlayingHighlight();
   ytpUpdateMiniFooter();
@@ -6574,7 +6613,7 @@ async function initLanding() {
   try {
     const tagline = document.getElementById('brand-tagline');
     if (tagline) tagline.innerHTML = 'Pick an artist to start listening';
-    document.title = 'Suffering Jukebox';
+    document.title = _sjBaseTitle = 'Suffering Jukebox';
     const _lsSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
@@ -6767,12 +6806,17 @@ function clearSubmitterFilter(e) {
 // user's account). Any hide elsewhere re-renders the landing, so a hidden
 // artist's box automatically unchecks here.
 function landingArtistOptions() {
-  return [...landingStats].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  let opts = landingStats;
+  if (landingSubmitterFilter.size) {
+    opts = opts.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
+  }
+  return [...opts].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
 function artistsBtnLabel() {
-  const total = landingStats.length;
-  const hidden = landingStats.filter(r => r.hidden).length;
+  const opts = landingArtistOptions();
+  const total = opts.length;
+  const hidden = opts.filter(r => r.hidden).length;
   if (!hidden) return 'All artists';
   return (total - hidden) + ' of ' + total + ' shown';
 }
@@ -6835,7 +6879,7 @@ function renderLanding() {
   const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${_subAllOn || landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
   const _artistOpts = landingArtistOptions();
   _landingArtistKeys = _artistOpts.map(o => o.artist_id);
-  const _artistAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${landingStats.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists(this)"><span class="lsm-name">All</span></label>`;
+  const _artistAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_artistOpts.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists(this)"><span class="lsm-name">All</span></label>`;
   const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
@@ -7133,6 +7177,12 @@ async function laEnsureArtistData(row) {
   memberIds.forEach(id => { albums[id] = []; tracks[id] = []; });
   albRows.forEach(a => { if (albums[a.artist_id]) albums[a.artist_id].push(a); });
   trackRows.forEach(t => { const aid = albumArtistMap[t.album_id]; if (tracks[aid]) tracks[aid].push(t); });
+  const _albMetaById = {};
+  albRows.forEach(a => { _albMetaById[a.id] = a; });
+  trackRows.forEach(t => {
+    const _a = _albMetaById[t.album_id];
+    SJ_TRACK_META[t.id] = { artist: row.name || '', album: (_a && _a.name) || '', year: ((_a && _a.release_date) || '').slice(0, 4) };
+  });
   const yt = await loadYT(trackRows.map(t => t.id));
   Object.assign(ytData, yt);
   memberIds.forEach(id => { selectedIds.add(id); _laLoadedArtists.add(id); });
@@ -7368,7 +7418,7 @@ async function loadArtistPageData() {
   const _ap = FEATURED_ARTIST_ID;
   const _one = _ap && allArtists.find(a => a.id === _ap);
   if (_one) {
-    document.title = _one.name + ' Jukebox: Suffering Jukebox';
+    document.title = _sjBaseTitle = _one.name + ' Jukebox: Suffering Jukebox';
     const _tag = document.getElementById('brand-tagline');
     if (_tag) _tag.innerHTML = 'The <strong>' + (_one.name || '').replace(/</g, '&lt;') + '</strong> jukebox' + (_one.added_by_name ? ', added to the community by ' + (_one.added_by_name || '').replace(/</g, '&lt;') : '');
   }
@@ -10068,6 +10118,10 @@ async function restorePlaybackState() {
     openYTPlayer(item.videoId, item.title, item.trackId || null);
     ytQueue = row.queue;
     ytQueueIdx = idx;
+    row.queue.forEach(q => { if (q && q.trackId && q.artist) SJ_TRACK_META[q.trackId] = { artist: q.artist, album: q.album || '', year: q.year || '' }; });
+    ytpApplyTitle(item.trackId || null, item.title);
+    ytpUpdateMiniFooter();
+    ytpUpdateTabTitle(item.trackId || null, item.title);
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
     // Never auto-play on page load - it's disruptive and unexpected. Restore
@@ -10253,6 +10307,8 @@ function fmtAdminDateTime(iso) {
 }
 
 let _sjdData = null;
+let _sjdUsersSort = 'visits';
+let _sjdUsersDir = -1; // -1 desc, 1 asc
 let _sjdDays = 30;
 let _sjdMetric = 'page_loads';
 let _sjdUser = null;
@@ -10508,19 +10564,41 @@ function sjdRecentHTML() {
   }).join('') + '</div>';
 }
 
+function sjdSortUsers(col) {
+  if (_sjdUsersSort === col) { _sjdUsersDir = -_sjdUsersDir; }
+  else { _sjdUsersSort = col; _sjdUsersDir = (col === 'name') ? 1 : -1; }
+  renderSjDashboard();
+}
+
 function sjdUsersHTML() {
-  const users = _sjdData.users || [];
-  if (!users.length) return '<div class="sjd-nodata">No signed-in visitors in this range.</div>';
-  const max = Math.max(...users.map(u => u.visits), 1);
-  return '<table class="sjd-table"><thead><tr><th>Listener</th><th class="num">Events</th><th class="num">Last Seen</th></tr></thead><tbody>'
-    + users.map((u, i) => {
+  const orig = _sjdData.users || [];
+  if (!orig.length) return '<div class="sjd-nodata">No signed-in visitors in this range.</div>';
+  const max = Math.max(...orig.map(u => u.visits), 1);
+  const dir = _sjdUsersDir, key = _sjdUsersSort;
+  const users = orig.slice().sort((a, b) => {
+    if (key === 'name') {
+      const av = (a.name || a.email || '').toLowerCase(), bv = (b.name || b.email || '').toLowerCase();
+      return av < bv ? -dir : av > bv ? dir : 0;
+    }
+    const av = key === 'last_seen' ? (new Date(a.last_seen).getTime() || 0) : (a.visits || 0);
+    const bv = key === 'last_seen' ? (new Date(b.last_seen).getTime() || 0) : (b.visits || 0);
+    return (av - bv) * dir;
+  });
+  const caret = c => _sjdUsersSort === c ? (_sjdUsersDir < 0 ? ' \u25be' : ' \u25b4') : '';
+  return '<div class="sjd-users-scroll"><table class="sjd-table"><thead><tr>'
+    + '<th class="sjd-sort" onclick="sjdSortUsers(\'name\')">Listener' + caret('name') + '</th>'
+    + '<th class="num sjd-sort" onclick="sjdSortUsers(\'visits\')">Events' + caret('visits') + '</th>'
+    + '<th class="num sjd-sort" onclick="sjdSortUsers(\'last_seen\')">Last Seen' + caret('last_seen') + '</th>'
+    + '</tr></thead><tbody>'
+    + users.map((u) => {
+      const i = orig.indexOf(u);
       const active = _sjdUser && String(u.email).toLowerCase() === _sjdUser;
       return '<tr class="sjd-click' + (active ? ' on' : '') + '" onclick="sjdSetUserIdx(' + i + ')" title="' + (active ? 'Clear filter' : 'Filter dashboard to ' + escAdmin(u.email)) + '">'
-        + '<td><span class="sjd-song-name" title="' + escAdmin(u.email) + '">' + (active ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(sjdWho(u.name || u.email)) + '</span>'
+        + '<td><span class="sjd-song-name" title="' + escAdmin(u.email) + '">' + (active ? '<span style="color:var(--accent)">\u25cf</span> ' : '') + escAdmin(sjdWho(u.name || u.email)) + '</span>'
         + '<span class="sjd-song-track"><i style="width:' + Math.round((u.visits / max) * 100) + '%"></i></span></td>'
         + '<td class="num">' + u.visits.toLocaleString() + '</td>'
         + '<td class="num">' + escAdmin(fmtAdminDateTime(u.last_seen)) + '</td></tr>';
-    }).join('') + '</tbody></table>';
+    }).join('') + '</tbody></table></div>';
 }
 
 function sjdFilterChipHTML() {
@@ -12282,7 +12360,7 @@ function updatePageTitle(visAlbList) {
 }
 
 if (IS_COMMUNITY) {
-  document.title = 'Community Jukebox: Suffering Jukebox';
+  document.title = _sjBaseTitle = 'Community Jukebox: Suffering Jukebox';
   const _tag = document.getElementById('brand-tagline');
   if (_tag) _tag.innerHTML = 'The <strong>Community</strong> jukebox, music added by listeners';
   document.querySelectorAll('.hdr-brand-mobile img, .brand-block img').forEach(img => { img.title = 'Community Jukebox'; });
