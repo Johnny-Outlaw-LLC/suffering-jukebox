@@ -1176,7 +1176,7 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-queue-row { display:flex; align-items:center; gap:7px; padding:5px 10px; cursor:pointer; background:transparent; transition:background .1s; }
 .yt-queue-row:hover { background:var(--bg-elevated); }
 .yt-queue-row.active { background:var(--bg-elevated); }
-.yt-queue-num { color:var(--text-muted); font-size:.52rem; width:14px; text-align:center; flex-shrink:0; }
+.yt-queue-num { color:var(--text-muted); font-size:.52rem; min-width:22px; text-align:right; flex-shrink:0; }
 .yt-queue-row.active .yt-queue-num { color:var(--text); font-weight:600; }
 .yt-queue-title { font-size:.55rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; }
 .yt-queue-row.active .yt-queue-title { color:var(--text); font-weight:600; }
@@ -7005,9 +7005,34 @@ async function resolvePlaylistTracks(trackIds) {
   if (!ids.length) return {};
   let tRows = [];
   for (let i = 0; i < ids.length; i += 50) {
-    tRows = tRows.concat(await dbGet(`/tracks?id=in.(${ids.slice(i, i + 50).join(',')})&select=id,name`));
+    tRows = tRows.concat(await dbGet(`/tracks?id=in.(${ids.slice(i, i + 50).join(',')})&select=id,name,album_id`));
   }
   const yt = await loadYT(ids);
+  // Stamp SJ_TRACK_META so the player title bar / tab title resolve an artist
+  // even when this track's artist was never visited via laEnsureArtistData.
+  const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
+  let albById = {};
+  if (albumIds.length) {
+    let albRows = [];
+    for (let i = 0; i < albumIds.length; i += 50) {
+      albRows = albRows.concat(await dbGet(`/albums?id=in.(${albumIds.slice(i, i + 50).join(',')})&select=id,name,artist_id,release_date`));
+    }
+    albRows.forEach(a => { albById[a.id] = a; });
+    const artistIds = [...new Set(albRows.map(a => a.artist_id).filter(Boolean))];
+    if (artistIds.length) {
+      let artRows = [];
+      for (let i = 0; i < artistIds.length; i += 50) {
+        artRows = artRows.concat(await dbGet(`/artists?id=in.(${artistIds.slice(i, i + 50).join(',')})&select=id,name`));
+      }
+      const artById = {};
+      artRows.forEach(a => { artById[a.id] = a; });
+      tRows.forEach(t => {
+        const alb = albById[t.album_id];
+        const art = alb && artById[alb.artist_id];
+        if (art) SJ_TRACK_META[t.id] = { artist: art.name || '', album: alb.name || '', year: (alb.release_date || '').slice(0, 4) };
+      });
+    }
+  }
   const map = {};
   tRows.forEach(t => { map[t.id] = { name: t.name, videoId: yt[t.id]?.video_id || null }; });
   return map;
