@@ -7049,10 +7049,20 @@ async function landingShuffleAll() {
     albRows = albRows.filter(a => !a.name.toLowerCase().includes('early times'));
     if (!albRows.length) return;
     const albumIds = albRows.map(a => a.id);
+    const albById = {}; albRows.forEach(a => { albById[a.id] = a; });
+    // Stamp SJ_TRACK_META so the player title bar / tab title show an artist -
+    // this catalogue-wide shuffle spans artists never individually visited via laEnsureArtistData.
+    const artRows = await dbGet(`/artists?id=in.(${[...new Set(albRows.map(a => a.artist_id))].join(',')})&select=id,name`);
+    const artById = {}; artRows.forEach(a => { artById[a.id] = a; });
     const chunks = [];
     for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
-    const results = await Promise.all(chunks.map(c => dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name`)));
+    const results = await Promise.all(chunks.map(c => dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id`)));
     const trackRows = results.flat();
+    trackRows.forEach(t => {
+      const alb = albById[t.album_id];
+      const art = alb && artById[alb.artist_id];
+      if (art) SJ_TRACK_META[t.id] = { artist: art.name || '', album: alb.name || '', year: (alb.release_date || '').slice(0, 4) };
+    });
     const yt = await loadYT(trackRows.map(t => t.id));
     const q = shuffleInPlace(trackRows.filter(t => yt[t.id]?.video_id))
       .map(t => ({ videoId: yt[t.id].video_id, title: t.name, trackId: t.id }));
