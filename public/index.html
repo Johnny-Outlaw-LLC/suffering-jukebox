@@ -969,6 +969,9 @@ textarea.report-input { resize:vertical; }
 .ai-date { font-size:.52rem; color:var(--text-muted); }
 .ai-resolve { margin-left:auto; background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.5rem; padding:.25rem .55rem; border-radius:6px; cursor:pointer; }
 .ai-resolve:hover { color:var(--text); border-color:var(--text-muted); }
+.ai-play { margin-left:auto; background:var(--accent,#ff6b35); border:1px solid var(--accent,#ff6b35); color:#fff; font-family:var(--mono); font-size:.5rem; padding:.25rem .55rem; border-radius:6px; cursor:pointer; }
+.ai-play:hover { filter:brightness(1.08); }
+.ai-play + .ai-resolve { margin-left:6px; }
 .ai-ctx { font-size:.56rem; color:var(--text-muted); margin-top:6px; }
 .ai-desc { font-size:.62rem; color:var(--text); margin-top:6px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
 .ai-who { font-size:.52rem; color:var(--text-muted); margin-top:6px; }
@@ -4743,6 +4746,7 @@ function renderAdminIssues() {
       <div class="ai-card-top">
         <span class="ai-cat">${CATLBL[r.category] || esc(r.category)}</span>
         <span class="ai-date">${fmtDate(r.created_at)}</span>
+        ${r.track_id ? `<button class="ai-play" onclick="playIssueTrack('${r.track_id}')" title="Play this track to test the fix">▶ Play Now</button>` : ''}
         <button class="ai-resolve" onclick="toggleIssueResolved('${r.id}', ${r.resolved ? 'false' : 'true'})">${r.resolved ? 'Reopen' : 'Mark resolved'}</button>
       </div>
       ${ctx ? `<div class="ai-ctx">${ctx}</div>` : ''}
@@ -4767,6 +4771,23 @@ async function toggleIssueResolved(id, resolved) {
     if (it) { it.resolved = resolved; it.resolved_at = resolved ? new Date().toISOString() : null; }
     renderAdminIssues();
   } catch (e) { showToast('Could not update. Try again.'); }
+}
+
+// ── Admin: play a reported track to test the fix ─────────────
+async function playIssueTrack(trackId) {
+  const it = (_adminIssues || []).find(x => x.track_id === trackId);
+  const name = it?.track_name || 'Track';
+  try {
+    const m = await loadYT([trackId]);
+    const vid = m[trackId]?.video_id;
+    if (!vid) { showToast('No video is mapped to this track yet.'); return; }
+    ytData[trackId] = { ...(ytData[trackId] || {}), ...m[trackId] };
+    closeAdminIssues();
+    ytPlayNow(vid, name, trackId);
+    showToast('Playing \u201c' + name + '\u201d \u2014 reopen Issue Reports to mark resolved.');
+  } catch (e) {
+    showToast('Could not load this track.');
+  }
 }
 
 // ── Admin: run the auto-resolve job on demand ────────────────
