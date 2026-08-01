@@ -89,16 +89,42 @@ async function trackContext(
   return { trackName: track.name ?? null, artistName, albumId: track.album_id ?? null };
 }
 
-// Score candidates: prefer official audio ("Topic") / VEVO / artist-named channels, then views.
+// Normalize a title/track name for comparison: drop parentheticals, common
+// video-noise words and year/remaster tags, keep alphanumeric word tokens.
+function titleTokens(s: string): string[] {
+  const norm = (s || "")
+    .toLowerCase()
+    .replace(/\(.*?\)|\[.*?\]/g, " ")
+    .replace(/\b(official|video|audio|lyric|lyrics|hd|hq|mv|m\/v|remaster(ed)?|version|feat|ft|\d{4})\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  return norm.split(" ").filter((t) => t.length > 1);
+}
+
+// Does a candidate video title plausibly correspond to the track we're fixing?
+// Requires most of the track-name words to appear in the candidate title, so we
+// never silently swap in a different song (e.g. right artist, wrong track).
+function titleMatches(trackName: string | null, candidateTitle: string): boolean {
+  const want = titleTokens(trackName || "");
+  if (!want.length) return true; // no track name to check against
+  const have = new Set(titleTokens(candidateTitle));
+  const hits = want.filter((t) => have.has(t)).length;
+  return hits / want.length >= 0.7;
+}
+
+// Score candidates: require a title match, then prefer official audio ("Topic") /
+// VEVO / artist-named channels, then views. Returns null if nothing is confident.
 function pickBestReplacement(
   candidates: string[],
   info: Record<string, YtVideoInfo>,
   artistName: string | null,
+  trackName: string | null,
 ): YtVideoInfo | null {
   const artistLc = (artistName ?? "").toLowerCase();
   const scored = candidates
     .map((id) => info[id])
     .filter((v): v is YtVideoInfo => !!v && v.playable)
+    .filter((v) => titleMatches(trackName, v.title))
     .map((v) => {
       const ch = v.channelTitle.toLowerCase();
       let bonus = 0;
@@ -264,6 +290,7 @@ async function runAutoResolve() {
         candidates.filter((c) => c !== vid),
         candInfo,
         ctx.artistName || group[0].artist_name,
+        ctx.trackName || group[0].track_name,
       );
 
       if (best) {
