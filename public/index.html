@@ -1843,6 +1843,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">FAQ / How-To Guide</button>
+          <button type="button" class="user-menu-item" id="user-menu-updates" style="display:none" onclick="userMenuAction('updates')">What's New</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-issues" onclick="userMenuAction('issues')">Issue Reports</button>
@@ -2180,6 +2181,20 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   </div>
 </div>
 
+<div class="modal-overlay" id="updatesOverlay" onclick="if(event.target===this)closeUpdatesFeed()">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <span class="modal-title">What's New</span>
+      <button class="modal-close" onclick="closeUpdatesFeed()">✕</button>
+    </div>
+    <div class="modal-body" id="updates-body">
+      <div class="admin-metrics-loading">Loading updates…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeUpdatesFeed()">Close</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="adminIssuesOverlay" onclick="if(event.target===this)closeAdminIssues()">
   <div class="modal" style="max-width:720px">
     <div class="modal-header">
@@ -2190,6 +2205,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div class="admin-metrics-loading">Loading reports…</div>
     </div>
     <div class="modal-footer">
+      <button class="m-btn" id="ai-autoresolve-btn" onclick="runIssueAutoResolve()">Auto Resolve Issues Now</button>
       <button class="m-btn ghost" onclick="closeAdminIssues()">Close</button>
     </div>
   </div>
@@ -4731,6 +4747,7 @@ function renderAdminIssues() {
       </div>
       ${ctx ? `<div class="ai-ctx">${ctx}</div>` : ''}
       <div class="ai-desc">${esc(r.description) || '<span style=\'opacity:.5\'>(no description)</span>'}</div>
+      ${r.resolved && r.resolution_note ? `<div class="ai-ctx" style="opacity:.85">✅ ${esc(r.resolution_note)}${r.new_video_id ? ' · new video ' + esc(r.new_video_id) : ''}</div>` : ''}
       <div class="ai-who">Reported by ${who}</div>
     </div>`;
   }).join('') + '</div>';
@@ -4750,6 +4767,72 @@ async function toggleIssueResolved(id, resolved) {
     if (it) { it.resolved = resolved; it.resolved_at = resolved ? new Date().toISOString() : null; }
     renderAdminIssues();
   } catch (e) { showToast('Could not update. Try again.'); }
+}
+
+// ── Admin: run the auto-resolve job on demand ────────────────
+async function runIssueAutoResolve() {
+  const btn = document.getElementById('ai-autoresolve-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-issue-autoresolve'), {
+      method: 'POST',
+      headers: { ...(await sjAuthHeaders()), 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    const d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || ('HTTP ' + res.status));
+    const parts = [];
+    if (d.fixed)       parts.push(d.fixed + ' fixed');
+    if (d.verified_ok) parts.push(d.verified_ok + ' verified OK');
+    if (d.flagged)     parts.push(d.flagged + ' flagged');
+    showToast(parts.length ? ('Auto-resolve: ' + parts.join(', ')) : 'Auto-resolve: nothing to do');
+    await loadAdminIssues();
+  } catch (e) {
+    showToast('Auto-resolve failed: ' + (e.message || 'try again'));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Auto Resolve Issues Now'; }
+  }
+}
+
+// ── Members: "What's New" updates feed (reported issues + resolutions) ──
+let _updatesData = [];
+function openUpdatesFeed() {
+  if (!googleUser) return;
+  document.getElementById('updatesOverlay')?.classList.add('open');
+  loadUpdatesFeed();
+}
+function closeUpdatesFeed() { document.getElementById('updatesOverlay')?.classList.remove('open'); }
+async function loadUpdatesFeed() {
+  const body = document.getElementById('updates-body');
+  if (!body) return;
+  body.innerHTML = '<div class="admin-metrics-loading">Loading updates…</div>';
+  try {
+    const rows = await dbRpcAuth('/rpc/public_issue_updates', { p_limit: 60 });
+    _updatesData = Array.isArray(rows) ? rows : [];
+    renderUpdatesFeed();
+  } catch (e) {
+    body.innerHTML = '<div class="admin-metrics-loading">Could not load updates.</div>';
+  }
+}
+function renderUpdatesFeed() {
+  const body = document.getElementById('updates-body');
+  if (!body) return;
+  const esc = v => (v == null ? '' : String(v)).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  if (!_updatesData.length) { body.innerHTML = '<div class="admin-metrics-loading">No updates yet. Reported problems and their fixes will show up here.</div>'; return; }
+  const fmt = v => { try { return new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (_) { return v; } };
+  const ICON = { reported: '📝', auto_fixed: '✅', auto_verified: '✔️', auto_flagged: '⚠️', admin_resolved: '✅', admin_reopened: '🔄' };
+  const LBL  = { reported: 'Reported', auto_fixed: 'Fixed', auto_verified: 'Verified', auto_flagged: 'Flagged', admin_resolved: 'Resolved', admin_reopened: 'Reopened' };
+  body.innerHTML = '<div class="ai-list">' + _updatesData.map(r => {
+    const ctx = [r.artist_name, r.album_name].filter(Boolean).map(esc).join('  ·  ');
+    return `<div class="ai-card${r.resolved ? ' resolved' : ''}">
+      <div class="ai-card-top">
+        <span class="ai-cat">${ICON[r.kind] || '•'} ${esc(LBL[r.kind] || 'Update')}</span>
+        <span class="ai-date">${fmt(r.at)}</span>
+      </div>
+      <div class="ai-desc">${esc(r.detail) || ''}</div>
+      ${ctx ? `<div class="ai-ctx">${ctx}</div>` : ''}
+    </div>`;
+  }).join('') + '</div>';
 }
 
 function ytpInitMediaSession() {
@@ -10039,6 +10122,10 @@ async function userMenuAction(action) {
     openFaq();
     return;
   }
+  if (action === 'updates') {
+    openUpdatesFeed();
+    return;
+  }
   if (action === 'logout') {
     await handleLogout();
     return;
@@ -10282,6 +10369,7 @@ function updateAuthBtn() {
   if (googleUser) {
     btn.style.display = 'none';
     if (menuWrap) menuWrap.style.display = '';
+    { const _um = document.getElementById('user-menu-updates'); if (_um) _um.style.display = ''; }
     const displayName = googleUser.name ? googleUser.name.split(' ')[0] : 'Account';
     if (menuBtn) {
       menuBtn.className = 'auth-btn signed-in';
@@ -10300,6 +10388,7 @@ function updateAuthBtn() {
   } else {
     btn.style.display = '';
     btn.className = 'auth-btn';
+    { const _um = document.getElementById('user-menu-updates'); if (_um) _um.style.display = 'none'; }
     btn.title = 'Sign in with Google';
     btn.innerHTML = '<span class="auth-label-full">Sign In to Remember Ratings and Play History</span><span class="auth-label-short">Sign In</span>';
     if (menuWrap) menuWrap.style.display = 'none';

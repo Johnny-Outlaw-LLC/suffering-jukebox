@@ -104,6 +104,89 @@ export function parseYouTubeVideoId(input: string): string | null {
   return null;
 }
 
+export type YtVideoInfo = {
+  id: string;
+  playable: boolean;
+  reason: string | null;
+  views: number;
+  likes: number;
+  thumbnail: string | null;
+  title: string;
+  channelTitle: string;
+};
+
+// Batch-fetch full playability + stats for up to any number of video ids.
+// A video id that is absent from the result was deleted/removed by YouTube.
+export async function fetchYouTubeVideoInfo(
+  videoIds: string[],
+): Promise<Record<string, YtVideoInfo>> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) throw new Error("YouTube API key not configured.");
+  const out: Record<string, YtVideoInfo> = {};
+  const ids = [...new Set(videoIds.filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const url = new URL("https://www.googleapis.com/youtube/v3/videos");
+    url.searchParams.set("part", "status,contentDetails,statistics,snippet");
+    url.searchParams.set("id", chunk.join(","));
+    url.searchParams.set("key", key);
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error(`YouTube API error (${res.status})`);
+    const json = (await res.json()) as { items?: any[] };
+    for (const item of json.items ?? []) {
+      const status = item.status ?? {};
+      const rr = item.contentDetails?.regionRestriction ?? {};
+      let playable = true;
+      let reason: string | null = null;
+      if (status.privacyStatus && status.privacyStatus !== "public") {
+        playable = false;
+        reason = `video is ${status.privacyStatus}`;
+      } else if (status.uploadStatus && status.uploadStatus !== "processed") {
+        playable = false;
+        reason = `upload status ${status.uploadStatus}`;
+      } else if (status.embeddable === false) {
+        playable = false;
+        reason = "embedding disabled by the owner";
+      } else if (Array.isArray(rr.blocked) && rr.blocked.includes("US")) {
+        playable = false;
+        reason = "blocked in the US";
+      } else if (Array.isArray(rr.allowed) && !rr.allowed.includes("US")) {
+        playable = false;
+        reason = "not available in the US";
+      }
+      const thumbs = item.snippet?.thumbnails;
+      out[item.id] = {
+        id: item.id,
+        playable,
+        reason,
+        views: Number(item.statistics?.viewCount ?? 0),
+        likes: Number(item.statistics?.likeCount ?? 0),
+        thumbnail: thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
+        title: item.snippet?.title ?? "",
+        channelTitle: item.snippet?.channelTitle ?? "",
+      };
+    }
+  }
+  return out;
+}
+
+// Search YouTube for embeddable candidate video ids for a track.
+export async function searchYouTubeVideoIds(query: string): Promise<string[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) throw new Error("YouTube API key not configured.");
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("q", query);
+  url.searchParams.set("type", "video");
+  url.searchParams.set("videoEmbeddable", "true");
+  url.searchParams.set("maxResults", "10");
+  url.searchParams.set("key", key);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`YouTube search error (${res.status})`);
+  const json = (await res.json()) as { items?: any[] };
+  return (json.items ?? []).map((it) => it.id?.videoId).filter(Boolean);
+}
+
 export async function fetchYouTubeVideoStats(videoId: string) {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) throw new Error("YouTube API key not configured.");
