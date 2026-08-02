@@ -2720,16 +2720,14 @@ const colorOf = (artistId) => {
 // Dominant-color cache extracted from album art (featured artist jukebox)
 const artColorCache = {};   // albumId -> hex
 
-// Album-specific color - this is what makes the bars pretty.
-// Featured artist jukebox: per-album color from its art; other artists: one color per artist.
+// Album-specific color - this is what makes the bars pretty. Every album
+// defaults to the dominant color pulled from its own cover art (artColorCache,
+// filled in by extractArtColors); colorOf(artist_id) is only the placeholder
+// shown before that extraction lands, or the true fallback if it never does.
 const albumColor = (alb) => {
   if (alb.color) return alb.color;   // per-album override from the fine-tune step
   if (ALBUM_COLORS[alb.name]) return ALBUM_COLORS[alb.name];   // curated SJ/PM catalog color - keep it no matter which of the two is "featured"
-  if (IS_COMMUNITY && FEATURED_ARTIST_ID) {
-    if (alb.artist_id === FEATURED_ARTIST_ID) return artColorCache[alb.id] || '#ff6b35';
-    return colorOf(alb.artist_id);
-  }
-  return colorOf(alb.artist_id);
+  return artColorCache[alb.id] || colorOf(alb.artist_id);
 };
 
 // ── Dominant color extraction from album art ──
@@ -9084,10 +9082,8 @@ async function loadData() {
 
     render();
 
-    // Featured artist jukebox: derive each album's bar color from its art, then repaint
-    if (IS_COMMUNITY && FEATURED_ARTIST_ID) {
-      extractArtColors(albums[FEATURED_ARTIST_ID] || []).then(n => { if (n) render(); });
-    }
+    // Derive each album's bar color from its own cover art, then repaint once ready
+    extractArtColors(albRows).then(n => { if (n) render(); });
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
@@ -11401,6 +11397,7 @@ const SJ_CHANGELOG = [
     'Manage My Artists now has a search box (artist, album, or song) and each artist collapses to just its name until you expand it, so a big library does not turn into an endless scroll.',
     'YouTube imports now check the album against its official studio tracklist, so bonus, live, and promo videos riding along in the same playlist no longer get pulled in as album tracks.',
     'Removing a track from an album now renumbers the rest of the tracklist so there is no gap where it used to be.',
+    'Every artist’s albums now default to a color pulled from their own cover art, instead of every album on an artist sharing one color.',
   ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
