@@ -823,6 +823,24 @@ mark.lyr-cmt { background: rgba(255,107,53,.15); color: inherit; border-bottom: 
   border-radius: 2px; cursor: pointer; padding: 0 1px; }
 mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
 .lyr-line.lyr-has-cmt { border-left: 2px solid var(--accent); padding-left: 5px; margin-left: -7px; }
+/* Hover (desktop) / long-press (touch) toolbar on a karaoke lyric line */
+.lyr-line-toolbar { position: fixed; z-index: 9800; display: none; align-items: center; gap: 3px;
+  background: #161616; border: 1px solid var(--accent); border-radius: 8px; padding: 3px; font-family: var(--mono);
+  box-shadow: 0 6px 20px rgba(0,0,0,.6); }
+.llt-btn { background: none; border: none; color: var(--text); font-family: var(--mono); font-size: .5rem;
+  padding: 4px 7px; border-radius: 5px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+.llt-btn:hover { background: rgba(255,255,255,.08); }
+.llt-btn:disabled { opacity: .5; cursor: default; }
+.llt-react.active { color: var(--accent); }
+/* Reaction button inside the comment modal's cited-lyric quote */
+.cmt-quote { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cmt-quote-text { flex: 1; min-width: 0; }
+.cmt-quote-react-btn { display: none; align-items: center; gap: 4px; flex-shrink: 0; background: none;
+  border: 1px solid #2a2a2a; border-radius: 6px; color: var(--text-muted); font-family: var(--mono);
+  font-size: .5rem; padding: 4px 8px; cursor: pointer; }
+.cmt-quote-react-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cmt-quote-react-btn.active { border-color: var(--accent); color: var(--accent); }
+.cmt-quote-react-btn:disabled { opacity: .5; cursor: default; }
 #lyr-sel-pop { position: fixed; z-index: 9800; display: none; background: #161616; border: 1px solid var(--accent);
   border-radius: 7px; padding: 5px 9px; font-family: var(--mono); font-size: .5rem; color: var(--accent);
   cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.6); white-space: nowrap; }
@@ -2263,7 +2281,10 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     <div class="modal-body" style="gap:.9rem">
       <div id="cmt-target" class="cmt-target"></div>
       <div id="cmt-tabs" class="cmt-tabs"></div>
-      <div id="cmt-quote" class="cmt-quote" style="display:none"></div>
+      <div id="cmt-quote" class="cmt-quote" style="display:none">
+        <span id="cmt-quote-text" class="cmt-quote-text"></span>
+        <button id="cmt-quote-react" class="cmt-quote-react-btn" onclick="cmtToggleQuoteReaction()" title="Thumbs up this lyric">👍 <span id="cmt-quote-react-count">0</span></button>
+      </div>
       <div id="cmt-thread" class="cmt-thread"><div class="cmt-empty">Loading&hellip;</div></div>
       <div class="cmt-composer">
         <input type="text" id="cmt-name" class="report-input" maxlength="60" placeholder="Your name (optional &mdash; leave blank to stay anonymous)" style="display:none">
@@ -5011,14 +5032,46 @@ function _cmtRenderHeader() {
   const q = document.getElementById('cmt-quote');
   if (q) {
     if (c.tab === 'lyric' && c.lyric && c.lyric.quote) {
-      q.style.display = 'block';
-      q.textContent = '\u201C' + c.lyric.quote + '\u201D';
+      q.style.display = 'flex';
+      const qt = document.getElementById('cmt-quote-text');
+      if (qt) qt.textContent = '\u201C' + c.lyric.quote + '\u201D';
+      _cmtRenderQuoteReaction();
     } else {
       q.style.display = 'none';
     }
   }
   const post = document.getElementById('cmt-post-btn');
   if (post) post.textContent = c.tab === 'lyric' ? 'Post lyric comment' : 'Post comment';
+}
+
+// Thumbs-up on the comment modal's cited lyric passage - shares the same reaction
+// cache and RPC as the quick hover/long-press toolbar on the karaoke lines.
+async function _cmtRenderQuoteReaction() {
+  const c = _cmtCtx;
+  const btn = document.getElementById('cmt-quote-react');
+  const countEl = document.getElementById('cmt-quote-react-count');
+  if (!btn || !countEl) return;
+  if (!c || c.tab !== 'lyric' || !c.lyric || !c.lyric.quote || !c.track_id) { btn.style.display = 'none'; return; }
+  btn.style.display = 'inline-flex';
+  const state = await _lyrEnsureReactions(c.track_id);
+  if (_cmtCtx !== c) return; // context moved on while fetching
+  const s = state[c.lyric.quote];
+  countEl.textContent = s ? s.count : 0;
+  btn.classList.toggle('active', !!(s && s.reacted));
+}
+
+async function cmtToggleQuoteReaction() {
+  const c = _cmtCtx;
+  if (!c || c.tab !== 'lyric' || !c.lyric || !c.lyric.quote || !c.track_id) return;
+  const btn = document.getElementById('cmt-quote-react');
+  const countEl = document.getElementById('cmt-quote-react-count');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await _lyrToggleReaction(c.track_id, c.lyric.quote, c.lyric.start, c.lyric.end);
+    if (countEl) countEl.textContent = r.count;
+    if (btn) btn.classList.toggle('active', r.reacted);
+  } catch (e) { showToast('Could not save that.'); }
+  finally { if (btn) btn.disabled = false; }
 }
 
 async function _cmtLoadThread() {
@@ -5441,6 +5494,180 @@ document.addEventListener('click', e => {
   e.preventDefault(); e.stopPropagation();
   openComments('lyric', m.getAttribute('data-lyr-cmt'));
 });
+
+// ── Karaoke line hover (desktop) / long-press (touch) toolbar ──────────────
+// Clicking a .lyr-line seeks the track - fine for navigating, but jumping the
+// song just to comment or react disrupts listening. Hovering (or, on touch,
+// holding) a line for a moment instead surfaces a small Comment/\u{1F44D} toolbar
+// that never touches playback.
+const _lyrReactionCache = {}; // trackId -> { [quote]: {count, reacted} }
+
+async function _lyrEnsureReactions(trackId) {
+  if (!trackId) return {};
+  const cached = _lyrReactionCache[trackId];
+  if (cached && cached !== 'loading') return cached;
+  if (cached === 'loading') {
+    while (_lyrReactionCache[trackId] === 'loading') await new Promise(r => setTimeout(r, 80));
+    return _lyrReactionCache[trackId] || {};
+  }
+  _lyrReactionCache[trackId] = 'loading';
+  try {
+    const rows = await dbRpcAuth('/rpc/lyric_reaction_state', { p_track_id: trackId, p_device_id: getDeviceId() });
+    const map = {};
+    (rows || []).forEach(r => { map[r.quote] = { count: Number(r.count) || 0, reacted: !!r.reacted }; });
+    _lyrReactionCache[trackId] = map;
+  } catch (e) { _lyrReactionCache[trackId] = {}; }
+  return _lyrReactionCache[trackId];
+}
+
+async function _lyrToggleReaction(trackId, quote, start, end) {
+  const rows = await dbRpcAuth('/rpc/toggle_lyric_reaction', {
+    p_track_id: trackId, p_quote: quote, p_start: start, p_end: end, p_device_id: getDeviceId()
+  });
+  const row = Array.isArray(rows) ? rows[0] : rows;
+  const result = { reacted: !!row?.reacted, count: Number(row?.count) || 0 };
+  const cache = _lyrReactionCache[trackId] && _lyrReactionCache[trackId] !== 'loading' ? _lyrReactionCache[trackId] : (_lyrReactionCache[trackId] = {});
+  cache[quote] = result;
+  return result;
+}
+
+let _lyrToolbarCtx = null; // { trackId, quote, start, end, lineEl }
+
+function _lyrLineToolbarEl() {
+  let el = document.getElementById('lyr-line-toolbar');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'lyr-line-toolbar';
+    el.className = 'lyr-line-toolbar';
+    el.innerHTML =
+      '<button class="llt-btn llt-react" onclick="lyrQuickReact(event)" title="Thumbs up this lyric">\u{1F44D} <span class="llt-count">0</span></button>' +
+      '<button class="llt-btn llt-comment" onclick="lyrCommentFromToolbar(event)" title="Comment on this lyric">\u{1F4AC} Comment</button>';
+    el.addEventListener('mousedown', e => e.preventDefault()); // don't clear the user's selection before the click lands
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function hideLyrLineToolbar() {
+  const el = document.getElementById('lyr-line-toolbar');
+  if (el) el.style.display = 'none';
+  _lyrToolbarCtx = null;
+}
+
+// Default quote is the whole line; a custom selection confined to that line wins instead.
+async function _lyrRevealLineToolbar(lineEl) {
+  const info = _lyricHostOf(lineEl);
+  if (!info) return;
+  let quote = (lineEl.textContent || '').trim();
+  let start = null, end = null;
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed && sel.rangeCount) {
+    const r = sel.getRangeAt(0);
+    if (lineEl.contains(r.startContainer) && lineEl.contains(r.endContainer)) {
+      const custom = sel.toString().replace(/\s+$/, '').trim();
+      if (custom) quote = custom;
+    }
+  }
+  if (!quote) return;
+  const trackId = info.trackId;
+  _lyrToolbarCtx = { trackId, quote, start, end, lineEl };
+
+  const el = _lyrLineToolbarEl();
+  const r = lineEl.getBoundingClientRect();
+  el.style.display = 'flex';
+  const w = el.offsetWidth || 140;
+  el.style.left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left)) + 'px';
+  el.style.top  = Math.max(6, r.top - 36) + 'px';
+
+  const countEl = el.querySelector('.llt-count');
+  const reactBtn = el.querySelector('.llt-react');
+  if (countEl) countEl.textContent = '\u2026';
+  if (reactBtn) reactBtn.classList.remove('active');
+  const state = await _lyrEnsureReactions(trackId);
+  if (!_lyrToolbarCtx || _lyrToolbarCtx.lineEl !== lineEl) return; // moved on while fetching
+  const s = state[quote];
+  if (countEl) countEl.textContent = s ? s.count : 0;
+  if (reactBtn) reactBtn.classList.toggle('active', !!(s && s.reacted));
+}
+
+async function lyrCommentFromToolbar(e) {
+  e?.stopPropagation();
+  const ctx = _lyrToolbarCtx;
+  hideLyrLineToolbar();
+  if (!ctx) return;
+  openComments('lyric', ctx.trackId, { lyric: { quote: ctx.quote, start: ctx.start, end: ctx.end } });
+}
+
+async function lyrQuickReact(e) {
+  e?.stopPropagation();
+  const ctx = _lyrToolbarCtx;
+  if (!ctx) return;
+  const el = document.getElementById('lyr-line-toolbar');
+  const btn = el?.querySelector('.llt-react');
+  const countEl = el?.querySelector('.llt-count');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await _lyrToggleReaction(ctx.trackId, ctx.quote, ctx.start, ctx.end);
+    if (countEl) countEl.textContent = r.count;
+    if (btn) btn.classList.toggle('active', r.reacted);
+  } catch (err) { showToast('Could not save that.'); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+// Desktop: hover-and-dwell (doesn't fight the existing click-to-seek).
+let _lyrHoverTimer = null, _lyrHoverEl = null;
+document.addEventListener('mouseover', e => {
+  const line = e.target.closest && e.target.closest('.lyr-line');
+  if (!line || line === _lyrHoverEl) return;
+  if (_lyrHoverTimer) clearTimeout(_lyrHoverTimer);
+  _lyrHoverEl = line;
+  _lyrHoverTimer = setTimeout(() => { _lyrRevealLineToolbar(line); }, 450);
+});
+document.addEventListener('mouseout', e => {
+  const line = e.target.closest && e.target.closest('.lyr-line');
+  if (!line) return;
+  const to = e.relatedTarget;
+  if (to && to.closest && (to.closest('.lyr-line') === line || to.closest('#lyr-line-toolbar'))) return;
+  if (_lyrHoverTimer) { clearTimeout(_lyrHoverTimer); _lyrHoverTimer = null; }
+  _lyrHoverEl = null;
+  if (_lyrToolbarCtx && _lyrToolbarCtx.lineEl === line) hideLyrLineToolbar();
+});
+
+// Touch: long-press reveals the toolbar; a normal short tap still seeks as before.
+// The capturing click listener below swallows the click a long-press would
+// otherwise also fire, so lyrSeek() never runs for it.
+let _lyrTouchTimer = null, _lyrLongPressed = false;
+document.addEventListener('touchstart', e => {
+  const line = e.target.closest && e.target.closest('.lyr-line');
+  if (!line) return;
+  _lyrLongPressed = false;
+  _lyrTouchTimer = setTimeout(() => {
+    _lyrLongPressed = true;
+    _lyrRevealLineToolbar(line);
+    try { navigator.vibrate && navigator.vibrate(12); } catch (err) {}
+  }, 450);
+}, { passive: true });
+document.addEventListener('touchmove', () => {
+  if (_lyrTouchTimer) { clearTimeout(_lyrTouchTimer); _lyrTouchTimer = null; }
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (_lyrTouchTimer) { clearTimeout(_lyrTouchTimer); _lyrTouchTimer = null; }
+}, { passive: true });
+document.addEventListener('click', e => {
+  if (!_lyrLongPressed) return;
+  _lyrLongPressed = false;
+  if (e.target.closest && e.target.closest('.lyr-line')) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
+document.addEventListener('mousedown', e => {
+  if (!e.target.closest || !e.target.closest('#lyr-line-toolbar')) hideLyrLineToolbar();
+});
+document.addEventListener('touchstart', e => {
+  if (_lyrToolbarCtx && !(e.target.closest && (e.target.closest('#lyr-line-toolbar') || e.target.closest('.lyr-line') === _lyrToolbarCtx.lineEl))) {
+    hideLyrLineToolbar();
+  }
+}, { passive: true });
+document.addEventListener('scroll', hideLyrLineToolbar, { capture: true, passive: true });
 
 // Comment on whatever the player is playing right now.
 function ytpOpenComments() {
@@ -11037,6 +11264,7 @@ const SJ_CHANGELOG = [
     'Highlighting a lyric and choosing to comment on it now quotes those exact words straight into your comment box, ready to write under.',
     'Comments on a song or a lyric now suggest the track time automatically \u2014 for a lyric it is where those words actually fall in the song, not wherever playback drifted to while you were typing \u2014 and you can uncheck it or edit the time by hand.',
     'Search results now show the artist and album under each song, and have a Comment button right there.',
+    'Hover over a line of synced lyrics (press and hold on a phone) for a Comment button and a thumbs up \u2014 no need to click the line and jump the song. Thumbs up a whole line by default, or highlight your own words first.',
   ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
