@@ -5549,6 +5549,7 @@ function _lyrLineToolbarEl() {
 }
 
 function hideLyrLineToolbar() {
+  if (_lyrHideTimer) { clearTimeout(_lyrHideTimer); _lyrHideTimer = null; }
   const el = document.getElementById('lyr-line-toolbar');
   if (el) el.style.display = 'none';
   _lyrToolbarCtx = null;
@@ -5556,6 +5557,7 @@ function hideLyrLineToolbar() {
 
 // Default quote is the whole line; a custom selection confined to that line wins instead.
 async function _lyrRevealLineToolbar(lineEl) {
+  if (_lyrHideTimer) { clearTimeout(_lyrHideTimer); _lyrHideTimer = null; }
   const info = _lyricHostOf(lineEl);
   if (!info) return;
   let quote = (lineEl.textContent || '').trim();
@@ -5616,21 +5618,41 @@ async function lyrQuickReact(e) {
 
 // Desktop: hover-and-dwell (doesn't fight the existing click-to-seek).
 let _lyrHoverTimer = null, _lyrHoverEl = null;
+let _lyrHideTimer = null;
+
+function _lyrCancelHide() {
+  if (_lyrHideTimer) { clearTimeout(_lyrHideTimer); _lyrHideTimer = null; }
+}
+// The toolbar floats just above the line, so reaching it means crossing a gap of
+// "nothing" first - hiding the instant the mouse leaves the line never gives that
+// crossing a chance to land. A short grace period survives it; re-entering the line
+// or the toolbar within that window cancels the hide outright.
+function _lyrScheduleHide() {
+  _lyrCancelHide();
+  _lyrHideTimer = setTimeout(hideLyrLineToolbar, 350);
+}
+
 document.addEventListener('mouseover', e => {
+  const toolbar = e.target.closest && e.target.closest('#lyr-line-toolbar');
+  if (toolbar) { _lyrCancelHide(); return; }
   const line = e.target.closest && e.target.closest('.lyr-line');
   if (!line || line === _lyrHoverEl) return;
+  _lyrCancelHide();
   if (_lyrHoverTimer) clearTimeout(_lyrHoverTimer);
   _lyrHoverEl = line;
-  _lyrHoverTimer = setTimeout(() => { _lyrRevealLineToolbar(line); }, 450);
+  _lyrHoverTimer = setTimeout(() => { _lyrRevealLineToolbar(line); }, 1350);
 });
 document.addEventListener('mouseout', e => {
   const line = e.target.closest && e.target.closest('.lyr-line');
-  if (!line) return;
+  const toolbar = e.target.closest && e.target.closest('#lyr-line-toolbar');
+  if (!line && !toolbar) return;
   const to = e.relatedTarget;
-  if (to && to.closest && (to.closest('.lyr-line') === line || to.closest('#lyr-line-toolbar'))) return;
-  if (_lyrHoverTimer) { clearTimeout(_lyrHoverTimer); _lyrHoverTimer = null; }
-  _lyrHoverEl = null;
-  if (_lyrToolbarCtx && _lyrToolbarCtx.lineEl === line) hideLyrLineToolbar();
+  if (to && to.closest && (to.closest('.lyr-line') || to.closest('#lyr-line-toolbar'))) return;
+  if (line) {
+    if (_lyrHoverTimer) { clearTimeout(_lyrHoverTimer); _lyrHoverTimer = null; }
+    _lyrHoverEl = null;
+  }
+  if (_lyrToolbarCtx) _lyrScheduleHide();
 });
 
 // Touch: long-press reveals the toolbar; a normal short tap still seeks as before.
