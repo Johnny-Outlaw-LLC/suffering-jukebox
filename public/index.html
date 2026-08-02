@@ -1023,6 +1023,16 @@ textarea.report-input { resize:vertical; }
 .ai-ctx { font-size:.56rem; color:var(--text-muted); margin-top:6px; }
 .ai-desc { font-size:.62rem; color:var(--text); margin-top:6px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
 .ai-who { font-size:.52rem; color:var(--text-muted); margin-top:6px; }
+.ai-acts { margin-left:auto; display:flex; gap:6px; flex-shrink:0; }
+.ai-acts > .ai-resolve, .ai-acts > .ai-play { margin-left:0; }
+.ai-del { background:none; border:1px solid #4a2020; color:#c06060; font-family:var(--mono); font-size:.5rem; padding:.25rem .55rem; border-radius:6px; cursor:pointer; }
+.ai-del:hover { color:#fff; background:#8a2020; border-color:#8a2020; }
+.ai-card.hidden-cmt { opacity:.5; border-style:dashed; }
+.ai-sections { display:flex; gap:6px; border-bottom:1px solid var(--border); padding-bottom:11px; margin-bottom:13px; }
+.ai-note { font-size:.52rem; color:var(--text-muted); margin:-4px 0 12px; line-height:1.5; }
+.ai-quote { border-left:2px solid var(--accent); padding-left:8px; margin-top:6px; font-size:.55rem;
+  color:var(--text-muted); font-style:italic; white-space:pre-wrap; word-break:break-word; }
+.ai-meta { font-size:.5rem; color:var(--text-muted); margin-top:6px; font-family:var(--mono); word-break:break-all; }
 .ytp-playpause-btn { padding: 2px 8px; font-size: .65rem; }
 #ytp-vote-btn { font-size: .6rem; }
 .ytp-block-btn:hover { color: #ef4444; border-color: #ef4444; }
@@ -2280,7 +2290,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 <div class="modal-overlay" id="adminIssuesOverlay" onclick="if(event.target===this)closeAdminIssues()">
   <div class="modal" style="max-width:720px">
     <div class="modal-header">
-      <span class="modal-title">Issue Reports</span>
+      <span class="modal-title">Reports &amp; Comments</span>
       <button class="modal-close" onclick="closeAdminIssues()">✕</button>
     </div>
     <div class="modal-body" id="admin-issues-body">
@@ -5333,7 +5343,175 @@ let _adminIssuesFilter = 'open';
 function openAdminIssues() {
   if (!sjIsAdmin) return;
   document.getElementById('adminIssuesOverlay')?.classList.add('open');
+  _adminSection = 'issues';
+  _adminFooterForSection();
   loadAdminIssues();
+}
+
+// ── Admin: which half of the modal is showing ──────────────────
+let _adminSection  = 'issues';
+let _adminComments = [];
+let _adminCmtStats = { private_count: 0, hidden_count: 0 };
+let _adminCmtLoaded = false;
+let _adminCmtFilter = 'visible';
+
+// Auto Resolve only applies to problem reports.
+function _adminFooterForSection() {
+  const btn = document.getElementById('ai-autoresolve-btn');
+  if (btn) btn.style.display = _adminSection === 'issues' ? '' : 'none';
+}
+
+function setAdminSection(s) {
+  _adminSection = s;
+  _adminFooterForSection();
+  if (s === 'issues') { _adminIssues.length ? renderAdminIssues() : loadAdminIssues(); }
+  else { _adminCmtLoaded ? renderAdminComments() : loadAdminComments(); }
+}
+
+function _adminSectionTabs() {
+  const openN = _adminIssues.filter(r => !r.resolved).length;
+  return `<div class="ai-sections">
+    <button class="ai-fbtn${_adminSection === 'issues' ? ' active' : ''}" onclick="setAdminSection('issues')">\u2691 Problems${openN ? ' (' + openN + ')' : ''}</button>
+    <button class="ai-fbtn${_adminSection === 'comments' ? ' active' : ''}" onclick="setAdminSection('comments')">\u{1F4AC} Comments</button>
+  </div>`;
+}
+
+// ── Admin: comment moderation ──────────────────────────────────
+async function loadAdminComments() {
+  const body = document.getElementById('admin-issues-body');
+  if (!body) return;
+  body.innerHTML = _adminSectionTabs() + '<div class="admin-metrics-loading">Loading comments\u2026</div>';
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    const tok = session?.access_token || ANON;
+    const res = await fetch(REST + '/rpc/admin_list_comments', {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json',
+        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
+      body: '{}'
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    _adminComments  = Array.isArray(d?.comments) ? d.comments : [];
+    _adminCmtStats  = { private_count: d?.private_count || 0, hidden_count: d?.hidden_count || 0 };
+    _adminCmtLoaded = true;
+    renderAdminComments();
+  } catch (e) {
+    body.innerHTML = _adminSectionTabs() + '<div class="admin-metrics-loading">Could not load comments.</div>';
+  }
+}
+
+function setAdminCmtFilter(f) { _adminCmtFilter = f; renderAdminComments(); }
+
+function renderAdminComments() {
+  const body = document.getElementById('admin-issues-body');
+  if (!body) return;
+  const esc = v => (v == null ? '' : String(v)).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const TYPELBL = { artist: 'Artist', album: 'Album', track: 'Track', lyric: 'Lyric' };
+  const visibleN = _adminComments.filter(c => !c.hidden).length;
+  const hiddenN  = _adminComments.filter(c => c.hidden).length;
+  let rows = _adminComments;
+  if (_adminCmtFilter === 'visible') rows = rows.filter(c => !c.hidden);
+  else if (_adminCmtFilter === 'hidden') rows = rows.filter(c => c.hidden);
+
+  const head = _adminSectionTabs() + `<div class="ai-filters">
+    <button class="ai-fbtn${_adminCmtFilter === 'visible' ? ' active' : ''}" onclick="setAdminCmtFilter('visible')">Visible (${visibleN})</button>
+    <button class="ai-fbtn${_adminCmtFilter === 'hidden' ? ' active' : ''}" onclick="setAdminCmtFilter('hidden')">Hidden (${hiddenN})</button>
+    <button class="ai-fbtn${_adminCmtFilter === 'all' ? ' active' : ''}" onclick="setAdminCmtFilter('all')">All</button>
+  </div>` + (_adminCmtStats.private_count
+    ? `<div class="ai-note">${_adminCmtStats.private_count} private comment${_adminCmtStats.private_count === 1 ? '' : 's'} not listed. Private comments are only ever visible to the listener who wrote them \u2014 the privacy policy says so, so moderation does not read them.</div>`
+    : '');
+
+  if (!rows.length) { body.innerHTML = head + '<div class="admin-metrics-loading">No comments here.</div>'; return; }
+  const fmtDate = v => { try { return new Date(v).toLocaleString(); } catch (_) { return v; } };
+  const fmtPos = ms => { if (ms == null) return ''; const s = Math.round(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+  body.innerHTML = head + '<div class="ai-list">' + rows.map(c => {
+    const ctx = [
+      c.artist_name && ('Artist: ' + esc(c.artist_name)),
+      c.album_name  && ('Album: '  + esc(c.album_name)),
+      c.track_name  && ('Track: '  + esc(c.track_name))
+    ].filter(Boolean).join('  \u00B7  ');
+    const who = c.is_anonymous
+      ? 'Anonymous'
+      : (esc(c.user_name || '(no name)') + (c.user_email ? ' &lt;' + esc(c.user_email) + '&gt;' : ' (not signed in)'));
+    const meta = [
+      'IP ' + esc(c.ip_address || 'unknown'),
+      c.playing_track_name ? 'playing \u201C' + esc(c.playing_track_name) + '\u201D at ' + fmtPos(c.playing_position_ms) : null,
+      c.ref_position_ms != null ? 'cites ' + fmtPos(c.ref_position_ms) : null
+    ].filter(Boolean).join('  \u00B7  ');
+    return `<div class="ai-card${c.hidden ? ' hidden-cmt' : ''}">
+      <div class="ai-card-top">
+        <span class="ai-cat">${TYPELBL[c.target_type] || esc(c.target_type)}</span>
+        <span class="ai-date">${fmtDate(c.created_at)}</span>
+        <span class="ai-acts">
+          ${c.track_id ? `<button class="ai-play" onclick="adminPlayCommentTrack('${c.track_id}')" title="Play the track this is about">\u25B6 Play</button>` : ''}
+          <button class="ai-resolve" onclick="toggleCommentHidden('${c.id}', ${c.hidden ? 'false' : 'true'})">${c.hidden ? 'Unhide' : 'Hide'}</button>
+          <button class="ai-del" onclick="adminDeleteComment('${c.id}')" title="Delete permanently">Delete</button>
+        </span>
+      </div>
+      ${ctx ? `<div class="ai-ctx">${ctx}</div>` : ''}
+      ${c.lyric_quote ? `<div class="ai-quote">\u201C${esc(c.lyric_quote)}\u201D</div>` : ''}
+      <div class="ai-desc">${esc(c.body)}</div>
+      <div class="ai-who">By ${who}</div>
+      <div class="ai-meta">${meta}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+async function _adminCmtRpc(fn, payload) {
+  const { data: { session } } = await sbAuth.auth.getSession();
+  const tok = session?.access_token || ANON;
+  const res = await fetch(REST + '/rpc/' + fn, {
+    method: 'POST',
+    headers: { apikey: ANON, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json',
+      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+}
+
+// Hiding pulls a comment out of every listener's view, including its author's,
+// without destroying it.
+async function toggleCommentHidden(id, hide) {
+  try {
+    await _adminCmtRpc('admin_set_comment_hidden', { p_id: id, p_hidden: hide });
+    const c = _adminComments.find(x => x.id === id);
+    if (c) c.hidden = hide;
+    _adminCmtStats.hidden_count += hide ? 1 : -1;
+    renderAdminComments();
+    loadCommentCounts();
+    if (c && c.track_id) refreshTrackComments(c.track_id).catch(() => {});
+    showToast(hide ? 'Comment hidden.' : 'Comment restored.');
+  } catch (e) { showToast('Could not update that comment.'); }
+}
+
+async function adminDeleteComment(id) {
+  const c = _adminComments.find(x => x.id === id);
+  if (!confirm('Delete this comment permanently? This cannot be undone.\n\n' + (c ? c.body.slice(0, 160) : ''))) return;
+  try {
+    await _adminCmtRpc('admin_delete_comment', { p_id: id });
+    if (c && c.hidden) _adminCmtStats.hidden_count = Math.max(0, _adminCmtStats.hidden_count - 1);
+    _adminComments = _adminComments.filter(x => x.id !== id);
+    renderAdminComments();
+    loadCommentCounts();
+    if (c && c.track_id) refreshTrackComments(c.track_id).catch(() => {});
+    showToast('Comment deleted.');
+  } catch (e) { showToast('Could not delete that comment.'); }
+}
+
+// Same idea as playIssueTrack, but sourced from the comment list.
+async function adminPlayCommentTrack(trackId) {
+  const c = (_adminComments || []).find(x => x.track_id === trackId);
+  const name = c?.track_name || 'Track';
+  try {
+    const m = await loadYT([trackId]);
+    const vid = m[trackId]?.video_id;
+    if (!vid) { showToast('No video is mapped to this track yet.'); return; }
+    ytData[trackId] = { ...(ytData[trackId] || {}), ...m[trackId] };
+    closeAdminIssues();
+    ytPlayNow(vid, name, trackId);
+  } catch (e) { showToast('Could not load this track.'); }
 }
 function closeAdminIssues() { document.getElementById('adminIssuesOverlay')?.classList.remove('open'); }
 async function loadAdminIssues() {
@@ -5366,7 +5544,7 @@ function renderAdminIssues() {
   if (_adminIssuesFilter === 'open') rows = rows.filter(r => !r.resolved);
   else if (_adminIssuesFilter === 'resolved') rows = rows.filter(r => r.resolved);
   const openCount = _adminIssues.filter(r => !r.resolved).length;
-  const head = `<div class="ai-filters">
+  const head = _adminSectionTabs() + `<div class="ai-filters">
     <button class="ai-fbtn${_adminIssuesFilter === 'open' ? ' active' : ''}" onclick="setAdminIssuesFilter('open')">Open (${openCount})</button>
     <button class="ai-fbtn${_adminIssuesFilter === 'resolved' ? ' active' : ''}" onclick="setAdminIssuesFilter('resolved')">Resolved</button>
     <button class="ai-fbtn${_adminIssuesFilter === 'all' ? ' active' : ''}" onclick="setAdminIssuesFilter('all')">All</button>
@@ -10625,6 +10803,7 @@ const SJ_CHANGELOG = [
     'While a song is playing you can attach the current moment to your comment, and anyone reading it can jump straight to that spot.',
     'Open any song and its comments are right there under the lyrics, so you can read along while you browse.',
     'You do not need an account to comment \u2014 sign it with a name or leave it anonymous.',
+    'Public comments can be hidden or removed by the team if they break the rules. Private comments are never read by anyone but you.',
     'Broken videos now fix themselves: every night the jukebox rechecks songs reported as unplayable and swaps in a working video when it finds a good match.',
     'New “What’s New” entry in the account menu — signed-in users can follow what happened to the problems they reported.',
   ]},
