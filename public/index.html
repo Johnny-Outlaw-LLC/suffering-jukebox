@@ -380,6 +380,8 @@ body:not(.light) .tt-num { color: var(--text); }
 /* fixed width: .m-input's flex:1 sets basis 0, which would otherwise split the
    row 50/50 with the album name and truncate it (needs .m-input to outrank it) */
 .m-input.am-ft-yr { flex: 0 0 76px; }
+.ma-search-row { padding: 0 0 10px; }
+.ma-search-row .m-input { width: 100%; box-sizing: border-box; }
 /* block context, so the flex:1 from .m-input does nothing */
 #amManName { width: 100%; }
 .am-ft-arts { display: flex; gap: .35rem; flex-wrap: wrap; }
@@ -407,6 +409,7 @@ body:not(.light) .tt-num { color: var(--text); }
 .oa-artist-row:hover { background: var(--bg-elevated); }
 .oa-caret { font-size: .55rem; color: var(--text-muted); width: 10px; flex-shrink: 0; }
 .oa-info { flex: 1; min-width: 0; }
+.ma-caret { flex-shrink: 0; width: 14px; text-align: center; color: var(--text-muted); font-size: .55rem; user-select: none; cursor: pointer; }
 .oa-name { font-family: var(--mono); font-size: .6rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .oa-meta { font-family: var(--mono); font-size: .45rem; color: var(--text-muted); letter-spacing: .04em; }
 .oa-act { background: none; border: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: .46rem; letter-spacing: .04em; padding: .25rem .5rem; border-radius: 6px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all .12s; }
@@ -2103,6 +2106,9 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="modal-close" onclick="closeMyArtists()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="ma-search-row">
+        <input type="text" class="m-input" id="maSearchInput" placeholder="Search artist, album, or song…" autocomplete="off" oninput="maFilterArtists(this.value)">
+      </div>
       <div id="myArtistsBody"><div class="oa-albs-note">Loading…</div></div>
     </div>
     <div class="modal-footer">
@@ -10849,6 +10855,9 @@ function renderAmAlbums() {
 // ── MANAGE MY ARTISTS ────────────────────────────────────────────────────────
 let _maData = [];
 let _maTrkCache = {};   // albumId -> [{id,name,track_number,duration_ms,has_lyrics}]
+let _maExpanded = new Set();          // artist ids the user has manually expanded
+let _maTrackHitAlbumIds = new Set();  // album ids matching the current song-title search
+let _maSearchSeq = 0;
 function openMyArtists() {
   if (!googleUser) {
     if (confirm('Sign in with Google to manage your artists. Sign in now?')) handleAuthClick();
@@ -10879,9 +10888,10 @@ function renderMyArtists(isAdmin) {
     return;
   }
   body.innerHTML = _maData.map(a => `
-    <div class="oa-artist">
-      <div class="oa-artist-row" style="cursor:default">
-        <div class="oa-info">
+    <div class="oa-artist" data-ma-artist="${a.id}">
+      <div class="oa-artist-row">
+        <span class="ma-caret" id="ma-caret-${a.id}" onclick="maToggleArtist('${a.id}')" title="Expand / collapse">▸</span>
+        <div class="oa-info" onclick="maToggleArtist('${a.id}')" style="cursor:pointer">
           <div class="oa-name">${esc(a.name)}</div>
           <div class="oa-meta">${a.albums.length} album${a.albums.length===1?'':'s'} · ${a.track_count} track${a.track_count===1?'':'s'}${isAdmin && !a.mine ? ' · added by ' + esc(a.added_by_name || '?') : ''}</div>
         </div>
@@ -10889,10 +10899,71 @@ function renderMyArtists(isAdmin) {
         <button type="button" class="oa-act" onclick="maRename('${a.id}')">✎ Rename</button>
         <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444" onclick="maDeleteArtist('${a.id}')">✕ Remove</button>
       </div>
-      <div class="oa-albs">
+      <div class="oa-albs" id="ma-albs-${a.id}" style="display:none">
         ${a.albums.map(al => `<div class="oa-alb" id="ma-albrow-${al.id}">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio for this album (rights holders only)" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Edit name & year" onclick="maToggleAlbumEdit('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div><div class="ma-albedit-box" id="ma-albedit-${al.id}" style="display:none"></div>`).join('')}
       </div>
     </div>`).join('');
+  const activeQ = document.getElementById('maSearchInput')?.value || '';
+  if (activeQ.trim()) maFilterArtists(activeQ);
+}
+
+function maToggleArtist(artistId) {
+  const box = document.getElementById('ma-albs-' + artistId);
+  const caret = document.getElementById('ma-caret-' + artistId);
+  if (!box) return;
+  const show = box.style.display === 'none';
+  box.style.display = show ? '' : 'none';
+  if (caret) caret.textContent = show ? '▾' : '▸';
+  if (show) _maExpanded.add(artistId); else _maExpanded.delete(artistId);
+}
+
+function maFilterArtists(raw) {
+  const q = (raw || '').trim().toLowerCase();
+  if (!q) {
+    _maTrackHitAlbumIds = new Set();
+    maApplyFilter('');
+    return;
+  }
+  const seq = ++_maSearchSeq;
+  dbGet(`/tracks?name=ilike.*${encodeURIComponent(q)}*&select=id,album_id&limit=200`)
+    .then(rows => {
+      if (seq !== _maSearchSeq) return; // a newer keystroke superseded this search
+      _maTrackHitAlbumIds = new Set(rows.map(r => r.album_id));
+      maApplyFilter(q);
+    })
+    .catch(() => {});
+  maApplyFilter(q);
+}
+
+function maApplyFilter(q) {
+  const body = document.getElementById('myArtistsBody');
+  if (!body) return;
+  for (const a of _maData) {
+    const el = body.querySelector(`[data-ma-artist="${a.id}"]`);
+    if (!el) continue;
+    const box = document.getElementById('ma-albs-' + a.id);
+    const caret = document.getElementById('ma-caret-' + a.id);
+    if (!q) {
+      el.style.display = '';
+      el.querySelectorAll('.oa-alb').forEach(row => { row.style.display = ''; });
+      const expanded = _maExpanded.has(a.id);
+      if (box) box.style.display = expanded ? '' : 'none';
+      if (caret) caret.textContent = expanded ? '▾' : '▸';
+      continue;
+    }
+    const artistHit = a.name.toLowerCase().includes(q);
+    let anyAlbumHit = false;
+    el.querySelectorAll('.oa-alb').forEach((row, idx) => {
+      const al = a.albums[idx];
+      const albHit = artistHit || (al && al.name.toLowerCase().includes(q)) || (al && _maTrackHitAlbumIds.has(al.id));
+      row.style.display = albHit ? '' : 'none';
+      if (albHit) anyAlbumHit = true;
+    });
+    const show = artistHit || anyAlbumHit;
+    el.style.display = show ? '' : 'none';
+    if (box) box.style.display = show ? '' : 'none';
+    if (caret) caret.textContent = show ? '▾' : '▸';
+  }
 }
 
 async function maToggleTracks(artistId, albumId) {
@@ -10949,7 +11020,9 @@ async function maDeleteTrack(artistId, albumId, trackId) {
   maBusy('Removing track…');
   try {
     await amFetch('?action=delete_track', { method: 'POST', body: JSON.stringify({ track_id: trackId }) });
-    _maTrkCache[albumId] = _maTrkCache[albumId].filter(x => x.id !== trackId);
+    _maTrkCache[albumId] = _maTrkCache[albumId]
+      .filter(x => x.id !== trackId)
+      .map(x => (t.track_number != null && x.track_number > t.track_number) ? { ...x, track_number: x.track_number - 1 } : x);
     const a = _maData.find(x => x.id === artistId);
     if (a) a.track_count = Math.max(0, (a.track_count || 1) - 1);
     maRenderTracks(artistId, albumId);
@@ -11325,6 +11398,9 @@ const SJ_CHANGELOG = [
     'Search results now show the artist and album under each song, and have a Comment button right there.',
     'Hover over a line of synced lyrics (press and hold on a phone) for a Comment button and a thumbs up \u2014 no need to click the line and jump the song. Thumbs up a whole line by default, or highlight your own words first.',
     'In Manage My Artists, the album edit button now opens a proper name and year field instead of a popup, so you can fix a wrong release year without retyping the whole album name.',
+    'Manage My Artists now has a search box (artist, album, or song) and each artist collapses to just its name until you expand it, so a big library does not turn into an endless scroll.',
+    'YouTube imports now check the album against its official studio tracklist, so bonus, live, and promo videos riding along in the same playlist no longer get pulled in as album tracks.',
+    'Removing a track from an album now renumbers the rest of the tracklist so there is no gap where it used to be.',
   ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
