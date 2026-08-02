@@ -808,7 +808,10 @@ body:not(.light) .tt-num { color: var(--text); }
   font-family: var(--mono); font-size: .42rem; letter-spacing: .04em; padding: 3px 7px; transition: all .12s; white-space: nowrap; }
 .cmt-btn:hover { border-color: var(--accent); color: var(--accent); }
 .cmt-btn.has { border-color: var(--accent); color: var(--accent); }
-.tl-panel-hdr .cmt-btn { flex-shrink: 0; }
+.tl-panel-hdr { gap: 6px; }
+.tl-panel-hdr > .cmt-btn, .tl-panel-hdr > .ctrl-btn, .tl-panel-hdr > .tl-panel-close { flex-shrink: 0; }
+.tl-panel-hdr > .cmt-btn { padding: 3px 6px; }
+.tl-panel-hdr [data-alb-metric] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmt-inline { display: grid; gap: .5rem; margin-top: 6px; }
 .cmt-inline .cmt-card { font-size: .95em; }
 /* Lyric passages that carry a comment */
@@ -1233,7 +1236,7 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-pl-save-btn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.46rem; letter-spacing:.05em; padding:3px 8px; border-radius:5px; cursor:pointer; transition:color .1s,border-color .1s; white-space:nowrap; text-transform:uppercase; flex-shrink:0; }
 .yt-pl-save-btn:hover { color:#ff6b35; border-color:#ff6b35; }
 .yt-queue-section { background:var(--bg-card); max-height:280px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
-.yt-queue-head { display:flex; align-items:center; gap:6px; font-size:.42rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); padding:5px 10px 3px; font-weight:600; position:sticky; top:0; background:var(--bg-card); }
+.yt-queue-head { display:flex; align-items:center; gap:6px; font-size:.42rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); padding:6px 10px 5px; font-weight:600; position:sticky; top:0; background:var(--bg-card); z-index:2; border-bottom:1px solid var(--border); }
 .yt-queue-row { display:flex; align-items:center; gap:7px; padding:5px 10px; cursor:pointer; background:transparent; transition:background .1s; }
 .yt-queue-row:hover { background:var(--bg-elevated); }
 .yt-queue-row.active { background:var(--bg-elevated); }
@@ -1859,6 +1862,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <div class="ytp-mf-controls">
     <button class="ytp-mf-btn ytp-mf-block" onclick="event.stopPropagation();ytpBlockCurrent()" title="Never play this song again" id="ytp-mf-block" style="display:none">⊘</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleLyricStrip()" title="Show lyrics" id="ytp-mf-lyrics" style="display:none">♫</button>
+    <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpOpenComments()" title="Comment on this track" id="ytp-mf-comment">🗩</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleShuffle()" title="Shuffle" id="ytp-mf-shuffle">⇄</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytPrevTrack()" title="Previous" id="ytp-mf-prev">⏮</button>
     <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
@@ -2245,7 +2249,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 <div class="modal-overlay" id="commentsOverlay" onclick="if(event.target===this)closeComments()">
   <div class="modal" style="max-width:640px">
     <div class="modal-header">
-      <span class="modal-title">&#128172; Comments</span>
+      <span class="modal-title">Comments</span>
       <button class="modal-close" onclick="closeComments()">&#10005;</button>
     </div>
     <div class="modal-body" style="gap:.9rem">
@@ -3109,7 +3113,7 @@ function buildSinglePanelHTML(alb, L) {
       </div>
       ${hasVideos ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)"
         title="Play all tracks in order">▶ Play</button>` : ''}
-      <button class="cmt-btn" data-cmt-badge="album:${alb.id}" onclick="event.stopPropagation();openComments('album','${alb.id}')" title="Comment on this album">&#128172; Comment</button>
+      <button class="cmt-btn" data-cmt-badge="album:${alb.id}" onclick="event.stopPropagation();openComments('album','${alb.id}')" title="Comment on this album">Comment</button>
       <button class="tl-panel-close" onclick="event.stopPropagation();toggleAlbumExpand('${alb.id}')">✕</button>
     </div>
     <div style="height:auto;overflow:visible;padding-bottom:8px;">
@@ -3693,6 +3697,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
             style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer">
         </label>
         <button class="ytp-btn ytp-block-btn" id="ytp-block-btn" onclick="ytpBlockCurrent();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Never play this song again" style="display:none">⊘ Never Again</button>
+        <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
         <button class="ytp-btn ytp-report-btn" id="ytp-report-btn" onclick="openReportModal();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Report a problem with this track">⚑ Report a problem</button>
       </div>
     </div>
@@ -4876,7 +4881,7 @@ function refreshCommentBadges() {
   document.querySelectorAll('[data-cmt-badge]').forEach(el => {
     const [kind, id] = (el.getAttribute('data-cmt-badge') || '').split(':');
     const n = commentCount(kind, id);
-    el.textContent = n ? '\u{1F4AC} ' + n : '\u{1F4AC} Comment';
+    el.textContent = n ? 'Comment (' + n + ')' : 'Comment';
     el.classList.toggle('has', n > 0);
   });
 }
@@ -5252,7 +5257,7 @@ function _lyrSelPopEl() {
   if (!p) {
     p = document.createElement('div');
     p.id = 'lyr-sel-pop';
-    p.textContent = '\u{1F4AC} Comment on this';
+    p.textContent = 'Comment on this';
     p.addEventListener('mousedown', e => e.preventDefault());
     p.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); commentOnSelection(); });
     document.body.appendChild(p);
@@ -5323,6 +5328,14 @@ document.addEventListener('click', e => {
   openComments('lyric', m.getAttribute('data-lyr-cmt'));
 });
 
+// Comment on whatever the player is playing right now.
+function ytpOpenComments() {
+  const item = (typeof ytQueue !== 'undefined' && Array.isArray(ytQueue)) ? (ytQueue[ytQueueIdx] || null) : null;
+  const tid = (item && item.trackId) || nowPlayingTrackId || null;
+  if (!tid) { showToast('No track is playing yet.'); return; }
+  openComments('track', tid);
+}
+
 // Artist-level entry point from the filter bar: pick one when several are loaded.
 function openArtistComments() {
   const arts = (allArtists || []).filter(a => a && a.id);
@@ -5372,7 +5385,7 @@ function _adminSectionTabs() {
   const openN = _adminIssues.filter(r => !r.resolved).length;
   return `<div class="ai-sections">
     <button class="ai-fbtn${_adminSection === 'issues' ? ' active' : ''}" onclick="setAdminSection('issues')">\u2691 Problems${openN ? ' (' + openN + ')' : ''}</button>
-    <button class="ai-fbtn${_adminSection === 'comments' ? ' active' : ''}" onclick="setAdminSection('comments')">\u{1F4AC} Comments</button>
+    <button class="ai-fbtn${_adminSection === 'comments' ? ' active' : ''}" onclick="setAdminSection('comments')">Comments</button>
   </div>`;
 }
 
@@ -6932,7 +6945,7 @@ function _buildAccordionContent(trackId) {
       ${vid ? `<a class="sc-link yt" href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeTitle}','${trackId}',event)" style="margin:0">▶ Play</a>` : ''}
       ${spotifyId ? `<a class="sc-link" href="https://open.spotify.com/track/${spotifyId}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#1db954;border-color:#1db954;margin:0">Spotify ↗</a>` : ''}
       ${googleUser ? `<button class="sc-link sj-block${isTrackBlocked(trackId) ? ' blocked' : ''}" data-block-track="${trackId}" onclick="event.preventDefault();event.stopPropagation();toggleBlockTrack('${trackId}')" title="Never play this song again" style="margin:0">${isTrackBlocked(trackId) ? '↺ Unblock' : '⊘ Never Again'}</button>` : ''}
-      <button class="cmt-btn" data-cmt-badge="track:${trackId}" onclick="event.preventDefault();event.stopPropagation();openComments('track','${trackId}')" title="Comment on this track">&#128172; Comment</button>
+      <button class="cmt-btn" data-cmt-badge="track:${trackId}" onclick="event.preventDefault();event.stopPropagation();openComments('track','${trackId}')" title="Comment on this track">Comment</button>
       ${statParts ? `<span style="font-size:.42rem;color:var(--text-muted)">${statParts}</span>` : ''}
     </div>
     <div>
@@ -6948,7 +6961,7 @@ function _buildAccordionContent(trackId) {
       </div>
       <div class="trk-acc-lyrics"><div data-acc-lyric="${trackId}" class="sc-lyrics-ph">Loading…</div></div>
       <div class="trk-acc-lbl" style="display:flex;align-items:center;gap:6px;margin-top:9px">Comments
-        <button class="cmt-btn" onclick="openComments('track','${trackId}');event.stopPropagation()" title="Leave a comment on this track">&#128172; Add</button>
+        <button class="cmt-btn" onclick="openComments('track','${trackId}');event.stopPropagation()" title="Leave a comment on this track">Add</button>
       </div>
       <div class="cmt-inline" data-cmt-inline="${trackId}"><div class="cmt-empty">Loading…</div></div>
     </div>
@@ -8937,7 +8950,7 @@ function renderCommunityFilterBar() {
       </div>
     </div>
     ${renderSJPMSpecialButtons()}
-    <button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">&#128172; Artist Comments</button>
+    <button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>
     ${renderOtherArtistsBtn()}
   </div>`;
 }
@@ -8997,7 +9010,7 @@ function renderFilterBar(allAlbs) {
       <span class="pill-dot" style="background:${pmAllHidden ? 'var(--text-muted)' : pmColor}"></span>
       Purple Mountains
     </button>
-    <button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">&#128172; Artist Comments</button>
+    <button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>
     ${renderOtherArtistsBtn()}
   </div>`;
 }
@@ -9686,7 +9699,7 @@ function renderOtherArtistsBtn() {
           <div class="oa-meta">${a.is_community === false ? 'main jukebox artist' : (a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist')}</div>
         </div>
         ${(!IS_COMMUNITY || _featuredId) ? `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>` : ''}
-        <button type="button" class="cmt-btn" data-cmt-badge="artist:${a.id}" onclick="event.stopPropagation();openComments('artist','${a.id}')" title="Comment on this artist">&#128172; Comment</button>
+        <button type="button" class="cmt-btn" data-cmt-badge="artist:${a.id}" onclick="event.stopPropagation();openComments('artist','${a.id}')" title="Comment on this artist">Comment</button>
         <button type="button" class="oa-act go" onclick="event.stopPropagation();oaGoToArtist('${a.id}')" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
@@ -10804,6 +10817,8 @@ const SJ_CHANGELOG = [
     'Open any song and its comments are right there under the lyrics, so you can read along while you browse.',
     'You do not need an account to comment \u2014 sign it with a name or leave it anonymous.',
     'Public comments can be hidden or removed by the team if they break the rules. Private comments are never read by anyone but you.',
+    'The player has a Comment button too, in the popup, in full screen and in the minimized bar, so you can comment on whatever is playing without hunting for the song.',
+    'Tidied up the queue list: the Clear Playlist header no longer has song rows showing through it, and album headers no longer overlap their buttons when the panel is narrow.',
     'Broken videos now fix themselves: every night the jukebox rechecks songs reported as unplayable and swaps in a working video when it finds a good match.',
     'New “What’s New” entry in the account menu — signed-in users can follow what happened to the problems they reported.',
   ]},
