@@ -4854,10 +4854,56 @@ function _cmtResolve(kind, id) {
     }
   }
   // Community and restored-queue tracks are never in `tracks`, so fall back to
-  // the play-time metadata cache. Ids for their album/artist stay unknown.
+  // the play-time metadata cache. Anything still missing gets looked up in the
+  // database by _cmtEnrich() - including the album/artist ids, which the cache
+  // never carries. Note ytpTrackMeta() invents the string 'Unknown' for a title
+  // it cannot resolve; that is fine for a title bar but must not be stored as a
+  // track name, so it is dropped here.
   const m = ytpTrackMeta(id, null);
-  out.track_id = id; out.track_name = m.title || ''; out.album_name = m.album || ''; out.artist_name = m.artist || '';
+  out.track_id    = id;
+  out.track_name  = (m.title && m.title !== 'Unknown') ? m.title : '';
+  out.album_name  = m.album || '';
+  out.artist_name = m.artist || '';
   return out;
+}
+
+// Fills in whatever the loaded catalogue could not. One embedded query gets the
+// track, its album and its artist, ids included - so a comment made from the
+// player names the right things and offers the Artist and Album tabs even when
+// the page never loaded that artist.
+async function _cmtEnrich() {
+  const c = _cmtCtx;
+  if (!c || !c.track_id) return;
+  if (c.artist_id && c.album_id && c.track_name) return;   // nothing left to find
+  const forTrack = c.track_id;
+  let row;
+  try {
+    const rows = await dbGet('/tracks?id=eq.' + forTrack +
+      '&select=id,name,album_id,albums(id,name,artist_id,artists(id,name))&limit=1');
+    row = rows && rows[0];
+  } catch (e) { return; }
+  // The listener may have moved on to another target while this was in flight.
+  if (!row || !_cmtCtx || _cmtCtx.track_id !== forTrack) return;
+
+  const c2 = _cmtCtx;
+  c2.track_name = c2.track_name || row.name || '';
+  const alb = row.albums;
+  if (alb) {
+    c2.album_id   = c2.album_id   || alb.id;
+    c2.album_name = c2.album_name || alb.name || '';
+    const art = alb.artists;
+    if (art) {
+      c2.artist_id   = c2.artist_id   || art.id;
+      c2.artist_name = c2.artist_name || art.name || '';
+    }
+  }
+  // Stamp the play-time cache so the next open resolves instantly.
+  if (c2.artist_name || c2.album_name) {
+    SJ_TRACK_META[forTrack] = Object.assign({}, SJ_TRACK_META[forTrack] || {},
+      { artist: c2.artist_name, album: c2.album_name });
+  }
+  _cmtRenderHeader();
+  _cmtLoadThread();   // album/artist threads only become fetchable now
 }
 
 // ── Counts + badges ────────────────────────────────────────────
@@ -4909,6 +4955,7 @@ function openComments(kind, id, opts) {
   if (bodyEl) setTimeout(() => bodyEl.focus(), 60);
   _cmtStartTimeTicker();
   _cmtLoadThread();
+  _cmtEnrich();
 }
 
 function closeComments() {
@@ -4934,7 +4981,8 @@ function _cmtRenderHeader() {
     if (c.artist_name) bits.push('Artist: ' + escHtml(c.artist_name));
     if (c.album_name)  bits.push('Album: '  + escHtml(c.album_name));
     if (c.track_name)  bits.push('Track: '  + escHtml(c.track_name));
-    tgt.innerHTML = bits.join(' &nbsp;\u00B7&nbsp; ') || 'General';
+    tgt.innerHTML = bits.join(' &nbsp;\u00B7&nbsp; ') ||
+      (c.track_id ? 'Looking up this track\u2026' : 'General');
   }
   const tabs = document.getElementById('cmt-tabs');
   if (tabs) {
@@ -10818,6 +10866,7 @@ const SJ_CHANGELOG = [
     'You do not need an account to comment \u2014 sign it with a name or leave it anonymous.',
     'Public comments can be hidden or removed by the team if they break the rules. Private comments are never read by anyone but you.',
     'The player has a Comment button too, in the popup, in full screen and in the minimized bar, so you can comment on whatever is playing without hunting for the song.',
+    'Commenting from the player now always names the artist, album and song you are listening to, and lets you comment on any of the three. It used to say \u201CTrack: Unknown\u201D for songs the page had not loaded.',
     'Tidied up the queue list: the Clear Playlist header no longer has song rows showing through it, and album headers no longer overlap their buttons when the panel is narrow.',
     'Broken videos now fix themselves: every night the jukebox rechecks songs reported as unplayable and swaps in a working video when it finds a good match.',
     'New “What’s New” entry in the account menu — signed-in users can follow what happened to the problems they reported.',
