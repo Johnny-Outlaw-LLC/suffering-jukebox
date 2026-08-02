@@ -916,6 +916,12 @@ mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
 .lyr-line { padding:1px 6px; margin:0 -6px; border-radius:4px; cursor:pointer; opacity:.55; transition:opacity .25s, color .25s, background .25s; }
 .lyr-line:hover { opacity:.85; background:rgba(255,255,255,.05); }
 .lyr-line.lyr-active { opacity:1; color:var(--accent); background:rgba(255,255,255,.07); font-weight:600; }
+.cmt-lyr-panel { border: 1px solid #232323; border-radius: 8px; background: #0e0e0e; }
+.cmt-lyr-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid #232323; font-size: .44rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.cmt-lyr-live { color: var(--accent); text-transform: none; letter-spacing: 0; font-weight: 700; }
+.cmt-lyr-hint { text-transform: none; letter-spacing: 0; opacity: .6; font-weight: 400; }
+.cmt-lyr-lines { max-height: 22vh; overflow-y: auto; padding: 6px 4px; font-size: .58rem; line-height: 1.7; }
+.cmt-lyr-lines .lyr-line.lyr-quoted { opacity: 1; color: #fff; background: rgba(255,107,53,.22); }
 .sc-font-slider { -webkit-appearance: none; appearance: none; width: 56px; height: 3px; border-radius: 2px; background: var(--border); outline: none; cursor: pointer; vertical-align: middle; }
 .sc-font-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); cursor: pointer; transition: background .1s; }
 .sc-font-slider::-webkit-slider-thumb:hover { background: var(--text); }
@@ -2260,6 +2266,13 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div id="cmt-target" class="cmt-target"></div>
       <div id="cmt-tabs" class="cmt-tabs"></div>
       <div id="cmt-quote" class="cmt-quote" style="display:none"></div>
+      <div id="cmt-lyr-panel" class="cmt-lyr-panel" style="display:none">
+        <div class="cmt-lyr-hdr">
+          <span>Lyrics <span id="cmt-lyr-live" class="cmt-lyr-live" style="display:none">&#9679; live</span></span>
+          <span class="cmt-lyr-hint">Click a line to quote it</span>
+        </div>
+        <div id="cmt-lyr-lines" class="cmt-lyr-lines"></div>
+      </div>
       <div id="cmt-thread" class="cmt-thread"><div class="cmt-empty">Loading&hellip;</div></div>
       <div class="cmt-composer">
         <input type="text" id="cmt-name" class="report-input" maxlength="60" placeholder="Your name (optional &mdash; leave blank to stay anonymous)" style="display:none">
@@ -4795,6 +4808,8 @@ async function submitReport() {
 // Counts are loaded once for the whole app so every browse surface can show a
 // badge without a request per row. Threads load on demand.
 let _cmtCounts   = { artist: {}, album: {}, track: {}, lyric: {} };
+let _cmtLyrTrackId    = null; // track id currently rendered in the comment-modal lyrics panel
+let _cmtLastQuoteBlock = '';  // last auto-inserted quote block, so re-quoting a line replaces it instead of stacking
 let _cmtAnchors  = {};    // trackId -> [{id, quote, start, end}] for lyric highlighting
 let _cmtCtx      = null;  // what the open modal is commenting on
 let _cmtRows     = [];    // the thread currently loaded for that context
@@ -4955,6 +4970,7 @@ function openComments(kind, id, opts) {
   const bodyEl = document.getElementById('cmt-body'); if (bodyEl) bodyEl.value = '';
   const st = document.getElementById('cmt-status'); if (st) st.textContent = '';
   _cmtRenderHeader();
+  _cmtRenderLyricsPanel();
   ov.classList.add('open');
   if (bodyEl) setTimeout(() => bodyEl.focus(), 60);
   _cmtStartTimeTicker();
@@ -4965,6 +4981,12 @@ function openComments(kind, id, opts) {
 function closeComments() {
   document.getElementById('commentsOverlay')?.classList.remove('open');
   if (_cmtTimeTimer) { clearInterval(_cmtTimeTimer); _cmtTimeTimer = null; }
+  const lyrLinesEl = document.getElementById('cmt-lyr-lines');
+  if (lyrLinesEl) {
+    delete lyrLinesEl.dataset.lyrSynced;
+    lyrLinesEl.querySelectorAll('.lyr-line.lyr-active').forEach(el => el.classList.remove('lyr-active'));
+  }
+  _cmtLyrTrackId = null;
 }
 
 function _cmtSavedName() { try { return localStorage.getItem('sj_cmt_name') || ''; } catch (e) { return ''; } }
@@ -4974,6 +4996,7 @@ function _cmtSetTab(tab) {
   _cmtCtx.tab = tab;
   if (tab !== 'lyric') _cmtCtx.lyric = null;
   _cmtRenderHeader();
+  _cmtRenderLyricsPanel();
   _cmtRenderThread();
 }
 
@@ -5020,6 +5043,98 @@ function _cmtRenderHeader() {
   if (lbl && canCite) lbl.textContent = 'Include the track time (' + _cmtFmtMs(_cmtPlayback().position_ms) + ')';
   const post = document.getElementById('cmt-post-btn');
   if (post) post.textContent = c.tab === 'lyric' ? 'Post lyric comment' : 'Post comment';
+}
+
+// ── Karaoke-style lyrics inside the comment modal's Lyrics tab ─────────────
+// Builds the line list once per track/tab (fetch + render); live highlighting while
+// that track plays is kept in sync separately by _cmtUpdateLyricLiveState() so playback
+// or track changes never blow away a line the user just clicked to quote.
+async function _cmtRenderLyricsPanel() {
+  const c = _cmtCtx;
+  const panel   = document.getElementById('cmt-lyr-panel');
+  const linesEl = document.getElementById('cmt-lyr-lines');
+  if (!panel || !linesEl) return;
+  if (!c || c.tab !== 'lyric' || !c.track_id) {
+    panel.style.display = 'none';
+    delete linesEl.dataset.lyrSynced;
+    _cmtLyrTrackId = null;
+    return;
+  }
+  const trackId = c.track_id;
+  _cmtLyrTrackId = trackId;
+  const sync = await fetchSyncedLyrics(trackId);
+  if (_cmtCtx !== c || _cmtLyrTrackId !== trackId) return; // context moved on while fetching
+
+  let lines = null;
+  if (sync && sync.length) {
+    lines = sync.map(l => l.text);
+  } else {
+    let text = lyricsCache[trackId];
+    if (text === undefined) {
+      try {
+        const rows = await dbGet('/lyrics?track_id=eq.' + trackId + '&select=lyrics&limit=1');
+        text = rows[0]?.lyrics?.trim() || null;
+      } catch (e) { text = null; }
+      lyricsCache[trackId] = text;
+    }
+    if (_cmtLyrTrackId !== trackId) return;
+    lines = text ? text.split('\n') : null;
+  }
+
+  if (!lines || !lines.length) {
+    panel.style.display = 'none';
+    delete linesEl.dataset.lyrSynced;
+    return;
+  }
+  panel.style.display = 'block';
+  linesEl.innerHTML = lines.map((t, i) =>
+    '<div class="lyr-line" data-i="' + i + '" onclick="cmtQuoteLyricLine(' + i + ')">' + (escHtml(t) || '&nbsp;') + '</div>').join('');
+  _cmtLastQuoteBlock = '';
+  _cmtUpdateLyricLiveState();
+}
+
+// Toggles the "live, following playback" state of the comment-modal lyrics panel without
+// rebuilding the line list - called on open/tab-switch and whenever the playing track changes.
+function _cmtUpdateLyricLiveState() {
+  const linesEl = document.getElementById('cmt-lyr-lines');
+  const liveEl  = document.getElementById('cmt-lyr-live');
+  if (!linesEl || !_cmtLyrTrackId) return;
+  const sync   = syncedLyricsCache[_cmtLyrTrackId];
+  const isLive = !!(sync && sync.length && nowPlayingTrackId === _cmtLyrTrackId);
+  if (isLive) {
+    linesEl.dataset.lyrSynced = '1';
+    _lyrSyncActiveIdx = -1;
+    lyrSyncStart();
+  } else {
+    delete linesEl.dataset.lyrSynced;
+    linesEl.querySelectorAll('.lyr-line.lyr-active').forEach(el => el.classList.remove('lyr-active'));
+  }
+  if (liveEl) liveEl.style.display = isLive ? 'inline' : 'none';
+}
+
+// Click a lyric line in the comment modal - quotes it into the comment body and anchors
+// it as the comment's cited passage, same as highlighting text in the lyrics panel does.
+function cmtQuoteLyricLine(i) {
+  const c = _cmtCtx;
+  const linesEl = document.getElementById('cmt-lyr-lines');
+  if (!c || !linesEl) return;
+  const lineEl = linesEl.querySelector('.lyr-line[data-i="' + i + '"]');
+  const text = (lineEl?.textContent || '').trim();
+  if (!text) return;
+  c.lyric = { quote: text, start: null, end: null };
+  const body = document.getElementById('cmt-body');
+  if (body) {
+    let val = body.value;
+    if (_cmtLastQuoteBlock && val.startsWith(_cmtLastQuoteBlock)) val = val.slice(_cmtLastQuoteBlock.length);
+    const block = '\u201C' + text + '\u201D\n\n';
+    body.value = block + val;
+    _cmtLastQuoteBlock = block;
+    body.focus();
+    body.setSelectionRange(body.value.length, body.value.length);
+  }
+  linesEl.querySelectorAll('.lyr-line.lyr-quoted').forEach(el => el.classList.remove('lyr-quoted'));
+  if (lineEl) lineEl.classList.add('lyr-quoted');
+  _cmtRenderHeader();
 }
 
 // Keeps the "include the track time" label honest while the song keeps playing.
@@ -6827,6 +6942,7 @@ function ytpOnTrackChange(videoId, trackId, title) {
   ytpStampQueueMeta(trackId || null);
   ytpSyncBlockBtn(trackId || null);
   applyNowPlayingHighlight();
+  if (document.getElementById('commentsOverlay')?.classList.contains('open')) _cmtUpdateLyricLiveState();
   ytpUpdateMiniFooter();
   taSyncAudioBtn();
   const t       = (title || '').toLowerCase();
@@ -6994,6 +7110,8 @@ function lyrSyncTick() {
   if (!_lyrSyncEnabled) return; // strip-only mode - leave the full panes alone
   // Main player pane, plus any track-card/accordion lyrics panel currently showing the synced view.
   const bodies = [document.getElementById('ytp-lyr-text')].concat(_lyricCardEls(nowPlayingTrackId).filter(el => el.dataset.lyrSynced === '1'));
+  const cmtLyrEl = document.getElementById('cmt-lyr-lines');
+  if (cmtLyrEl && cmtLyrEl.dataset.lyrSynced === '1') bodies.push(cmtLyrEl);
   bodies.forEach(body => {
     if (!body) return;
     body.querySelectorAll('.lyr-line.lyr-active').forEach(el => el.classList.remove('lyr-active'));
@@ -10966,11 +11084,14 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-01';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-02';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-02', items: [
+    'Commenting on lyrics now shows the words themselves, karaoke-style, highlighting the line being sung if that song is playing. Click any line to quote it straight into your comment.',
+  ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
     'To comment on a lyric, highlight the words you mean (or right-click them) and a \u201CComment on this\u201D button appears. Lines that already have comments are underlined in orange \u2014 click one to read the thread.',
