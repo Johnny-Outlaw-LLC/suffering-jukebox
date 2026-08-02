@@ -12,16 +12,20 @@
  *   2. SJ_APP_UPDATED_FALLBACK matches that same date.
  *   3. Dates are in descending order and none are in the future.
  *
- * Escape hatch: put [no-changelog] in the commit message when a change is
- * genuinely invisible to users (refactors, infra, server-only work).
+ * Escape hatch: add a "No-Changelog: <reason>" trailer line to the commit
+ * message when a change is genuinely invisible to users (refactors, infra,
+ * server-only work).
  *
- * Usage: node scripts/check-changelog.js [path/to/index.html]
+ * Usage: node scripts/check-changelog.js [path/to/index.html | -]
  */
 const fs = require('fs');
 const path = require('path');
 
-const file = process.argv[2] || path.join(__dirname, '..', 'public', 'index.html');
-const html = fs.readFileSync(file, 'utf8');
+// Pass '-' to read the HTML on stdin (the hook feeds it the exact blob being
+// pushed, not whatever happens to be in the working tree).
+const arg = process.argv[2];
+const file = arg === '-' ? '<stdin>' : arg || path.join(__dirname, '..', 'public', 'index.html');
+const html = fs.readFileSync(arg === '-' ? 0 : file, 'utf8');
 
 function fail(msg) {
   console.error('\nChange Log check FAILED\n');
@@ -31,8 +35,9 @@ function fail(msg) {
   console.error('     and set SJ_APP_UPDATED_FALLBACK to the same date.');
   console.error('     Write items for users, not for engineers: what changed on');
   console.error('     screen, in plain language, no file names or commit talk.');
-  console.error('\nIf this change is genuinely invisible to users, put');
-  console.error('[no-changelog] in the commit message and push again.\n');
+  console.error('\nIf this change is genuinely invisible to users, add a trailer');
+  console.error('line to the commit message and push again:');
+  console.error('     No-Changelog: server-only, nothing visible on screen\n');
   process.exit(1);
 }
 
