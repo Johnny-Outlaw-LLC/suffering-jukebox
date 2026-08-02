@@ -419,6 +419,9 @@ body:not(.light) .tt-num { color: var(--text); }
 .oa-alb input[type="checkbox"] { flex-shrink: 0; width: 12px; height: 12px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .oa-alb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oa-alb-yr { color: var(--text-muted); font-size: .48rem; }
+.ma-albedit-box { padding: 2px 12px 8px 27px; }
+.ma-albedit-row { display: flex; gap: 6px; align-items: center; }
+.ma-albedit-row input[type="number"] { -moz-appearance: textfield; }
 .oa-albs-note { font-family: var(--mono); font-size: .52rem; color: var(--text-muted); padding: 10px 12px; }
 .oa-filters { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
 .oa-search-wrap { position: relative; display: flex; align-items: center; }
@@ -10887,7 +10890,7 @@ function renderMyArtists(isAdmin) {
         <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444" onclick="maDeleteArtist('${a.id}')">✕ Remove</button>
       </div>
       <div class="oa-albs">
-        ${a.albums.map(al => `<div class="oa-alb">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio for this album (rights holders only)" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Rename this album" onclick="maRenameAlbum('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div>`).join('')}
+        ${a.albums.map(al => `<div class="oa-alb" id="ma-albrow-${al.id}">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio for this album (rights holders only)" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Edit name & year" onclick="maToggleAlbumEdit('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div><div class="ma-albedit-box" id="ma-albedit-${al.id}" style="display:none"></div>`).join('')}
       </div>
     </div>`).join('');
 }
@@ -11023,17 +11026,51 @@ async function maRename(artistId) {
   } catch (e) { maBusy('✗ ' + e.message, true); }
 }
 
-async function maRenameAlbum(artistId, albumId) {
+function maToggleAlbumEdit(artistId, albumId) {
+  const box = document.getElementById('ma-albedit-' + albumId);
+  if (!box) return;
+  if (box.style.display !== 'none') { box.style.display = 'none'; box.innerHTML = ''; return; }
   const a = _maData.find(x => x.id === artistId);
   const al = a && a.albums.find(x => x.id === albumId);
   if (!al) return;
-  const name = prompt('New album name:', al.name);
-  if (!name || !name.trim() || name.trim() === al.name) return;
-  maBusy('Renaming album…');
+  const nameAttr = (al.name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const yr = (al.release_date || '').slice(0, 4);
+  box.style.display = '';
+  box.innerHTML = `
+    <div class="ma-albedit-row">
+      <input type="text" class="m-input" id="ma-albedit-name-${albumId}" value="${nameAttr}" placeholder="Album name" style="flex:1;min-width:0" autocomplete="off">
+      <input type="number" class="m-input" id="ma-albedit-year-${albumId}" value="${yr}" placeholder="Year" min="1900" max="2100" step="1" style="width:64px;flex-shrink:0" autocomplete="off">
+      <button type="button" class="lyr-save-btn" onclick="maSaveAlbumEdit('${artistId}','${albumId}')">Save</button>
+      <button type="button" class="lyr-cancel-btn" onclick="maToggleAlbumEdit('${artistId}','${albumId}')">Cancel</button>
+    </div>`;
+  document.getElementById('ma-albedit-name-' + albumId)?.focus();
+}
+
+async function maSaveAlbumEdit(artistId, albumId) {
+  const a = _maData.find(x => x.id === artistId);
+  const al = a && a.albums.find(x => x.id === albumId);
+  if (!al) return;
+  const name = (document.getElementById('ma-albedit-name-' + albumId)?.value || '').trim();
+  const yearStr = (document.getElementById('ma-albedit-year-' + albumId)?.value || '').trim();
+  if (!name) { maBusy('Album name can’t be empty.', true); return; }
+  if (yearStr && !/^\d{4}$/.test(yearStr)) { maBusy('Year must be 4 digits.', true); return; }
+  const payload = { id: albumId, name };
+  if (yearStr) payload.release_date = yearStr;
+  maBusy('Saving album…');
   try {
-    await amFetch('?action=rename_album', { method: 'POST', body: JSON.stringify({ album_id: albumId, name: name.trim() }) });
-    maBusy('✓ Album renamed');
-    await maAfterChange();
+    await amFetch('?action=finetune', { method: 'POST', body: JSON.stringify({ artist_id: artistId, albums: [payload] }) });
+    al.name = name;
+    if (yearStr) al.release_date = `${yearStr}-01-01`;
+    const row = document.getElementById('ma-albrow-' + albumId);
+    if (row) {
+      const nameSpan = row.querySelector('.oa-alb-name');
+      const yrSpan = row.querySelector('.oa-alb-yr');
+      if (nameSpan) nameSpan.textContent = name;
+      if (yrSpan) yrSpan.textContent = yearStr || (al.release_date || '').slice(0, 4);
+    }
+    maToggleAlbumEdit(artistId, albumId);
+    maBusy('✓ Album updated');
+    try { loadData(); } catch (_) {}
   } catch (e) { maBusy('✗ ' + e.message, true); }
 }
 
@@ -11287,6 +11324,7 @@ const SJ_CHANGELOG = [
     'Comments on a song or a lyric now suggest the track time automatically \u2014 for a lyric it is where those words actually fall in the song, not wherever playback drifted to while you were typing \u2014 and you can uncheck it or edit the time by hand.',
     'Search results now show the artist and album under each song, and have a Comment button right there.',
     'Hover over a line of synced lyrics (press and hold on a phone) for a Comment button and a thumbs up \u2014 no need to click the line and jump the song. Thumbs up a whole line by default, or highlight your own words first.',
+    'In Manage My Artists, the album edit button now opens a proper name and year field instead of a popup, so you can fix a wrong release year without retyping the whole album name.',
   ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
