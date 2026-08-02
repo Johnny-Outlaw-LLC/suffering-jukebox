@@ -11036,6 +11036,7 @@ const SJ_CHANGELOG = [
   { date: '2026-08-02', items: [
     'Highlighting a lyric and choosing to comment on it now quotes those exact words straight into your comment box, ready to write under.',
     'Comments on a song or a lyric now suggest the track time automatically \u2014 for a lyric it is where those words actually fall in the song, not wherever playback drifted to while you were typing \u2014 and you can uncheck it or edit the time by hand.',
+    'Search results now show the artist and album under each song, and have a Comment button right there.',
   ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
@@ -14353,24 +14354,30 @@ async function _runSearch(query) {
 
   const hits = [];
 
-  Object.values(tracks).flat().forEach(t => {
-    const nameMatch   = t.name.toLowerCase().includes(q);
-    const albumMatch  = (t.album || '').toLowerCase().includes(q);
-    const lyricsRaw   = lyricsByTrackId[t.id] || lyricsCache[t.id] || '';
-    const lyricsMatch = !!lyricsRaw && lyricsRaw.toLowerCase().includes(q);
-    if (!nameMatch && !albumMatch && !lyricsMatch) return;
+  // Walk tracks() by artist id so each hit can carry its real artist and album
+  // objects - track rows only store album_id, not an album name or an artist ref.
+  Object.entries(tracks || {}).forEach(([aid, list]) => {
+    const artist = (allArtists || []).find(a => a.id === aid);
+    (list || []).forEach(t => {
+      const album       = (albums[aid] || []).find(a => a.id === t.album_id);
+      const nameMatch   = t.name.toLowerCase().includes(q);
+      const albumMatch  = !!(album && album.name && album.name.toLowerCase().includes(q));
+      const lyricsRaw   = lyricsByTrackId[t.id] || lyricsCache[t.id] || '';
+      const lyricsMatch = !!lyricsRaw && lyricsRaw.toLowerCase().includes(q);
+      if (!nameMatch && !albumMatch && !lyricsMatch) return;
 
-    let snippet = '';
-    if (lyricsMatch) {
-      const lines   = lyricsRaw.split('\n');
-      const lineIdx = lines.findIndex(l => l.toLowerCase().includes(q));
-      if (lineIdx >= 0) {
-        const start = Math.max(0, lineIdx - 1);
-        const end   = Math.min(lines.length, lineIdx + 3);
-        snippet = lines.slice(start, end).join('\n');
+      let snippet = '';
+      if (lyricsMatch) {
+        const lines   = lyricsRaw.split('\n');
+        const lineIdx = lines.findIndex(l => l.toLowerCase().includes(q));
+        if (lineIdx >= 0) {
+          const start = Math.max(0, lineIdx - 1);
+          const end   = Math.min(lines.length, lineIdx + 3);
+          snippet = lines.slice(start, end).join('\n');
+        }
       }
-    }
-    hits.push({ track: t, nameMatch, albumMatch, lyricsMatch, snippet });
+      hits.push({ track: t, artist, album, nameMatch, albumMatch, lyricsMatch, snippet });
+    });
   });
 
   // Sort: name matches first, then album, then lyrics
@@ -14392,13 +14399,12 @@ async function _runSearch(query) {
       m => `<mark>${m}</mark>`);
   }
 
-  const cards = hits.map(({ track: t, nameMatch, albumMatch, lyricsMatch, snippet }) => {
-    const alb   = getAlbumForTrack(t);
-    const thumb = alb ? albumThumb(alb) : (ytData[t.id]?.thumbnail || '');
+  const cards = hits.map(({ track: t, artist, album, nameMatch, albumMatch, lyricsMatch, snippet }) => {
+    const thumb = album ? albumThumb(album) : (ytData[t.id]?.thumbnail || '');
     const art   = thumb
       ? `<img class="srch-art" src="${escHtml(thumb)}" alt="">`
       : `<div class="srch-art-ph" style="background:var(--bg-elevated)">${escHtml((t.name||'?')[0].toUpperCase())}</div>`;
-    const meta = [t.album, t.year].filter(Boolean).join(' · ');
+    const meta = [artist?.name, album?.name, album?.year].filter(Boolean).join(' · ');
     const snipHtml = snippet
       ? `<div class="srch-lyr-panel">${hl(snippet)}</div>` : '';
     return `<div class="srch-card" data-track-id="${t.id}">
@@ -14410,11 +14416,13 @@ async function _runSearch(query) {
       </div>
       <div class="srch-actions">
         <button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${!ytData[t.id]?.video_id ? 'disabled title=\"No video available\"' : ''}>▶ Play</button>
+        <button class="srch-btn cmt-btn" data-cmt-badge="track:${t.id}" onclick="event.stopPropagation();openComments('track','${t.id}')" title="Comment on this track">Comment</button>
       </div>
     </div>`;
   });
 
   if (bodyEl) bodyEl.innerHTML = cards.join('');
+  refreshCommentBadges();
 }
 
 // ── Lyrics editing ────────────────────────────────────────────
