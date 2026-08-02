@@ -1036,6 +1036,10 @@ textarea.report-input { resize:vertical; }
 .ai-quote { border-left:2px solid var(--accent); padding-left:8px; margin-top:6px; font-size:.55rem;
   color:var(--text-muted); font-style:italic; white-space:pre-wrap; word-break:break-word; }
 .ai-meta { font-size:.5rem; color:var(--text-muted); margin-top:6px; font-family:var(--mono); word-break:break-all; }
+.wn-tabs { margin-bottom:13px; padding-bottom:11px; border-bottom:1px solid var(--border); }
+.wn-items { margin:6px 0 0; padding-left:16px; display:flex; flex-direction:column; gap:5px; }
+.wn-items li { font-size:.6rem; color:var(--text); line-height:1.5; }
+#updates-body .ai-card[onclick]:hover { border-color:var(--accent); }
 .ytp-playpause-btn { padding: 2px 8px; font-size: .65rem; }
 #ytp-vote-btn { font-size: .6rem; }
 .ytp-block-btn:hover { color: #ef4444; border-color: #ef4444; }
@@ -5693,44 +5697,154 @@ async function runIssueAutoResolve() {
 }
 
 // ── Members: "What's New" updates feed (reported issues + resolutions) ──
-let _updatesData = [];
+// ══════════════════════════════════════════════════════════════
+// WHAT'S NEW - four feeds behind one modal
+// ══════════════════════════════════════════════════════════════
+// Jukebox Updates reads SJ_CHANGELOG directly, so anything shipped (comments,
+// the auto-resolver, whatever comes next) appears here the moment it is written
+// into the Change Log - there is no second list to maintain.
+let _wnTab  = 'additions';
+let _wnData = { additions: null, issues: null, comments: null };
+
+const _WN_TABS = [
+  ['additions', 'Artist Additions'],
+  ['issues',    'Playback Issues'],
+  ['comments',  'Public Comments'],
+  ['updates',   'Jukebox Updates']
+];
+
 function openUpdatesFeed() {
   if (!googleUser) return;
   document.getElementById('updatesOverlay')?.classList.add('open');
-  loadUpdatesFeed();
+  _wnTab = 'additions';
+  renderUpdatesFeed();
 }
 function closeUpdatesFeed() { document.getElementById('updatesOverlay')?.classList.remove('open'); }
-async function loadUpdatesFeed() {
-  const body = document.getElementById('updates-body');
-  if (!body) return;
-  body.innerHTML = '<div class="admin-metrics-loading">Loading updates…</div>';
-  try {
-    const rows = await dbRpcAuth('/rpc/public_issue_updates', { p_limit: 60 });
-    _updatesData = Array.isArray(rows) ? rows : [];
-    renderUpdatesFeed();
-  } catch (e) {
-    body.innerHTML = '<div class="admin-metrics-loading">Could not load updates.</div>';
-  }
+
+function setWnTab(t) { _wnTab = t; renderUpdatesFeed(); }
+
+function _wnEsc(v) { return (v == null ? '' : String(v)).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+function _wnDate(v) {
+  try { return new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+  catch (_) { return v; }
 }
-function renderUpdatesFeed() {
+function _wnTabsHTML() {
+  return '<div class="cmt-tabs wn-tabs">' + _WN_TABS.map(([k, lbl]) =>
+    '<button class="cmt-tab' + (_wnTab === k ? ' active' : '') + '" onclick="setWnTab(\'' + k + '\')">' + lbl + '</button>'
+  ).join('') + '</div>';
+}
+
+async function renderUpdatesFeed() {
   const body = document.getElementById('updates-body');
   if (!body) return;
-  const esc = v => (v == null ? '' : String(v)).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  if (!_updatesData.length) { body.innerHTML = '<div class="admin-metrics-loading">No updates yet. Reported problems and their fixes will show up here.</div>'; return; }
-  const fmt = v => { try { return new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (_) { return v; } };
-  const ICON = { reported: '📝', auto_fixed: '✅', auto_verified: '✔️', auto_flagged: '⚠️', admin_resolved: '✅', admin_reopened: '🔄' };
-  const LBL  = { reported: 'Reported', auto_fixed: 'Fixed', auto_verified: 'Verified', auto_flagged: 'Flagged', admin_resolved: 'Resolved', admin_reopened: 'Reopened' };
-  body.innerHTML = '<div class="ai-list">' + _updatesData.map(r => {
-    const ctx = [r.artist_name, r.album_name].filter(Boolean).map(esc).join('  ·  ');
-    return `<div class="ai-card${r.resolved ? ' resolved' : ''}">
-      <div class="ai-card-top">
-        <span class="ai-cat">${ICON[r.kind] || '•'} ${esc(LBL[r.kind] || 'Update')}</span>
-        <span class="ai-date">${fmt(r.at)}</span>
-      </div>
-      <div class="ai-desc">${esc(r.detail) || ''}</div>
-      ${ctx ? `<div class="ai-ctx">${ctx}</div>` : ''}
-    </div>`;
+  const tabs = _wnTabsHTML();
+
+  if (_wnTab === 'updates') { body.innerHTML = tabs + _wnUpdatesHTML(); return; }
+
+  const key = _wnTab;
+  if (_wnData[key] === null) {
+    body.innerHTML = tabs + '<div class="admin-metrics-loading">Loading\u2026</div>';
+    const RPC = { additions: 'public_artist_additions', issues: 'public_issue_updates', comments: 'public_comment_feed' };
+    try {
+      const rows = await dbRpcAuth('/rpc/' + RPC[key], { p_limit: 60 });
+      _wnData[key] = Array.isArray(rows) ? rows : [];
+    } catch (e) {
+      if (_wnTab === key) body.innerHTML = tabs + '<div class="admin-metrics-loading">Could not load this feed.</div>';
+      return;
+    }
+    if (_wnTab !== key) return;   // switched tabs while the request was in flight
+  }
+  const html = key === 'additions' ? _wnAdditionsHTML()
+             : key === 'issues'    ? _wnIssuesHTML()
+             :                       _wnCommentsHTML();
+  body.innerHTML = tabs + html;
+}
+
+// ── Artist Additions ───────────────────────────────────────────
+function _wnAdditionsHTML() {
+  const rows = _wnData.additions || [];
+  if (!rows.length) return '<div class="admin-metrics-loading">No artists have been added yet.</div>';
+  // An import writes the artist and its albums together, so fold the album row
+  // into the artist row when they landed at the same time.
+  const merged = [];
+  rows.forEach(r => {
+    if (r.kind === 'album') {
+      const twin = rows.find(x => x.kind === 'artist' && x.artist_name === r.artist_name &&
+        Math.abs(new Date(x.at) - new Date(r.at)) < 36e5);
+      if (twin) { twin._albums = r.n; return; }
+    }
+    merged.push(r);
+  });
+  return '<div class="ai-list">' + merged.map(r => {
+    const who  = r.added_by ? _wnEsc(r.added_by) : 'The jukebox';
+    const isNew = r.kind === 'artist';
+    const n    = isNew ? (r._albums || 0) : r.n;
+    const head = isNew
+      ? who + ' added <strong>' + _wnEsc(r.artist_name) + '</strong>' + (n ? ' with ' + n + ' album' + (n === 1 ? '' : 's') : '')
+      : who + ' added ' + n + ' album' + (n === 1 ? '' : 's') + ' to <strong>' + _wnEsc(r.artist_name) + '</strong>';
+    const sub  = (!isNew && r.album_name) ? _wnEsc(r.album_name) + (r.n > 1 ? ' and ' + (r.n - 1) + ' more' : '') : '';
+    const go   = r.slug ? ' onclick="wnGoArtist(\'' + _wnEsc(r.slug) + '\')" style="cursor:pointer"' : '';
+    return '<div class="ai-card"' + go + '>' +
+      '<div class="ai-card-top"><span class="ai-cat">' + (isNew ? 'New Artist' : 'New Albums') + '</span>' +
+      '<span class="ai-date">' + _wnDate(r.at) + '</span></div>' +
+      '<div class="ai-desc">' + head + '</div>' +
+      (sub ? '<div class="ai-ctx">' + sub + '</div>' : '') +
+    '</div>';
   }).join('') + '</div>';
+}
+
+function wnGoArtist(slug) { if (slug) window.location.href = '/' + slug; }
+
+// ── Playback Issues (the original feed) ────────────────────────
+function _wnIssuesHTML() {
+  const rows = _wnData.issues || [];
+  if (!rows.length) return '<div class="admin-metrics-loading">No updates yet. Reported problems and their fixes will show up here.</div>';
+  const ICON = { reported: '\u{1F4DD}', auto_fixed: '\u2705', auto_verified: '\u2714\uFE0F', auto_flagged: '\u26A0\uFE0F', admin_resolved: '\u2705', admin_reopened: '\u{1F504}' };
+  const LBL  = { reported: 'Reported', auto_fixed: 'Fixed', auto_verified: 'Verified', auto_flagged: 'Flagged', admin_resolved: 'Resolved', admin_reopened: 'Reopened' };
+  return '<div class="ai-list">' + rows.map(r => {
+    const ctx = [r.artist_name, r.album_name].filter(Boolean).map(_wnEsc).join('  \u00B7  ');
+    return '<div class="ai-card' + (r.resolved ? ' resolved' : '') + '">' +
+      '<div class="ai-card-top"><span class="ai-cat">' + (ICON[r.kind] || '\u2022') + ' ' + _wnEsc(LBL[r.kind] || 'Update') + '</span>' +
+      '<span class="ai-date">' + _wnDate(r.at) + '</span></div>' +
+      '<div class="ai-desc">' + (_wnEsc(r.detail) || '') + '</div>' +
+      (ctx ? '<div class="ai-ctx">' + ctx + '</div>' : '') +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+// ── Public Comments ────────────────────────────────────────────
+function _wnCommentsHTML() {
+  const rows = _wnData.comments || [];
+  if (!rows.length) return '<div class="admin-metrics-loading">No public comments yet. Be the first to leave one.</div>';
+  const TYPE = { artist: 'Artist', album: 'Album', track: 'Track', lyric: 'Lyric' };
+  return '<div class="ai-list">' + rows.map(r => {
+    const ctx = [r.artist_name, r.album_name, r.track_name].filter(Boolean).map(_wnEsc).join('  \u00B7  ');
+    const kind = r.target_type === 'lyric' ? 'track' : r.target_type;
+    const id = r.target_type === 'artist' ? r.artist_id : r.target_type === 'album' ? r.album_id : r.track_id;
+    const go = id ? ' onclick="closeUpdatesFeed();openComments(\'' + (r.target_type === 'lyric' ? 'lyric' : kind) + '\',\'' + id + '\')" style="cursor:pointer"' : '';
+    return '<div class="ai-card"' + go + '>' +
+      '<div class="ai-card-top"><span class="ai-cat">' + (TYPE[r.target_type] || 'Comment') + '</span>' +
+      '<span class="ai-date">' + _wnDate(r.at) + '</span></div>' +
+      (ctx ? '<div class="ai-ctx">' + ctx + '</div>' : '') +
+      (r.lyric_quote ? '<div class="ai-quote">\u201C' + _wnEsc(r.lyric_quote) + '\u201D</div>' : '') +
+      '<div class="ai-desc">' + _wnEsc(r.body) + '</div>' +
+      '<div class="ai-who">' + _wnEsc(r.author_name || 'Anonymous') + '</div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+// ── Jukebox Updates - straight from the Change Log ─────────────
+function _wnUpdatesHTML() {
+  const groups = (typeof SJ_CHANGELOG !== 'undefined' && SJ_CHANGELOG) ? SJ_CHANGELOG : [];
+  if (!groups.length) return '<div class="admin-metrics-loading">No updates yet.</div>';
+  const day = d => { try { return new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); } catch (_) { return d; } };
+  return '<div class="ai-list">' + groups.map((g, i) =>
+    '<div class="ai-card">' +
+      '<div class="ai-card-top"><span class="ai-cat">' + (i === 0 ? 'Latest' : 'Update') + '</span>' +
+      '<span class="ai-date">' + _wnEsc(day(g.date)) + '</span></div>' +
+      '<ul class="wn-items">' + (g.items || []).map(it => '<li>' + _wnEsc(it) + '</li>').join('') + '</ul>' +
+    '</div>'
+  ).join('') + '</div>';
 }
 
 function ytpInitMediaSession() {
@@ -10867,6 +10981,7 @@ const SJ_CHANGELOG = [
     'Public comments can be hidden or removed by the team if they break the rules. Private comments are never read by anyone but you.',
     'The player has a Comment button too, in the popup, in full screen and in the minimized bar, so you can comment on whatever is playing without hunting for the song.',
     'Commenting from the player now always names the artist, album and song you are listening to, and lets you comment on any of the three. It used to say \u201CTrack: Unknown\u201D for songs the page had not loaded.',
+    'What\u2019s New is now split into four tabs: Artist Additions, Playback Issues, Public Comments and Jukebox Updates. See who added which artists, follow problems you reported, read what people are saying, and catch up on everything new in the jukebox.',
     'Tidied up the queue list: the Clear Playlist header no longer has song rows showing through it, and album headers no longer overlap their buttons when the panel is narrow.',
     'Broken videos now fix themselves: every night the jukebox rechecks songs reported as unplayable and swaps in a working video when it finds a good match.',
     'New “What’s New” entry in the account menu — signed-in users can follow what happened to the problems they reported.',
