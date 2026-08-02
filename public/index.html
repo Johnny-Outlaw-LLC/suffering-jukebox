@@ -190,7 +190,9 @@ main > * { min-width: 0; }
   will-change: transform, opacity;
   backface-visibility: hidden; }
 .tl-panel.panel-exit { animation: panelExit .28s cubic-bezier(.4,0,.85,.18) forwards; }
-.tl-panel-hdr { display: flex; align-items: center; gap: 8px; padding: 7px 10px 6px; border-bottom: 1px solid var(--border); }
+.tl-panel-hdr { display: flex; flex-direction: column; gap: 6px; padding: 7px 10px 6px; border-bottom: 1px solid var(--border); }
+.tl-panel-hdr-top { display: flex; align-items: center; gap: 8px; }
+.tl-panel-hdr-actions { display: flex; align-items: center; gap: 6px; padding-left: 42px; }
 .tl-panel-art { width: 34px; height: 34px; border-radius: 4px; overflow: hidden; flex-shrink: 0; background: var(--bg-elevated); }
 .tl-panel-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tl-panel-close { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: .7rem; padding: 2px 5px; border-radius: 4px; transition: color .1s; line-height: 1; flex-shrink: 0; }
@@ -818,9 +820,8 @@ body:not(.light) .tt-num { color: var(--text); }
   font-family: var(--mono); font-size: .42rem; letter-spacing: .04em; padding: 3px 7px; transition: all .12s; white-space: nowrap; }
 .cmt-btn:hover { border-color: var(--accent); color: var(--accent); }
 .cmt-btn.has { border-color: var(--accent); color: var(--accent); }
-.tl-panel-hdr { gap: 6px; }
-.tl-panel-hdr > .cmt-btn, .tl-panel-hdr > .ctrl-btn, .tl-panel-hdr > .tl-panel-close { flex-shrink: 0; }
-.tl-panel-hdr > .cmt-btn { padding: 3px 6px; }
+.tl-panel-hdr-actions > .cmt-btn, .tl-panel-hdr-actions > .ctrl-btn, .tl-panel-hdr-top > .tl-panel-close { flex-shrink: 0; }
+.tl-panel-hdr-actions > .cmt-btn { padding: 3px 6px; }
 .tl-panel-hdr [data-alb-metric] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmt-inline { display: grid; gap: .5rem; margin-top: 6px; }
 .cmt-inline .cmt-card { font-size: .95em; }
@@ -2018,8 +2019,10 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title">Add Music from YouTube</span>
-      <button class="modal-close" onclick="amMinimize()" title="Minimize (keeps working in the background)" style="font-size:1rem">–</button>
-      <button class="modal-close" onclick="amDismiss()">✕</button>
+      <div style="display:flex">
+        <button class="modal-close" onclick="amMinimize()" title="Minimize (keeps working in the background)" style="font-size:1rem">–</button>
+        <button class="modal-close" onclick="amDismiss()">✕</button>
+      </div>
     </div>
     <div class="modal-body">
       <div class="am-steps" id="amSteps">
@@ -2085,7 +2088,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       </div>
     </div>
     <div class="modal-footer">
-      <button class="m-btn ghost" onclick="amDismiss()">Cancel</button>
+      <button class="m-btn ghost" id="amCancelBtn" onclick="amDismiss()">Cancel</button>
       <button class="m-btn ghost" id="amBackBtn" onclick="amBack()" style="display:none">‹ Back</button>
       <button class="m-btn" id="amNextBtn" onclick="amNext()" disabled>Next: Choose Albums ›</button>
       <span class="mf-status" id="amFooterStatus"></span>
@@ -3141,17 +3144,21 @@ function buildSinglePanelHTML(alb, L) {
     style="--alb-dx:${albDx}px;--alb-dy:${albDy}px;left:${pp.left}px;top:${panelZoneTop}px;width:${pp.w}px;
     background:var(--bg-card);border:1px solid var(--border);border-top:2px solid ${color};z-index:3">
     <div class="tl-panel-hdr" style="background:${color}10">
-      <div class="tl-panel-art">
-        ${thumb ? `<img src="${thumb}" loading="lazy">` : `<div style="width:100%;height:100%;background:${color}22;display:flex;align-items:center;justify-content:center;color:${color};font-weight:700">${name.charAt(0)}</div>`}
+      <div class="tl-panel-hdr-top">
+        <div class="tl-panel-art">
+          ${thumb ? `<img src="${thumb}" loading="lazy">` : `<div style="width:100%;height:100%;background:${color}22;display:flex;align-items:center;justify-content:center;color:${color};font-weight:700">${name.charAt(0)}</div>`}
+        </div>
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:700;font-size:.63rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2">${name}</div>
+          <div style="font-size:.645rem;margin-top:1px" data-alb-metric="${alb.id}"><span style="color:var(--accent);font-weight:600">${_albMetricFmt}</span><span style="color:var(--text-muted)"> ${_albMetricLbl} · ${yr}</span></div>
+        </div>
+        <button class="tl-panel-close" onclick="event.stopPropagation();toggleAlbumExpand('${alb.id}')">✕</button>
       </div>
-      <div style="min-width:0;flex:1">
-        <div style="font-weight:700;font-size:.63rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2">${name}</div>
-        <div style="font-size:.645rem;margin-top:1px" data-alb-metric="${alb.id}"><span style="color:var(--accent);font-weight:600">${_albMetricFmt}</span><span style="color:var(--text-muted)"> ${_albMetricLbl} · ${yr}</span></div>
+      <div class="tl-panel-hdr-actions">
+        ${hasVideos ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)"
+          title="Play all tracks in order">▶ Play</button>` : ''}
+        <button class="cmt-btn" data-cmt-badge="album:${alb.id}" onclick="event.stopPropagation();openComments('album','${alb.id}')" title="Comment on this album">Comment</button>
       </div>
-      ${hasVideos ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)"
-        title="Play all tracks in order">▶ Play</button>` : ''}
-      <button class="cmt-btn" data-cmt-badge="album:${alb.id}" onclick="event.stopPropagation();openComments('album','${alb.id}')" title="Comment on this album">Comment</button>
-      <button class="tl-panel-close" onclick="event.stopPropagation();toggleAlbumExpand('${alb.id}')">✕</button>
     </div>
     <div style="height:auto;overflow:visible;padding-bottom:8px;">
       ${renderTrackLines(alb)}
@@ -10480,10 +10487,12 @@ function amShowPane(n) {
     if (p) p.classList.toggle('active', i === n);
   }
 }
-function amSetFooter(backVisible, nextLabel, nextDisabled) {
+function amSetFooter(backVisible, nextLabel, nextDisabled, cancelVisible = true) {
   const back = document.getElementById('amBackBtn'), next = document.getElementById('amNextBtn');
   if (back) back.style.display = backVisible ? '' : 'none';
   if (next) { next.innerHTML = nextLabel; next.disabled = !!nextDisabled; }
+  const cancel = document.getElementById('amCancelBtn');
+  if (cancel) cancel.style.display = cancelVisible ? '' : 'none';   // once imported, Cancel can't undo it - only Finish belongs here
   const go = document.getElementById('amGoBtn');
   if (go) go.style.display = 'none';
 }
@@ -10564,7 +10573,7 @@ function amGoAlbums() {
 async function amGoFinetune() {
   amShowPane(4);
   amStepGo(4, 'Loading album details…');
-  amSetFooter(false, '<span class="m-spin"></span>Loading…', true);
+  amSetFooter(false, '<span class="m-spin"></span>Loading…', true, false);
   amBusy = true;
   try {
     amFt = await amFetch(`?action=finetune_data&artist_id=${encodeURIComponent(amArtistId)}`);
@@ -10576,7 +10585,7 @@ async function amGoFinetune() {
     amStepGo(4, 'Fine-tuning unavailable. You can finish now.');
   } finally {
     amBusy = false;
-    amSetFooter(false, '✓ Finish', false);
+    amSetFooter(false, '✓ Finish', false, false);
     amShowGoBtn();
   }
 }
@@ -10717,7 +10726,7 @@ function amNewArtist() {
 }
 // Tuck the wizard away without cancelling the background lyrics/date work
 function amStowWizard() {
-  if (amBgBusy) { _amWizardDone = true; amShowPane(3); amSetFooter(false, 'Fine-tune ›', false); amMinimize(); amBgSync(); }
+  if (amBgBusy) { _amWizardDone = true; amShowPane(3); amSetFooter(false, 'Fine-tune ›', false, false); amMinimize(); amBgSync(); }
   else closeAddMusic();
 }
 function amShowGoBtn() {
@@ -11398,6 +11407,8 @@ const SJ_CHANGELOG = [
     'YouTube imports now check the album against its official studio tracklist, so bonus, live, and promo videos riding along in the same playlist no longer get pulled in as album tracks.',
     'Removing a track from an album now renumbers the rest of the tracklist so there is no gap where it used to be.',
     'Every artist’s albums now default to a color pulled from their own cover art, instead of every album on an artist sharing one color.',
+    'Timeline album panels: Play and Comment moved to their own row below the title, so long album names no longer get cut off.',
+    'Add Music from YouTube: the minimize button sits next to the close button now, and the Cancel button disappears on the fine-tune step, once there is nothing left to cancel.',
   ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
