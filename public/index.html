@@ -804,6 +804,10 @@ body:not(.light) .tt-num { color: var(--text); }
 .cmt-opts { display: flex; gap: 1rem; flex-wrap: wrap; }
 .cmt-opt { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: .53rem; color: var(--text-muted); }
 .cmt-opt input { width: 13px; height: 13px; accent-color: var(--accent); cursor: pointer; }
+.cmt-time-row { display: flex; align-items: center; gap: 8px; }
+.cmt-time-input { width: 50px; background: #0e0e0e; border: 1px solid #2a2a2a; border-radius: 5px; color: var(--text); font-family: var(--mono); font-size: .53rem; padding: 3px 6px; text-align: center; }
+.cmt-time-input:disabled { opacity: .4; cursor: default; }
+.cmt-time-input:focus { outline: none; border-color: var(--accent); }
 .cmt-btn { background: transparent; border: 1px solid #2a2a2a; border-radius: 6px; color: var(--text-muted); cursor: pointer;
   font-family: var(--mono); font-size: .42rem; letter-spacing: .04em; padding: 3px 7px; transition: all .12s; white-space: nowrap; }
 .cmt-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -2264,6 +2268,10 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div class="cmt-composer">
         <input type="text" id="cmt-name" class="report-input" maxlength="60" placeholder="Your name (optional &mdash; leave blank to stay anonymous)" style="display:none">
         <textarea id="cmt-body" class="report-input" rows="3" placeholder="Leave a comment&hellip;"></textarea>
+        <div class="cmt-time-row" id="cmt-time-row" style="display:none">
+          <label class="cmt-opt"><input type="checkbox" id="cmt-time-chk" onchange="cmtTimeChkChanged()"><span>Include the track time</span></label>
+          <input type="text" id="cmt-time-val" class="cmt-time-input" maxlength="8" inputmode="numeric" autocomplete="off" placeholder="0:00" oninput="cmtTimeValEdited()">
+        </div>
         <div class="cmt-opts">
           <label class="cmt-opt"><input type="checkbox" id="cmt-private-chk"><span>Private &mdash; only I can see this</span></label>
           <label class="cmt-opt" id="cmt-anon-row" style="display:none"><input type="checkbox" id="cmt-anon-chk"><span>Post anonymously</span></label>
@@ -4952,6 +4960,7 @@ function openComments(kind, id, opts) {
   if (bodyEl) bodyEl.value = (opts.lyric && opts.lyric.quote) ? ('\u201C' + opts.lyric.quote + '\u201D\n\n') : '';
   const st = document.getElementById('cmt-status'); if (st) st.textContent = '';
   _cmtRenderHeader();
+  _cmtRenderTimeRow();
   ov.classList.add('open');
   if (bodyEl) setTimeout(() => { bodyEl.focus(); bodyEl.setSelectionRange(bodyEl.value.length, bodyEl.value.length); }, 60);
   _cmtLoadThread();
@@ -4960,6 +4969,7 @@ function openComments(kind, id, opts) {
 
 function closeComments() {
   document.getElementById('commentsOverlay')?.classList.remove('open');
+  if (_cmtTimeTicker) { clearInterval(_cmtTimeTicker); _cmtTimeTicker = null; }
 }
 
 function _cmtSavedName() { try { return localStorage.getItem('sj_cmt_name') || ''; } catch (e) { return ''; } }
@@ -4969,6 +4979,7 @@ function _cmtSetTab(tab) {
   _cmtCtx.tab = tab;
   if (tab !== 'lyric') _cmtCtx.lyric = null;
   _cmtRenderHeader();
+  _cmtRenderTimeRow();
   _cmtRenderThread();
 }
 
@@ -5069,6 +5080,80 @@ function _cmtRenderThread() {
   box.innerHTML = rows.map(r => _cmtCardHTML(r, { showTarget: true })).join('');
 }
 
+// Where the quoted lyric actually falls in the song, from the synced (LRC) lyrics -
+// not wherever playback happens to be by the time the comment gets typed and submitted.
+// Matches on the quote's first line, same rule _paintLyricComments() uses for the karaoke view.
+async function _cmtLyricTimestampMs(trackId, quote) {
+  if (!trackId || !quote) return null;
+  const sync = await fetchSyncedLyrics(trackId);
+  if (!sync || !sync.length) return null;
+  const first = quote.split('\n')[0].trim();
+  if (!first) return null;
+  const line = sync.find(l => l.text && l.text.indexOf(first) >= 0);
+  if (!line) return null;
+  const offset = (nowPlayingTrackId === trackId) ? _ytpLyrOffset : 0;
+  return Math.round((line.t + offset) * 1000);
+}
+
+function _cmtParseTime(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const m = s.match(/^(\d+):([0-5]?\d)$/);
+  if (m) return ((+m[1]) * 60 + (+m[2])) * 1000;
+  if (/^\d+$/.test(s)) return (+s) * 1000;
+  return null;
+}
+
+let _cmtTimeEdited = false;   // true once the user hand-edits the time field - stops the live ticker from overwriting it
+let _cmtTimeTicker = null;
+
+function cmtTimeChkChanged() {
+  const chk = document.getElementById('cmt-time-chk');
+  const val = document.getElementById('cmt-time-val');
+  if (val) val.disabled = !chk.checked;
+}
+
+function cmtTimeValEdited() { _cmtTimeEdited = true; }
+
+// Pre-fills and shows the time row: a lyric comment defaults to where those words fall in the
+// song (from the synced lyrics), a track comment defaults to the live playback position. Either
+// way it's just a starting point - the checkbox can be unchecked and the field hand-edited.
+async function _cmtRenderTimeRow() {
+  const c = _cmtCtx;
+  const row = document.getElementById('cmt-time-row');
+  const chk = document.getElementById('cmt-time-chk');
+  const val = document.getElementById('cmt-time-val');
+  if (!row || !chk || !val) return;
+  if (_cmtTimeTicker) { clearInterval(_cmtTimeTicker); _cmtTimeTicker = null; }
+  const isTrackTab = c && (c.tab === 'track' || c.tab === 'lyric');
+  if (!c || !isTrackTab || !c.track_id) { row.style.display = 'none'; return; }
+
+  row.style.display = 'flex';
+  _cmtTimeEdited = false;
+  let ms = null;
+  if (c.tab === 'lyric' && c.lyric && c.lyric.quote) {
+    ms = await _cmtLyricTimestampMs(c.track_id, c.lyric.quote);
+    if (_cmtCtx !== c) return; // context moved on while fetching
+  }
+  if (ms == null) {
+    const now = _cmtPlayback();
+    if (now.track_id === c.track_id && now.position_ms != null) ms = now.position_ms;
+  }
+  chk.checked = ms != null;
+  val.value = ms != null ? _cmtFmtMs(ms) : '';
+  val.disabled = !chk.checked;
+
+  // A plain track-time citation tracks live playback until the user edits it themselves;
+  // a lyric's position is fixed to that lyric, so it never needs to tick.
+  if (c.tab === 'track') {
+    _cmtTimeTicker = setInterval(() => {
+      if (_cmtTimeEdited || !chk.checked) return;
+      const now = _cmtPlayback();
+      if (now.track_id === c.track_id && now.position_ms != null) val.value = _cmtFmtMs(now.position_ms);
+    }, 1000);
+  }
+}
+
 async function submitComment() {
   const c = _cmtCtx; if (!c) return;
   const body = (document.getElementById('cmt-body')?.value || '').trim();
@@ -5085,6 +5170,10 @@ async function submitComment() {
 
   const now  = _cmtPlayback();
   const isTrackTab = c.tab === 'track' || c.tab === 'lyric';
+  const timeChk = document.getElementById('cmt-time-chk');
+  const refPositionMs = (isTrackTab && timeChk && timeChk.checked)
+    ? _cmtParseTime(document.getElementById('cmt-time-val')?.value)
+    : null;
   const payload = {
     target_type: c.tab,
     artist_id:   c.artist_id || null,
@@ -5102,7 +5191,7 @@ async function submitComment() {
     playing_video_id:    now.video_id || null,
     playing_track_name:  now.track_name || null,
     playing_position_ms: now.position_ms,
-    ref_position_ms: (isTrackTab && now.track_id === c.track_id) ? now.position_ms : null,
+    ref_position_ms: refPositionMs,
     lyric_quote: c.tab === 'lyric' && c.lyric ? c.lyric.quote : null,
     lyric_start: c.tab === 'lyric' && c.lyric ? c.lyric.start : null,
     lyric_end:   c.tab === 'lyric' && c.lyric ? c.lyric.end   : null
@@ -10946,7 +11035,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-02';
 const SJ_CHANGELOG = [
   { date: '2026-08-02', items: [
     'Highlighting a lyric and choosing to comment on it now quotes those exact words straight into your comment box, ready to write under.',
-    'Comments on a song or a lyric now always include the moment in the track you were at when you wrote them \u2014 no checkbox to remember.',
+    'Comments on a song or a lyric now suggest the track time automatically \u2014 for a lyric it is where those words actually fall in the song, not wherever playback drifted to while you were typing \u2014 and you can uncheck it or edit the time by hand.',
   ]},
   { date: '2026-08-01', items: [
     'You can leave comments now \u2014 on an artist, on an album, on a single song, or on an individual line of lyrics. Look for the \u201CComment\u201D buttons.',
