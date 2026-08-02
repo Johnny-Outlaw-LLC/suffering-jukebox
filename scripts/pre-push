@@ -1,0 +1,33 @@
+#!/bin/sh
+# Suffering Jukebox pre-push hook.
+#
+# Blocks a push that changes public/index.html without a Change Log entry
+# dated today. Install with: sh scripts/install-hooks.sh
+#
+# Skip for an invisible-to-users change by putting [no-changelog] anywhere in
+# one of the commit messages being pushed.
+
+repo_root=$(git rev-parse --show-toplevel)
+zero=$(git hash-object --stdin </dev/null | tr '0-9a-f' '0')
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue          # branch deletion
+
+  if [ "$remote_sha" = "$zero" ]; then
+    range="$local_sha"                             # new branch
+  else
+    range="$remote_sha..$local_sha"
+  fi
+
+  changed=$(git diff --name-only "$range" 2>/dev/null || git show --name-only --pretty=format: "$local_sha")
+  echo "$changed" | grep -q '^public/index.html$' || continue
+
+  if git log --format=%B "$range" 2>/dev/null | grep -qi '\[no-changelog\]'; then
+    echo "pre-push: [no-changelog] found, skipping Change Log check."
+    continue
+  fi
+
+  node "$repo_root/scripts/check-changelog.js" "$repo_root/public/index.html" || exit 1
+done
+
+exit 0
