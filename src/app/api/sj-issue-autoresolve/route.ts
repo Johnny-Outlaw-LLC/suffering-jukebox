@@ -16,12 +16,46 @@ export const maxDuration = 60;
 type IssueRow = {
   id: string;
   category: string | null;
+  description: string | null;
   track_id: string | null;
   video_id: string | null;
   track_name: string | null;
   artist_name: string | null;
   album_name: string | null;
 };
+
+// Phrases people copy out of the YouTube player when a video refuses to play in
+// an embed. If a report says any of this, we do not accept "the API says it's
+// fine" as proof — we go looking for a replacement instead, and if we can't find
+// one we leave the report open for a human rather than closing it.
+const EMBED_BLOCK_SIGNS = [
+  "age-restricted",
+  "age restricted",
+  "confirm your age",
+  "only available on youtube",
+  "watch on youtube",
+  "playback on other websites",
+  "video unavailable",
+  "unavailable",
+  "not available",
+  "restricted",
+  "blocked",
+  "won't play",
+  "wont play",
+  "will not play",
+  "doesn't play",
+  "does not play",
+  "not playing",
+  "no longer available",
+  "error 101",
+  "error 150",
+];
+
+function looksLikeEmbedBlock(description: string | null): boolean {
+  const d = (description || "").toLowerCase();
+  if (!d) return false;
+  return EMBED_BLOCK_SIGNS.some((s) => d.includes(s));
+}
 
 // ── Authorization: the nightly cron sends a shared secret; admins send a JWT ──
 async function authorize(req: NextRequest): Promise<
@@ -217,7 +251,7 @@ async function runAutoResolve() {
   const { data: openIssues, error } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("issues")
-    .select("id, category, track_id, video_id, track_name, artist_name, album_name")
+    .select("id, category, description, track_id, video_id, track_name, artist_name, album_name")
     .eq("resolved", false);
   if (error) throw error;
 
@@ -257,8 +291,11 @@ async function runAutoResolve() {
 
       const info = await fetchYouTubeVideoInfo([vid]);
       const cur = info[vid];
+      // Somebody described an embed failure. Even if YouTube's metadata looks
+      // clean, do not close the report on that alone.
+      const reportedBlock = group.some((g) => looksLikeEmbedBlock(g.description));
 
-      if (cur && cur.playable) {
+      if (cur && cur.playable && !reportedBlock) {
         await resolveIssues(sb, ids, {
           resolved: true,
           resolved_at: nowIso,
@@ -277,7 +314,9 @@ async function runAutoResolve() {
       }
 
       // Broken — find a working replacement.
-      const reason = cur?.reason || "video removed from YouTube";
+      const reason =
+        cur?.reason ||
+        (cur ? "reported as unplayable in the embedded player" : "video removed from YouTube");
       const ctx = await trackContext(sb, trackId);
       const query = [ctx.artistName || group[0].artist_name || "", ctx.trackName || label]
         .filter(Boolean)
@@ -303,7 +342,7 @@ async function runAutoResolve() {
           resolution_kind: "revideo",
           old_video_id: vid,
           new_video_id: best.id,
-          resolution_note: `Original video was ${reason}. Swapped in a working version from "${best.channelTitle}".`,
+          resolution_note: `Original video was ${reason}. Swapped in a version that plays here, from "${best.channelTitle}".`,
           last_auto_attempt_at: nowIso,
         });
         for (const it of group)
@@ -319,10 +358,18 @@ async function runAutoResolve() {
         await resolveIssues(sb, ids, {
           last_auto_attempt_at: nowIso,
           old_video_id: vid,
-          resolution_note: `Original video was ${reason}, but no working replacement was found automatically.`,
+          resolution_note: cur?.playable
+            ? "Reported as unplayable in the player. YouTube still lists the video as fine and no better version turned up, so this one needs a person to look at it."
+            : `Original video was ${reason}, but no working replacement was found automatically.`,
         });
         for (const it of group)
-          await maybeFlag(sb, it, `Video for "${it.track_name ?? "a track"}" is ${reason}; no automatic replacement found yet — flagged for review.`);
+          await maybeFlag(
+            sb,
+            it,
+            cur?.playable
+              ? `"${it.track_name ?? "A track"}" was reported as unplayable and no working replacement was found yet — flagged for review.`
+              : `Video for "${it.track_name ?? "a track"}" is ${reason}; no automatic replacement found yet — flagged for review.`,
+          );
         summary.flagged++;
         summary.details.push(`Flagged "${label}" (${reason}) — no replacement found`);
       }

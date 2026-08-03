@@ -106,8 +106,10 @@ export function parseYouTubeVideoId(input: string): string | null {
 
 export type YtVideoInfo = {
   id: string;
+  /** True only if the video will actually play inside our embedded player. */
   playable: boolean;
   reason: string | null;
+  ageRestricted: boolean;
   views: number;
   likes: number;
   thumbnail: string | null;
@@ -136,6 +138,10 @@ export async function fetchYouTubeVideoInfo(
     for (const item of json.items ?? []) {
       const status = item.status ?? {};
       const rr = item.contentDetails?.regionRestriction ?? {};
+      // YouTube reports age-restricted videos as embeddable:true, but the IFrame
+      // player refuses to play them (error 150 — "only available on YouTube"),
+      // so they have to be treated as broken for our purposes.
+      const ageRestricted = item.contentDetails?.contentRating?.ytRating === "ytAgeRestricted";
       let playable = true;
       let reason: string | null = null;
       if (status.privacyStatus && status.privacyStatus !== "public") {
@@ -147,6 +153,9 @@ export async function fetchYouTubeVideoInfo(
       } else if (status.embeddable === false) {
         playable = false;
         reason = "embedding disabled by the owner";
+      } else if (ageRestricted) {
+        playable = false;
+        reason = "age-restricted, so it will not play outside YouTube";
       } else if (Array.isArray(rr.blocked) && rr.blocked.includes("US")) {
         playable = false;
         reason = "blocked in the US";
@@ -159,6 +168,7 @@ export async function fetchYouTubeVideoInfo(
         id: item.id,
         playable,
         reason,
+        ageRestricted,
         views: Number(item.statistics?.viewCount ?? 0),
         likes: Number(item.statistics?.likeCount ?? 0),
         thumbnail: thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
