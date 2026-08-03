@@ -294,8 +294,11 @@ async function runAutoResolve() {
       // Somebody described an embed failure. Even if YouTube's metadata looks
       // clean, do not close the report on that alone.
       const reportedBlock = group.some((g) => looksLikeEmbedBlock(g.description));
+      // Somebody took the trouble to type something. Whatever it says, a clean
+      // metadata check is not an answer to it.
+      const hasNote = group.some((g) => (g.description || "").trim().length > 0);
 
-      if (cur && cur.playable && !reportedBlock) {
+      if (cur && cur.playable && !hasNote) {
         await resolveIssues(sb, ids, {
           resolved: true,
           resolved_at: nowIso,
@@ -310,6 +313,26 @@ async function runAutoResolve() {
           await logEvent(sb, it, "auto_verified", `"${it.track_name ?? "This track"}" checked out fine and is playing normally.`);
         summary.verified_ok++;
         summary.details.push(`Verified "${label}" playable`);
+        continue;
+      }
+
+      // The video is fine and the note is not about playback (wrong song, an ad,
+      // bad audio...). Swapping videos would not help, so leave it for a person.
+      if (cur && cur.playable && !reportedBlock) {
+        await resolveIssues(sb, ids, {
+          last_auto_attempt_at: nowIso,
+          old_video_id: vid,
+          resolution_note:
+            "The video itself checks out on YouTube, so this report is about something the check cannot see. Left open for a person to read.",
+        });
+        for (const it of group)
+          await maybeFlag(
+            sb,
+            it,
+            `"${it.track_name ?? "A track"}" plays, but the report says something that needs a person to read it — left open.`,
+          );
+        summary.flagged++;
+        summary.details.push(`Left open "${label}" — video plays, report needs a human`);
         continue;
       }
 
