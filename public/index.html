@@ -10619,8 +10619,7 @@ function amFtRender() {
             </div>
             ${(al.art_options || []).length > 1 ? `<div class="am-ft-arts">${al.art_options.map(u =>
               `<img src="${esc(u)}" loading="lazy" class="${u === al.art_url ? 'sel' : ''}" data-u="${esc(u)}" onclick="amFtPickArt(${i}, this)">`).join('')}</div>` : ''}
-            <div class="am-ft-albcolor-row"><span class="am-ft-albcolor-lbl">Bar color</span><div class="am-swatches am-ft-albcolors" data-i="${i}">${OA_PALETTE.map(c =>
-              `<button type="button" class="am-swatch am-swatch-sm${(al.color || '') === c ? ' sel' : ''}" style="background:${c}" data-c="${c}" onclick="amFtPickAlbColor(${i},'${c}')" title="${c}"></button>`).join('')}<input type="color" class="am-swatch-custom am-swatch-sm" value="${al.color || cur}" title="Custom color" oninput="amFtPickAlbColor(${i}, this.value)"><button type="button" class="am-ft-albclear" id="amFtAlbClear${i}" style="${al.color ? '' : 'display:none'}" onclick="amFtPickAlbColor(${i}, null)">↺ artist color</button></div></div>
+
           </div>
         </div>`).join('')}
       </div>
@@ -10758,16 +10757,7 @@ function amFtPickArt(i, el) {
   document.getElementById('amFtCover' + i).src = el.dataset.u;
   el.parentElement.querySelectorAll('img').forEach(x => x.classList.toggle('sel', x === el));
 }
-function amFtPickAlbColor(i, c) {
-  amFt.albums[i]._pickedColor = c;   // hex sets an override, null falls back to the artist color
-  const wrap = document.querySelector(`.am-ft-albcolors[data-i="${i}"]`);
-  if (!wrap) return;
-  wrap.querySelectorAll('.am-swatch').forEach(el => el.classList.toggle('sel', !!c && el.dataset.c === c));
-  const clr = document.getElementById('amFtAlbClear' + i);
-  if (clr) clr.style.display = c ? '' : 'none';
-  const custom = wrap.querySelector('.am-swatch-custom');
-  if (custom && c && custom.value !== c) { try { custom.value = c; } catch (_) {} }
-}
+
 
 async function amFtSave() {
   if (!amFt || !amArtistId) return;
@@ -10782,7 +10772,6 @@ async function amFtSave() {
     if (nn && nn !== al.name) d.name = nn;
     if (/^\d{4}$/.test(yy) && yy !== (al.release_date || '').slice(0, 4)) d.release_date = yy;
     if (al._pickedArt && al._pickedArt !== al.art_url) d.art_url = al._pickedArt;
-    if (al._pickedColor !== undefined && al._pickedColor !== (al.color || null)) d.color = al._pickedColor;
     if (Object.keys(d).length > 1) payload.albums.push(d);
   });
   if (payload.artist_name || payload.color || payload.albums.length) {
@@ -11392,11 +11381,15 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-02';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-03';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-03', items: [
+    'Adding a new artist: the final step no longer lets you set a separate bar color for each album. You pick one chart color for the artist and every one of their albums uses it \u2014 one less thing to fuss over.',
+    'Adding an artist from YouTube now brings in the whole album. If a song was missing from the playlist, or the playlist named it oddly, it is filled in by finding a video of the right length, so albums no longer come in with tracks dropped.',
+  ]},
   { date: '2026-08-02', items: [
     'Highlighting a lyric and choosing to comment on it now quotes those exact words straight into your comment box, ready to write under.',
     'Comments on a song or a lyric now suggest the track time automatically \u2014 for a lyric it is where those words actually fall in the song, not wherever playback drifted to while you were typing \u2014 and you can uncheck it or edit the time by hand.',
