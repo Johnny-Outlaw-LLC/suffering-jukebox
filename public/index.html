@@ -2825,6 +2825,10 @@ let _taConsentOk        = false; // rights-ownership notice acknowledged this se
 let _taConsentResolve   = null;  // pending in-app consent modal resolver
 let _taBatch            = null;  // { artistId, albumId, tracks, files, assign } for the batch uploader
 let _taManualAudio      = false; // audio-only mode toggled from the player toolbar
+let _ytpWatchdogTimer   = null;  // fires if a track never reaches PLAYING (stall/embed-blocked)
+let _ytpWatchdogVideoId = null;  // videoId the pending watchdog is guarding
+let _ytpFailureHandledFor = null; // videoId already auto-reported+skipped, avoids double-fire (error + stall)
+let _ytpAutoReportedIds = new Set(); // trackId/videoId already auto-reported this session
 
 const isAlbumVisible = (albumId) => !excludedAlbumIds.has(albumId);
 
@@ -3847,6 +3851,7 @@ function ytpCloseToMini() {
 
 function closeYTPlayer() {
   if (!ytPlayerEl) return;
+  ytpClearPlaybackWatchdog();
   markPlayerClosed();
   hideYtpMiniFooter();
   patchYTPlayDuration();
@@ -4191,6 +4196,7 @@ function attachYTAPIPlayer() {
               if (p) logYTPlay(p.videoId, p.trackId, 'play');
             }, 10000);
           }
+          ytpClearPlaybackWatchdog();
         } else if (ev.data === 2) { // PAUSED
           if (_taBgActive) return; // our own pause - uploaded audio has the sound
           ytpSetPlayPauseIcon(false);
@@ -4214,6 +4220,11 @@ function attachYTAPIPlayer() {
           if (ytRepeat && ytQueue.length === 1) { ytAPIPlayer.seekTo(0); ytAPIPlayer.playVideo(); }
           else ytNextTrack();
         }
+      },
+      onError: function(ev) {
+        // Video is unplayable (removed, private, region/embed-blocked, etc.) - report it and move on.
+        const item = ytQueue[ytQueueIdx];
+        ytpHandlePlaybackFailure(ytVideoId, item && item.trackId, item && item.title, 'error', ev.data);
       }
     }
   });
@@ -4751,6 +4762,79 @@ function ytpStampQueueMeta(trackId) {
   if (m.artist) item.artist = m.artist;
   if (m.album)  item.album  = m.album;
   if (m.year)   item.year   = m.year;
+}
+
+// ── Playback-issue detection: watchdog + silent auto-report + auto-skip ──
+// Two ways a track can fail without the user doing anything: an explicit YT
+// player error (removed/private/region- or embed-blocked - the "can't be
+// played on your mobile browser" case), or a silent stall where the player
+// never reaches PLAYING at all (onError never fires for that case, so a
+// timeout is the only signal). Both funnel into ytpHandlePlaybackFailure.
+const YTP_STALL_MS = 12000;
+
+function ytpClearPlaybackWatchdog() {
+  if (_ytpWatchdogTimer) { clearTimeout(_ytpWatchdogTimer); _ytpWatchdogTimer = null; }
+  _ytpWatchdogVideoId = null;
+}
+
+function ytpStartPlaybackWatchdog(videoId, trackId, title) {
+  ytpClearPlaybackWatchdog();
+  if (!videoId || _taBgActive) return; // audio-only mode: the video is only ever cued, never "playing"
+  _ytpWatchdogVideoId = videoId;
+  _ytpWatchdogTimer = setTimeout(function() {
+    _ytpWatchdogTimer = null;
+    if (_ytpWatchdogVideoId !== videoId) return; // superseded by a newer track
+    if (videoId !== ytVideoId) return;           // no longer the track we're waiting on
+    if (!_ytUserWantsPlay) return;                // user paused/left before it ever started - not a failure
+    let state = null;
+    try { state = ytAPIPlayer && ytAPIPlayer.getPlayerState && ytAPIPlayer.getPlayerState(); } catch (e) {}
+    if (state === 1) return; // already playing somehow - nothing to do
+    ytpHandlePlaybackFailure(videoId, trackId, title, 'stall', null);
+  }, YTP_STALL_MS);
+}
+
+async function ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code) {
+  const dedupeKey = trackId || videoId;
+  if (dedupeKey && _ytpAutoReportedIds.has(dedupeKey)) return;
+  if (dedupeKey) _ytpAutoReportedIds.add(dedupeKey);
+  const meta = trackId ? ytpTrackMeta(trackId, title) : null;
+  const desc = kind === 'error'
+    ? 'Auto-detected: playback error (code ' + code + ') - the app skipped this track automatically.'
+    : 'Auto-detected: track never started playing within ' + Math.round(YTP_STALL_MS / 1000) + 's - the app skipped it automatically.';
+  const row = {
+    category: 'playback',
+    description: desc,
+    artist_name: (meta && meta.artist) || null,
+    album_name: (meta && meta.album) || null,
+    track_name: (meta && meta.title) || title || null,
+    track_id: trackId || null,
+    video_id: videoId || null,
+  };
+  try {
+    await fetch(REST + '/issues', {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Content-Type': 'application/json',
+        'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=minimal' },
+      body: JSON.stringify(row)
+    });
+  } catch (e) { /* best effort - a missed auto-report shouldn't block the skip */ }
+}
+
+function ytpHandlePlaybackFailure(videoId, trackId, title, kind, code) {
+  if (!videoId || videoId !== ytVideoId) return; // stale callback for a track we've already moved past
+  if (_ytpFailureHandledFor === videoId) return;  // error + stall both firing for the same track
+  _ytpFailureHandledFor = videoId;
+  ytpClearPlaybackWatchdog();
+  ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code);
+  if (ytQueue.length > 1) {
+    showToast('Playback issue detected - reported and skipped to the next track.');
+    ytNextTrack();
+  } else {
+    showToast('Playback issue detected and reported - no other track queued to skip to.');
+    try { ytAPIPlayer && ytAPIPlayer.stopVideo && ytAPIPlayer.stopVideo(); } catch (e) {}
+    _ytUserWantsPlay = false;
+    ytpSetPlayPauseIcon(false);
+  }
 }
 
 // ── Report a problem ───────────────────────────────────────────
@@ -7161,6 +7245,7 @@ function applyNowPlayingHighlight() {
 
 function ytpOnTrackChange(videoId, trackId, title) {
   schedulePlaybackStateSave(); // remember queue + position for signed-in users
+  ytpStartPlaybackWatchdog(videoId, trackId, title);
   nowPlayingTrackId = trackId || null;
   ytpApplyTitle(trackId || null, title);
   ytpUpdateTabTitle(trackId || null, title);
@@ -11413,11 +11498,14 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-03';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-04';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-04', items: [
+    'The player now notices when a song fails to play — removed, blocked, or just stuck — and automatically reports it and skips to the next track in your queue, instead of leaving you staring at a dead player.',
+  ]},
   { date: '2026-08-03', items: [
     'Comments are switched off for now. The Comment buttons on artists, albums, songs and lyrics are gone, along with the highlighting on lines that had been commented on. It was a fun idea that turned out clumsy to actually use. Nothing anybody wrote has been deleted, so it can come back if we find a better shape for it.',
     'Adding a new artist: the final step no longer lets you set a separate bar color for each album. You pick one chart color for the artist and every one of their albums uses it \u2014 one less thing to fuss over.',
