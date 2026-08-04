@@ -781,6 +781,11 @@ body:not(.light) .tt-num { color: var(--text); }
 .m-btn.ghost { background: transparent; border: 1px solid #2a2a2a; color: var(--text); }
 .m-btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
 
+/* Comments are switched off - see SJ_COMMENTS_ENABLED. This covers the markup that
+   lives in the page itself rather than in a template. */
+#ytp-comment-btn, #ytp-mf-comment, #lyr-sel-pop, .llt-comment, .cmt-btn { display: none !important; }
+mark.lyr-cmt { background: none; color: inherit; cursor: inherit; }
+
 /* ── Comments ─────────────────────────────────────────────────────────── */
 .cmt-tabs { display: flex; gap: 5px; flex-wrap: wrap; }
 .cmt-tab { background: transparent; border: 1px solid #2a2a2a; border-radius: 7px; color: var(--text-muted); cursor: pointer;
@@ -3157,7 +3162,7 @@ function buildSinglePanelHTML(alb, L) {
       <div class="tl-panel-hdr-actions">
         ${hasVideos ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)"
           title="Play all tracks in order">▶ Play</button>` : ''}
-        <button class="cmt-btn" data-cmt-badge="album:${alb.id}" onclick="event.stopPropagation();openComments('album','${alb.id}')" title="Comment on this album">Comment</button>
+        ${SJ_COMMENTS_ENABLED ? `<button class="cmt-btn" data-cmt-badge="album:${alb.id}" onclick="event.stopPropagation();openComments('album','${alb.id}')" title="Comment on this album">Comment</button>` : ''}
       </div>
     </div>
     <div style="height:auto;overflow:visible;padding-bottom:8px;">
@@ -4830,6 +4835,11 @@ async function submitReport() {
 }
 
 // ══════════════════════════════════════════════════════════════
+// Comments are switched off (2026-08-03). Leaving one felt clumsy in practice, so every
+// button, tooltip and highlight is withheld while the code and the data stay put. Flip this
+// to true to bring the whole feature back exactly as it was.
+const SJ_COMMENTS_ENABLED = false;
+
 // COMMENTS - on an artist, an album, a track, or a lyric passage
 // ══════════════════════════════════════════════════════════════
 // Counts are loaded once for the whole app so every browse surface can show a
@@ -4951,6 +4961,7 @@ async function _cmtEnrich() {
 
 // ── Counts + badges ────────────────────────────────────────────
 async function loadCommentCounts() {
+  if (!SJ_COMMENTS_ENABLED) return;
   try {
     const rows = await dbRpcAuth('/rpc/comment_counts', { p_device_id: getDeviceId() });
     const next = { artist: {}, album: {}, track: {}, lyric: {} };
@@ -4979,6 +4990,7 @@ function refreshCommentBadges() {
 // kind: 'artist' | 'album' | 'track' | 'lyric'
 // opts.lyric = { quote, start, end } when anchoring to a lyric passage
 function openComments(kind, id, opts) {
+  if (!SJ_COMMENTS_ENABLED) return;
   opts = opts || {};
   const base = _cmtResolve(kind === 'lyric' ? 'track' : kind, id);
   _cmtCtx = Object.assign(base, { tab: kind, lyric: opts.lyric || null });
@@ -5341,6 +5353,7 @@ async function refreshTrackComments(trackId) {
 }
 
 function loadInlineComments(trackId) {
+  if (!SJ_COMMENTS_ENABLED) return;
   if (!trackId) return;
   refreshCommentBadges();
   refreshTrackComments(trackId).catch(() => {});
@@ -5352,6 +5365,7 @@ function repaintLyricComments(trackId) {
 }
 
 function _paintLyricComments(el, trackId) {
+  if (!SJ_COMMENTS_ENABLED) return;
   if (!el || !trackId) return;
   const anchors = _cmtAnchors[trackId];
   if (!anchors || !anchors.length) return;
@@ -5453,6 +5467,7 @@ function hideLyrSelPop() {
 }
 
 function _maybeOfferLyricComment() {
+  if (!SJ_COMMENTS_ENABLED) { hideLyrSelPop(); return false; }
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) { hideLyrSelPop(); return false; }
   const quote = sel.toString().replace(/\s+$/, '');
@@ -5555,7 +5570,7 @@ function _lyrLineToolbarEl() {
     el.className = 'lyr-line-toolbar';
     el.innerHTML =
       '<button class="llt-btn llt-react" onclick="lyrQuickReact(event)" title="Thumbs up this lyric">\u{1F44D} <span class="llt-count">0</span></button>' +
-      '<button class="llt-btn llt-comment" onclick="lyrCommentFromToolbar(event)" title="Comment on this lyric">\u{1F4AC} Comment</button>';
+      (SJ_COMMENTS_ENABLED ? '<button class="llt-btn llt-comment" onclick="lyrCommentFromToolbar(event)" title="Comment on this lyric">\u{1F4AC} Comment</button>' : '');
     el.addEventListener('mousedown', e => e.preventDefault()); // don't clear the user's selection before the click lands
     document.body.appendChild(el);
   }
@@ -6036,7 +6051,7 @@ const _WN_TABS = [
   ['issues',    'Playback Issues'],
   ['comments',  'Public Comments'],
   ['updates',   'Jukebox Updates']
-];
+].filter(t => SJ_COMMENTS_ENABLED || t[0] !== 'comments');
 
 function openUpdatesFeed() {
   if (!googleUser) return;
@@ -7432,7 +7447,7 @@ function _buildAccordionContent(trackId) {
       ${vid ? `<a class="sc-link yt" href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeTitle}','${trackId}',event)" style="margin:0">▶ Play</a>` : ''}
       ${spotifyId ? `<a class="sc-link" href="https://open.spotify.com/track/${spotifyId}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#1db954;border-color:#1db954;margin:0">Spotify ↗</a>` : ''}
       ${googleUser ? `<button class="sc-link sj-block${isTrackBlocked(trackId) ? ' blocked' : ''}" data-block-track="${trackId}" onclick="event.preventDefault();event.stopPropagation();toggleBlockTrack('${trackId}')" title="Never play this song again" style="margin:0">${isTrackBlocked(trackId) ? '↺ Unblock' : '⊘ Never Again'}</button>` : ''}
-      <button class="cmt-btn" data-cmt-badge="track:${trackId}" onclick="event.preventDefault();event.stopPropagation();openComments('track','${trackId}')" title="Comment on this track">Comment</button>
+      ${SJ_COMMENTS_ENABLED ? `<button class="cmt-btn" data-cmt-badge="track:${trackId}" onclick="event.preventDefault();event.stopPropagation();openComments('track','${trackId}')" title="Comment on this track">Comment</button>` : ''}
       ${statParts ? `<span style="font-size:.42rem;color:var(--text-muted)">${statParts}</span>` : ''}
     </div>
     <div>
@@ -7447,10 +7462,10 @@ function _buildAccordionContent(trackId) {
         ${googleUser ? `<button class="lyr-edit-btn" onclick="startLyricsEdit('${trackId}','acc');event.stopPropagation()">&#9999; Edit</button><button class="lyr-hist-btn" onclick="openLyricsHistory('${trackId}');event.stopPropagation()" title="Edit history">&#128336;</button>` : ''}
       </div>
       <div class="trk-acc-lyrics"><div data-acc-lyric="${trackId}" class="sc-lyrics-ph">Loading…</div></div>
-      <div class="trk-acc-lbl" style="display:flex;align-items:center;gap:6px;margin-top:9px">Comments
+      ${SJ_COMMENTS_ENABLED ? `<div class="trk-acc-lbl" style="display:flex;align-items:center;gap:6px;margin-top:9px">Comments
         <button class="cmt-btn" onclick="openComments('track','${trackId}');event.stopPropagation()" title="Leave a comment on this track">Add</button>
       </div>
-      <div class="cmt-inline" data-cmt-inline="${trackId}"><div class="cmt-empty">Loading…</div></div>
+      <div class="cmt-inline" data-cmt-inline="${trackId}"><div class="cmt-empty">Loading…</div></div>` : ''}
     </div>
   </div>`;
 }
@@ -9435,7 +9450,7 @@ function renderCommunityFilterBar() {
       </div>
     </div>
     ${renderSJPMSpecialButtons()}
-    <button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>
+    ${SJ_COMMENTS_ENABLED ? `<button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>` : ''}
     ${renderOtherArtistsBtn()}
   </div>`;
 }
@@ -9495,7 +9510,7 @@ function renderFilterBar(allAlbs) {
       <span class="pill-dot" style="background:${pmAllHidden ? 'var(--text-muted)' : pmColor}"></span>
       Purple Mountains
     </button>
-    <button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>
+    ${SJ_COMMENTS_ENABLED ? `<button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>` : ''}
     ${renderOtherArtistsBtn()}
   </div>`;
 }
@@ -10184,7 +10199,7 @@ function renderOtherArtistsBtn() {
           <div class="oa-meta">${a.is_community === false ? 'main jukebox artist' : (a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist')}</div>
         </div>
         ${(!IS_COMMUNITY || _featuredId) ? `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>` : ''}
-        <button type="button" class="cmt-btn" data-cmt-badge="artist:${a.id}" onclick="event.stopPropagation();openComments('artist','${a.id}')" title="Comment on this artist">Comment</button>
+        ${SJ_COMMENTS_ENABLED ? `<button type="button" class="cmt-btn" data-cmt-badge="artist:${a.id}" onclick="event.stopPropagation();openComments('artist','${a.id}')" title="Comment on this artist">Comment</button>` : ''}
         <button type="button" class="oa-act go" onclick="event.stopPropagation();oaGoToArtist('${a.id}')" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
@@ -11404,6 +11419,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-03';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-03', items: [
+    'Comments are switched off for now. The Comment buttons on artists, albums, songs and lyrics are gone, along with the highlighting on lines that had been commented on. It was a fun idea that turned out clumsy to actually use. Nothing anybody wrote has been deleted, so it can come back if we find a better shape for it.',
     'Adding a new artist: the final step no longer lets you set a separate bar color for each album. You pick one chart color for the artist and every one of their albums uses it \u2014 one less thing to fuss over.',
     'Adding an artist from YouTube now brings in the whole album. If a song was missing from the playlist, or the playlist named it oddly, it is filled in by finding a video of the right length, so albums no longer come in with tracks dropped.',
     'If you added an artist, you can now rename an individual song. In Manage My Artists, open an album’s tracks and each song has a Rename button, handy for cleaning up a title that came in from YouTube with extra text in the name.',
@@ -14799,7 +14815,7 @@ async function _runSearch(query) {
       </div>
       <div class="srch-actions">
         <button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${!ytData[t.id]?.video_id ? 'disabled title=\"No video available\"' : ''}>▶ Play</button>
-        <button class="srch-btn cmt-btn" data-cmt-badge="track:${t.id}" onclick="event.stopPropagation();openComments('track','${t.id}')" title="Comment on this track">Comment</button>
+        ${SJ_COMMENTS_ENABLED ? `<button class="srch-btn cmt-btn" data-cmt-badge="track:${t.id}" onclick="event.stopPropagation();openComments('track','${t.id}')" title="Comment on this track">Comment</button>` : ''}
       </div>
     </div>`;
   });
