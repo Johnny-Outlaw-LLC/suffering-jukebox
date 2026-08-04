@@ -10999,6 +10999,7 @@ function maRenderTracks(artistId, albumId) {
       <span id="ta-st-${t.id}" style="font-size:.42rem;flex-shrink:0;${taData[t.id] ? 'color:#22c55e' : ''}">${taData[t.id] ? '🎧' : ''}</span>
       <button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="${taData[t.id] ? 'Replace the background-play audio file' : 'Upload an audio file for background play (rights holders only)'}" onclick="taQuickUpload('${t.id}', ${t.duration_ms || null})">${taData[t.id] ? '↻ Audio' : '＋ Audio'}</button>
       <button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="${t.has_lyrics ? 'Edit lyrics' : 'Add lyrics'}" onclick="maEditLyrics('${artistId}','${albumId}','${t.id}')">${t.has_lyrics ? '✎ Lyrics' : '＋ Lyrics'}</button>
+      <button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Rename this track" onclick="maRenameTrack('${artistId}','${albumId}','${t.id}')">✎ Rename</button>
       <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this track" onclick="maDeleteTrack('${artistId}','${albumId}','${t.id}')">✕</button>
     </div>
     <div class="ma-lyr-box" id="ma-lyr-${t.id}" style="display:none"></div>`).join('') + `
@@ -11021,6 +11022,22 @@ async function maDeleteTrack(artistId, albumId, trackId) {
     if (a) a.track_count = Math.max(0, (a.track_count || 1) - 1);
     maRenderTracks(artistId, albumId);
     maBusy('✓ Track removed');
+    try { loadData(); } catch (_) {}
+  } catch (e) { maBusy('✗ ' + e.message, true); }
+}
+
+async function maRenameTrack(artistId, albumId, trackId) {
+  const t = (_maTrkCache[albumId] || []).find(x => x.id === trackId); if (!t) return;
+  const name = prompt('New song name:', t.name);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === t.name) return;
+  maBusy('Renaming track…');
+  try {
+    const d = await amFetch('?action=rename_track', { method: 'POST', body: JSON.stringify({ track_id: trackId, name: trimmed }) });
+    t.name = d.name || trimmed;
+    maRenderTracks(artistId, albumId);
+    maBusy('✓ Track renamed');
     try { loadData(); } catch (_) {}
   } catch (e) { maBusy('✗ ' + e.message, true); }
 }
@@ -11389,6 +11406,7 @@ const SJ_CHANGELOG = [
   { date: '2026-08-03', items: [
     'Adding a new artist: the final step no longer lets you set a separate bar color for each album. You pick one chart color for the artist and every one of their albums uses it \u2014 one less thing to fuss over.',
     'Adding an artist from YouTube now brings in the whole album. If a song was missing from the playlist, or the playlist named it oddly, it is filled in by finding a video of the right length, so albums no longer come in with tracks dropped.',
+    'If you added an artist, you can now rename an individual song. In Manage My Artists, open an album’s tracks and each song has a Rename button, handy for cleaning up a title that came in from YouTube with extra text in the name.',
   ]},
   { date: '2026-08-02', items: [
     'Highlighting a lyric and choosing to comment on it now quotes those exact words straight into your comment box, ready to write under.',
