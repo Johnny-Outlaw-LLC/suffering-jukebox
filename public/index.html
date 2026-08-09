@@ -1908,6 +1908,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   </div>
   <span class="ytp-mf-sep" aria-hidden="true"></span>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Expand" id="ytp-mf-restore"></button>
+  <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleFullscreen()" title="Maximize" id="ytp-mf-maximize"></button>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close">✕</button>
   <div id="ytp-mf-lyric-strip"><span class="lyr-strip-line"></span><span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span></div>
 </div>
@@ -2134,17 +2135,22 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="modal-close" onclick="taConsentDecide(false)">✕</button>
     </div>
     <div class="modal-body" style="gap:.9rem">
-      <div style="font-size:.6rem;line-height:1.6">
-        Upload audio only if <strong>you own the rights to this music</strong>. This must not be used
-        for copyrighted music you do not own the rights to.
-      </div>
-      <div style="font-size:.52rem;color:var(--text-muted);line-height:1.6">
-        Your account and the date of this consent are recorded with every uploaded file, and all plays are logged.
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
+        <input type="checkbox" id="taConsentPersonal" onchange="taConsentSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
+        <span>I own the rights to personally stream this song. Make background play available for me only</span>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
+        <input type="checkbox" id="taConsentPublic" onchange="taConsentSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
+        <span>Public play — make background play available to everyone on this track</span>
+      </label>
+      <div id="taConsentWarn" style="display:none;border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
+        ⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted
+        music you do not own. Your account and consent date are recorded with every file, and all plays are logged.
       </div>
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="taConsentDecide(false)">Cancel</button>
-      <button class="m-btn" onclick="taConsentDecide(true)">I own the rights — continue</button>
+      <button class="m-btn" id="taConsentContinue" onclick="taConsentDecide(true)" disabled>Continue</button>
     </div>
   </div>
 </div>
@@ -2157,14 +2163,18 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="modal-close" onclick="taBatchClose()">✕</button>
     </div>
     <div class="modal-body" style="gap:.9rem">
-      <div style="border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
-        ⚠ Only upload audio you own the rights to. It must not be applied to copyrighted music you do not
-        own. Your account and consent date are recorded with every file, and all plays are logged.
-      </div>
-      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none">
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
         <input type="checkbox" id="taBatchConsent" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>I own the rights to this music and consent to it being stored for background play.</span>
+        <span>I own the rights to personally stream this song. Make background play available for me only</span>
       </label>
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
+        <input type="checkbox" id="taBatchPublic" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
+        <span>Public play — make background play available to everyone on these tracks</span>
+      </label>
+      <div id="taBatchWarn" style="display:none;border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
+        ⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted
+        music you do not own. Your account and consent date are recorded with every file, and all plays are logged.
+      </div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
         <label class="m-btn" style="cursor:pointer;margin:0">＋ Select files<input type="file" accept="audio/*" multiple style="display:none" onchange="taBatchAddFiles(this)"></label>
         <label class="m-btn ghost" style="cursor:pointer;margin:0">📁 Select a folder<input type="file" accept="audio/*" multiple webkitdirectory style="display:none" onchange="taBatchAddFiles(this)"></label>
@@ -2821,7 +2831,8 @@ let _taAudioEl          = null;  // real <audio> element that plays while the pa
 let _taBgActive         = false; // sound is currently coming from the uploaded audio, not the embed
 let _taBgLogged         = false; // play_event already logged for the current background track
 let _taBgStartPos       = 0;     // where background audio started (for the 10s play threshold)
-let _taConsentOk        = false; // rights-ownership notice acknowledged this session
+let _taConsentOk        = false; // personal-rights checkbox acknowledged this session
+let _taPublicPlay       = false; // Public play option chosen for the current upload flow
 let _taConsentResolve   = null;  // pending in-app consent modal resolver
 let _taBatch            = null;  // { artistId, albumId, tracks, files, assign } for the batch uploader
 let _taManualAudio      = false; // audio-only mode toggled from the player toolbar
@@ -4550,6 +4561,8 @@ function showYtpMiniFooter() {
   el.classList.add('open');
   const restoreBtn = document.getElementById('ytp-mf-restore');
   if (restoreBtn) ytpSetWinIcon(restoreBtn, 'restore');
+  const maxBtn = document.getElementById('ytp-mf-maximize');
+  if (maxBtn) ytpSetWinIcon(maxBtn, 'maximize');
   ytpUpdateMiniFooter();
   ytpMfApplyLyricStrip();
   const titleEl = document.getElementById('ytp-mf-title');
@@ -6688,18 +6701,40 @@ function taOnAudioTime() {
   }
 }
 
-// ── Audio upload (rights holders only) ─────────────────────────
-// In-app rights-consent modal (once per session). Resolves true if accepted.
+// ── Audio upload (personal / public rights) ────────────────────
+// In-app rights-consent modal. Personal checkbox required; Public play is
+// optional and is the only option that shows the ownership warning.
+function taConsentSync() {
+  const personal = !!document.getElementById('taConsentPersonal')?.checked;
+  const pub = !!document.getElementById('taConsentPublic')?.checked;
+  const warn = document.getElementById('taConsentWarn');
+  const btn = document.getElementById('taConsentContinue');
+  if (warn) warn.style.display = pub ? '' : 'none';
+  if (btn) btn.disabled = !personal;
+  // Public play implies the personal-rights base consent.
+  if (pub && !personal) {
+    const p = document.getElementById('taConsentPersonal');
+    if (p) { p.checked = true; if (btn) btn.disabled = false; }
+  }
+}
 function taConsentModal() {
-  if (_taConsentOk) return Promise.resolve(true);
   return new Promise(res => {
     _taConsentResolve = res;
+    const p = document.getElementById('taConsentPersonal');
+    const pub = document.getElementById('taConsentPublic');
+    if (p) p.checked = _taConsentOk;
+    if (pub) pub.checked = _taPublicPlay;
+    taConsentSync();
     document.getElementById('audioConsentOverlay').classList.add('open');
   });
 }
 function taConsentDecide(ok) {
   document.getElementById('audioConsentOverlay').classList.remove('open');
-  if (ok) _taConsentOk = true;
+  if (ok) {
+    _taConsentOk = !!document.getElementById('taConsentPersonal')?.checked;
+    _taPublicPlay = !!document.getElementById('taConsentPublic')?.checked;
+    if (!_taConsentOk) ok = false;
+  }
   const r = _taConsentResolve; _taConsentResolve = null;
   if (r) r(ok);
 }
@@ -6729,19 +6764,21 @@ function taProbeDuration(file) {
 
 // Upload one File for one track. Returns {ok, msg, warn} - no DOM side effects,
 // so both the per-track inputs and the batch uploader can share it.
-async function taUploadOneFile(trackId, file, expectMs) {
+// isPublic overrides the session Public-play checkbox when provided.
+async function taUploadOneFile(trackId, file, expectMs, isPublic) {
   if (!file) return { ok: false, msg: 'No file' };
   if (file.size > 30 * 1024 * 1024) return { ok: false, msg: 'Too big (max 30 MB)' };
   try {
     const { data: { session } } = await sbAuth.auth.getSession();
     if (!session) return { ok: false, msg: 'Not signed in' };
+    const pub = (typeof isPublic === 'boolean') ? isPublic : !!_taPublicPlay;
     const ext = ((file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'mp3';
     const path = `${trackId}/${Date.now()}-${Math.floor(performance.now())}.${ext}`;
     const dur = await taProbeDuration(file);
     const { error } = await sbAuth.storage.from('jukebox-audio')
       .upload(path, file, { contentType: file.type || 'audio/mpeg', upsert: false });
     if (error) throw new Error(error.message);
-    await dbUpsert('/track_audio', 'track_id', {
+    await dbUpsert('/track_audio', 'track_id,uploaded_by', {
       track_id: trackId,
       storage_path: path,
       source_video_id: ytData[trackId]?.video_id || null,
@@ -6750,14 +6787,18 @@ async function taUploadOneFile(trackId, file, expectMs) {
       uploader_email: session.user.email || null,
       uploader_name: googleUser?.name || null,
       consent_at: new Date().toISOString(),
+      is_public: pub,
     });
-    taData[trackId] = { url: taPublicUrl(path), duration: dur };
+    taData[trackId] = { url: taPublicUrl(path), duration: dur, isPublic: pub, uploadedBy: session.user.id };
     const diff = (expectMs && dur) ? Math.abs(dur - expectMs / 1000) : 0;
+    const ready = pub ? '✓ Ready for public background play' : '✓ Ready for your background play only';
     return { ok: true, warn: diff > 3 ? Math.round(diff) : 0,
-             msg: diff > 3 ? `✓ Uploaded - ${Math.round(diff)}s off the video` : '✓ Ready for background play' };
+             msg: diff > 3 ? `✓ Uploaded - ${Math.round(diff)}s off the video` : ready };
   } catch (e) {
-    const msg = /policy|denied|row-level|duplicate/i.test(e.message || '')
-      ? 'Audio for this track was uploaded by someone else' : (e.message || 'Upload failed');
+    const msg = /one_public|duplicate key|unique/i.test(e.message || '')
+      ? 'Someone already made public audio for this track'
+      : /policy|denied|row-level/i.test(e.message || '')
+        ? 'Could not save audio for this track' : (e.message || 'Upload failed');
     return { ok: false, msg };
   }
 }
@@ -6766,10 +6807,13 @@ async function taUploadFile(trackId, inputEl, expectMs) {
   const file = inputEl.files?.[0];
   if (!file) return;
   inputEl.value = '';
+  // Prefer the fine-tune Public play checkbox when that panel is open.
+  const amPub = document.getElementById('amTaPublic');
+  if (amPub) _taPublicPlay = !!amPub.checked;
   const st = document.getElementById('ta-st-' + trackId);
   const setSt = (t, color) => { if (st) { st.textContent = t; st.style.color = color || ''; } };
   setSt('Uploading…', '');
-  const r = await taUploadOneFile(trackId, file, expectMs);
+  const r = await taUploadOneFile(trackId, file, expectMs, _taPublicPlay);
   setSt(r.ok ? r.msg : '✗ ' + r.msg, r.ok ? (r.warn ? '#f59e0b' : '#22c55e') : '#ef4444');
 }
 
@@ -6809,10 +6853,13 @@ async function taBatchOpen(artistId, albumId) {
   document.getElementById('taBatchTitle').textContent =
     'Background audio · ' + (artist?.name || '') + (album ? ' · ' + album.name : ' · all albums');
   document.getElementById('taBatchConsent').checked = _taConsentOk;
+  const pubEl = document.getElementById('taBatchPublic');
+  if (pubEl) pubEl.checked = _taPublicPlay;
   document.getElementById('taBatchStatus').textContent = '';
   document.getElementById('taBatchUploadBtn').disabled = true;
   document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
   document.getElementById('audioBatchOverlay').classList.add('open');
+  taBatchSync();
   try {
     const albumIds = albumId ? [albumId] : (artist?.albums || []).map(a => a.id);
     const rows = [];
@@ -6897,14 +6944,24 @@ function taBatchReassign(tid, val) {
 
 function taBatchSync() {
   const consent = document.getElementById('taBatchConsent')?.checked;
+  const pub = document.getElementById('taBatchPublic')?.checked;
+  const warn = document.getElementById('taBatchWarn');
+  if (warn) warn.style.display = pub ? '' : 'none';
+  // Public play implies the personal-rights base consent.
+  if (pub && !consent) {
+    const c = document.getElementById('taBatchConsent');
+    if (c) c.checked = true;
+  }
+  const personal = !!document.getElementById('taBatchConsent')?.checked;
   const n = _taBatch ? Object.values(_taBatch.assign).filter(v => v != null).length : 0;
   const btn = document.getElementById('taBatchUploadBtn');
-  if (btn) { btn.disabled = !(consent && n > 0); btn.textContent = n > 0 ? `Upload ${n} file${n === 1 ? '' : 's'}` : 'Upload matched'; }
+  if (btn) { btn.disabled = !(personal && n > 0); btn.textContent = n > 0 ? `Upload ${n} file${n === 1 ? '' : 's'}` : 'Upload matched'; }
 }
 
 async function taBatchUpload() {
   if (!_taBatch || !document.getElementById('taBatchConsent').checked) return;
   _taConsentOk = true;
+  _taPublicPlay = !!document.getElementById('taBatchPublic')?.checked;
   const entries = Object.entries(_taBatch.assign).filter(([, fi]) => fi != null);
   if (!entries.length) return;
   const btn = document.getElementById('taBatchUploadBtn');
@@ -6915,7 +6972,7 @@ async function taBatchUpload() {
     const cell = document.getElementById('tabx-' + tid);
     if (cell) { cell.textContent = 'uploading…'; cell.style.color = ''; }
     const t = _taBatch.tracks.find(x => x.id === tid);
-    const r = await taUploadOneFile(tid, _taBatch.files[fi], t?.duration_ms);
+    const r = await taUploadOneFile(tid, _taBatch.files[fi], t?.duration_ms, _taPublicPlay);
     done++; if (r.ok) ok++;
     if (cell) {
       cell.textContent = r.ok ? (r.warn ? `±${r.warn}s` : '✓ done') : '✗ ' + r.msg;
@@ -8533,27 +8590,30 @@ function shuffleInPlace(arr) {
 async function resolvePlaylistTracks(trackIds) {
   const ids = [...new Set((trackIds || []).filter(Boolean))];
   if (!ids.length) return {};
-  let tRows = [];
-  for (let i = 0; i < ids.length; i += 50) {
-    tRows = tRows.concat(await dbGet(`/tracks?id=in.(${ids.slice(i, i + 50).join(',')})&select=id,name,album_id`));
-  }
-  const yt = await loadYT(ids);
+  const tChunks = [];
+  for (let i = 0; i < ids.length; i += 50) tChunks.push(ids.slice(i, i + 50));
+  // Names + video ids in parallel — playback does not need YouTube stats.
+  const [tChunkRows, yt] = await Promise.all([
+    Promise.all(tChunks.map(c => dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id`))),
+    loadYTVideoIds(ids),
+  ]);
+  const tRows = tChunkRows.flat();
   // Stamp SJ_TRACK_META so the player title bar / tab title resolve an artist
   // even when this track's artist was never visited via laEnsureArtistData.
   const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
   let albById = {};
   if (albumIds.length) {
-    let albRows = [];
-    for (let i = 0; i < albumIds.length; i += 50) {
-      albRows = albRows.concat(await dbGet(`/albums?id=in.(${albumIds.slice(i, i + 50).join(',')})&select=id,name,artist_id,release_date`));
-    }
+    const aChunks = [];
+    for (let i = 0; i < albumIds.length; i += 50) aChunks.push(albumIds.slice(i, i + 50));
+    const albRows = (await Promise.all(aChunks.map(c =>
+      dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,artist_id,release_date`)))).flat();
     albRows.forEach(a => { albById[a.id] = a; });
     const artistIds = [...new Set(albRows.map(a => a.artist_id).filter(Boolean))];
     if (artistIds.length) {
-      let artRows = [];
-      for (let i = 0; i < artistIds.length; i += 50) {
-        artRows = artRows.concat(await dbGet(`/artists?id=in.(${artistIds.slice(i, i + 50).join(',')})&select=id,name`));
-      }
+      const artChunks = [];
+      for (let i = 0; i < artistIds.length; i += 50) artChunks.push(artistIds.slice(i, i + 50));
+      const artRows = (await Promise.all(artChunks.map(c =>
+        dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat();
       const artById = {};
       artRows.forEach(a => { artById[a.id] = a; });
       tRows.forEach(t => {
@@ -8575,29 +8635,33 @@ async function landingShuffleAll() {
   try {
     const artistIds = getVisibleLandingStats().flatMap(r => (r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id]);
     if (!artistIds.length) return;
-    let albRows = await dbGet(`/albums?artist_id=in.(${artistIds.join(',')})&order=release_date.asc`);
+    // Albums + artist names together — still no YouTube stats here.
+    let [albRows, artRows] = await Promise.all([
+      dbGet(`/albums?artist_id=in.(${artistIds.join(',')})&select=id,name,artist_id,release_date&order=release_date.asc`),
+      dbGet(`/artists?id=in.(${artistIds.join(',')})&select=id,name`),
+    ]);
     albRows = albRows.filter(a => !a.name.toLowerCase().includes('early times'));
     if (!albRows.length) return;
     const albumIds = albRows.map(a => a.id);
     const albById = {}; albRows.forEach(a => { albById[a.id] = a; });
-    // Stamp SJ_TRACK_META so the player title bar / tab title show an artist -
-    // this catalogue-wide shuffle spans artists never individually visited via laEnsureArtistData.
-    const artRows = await dbGet(`/artists?id=in.(${[...new Set(albRows.map(a => a.artist_id))].join(',')})&select=id,name`);
     const artById = {}; artRows.forEach(a => { artById[a.id] = a; });
     const chunks = [];
     for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
-    const results = await Promise.all(chunks.map(c => dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id`)));
-    const trackRows = results.flat();
+    const trackRows = (await Promise.all(chunks.map(c =>
+      dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id`)))).flat();
     trackRows.forEach(t => {
       const alb = albById[t.album_id];
       const art = alb && artById[alb.artist_id];
       if (art) SJ_TRACK_META[t.id] = { artist: art.name || '', album: alb.name || '', year: (alb.release_date || '').slice(0, 4) };
     });
-    const yt = await loadYT(trackRows.map(t => t.id));
+    // Video ids only — views/likes/thumbnails belong on artist-page chart loads.
+    const yt = await loadYTVideoIds(trackRows.map(t => t.id));
     const q = shuffleInPlace(trackRows.filter(t => yt[t.id]?.video_id))
       .map(t => ({ videoId: yt[t.id].video_id, title: t.name, trackId: t.id }));
     if (!q.length) { alert('No playable tracks found.'); return; }
     landingPlayQueue(q);
+    // Background-play audio for the head of the queue only (not the whole catalogue).
+    loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
   } catch (e) {
     console.warn('landingShuffleAll error', e);
   } finally {
@@ -9194,16 +9258,17 @@ async function loadData() {
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
+// Full YouTube metrics for UI (views / likes / thumbnails / video id).
+// Use on artist-page loads where charts and cards need the numbers — not for
+// building a play queue. Playback only needs loadYTVideoIds().
 async function loadYT(trackIds) {
   if (!trackIds.length) return {};
-  const allMetrics = [];
-  for (let i = 0; i < trackIds.length; i += 50) {
-    const chunk = trackIds.slice(i, i + 50).join(',');
-    const m = await dbGet(`/metrics?metric_source=eq.youtube&track_id=in.(${chunk})`);
-    allMetrics.push(...m);
-  }
+  const chunks = [];
+  for (let i = 0; i < trackIds.length; i += 50) chunks.push(trackIds.slice(i, i + 50));
+  const results = await Promise.all(chunks.map(chunk =>
+    dbGet(`/metrics?metric_source=eq.youtube&track_id=in.(${chunk.join(',')})`)));
   const map = {};
-  for (const row of allMetrics) {
+  for (const row of results.flat()) {
     const tid = row.track_id;
     if (!map[tid]) map[tid] = {};
     if (row.metric_name === 'youtube_views')     map[tid].views     = Number(row.metric_value);
@@ -9215,16 +9280,51 @@ async function loadYT(trackIds) {
   return map;
 }
 
-// Rights-holder-uploaded audio files (background play) for these tracks.
+// Playback-only lookup: just the YouTube video id for each track. Parallel
+// chunks, no views/likes/thumbnails, no catalogue-wide audio preload.
+async function loadYTVideoIds(trackIds) {
+  if (!trackIds.length) return {};
+  const ids = [...new Set(trackIds.filter(Boolean))];
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 80) chunks.push(ids.slice(i, i + 80));
+  const results = await Promise.all(chunks.map(chunk =>
+    dbGet(`/metrics?metric_source=eq.youtube&metric_name=eq.youtube_video_id&track_id=in.(${chunk.join(',')})&select=track_id,metric_text_value`)));
+  const map = {};
+  results.flat().forEach(row => {
+    if (!row.track_id || !row.metric_text_value) return;
+    map[row.track_id] = { video_id: row.metric_text_value };
+    if (!ytData[row.track_id]) ytData[row.track_id] = {};
+    if (!ytData[row.track_id].video_id) ytData[row.track_id].video_id = row.metric_text_value;
+  });
+  return map;
+}
+
+// Uploaded audio files (background play) for these tracks.
+// Prefer the signed-in user's own file; otherwise use a public file.
 async function loadTrackAudio(trackIds) {
   if (!trackIds.length) return;
   try {
+    const uid = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session?.user?.id || null;
     const chunks = [];
     for (let i = 0; i < trackIds.length; i += 50) chunks.push(trackIds.slice(i, i + 50));
     const results = await Promise.all(chunks.map(c =>
-      dbGet(`/track_audio?track_id=in.(${c.join(',')})&select=track_id,storage_path,duration_seconds`)));
+      dbGetAuth(`/track_audio?track_id=in.(${c.join(',')})&select=track_id,storage_path,duration_seconds,is_public,uploaded_by`)));
+    const best = {};
     results.flat().forEach(r => {
-      taData[r.track_id] = { url: taPublicUrl(r.storage_path), duration: Number(r.duration_seconds) || null };
+      const cur = best[r.track_id];
+      const mine = !!(uid && r.uploaded_by === uid);
+      const curMine = !!(uid && cur && cur.uploaded_by === uid);
+      if (!cur) { best[r.track_id] = r; return; }
+      if (mine && !curMine) { best[r.track_id] = r; return; }
+      if (!mine && !curMine && r.is_public && !cur.is_public) best[r.track_id] = r;
+    });
+    Object.values(best).forEach(r => {
+      taData[r.track_id] = {
+        url: taPublicUrl(r.storage_path),
+        duration: Number(r.duration_seconds) || null,
+        isPublic: !!r.is_public,
+        uploadedBy: r.uploaded_by || null,
+      };
     });
     taSyncAudioBtn();
   } catch (_) {}
@@ -10726,27 +10826,55 @@ function amFtRender() {
     </div>
     <div class="am-ft-section">
       <div class="m-fl">Background play (optional)</div>
-      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none">
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
         <input type="checkbox" id="amTaChk" onchange="amTaToggle(this.checked)" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>Upload audio files for these tracks so the music keeps playing when the phone screen is off or the app is in the background.</span>
+        <span>I own the rights to personally stream this song. Make background play available for me only</span>
       </label>
+      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5;margin-top:.45rem">
+        <input type="checkbox" id="amTaPublic" onchange="amTaPublicToggle(this.checked)" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
+        <span>Public play — make background play available to everyone on these tracks</span>
+      </label>
+      <div id="amTaWarn" style="display:none;border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.5rem;padding:.5rem .6rem;border-radius:6px;margin-top:.55rem;line-height:1.5">
+        ⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted
+        music you do not own the rights to. Your account and the date of this consent are recorded with every
+        uploaded file, and all plays are logged.
+      </div>
       <div id="amTaBody" style="display:none;margin-top:.6rem"></div>
     </div>`;
   amBgSync();
   amFtDedupArts();   // fire-and-forget: hide duplicate cover options as hashes come in
 }
 
+function amTaPublicToggle(checked) {
+  const warn = document.getElementById('amTaWarn');
+  if (warn) warn.style.display = checked ? '' : 'none';
+  _taPublicPlay = !!checked;
+  if (checked) {
+    const personal = document.getElementById('amTaChk');
+    if (personal && !personal.checked) {
+      personal.checked = true;
+      amTaToggle(true);
+      return;
+    }
+  }
+}
+
 async function amTaToggle(checked) {
   const body = document.getElementById('amTaBody');
   if (!body) return;
-  if (!checked) { body.style.display = 'none'; return; }
-  _taConsentOk = true;   // the rights notice is displayed right below the checkbox
+  if (!checked) {
+    body.style.display = 'none';
+    const pub = document.getElementById('amTaPublic');
+    if (pub) { pub.checked = false; }
+    const warn = document.getElementById('amTaWarn');
+    if (warn) warn.style.display = 'none';
+    _taPublicPlay = false;
+    return;
+  }
+  _taConsentOk = true;
+  _taPublicPlay = !!document.getElementById('amTaPublic')?.checked;
   body.style.display = '';
-  const warn = `<div style="border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.5rem;padding:.5rem .6rem;border-radius:6px;margin-bottom:.6rem;line-height:1.5">
-    ⚠ Only check this option if you own the rights to this music. It must not be applied to copyrighted
-    music you do not own the rights to. Your account and the date of this consent are recorded with every
-    uploaded file, and all plays are logged.</div>`;
-  body.innerHTML = warn + '<div class="oa-albs-note">Loading tracks…</div>';
+  body.innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
   try {
     const albumIds = (amFt?.albums || []).map(a => a.id);
     if (!albumIds.length) throw new Error('No albums to load tracks for');
@@ -10756,7 +10884,7 @@ async function amTaToggle(checked) {
     const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const albName = {};
     (amFt.albums || []).forEach(a => { albName[a.id] = a.name; });
-    body.innerHTML = warn + albumIds.map(aid => {
+    body.innerHTML = albumIds.map(aid => {
       const trs = rows.filter(t => t.album_id === aid);
       if (!trs.length) return '';
       return `<div style="font-size:.5rem;font-weight:600;margin:.5rem 0 .25rem;opacity:.8">${esc(albName[aid] || '')}</div>` +
@@ -10769,7 +10897,7 @@ async function amTaToggle(checked) {
         </div>`).join('');
     }).join('');
   } catch (e) {
-    body.innerHTML = warn + `<div style="color:#ef4444;font-size:.55rem">${(e.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
+    body.innerHTML = `<div style="color:#ef4444;font-size:.55rem">${(e.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
   }
 }
 // Hide visually-duplicate cover options (same art served from different video thumbnails).
@@ -11498,11 +11626,16 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-04';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-09';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-09', items: [
+    'Background-play audio uploads now start as personal: check “I own the rights to personally stream this song. Make background play available for me only,” and the audio stays on your account. There is a separate Public play checkbox if you want everyone to get background play on that track — the ownership warning only appears when you turn Public play on.',
+    'Shuffle All and Shuffle Favorites on the home page start much faster — they no longer pull YouTube view/like stats just to build a play queue.',
+    'The minimized player bar has a Maximize button, so you can jump straight to full screen without restoring the floating window first.',
+  ]},
   { date: '2026-08-04', items: [
     'The player now notices when a song fails to play — removed, blocked, or just stuck — and automatically reports it and skips to the next track in your queue, instead of leaving you staring at a dead player.',
   ]},
