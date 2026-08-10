@@ -4,10 +4,14 @@ import { SJ_SUPABASE_URL } from "@/lib/sj-admin-auth";
 export const runtime = "edge";
 
 /**
- * Same-origin CDN front for public jukebox-audio.
- * Browsers hit sufferingjukebox.stream (Vercel edge / any Cloudflare in front)
- * instead of supabase.co on every play, so repeat listens stay cheap.
- * Supports Range requests for seeking.
+ * Same-origin front for public jukebox-audio.
+ *
+ * IMPORTANT: HTML5 <audio> seeking (and most mobile play starts) send Range
+ * requests and need a real 206 + Content-Range. Caching a full-body 200 at the
+ * CDN and then answering Range with that cached 200 makes playback go silent
+ * the moment we hand off from YouTube mid-track. So:
+ *  - Range requests always hit Supabase with cache: "no-store"
+ *  - Vercel CDN is told not to store these responses (browser may still cache)
  */
 export async function GET(
   req: NextRequest,
@@ -30,9 +34,10 @@ export async function GET(
   try {
     upstreamRes = await fetch(upstream, {
       headers,
-      // Cache at the edge between origin fetches
-      next: { revalidate: 86400 * 30 },
-    } as RequestInit);
+      // Never reuse a full-body Next fetch cache for a Range request — that
+      // returns status 200 without Content-Range and breaks <audio>.
+      cache: "no-store",
+    });
   } catch (e) {
     console.error("[sj-audio] fetch", e);
     return NextResponse.json({ ok: false, error: "Upstream error." }, { status: 502 });
@@ -43,6 +48,8 @@ export async function GET(
       status: upstreamRes.status,
       headers: {
         "Cache-Control": "public, max-age=60",
+        "CDN-Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store",
       },
     });
   }
@@ -61,10 +68,12 @@ export async function GET(
     if (v) out.set(h, v);
   }
   if (!out.has("accept-ranges")) out.set("Accept-Ranges", "bytes");
-  // Long-lived CDN cache — audio objects are immutable by path (timestamped filenames)
+  out.set("Vary", "Range");
+  // Browser can keep a copy; do not let the Vercel CDN store a full 200 that
+  // later answers Range incorrectly (that was the silent-handoff bug).
   out.set("Cache-Control", "public, max-age=31536000, immutable");
-  out.set("CDN-Cache-Control", "public, max-age=31536000");
-  out.set("Vercel-CDN-Cache-Control", "public, max-age=31536000");
+  out.set("CDN-Cache-Control", "no-store");
+  out.set("Vercel-CDN-Cache-Control", "no-store");
   out.set("Access-Control-Allow-Origin", "*");
   out.set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges");
 

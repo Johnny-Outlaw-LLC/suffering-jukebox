@@ -6760,11 +6760,11 @@ function ytpOpenInYouTube() {
 // return we hand it back to the embed. The OS media pipeline owns the audio
 // element, so lock-screen play/pause/next/prev and screen-off playback work.
 function taPublicUrl(path) {
-  // Same-origin CDN front (/api/sj-audio) so repeat plays hit the edge cache
-  // instead of supabase storage egress on every listen.
+  // Same-origin audio front (/api/sj-audio). ?v=2 busts an older CDN cache
+  // that answered Range requests with full-body 200s (silent mid-track handoff).
   if (!path) return '';
   const parts = String(path).split('/').map(encodeURIComponent).join('/');
-  return sjApiUrl('/api/sj-audio/' + parts);
+  return sjApiUrl('/api/sj-audio/' + parts + '?v=2');
 }
 
 function taTrackAudio(trackId) { return (trackId && taData[trackId]) || null; }
@@ -6904,8 +6904,42 @@ function taPrimeAudioEl(item) {
   a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = v; }).catch(() => { a.volume = v; });
 }
 
-// Page just hid: take over from the embed if the current track has audio.
-// Returns true when background audio is now carrying the sound.
+function taWaitAudioReady(a, timeoutMs) {
+  if (a.readyState >= 1 && Number.isFinite(a.duration) && a.duration > 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (fn, arg) => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      a.removeEventListener('loadedmetadata', onMeta);
+      a.removeEventListener('canplay', onMeta);
+      a.removeEventListener('error', onErr);
+      fn(arg);
+    };
+    const onMeta = () => finish(resolve);
+    const onErr = () => finish(reject, new Error('audio load failed'));
+    const t = setTimeout(() => finish(reject, new Error('audio load timeout')), timeoutMs || 12000);
+    a.addEventListener('loadedmetadata', onMeta);
+    a.addEventListener('canplay', onMeta);
+    a.addEventListener('error', onErr);
+  });
+}
+
+function taFailBgAudio(reason) {
+  _taBgActive = false;
+  _taManualAudio = false;
+  taSyncAudioBtn();
+  try { _taAudioEl?.pause(); } catch (_) {}
+  try {
+    if (_ytUserWantsPlay) ytAPIPlayer?.playVideo?.();
+  } catch (_) {}
+  ytpStartBgKeepalive();
+  if (reason) showToast(reason);
+}
+
+// Hand sound to the uploaded MP3. Returns true once play() has started
+// (or been kicked off); on failure restores YouTube so we never sit silent.
 function taEnterBgAudio() {
   const item = ytQueue[ytQueueIdx];
   const ta = taTrackAudio(item?.trackId);
@@ -6918,16 +6952,32 @@ function taEnterBgAudio() {
   let pos = 0;
   try { pos = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
   const a = taEnsureAudioEl();
-  if (a.dataset.trackId !== String(item.trackId)) { a.src = ta.url; a.dataset.trackId = String(item.trackId); }
+  // Always (re)assign so cache-busted URLs replace a stale src for the same track.
+  a.src = ta.url;
+  a.dataset.trackId = String(item.trackId);
   _taBgActive = true;
   _taBgLogged = true;   // the embed already logged this play - don't double count
   _taBgStartPos = pos;
   try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
   ytpStopBgKeepalive(); // real audio holds the media pipeline now
-  try { a.currentTime = pos; } catch (_) {}
-  a.play().then(() => ytpSetMediaPlaybackState('playing'))
-          .catch(() => { _taBgActive = false; ytpStartBgKeepalive(); });
-  return _taBgActive;
+
+  const start = async () => {
+    try {
+      if (a.readyState < 1) a.load();
+      await taWaitAudioReady(a, 12000);
+      if (pos > 0.5 && Number.isFinite(a.duration) && a.duration > 0) {
+        try { a.currentTime = Math.min(pos, Math.max(0, a.duration - 0.35)); } catch (_) {}
+      }
+      await a.play();
+      ytpSetMediaPlaybackState('playing');
+      taSyncAudioBtn();
+    } catch (e) {
+      console.warn('taEnterBgAudio failed', e);
+      taFailBgAudio('Background audio failed to start — back on YouTube.');
+    }
+  };
+  start();
+  return true;
 }
 
 // Leave audio-only mode (user toggled off, or forced). Does not clear the
@@ -6974,10 +7024,21 @@ function taPlayBgIdx(idx) {
   const a = taEnsureAudioEl();
   a.src = ta.url;
   a.dataset.trackId = String(item.trackId);
-  try { a.currentTime = 0; } catch (_) {}
   _taBgLogged = false;
   _taBgStartPos = 0;
-  a.play().catch(() => {});
+  const start = async () => {
+    try {
+      a.load();
+      await taWaitAudioReady(a, 12000);
+      try { a.currentTime = 0; } catch (_) {}
+      await a.play();
+      ytpSetMediaPlaybackState('playing');
+    } catch (e) {
+      console.warn('taPlayBgIdx failed', e);
+      taFailBgAudio('Background audio failed to start — back on YouTube.');
+    }
+  };
+  start();
   ytVideoId = item.videoId;
   nowPlayingTrackId = item.trackId || null;
   ytpUpdateMediaSession();
@@ -12442,6 +12503,7 @@ const SJ_CHANGELOG = [
     'Lyrics are larger and easier to read on phones.',
     'Removed the mystery volume slider from the phone player — use your device volume instead.',
     'Background Play stays visible on phones once you unlock it, and it appears as soon as a track’s uploaded audio is ready (including when you press Play on an artist card).',
+    'Fixed Background Play going silent: the audio handoff from YouTube now waits for the MP3 to load before seeking, and if it fails YouTube takes over again instead of leaving you with no sound.',
   ]},
   { date: '2026-08-09', items: [
     'Home is now My Jukebox — continue with favorites, playlists, and a clear door into Explore Artists (the full community catalogue).',
