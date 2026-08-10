@@ -394,12 +394,15 @@ body:not(.light) .tt-num { color: var(--text); }
 .am-swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid #333; box-sizing: border-box; padding: 0; }
 .am-swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px #ffffff33; }
 .am-swatch-custom { width: 26px; height: 26px; border-radius: 50%; border: 2px dashed #555; background: none; cursor: pointer; padding: 0; }
-#am-minibar { position: fixed; bottom: 16px; right: 16px; z-index: 4900; display: none; align-items: center; gap: 8px; background: #141210; border: 1px solid var(--accent); border-radius: 999px; padding: .55rem .95rem; font-family: var(--mono); font-size: .55rem; color: var(--text); cursor: pointer; box-shadow: 0 4px 18px rgba(0,0,0,.55); max-width: min(430px, calc(100vw - 32px)); transition: background .15s; }
-#am-minibar:hover { background: #1d1815; }
-#am-minibar.done { border-color: #22c55e; }
-#am-minibar.err { border-color: #ef4444; }
-#am-minibar .am-mini-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 640px) { #am-minibar { bottom: 76px; right: 12px; } }
+#am-minibar, #ta-minibar { position: fixed; bottom: 16px; right: 16px; z-index: 4900; display: none; align-items: center; gap: 8px; background: #141210; border: 1px solid var(--accent); border-radius: 999px; padding: .55rem .95rem; font-family: var(--mono); font-size: .55rem; color: var(--text); cursor: pointer; box-shadow: 0 4px 18px rgba(0,0,0,.55); max-width: min(430px, calc(100vw - 32px)); transition: background .15s; }
+#am-minibar:hover, #ta-minibar:hover { background: #1d1815; }
+#am-minibar.done, #ta-minibar.done { border-color: #22c55e; }
+#am-minibar.err, #ta-minibar.err { border-color: #ef4444; }
+#am-minibar .am-mini-txt, #ta-minibar .ta-mini-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { #am-minibar, #ta-minibar { bottom: 76px; right: 12px; } }
+/* stack above Add Music pill when both are up */
+#ta-minibar { bottom: 64px; }
+@media (max-width: 640px) { #ta-minibar { bottom: 124px; } }
 .am-ident-card { display: flex; gap: .8rem; background: #161311; border: 1px solid var(--accent); border-radius: 8px; padding: .8rem; align-items: flex-start; }
 .am-ident-card img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
 .am-ident-extract { font-size: .55rem; color: #bbb; line-height: 1.55; margin-top: .3rem; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1176,18 +1179,46 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-block:hover { border-color: #ef4444; color: #ef4444; }
 #ytp-mini-footer .tvb-up { color: #22c55e; }
 @media (max-width: 640px) {
-  /* Extra inset so the vote / close buttons clear the phone's rounded corners
-     and home indicator (env() adds more on notched devices, 0 elsewhere). */
+  /* Mobile mini bar: title row + big transport row. No windowed chrome —
+     restore expands to fullscreen; maximize is unused (hidden). */
   .ytp-mini-footer {
-    gap: 8px;
-    padding: 8px calc(20px + env(safe-area-inset-right, 0px))
-             calc(12px + env(safe-area-inset-bottom, 0px)) calc(20px + env(safe-area-inset-left, 0px));
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    grid-template-areas:
+      "vote title restore close"
+      "controls controls controls controls";
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 10px;
+    padding: 12px calc(16px + env(safe-area-inset-right, 0px))
+             calc(14px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
   }
-  .ytp-mf-title { font-size: .58rem; }
-  .ytp-mf-sub { font-size: .44rem; }
-  .ytp-mf-btn { width: 27px; height: 27px; }
-  #ytp-mf-lyric-strip { font-size: .55rem; padding: 6px 12px; }
-  .ytp-mf-sep { margin: 3px 0; }
+  #ytp-mf-vote { grid-area: vote; width: 44px; height: 44px; }
+  .ytp-mf-title {
+    grid-area: title; font-size: .72rem; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ytp-mf-sub { font-size: .48rem; }
+  .ytp-mf-controls {
+    grid-area: controls; justify-content: center; gap: 12px; width: 100%;
+  }
+  .ytp-mf-btn { width: 48px; height: 48px; font-size: 1.15rem; border-radius: 14px; }
+  .ytp-mf-controls .ytp-mf-btn { width: 52px; height: 52px; font-size: 1.25rem; }
+  #ytp-mf-playpause { width: 60px; height: 60px; font-size: 1.45rem; border-color: var(--accent); color: var(--accent); }
+  .ytp-mf-sep, #ytp-mf-maximize { display: none !important; }
+  #ytp-mf-restore { grid-area: restore; }
+  #ytp-mf-close { grid-area: close; }
+  #ytp-mf-lyric-strip { font-size: .62rem; padding: 8px 14px; }
+  /* No Maximize on mobile — only fullscreen ↔ minimized. */
+  .ytp-fs-btn { display: none !important; }
+  #yt-player-container.ytp-fs .ytp-win-btn,
+  #yt-player-container.ytp-fs .sc-close {
+    width: 40px; height: 40px; min-width: 40px; font-size: 1rem;
+  }
+  #yt-player-container.ytp-fs .ytp-btn {
+    min-height: 40px; padding: 8px 12px; font-size: .58rem;
+  }
+  #yt-player-container.ytp-fs .ytp-playpause-btn { min-width: 52px; font-size: .85rem; }
 }
 .ytp-play-overlay {
   position: absolute; inset: 0;
@@ -1933,7 +1964,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <span class="ytp-mf-sep" aria-hidden="true"></span>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Expand" id="ytp-mf-restore"></button>
   <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleFullscreen()" title="Maximize" id="ytp-mf-maximize"></button>
-  <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close">✕</button>
+  <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close" id="ytp-mf-close">✕</button>
   <div id="ytp-mf-lyric-strip"><span class="lyr-strip-line"></span><span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span></div>
 </div>
 
@@ -2180,11 +2211,14 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 </div>
 
 <!-- BATCH BACKGROUND-AUDIO UPLOAD (per album or artist, auto-matched by name) -->
-<div class="modal-overlay" id="audioBatchOverlay" onclick="if(event.target===this)taBatchClose()">
+<div class="modal-overlay" id="audioBatchOverlay" onclick="if(event.target===this)taBatchRequestClose()">
   <div class="modal">
     <div class="modal-header">
       <span class="modal-title" id="taBatchTitle">Batch background audio</span>
-      <button class="modal-close" onclick="taBatchClose()">✕</button>
+      <div style="display:flex">
+        <button class="modal-close" onclick="taBatchMinimize()" title="Minimize (keeps uploading in the background)" style="font-size:1rem">–</button>
+        <button class="modal-close" onclick="taBatchRequestClose()">✕</button>
+      </div>
     </div>
     <div class="modal-body" style="gap:.9rem">
       <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
@@ -2199,7 +2233,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
         ⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted
         music you do not own. Your account and consent date are recorded with every file, and all plays are logged.
       </div>
-      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap" id="taBatchPickRow">
         <label class="m-btn" style="cursor:pointer;margin:0">＋ Select files<input type="file" accept="audio/*" multiple style="display:none" onchange="taBatchAddFiles(this)"></label>
         <label class="m-btn ghost" style="cursor:pointer;margin:0">📁 Select a folder<input type="file" accept="audio/*" multiple webkitdirectory style="display:none" onchange="taBatchAddFiles(this)"></label>
         <span style="font-size:.48rem;color:var(--text-muted)">Pick a whole album at once — files are matched to tracks by name.</span>
@@ -2207,11 +2241,17 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div id="taBatchList"><div class="oa-albs-note">Loading tracks…</div></div>
     </div>
     <div class="modal-footer">
-      <button class="m-btn ghost" onclick="taBatchClose()">Close</button>
+      <button class="m-btn ghost" id="taBatchCloseBtn" onclick="taBatchRequestClose()">Close</button>
+      <button class="m-btn ghost" id="taBatchCancelBtn" onclick="taBatchCancel()" style="display:none;border-color:#ef444455;color:#ef4444">Cancel</button>
       <button class="m-btn" id="taBatchUploadBtn" onclick="taBatchUpload()" disabled>Upload matched</button>
       <span class="mf-status" id="taBatchStatus"></span>
     </div>
   </div>
+</div>
+
+<!-- Batch audio upload minimized progress pill -->
+<div id="ta-minibar" onclick="taBatchRestore()" title="Click to reopen audio upload">
+  <span class="m-spin"></span><span class="ta-mini-txt">Uploading audio…</span>
 </div>
 
 <!-- MANAGE MY JUKEBOX MODAL (hide artists from the landing page, rate them) -->
@@ -2858,8 +2898,14 @@ let _taBgStartPos       = 0;     // where background audio started (for the 10s 
 let _taConsentOk        = false; // personal-rights checkbox acknowledged this session
 let _taPublicPlay       = false; // Public play option chosen for the current upload flow
 let _taConsentResolve   = null;  // pending in-app consent modal resolver
-let _taBatch            = null;  // { artistId, albumId, tracks, files, assign } for the batch uploader
-let _taManualAudio      = false; // audio-only mode toggled from the player toolbar
+let _taBatch            = null;  // { artistId, albumId, tracks, files, assign, uploadedThisRun } for the batch uploader
+let _taBatchBusy        = false; // upload loop currently running
+let _taBatchCancel      = false; // set by Cancel — stop after the current file
+let _taBatchMinimized   = false;
+let _taBatchLastStatus  = '';
+let _taManualAudio      = false; // audio-only mode active for the current track
+let _taPreferBg         = false; // sticky: once enabled on mobile, prefer bg play when audio exists
+try { _taPreferBg = localStorage.getItem('sj_bg_play') === '1'; } catch (_) {}
 let _ytpWatchdogTimer   = null;  // fires if a track never reaches PLAYING (stall/embed-blocked)
 let _ytpWatchdogVideoId = null;  // videoId the pending watchdog is guarding
 let _ytpFailureHandledFor = null; // videoId already auto-reported+skipped, avoids double-fire (error + stall)
@@ -3827,6 +3873,14 @@ function openYTPlayer(videoId, title, trackId, ev) {
   });
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
   ytpOnTrackChange(videoId, trackId, title);
+  // Mobile never uses the floating windowed sheet — open fullscreen.
+  if (_isMobPlayer) requestAnimationFrame(() => ytpEnterFullscreen());
+  // Sticky background-play preference: start audio mode when this track has a file.
+  if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused) {
+    _taManualAudio = true;
+    _ytUserWantsPlay = true;
+    setTimeout(() => { if (_taManualAudio) taEnterBgAudio(); taSyncAudioBtn(); }, 500);
+  }
 }
 
 function ytpIframeHTML(videoId, h, autoplay) {
@@ -4017,8 +4071,10 @@ function ytPlayNow(videoId, title, trackId) {
   ytVideoId = videoId;
   // play will be logged by onStateChange after 10 seconds
   if (!ytPlayerEl) { openYTPlayer(videoId, title, trackId); return; }
+  if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId)) _taManualAudio = true;
   const _useTa = _taManualAudio && !!taTrackAudio(trackId);
   if (_taBgActive && !_useTa) {
+    // Track has no uploaded audio — pause bg element but keep the preference.
     _taManualAudio = false; _taBgActive = false;
     try { _taAudioEl?.pause(); } catch (_) {}
     taSyncAudioBtn();
@@ -4067,9 +4123,10 @@ function ytPlayQueueIdx(idx) {
   ytQueueIdx = idx;
   const item = ytQueue[idx];
   ytVideoId = item.videoId;
+  if (_taPreferBg && taIsMobileDevice() && taTrackAudio(item.trackId)) _taManualAudio = true;
   const _useTa = _taManualAudio && !!taTrackAudio(item.trackId);
   if (_taBgActive && !_useTa) {
-    // Leaving audio-only mode: this track has no uploaded audio
+    // This track has no uploaded audio — fall back to video, keep prefer flag.
     _taManualAudio = false; _taBgActive = false;
     try { _taAudioEl?.pause(); } catch (_) {}
     taSyncAudioBtn();
@@ -4234,6 +4291,11 @@ function attachYTAPIPlayer() {
             return;
           }
           if (_taManualAudio && _taBgActive) {
+            // Prefer sticky background play: keep the audio element, pause the embed.
+            if (_taPreferBg && taTrackAudio(ytQueue[ytQueueIdx]?.trackId)) {
+              try { ytAPIPlayer.pauseVideo(); } catch (_) {}
+              return;
+            }
             // User started the video itself - hand the sound back to the embed
             _taManualAudio = false; _taBgActive = false;
             try { _taAudioEl?.pause(); } catch (_) {}
@@ -4560,14 +4622,79 @@ function ytpLyrResizeStart(e) {
 
 let _ytpMinimized = false;
 
-// Minimizing hides the floating tiled window entirely and shows a compact
-// fixed footer at the bottom of the page instead - the floating window only
-// ever exists in tiled (windowed) mode.
+// Enter fullscreen without toggling. Used by mobile open and restore-from-mini.
+function ytpEnterFullscreen() {
+  if (!_ytpContainerEl || !ytPlayerEl || _ytpFs) {
+    if (_ytpFs) ytpUpdateFsLayout();
+    return;
+  }
+  const frame = ytPlayerEl.querySelector('.yt-player-frame');
+  _ytpFsRestore = {
+    left: _ytpContainerEl.style.left || '',
+    top: _ytpContainerEl.style.top || '',
+    width: ytPlayerEl.style.width || (ytPlayerEl.offsetWidth + 'px'),
+    frameH: frame?.style.height || (frame ? frame.offsetHeight + 'px' : ''),
+    lyrWidth: _ytpLyricsPaneEl?.style.width || '',
+    lyrHeight: _ytpLyricsPaneEl?.style.height || '',
+  };
+  _ytpFs = true;
+  _ytpContainerEl.classList.add('ytp-fs');
+  const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
+  ytpSetWinIcon(fsBtn, 'restore');
+  if (fsBtn) fsBtn.title = ytpIsMob() ? 'Minimize' : 'Restore down';
+  ytpUpdateFsLayout();
+  if (!_ytpLyricsOpen) {
+    _ytpFsAutoLyrics = true;
+    const lyrChk = document.getElementById('ytp-lyrics-chk');
+    if (lyrChk) lyrChk.checked = true;
+    ytpToggleLyrics(true);
+  }
+}
+
+// Drop out of fullscreen into the mini bar on mobile (never the windowed sheet).
+// Leaves lyrics open-state alone so restoring fullscreen feels continuous.
+function ytpMobExitFsToMini() {
+  if (!_ytpContainerEl || !ytPlayerEl) return;
+  _ytpFsAutoLyrics = false;
+  _ytpFs = false;
+  _ytpContainerEl.classList.remove('ytp-fs');
+  const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
+  ytpSetWinIcon(fsBtn, 'maximize');
+  if (fsBtn) fsBtn.title = 'Maximize';
+  _ytpFsRestore = null;
+}
+
+// Minimizing hides the player and shows a compact fixed footer.
+// Desktop: floating windowed ↔ mini. Mobile: fullscreen ↔ mini only.
 function ytpToggleMinimize() {
   if (!ytPlayerEl) return;
+  const target = _ytpContainerEl || ytPlayerEl;
+
+  // Mobile: toggle between fullscreen and the mini bar — never windowed.
+  if (ytpIsMob()) {
+    if (_ytpMinimized) {
+      _ytpMinimized = false;
+      target.style.display = '';
+      target.style.opacity = '1';
+      target.style.transform = '';
+      hideYtpMiniFooter();
+      if (_mfLyricStripOn !== _ytpLyricsOpen) ytpToggleLyrics(_mfLyricStripOn);
+      ytpEnterFullscreen();
+      return;
+    }
+    if (_mfLyricStripOn !== _ytpLyricsOpen) {
+      _mfLyricStripOn = _ytpLyricsOpen;
+      try { localStorage.setItem('sj_mf_lyric_strip', _mfLyricStripOn ? '1' : '0'); } catch(e) {}
+    }
+    if (_ytpFs) ytpMobExitFsToMini();
+    _ytpMinimized = true;
+    target.style.display = 'none';
+    showYtpMiniFooter();
+    return;
+  }
+
   if (_ytpFs) ytpToggleFullscreen();
   _ytpMinimized = !_ytpMinimized;
-  const target = _ytpContainerEl || ytPlayerEl;
   if (_ytpMinimized) {
     // Carry the lyrics setting into the mini bar: the strip mirrors the pane.
     if (_mfLyricStripOn !== _ytpLyricsOpen) {
@@ -6466,8 +6593,17 @@ function ytpOnVisibilityChange() {
   } else {
     if (_ytBgResumeTimer) { clearInterval(_ytBgResumeTimer); _ytBgResumeTimer = null; }
     if (_taBgActive) {
-      if (_taManualAudio) { taManualResync(); return; } // stay in audio-only mode
+      if (_taManualAudio || (_taPreferBg && taTrackAudio(ytQueue[ytQueueIdx]?.trackId))) {
+        _taManualAudio = true;
+        taManualResync();
+        return; // stay in audio-only mode
+      }
       taExitBgAudio(); return;
+    }
+    // Preference on + track has audio: re-enter bg mode when returning to the tab.
+    if (_taPreferBg && _ytUserWantsPlay && taTrackAudio(ytQueue[ytQueueIdx]?.trackId)) {
+      _taManualAudio = true;
+      if (taEnterBgAudio()) { ytpUpdateMediaSession(); return; }
     }
     if (_ytUserWantsPlay) {
       setTimeout(ytpKickBackgroundPlay, 100);
@@ -6546,8 +6682,14 @@ function taSyncBgOverlay() {
   if (el.parentNode !== frame) frame.appendChild(el);
 }
 
+function taSetPreferBg(on) {
+  _taPreferBg = !!on;
+  try { localStorage.setItem('sj_bg_play', on ? '1' : '0'); } catch (_) {}
+}
+
 function taToggleAudioMode() {
   if (_taManualAudio && _taBgActive) {
+    taSetPreferBg(false);
     taExitBgAudio(); // also clears _taManualAudio + resyncs the button
     return;
   }
@@ -6555,6 +6697,7 @@ function taToggleAudioMode() {
   if (!taTrackAudio(item?.trackId)) { taSyncAudioBtn(); return; }
   _ytUserWantsPlay = true;
   _taManualAudio = true;
+  taSetPreferBg(true);
   if (!taEnterBgAudio()) { _taManualAudio = false; taSyncAudioBtn(); return; }
   ytpUpdateMediaSession();
   ytpSetPlayPauseIcon(true);
@@ -6569,12 +6712,14 @@ function taSyncAudioBtn() {
   if (!btn) return;
   const has = taIsMobileDevice() && !!taTrackAudio(ytQueue[ytQueueIdx]?.trackId);
   btn.style.display = has ? '' : 'none';
-  const on = _taManualAudio && _taBgActive;
-  btn.textContent = on ? 'Background Play ✓' : 'Enable Background Play';
-  btn.style.color = on ? 'var(--accent)' : '';
-  btn.style.borderColor = on ? 'var(--accent)' : '';
+  const on = (_taManualAudio && _taBgActive) || (_taPreferBg && has && _taBgActive);
+  btn.textContent = on ? 'Background Play ✓' : (_taPreferBg && has ? 'Background Play' : 'Enable Background Play');
+  btn.style.color = (on || (_taPreferBg && has)) ? 'var(--accent)' : '';
+  btn.style.borderColor = (on || (_taPreferBg && has)) ? 'var(--accent)' : '';
   btn.title = on ? 'Audio-only mode is on - tap to go back to video'
-                 : 'Audio-only mode - keeps playing with the screen off or in the background';
+                 : (_taPreferBg
+                    ? 'Background play stays on for tracks with audio - tap to turn off'
+                    : 'Audio-only mode - keeps playing with the screen off or in the background');
 }
 
 // Queue moved while audio-only mode had the sound: line the on-screen player
@@ -6618,7 +6763,10 @@ function taPrimeAudioEl(item) {
 function taEnterBgAudio() {
   const item = ytQueue[ytQueueIdx];
   const ta = taTrackAudio(item?.trackId);
-  if (!_taManualAudio) return false; // audio-only mode is button-only; never auto-switch (e.g. Early Lines) on hide/minimize
+  // Sticky preference counts as "on" for tracks that have uploaded audio.
+  if (!_taManualAudio && !(_taPreferBg && taIsMobileDevice() && ta)) return false;
+  if (_taPreferBg && ta) _taManualAudio = true;
+  if (!_taManualAudio) return false;
   if (!ta || !_ytUserWantsPlay) return false;
   let pos = 0;
   try { pos = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
@@ -6635,9 +6783,10 @@ function taEnterBgAudio() {
   return _taBgActive;
 }
 
-// Page visible again: hand the sound back to the embed at the audio position.
+// Leave audio-only mode (user toggled off, or forced). Does not clear the
+// sticky preference — taSetPreferBg(false) is for an explicit opt-out.
 function taExitBgAudio() {
-  if (!_taBgActive) return;
+  if (!_taBgActive && !_taManualAudio) return;
   _taBgActive = false;
   _taManualAudio = false;
   taSyncAudioBtn();
@@ -6724,6 +6873,7 @@ function taStopBg() {
   ytpSetMediaPlaybackState('paused');
   ytpSetPlayPauseIcon(false);
   taSyncAudioBtn();
+  // Preference stays — next play with audio resumes background mode.
 }
 
 function taOnAudioEnded() {
@@ -6839,10 +6989,10 @@ async function taUploadOneFile(trackId, file, expectMs, isPublic) {
       consent_at: new Date().toISOString(),
       is_public: pub,
     });
-    taData[trackId] = { url: taPublicUrl(path), duration: dur, isPublic: pub, uploadedBy: session.user.id };
+    taData[trackId] = { url: taPublicUrl(path), path, duration: dur, isPublic: pub, uploadedBy: session.user.id };
     const diff = (expectMs && dur) ? Math.abs(dur - expectMs / 1000) : 0;
     const ready = pub ? '✓ Ready for public background play' : '✓ Ready for your background play only';
-    return { ok: true, warn: diff > 3 ? Math.round(diff) : 0,
+    return { ok: true, path, warn: diff > 3 ? Math.round(diff) : 0,
              msg: diff > 3 ? `✓ Uploaded - ${Math.round(diff)}s off the video` : ready };
   } catch (e) {
     const msg = /one_public|duplicate key|unique/i.test(e.message || '')
@@ -6897,9 +7047,17 @@ async function taBatchOpen(artistId, albumId) {
     if (confirm('Sign in with Google to upload audio. Sign in now?')) handleAuthClick();
     return;
   }
+  // A session is already open (uploading or tucked away) — reopen it.
+  if (_taBatch && (_taBatchBusy || _taBatchMinimized ||
+      (_taBatch.artistId === artistId && (_taBatch.albumId || null) === (albumId || null)))) {
+    taBatchRestore();
+    return;
+  }
   const artist = _maData.find(a => a.id === artistId);
   const album  = albumId ? (artist?.albums || []).find(x => x.id === albumId) : null;
-  _taBatch = { artistId, albumId: albumId || null, tracks: [], files: [], assign: {} };
+  _taBatch = { artistId, albumId: albumId || null, tracks: [], files: [], assign: {}, uploadedThisRun: [] };
+  _taBatchCancel = false;
+  _taBatchLastStatus = '';
   document.getElementById('taBatchTitle').textContent =
     'Background audio · ' + (artist?.name || '') + (album ? ' · ' + album.name : ' · all albums');
   document.getElementById('taBatchConsent').checked = _taConsentOk;
@@ -6908,6 +7066,9 @@ async function taBatchOpen(artistId, albumId) {
   document.getElementById('taBatchStatus').textContent = '';
   document.getElementById('taBatchUploadBtn').disabled = true;
   document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
+  _taBatchMinimized = false;
+  const mb = document.getElementById('ta-minibar');
+  if (mb) mb.style.display = 'none';
   document.getElementById('audioBatchOverlay').classList.add('open');
   taBatchSync();
   try {
@@ -6918,19 +7079,109 @@ async function taBatchOpen(artistId, albumId) {
       rows.push(...await dbGet(`/tracks?album_id=in.(${chunk.join(',')})&select=id,name,album_id,track_number,duration_ms&order=album_id,track_number`));
     }
     await loadTrackAudio(rows.map(t => t.id));
+    if (!_taBatch) return;
     _taBatch.tracks = rows;
     taBatchRender();
   } catch (e) {
     document.getElementById('taBatchList').innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${(e.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
   }
 }
-function taBatchClose() { document.getElementById('audioBatchOverlay').classList.remove('open'); _taBatch = null; }
+
+// Close / backdrop / ✕: while uploading, tuck away; otherwise dismiss.
+function taBatchRequestClose() {
+  if (_taBatchBusy) { taBatchMinimize(); return; }
+  taBatchClose();
+}
+function taBatchClose() {
+  if (_taBatchBusy) { taBatchMinimize(); return; }
+  _taBatchMinimized = false;
+  _taBatch = null;
+  _taBatchCancel = false;
+  _taBatchLastStatus = '';
+  const mb = document.getElementById('ta-minibar');
+  if (mb) mb.style.display = 'none';
+  document.getElementById('audioBatchOverlay').classList.remove('open');
+}
+function taBatchMinimize() {
+  if (!_taBatch) { document.getElementById('audioBatchOverlay').classList.remove('open'); return; }
+  _taBatchMinimized = true;
+  document.getElementById('audioBatchOverlay').classList.remove('open');
+  const mb = document.getElementById('ta-minibar');
+  if (mb) mb.style.display = 'flex';
+  taBatchMiniSync();
+}
+function taBatchRestore() {
+  _taBatchMinimized = false;
+  const mb = document.getElementById('ta-minibar');
+  if (mb) mb.style.display = 'none';
+  document.getElementById('audioBatchOverlay').classList.add('open');
+}
+function taBatchMiniSync() {
+  const mb = document.getElementById('ta-minibar');
+  if (!mb || !_taBatchMinimized) return;
+  const spin = mb.querySelector('.m-spin');
+  const failed = !_taBatchBusy && /^✗|^Cancelled/.test(_taBatchLastStatus);
+  if (spin) spin.style.display = _taBatchBusy ? '' : 'none';
+  mb.classList.toggle('done', !_taBatchBusy && !failed && /Done|uploaded/.test(_taBatchLastStatus));
+  mb.classList.toggle('err', failed);
+  const txt = mb.querySelector('.ta-mini-txt');
+  if (txt) {
+    txt.textContent = _taBatchBusy
+      ? ('Uploading audio — ' + (_taBatchLastStatus || 'working…'))
+      : failed ? (_taBatchLastStatus + ' — click to reopen')
+      : (_taBatchLastStatus ? (_taBatchLastStatus + ' — click to reopen') : 'Audio upload — click to reopen');
+  }
+}
+
+async function taDeleteUploaded(trackId, path) {
+  const { data: { session } } = await sbAuth.auth.getSession();
+  if (!session) throw new Error('Not signed in');
+  if (path) {
+    try { await sbAuth.storage.from('jukebox-audio').remove([path]); } catch (_) {}
+  }
+  await dbDelete(`/track_audio?track_id=eq.${trackId}&uploaded_by=eq.${session.user.id}`);
+  if (taData[trackId] && (!taData[trackId].uploadedBy || taData[trackId].uploadedBy === session.user.id)) {
+    delete taData[trackId];
+  }
+}
+
+async function taBatchCancel() {
+  if (!_taBatch) return;
+  if (_taBatchBusy) {
+    _taBatchCancel = true;
+    _taBatchLastStatus = 'Cancelling…';
+    const status = document.getElementById('taBatchStatus');
+    if (status) status.textContent = 'Cancelling after current file…';
+    taBatchMiniSync();
+    return;
+  }
+  // Idle with files already uploaded this run — offer to remove them.
+  const uploaded = _taBatch.uploadedThisRun || [];
+  if (uploaded.length) {
+    if (confirm(`Delete the ${uploaded.length} audio file${uploaded.length === 1 ? '' : 's'} already uploaded in this session?`)) {
+      const status = document.getElementById('taBatchStatus');
+      if (status) status.textContent = 'Deleting…';
+      for (const u of uploaded) {
+        try { await taDeleteUploaded(u.trackId, u.path); } catch (_) {}
+        const cell = document.getElementById('tabx-' + u.trackId);
+        if (cell) { cell.textContent = 'removed'; cell.style.color = 'var(--text-muted)'; }
+      }
+      _taBatch.uploadedThisRun = [];
+      _taBatchLastStatus = 'Cancelled — uploads removed';
+      if (status) status.textContent = _taBatchLastStatus;
+      const albs = new Set(_taBatch.tracks.map(t => t.album_id));
+      albs.forEach(aid => { if (_maTrkCache[aid]) maRenderTracks(_taBatch.artistId, aid); });
+      taSyncAudioBtn();
+    }
+  }
+  taBatchClose();
+}
 
 function taBatchAddFiles(inputEl) {
   const picked = [...(inputEl.files || [])].filter(f =>
     /^audio\//.test(f.type) || /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|webm)$/i.test(f.name));
   inputEl.value = '';
-  if (!picked.length || !_taBatch) return;
+  if (!picked.length || !_taBatch || _taBatchBusy) return;
   const seen = new Set();
   _taBatch.files = _taBatch.files.concat(picked).filter(f => {
     const k = f.name + ':' + f.size; if (seen.has(k)) return false; seen.add(k); return true;
@@ -6967,6 +7218,7 @@ function taBatchRender() {
   if (!tracks.length) { box.innerHTML = '<div class="oa-albs-note">No tracks in this selection.</div>'; taBatchSync(); return; }
   const matched = Object.values(assign).filter(v => v != null).length;
   const usedFiles = new Set(Object.values(assign).filter(v => v != null));
+  const lock = _taBatchBusy;
   const opts = sel => '<option value="">— none —</option>' +
     files.map((f, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${esc(f.name)}</option>`).join('');
   let html = files.length
@@ -6976,7 +7228,7 @@ function taBatchRender() {
     <div style="display:flex;align-items:center;gap:.45rem;font-size:.52rem;padding:.22rem 0;border-bottom:1px solid #ffffff10">
       <span style="opacity:.5;width:1.2rem;text-align:right;flex-shrink:0">${t.track_number || ''}</span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}${taData[t.id] ? ' <span style="color:#22c55e" title="already has background audio">🎧</span>' : ''}</span>
-      <select class="m-input" style="flex:1.4;min-width:0;font-size:.5rem;padding:.15rem .3rem"${files.length ? '' : ' disabled'} onchange="taBatchReassign('${t.id}', this.value)">${opts(assign[t.id])}</select>
+      <select class="m-input" style="flex:1.4;min-width:0;font-size:.5rem;padding:.15rem .3rem"${files.length && !lock ? '' : ' disabled'} onchange="taBatchReassign('${t.id}', this.value)">${opts(assign[t.id])}</select>
       <span id="tabx-${t.id}" style="width:5rem;font-size:.45rem;flex-shrink:0;text-align:right;color:var(--text-muted)">${taData[t.id] ? 'has audio' : ''}</span>
     </div>`).join('');
   const unused = files.map((f, i) => usedFiles.has(i) ? null : f).filter(Boolean);
@@ -6986,7 +7238,7 @@ function taBatchRender() {
 }
 
 function taBatchReassign(tid, val) {
-  if (!_taBatch) return;
+  if (!_taBatch || _taBatchBusy) return;
   if (val === '') delete _taBatch.assign[tid];
   else _taBatch.assign[tid] = Number(val);
   taBatchRender();   // re-render so the "not matched" list and counts stay honest
@@ -7005,36 +7257,87 @@ function taBatchSync() {
   const personal = !!document.getElementById('taBatchConsent')?.checked;
   const n = _taBatch ? Object.values(_taBatch.assign).filter(v => v != null).length : 0;
   const btn = document.getElementById('taBatchUploadBtn');
-  if (btn) { btn.disabled = !(personal && n > 0); btn.textContent = n > 0 ? `Upload ${n} file${n === 1 ? '' : 's'}` : 'Upload matched'; }
+  if (btn) {
+    btn.disabled = _taBatchBusy || !(personal && n > 0);
+    btn.textContent = _taBatchBusy
+      ? 'Uploading…'
+      : (n > 0 ? `Upload ${n} file${n === 1 ? '' : 's'}` : 'Upload matched');
+  }
+  const cancel = document.getElementById('taBatchCancelBtn');
+  if (cancel) {
+    const hasRun = !!(_taBatch?.uploadedThisRun?.length);
+    cancel.style.display = (_taBatchBusy || hasRun) ? '' : 'none';
+  }
+  const pick = document.getElementById('taBatchPickRow');
+  if (pick) pick.style.opacity = _taBatchBusy ? '0.45' : '';
+  const closeBtn = document.getElementById('taBatchCloseBtn');
+  if (closeBtn) closeBtn.textContent = _taBatchBusy ? 'Minimize' : 'Close';
 }
 
 async function taBatchUpload() {
-  if (!_taBatch || !document.getElementById('taBatchConsent').checked) return;
+  if (!_taBatch || _taBatchBusy || !document.getElementById('taBatchConsent').checked) return;
   _taConsentOk = true;
   _taPublicPlay = !!document.getElementById('taBatchPublic')?.checked;
   const entries = Object.entries(_taBatch.assign).filter(([, fi]) => fi != null);
   if (!entries.length) return;
   const btn = document.getElementById('taBatchUploadBtn');
   const status = document.getElementById('taBatchStatus');
+  _taBatchBusy = true;
+  _taBatchCancel = false;
+  if (!_taBatch.uploadedThisRun) _taBatch.uploadedThisRun = [];
   btn.disabled = true;
+  btn.textContent = 'Uploading…';
+  taBatchSync();
   let done = 0, ok = 0;
   for (const [tid, fi] of entries) {
+    if (_taBatchCancel) break;
     const cell = document.getElementById('tabx-' + tid);
     if (cell) { cell.textContent = 'uploading…'; cell.style.color = ''; }
     const t = _taBatch.tracks.find(x => x.id === tid);
     const r = await taUploadOneFile(tid, _taBatch.files[fi], t?.duration_ms, _taPublicPlay);
-    done++; if (r.ok) ok++;
+    if (!_taBatch) return; // session dismissed somehow
+    done++; if (r.ok) {
+      ok++;
+      if (r.path) _taBatch.uploadedThisRun.push({ trackId: tid, path: r.path });
+    }
     if (cell) {
       cell.textContent = r.ok ? (r.warn ? `±${r.warn}s` : '✓ done') : '✗ ' + r.msg;
       cell.style.color = r.ok ? (r.warn ? '#f59e0b' : '#22c55e') : '#ef4444';
     }
-    status.textContent = `${done}/${entries.length} uploaded`;
+    _taBatchLastStatus = `${done}/${entries.length} uploaded`;
+    if (status) status.textContent = _taBatchLastStatus;
+    taBatchMiniSync();
   }
-  status.textContent = `Done — ${ok}/${entries.length} uploaded`;
+  const cancelled = _taBatchCancel;
+  _taBatchBusy = false;
+  _taBatchCancel = false;
+  if (cancelled) {
+    const n = _taBatch.uploadedThisRun.length;
+    _taBatchLastStatus = n
+      ? `Cancelled — ${ok}/${entries.length} uploaded`
+      : 'Cancelled';
+    if (status) status.textContent = _taBatchLastStatus;
+    if (n && confirm(`Upload stopped. Delete the ${n} audio file${n === 1 ? '' : 's'} already uploaded in this session?`)) {
+      if (status) status.textContent = 'Deleting…';
+      for (const u of [..._taBatch.uploadedThisRun]) {
+        try { await taDeleteUploaded(u.trackId, u.path); } catch (_) {}
+        const cell = document.getElementById('tabx-' + u.trackId);
+        if (cell) { cell.textContent = 'removed'; cell.style.color = 'var(--text-muted)'; }
+      }
+      _taBatch.uploadedThisRun = [];
+      _taBatchLastStatus = 'Cancelled — uploads removed';
+      if (status) status.textContent = _taBatchLastStatus;
+    }
+  } else {
+    _taBatchLastStatus = `Done — ${ok}/${entries.length} uploaded`;
+    if (status) status.textContent = _taBatchLastStatus;
+  }
   taBatchSync();
+  taBatchMiniSync();
   // Refresh any open track list for the affected album(s) so the 🎧 badges update.
   const albs = new Set(_taBatch.tracks.map(t => t.album_id));
   albs.forEach(aid => { if (_maTrkCache[aid]) maRenderTracks(_taBatch.artistId, aid); });
+  taSyncAudioBtn();
 }
 
 function ytpPlayerChromeH() {
@@ -7108,38 +7411,26 @@ function ytpRestoreFromFs() {
 
 function ytpToggleFullscreen() {
   if (!_ytpContainerEl || !ytPlayerEl) return;
+  // Mobile: Maximize from the mini bar = expand to fullscreen; from fullscreen
+  // the Maximize control is hidden and Restore-down would mean windowed, so
+  // any leftover call tucks to the mini bar instead.
+  if (ytpIsMob()) {
+    if (_ytpMinimized) { ytpToggleMinimize(); return; }
+    if (_ytpFs) { ytpToggleMinimize(); return; }
+    ytpEnterFullscreen();
+    return;
+  }
   if (_ytpMinimized) ytpToggleMinimize();
   const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
 
   if (!_ytpFs) {
-    const frame = ytPlayerEl.querySelector('.yt-player-frame');
-    _ytpFsRestore = {
-      left: _ytpContainerEl.style.left || '',
-      top: _ytpContainerEl.style.top || '',
-      width: ytPlayerEl.style.width || (ytPlayerEl.offsetWidth + 'px'),
-      frameH: frame?.style.height || (frame ? frame.offsetHeight + 'px' : ''),
-      lyrWidth: _ytpLyricsPaneEl?.style.width || '',
-      lyrHeight: _ytpLyricsPaneEl?.style.height || '',
-    };
-    _ytpFs = true;
-    _ytpContainerEl.classList.add('ytp-fs');
-    ytpSetWinIcon(fsBtn, 'restore');
-    if (fsBtn) fsBtn.title = 'Restore down';
-    ytpUpdateFsLayout();
-    // Fullscreen is the read-along view, so open the lyrics pane by default.
-    // Remembered so leaving fullscreen puts it back the way we found it.
-    if (!_ytpLyricsOpen) {
-      _ytpFsAutoLyrics = true;
-      const lyrChk = document.getElementById('ytp-lyrics-chk');
-      if (lyrChk) lyrChk.checked = true;
-      ytpToggleLyrics(true);
-    }
+    ytpEnterFullscreen();
     return;
   }
 
   // Close the pane while _ytpFs is still true so ytpToggleLyrics() takes the
   // fullscreen path instead of trying to shift the floating container back.
-  if (_ytpLyricsOpen && (ytpIsMob() || _ytpFsAutoLyrics)) {
+  if (_ytpLyricsOpen && _ytpFsAutoLyrics) {
     const chk = document.getElementById('ytp-lyrics-chk');
     if (chk) chk.checked = false;
     ytpToggleLyrics(false);
@@ -7149,15 +7440,7 @@ function ytpToggleFullscreen() {
   _ytpContainerEl.classList.remove('ytp-fs');
   ytpSetWinIcon(fsBtn, 'maximize');
   if (fsBtn) fsBtn.title = 'Maximize';
-  if (ytpIsMob()) {
-    const frame  = ytPlayerEl.querySelector('.yt-player-frame');
-    const iframe = frame?.querySelector('iframe');
-    const h      = Math.round(window.innerWidth * 9 / 16);
-    if (frame) frame.style.height = h + 'px';
-    if (iframe) iframe.style.height = h + 'px';
-  } else {
-    ytpRestoreFromFs();
-  }
+  ytpRestoreFromFs();
   _ytpFsRestore = null;
 }
 
@@ -9394,6 +9677,7 @@ async function loadTrackAudio(trackIds) {
     Object.values(best).forEach(r => {
       taData[r.track_id] = {
         url: taPublicUrl(r.storage_path),
+        path: r.storage_path,
         duration: Number(r.duration_seconds) || null,
         isPublic: !!r.is_public,
         uploadedBy: r.uploaded_by || null,
@@ -11711,6 +11995,9 @@ const SJ_CHANGELOG = [
     'The home page now opens with a catalogue header: total tracks, artists, and albums, plus YouTube Plays and Jukebox plays for the whole jukebox.',
     'Long lyrics inside an album card now scroll in place instead of stretching the card forever.',
     'Refreshing while signed in no longer blips a second of audio before pausing — the restored player opens quiet until you hit play.',
+    'Batch background-audio upload: the Upload button stays off while files are going up, Close minimizes so you can reopen from a floating pill (like Add Music), and Cancel stops the run and can delete files already uploaded in that session.',
+    'On phones, the player no longer opens as a floating window — it toggles between fullscreen and the bottom mini bar, with larger transport buttons when minimized.',
+    'Once you turn on Background Play on a phone, it stays the default for later tracks that have uploaded audio (until you turn it off).',
   ]},
   { date: '2026-08-04', items: [
     'The player now notices when a song fails to play — removed, blocked, or just stuck — and automatically reports it and skips to the next track in your queue, instead of leaving you staring at a dead player.',
