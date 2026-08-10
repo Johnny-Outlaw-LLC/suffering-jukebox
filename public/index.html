@@ -1689,15 +1689,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 /* ── Landing page (artist card grid) ── */
 #main.main-landing { display: block; padding: 0; }
 .landing-wrap { padding: 20px clamp(16px,4vw,48px) 60px; max-width: 1600px; margin: 0 auto; }
-.landing-totals {
-  display: flex; flex-direction: column; gap: 4px;
-  margin: 0 0 16px; padding: 0 0 14px; border-bottom: 1px solid var(--border);
-  font-family: var(--mono); color: var(--text-muted); line-height: 1.45;
-}
-.landing-totals-line1 { font-size: .62rem; letter-spacing: .02em; }
-.landing-totals-line2 { font-size: .58rem; letter-spacing: .04em; text-transform: uppercase; }
-.landing-totals strong { color: var(--text); font-weight: 600; }
-.landing-totals-sep { opacity: .45; margin: 0 .55rem; }
 .landing-intro { font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 18px; }
 .landing-controls { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin: 0 0 18px; }
 .landing-control-group { display: flex; align-items: center; gap: 10px; }
@@ -1762,9 +1753,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .landing-add-artist-btn:hover { background: var(--accent); color: #0a0a0a; }
 @media (max-width: 640px) {
   /* Filter bar: 2-up grid, label stacked over full-width control */
-  .landing-totals { margin: 0 0 12px; padding: 0 0 12px; gap: 3px; }
-  .landing-totals-line1 { font-size: .56rem; }
-  .landing-totals-line2 { font-size: .5rem; }
   .landing-intro { margin: 0 0 10px; }
   .landing-controls { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 10px; margin: 0 0 14px; }
   .landing-control-group { flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; }
@@ -8785,28 +8773,6 @@ function clearArtistsFilter(e) {
   renderLanding();
 }
 
-function landingCatalogueTotals() {
-  const all = Array.isArray(landingStats) ? landingStats : [];
-  let tracks = 0, albums = 0, yt = 0, plays = 0;
-  all.forEach(r => {
-    tracks += Number(r.track_count) || 0;
-    albums += Number(r.album_count) || 0;
-    yt     += Number(r.total_views) || 0;
-    plays  += Number(r.total_plays) || 0;
-  });
-  return { artists: all.length, tracks, albums, yt, plays };
-}
-
-function landingTotalsHTML() {
-  const t = landingCatalogueTotals();
-  if (!t.artists) return '';
-  const n = v => (Number(v) || 0).toLocaleString('en-US');
-  return `<div class="landing-totals" aria-label="Jukebox catalogue totals">
-    <div class="landing-totals-line1"><strong>${n(t.tracks)}</strong> total tracks across <strong>${n(t.artists)}</strong> artists and <strong>${n(t.albums)}</strong> albums</div>
-    <div class="landing-totals-line2"><strong>${fmtV(t.yt)}</strong> YouTube Plays<span class="landing-totals-sep">·</span><strong>${n(t.plays)}</strong> Jukebox plays</div>
-  </div>`;
-}
-
 function renderLanding() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const main = document.getElementById('main');
@@ -8825,7 +8791,6 @@ function renderLanding() {
   const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
-      ${landingTotalsHTML()}
       <p class="landing-intro">Pick an artist</p>
       <div class="landing-controls">
         <div class="landing-control-group">
@@ -11992,7 +11957,7 @@ const SJ_CHANGELOG = [
     'Background-play audio uploads now start as personal: check “I own the rights to personally stream this song. Make background play available for me only,” and the audio stays on your account. There is a separate Public play checkbox if you want everyone to get background play on that track — the ownership warning only appears when you turn Public play on.',
     'Shuffle All and Shuffle Favorites on the home page start much faster — they no longer pull YouTube view/like stats just to build a play queue.',
     'The minimized player bar has a Maximize button, so you can jump straight to full screen without restoring the floating window first.',
-    'The home page now opens with a catalogue header: total tracks, artists, and albums, plus YouTube Plays and Jukebox plays for the whole jukebox.',
+    'The catalogue totals at the top of the home page are gone — it goes straight to Pick an artist.',
     'Long lyrics inside an album card now scroll in place instead of stretching the card forever.',
     'Refreshing while signed in no longer blips a second of audio before pausing — the restored player opens quiet until you hit play.',
     'Batch background-audio upload: the Upload button stays off while files are going up, Close minimizes so you can reopen from a floating pill (like Add Music), and Cancel stops the run and can delete files already uploaded in that session.',
