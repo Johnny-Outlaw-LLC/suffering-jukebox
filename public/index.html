@@ -719,6 +719,19 @@ body:not(.light) .tt-num { color: var(--text); }
   .expand-collapse-btn { display: none !important; }
   /* Hide lyric font-size sliders on mobile */
   .acc-lyric-ctrl, .sc-lyric-font-ctrl, .ytp-lyr-font-ctrl { display: none !important; }
+  /* Volume is device-level on phones — the unlabeled slider just looked mysterious */
+  .ytp-vol-wrap { display: none !important; }
+  /* Bigger, readable lyrics on phones */
+  #ytp-lyr-text, .sc-lyrics-text, [data-acc-lyric], #ytp-lyr-text .lyr-line {
+    font-size: 1.05rem !important;
+    line-height: 1.55 !important;
+  }
+  #ytp-lyr-text .lyr-line { opacity: .78; padding: 5px 8px; margin: 0 -8px; }
+  #ytp-lyr-text .lyr-line.lyr-active { opacity: 1; font-weight: 700; }
+  #ytp-mf-lyric-strip {
+    font-size: .88rem !important; padding: 10px 16px; font-weight: 700;
+    color: var(--accent); letter-spacing: .01em;
+  }
   /* YT player: bottom-sheet on mobile, lyrics stacked below video */
   #yt-player-container {
     bottom: 0 !important; left: 0 !important; right: 0 !important; top: auto !important;
@@ -727,7 +740,7 @@ body:not(.light) .tt-num { color: var(--text); }
   }
   #yt-player-container .yt-player { order: 1; width: 100% !important; min-width: 0 !important; border-radius: inherit; }
   #ytp-lyrics-pane {
-    order: 2; width: 100% !important; min-width: 0 !important; max-height: 42vh;
+    order: 2; width: 100% !important; min-width: 0 !important; max-height: 48vh;
     border-radius: 0 0 14px 14px; border-top: none; border-right: 1px solid var(--border);
   }
   #ytp-lyr-resize-handle, #ytp-lyrics-pane .ytp-lyr-resize-e { display: none !important; }
@@ -1730,6 +1743,34 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   font-family: var(--mono); font-size: .56rem; font-weight: 700; padding: .55rem 1rem; cursor: pointer;
 }
 .home-unlock-cta:disabled { opacity: .55; cursor: default; }
+.home-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; }
+.home-filter-chk {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+  font-family: var(--mono); font-size: .52rem; color: var(--text-muted);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: .4rem .7rem;
+}
+.home-filter-chk input { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.home-filter-chk.on { border-color: var(--accent); color: var(--accent); }
+.home-artist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.home-artist-card {
+  position: relative; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden; cursor: pointer; text-align: left; padding: 0; font: inherit; color: var(--text);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.home-artist-card:hover { border-color: var(--accent); }
+.home-artist-art {
+  aspect-ratio: 1; background: var(--bg-elevated) center/cover no-repeat; display: flex;
+  align-items: center; justify-content: center; font-size: 1.6rem; color: var(--text-muted);
+}
+.home-artist-body { padding: .55rem .65rem .7rem; display: flex; flex-direction: column; gap: 4px; }
+.home-artist-name { font-size: .62rem; font-weight: 700; line-height: 1.25; }
+.home-artist-meta { font-family: var(--mono); font-size: .44rem; color: var(--text-muted); }
+.home-artist-bg {
+  font-family: var(--mono); font-size: .42rem; color: #22c55e; letter-spacing: .04em;
+}
+.home-artist-acts { display: flex; gap: 6px; margin-top: 4px; }
+.home-artist-acts .landing-play-btn,
+.home-artist-acts .landing-explore-btn { font-size: .45rem; padding: .28rem .5rem; }
 .bg-paywall-modal { max-width: 440px; }
 .bg-paywall-price { font-size: 1.4rem; font-weight: 700; margin: .2rem 0; }
 .bg-paywall-forever { font-size: .55rem; color: var(--text-muted); font-style: italic; margin-bottom: .75rem; }
@@ -3910,10 +3951,11 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
         <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
-          <span style="font-size:.5rem">🔊</span>
+          <span style="font-size:.5rem;letter-spacing:.02em">Vol</span>
           <input type="range" id="ytp-vol-slider" min="0" max="100" value="100" step="5"
             oninput="ytpSetVolume(this.valueAsNumber)" onmousedown="event.stopPropagation()"
-            style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer">
+            style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer"
+            aria-label="Volume">
         </label>
         <button class="ytp-btn ytp-block-btn" id="ytp-block-btn" onclick="ytpBlockCurrent();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Never play this song again" style="display:none">⊘ Never Again</button>
         <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
@@ -6782,7 +6824,11 @@ function taToggleAudioMode() {
     return;
   }
   const item = ytQueue[ytQueueIdx];
-  if (!taTrackAudio(item?.trackId)) { taSyncAudioBtn(); return; }
+  if (!taTrackAudio(item?.trackId)) {
+    showToast('No uploaded audio for this track yet. Use Manage My Artists → Audio to add it.');
+    taSyncAudioBtn();
+    return;
+  }
   _ytUserWantsPlay = true;
   _taManualAudio = true;
   taSetPreferBg(true);
@@ -6792,15 +6838,27 @@ function taToggleAudioMode() {
   taSyncAudioBtn();
 }
 
-// Show the button only when the current track has uploaded audio; highlight
-// it while audio-only mode is on.
+// Show the button on mobile when unlocked (so it is findable) or whenever the
+// current track has uploaded audio; highlight it while audio-only mode is on.
 function taSyncAudioBtn() {
   taSyncBgOverlay();
   const btn = document.getElementById('ytp-audio-btn');
   if (!btn) return;
-  const has = taIsMobileDevice() && !!taTrackAudio(ytQueue[ytQueueIdx]?.trackId);
-  btn.style.display = has ? '' : 'none';
+  const mob = taIsMobileDevice();
+  const has = !!taTrackAudio(ytQueue[ytQueueIdx]?.trackId);
+  const unlocked = sjHasBgUnlock();
+  const show = mob && (has || unlocked);
+  btn.style.display = show ? '' : 'none';
   const on = (_taManualAudio && _taBgActive) || (_taPreferBg && has && _taBgActive);
+  if (!has) {
+    btn.textContent = 'Background Play';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    btn.title = unlocked
+      ? 'No uploaded audio on this track yet — open Manage My Artists → Audio to add it'
+      : 'Unlock Background Play Forever, then upload audio for this track';
+    return;
+  }
   btn.textContent = on ? 'Background Play ✓' : (_taPreferBg && has ? 'Background Play' : 'Enable Background Play');
   btn.style.color = (on || (_taPreferBg && has)) ? 'var(--accent)' : '';
   btn.style.borderColor = (on || (_taPreferBg && has)) ? 'var(--accent)' : '';
@@ -7084,8 +7142,10 @@ async function taUploadOneFile(trackId, file, expectMs, isPublic) {
       file_bytes: file.size || null,
     });
     taData[trackId] = { url: taPublicUrl(path), path, duration: dur, isPublic: pub, uploadedBy: session.user.id };
+    _homeLibLoaded = false;
     await refreshBgUnlock();
     taSyncQuotaLabel('taBatchQuota');
+    taSyncAudioBtn();
     const diff = (expectMs && dur) ? Math.abs(dur - expectMs / 1000) : 0;
     const ready = pub ? '✓ Ready for public background play' : '✓ Ready for your background play only';
     return { ok: true, path, warn: diff > 3 ? Math.round(diff) : 0,
@@ -7242,6 +7302,8 @@ async function taDeleteUploaded(trackId, path) {
   if (taData[trackId] && (!taData[trackId].uploadedBy || taData[trackId].uploadedBy === session.user.id)) {
     delete taData[trackId];
   }
+  _homeLibLoaded = false;
+  taSyncAudioBtn();
 }
 
 async function taBatchCancel() {
@@ -7743,6 +7805,9 @@ function ytpOnTrackChange(videoId, trackId, title) {
   applyNowPlayingHighlight();
   ytpUpdateMiniFooter();
   taSyncAudioBtn();
+  // Ensure background-play audio metadata is loaded for the current track
+  // (landing / shuffle paths can open the player before loadTrackAudio finishes).
+  if (trackId && !taData[trackId]) loadTrackAudio([trackId]);
   const t       = (title || '').toLowerCase();
   const isAMHIG = t.includes('all my happiness');
   const isRR    = t.includes('random rules');
@@ -8600,7 +8665,7 @@ async function confirmDeletePlaylist(id, name) {
 let landingStats       = [];
 const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
-let landingTab          = localStorage.getItem('sj_landing_tab') || 'home'; // home | explore
+let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // home | explore
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
@@ -8613,6 +8678,10 @@ let _landingSearchFocus = false;
 let _submitterMenuOpen = false;
 let _landingArtistKeys = [];
 let _artistsMenuOpen = false;
+let homeBgOnly = localStorage.getItem('sj_home_bg_only') === '1';
+let _homeBgArtistIds = new Set(); // artists with at least one of my uploaded bg-audio files
+let _homeLibLoaded = false;
+let _homeLibLoading = false;
 
 function fmtScore(n) {
   n = Number(n) || 0;
@@ -8668,6 +8737,7 @@ async function initLanding() {
     } catch (_) {}
     renderLanding();
     loadPlaylists().then(() => { if (isLandingMode) renderLanding(); });
+    ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
@@ -8910,9 +8980,62 @@ function clearArtistsFilter(e) {
 
 function setLandingTab(tab) {
   landingTab = tab === 'explore' ? 'explore' : 'home';
-  try { localStorage.setItem('sj_landing_tab', landingTab); } catch (_) {}
+  try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
+  if (tab === 'home') ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
   renderLanding();
+}
+
+function setHomeBgOnly(on) {
+  homeBgOnly = !!on;
+  try { localStorage.setItem('sj_home_bg_only', on ? '1' : '0'); } catch (_) {}
+  renderLanding();
+}
+
+// Artists I added, plus artists where I have uploaded background-play audio.
+function getHomeArtistRows() {
+  let rows = (landingStats || []).filter(r => {
+    if (r.hidden) return false;
+    const mine = oaIsMine(r);
+    const hasBg = _homeBgArtistIds.has(r.artist_id)
+      || (Array.isArray(r.member_ids) && r.member_ids.some(id => _homeBgArtistIds.has(id)));
+    return mine || hasBg;
+  });
+  if (homeBgOnly) {
+    rows = rows.filter(r =>
+      _homeBgArtistIds.has(r.artist_id)
+      || (Array.isArray(r.member_ids) && r.member_ids.some(id => _homeBgArtistIds.has(id))));
+  }
+  return rows;
+}
+
+async function ensureHomeLibrary() {
+  if (_homeLibLoaded || _homeLibLoading) return;
+  if (!googleUser) { _homeBgArtistIds = new Set(); _homeLibLoaded = true; return; }
+  _homeLibLoading = true;
+  try {
+    const uid = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session?.user?.id;
+    if (!uid) { _homeBgArtistIds = new Set(); return; }
+    const mine = await dbGetAuth(`/track_audio?uploaded_by=eq.${uid}&select=track_id`);
+    const ids = [...new Set((mine || []).map(r => r.track_id).filter(Boolean))];
+    if (!ids.length) { _homeBgArtistIds = new Set(); return; }
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+    const trackRows = (await Promise.all(chunks.map(c =>
+      dbGet(`/tracks?id=in.(${c.join(',')})&select=id,album_id`)))).flat();
+    const albumIds = [...new Set(trackRows.map(t => t.album_id).filter(Boolean))];
+    if (!albumIds.length) { _homeBgArtistIds = new Set(); return; }
+    const aChunks = [];
+    for (let i = 0; i < albumIds.length; i += 50) aChunks.push(albumIds.slice(i, i + 50));
+    const albRows = (await Promise.all(aChunks.map(c =>
+      dbGet(`/albums?id=in.(${c.join(',')})&select=id,artist_id`)))).flat();
+    _homeBgArtistIds = new Set(albRows.map(a => a.artist_id).filter(Boolean));
+  } catch (_) {
+    _homeBgArtistIds = new Set();
+  } finally {
+    _homeLibLoading = false;
+    _homeLibLoaded = true;
+  }
 }
 
 function fmtBytes(n) {
@@ -9042,13 +9165,38 @@ function renderLandingHomeHTML(esc) {
   const used = Number(sjBgUnlock?.used) || 0;
   const limit = Number(sjBgUnlock?.limit) || (5 * 1024 * 1024 * 1024);
   const until = sjBgUnlock?.until ? new Date(sjBgUnlock.until).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : null;
-  const pls = (typeof playlists !== 'undefined' && Array.isArray(playlists) ? playlists : []).slice(0, 6);
+  const pls = (typeof playlists !== 'undefined' && Array.isArray(playlists) ? playlists : []).slice(0, 8);
   const plRows = pls.length
     ? pls.map(p => `<button type="button" class="home-pl-row" onclick="playPlaylist('${p.id}')">
         <span class="home-pl-name">${esc(p.name)}</span>
         <span class="home-pl-meta">${(p._tracks?.length || 0)} tracks</span>
       </button>`).join('')
     : `<div class="landing-no-results">${googleUser ? 'No playlists yet — save one from the player.' : 'Sign in to keep playlists and ratings across devices.'}</div>`;
+
+  const myArtists = getHomeArtistRows();
+  const artistCards = myArtists.length
+    ? `<div class="home-artist-grid">${myArtists.map((r, i) => {
+        const thumb = landingThumb(r);
+        const hasBg = _homeBgArtistIds.has(r.artist_id)
+          || (Array.isArray(r.member_ids) && r.member_ids.some(id => _homeBgArtistIds.has(id)));
+        return `<button type="button" class="home-artist-card" style="--card-accent:${landingColor(r, i)}"
+            onclick="landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">
+          <div class="home-artist-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
+          <div class="home-artist-body">
+            <div class="home-artist-name">${esc(r.name)}</div>
+            <div class="home-artist-meta">${r.album_count || 0} albums · ${r.track_count || 0} tracks</div>
+            ${hasBg ? '<div class="home-artist-bg">🎧 Background play ready</div>' : ''}
+            <div class="home-artist-acts">
+              <span class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</span>
+            </div>
+          </div>
+        </button>`;
+      }).join('')}</div>`
+    : `<div class="landing-no-results">${googleUser
+      ? (homeBgOnly
+        ? 'No artists with background-play audio yet — upload audio from Manage My Artists.'
+        : 'No artists here yet — add one from Explore Artists, or upload background-play audio for a catalogue artist.')
+      : 'Sign in to see the artists you have added and the ones with your background-play audio.'}</div>`;
 
   const unlockCard = unlocked
     ? `<div class="home-unlock-card">
@@ -9066,7 +9214,7 @@ function renderLandingHomeHTML(esc) {
   return `<div class="home-wrap">
     <div>
       <div class="home-hero-title">My Jukebox</div>
-      <p class="home-hero-sub">Your personal library on top of the community catalogue — ratings, playlists, and play history that remember you. Explore artists for free. Unlock Background Play when you want your own audio on mobile.</p>
+      <p class="home-hero-sub">Artists you have added, artists with your background-play audio, and your playlists. Explore Artists is the full community catalogue.</p>
     </div>
     <div>
       <div class="home-section-title">Quick play</div>
@@ -9076,6 +9224,16 @@ function renderLandingHomeHTML(esc) {
         <button type="button" class="home-action-btn" onclick="setLandingTab('explore')">Explore Artists →</button>
         ${googleUser ? `<button type="button" class="home-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : `<button type="button" class="home-action-btn" onclick="handleAuthClick()">Sign in</button>`}
       </div>
+    </div>
+    <div>
+      <div class="home-section-title">Your artists</div>
+      <div class="home-filter-row">
+        <label class="home-filter-chk${homeBgOnly ? ' on' : ''}">
+          <input type="checkbox"${homeBgOnly ? ' checked' : ''} onchange="setHomeBgOnly(this.checked)">
+          <span>Background play enabled only</span>
+        </label>
+      </div>
+      ${artistCards}
     </div>
     <div>
       <div class="home-section-title">Your playlists</div>
@@ -9299,8 +9457,9 @@ async function landingShuffleAll() {
       .map(t => ({ videoId: yt[t.id].video_id, title: t.name, trackId: t.id }));
     if (!q.length) { alert('No playable tracks found.'); return; }
     landingPlayQueue(q);
-    // Background-play audio for the head of the queue only (not the whole catalogue).
-    loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
+    // Background-play audio for the head of the queue (await so the toggle can appear).
+    await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
+    taSyncAudioBtn();
   } catch (e) {
     console.warn('landingShuffleAll error', e);
   } finally {
@@ -9320,6 +9479,8 @@ async function landingShuffleFavorites() {
       .map(tid => ({ videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }));
     if (!q.length) { alert('No favorited tracks have YouTube videos.'); return; }
     landingPlayQueue(q);
+    await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
+    taSyncAudioBtn();
   } catch (e) {
     console.warn('landingShuffleFavorites error', e);
   } finally {
@@ -9661,6 +9822,8 @@ async function landingPlayArtist(artistId, ev) {
     const playable = trackRows.filter(t => ytData[t.id]?.video_id);
     if (!playable.length) return;
     const queue = shuffleInPlace([...playable]).map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+    // Wait for background-play audio so the Enable Background Play button can appear.
+    await loadTrackAudio(queue.slice(0, 80).map(x => x.trackId));
     // If music is already playing, let the user choose Play Now vs Add All to Queue
     // (same popup the album/track Play buttons use); otherwise just start playback.
     if (ytPlayerEl) {
@@ -9668,6 +9831,7 @@ async function landingPlayArtist(artistId, ev) {
     } else {
       landingPlayQueue(queue);
     }
+    taSyncAudioBtn();
   } catch (e) {
     console.warn('landingPlayArtist error', e);
   } finally {
@@ -12266,11 +12430,19 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-09';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-10';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-10', items: [
+    'The app now opens on Explore Artists instead of My Jukebox.',
+    'My Jukebox shows the artists you have added, plus any artist where you uploaded background-play audio, along with your playlists.',
+    'My Jukebox has a “Background play enabled only” filter so you can narrow the list to artists with your uploaded audio.',
+    'Lyrics are larger and easier to read on phones.',
+    'Removed the mystery volume slider from the phone player — use your device volume instead.',
+    'Background Play stays visible on phones once you unlock it, and it appears as soon as a track’s uploaded audio is ready (including when you press Play on an artist card).',
+  ]},
   { date: '2026-08-09', items: [
     'Home is now My Jukebox — continue with favorites, playlists, and a clear door into Explore Artists (the full community catalogue).',
     'Background Play Forever — $5 unlocks uploading your own audio for screen-off listening on your phone, with 5 GB of personal storage. Forever means ten years; in today\'s technology world, that\'s forever.',
@@ -12695,6 +12867,8 @@ function initGoogleAuth() {
         picture : u.user_metadata?.avatar_url || null
       };
       if (_prevAuthEmail !== u.email) {
+        _homeLibLoaded = false;
+        _homeBgArtistIds = new Set();
         loadMyPlayCounts();
         loadMyVotes();
         loadMyBlockedTracks();
@@ -12714,6 +12888,8 @@ function initGoogleAuth() {
       googleUser = null;
       sjIsAdmin = false;
       sjBgUnlock = null;
+      _homeLibLoaded = false;
+      _homeBgArtistIds = new Set();
       myInAppPlays = {};
       blockedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
     }
@@ -13724,7 +13900,18 @@ function applyGlobalLyricSize(size) {
 (function restoreLyricSize() {
   try {
     const ls = localStorage.getItem('sj_lyric_size');
-    if (ls) { globalLyricSize = +ls; }
+    const isMob = window.matchMedia('(max-width:640px)').matches;
+    if (ls) globalLyricSize = +ls;
+    // One-time mobile bump: old default (11px) is too small to read on phones.
+    if (isMob && !localStorage.getItem('sj_lyric_size_mob_bump')) {
+      if (!ls || +ls < 15) {
+        globalLyricSize = 16;
+        localStorage.setItem('sj_lyric_size', '16');
+      }
+      localStorage.setItem('sj_lyric_size_mob_bump', '1');
+    } else if (!ls && isMob) {
+      globalLyricSize = 16;
+    }
   } catch(e) {}
 })();
 
