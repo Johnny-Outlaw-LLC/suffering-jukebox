@@ -2270,6 +2270,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
         <label class="m-btn ghost" style="cursor:pointer;margin:0">📁 Select a folder<input type="file" accept="audio/*" multiple webkitdirectory style="display:none" onchange="taBatchAddFiles(this)"></label>
         <span style="font-size:.48rem;color:var(--text-muted)">Pick a whole album at once — files are matched to tracks by name.</span>
       </div>
+      <div id="taBatchQuota" style="font-family:var(--mono);font-size:.48rem;color:var(--text-muted)"></div>
       <div id="taBatchList"><div class="oa-albs-note">Loading tracks…</div></div>
     </div>
     <div class="modal-footer">
@@ -6717,7 +6718,11 @@ function ytpOpenInYouTube() {
 // return we hand it back to the embed. The OS media pipeline owns the audio
 // element, so lock-screen play/pause/next/prev and screen-off playback work.
 function taPublicUrl(path) {
-  return `${SB_AUTH_URL}/storage/v1/object/public/jukebox-audio/${path}`;
+  // Same-origin CDN front (/api/sj-audio) so repeat plays hit the edge cache
+  // instead of supabase storage egress on every listen.
+  if (!path) return '';
+  const parts = String(path).split('/').map(encodeURIComponent).join('/');
+  return sjApiUrl('/api/sj-audio/' + parts);
 }
 
 function taTrackAudio(trackId) { return (trackId && taData[trackId]) || null; }
@@ -7080,6 +7085,7 @@ async function taUploadOneFile(trackId, file, expectMs, isPublic) {
     });
     taData[trackId] = { url: taPublicUrl(path), path, duration: dur, isPublic: pub, uploadedBy: session.user.id };
     await refreshBgUnlock();
+    taSyncQuotaLabel('taBatchQuota');
     const diff = (expectMs && dur) ? Math.abs(dur - expectMs / 1000) : 0;
     const ready = pub ? '✓ Ready for public background play' : '✓ Ready for your background play only';
     return { ok: true, path, warn: diff > 3 ? Math.round(diff) : 0,
@@ -7138,6 +7144,8 @@ async function taBatchOpen(artistId, albumId) {
     return;
   }
   if (!(await sjEnsureBgUnlock('batch_upload'))) return;
+  await refreshBgUnlock();
+  taSyncQuotaLabel('taBatchQuota');
   // A session is already open (uploading or tucked away) — reopen it.
   if (_taBatch && (_taBatchBusy || _taBatchMinimized ||
       (_taBatch.artistId === artistId && (_taBatch.albumId || null) === (albumId || null)))) {
@@ -9000,7 +9008,33 @@ async function sjEnsureUploadQuota(fileSize, reason) {
     showToast('Not enough storage left in your 5 GB. Delete some uploads or check back when we sell more space.');
     return false;
   }
+  // Soft rate limit: 40 uploads / rolling hour (abuse guard)
+  const now = Date.now();
+  try {
+    const raw = JSON.parse(localStorage.getItem('sj_upload_ts') || '[]');
+    const recent = (Array.isArray(raw) ? raw : []).filter(t => now - t < 60 * 60 * 1000);
+    if (recent.length >= 40) {
+      sjTrackProductEvent('bg_upload_rate_limited', { count: recent.length });
+      showToast('Slow down — too many uploads in the last hour. Try again shortly.');
+      return false;
+    }
+    recent.push(now);
+    localStorage.setItem('sj_upload_ts', JSON.stringify(recent));
+  } catch (_) {}
   return true;
+}
+
+function taSyncQuotaLabel(elId) {
+  const el = document.getElementById(elId || 'taBatchQuota');
+  if (!el) return;
+  if (!sjHasBgUnlock()) {
+    el.textContent = 'Background Play Forever unlock required to upload.';
+    return;
+  }
+  const used = Number(sjBgUnlock?.used) || 0;
+  const limit = Number(sjBgUnlock?.limit) || (5 * 1024 * 1024 * 1024);
+  const left = Math.max(0, limit - used);
+  el.textContent = `${fmtBytes(used)} used · ${fmtBytes(left)} free of ${fmtBytes(limit)}`;
 }
 
 function renderLandingHomeHTML(esc) {
@@ -12240,6 +12274,7 @@ const SJ_CHANGELOG = [
   { date: '2026-08-09', items: [
     'Home is now My Jukebox — continue with favorites, playlists, and a clear door into Explore Artists (the full community catalogue).',
     'Background Play Forever — $5 unlocks uploading your own audio for screen-off listening on your phone, with 5 GB of personal storage. Forever means ten years; in today\'s technology world, that\'s forever.',
+    'Uploaded audio now plays through the jukebox\'s own edge cache, so repeat listens stay fast and cheap.',
     'The old catalogue totals line at the top of the artist grid is gone.',
     'Background-play audio uploads now start as personal: check “I own the rights to personally stream this song. Make background play available for me only,” and the audio stays on your account. There is a separate Public play checkbox if you want everyone to get background play on that track — the ownership warning only appears when you turn Public play on.',
     'Shuffle All and Shuffle Favorites on the home page start much faster — they no longer pull YouTube view/like stats just to build a play queue.',

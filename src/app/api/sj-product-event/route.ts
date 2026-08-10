@@ -11,6 +11,7 @@ const ALLOWED = new Set([
   "bg_unlock_cancel",
   "bg_upload_blocked_locked",
   "bg_upload_blocked_quota",
+  "bg_upload_rate_limited",
   "bg_quota_90",
   "bg_bgplay_blocked_locked",
   "bg_home_explore_click",
