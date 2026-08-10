@@ -3012,6 +3012,7 @@ let _ytMediaPosTimer    = null;  // media session position updates
 let _ytMediaSessionReady = false;
 let taData              = {};    // trackId -> {url, duration}: rights-holder audio for background play
 let _taAudioEl          = null;  // real <audio> element that plays while the page is hidden
+let _taPreloadEl        = null;  // hidden <audio> that warms the next track's HTTP cache
 let _taBgActive         = false; // sound is currently coming from the uploaded audio, not the embed
 let _taBgLogged         = false; // play_event already logged for the current background track
 let _taBgStartPos       = 0;     // where background audio started (for the 10s play threshold)
@@ -6599,8 +6600,8 @@ function ytpInitMediaSession() {
       ytAPIPlayer?.pauseVideo?.();
       ytpStopBgKeepalive();
     });
-    navigator.mediaSession.setActionHandler('nexttrack', () => { if (_taBgActive && document.visibilityState === 'hidden') taAdvanceBg(); else ytNextTrack(); });
-    navigator.mediaSession.setActionHandler('previoustrack', () => { if (_taBgActive && document.visibilityState === 'hidden') taPrevBg(); else ytPrevTrack(); });
+    navigator.mediaSession.setActionHandler('nexttrack', () => { if (_taBgActive) taAdvanceBg(); else ytNextTrack(); });
+    navigator.mediaSession.setActionHandler('previoustrack', () => { if (_taBgActive) taPrevBg(); else ytPrevTrack(); });
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       if (details.seekTime == null) return;
       if (_taBgActive) { try { _taAudioEl.currentTime = details.seekTime; } catch (_) {} return; }
@@ -7009,6 +7010,40 @@ function taExitBgAudio() {
   } catch (_) {}
 }
 
+// Warm the HTTP cache for the next background-playable track so the
+// ended→next handoff can call play() immediately without a cold fetch.
+function taPreloadNextBg() {
+  if (!ytQueue.length) return;
+  let ni = -1;
+  if (ytShuffle && ytQueue.length > 1 && _ytShuffleBagQueue === ytQueue && _ytShuffleBag.length) {
+    ni = _ytShuffleBag[0];
+  } else {
+    for (let hops = 1; hops <= ytQueue.length; hops++) {
+      const cand = ytQueueIdx + hops;
+      const idx = cand < ytQueue.length ? cand : (ytRepeat ? cand % ytQueue.length : -1);
+      if (idx < 0) break;
+      if (taTrackAudio(ytQueue[idx]?.trackId)) { ni = idx; break; }
+      if (!ytRepeat && cand >= ytQueue.length) break;
+    }
+  }
+  if (ni < 0) return;
+  const item = ytQueue[ni];
+  const ta = taTrackAudio(item?.trackId);
+  if (!ta) return;
+  try {
+    if (!_taPreloadEl) {
+      _taPreloadEl = document.createElement('audio');
+      _taPreloadEl.id = 'ta-bg-preload';
+      _taPreloadEl.preload = 'auto';
+      _taPreloadEl.setAttribute('playsinline', '');
+    }
+    if (_taPreloadEl.dataset.trackId === String(item.trackId)) return;
+    _taPreloadEl.src = ta.url;
+    _taPreloadEl.dataset.trackId = String(item.trackId);
+    _taPreloadEl.load();
+  } catch (_) {}
+}
+
 // Start queue index `idx` on background audio. Returns false if that track
 // has no uploaded audio file.
 function taPlayBgIdx(idx) {
@@ -7026,25 +7061,43 @@ function taPlayBgIdx(idx) {
   a.dataset.trackId = String(item.trackId);
   _taBgLogged = false;
   _taBgStartPos = 0;
-  const start = async () => {
-    try {
-      a.load();
-      await taWaitAudioReady(a, 12000);
-      try { a.currentTime = 0; } catch (_) {}
-      await a.play();
+  // Critical: call play() in this same turn (especially from the 'ended'
+  // handler). Awaiting metadata first breaks iOS/Android continuous-play
+  // unlock while the screen is off, so the playlist died after one song.
+  const armPlay = () => {
+    try { if ((a.currentTime || 0) > 0.05) a.currentTime = 0; } catch (_) {}
+    const p = a.play();
+    if (p && typeof p.then === 'function') {
+      p.then(() => { ytpSetMediaPlaybackState('playing'); }).catch(async (err) => {
+        try {
+          await taWaitAudioReady(a, 12000);
+          try { a.currentTime = 0; } catch (_) {}
+          await a.play();
+          ytpSetMediaPlaybackState('playing');
+        } catch (e2) {
+          console.warn('taPlayBgIdx failed', e2 || err);
+          taFailBgAudio('Background audio failed to start — back on YouTube.');
+        }
+      });
+    } else {
       ytpSetMediaPlaybackState('playing');
-    } catch (e) {
-      console.warn('taPlayBgIdx failed', e);
-      taFailBgAudio('Background audio failed to start — back on YouTube.');
     }
   };
-  start();
+  armPlay();
   ytVideoId = item.videoId;
   nowPlayingTrackId = item.trackId || null;
   ytpUpdateMediaSession();
   if (_lyrSyncEnabled && item.trackId && syncedLyricsCache[item.trackId]) lyrSyncStart();
   if (_taManualAudio && document.visibilityState === 'visible') taManualResync();
+  else {
+    try {
+      const titleEl = ytPlayerEl?.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = item.title || '';
+      updateYTQueueUI();
+    } catch (_) {}
+  }
   taSyncAudioBtn();
+  taPreloadNextBg();
   return true;
 }
 
@@ -7086,6 +7139,7 @@ function taStopBg() {
 
 function taOnAudioEnded() {
   if (!_taBgActive) return;
+  // Must stay synchronous so taPlayBgIdx's play() inherits continuous-play unlock.
   taAdvanceBg();
 }
 
@@ -7107,6 +7161,9 @@ function taOnAudioTime() {
     const item = ytQueue[ytQueueIdx];
     if (item?.trackId) logYTPlay(item.videoId, item.trackId, 'play', 'audio');
   }
+  // Near the end, warm the next track so ended→play isn't racing a cold fetch.
+  const dur = _taAudioEl.duration;
+  if (dur > 20 && isFinite(dur) && _taAudioEl.currentTime >= dur - 18) taPreloadNextBg();
 }
 
 // ── Audio upload (personal / public rights) ────────────────────
@@ -12504,6 +12561,7 @@ const SJ_CHANGELOG = [
     'Removed the mystery volume slider from the phone player — use your device volume instead.',
     'Background Play stays visible on phones once you unlock it, and it appears as soon as a track’s uploaded audio is ready (including when you press Play on an artist card).',
     'Fixed Background Play going silent: the audio handoff from YouTube now waits for the MP3 to load before seeking, and if it fails YouTube takes over again instead of leaving you with no sound.',
+    'Background Play on phones now keeps going through the rest of the queue after a song ends — it was stopping after the current track with the screen off.',
   ]},
   { date: '2026-08-09', items: [
     'Home is now My Jukebox — continue with favorites, playlists, and a clear door into Explore Artists (the full community catalogue).',
