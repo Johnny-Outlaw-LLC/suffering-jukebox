@@ -3707,8 +3707,14 @@ function openYTPlayer(videoId, title, trackId, ev) {
     return;
   }
 
-  ytMarkMobPlayIntent();
-  _ytUserWantsPlay = true;
+  // Session restore opens the player paused - no autoplay, no mobile play kick.
+  const restorePaused = !!_pbRestoreOpts;
+  if (!restorePaused) {
+    ytMarkMobPlayIntent();
+    _ytUserWantsPlay = true;
+  } else {
+    _ytUserWantsPlay = false;
+  }
 
   const _isMobPlayer = window.innerWidth <= 640;
   const cW = _isMobPlayer ? window.innerWidth : 320;
@@ -3790,7 +3796,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       </div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
-      ${ytpIframeHTML(videoId, cH)}
+      ${ytpIframeHTML(videoId, cH, !restorePaused)}
     </div>
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
   _ytpContainerEl.appendChild(ytPlayerEl);
@@ -3806,7 +3812,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
   ytQueue = [{videoId, title, trackId: trackId || null}];
   ytQueueIdx = 0;
   ytpSyncVoteBtn(trackId || null);
-  ytpSetPlayPauseIcon(true);
+  ytpSetPlayPauseIcon(!restorePaused);
   setTimeout(ytpSyncVolumeSlider, 600);
   // play will be logged by onStateChange after 10 seconds
 
@@ -3823,8 +3829,8 @@ function openYTPlayer(videoId, title, trackId, ev) {
   ytpOnTrackChange(videoId, trackId, title);
 }
 
-function ytpIframeHTML(videoId, h) {
-  return `<iframe id="yt-embed-iframe" src="${ytpEmbedSrc(videoId)}"
+function ytpIframeHTML(videoId, h, autoplay) {
+  return `<iframe id="yt-embed-iframe" src="${ytpEmbedSrc(videoId, autoplay)}"
     style="width:100%;height:${h}px;border:none;display:block"
     allow="autoplay; encrypted-media; picture-in-picture"
     allowfullscreen></iframe>`;
@@ -3834,9 +3840,10 @@ function ytpEmbedTheme() {
   return document.body.classList.contains('light') ? 'light' : 'dark';
 }
 
-function ytpEmbedSrc(videoId) {
+function ytpEmbedSrc(videoId, autoplay) {
   const origin = encodeURIComponent(location.origin);
-  return `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&enablejsapi=1&playsinline=1&origin=${origin}&theme=${ytpEmbedTheme()}`;
+  const ap = autoplay === false ? 0 : 1;
+  return `https://www.youtube.com/embed/${videoId}?autoplay=${ap}&rel=0&enablejsapi=1&playsinline=1&origin=${origin}&theme=${ytpEmbedTheme()}`;
 }
 
 function updateYTEmbedTheme() {
@@ -4196,6 +4203,19 @@ function attachYTAPIPlayer() {
   ytAPIPlayer = new YT.Player('yt-embed-iframe', {
     events: {
       onReady: function(ev) {
+        if (_pbRestoreOpts) {
+          const sec = Math.max(_pbRestoreOpts.resumeSec || 0, 0);
+          try {
+            if (sec > 0) ytAPIPlayer.seekTo(sec, true);
+            ytAPIPlayer.pauseVideo();
+          } catch (_) {}
+          // Clear after pause so a PLAYING event during seek still hits the
+          // restore guard in onStateChange.
+          _pbRestoreOpts = null;
+          _ytUserWantsPlay = false;
+          ytpSetPlayPauseIcon(false);
+          return;
+        }
         if (_ytShuffleAfterReady && ytQueue.length > 1) {
           _ytShuffleAfterReady = false;
           ytNextTrack();
@@ -4207,6 +4227,12 @@ function attachYTAPIPlayer() {
       },
       onStateChange: function(ev) {
         if (ev.data === 1) { // PLAYING
+          // Session restore intentionally opens paused; ignore the brief
+          // autoplay flash if YouTube still starts audio before we pause it.
+          if (_pbRestoreOpts) {
+            try { ytAPIPlayer.pauseVideo(); } catch (_) {}
+            return;
+          }
           if (_taManualAudio && _taBgActive) {
             // User started the video itself - hand the sound back to the embed
             _taManualAudio = false; _taBgActive = false;
@@ -11684,6 +11710,7 @@ const SJ_CHANGELOG = [
     'The minimized player bar has a Maximize button, so you can jump straight to full screen without restoring the floating window first.',
     'The home page now opens with a catalogue header: total tracks, artists, and albums, plus YouTube Plays and Jukebox plays for the whole jukebox.',
     'Long lyrics inside an album card now scroll in place instead of stretching the card forever.',
+    'Refreshing while signed in no longer blips a second of audio before pausing — the restored player opens quiet until you hit play.',
   ]},
   { date: '2026-08-04', items: [
     'The player now notices when a song fails to play — removed, blocked, or just stuck — and automatically reports it and skips to the next track in your queue, instead of leaving you staring at a dead player.',
@@ -11969,6 +11996,9 @@ async function handleLogout() {
 // ── Playback state persistence (resume queue + position for signed-in users) ──
 let _pbRestoreDone = false; // only attempt restore once per sign-in
 let _pbSaveTimer   = null;  // debounce rapid save calls (track changes fire often)
+// Non-null while reopen-from-saved-session is opening the player paused.
+// Shape: { resumeSec: number }. Cleared in the YT onReady handler after seek+pause.
+let _pbRestoreOpts = null;
 
 function schedulePlaybackStateSave() {
   if (!googleUser) return;
@@ -12047,6 +12077,10 @@ async function restorePlaybackState() {
     const idx  = Math.min(Math.max(row.queue_idx || 0, 0), row.queue.length - 1);
     const item = row.queue[idx];
     if (!item?.videoId) return;
+    // Set before openYTPlayer so the embed uses autoplay=0 and onReady seeks
+    // then stays paused. (Old path: autoplay=1, then pause ~800ms later —
+    // that was the one-second audio blip on refresh.)
+    _pbRestoreOpts = { resumeSec: Math.max(row.position_seconds || 0, 0) };
     openYTPlayer(item.videoId, item.title, item.trackId || null);
     ytQueue = row.queue;
     ytQueueIdx = idx;
@@ -12056,19 +12090,11 @@ async function restorePlaybackState() {
     ytpUpdateTabTitle(item.trackId || null, item.title);
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
-    // Never auto-play on page load - it's disruptive and unexpected. Restore
-    // the queue at the saved position but leave the player paused; the user
-    // hits play when they actually want the music back.
-    const resumeSec = Math.max(row.position_seconds || 0, 0);
-    const pauseWhenReady = (tries) => {
-      if (ytAPIPlayer && typeof ytAPIPlayer.seekTo === 'function') {
-        try { if (resumeSec > 0) ytAPIPlayer.seekTo(resumeSec, true); ytAPIPlayer.pauseVideo(); ytpSetPlayPauseIcon(false); } catch (e) {}
-      } else if ((tries || 0) < 20) {
-        setTimeout(() => pauseWhenReady((tries || 0) + 1), 300);
-      }
-    };
-    setTimeout(() => pauseWhenReady(0), 800);
-  } catch (e) { /* no saved state yet, or fetch failed - just start fresh */ }
+    ytpSetPlayPauseIcon(false);
+  } catch (e) {
+    _pbRestoreOpts = null;
+    /* no saved state yet, or fetch failed - just start fresh */
+  }
 }
 
 function initGoogleAuth() {
