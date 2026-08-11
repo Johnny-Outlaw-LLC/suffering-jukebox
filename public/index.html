@@ -2053,7 +2053,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div class="hdr-search-wrap">
         <span class="hdr-search-icon">🔍</span>
         <input type="text" class="hdr-search-input" id="hdr-search-input"
-          placeholder="Search songs or lyrics…" autocomplete="off"
+          placeholder="Search songs, artists, or lyrics…" autocomplete="off"
           onkeydown="if(event.key==='Enter')openSearchModal(this.value)"
           oninput="scheduleSearch(this.value)">
       </div>
@@ -2373,8 +2373,8 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
         <div class="faq-q"><span class="faq-q-ico">▸</span>My Jukebox vs Explore Artists</div>
         <div class="faq-a">
           <ul>
-            <li><b>My Jukebox</b> is your front door — continue listening, favorites, playlists, and a path into the catalogue.</li>
-            <li><b>Explore Artists</b> is the full community grid: every artist people have added from YouTube, with discography views, charts, and Add Artist. Free forever.</li>
+            <li><b>Explore Artists</b> is the front door — the full community grid: every artist people have added from YouTube, with discography views, charts, and Add Artist. Free forever.</li>
+            <li><b>My Jukebox</b> is your personal shelf — continue listening, favorites, playlists, and artists you have added or uploaded background-play audio for.</li>
           </ul>
         </div>
       </div>
@@ -2584,7 +2584,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <div id="srch-box">
     <div id="srch-head">
       <span style="font-size:.6rem;color:var(--text-muted);flex-shrink:0">🔍</span>
-      <input type="text" id="srch-head-input" placeholder="Search songs or lyrics…" autocomplete="off"
+      <input type="text" id="srch-head-input" placeholder="Search songs, artists, or lyrics…" autocomplete="off"
         onkeydown="if(event.key==='Enter')_runSearch(this.value);if(event.key==='Escape')closeSearchModal()"
         oninput="_srchDebounce(this.value)">
       <span class="srch-count" id="srch-count"></span>
@@ -9291,8 +9291,8 @@ function renderLanding() {
   main.innerHTML = `
     <div class="landing-wrap">
       <div class="landing-tabs">
-        <button type="button" class="landing-tab${landingTab === 'home' ? ' active' : ''}" onclick="setLandingTab('home')">My Jukebox</button>
         <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
+        <button type="button" class="landing-tab${landingTab === 'home' ? ' active' : ''}" onclick="setLandingTab('home')">My Jukebox</button>
       </div>
       ${landingTab === 'home' ? renderLandingHomeHTML(esc) : `
       <p class="landing-intro">Explore Artists — pick a discography</p>
@@ -12459,11 +12459,15 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-10';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-11';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-11', items: [
+    'Explore Artists is now the first tab on the home page; My Jukebox sits second.',
+    'Search from the home page looks across the whole jukebox — every song, artist, album, and lyric — not just artists already open on the page.',
+  ]},
   { date: '2026-08-10', items: [
     'Uploading your own audio for Background Play is free when you sign in — no paid unlock. Each account gets 500 MB of personal storage.',
     'The app now opens on Explore Artists instead of My Jukebox.',
@@ -15781,14 +15785,22 @@ function srchPlay(vid, title, trackId, el) {
   });
 }
 
-function srchPlayTrack(trackId, el) {
-  const vid = ytData[trackId]?.video_id;
+async function srchPlayTrack(trackId, el) {
+  let vid = ytData[trackId]?.video_id;
+  let name = (_srchHitMeta[trackId]?.name) || findTrackById(trackId)?.name || '';
+  if (!vid || !name) {
+    try {
+      const info = await resolvePlaylistTracks([trackId]);
+      if (info[trackId]?.videoId) vid = info[trackId].videoId;
+      if (info[trackId]?.name) name = info[trackId].name;
+    } catch (_) {}
+  }
   if (!vid) return;
-  const t = findTrackById(trackId);
-  srchPlay(vid, t?.name || '', trackId, el);
+  srchPlay(vid, name, trackId, el);
 }
 
 let _srchTimer = null;
+const _srchHitMeta = {}; // trackId → { name } for play when the page hasn't loaded that artist
 
 function openSearchModal(query) {
   const overlay = document.getElementById('srch-overlay');
@@ -15836,63 +15848,177 @@ async function _runSearch(query) {
   const countEl  = document.getElementById('srch-count');
   if (hdrInput && hdrInput.value !== query) hdrInput.value = query;
   if (!query || query.trim().length < 2) {
-    if (statusEl) statusEl.textContent = 'Start typing to search songs and lyrics.';
-    if (bodyEl)   bodyEl.innerHTML = '<div id="srch-status">Start typing to search songs and lyrics.</div>';
+    if (statusEl) statusEl.textContent = 'Start typing to search songs, artists, or lyrics.';
+    if (bodyEl)   bodyEl.innerHTML = '<div id="srch-status">Start typing to search songs, artists, or lyrics.</div>';
     if (countEl)  countEl.textContent = '';
     return;
   }
 
   const q = query.trim().toLowerCase();
+  const qEnc = encodeURIComponent(q);
 
-  // Show a quick loading state while we hit the DB for lyrics
+  // Show a quick loading state while we hit the full catalogue in the DB
   if (bodyEl) bodyEl.innerHTML = '<div id="srch-status">Searching…</div>';
   if (countEl) countEl.textContent = '';
 
-  // Fetch lyrics matches from DB (ilike = case-insensitive contains)
-  let lyricsRows = [];
+  // Catalogue-wide search — home page only keeps a few artists' tracks in
+  // memory, so walking `tracks` alone misses almost everything. Query songs,
+  // albums, artists, and lyrics directly; ignore Manage My Jukebox hides.
+  let trackNameRows = [], albumNameRows = [], artistNameRows = [], lyricsRows = [];
   try {
-    lyricsRows = await dbGet(`/lyrics?lyrics=ilike.*${encodeURIComponent(q)}*&select=track_id,lyrics&limit=200`);
-  } catch(e) { /* non-fatal - fall back to cached only */ }
+    [trackNameRows, albumNameRows, artistNameRows, lyricsRows] = await Promise.all([
+      dbGet(`/tracks?name=ilike.*${qEnc}*&select=id,name,album_id&limit=200`).catch(() => []),
+      dbGet(`/albums?name=ilike.*${qEnc}*&select=id,name,artist_id,release_date,art_url&limit=100`).catch(() => []),
+      dbGet(`/artists?name=ilike.*${qEnc}*&select=id,name&limit=50`).catch(() => []),
+      dbGet(`/lyrics?lyrics=ilike.*${qEnc}*&select=track_id,lyrics&limit=200`).catch(() => []),
+    ]);
+  } catch (_) { /* non-fatal */ }
 
-  if (token !== _srchToken) return; // stale query, another one fired
+  if (token !== _srchToken) return;
 
-  // Populate lyricsCache with fresh DB data
   lyricsRows.forEach(r => { if (lyricsCache[r.track_id] === undefined) lyricsCache[r.track_id] = r.lyrics; });
-
   const lyricsByTrackId = {};
   lyricsRows.forEach(r => { lyricsByTrackId[r.track_id] = r.lyrics || ''; });
 
-  const hits = [];
+  // Flags keyed by track id; we'll hydrate row data next.
+  const flags = {}; // id → { nameMatch, albumMatch, artistMatch, lyricsMatch }
+  const bump = (id, patch) => {
+    if (!id) return;
+    const cur = flags[id] || { nameMatch: false, albumMatch: false, artistMatch: false, lyricsMatch: false };
+    flags[id] = { ...cur, ...patch };
+  };
+  trackNameRows.forEach(t => bump(t.id, { nameMatch: true }));
+  lyricsRows.forEach(r => bump(r.track_id, { lyricsMatch: true }));
 
-  // Walk tracks() by artist id so each hit can carry its real artist and album
-  // objects - track rows only store album_id, not an album name or an artist ref.
-  Object.entries(tracks || {}).forEach(([aid, list]) => {
-    const artist = (allArtists || []).find(a => a.id === aid);
-    (list || []).forEach(t => {
-      const album       = (albums[aid] || []).find(a => a.id === t.album_id);
-      const nameMatch   = t.name.toLowerCase().includes(q);
-      const albumMatch  = !!(album && album.name && album.name.toLowerCase().includes(q));
-      const lyricsRaw   = lyricsByTrackId[t.id] || lyricsCache[t.id] || '';
-      const lyricsMatch = !!lyricsRaw && lyricsRaw.toLowerCase().includes(q);
-      if (!nameMatch && !albumMatch && !lyricsMatch) return;
+  // Album-name hits → every track on those albums
+  let albumHitTracks = [];
+  if (albumNameRows.length) {
+    const albIds = albumNameRows.map(a => a.id);
+    const chunks = [];
+    for (let i = 0; i < albIds.length; i += 50) chunks.push(albIds.slice(i, i + 50));
+    try {
+      albumHitTracks = (await Promise.all(chunks.map(c =>
+        dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id&limit=200`)))).flat();
+      albumHitTracks.forEach(t => bump(t.id, { albumMatch: true }));
+    } catch (_) {}
+  }
+  if (token !== _srchToken) return;
 
-      let snippet = '';
-      if (lyricsMatch) {
-        const lines   = lyricsRaw.split('\n');
-        const lineIdx = lines.findIndex(l => l.toLowerCase().includes(q));
-        if (lineIdx >= 0) {
-          const start = Math.max(0, lineIdx - 1);
-          const end   = Math.min(lines.length, lineIdx + 3);
-          snippet = lines.slice(start, end).join('\n');
-        }
+  // Artist-name hits → albums → tracks (capped so a big catalogue doesn't flood)
+  let artistHitTracks = [];
+  const artistById = {};
+  artistNameRows.forEach(a => { artistById[a.id] = a; });
+  if (artistNameRows.length) {
+    try {
+      const artIds = artistNameRows.map(a => a.id);
+      const artAlbums = await dbGet(`/albums?artist_id=in.(${artIds.join(',')})&select=id,name,artist_id,release_date,art_url&limit=200`);
+      if (artAlbums.length) {
+        const albIds = artAlbums.map(a => a.id);
+        const chunks = [];
+        for (let i = 0; i < albIds.length; i += 50) chunks.push(albIds.slice(i, i + 50));
+        artistHitTracks = (await Promise.all(chunks.map(c =>
+          dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id&limit=200`)))).flat();
+        // Cap per matching artist via album → artist map
+        const albArt = {};
+        artAlbums.forEach(a => { albArt[a.id] = a.artist_id; });
+        const perArtist = {};
+        artistHitTracks = artistHitTracks.filter(t => {
+          const aid = albArt[t.album_id];
+          perArtist[aid] = (perArtist[aid] || 0) + 1;
+          return perArtist[aid] <= 40;
+        });
+        artistHitTracks.forEach(t => bump(t.id, { artistMatch: true }));
+        // Keep album rows so hydration can reuse them
+        artAlbums.forEach(a => { albumNameRows.push(a); });
       }
-      hits.push({ track: t, artist, album, nameMatch, albumMatch, lyricsMatch, snippet });
-    });
+    } catch (_) {}
+  }
+  if (token !== _srchToken) return;
+
+  // Seed track rows we already have from the name/album/artist queries
+  const trackById = {};
+  [...trackNameRows, ...albumHitTracks, ...artistHitTracks].forEach(t => { trackById[t.id] = t; });
+
+  // Lyrics-only hits still need a track row
+  const missingTrackIds = Object.keys(flags).filter(id => !trackById[id]);
+  if (missingTrackIds.length) {
+    try {
+      const chunks = [];
+      for (let i = 0; i < missingTrackIds.length; i += 50) chunks.push(missingTrackIds.slice(i, i + 50));
+      const rows = (await Promise.all(chunks.map(c =>
+        dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id`)))).flat();
+      rows.forEach(t => { trackById[t.id] = t; });
+    } catch (_) {}
+  }
+  if (token !== _srchToken) return;
+
+  // Hydrate albums + artists for every hit (page may not have them loaded)
+  const albumById = {};
+  albumNameRows.forEach(a => { albumById[a.id] = a; });
+  const needAlbIds = [...new Set(Object.values(trackById).map(t => t.album_id).filter(id => id && !albumById[id]))];
+  if (needAlbIds.length) {
+    try {
+      const chunks = [];
+      for (let i = 0; i < needAlbIds.length; i += 50) chunks.push(needAlbIds.slice(i, i + 50));
+      const rows = (await Promise.all(chunks.map(c =>
+        dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,artist_id,release_date,art_url`)))).flat();
+      rows.forEach(a => { albumById[a.id] = a; });
+    } catch (_) {}
+  }
+  const needArtIds = [...new Set(Object.values(albumById).map(a => a.artist_id).filter(id => id && !artistById[id]))];
+  if (needArtIds.length) {
+    try {
+      const chunks = [];
+      for (let i = 0; i < needArtIds.length; i += 50) chunks.push(needArtIds.slice(i, i + 50));
+      const rows = (await Promise.all(chunks.map(c =>
+        dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat();
+      rows.forEach(a => { artistById[a.id] = a; });
+    } catch (_) {}
+  }
+  if (token !== _srchToken) return;
+
+  // Video ids so Play works even when the artist page was never opened
+  const hitIds = Object.keys(flags).filter(id => trackById[id]);
+  try { await loadYTVideoIds(hitIds); } catch (_) {}
+  if (token !== _srchToken) return;
+
+  const hits = hitIds.map(id => {
+    const t = trackById[id];
+    const album = albumById[t.album_id] || null;
+    const artist = album ? (artistById[album.artist_id] || null) : null;
+    const f = flags[id];
+    const lyricsRaw = lyricsByTrackId[id] || lyricsCache[id] || '';
+    let snippet = '';
+    if (f.lyricsMatch && lyricsRaw) {
+      const lines = lyricsRaw.split('\n');
+      const lineIdx = lines.findIndex(l => l.toLowerCase().includes(q));
+      if (lineIdx >= 0) {
+        const start = Math.max(0, lineIdx - 1);
+        const end = Math.min(lines.length, lineIdx + 3);
+        snippet = lines.slice(start, end).join('\n');
+      }
+    }
+    if (artist) SJ_TRACK_META[id] = {
+      artist: artist.name || '',
+      album: album?.name || '',
+      year: (album?.release_date || album?.year || '').toString().slice(0, 4),
+    };
+    _srchHitMeta[id] = { name: t.name };
+    const year = album ? ((album.release_date || '').slice(0, 4) || album.year || '') : '';
+    return {
+      track: t,
+      artist,
+      album: album ? { ...album, year } : null,
+      nameMatch: !!f.nameMatch,
+      albumMatch: !!f.albumMatch,
+      artistMatch: !!f.artistMatch,
+      lyricsMatch: !!f.lyricsMatch,
+      snippet,
+    };
   });
 
-  // Sort: name matches first, then album, then lyrics
   hits.sort((a, b) => {
-    const score = x => (x.nameMatch ? 4 : 0) + (x.albumMatch ? 2 : 0) + (x.lyricsMatch ? 1 : 0);
+    const score = x => (x.nameMatch ? 8 : 0) + (x.artistMatch ? 4 : 0) + (x.albumMatch ? 2 : 0) + (x.lyricsMatch ? 1 : 0);
     return score(b) - score(a);
   });
 
@@ -15909,14 +16035,15 @@ async function _runSearch(query) {
       m => `<mark>${m}</mark>`);
   }
 
-  const cards = hits.map(({ track: t, artist, album, nameMatch, albumMatch, lyricsMatch, snippet }) => {
-    const thumb = album ? albumThumb(album) : (ytData[t.id]?.thumbnail || '');
+  const cards = hits.map(({ track: t, artist, album, snippet }) => {
+    const thumb = (album && (album.art_url || albumThumb(album))) || (ytData[t.id]?.thumbnail || '');
     const art   = thumb
       ? `<img class="srch-art" src="${escHtml(thumb)}" alt="">`
       : `<div class="srch-art-ph" style="background:var(--bg-elevated)">${escHtml((t.name||'?')[0].toUpperCase())}</div>`;
     const meta = [artist?.name, album?.name, album?.year].filter(Boolean).join(' · ');
     const snipHtml = snippet
       ? `<div class="srch-lyr-panel">${hl(snippet)}</div>` : '';
+    const canPlay = !!ytData[t.id]?.video_id;
     return `<div class="srch-card" data-track-id="${t.id}">
       ${art}
       <div class="srch-info">
@@ -15925,7 +16052,7 @@ async function _runSearch(query) {
         ${snipHtml}
       </div>
       <div class="srch-actions">
-        <button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${!ytData[t.id]?.video_id ? 'disabled title=\"No video available\"' : ''}>▶ Play</button>
+        <button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${canPlay ? '' : 'disabled title=\"No video available\"'}>▶ Play</button>
         ${SJ_COMMENTS_ENABLED ? `<button class="srch-btn cmt-btn" data-cmt-badge="track:${t.id}" onclick="event.stopPropagation();openComments('track','${t.id}')" title="Comment on this track">Comment</button>` : ''}
       </div>
     </div>`;
