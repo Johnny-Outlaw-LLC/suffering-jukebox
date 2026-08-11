@@ -1771,9 +1771,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .home-artist-acts { display: flex; gap: 6px; margin-top: 4px; }
 .home-artist-acts .landing-play-btn,
 .home-artist-acts .landing-explore-btn { font-size: .45rem; padding: .28rem .5rem; }
-.bg-paywall-modal { max-width: 440px; }
-.bg-paywall-price { font-size: 1.4rem; font-weight: 700; margin: .2rem 0; }
-.bg-paywall-forever { font-size: .55rem; color: var(--text-muted); font-style: italic; margin-bottom: .75rem; }
 .landing-controls { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin: 0 0 18px; }
 .landing-control-group { display: flex; align-items: center; gap: 10px; }
 .landing-control-lbl { font-size: .5rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
@@ -2070,7 +2067,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <div class="user-menu-meta">App Last Updated</div>
           <div class="user-menu-date" id="user-menu-updated">-</div>
           <button type="button" class="clog-link" onclick="openChangelog(event)">Change Log</button>
-          <button type="button" class="user-menu-item" id="user-menu-bgunlock" onclick="userMenuAction('bgunlock')">Background Play Forever — $5</button>
+          <button type="button" class="user-menu-item" id="user-menu-bgunlock" onclick="userMenuAction('bgunlock')">Audio storage</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
@@ -2328,32 +2325,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   <span class="m-spin"></span><span class="ta-mini-txt">Uploading audio…</span>
 </div>
 
-<!-- BACKGROUND PLAY FOREVER PAYWALL -->
-<div class="modal-overlay" id="bgUnlockOverlay" onclick="if(event.target===this)closeBgUnlockPaywall()">
-  <div class="modal bg-paywall-modal">
-    <div class="modal-header">
-      <span class="modal-title">Background Play Forever</span>
-      <button class="modal-close" onclick="closeBgUnlockPaywall()">✕</button>
-    </div>
-    <div class="modal-body" style="gap:.7rem">
-      <div class="bg-paywall-price">$5</div>
-      <div class="bg-paywall-forever">Forever? Ten years. In today's technology world, that's forever.</div>
-      <p style="font-size:.58rem;color:var(--text-muted);line-height:1.65;margin:0">
-        Upload your own audio so tracks keep playing with the screen off on your phone.
-        Includes <b style="color:var(--text)">5 GB</b> of personal storage — about 500 songs.
-        Exploring artists and YouTube playback stay free.
-      </p>
-      <p style="font-size:.5rem;color:var(--text-muted);line-height:1.55;margin:0">
-        You must own the rights to personally stream what you upload.
-      </p>
-    </div>
-    <div class="modal-footer">
-      <button class="m-btn ghost" onclick="closeBgUnlockPaywall()">Not now</button>
-      <button class="m-btn" id="bgUnlockBuyBtn" onclick="startBgUnlockCheckout()">Unlock for $5</button>
-    </div>
-  </div>
-</div>
-
 <!-- MANAGE MY JUKEBOX MODAL (hide artists from the landing page, rate them) -->
 <div class="modal-overlay" id="manageJukeboxOverlay" onclick="if(event.target===this)closeManageJukebox()">
   <div class="modal">
@@ -2413,18 +2384,8 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           Hit <b>＋ Add Artist to the Jukebox</b> on Explore Artists to grow the collection.
           <ul>
             <li>Type an artist name to <b>auto-match</b>, or paste a <b>YouTube playlist link</b> to import it manually.</li>
-            <li>YouTube playback works free on desktop and phone. To keep music going with the screen off, you upload your own audio file for a track — that needs <b>Background Play Forever</b> ($5).</li>
-            <li>Includes <b>5 GB</b> of personal storage (about 500 songs). Forever means <b>ten years</b> — in today's technology world, that's forever.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="faq-section">
-        <div class="faq-q"><span class="faq-q-ico">▸</span>Background Play Forever — $5</div>
-        <div class="faq-a">
-          <ul>
-            <li>One payment unlocks uploading your own audio and using <b>Enable Background Play</b> on mobile for tracks with your files.</li>
-            <li>You must own the rights to personally stream what you upload. Public play for everyone else is a separate, optional checkbox with an extra confirmation.</li>
-            <li>Free stays free: explore artists, play via YouTube, rate songs, and keep as many playlists as you want.</li>
+            <li>YouTube playback works free on desktop and phone. To keep music going with the screen off, sign in and upload your own audio file for a track, then tap <b>Enable Background Play</b> on your phone.</li>
+            <li>Signed-in accounts get <b>500 MB</b> of personal storage for uploads. You must own the rights to personally stream what you upload. Public play for everyone else is a separate, optional checkbox with an extra confirmation.</li>
           </ul>
         </div>
       </div>
@@ -6819,9 +6780,8 @@ function taToggleAudioMode() {
     taExitBgAudio(); // also clears _taManualAudio + resyncs the button
     return;
   }
-  if (!sjHasBgUnlock()) {
-    sjTrackProductEvent('bg_bgplay_blocked_locked');
-    openBgUnlockPaywall('bg_play_btn');
+  if (!googleUser) {
+    showToast('Sign in to use Background Play.');
     return;
   }
   const item = ytQueue[ytQueueIdx];
@@ -6839,7 +6799,7 @@ function taToggleAudioMode() {
   taSyncAudioBtn();
 }
 
-// Show the button on mobile when unlocked (so it is findable) or whenever the
+// Show the button on mobile when signed in (so it is findable) or whenever the
 // current track has uploaded audio; highlight it while audio-only mode is on.
 function taSyncAudioBtn() {
   taSyncBgOverlay();
@@ -6847,17 +6807,17 @@ function taSyncAudioBtn() {
   if (!btn) return;
   const mob = taIsMobileDevice();
   const has = !!taTrackAudio(ytQueue[ytQueueIdx]?.trackId);
-  const unlocked = sjHasBgUnlock();
-  const show = mob && (has || unlocked);
+  const signedIn = !!googleUser;
+  const show = mob && (has || signedIn);
   btn.style.display = show ? '' : 'none';
   const on = (_taManualAudio && _taBgActive) || (_taPreferBg && has && _taBgActive);
   if (!has) {
     btn.textContent = 'Background Play';
     btn.style.color = '';
     btn.style.borderColor = '';
-    btn.title = unlocked
+    btn.title = signedIn
       ? 'No uploaded audio on this track yet — open Manage My Artists → Audio to add it'
-      : 'Unlock Background Play Forever, then upload audio for this track';
+      : 'Sign in and upload audio for this track to use Background Play';
     return;
   }
   btn.textContent = on ? 'Background Play ✓' : (_taPreferBg && has ? 'Background Play' : 'Enable Background Play');
@@ -6944,7 +6904,7 @@ function taFailBgAudio(reason) {
 function taEnterBgAudio() {
   const item = ytQueue[ytQueueIdx];
   const ta = taTrackAudio(item?.trackId);
-  if (!sjHasBgUnlock()) return false;
+  if (!googleUser) return false;
   // Sticky preference counts as "on" for tracks that have uploaded audio.
   if (!_taManualAudio && !(_taPreferBg && taIsMobileDevice() && ta)) return false;
   if (_taPreferBg && ta) _taManualAudio = true;
@@ -7238,7 +7198,7 @@ async function taUploadOneFile(trackId, file, expectMs, isPublic) {
     if (!session) return { ok: false, msg: 'Not signed in' };
     if (!(await sjEnsureUploadQuota(file.size, 'upload'))) {
       sjTrackProductEvent('bg_upload_blocked_locked', { trackId });
-      return { ok: false, msg: 'Background Play unlock required' };
+      return { ok: false, msg: 'Sign in and free up storage to upload' };
     }
     const pub = (typeof isPublic === 'boolean') ? isPublic : !!_taPublicPlay;
     const ext = ((file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'mp3';
@@ -8833,26 +8793,6 @@ async function initLanding() {
     if (!Array.isArray(rows) || !rows.length) { renderEmpty('No artists yet'); return; }
     landingStats = rows;
     await refreshBgUnlock();
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const bg = sp.get('bg_unlock');
-      if (bg === 'success') {
-        await refreshBgUnlock();
-        showToast(sjHasBgUnlock()
-          ? 'Background Play Forever is unlocked. Ten years. Welcome.'
-          : 'Payment received — unlock will appear in a moment. Refresh if needed.');
-        sjTrackProductEvent('bg_unlock_paid', { via: 'return_url' });
-        sp.delete('bg_unlock');
-        const clean = window.location.pathname + (sp.toString() ? '?' + sp.toString() : '');
-        history.replaceState(null, '', clean);
-      } else if (bg === 'cancel') {
-        sjTrackProductEvent('bg_unlock_cancel');
-        showToast('Checkout canceled');
-        sp.delete('bg_unlock');
-        const clean = window.location.pathname + (sp.toString() ? '?' + sp.toString() : '');
-        history.replaceState(null, '', clean);
-      }
-    } catch (_) {}
     renderLanding();
     loadPlaylists().then(() => { if (isLandingMode) renderLanding(); });
     ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
@@ -9196,57 +9136,27 @@ async function refreshBgUnlock() {
 }
 
 function sjHasBgUnlock() {
-  return !!(sjBgUnlock && sjBgUnlock.unlocked);
-}
-
-function openBgUnlockPaywall(reason) {
-  sjTrackProductEvent('bg_unlock_cta', { reason: reason || 'unknown' });
-  document.getElementById('bgUnlockOverlay')?.classList.add('open');
-}
-function closeBgUnlockPaywall() {
-  document.getElementById('bgUnlockOverlay')?.classList.remove('open');
-}
-
-async function startBgUnlockCheckout() {
-  if (!googleUser) { showToast('Sign in first.'); return; }
-  const btn = document.getElementById('bgUnlockBuyBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Opening…'; }
-  try {
-    const res = await fetch(sjApiUrl('/api/sj-bg-unlock/checkout'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
-    });
-    const data = await res.json();
-    if (data.alreadyUnlocked) {
-      await refreshBgUnlock();
-      closeBgUnlockPaywall();
-      showToast('Background Play is already unlocked on your account.');
-      if (isLandingMode) renderLanding();
-      return;
-    }
-    if (!data.ok || !data.url) throw new Error(data.error || 'Checkout failed');
-    window.location.href = data.url;
-  } catch (e) {
-    showToast(e.message || 'Could not start checkout');
-    if (btn) { btn.disabled = false; btn.textContent = 'Unlock for $5'; }
-  }
+  // Signed-in users can upload and use background play (no paid unlock).
+  return !!(googleUser && sjBgUnlock && sjBgUnlock.unlocked);
 }
 
 async function sjEnsureBgUnlock(reason) {
-  if (!googleUser) { showToast('Sign in to unlock Background Play.'); return false; }
+  if (!googleUser) { showToast('Sign in to upload audio and use Background Play.'); return false; }
   await refreshBgUnlock();
   if (sjHasBgUnlock()) return true;
-  openBgUnlockPaywall(reason || 'gate');
+  showToast('Could not load your storage status. Try refreshing.');
   return false;
 }
+
+const SJ_UPLOAD_LIMIT_BYTES = 500 * 1024 * 1024; // 500 MB
 
 async function sjEnsureUploadQuota(fileSize, reason) {
   if (!(await sjEnsureBgUnlock(reason || 'upload'))) return false;
   const used = Number(sjBgUnlock?.used) || 0;
-  const limit = Number(sjBgUnlock?.limit) || (5 * 1024 * 1024 * 1024);
+  const limit = Number(sjBgUnlock?.limit) || SJ_UPLOAD_LIMIT_BYTES;
   if (used + (Number(fileSize) || 0) > limit) {
     sjTrackProductEvent('bg_upload_blocked_quota', { used, limit, fileSize });
-    showToast('Not enough storage left in your 5 GB. Delete some uploads or check back when we sell more space.');
+    showToast('Not enough storage left in your 500 MB. Delete some uploads to free space.');
     return false;
   }
   // Soft rate limit: 40 uploads / rolling hour (abuse guard)
@@ -9268,21 +9178,23 @@ async function sjEnsureUploadQuota(fileSize, reason) {
 function taSyncQuotaLabel(elId) {
   const el = document.getElementById(elId || 'taBatchQuota');
   if (!el) return;
+  if (!googleUser) {
+    el.textContent = 'Sign in to upload audio (500 MB).';
+    return;
+  }
   if (!sjHasBgUnlock()) {
-    el.textContent = 'Background Play Forever unlock required to upload.';
+    el.textContent = 'Loading storage…';
     return;
   }
   const used = Number(sjBgUnlock?.used) || 0;
-  const limit = Number(sjBgUnlock?.limit) || (5 * 1024 * 1024 * 1024);
+  const limit = Number(sjBgUnlock?.limit) || SJ_UPLOAD_LIMIT_BYTES;
   const left = Math.max(0, limit - used);
   el.textContent = `${fmtBytes(used)} used · ${fmtBytes(left)} free of ${fmtBytes(limit)}`;
 }
 
 function renderLandingHomeHTML(esc) {
-  const unlocked = sjHasBgUnlock();
   const used = Number(sjBgUnlock?.used) || 0;
-  const limit = Number(sjBgUnlock?.limit) || (5 * 1024 * 1024 * 1024);
-  const until = sjBgUnlock?.until ? new Date(sjBgUnlock.until).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) : null;
+  const limit = Number(sjBgUnlock?.limit) || SJ_UPLOAD_LIMIT_BYTES;
   const pls = (typeof playlists !== 'undefined' && Array.isArray(playlists) ? playlists : []).slice(0, 8);
   const plRows = pls.length
     ? pls.map(p => `<button type="button" class="home-pl-row" onclick="playPlaylist('${p.id}')">
@@ -9316,17 +9228,16 @@ function renderLandingHomeHTML(esc) {
         : 'No artists here yet — add one from Explore Artists, or upload background-play audio for a catalogue artist.')
       : 'Sign in to see the artists you have added and the ones with your background-play audio.'}</div>`;
 
-  const unlockCard = unlocked
+  const unlockCard = googleUser
     ? `<div class="home-unlock-card">
-        <h3>Background Play Forever</h3>
+        <h3>Background Play</h3>
         <p class="quota-line">${fmtBytes(used)} used of ${fmtBytes(limit)}</p>
-        <p>${until ? 'Unlocked through ' + until + '.' : 'Unlocked on your account.'} Upload your own audio on any track to keep it playing with the screen off.</p>
+        <p>Upload your own audio on any track to keep it playing with the screen off on your phone. Sign-in includes 500 MB of personal storage.</p>
       </div>`
     : `<div class="home-unlock-card">
-        <h3>Background Play Forever — $5</h3>
-        <p>Upload your own audio for listening with the screen off on your phone. Includes 5 GB of personal storage (about 500 songs).</p>
-        <p class="forever-note">Forever? Ten years. In today's technology world, that's forever.</p>
-        <button type="button" class="home-unlock-cta" onclick="openBgUnlockPaywall('home_card')">Unlock for $5</button>
+        <h3>Background Play</h3>
+        <p>Sign in to upload your own audio for listening with the screen off on your phone. Includes 500 MB of personal storage.</p>
+        <button type="button" class="home-unlock-cta" onclick="handleAuthClick()">Sign in</button>
       </div>`;
 
   return `<div class="home-wrap">
@@ -12554,12 +12465,13 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-10';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-10', items: [
+    'Uploading your own audio for Background Play is free when you sign in — no paid unlock. Each account gets 500 MB of personal storage.',
     'The app now opens on Explore Artists instead of My Jukebox.',
     'My Jukebox shows the artists you have added, plus any artist where you uploaded background-play audio, along with your playlists.',
     'My Jukebox has a “Background play enabled only” filter so you can narrow the list to artists with your uploaded audio.',
     'Lyrics are larger and easier to read on phones.',
     'Removed the mystery volume slider from the phone player — use your device volume instead.',
-    'Background Play stays visible on phones once you unlock it, and it appears as soon as a track’s uploaded audio is ready (including when you press Play on an artist card).',
+    'Background Play stays visible on phones when you are signed in, and it appears as soon as a track’s uploaded audio is ready (including when you press Play on an artist card).',
     'Fixed Background Play going silent: the audio handoff from YouTube now waits for the MP3 to load before seeking, and if it fails YouTube takes over again instead of leaving you with no sound.',
     'Background Play on phones now keeps going through the rest of the queue after a song ends — it was stopping after the current track with the screen off.',
   ]},
@@ -12810,12 +12722,13 @@ async function userMenuAction(action) {
   closeUserMenu();
   if (action === 'bgunlock') {
     await refreshBgUnlock();
-    if (sjHasBgUnlock()) {
-      const until = sjBgUnlock?.until ? new Date(sjBgUnlock.until).toLocaleDateString() : '';
-      showToast(until ? `Background Play unlocked through ${until}` : 'Background Play is unlocked');
+    if (!googleUser) {
+      showToast('Sign in to see your audio storage.');
       return;
     }
-    openBgUnlockPaywall('user_menu');
+    const used = Number(sjBgUnlock?.used) || 0;
+    const limit = Number(sjBgUnlock?.limit) || SJ_UPLOAD_LIMIT_BYTES;
+    showToast(`${fmtBytes(used)} used of ${fmtBytes(limit)} audio storage`);
     return;
   }
   if (action === 'playlists') {
@@ -13067,9 +12980,13 @@ function updateAuthBtn() {
   });
   const bgMenu = document.getElementById('user-menu-bgunlock');
   if (bgMenu) {
-    bgMenu.textContent = sjHasBgUnlock()
-      ? 'Background Play Forever ✓'
-      : 'Background Play Forever — $5';
+    if (sjHasBgUnlock()) {
+      const used = Number(sjBgUnlock?.used) || 0;
+      const limit = Number(sjBgUnlock?.limit) || SJ_UPLOAD_LIMIT_BYTES;
+      bgMenu.textContent = `Audio storage · ${fmtBytes(used)} / ${fmtBytes(limit)}`;
+    } else {
+      bgMenu.textContent = 'Audio storage · 500 MB';
+    }
   }
   if (updatedEl) {
     try {

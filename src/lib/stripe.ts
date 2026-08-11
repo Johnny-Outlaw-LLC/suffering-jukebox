@@ -16,5 +16,5 @@ export function getStripe(): Stripe {
 export const SJ_BG_PRICE_ID =
   process.env.STRIPE_BG_PRICE_ID?.trim() || "price_1U2jT3BgSEjfnmpGBo9kj3sy";
 
-export const SJ_BG_STORAGE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GiB
+export const SJ_BG_STORAGE_BYTES = 500 * 1024 * 1024; // 500 MiB (free uploads)
 export const SJ_BG_YEARS = 10;
