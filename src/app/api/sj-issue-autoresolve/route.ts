@@ -9,6 +9,7 @@ import {
   JUKEBOX_SCHEMA,
   type YtVideoInfo,
 } from "@/lib/sj-admin-auth";
+import { recordTrackVideo } from "@/lib/track-videos";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -159,17 +160,30 @@ function pickBestReplacement(
   artistName: string | null,
   trackName: string | null,
 ): YtVideoInfo | null {
-  const artistLc = (artistName ?? "").toLowerCase();
-  const scored = candidates
+  const artistLc = (artistName ?? "").toLowerCase().trim();
+  // "- Topic" only means "official upload" when it is *this* artist's Topic
+  // channel. Rewarding the suffix on its own is how "Albemarle Station" ended up
+  // pointing at a 43-view upload on "True Delusions - Topic".
+  const isArtistChannel = (ch: string) => !!artistLc && ch.includes(artistLc);
+
+  const eligible = candidates
     .map((id) => info[id])
     .filter((v): v is YtVideoInfo => !!v && v.playable)
-    .filter((v) => titleMatches(trackName, v.title))
+    .filter((v) => titleMatches(trackName, v.title));
+
+  // If anything from the right artist turned up, never settle for a stranger's
+  // upload just because it has more views.
+  const onArtist = eligible.filter((v) => isArtistChannel(v.channelTitle.toLowerCase()));
+  const pool = onArtist.length ? onArtist : eligible;
+
+  const scored = pool
     .map((v) => {
       const ch = v.channelTitle.toLowerCase();
+      const mine = isArtistChannel(ch);
       let bonus = 0;
-      if (ch.includes(" - topic")) bonus += 3_000_000_000;
-      else if (ch.includes("vevo")) bonus += 2_000_000_000;
-      else if (artistLc && ch.includes(artistLc)) bonus += 1_000_000_000;
+      if (mine && ch.includes(" - topic")) bonus += 3_000_000_000;
+      else if (mine && ch.includes("vevo")) bonus += 2_000_000_000;
+      else if (mine) bonus += 1_000_000_000;
       return { v, score: bonus + v.views };
     })
     .sort((a, b) => b.score - a.score);
@@ -366,7 +380,25 @@ async function runAutoResolve() {
       );
 
       if (best) {
+        // Keep the outgoing upload on the track. It is usually the popular one,
+        // and the charts read the most-viewed version, not the current one.
+        if (vid) {
+          await recordTrackVideo(
+            sb,
+            trackId,
+            cur
+              ? { videoId: vid, title: cur.title, channel: cur.channelTitle, views: cur.views, likes: cur.likes, playable: cur.playable }
+              : { videoId: vid, playable: false },   // pulled from YouTube entirely
+            { source: "sync" },
+          );
+        }
         await writeVideoMetrics(sb, trackId, ctx.albumId, best);
+        await recordTrackVideo(
+          sb,
+          trackId,
+          { videoId: best.id, title: best.title, channel: best.channelTitle, views: best.views, likes: best.likes },
+          { makePrimary: true, source: "autoresolve" },
+        );
         await resolveIssues(sb, ids, {
           resolved: true,
           resolved_at: nowIso,

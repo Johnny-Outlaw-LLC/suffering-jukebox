@@ -1030,6 +1030,67 @@ mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
   border-right: none; border-radius: 10px 0 0 10px; display: flex; flex-direction: column;
   overflow: hidden; flex-shrink: 0; position: relative; min-height: 0;
 }
+/* Version switcher popup - lists every YouTube upload we hold for a song */
+.tv-menu {
+  position: fixed; z-index: 2147483000; min-width: 230px; max-width: 320px;
+  max-height: 60vh; overflow-y: auto;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 4px;
+}
+.tv-menu-hd {
+  font-size: .5rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted); padding: 6px 8px 4px;
+}
+.tv-menu-item {
+  display: flex; align-items: flex-start; gap: 6px; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer;
+  color: var(--text); font: inherit;
+}
+.tv-menu-item:hover:not(:disabled) { background: rgba(255,255,255,.07); }
+.tv-menu-item.tv-on { color: var(--accent); }
+.tv-menu-item.tv-dead { opacity: .45; cursor: not-allowed; }
+.tv-tick { width: 10px; flex-shrink: 0; font-size: .6rem; line-height: 1.3; }
+.tv-body { display: flex; flex-direction: column; min-width: 0; }
+.tv-name { font-size: .62rem; font-weight: 600; }
+.tv-star {
+  font-size: .45rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px;
+  padding: 0 3px; margin-left: 3px; vertical-align: 1px;
+}
+.tv-meta { font-size: .5rem; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.tv-menu-act {
+  display: block; width: 100%; text-align: left; margin-top: 4px;
+  border: 0; border-top: 1px solid var(--border); background: none; cursor: pointer;
+  color: var(--accent); font: inherit; font-size: .55rem; padding: 7px 8px 5px;
+}
+.tv-menu-act:hover { background: rgba(255,255,255,.07); }
+
+/* Karaoke timing offset, shown to admins and whoever imported the music */
+.tv-time-btn {
+  flex-shrink: 0; background: none; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-muted); font: inherit; font-size: .45rem; padding: 2px 5px; cursor: pointer;
+}
+.tv-time-btn:hover { color: var(--accent); border-color: var(--accent); }
+#tv-offset-row {
+  align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 5px 10px; background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.tv-offset-lbl { font-size: .45rem; color: var(--text-muted); }
+.tv-offset-btn {
+  background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text);
+  font: inherit; font-size: .5rem; line-height: 1; padding: 3px 6px; cursor: pointer;
+}
+.tv-offset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.tv-offset-wide { font-size: .45rem; }
+.tv-offset-save { color: var(--accent); border-color: var(--accent); }
+#tv-offset-input {
+  width: 52px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font: inherit; font-size: .5rem; padding: 3px 4px; text-align: right;
+}
+#tv-offset-status { font-size: .45rem; color: var(--text-muted); }
+
 #ytp-lyr-text {
   flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; box-sizing: border-box;
   scrollbar-width: thin; scrollbar-color: #333 transparent;
@@ -3869,7 +3930,18 @@ function openYTPlayer(videoId, title, trackId, ev) {
       '<span class="ytp-lyr-font-ctrl" style="font-size:.38rem;color:var(--text-muted)">A</span>' +
       '<input class="ytp-lyr-font-ctrl" type="range" min="9" max="28" value="' + globalLyricSize + '" onmousedown="event.stopPropagation()" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none">' +
       '<span class="ytp-lyr-font-ctrl" style="font-size:.5rem;color:var(--text-muted)">A</span>' +
+      '<button id="ytp-lyr-time-btn" class="tv-time-btn" style="display:none" onmousedown="event.stopPropagation()" onclick="tvToggleOffsetEditor()" title="Shift the karaoke timing for this version of the video">Timing</button>' +
       '<span id="ytp-lyr-btns" style="display:flex;gap:4px;flex-shrink:0;align-items:center"></span>' +
+    '</div>' +
+    '<div id="tv-offset-row" style="display:none">' +
+      '<span class="tv-offset-lbl">Lyrics start</span>' +
+      '<button class="tv-offset-btn" onclick="tvNudgeOffset(-0.5)" title="Lines run half a second earlier">−</button>' +
+      '<input id="tv-offset-input" type="number" step="0.5" value="0" oninput="tvPreviewOffset()" onmousedown="event.stopPropagation()">' +
+      '<span class="tv-offset-lbl">s</span>' +
+      '<button class="tv-offset-btn" onclick="tvNudgeOffset(0.5)" title="Lines run half a second later">+</button>' +
+      '<button class="tv-offset-btn tv-offset-wide" onclick="tvOffsetFromNow()" title="Set the offset from where the song is right now">Use now</button>' +
+      '<button class="tv-offset-btn tv-offset-save" onclick="tvSaveOffset()">Save</button>' +
+      '<span id="tv-offset-status"></span>' +
     '</div>' +
     '<div id="ytp-lyr-body" style="flex:1;overflow-y:auto;padding:12px 14px;scrollbar-width:thin;scrollbar-color:var(--border) transparent" onwheel="lyrScrollHold()" ontouchmove="lyrScrollHold()">' +
       '<div id="ytp-lyr-text" class="sc-lyrics-ph">No track playing.</div>' +
@@ -3914,7 +3986,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="setYtShuffleEnabled(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
-        <button class="ytp-btn" id="ytp-amhig-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleAMHIGVersion();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">▶ Original</button>
+        <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">⇄ Versions ▾</button>
         <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
           <span style="font-size:.5rem;letter-spacing:.02em">Vol</span>
@@ -7910,15 +7982,13 @@ let _lyrSyncScrollHold = 0;     // pause auto-scroll until this timestamp after 
 let _lyrSyncEnabled = true;
 try { _lyrSyncEnabled = localStorage.getItem('sj_lyric_sync') !== '0'; } catch(e) {}
 
-// "All My Happiness is Gone" music video has a 2:06 instrumental intro before the song starts.
-// The original audio upload doesn't. We track a per-session offset so lyric sync stays accurate.
-const AMHIG_ORIG_VIDEO_ID  = 'SS792qY-y7M';
-const AMHIG_MV_LYR_OFFSET  = 128; // seconds (2:06 intro + ~2s buffer)
-// "Random Rules" - alternate official music video (default ytData upload is the original audio).
-const RR_MV_VIDEO_ID       = 'bPD0JLwpc3k';
-let   _ytpLyrOffset        = 0;   // subtract from video time before matching LRC timestamps
+// Subtracted from player time before matching LRC timestamps, so a music video
+// with a long instrumental intro still highlights the right line. The number
+// comes from the version's own lyric_offset_seconds - it used to be hardcoded
+// here for the two songs we happened to know about.
+let _ytpLyrOffset = 0;
 
-// Called whenever the active video/track changes. Shows/hides the alt-version switcher
+// Called whenever the active video/track changes. Shows/hides the version switcher
 // button and sets the lyric sync offset appropriately.
 function applyNowPlayingHighlight() {
   document.querySelectorAll('.trk-line.trk-playing').forEach(el => el.classList.remove('trk-playing'));
@@ -7941,81 +8011,251 @@ function ytpOnTrackChange(videoId, trackId, title) {
   // Ensure background-play audio metadata is loaded for the current track
   // (landing / shuffle paths can open the player before loadTrackAudio finishes).
   if (trackId && !taData[trackId]) loadTrackAudio([trackId]);
-  const t       = (title || '').toLowerCase();
-  const isAMHIG = t.includes('all my happiness');
-  const isRR    = t.includes('random rules');
   _lyrSyncActiveIdx = -1; // force tick to re-evaluate from scratch
   if (ytPlayerEl && _ytUserWantsPlay) ytpUpdateMediaSession();
-  const btn = document.getElementById('ytp-amhig-btn');
-  if (!btn) return;
-  if (isAMHIG) {
-    const isOrig = videoId === AMHIG_ORIG_VIDEO_ID;
-    _ytpLyrOffset = isOrig ? 0 : AMHIG_MV_LYR_OFFSET;
-    btn.textContent  = isOrig ? '▶ Music Video' : '▶ Original';
-    btn.style.display = '';
-  } else if (isRR) {
-    const isMV = videoId === RR_MV_VIDEO_ID;
-    _ytpLyrOffset = 0;
-    btn.textContent  = isMV ? '▶ Original' : '▶ Music Video';
-    btn.style.display = '';
-  } else {
-    _ytpLyrOffset = 0;
-    btn.style.display = 'none';
+  ytpCloseVersionMenu();
+  _ytpLyrOffset = tvOffset(trackId, videoId);
+  ytpSyncVersionBtn(trackId, videoId);
+  // Versions may not be in memory yet on a cold start; fill in once they land.
+  if (trackId && !trackVideos[trackId]) {
+    loadTrackVideos([trackId]).then(() => {
+      if (nowPlayingTrackId !== trackId) return;
+      _ytpLyrOffset     = tvOffset(trackId, ytVideoId);
+      _lyrSyncActiveIdx = -1;
+      ytpSyncVersionBtn(trackId, ytVideoId);
+    });
   }
 }
 
-// Swap between alternate video versions (AMHIG original ↔ MV, Random Rules MV ↔ original).
-function ytpToggleAMHIGVersion() {
-  const item  = ytQueue[ytQueueIdx];
-  const title = (item?.title || '').toLowerCase();
-  const isAMHIG = title.includes('all my happiness');
-  const isRR    = title.includes('random rules');
-  if (isAMHIG) {
-    const isOrig = ytVideoId === AMHIG_ORIG_VIDEO_ID;
-    if (isOrig) {
-      const mvId = item?.trackId ? ytData[item.trackId]?.video_id : null;
-      if (!mvId) return;
-      ytVideoId = mvId;
-      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(mvId);
-      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(mvId); }
-      _ytpLyrOffset     = AMHIG_MV_LYR_OFFSET;
-      _lyrSyncActiveIdx = -1;
-      const btn = document.getElementById('ytp-amhig-btn');
-      if (btn) btn.textContent = '▶ Original';
-      ytpApplyTitle(item?.trackId || null, item?.title || 'All My Happiness is Gone');
-    } else {
-      ytVideoId = AMHIG_ORIG_VIDEO_ID;
-      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(AMHIG_ORIG_VIDEO_ID);
-      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(AMHIG_ORIG_VIDEO_ID); }
-      _ytpLyrOffset     = 0;
-      _lyrSyncActiveIdx = -1;
-      const btn = document.getElementById('ytp-amhig-btn');
-      if (btn) btn.textContent = '▶ Music Video';
-      ytpApplyTitle(item?.trackId || null, 'All My Happiness is Gone (Original)');
+// ── Version switcher ──────────────────────────────────────────────────────
+// Shown in the player toolbar whenever a track has more than one upload, in the
+// floating window and in fullscreen alike.
+let _tvMenuEl = null;
+
+function ytpSyncVersionBtn(trackId, videoId) {
+  const btn = document.getElementById('ytp-ver-btn');
+  if (!btn) return;
+  const vs = tvList(trackId);
+  if (vs.length < 2) { btn.style.display = 'none'; return; }
+  const cur = tvFor(trackId, videoId);
+  btn.style.display = '';
+  btn.textContent   = '⇄ ' + (cur ? tvLabel(cur) : 'Versions') + ' ▾';
+  btn.title         = vs.length + ' versions of this song on YouTube - tap to switch';
+}
+
+function ytpCloseVersionMenu() {
+  if (_tvMenuEl) { _tvMenuEl.remove(); _tvMenuEl = null; }
+  document.removeEventListener('mousedown', _tvMenuOutside, true);
+}
+function _tvMenuOutside(e) {
+  if (_tvMenuEl && !_tvMenuEl.contains(e.target) && e.target.id !== 'ytp-ver-btn') ytpCloseVersionMenu();
+}
+
+async function ytpToggleVersionMenu() {
+  if (_tvMenuEl) { ytpCloseVersionMenu(); return; }
+  const item    = ytQueue[ytQueueIdx];
+  const trackId = item?.trackId || nowPlayingTrackId;
+  const vs      = tvList(trackId);
+  if (!trackId || vs.length < 2) return;
+  const btn = document.getElementById('ytp-ver-btn');
+  if (!btn) return;
+
+  const menu = document.createElement('div');
+  menu.id = 'ytp-ver-menu';
+  menu.className = 'tv-menu';
+  menu.onmousedown = (e) => e.stopPropagation();
+  menu.innerHTML = '<div class="tv-menu-hd">Versions on YouTube</div>' +
+    vs.map(v => {
+      const on   = v.video_id === ytVideoId;
+      const dead = v.is_playable === false;
+      const meta = [v.channel || '', Number.isFinite(Number(v.view_count)) ? fmtV(Number(v.view_count)) + ' views' : '']
+        .filter(Boolean).join(' · ');
+      return '<button class="tv-menu-item' + (on ? ' tv-on' : '') + (dead ? ' tv-dead' : '') + '"' +
+             (dead ? ' disabled title="This upload is no longer available on YouTube"' : '') +
+             ' onclick="ytpPlayVersion(\'' + v.video_id + '\')">' +
+               '<span class="tv-tick">' + (on ? '▸' : '') + '</span>' +
+               '<span class="tv-body">' +
+                 '<span class="tv-name">' + escHtml(tvLabel(v)) + (v.is_primary ? ' <span class="tv-star">default</span>' : '') + '</span>' +
+                 '<span class="tv-meta">' + escHtml(meta) + (dead ? ' · unavailable' : '') + '</span>' +
+               '</span>' +
+             '</button>';
+    }).join('') +
+    '<div id="tv-menu-admin"></div>';
+
+  document.body.appendChild(menu);
+  _tvMenuEl = menu;
+  const r = btn.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+  // Flip above the button when there is no room underneath.
+  const below = window.innerHeight - r.bottom;
+  if (below < menu.offsetHeight + 12) menu.style.top = Math.max(8, r.top - menu.offsetHeight - 6) + 'px';
+  else menu.style.top = (r.bottom + 6) + 'px';
+  setTimeout(() => document.addEventListener('mousedown', _tvMenuOutside, true), 0);
+
+  // Editors get one extra control: which version everyone else lands on.
+  if (await tvCanEdit(trackId)) {
+    const host = document.getElementById('tv-menu-admin');
+    if (!host || _tvMenuEl !== menu) return;
+    const cur = tvFor(trackId, ytVideoId);
+    if (cur && !cur.is_primary) {
+      host.innerHTML = '<button class="tv-menu-act" onclick="tvMakeDefault()">★ Make this the default version</button>';
     }
-  } else if (isRR) {
-    const isMV = ytVideoId === RR_MV_VIDEO_ID;
-    if (isMV) {
-      const origId = item?.trackId ? ytData[item.trackId]?.video_id : null;
-      if (!origId) return;
-      ytVideoId = origId;
-      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(origId);
-      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(origId); }
-      _ytpLyrOffset     = 0;
-      _lyrSyncActiveIdx = -1;
-      const btn = document.getElementById('ytp-amhig-btn');
-      if (btn) btn.textContent = '▶ Music Video';
-      ytpApplyTitle(item?.trackId || null, item?.title || 'Random Rules');
-    } else {
-      ytVideoId = RR_MV_VIDEO_ID;
-      if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById(RR_MV_VIDEO_ID);
-      else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(RR_MV_VIDEO_ID); }
-      _ytpLyrOffset     = 0;
-      _lyrSyncActiveIdx = -1;
-      const btn = document.getElementById('ytp-amhig-btn');
-      if (btn) btn.textContent = '▶ Original';
-      ytpApplyTitle(item?.trackId || null, 'Random Rules (Music Video)');
+  }
+}
+
+// Switch the playing video. Positions are carried across using each version's
+// lyric offset, so jumping to a music video with a long intro lands in the same
+// place in the song rather than the same place in the file.
+function ytpPlayVersion(videoId) {
+  const item    = ytQueue[ytQueueIdx];
+  const trackId = item?.trackId || nowPlayingTrackId;
+  ytpCloseVersionMenu();
+  if (!videoId || videoId === ytVideoId) return;
+  const v = tvFor(trackId, videoId);
+  if (v && v.is_playable === false) return;
+  let at = 0;
+  try { at = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (e) {}
+  const from = tvOffset(trackId, ytVideoId);
+  const to   = tvOffset(trackId, videoId);
+  const seek = Math.max(0, at - from + to);
+
+  ytVideoId         = videoId;
+  _ytpLyrOffset     = to;
+  _lyrSyncActiveIdx = -1;
+  // Keep the queue entry in step, or the background-play resync will drag the
+  // player straight back to the old upload.
+  if (item) item.videoId = videoId;
+
+  if (ytAPIPlayer?.loadVideoById) ytAPIPlayer.loadVideoById({ videoId, startSeconds: seek });
+  else { const f = ytPlayerEl?.querySelector('iframe'); if (f) f.src = ytpEmbedSrc(videoId, true); }
+  ytpSyncVersionBtn(trackId, videoId);
+  tvSyncOffsetUI(trackId, videoId);
+}
+
+// ── Who may retime lyrics or pick the default version ─────────────────────
+// Admins, and whoever imported the artist or album. Answered by the database
+// from the signed-in user's token, never from anything the page asserts.
+const _tvEditCache = {};
+async function tvCanEdit(trackId) {
+  if (!trackId) return false;
+  if (sjIsAdmin) return true;
+  if (!googleUser) return false;
+  if (_tvEditCache[trackId] !== undefined) return _tvEditCache[trackId];
+  try {
+    const rows = await dbRpcAuth('/rpc/my_editable_tracks', { p_track_ids: [trackId] });
+    _tvEditCache[trackId] = Array.isArray(rows) && rows.length > 0;
+  } catch (e) { _tvEditCache[trackId] = false; }
+  return _tvEditCache[trackId];
+}
+
+async function tvMakeDefault() {
+  const item    = ytQueue[ytQueueIdx];
+  const trackId = item?.trackId || nowPlayingTrackId;
+  if (!trackId || !ytVideoId) return;
+  ytpCloseVersionMenu();
+  try {
+    await dbRpcAuth('/rpc/set_primary_track_video', { p_track_id: trackId, p_video_id: ytVideoId });
+    tvList(trackId).forEach(v => { v.is_primary = v.video_id === ytVideoId; });
+    if (ytData[trackId]) {
+      ytData[trackId].video_id = ytVideoId;
+      const v = tvFor(trackId, ytVideoId);
+      if (v?.thumbnail) ytData[trackId].thumbnail = v.thumbnail;
     }
+    ytpSyncVersionBtn(trackId, ytVideoId);
+    showToast('This version now plays by default.');
+  } catch (e) {
+    alert('Could not set the default version. ' + (e.message || ''));
+  }
+}
+
+// ── Lyric timing offset ───────────────────────────────────────────────────
+// Music videos often open with an instrumental the album cut does not have, so
+// the karaoke lines run ahead of the singing. The offset shifts them back for
+// that video only, and is saved per version rather than per song.
+let _tvOffsetOpen = false;
+
+async function tvSyncOffsetUI(trackId, videoId) {
+  const btn = document.getElementById('ytp-lyr-time-btn');
+  if (!btn) return;
+  const v   = tvFor(trackId, videoId);
+  const can = v && syncedLyricsCache[trackId] && await tvCanEdit(trackId);
+  btn.style.display = can ? '' : 'none';
+  if (!can) { tvCloseOffsetEditor(); return; }
+  const off = Number(v.lyric_offset_seconds) || 0;
+  btn.textContent = off ? 'Timing ' + (off > 0 ? '+' : '') + off + 's' : 'Timing';
+  const inp = document.getElementById('tv-offset-input');
+  if (inp && document.activeElement !== inp) inp.value = off;
+}
+
+function tvToggleOffsetEditor() {
+  const row = document.getElementById('tv-offset-row');
+  if (!row) return;
+  _tvOffsetOpen = !_tvOffsetOpen;
+  row.style.display = _tvOffsetOpen ? 'flex' : 'none';
+  if (_tvOffsetOpen) {
+    const inp = document.getElementById('tv-offset-input');
+    if (inp) inp.value = tvOffset(nowPlayingTrackId, ytVideoId);
+  }
+}
+function tvCloseOffsetEditor() {
+  _tvOffsetOpen = false;
+  const row = document.getElementById('tv-offset-row');
+  if (row) row.style.display = 'none';
+}
+
+// Live preview - the lines move as soon as you nudge, before anything is saved.
+function tvNudgeOffset(delta) {
+  const inp = document.getElementById('tv-offset-input');
+  if (!inp) return;
+  const next = Math.round(((Number(inp.value) || 0) + delta) * 100) / 100;
+  inp.value = next;
+  tvPreviewOffset();
+}
+function tvPreviewOffset() {
+  const inp = document.getElementById('tv-offset-input');
+  if (!inp) return;
+  _ytpLyrOffset     = Number(inp.value) || 0;
+  _lyrSyncActiveIdx = -1;
+  const st = document.getElementById('tv-offset-status');
+  if (st) { st.textContent = 'previewing'; st.style.color = 'var(--text-muted)'; }
+}
+
+// Take the timing from where the song actually is: play until the current line
+// should be starting, then press this.
+function tvOffsetFromNow() {
+  const sync = syncedLyricsCache[nowPlayingTrackId];
+  const inp  = document.getElementById('tv-offset-input');
+  if (!sync || !sync.length || !inp) return;
+  let t = 0;
+  try {
+    t = (_taBgActive && _taAudioEl) ? (_taAudioEl.currentTime || 0)
+                                    : (ytAPIPlayer?.getCurrentTime?.() || 0);
+  } catch (e) { return; }
+  // Line the first sung line up with the playhead.
+  inp.value = Math.round((t - sync[0].t) * 100) / 100;
+  tvPreviewOffset();
+}
+
+async function tvSaveOffset() {
+  const trackId = nowPlayingTrackId;
+  const inp = document.getElementById('tv-offset-input');
+  const st  = document.getElementById('tv-offset-status');
+  if (!trackId || !ytVideoId || !inp) return;
+  const val = Number(inp.value) || 0;
+  if (st) { st.textContent = 'Saving…'; st.style.color = 'var(--text-muted)'; }
+  try {
+    const saved = await dbRpcAuth('/rpc/set_video_lyric_offset',
+      { p_track_id: trackId, p_video_id: ytVideoId, p_offset: val });
+    const applied = Number(saved ?? val) || 0;
+    const v = tvFor(trackId, ytVideoId);
+    if (v) v.lyric_offset_seconds = applied;
+    _ytpLyrOffset     = applied;
+    _lyrSyncActiveIdx = -1;
+    inp.value = applied;
+    if (st) { st.textContent = '✓ Saved'; st.style.color = '#4ade80'; }
+    tvSyncOffsetUI(trackId, ytVideoId);
+  } catch (e) {
+    if (st) { st.textContent = 'Could not save.'; st.style.color = 'var(--danger,#ef4444)'; }
   }
 }
 
@@ -8046,6 +8286,7 @@ async function ytpApplySync(trackId) {
   const chk  = document.getElementById('ytp-lyr-sync-chk');
   if (wrap) wrap.style.display = sync ? 'flex' : 'none';
   if (chk) chk.checked = _lyrSyncEnabled;
+  tvSyncOffsetUI(trackId, ytVideoId);
   const textEl = document.getElementById('ytp-lyr-text');
   if (!textEl) return;
   if (sync && _lyrSyncEnabled) {
@@ -10145,6 +10386,67 @@ async function loadData() {
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
+// ── Track versions (jukebox.track_videos) ─────────────────────────────────
+// A song can live on YouTube several times over: the album audio, an official
+// music video, a live take. We keep every upload we have ever seen instead of
+// letting the nightly auto-fix overwrite the last one, because the replacement
+// is often a far less popular re-upload and the chart bar would collapse with it.
+const trackVideos = {};   // trackId → [version, ...] (most viewed first)
+
+async function loadTrackVideos(trackIds) {
+  const ids  = [...new Set((trackIds || []).filter(Boolean))];
+  const want = ids.filter(id => !trackVideos[id]);
+  if (!want.length) return trackVideos;
+  const chunks = [];
+  for (let i = 0; i < want.length; i += 60) chunks.push(want.slice(i, i + 60));
+  const cols = 'track_id,video_id,title,channel,thumbnail,view_count,like_count,' +
+               'lyric_offset_seconds,is_primary,is_playable,label';
+  try {
+    const res = await Promise.all(chunks.map(c =>
+      dbGet(`/track_videos?track_id=in.(${c.join(',')})&select=${cols}&order=view_count.desc.nullslast`)));
+    want.forEach(id => { trackVideos[id] = []; });
+    res.flat().forEach(r => { (trackVideos[r.track_id] = trackVideos[r.track_id] || []).push(r); });
+  } catch (e) {
+    // Mark them loaded-but-empty so a failed call does not retry on every render.
+    want.forEach(id => { if (!trackVideos[id]) trackVideos[id] = []; });
+  }
+  return trackVideos;
+}
+
+function tvList(trackId)  { return trackVideos[trackId] || []; }
+function tvFor(trackId, videoId) { return tvList(trackId).find(v => v.video_id === videoId) || null; }
+
+// The version that plays by default. Prefer one that still works.
+function tvPrimary(trackId) {
+  const vs = tvList(trackId);
+  return vs.find(v => v.is_primary && v.is_playable !== false)
+      || vs.find(v => v.is_primary)
+      || vs.find(v => v.is_playable !== false)
+      || vs[0] || null;
+}
+
+// The version the charts count: the most-watched one that still plays. Never a
+// sum across versions - the same listen would be counted twice.
+function tvTop(trackId) {
+  const vs = tvList(trackId).filter(v => v.is_playable !== false && Number.isFinite(Number(v.view_count)));
+  if (!vs.length) return null;
+  return vs.reduce((a, b) => (Number(b.view_count) > Number(a.view_count) ? b : a));
+}
+
+// Seconds to subtract from player time before matching lyric timestamps. A music
+// video with a long instrumental intro needs a positive number here.
+function tvOffset(trackId, videoId) {
+  const v = tvFor(trackId, videoId);
+  return v ? (Number(v.lyric_offset_seconds) || 0) : 0;
+}
+
+function tvLabel(v) {
+  if (!v) return 'Version';
+  if (v.label) return v.label;
+  const ch = (v.channel || '').replace(/\s*-\s*topic\s*$/i, '').trim();
+  return ch || v.title || v.video_id;
+}
+
 // Full YouTube metrics for UI (views / likes / thumbnails / video id).
 // Use on artist-page loads where charts and cards need the numbers — not for
 // building a play queue. Playback only needs loadYTVideoIds().
@@ -10152,17 +10454,41 @@ async function loadYT(trackIds) {
   if (!trackIds.length) return {};
   const chunks = [];
   for (let i = 0; i < trackIds.length; i += 50) chunks.push(trackIds.slice(i, i + 50));
-  const results = await Promise.all(chunks.map(chunk =>
-    dbGet(`/metrics?metric_source=eq.youtube&track_id=in.(${chunk.join(',')})`)));
-  const map = {};
+  const [results] = await Promise.all([
+    Promise.all(chunks.map(chunk => dbGet(`/metrics?metric_source=eq.youtube&track_id=in.(${chunk.join(',')})`))),
+    loadTrackVideos(trackIds),
+  ]);
+  const map  = {};
+  const seen = {};   // trackId → metric_name → newest metric_date seen so far
   for (const row of results.flat()) {
     const tid = row.track_id;
-    if (!map[tid]) map[tid] = {};
+    if (!map[tid]) { map[tid] = {}; seen[tid] = {}; }
+    // A track can carry several rows per metric once its video has been swapped.
+    // Take the newest rather than whichever the database hands back last.
+    const prev = seen[tid][row.metric_name];
+    if (prev && prev >= row.metric_date) continue;
+    seen[tid][row.metric_name] = row.metric_date;
     if (row.metric_name === 'youtube_views')     map[tid].views     = Number(row.metric_value);
     if (row.metric_name === 'youtube_likes')     map[tid].likes     = Number(row.metric_value);
     if (row.metric_name === 'youtube_video_id')  map[tid].video_id  = row.metric_text_value;
     if (row.metric_name === 'youtube_thumbnail') map[tid].thumbnail = row.metric_text_value;
   }
+  // Version list wins over the raw metrics: it knows which upload is the default
+  // and which one the play count should come from.
+  trackIds.forEach(tid => {
+    if (!tvList(tid).length) return;
+    if (!map[tid]) map[tid] = {};
+    const pri = tvPrimary(tid);
+    if (pri) {
+      map[tid].video_id = pri.video_id;
+      if (pri.thumbnail) map[tid].thumbnail = pri.thumbnail;
+    }
+    const top = tvTop(tid);
+    if (top) {
+      map[tid].views = Number(top.view_count) || 0;
+      map[tid].likes = Number(top.like_count) || 0;
+    }
+  });
   loadTrackAudio(trackIds);   // non-blocking - background-play audio availability
   return map;
 }
@@ -10174,14 +10500,27 @@ async function loadYTVideoIds(trackIds) {
   const ids = [...new Set(trackIds.filter(Boolean))];
   const chunks = [];
   for (let i = 0; i < ids.length; i += 80) chunks.push(ids.slice(i, i + 80));
-  const results = await Promise.all(chunks.map(chunk =>
-    dbGet(`/metrics?metric_source=eq.youtube&metric_name=eq.youtube_video_id&track_id=in.(${chunk.join(',')})&select=track_id,metric_text_value`)));
-  const map = {};
+  const [results] = await Promise.all([
+    Promise.all(chunks.map(chunk =>
+      dbGet(`/metrics?metric_source=eq.youtube&metric_name=eq.youtube_video_id&track_id=in.(${chunk.join(',')})&select=track_id,metric_text_value,metric_date`))),
+    loadTrackVideos(ids),
+  ]);
+  const map  = {};
+  const seen = {};
   results.flat().forEach(row => {
     if (!row.track_id || !row.metric_text_value) return;
+    if (seen[row.track_id] && seen[row.track_id] >= row.metric_date) return;
+    seen[row.track_id] = row.metric_date;
     map[row.track_id] = { video_id: row.metric_text_value };
-    if (!ytData[row.track_id]) ytData[row.track_id] = {};
-    if (!ytData[row.track_id].video_id) ytData[row.track_id].video_id = row.metric_text_value;
+  });
+  // The default version, where one has been chosen, beats the newest metric row.
+  ids.forEach(tid => {
+    const pri = tvPrimary(tid);
+    if (pri) map[tid] = { video_id: pri.video_id };
+    const vid = map[tid]?.video_id;
+    if (!vid) return;
+    if (!ytData[tid]) ytData[tid] = {};
+    if (!ytData[tid].video_id) ytData[tid].video_id = vid;
   });
   return map;
 }
@@ -12521,6 +12860,11 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-12';
 const SJ_CHANGELOG = [
   { date: '2026-08-12', items: [
     'The play queue and saved playlists now show each track as Artist - Song, matching the player title.',
+    'A song can now hold more than one YouTube video - the album audio, an official music video, a live take. Nothing gets thrown away when the app finds a replacement for a broken link.',
+    'Play counts in the bar charts now come from the most-watched version of a song rather than whichever video happens to be playing. Songs whose links were swapped for obscure re-uploads read correctly again. Counts are never added together across versions.',
+    'A Versions button appears in the player when a song has more than one video. Switch between them while it plays, in the window or fullscreen, and it picks up where you left off.',
+    'Karaoke timing can be adjusted per video. If a music video opens with a long intro, admins and whoever imported the music can nudge the lyrics into place and save it for everyone.',
+    'The nightly link repair no longer accepts a video from a different artist just because the song title matches.',
   ]},
   { date: '2026-08-11', items: [
     'Explore Artists is now the first tab on the home page; My Jukebox sits second.',

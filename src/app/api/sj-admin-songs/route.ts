@@ -7,6 +7,7 @@ import {
   verifySjAdmin,
   JUKEBOX_SCHEMA,
 } from "@/lib/sj-admin-auth";
+import { recordTrackVideo } from "@/lib/track-videos";
 
 export const dynamic = "force-dynamic";
 
@@ -272,6 +273,15 @@ export async function PATCH(req: NextRequest) {
     console.error("[sj-admin-songs:metrics]", insertErr);
     return NextResponse.json({ ok: false, error: "Could not save metrics." }, { status: 500 });
   }
+
+  // Keep the version list in step, and make the link an admin just pasted the
+  // one that plays.
+  await recordTrackVideo(
+    sb,
+    trackId,
+    { videoId, title: track.name, thumbnail: stats.thumbnail, views: stats.views, likes: stats.likes },
+    { makePrimary: true, source: "manual", addedBy: auth.user.email },
+  );
 
   return NextResponse.json({
     ok: true,
