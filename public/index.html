@@ -4575,14 +4575,6 @@ function updateYTQueueUI() {
 
   // (queue height is now fixed - no drag handle)
 
-  const _qArtistIdx = new Map();
-  try {
-    for (const aid of Object.keys(tracks)) {
-      const _art = (typeof allArtists !== 'undefined' && allArtists) ? allArtists.find(a => a.id === aid) : null;
-      const _nm = _art ? _art.name : '';
-      for (const t of (tracks[aid] || [])) _qArtistIdx.set(t.id, _nm);
-    }
-  } catch (_) {}
   const queueHTML = `<div class="yt-queue-wrap" style="display:flex;flex-direction:column;flex-shrink:0">
     ${ytPlaylistBarHTML()}
     <div class="yt-queue-section">
@@ -4590,9 +4582,14 @@ function updateYTQueueUI() {
         <span>Queue · ${ytQueue.length} tracks</span>
         <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
       </div>
-      ${ytQueue.map((item, i) => `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" onclick="ytPlayQueueIdx(${i})">
+      ${ytQueue.map((item, i) => {
+        const _qm = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
+        const _qArtist = (_qm && _qm.artist) || item.artist || '';
+        const _qSong = item.title || (_qm && _qm.title) || '';
+        const _qLabel = (_qArtist ? (_qArtist + ' - ' + _qSong) : _qSong).replace(/</g, '&lt;');
+        return `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" onclick="ytPlayQueueIdx(${i})">
         <span class="yt-queue-num">${i + 1}</span>
-        <span class="yt-queue-title"><span class="yt-queue-track">${item.title.replace(/</g,'&lt;')}</span>${item.trackId && _qArtistIdx.get(item.trackId) ? `<span class="yt-queue-artist">${_qArtistIdx.get(item.trackId).replace(/</g,'&lt;')}</span>` : ''}</span>
+        <span class="yt-queue-title">${_qLabel}</span>
         ${item.trackId ? `<button class="tvb-cycle${getMyVote(item.trackId)>0?' tvb-up':''}" data-vote-track="${item.trackId}" onclick="cycleVote('${item.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(getMyVote(item.trackId))]||'-'}</button>` : ''}
         <span style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
           <button onclick="event.stopPropagation();ytMoveQueue(${i},${i}-1)"
@@ -4604,7 +4601,8 @@ function updateYTQueueUI() {
         </span>
         <button onclick="event.stopPropagation();ytRemoveFromQueue(${i})"
           class="yt-queue-remove">✕</button>
-      </div>`).join('')}
+      </div>`;
+      }).join('')}
     </div>
   </div>`;
 
@@ -4978,7 +4976,8 @@ function ytpTrackMeta(trackId, fallbackTitle) {
   for (const aid of Object.keys(tracks)) {
     track = (tracks[aid] || []).find(t => t.id === trackId);
     if (track) {
-      artist = allArtists.find(a => a.id === aid);
+      artist = allArtists.find(a => a.id === aid)
+        || ((typeof communityArtists !== 'undefined' && communityArtists) ? communityArtists.find(a => a.id === aid) : null);
       album = (albums[aid] || []).find(a => a.id === track.album_id);
       break;
     }
@@ -8655,8 +8654,8 @@ function buildPlaylistCard(p) {
 function buildTrackListHtml(playlistId, trackList, isDirty) {
   const items = trackList.length
     ? trackList.map((row, idx) => {
-        const t    = trackById(row.track_id);
-        const name = t ? t.name : `(track ${row.track_id})`;
+        const m = ytpTrackMeta(row.track_id, null);
+        const name = m.artist ? (m.artist + ' - ' + m.title) : (m.title !== 'Unknown' ? m.title : `(track ${row.track_id})`);
         const isFirst = idx === 0, isLast = idx === trackList.length - 1;
         return `<div class="pl-track-item">
           <div class="pl-track-move-btns">
@@ -12515,11 +12514,14 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-11';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-12';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-12', items: [
+    'The play queue and saved playlists now show each track as Artist - Song, matching the player title.',
+  ]},
   { date: '2026-08-11', items: [
     'Explore Artists is now the first tab on the home page; My Jukebox sits second.',
     'Search from the home page looks across the whole jukebox — every song, artist, album, and lyric — not just artists already open on the page.',
@@ -14918,11 +14920,15 @@ function buildShareCard(m) {
   if (expanded) {
     if (cached && cached !== 'loading' && Array.isArray(cached.queue)) {
       tracksHtml = cached.queue.length
-        ? `<div class="pl-track-list">${cached.queue.map((q, i) =>
-            `<div class="pl-track-item">
+        ? `<div class="pl-track-list">${cached.queue.map((q, i) => {
+            const _a = q.artist || (q.trackId ? (ytpTrackMeta(q.trackId, q.title).artist || '') : '');
+            const _s = q.title || '(untitled)';
+            const _label = (_a ? (_a + ' - ' + _s) : _s).replace(/</g, '&lt;');
+            return `<div class="pl-track-item">
                <span class="pl-track-num">${i + 1}.</span>
-               <span class="pl-track-name-cell">${(q.title || '(untitled)').replace(/</g,'&lt;')}</span>
-             </div>`).join('')}</div>`
+               <span class="pl-track-name-cell">${_label}</span>
+             </div>`;
+          }).join('')}</div>`
         : `<div class="pl-empty" style="padding:.6rem">View-only share${cached.viewMode ? ` (${_pbViewModeLabels[cached.viewMode] || cached.viewMode})` : ''} - no tracks.</div>`;
     } else if (cached === null) {
       tracksHtml = `<div class="pl-empty" style="padding:.6rem">Could not load tracks.</div>`;
