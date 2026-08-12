@@ -49,6 +49,11 @@ const EMBED_BLOCK_SIGNS = [
   "no longer available",
   "error 101",
   "error 150",
+  "code 101",
+  "code 150",
+  "code 100",
+  "playback error",
+  "never started playing",
 ];
 
 function looksLikeEmbedBlock(description: string | null): boolean {
@@ -291,14 +296,19 @@ async function runAutoResolve() {
 
       const info = await fetchYouTubeVideoInfo([vid]);
       const cur = info[vid];
-      // Somebody described an embed failure. Even if YouTube's metadata looks
-      // clean, do not close the report on that alone.
+      // Machine-written auto-detect text is not a human note. The old 12s stall
+      // watchdog used to stamp every skip; those are hiccups, not reports.
+      const hasNote = group.some((g) => {
+        const d = (g.description || "").trim();
+        if (!d) return false;
+        if (/^auto-detected:/i.test(d)) return false;
+        return true;
+      });
+      // Somebody described an embed failure, or the player itself threw one.
+      // Even if YouTube's metadata looks clean, do not close the report on that alone.
       const reportedBlock = group.some((g) => looksLikeEmbedBlock(g.description));
-      // Somebody took the trouble to type something. Whatever it says, a clean
-      // metadata check is not an answer to it.
-      const hasNote = group.some((g) => (g.description || "").trim().length > 0);
 
-      if (cur && cur.playable && !hasNote) {
+      if (cur && cur.playable && !hasNote && !reportedBlock) {
         await resolveIssues(sb, ids, {
           resolved: true,
           resolved_at: nowIso,
@@ -405,21 +415,19 @@ async function runAutoResolve() {
   return summary;
 }
 
-// Only emit a fresh "flagged" history event if we haven't flagged this issue in the last ~20h,
-// so nightly re-runs don't spam the Updates feed.
+// Flag each issue at most once. Nightly re-runs used to append a new
+// "flagged" event every day and drown the Updates feed.
 async function maybeFlag(
   sb: ReturnType<typeof createSjServiceClient>,
   issue: IssueRow,
   detail: string,
 ) {
-  const cutoff = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString();
   const { data } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("issue_events")
     .select("id")
     .eq("issue_id", issue.id)
     .eq("kind", "auto_flagged")
-    .gte("at", cutoff)
     .limit(1);
   if (data && data.length) return;
   await logEvent(sb, issue, "auto_flagged", detail);

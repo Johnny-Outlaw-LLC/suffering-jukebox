@@ -2990,8 +2990,12 @@ let _taPreferBg         = false; // sticky: once enabled on mobile, prefer bg pl
 try { _taPreferBg = localStorage.getItem('sj_bg_play') === '1'; } catch (_) {}
 let _ytpWatchdogTimer   = null;  // fires if a track never reaches PLAYING (stall/embed-blocked)
 let _ytpWatchdogVideoId = null;  // videoId the pending watchdog is guarding
+let _ytpWatchdogStartedAt = 0;   // when we first started waiting on this videoId
 let _ytpFailureHandledFor = null; // videoId already auto-reported+skipped, avoids double-fire (error + stall)
 let _ytpAutoReportedIds = new Set(); // trackId/videoId already auto-reported this session
+let _ytpStallPending    = [];    // stalls waiting for the next track to actually play
+let _ytpStallStreak     = 0;     // consecutive stalls since the last successful play
+let _ytpStallEnv        = false; // this session's YouTube itself is failing — don't report stalls
 
 const isAlbumVisible = (albumId) => !excludedAlbumIds.has(albumId);
 
@@ -4403,6 +4407,7 @@ function attachYTAPIPlayer() {
             }, 10000);
           }
           ytpClearPlaybackWatchdog();
+          ytpConfirmPendingStalls();
         } else if (ev.data === 2) { // PAUSED
           if (_taBgActive) return; // our own pause - uploaded audio has the sound
           ytpSetPlayPauseIcon(false);
@@ -5043,27 +5048,55 @@ function ytpStampQueueMeta(trackId) {
 // played on your mobile browser" case), or a silent stall where the player
 // never reaches PLAYING at all (onError never fires for that case, so a
 // timeout is the only signal). Both funnel into ytpHandlePlaybackFailure.
-const YTP_STALL_MS = 12000;
+//
+// Stalls are noisy: slow loads, ads, a hidden tab, or YouTube itself being
+// down all look the same as a broken video. So a stall is only *reported*
+// after the next track actually plays — that means this one track was the
+// problem, not the session. Three stalls in a row with nothing playing is
+// treated as an environment failure and not reported at all.
+const YTP_STALL_MS = 20000;
+const YTP_STALL_GIVEUP_MS = 45000;
+const YTP_STALL_ENV_STREAK = 3;
 
 function ytpClearPlaybackWatchdog() {
   if (_ytpWatchdogTimer) { clearTimeout(_ytpWatchdogTimer); _ytpWatchdogTimer = null; }
   _ytpWatchdogVideoId = null;
+  _ytpWatchdogStartedAt = 0;
 }
 
 function ytpStartPlaybackWatchdog(videoId, trackId, title) {
-  ytpClearPlaybackWatchdog();
-  if (!videoId || _taBgActive) return; // audio-only mode: the video is only ever cued, never "playing"
+  if (_ytpWatchdogTimer) { clearTimeout(_ytpWatchdogTimer); _ytpWatchdogTimer = null; }
+  if (!videoId || _taBgActive) { _ytpWatchdogVideoId = null; _ytpWatchdogStartedAt = 0; return; }
+  if (_ytpWatchdogVideoId !== videoId) _ytpWatchdogStartedAt = Date.now();
   _ytpWatchdogVideoId = videoId;
   _ytpWatchdogTimer = setTimeout(function() {
     _ytpWatchdogTimer = null;
-    if (_ytpWatchdogVideoId !== videoId) return; // superseded by a newer track
-    if (videoId !== ytVideoId) return;           // no longer the track we're waiting on
-    if (!_ytUserWantsPlay) return;                // user paused/left before it ever started - not a failure
-    let state = null;
+    if (_ytpWatchdogVideoId !== videoId) return;
+    if (videoId !== ytVideoId) return;
+    if (!_ytUserWantsPlay) return;
+    if (document.visibilityState === 'hidden') return; // background: not a broken track
+    let state = null, t = 0;
     try { state = ytAPIPlayer && ytAPIPlayer.getPlayerState && ytAPIPlayer.getPlayerState(); } catch (e) {}
-    if (state === 1) return; // already playing somehow - nothing to do
+    try { t = ytAPIPlayer && ytAPIPlayer.getCurrentTime && ytAPIPlayer.getCurrentTime(); } catch (e) {}
+    if (state === 1 || t > 0.5) return; // already going
+    // Still buffering — give it more time, but not forever.
+    if (state === 3 && (Date.now() - _ytpWatchdogStartedAt) < YTP_STALL_GIVEUP_MS) {
+      ytpStartPlaybackWatchdog(videoId, trackId, title);
+      return;
+    }
     ytpHandlePlaybackFailure(videoId, trackId, title, 'stall', null);
   }, YTP_STALL_MS);
+}
+
+function ytpConfirmPendingStalls() {
+  if (_ytpStallPending.length && _ytpStallStreak > 0 && _ytpStallStreak < YTP_STALL_ENV_STREAK) {
+    _ytpStallPending.forEach(function(p) {
+      ytpAutoReportPlaybackIssue(p.videoId, p.trackId, p.title, 'stall', null);
+    });
+  }
+  _ytpStallPending = [];
+  _ytpStallStreak = 0;
+  _ytpStallEnv = false;
 }
 
 async function ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code) {
@@ -5073,7 +5106,7 @@ async function ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code) {
   const meta = trackId ? ytpTrackMeta(trackId, title) : null;
   const desc = kind === 'error'
     ? 'Auto-detected: playback error (code ' + code + ') - the app skipped this track automatically.'
-    : 'Auto-detected: track never started playing within ' + Math.round(YTP_STALL_MS / 1000) + 's - the app skipped it automatically.';
+    : 'Auto-detected: track never started playing (next track did) - likely a broken or blocked video.';
   const row = {
     category: 'playback',
     description: desc,
@@ -5093,21 +5126,42 @@ async function ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code) {
   } catch (e) { /* best effort - a missed auto-report shouldn't block the skip */ }
 }
 
+function ytpSkipAfterFailure(reported) {
+  if (ytQueue.length > 1) {
+    showToast(reported
+      ? 'Playback issue detected - reported and skipped to the next track.'
+      : 'This track didn\'t start - skipping to the next one.');
+    ytNextTrack();
+  } else {
+    showToast(reported
+      ? 'Playback issue detected and reported - no other track queued to skip to.'
+      : 'This track didn\u2019t start, and nothing else is queued.');
+    try { ytAPIPlayer && ytAPIPlayer.stopVideo && ytAPIPlayer.stopVideo(); } catch (e) {}
+    _ytUserWantsPlay = false;
+    ytpSetPlayPauseIcon(false);
+  }
+}
+
 function ytpHandlePlaybackFailure(videoId, trackId, title, kind, code) {
   if (!videoId || videoId !== ytVideoId) return; // stale callback for a track we've already moved past
   if (_ytpFailureHandledFor === videoId) return;  // error + stall both firing for the same track
   _ytpFailureHandledFor = videoId;
   ytpClearPlaybackWatchdog();
-  ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code);
-  if (ytQueue.length > 1) {
-    showToast('Playback issue detected - reported and skipped to the next track.');
-    ytNextTrack();
-  } else {
-    showToast('Playback issue detected and reported - no other track queued to skip to.');
-    try { ytAPIPlayer && ytAPIPlayer.stopVideo && ytAPIPlayer.stopVideo(); } catch (e) {}
-    _ytUserWantsPlay = false;
-    ytpSetPlayPauseIcon(false);
+  if (kind === 'error') {
+    ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code);
+    ytpSkipAfterFailure(true);
+    return;
   }
+  // Stall: don't report yet. If the next song plays, this one was the problem.
+  // If several stall in a row, YouTube itself is failing this session.
+  _ytpStallStreak++;
+  if (_ytpStallStreak >= YTP_STALL_ENV_STREAK || _ytpStallEnv) {
+    _ytpStallEnv = true;
+    _ytpStallPending = [];
+  } else {
+    _ytpStallPending.push({ videoId: videoId, trackId: trackId, title: title });
+  }
+  ytpSkipAfterFailure(false);
 }
 
 // ── Report a problem ───────────────────────────────────────────
@@ -12467,6 +12521,7 @@ const SJ_CHANGELOG = [
   { date: '2026-08-11', items: [
     'Explore Artists is now the first tab on the home page; My Jukebox sits second.',
     'Search from the home page looks across the whole jukebox — every song, artist, album, and lyric — not just artists already open on the page.',
+    'Playback Issues no longer fills up with false alarms. A song that is slow to start is only reported if the next one plays fine — if YouTube itself is stuck, the app still skips ahead but stays quiet.',
   ]},
   { date: '2026-08-10', items: [
     'Uploading your own audio for Background Play is free when you sign in — no paid unlock. Each account gets 500 MB of personal storage.',
