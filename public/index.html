@@ -1031,6 +1031,60 @@ mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
   overflow: hidden; flex-shrink: 0; position: relative; min-height: 0;
 }
 /* Version switcher popup - lists every YouTube upload we hold for a song */
+/* ── Per-track ⋯ menu ─────────────────────────────────────────────────
+   One popup, used from the album track rows, the accordion and the player,
+   so an action never lives in two places with two behaviours. */
+.trk-more {
+  flex: 0 0 auto; background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--text-muted); font-family: var(--mono); font-size: .7rem; line-height: 1;
+  padding: 2px 5px; cursor: pointer; opacity: .45; transition: opacity .12s, color .12s;
+}
+.trk-line:hover .trk-more, .trk-more[aria-expanded="true"] { opacity: 1; }
+.trk-more:hover, .trk-more[aria-expanded="true"] { color: var(--accent); border-color: var(--border); }
+
+.sjm-menu {
+  position: fixed; z-index: 2147483001; width: 244px;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(0,0,0,.55); padding: 4px; font-family: var(--mono);
+}
+.sjm-hd {
+  display: flex; align-items: center; gap: 4px;
+  font-size: .48rem; color: var(--text-muted); padding: 6px 8px 5px;
+  border-bottom: 1px solid var(--border); margin-bottom: 3px;
+}
+.sjm-hd-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
+.sjm-back {
+  background: none; border: 0; color: var(--text-muted); font: inherit; font-size: .8rem;
+  line-height: 1; padding: 0 4px 2px; cursor: pointer;
+}
+.sjm-back:hover { color: var(--accent); }
+.sjm-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 6px; padding: 7px 8px; cursor: pointer;
+  color: var(--text); font: inherit; font-size: .55rem; text-decoration: none;
+}
+.sjm-item:hover { background: rgba(255,255,255,.07); }
+.sjm-item.sjm-danger:hover { color: #ef4444; }
+.sjm-ic { width: 13px; flex-shrink: 0; text-align: center; color: var(--text-muted); font-size: .62rem; }
+.sjm-item:hover .sjm-ic { color: inherit; }
+.sjm-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sjm-sub { font-size: .44rem; color: var(--text-muted); flex-shrink: 0; }
+.sjm-scroll { max-height: 210px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.sjm-on .sjm-ic, .sjm-on .sjm-label { color: var(--accent); }
+.sjm-empty { font-size: .48rem; color: var(--text-muted); padding: 10px 8px; text-align: center; line-height: 1.5; }
+.sjm-sep { border-top: 1px solid var(--border); margin: 3px 0; }
+.sjm-newform { display: flex; gap: 4px; padding: 5px 6px 6px; }
+.sjm-newform input {
+  flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text); font: inherit; font-size: .52rem; padding: 5px 6px;
+}
+.sjm-newform input:focus { outline: none; border-color: var(--accent); }
+.sjm-newform button {
+  background: none; border: 1px solid var(--accent); border-radius: 5px; color: var(--accent);
+  font: inherit; font-size: .5rem; padding: 5px 8px; cursor: pointer;
+}
+.sjm-newform button:disabled { opacity: .5; cursor: default; }
+
 .tv-menu {
   position: fixed; z-index: 2147483000; min-width: 230px; max-width: 320px;
   max-height: 60vh; overflow-y: auto;
@@ -3995,9 +4049,8 @@ function openYTPlayer(videoId, title, trackId, ev) {
             style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer"
             aria-label="Volume">
         </label>
-        <button class="ytp-btn ytp-block-btn" id="ytp-block-btn" onclick="ytpBlockCurrent();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Never play this song again" style="display:none">⊘ Never Again</button>
         <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
-        <button class="ytp-btn ytp-report-btn" id="ytp-report-btn" onclick="openReportModal();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Report a problem with this track">⚑ Report a problem</button>
+        <button class="ytp-btn" id="ytp-more-btn" onclick="sjmOpenForPlayer(this,event)" onmousedown="event.stopPropagation()" title="Add to playlist, never play again, report a problem">⋯ More</button>
       </div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
@@ -5237,7 +5290,19 @@ function ytpHandlePlaybackFailure(videoId, trackId, title, kind, code) {
 
 // ── Report a problem ───────────────────────────────────────────
 let _reportCtx = null;
-function reportCurrentContext() {
+// Without an explicit track this describes whatever is playing. The per-track ⋯
+// menu passes one in, so you can report a song from its row without playing it.
+function reportCurrentContext(forTrackId) {
+  if (forTrackId) {
+    const meta = ytpTrackMeta(forTrackId, null);
+    return {
+      track_id: forTrackId,
+      video_id: ytData[forTrackId]?.video_id || null,
+      track_name: meta.title || (findTrackById(forTrackId)?.name || ''),
+      album_name: meta.album || '',
+      artist_name: meta.artist || '',
+    };
+  }
   const item = ytQueue[ytQueueIdx] || null;
   const trackId = (item && item.trackId) || nowPlayingTrackId || null;
   const meta = ytpTrackMeta(trackId, item ? item.title : null);
@@ -5249,8 +5314,8 @@ function reportCurrentContext() {
     artist_name: trackId ? (meta.artist || '') : '',
   };
 }
-function openReportModal() {
-  _reportCtx = reportCurrentContext();
+function openReportModal(forTrackId) {
+  _reportCtx = reportCurrentContext(typeof forTrackId === 'string' ? forTrackId : null);
   const ov = document.getElementById('reportOverlay');
   if (!ov) return;
   const ctxEl = document.getElementById('report-context');
@@ -8014,6 +8079,7 @@ function ytpOnTrackChange(videoId, trackId, title) {
   _lyrSyncActiveIdx = -1; // force tick to re-evaluate from scratch
   if (ytPlayerEl && _ytUserWantsPlay) ytpUpdateMediaSession();
   ytpCloseVersionMenu();
+  sjmClose();
   _ytpLyrOffset = tvOffset(trackId, videoId);
   ytpSyncVersionBtn(trackId, videoId);
   // Versions may not be in memory yet on a cold start; fill in once they land.
@@ -8259,6 +8325,248 @@ async function tvSaveOffset() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// PER-TRACK ⋯ MENU
+// One popup shared by the album track rows, the accordion action bar and the
+// player toolbar. Actions that used to sit inline as their own buttons - never
+// play again, report a problem - live here now alongside Add to playlist, so a
+// track row stays readable on a phone.
+// ══════════════════════════════════════════════════════════════
+let _sjmTrackId = null;
+let _sjmAnchor  = null;
+
+function sjmClose() {
+  const m = document.getElementById('sjm-menu');
+  if (m) m.remove();
+  if (_sjmAnchor) { _sjmAnchor.removeAttribute('aria-expanded'); _sjmAnchor = null; }
+  _sjmTrackId = null;
+  document.removeEventListener('mousedown', _sjmOutside, true);
+  window.removeEventListener('scroll', sjmClose, true);
+  window.removeEventListener('resize', sjmClose);
+}
+function _sjmOutside(e) {
+  const m = document.getElementById('sjm-menu');
+  if (m && !m.contains(e.target) && e.target !== _sjmAnchor && !_sjmAnchor?.contains(e.target)) sjmClose();
+}
+
+function sjmOpen(trackId, anchorEl, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const already = _sjmTrackId === trackId && document.getElementById('sjm-menu');
+  sjmClose();
+  if (already) return;   // second tap on the same button closes it
+  _sjmTrackId = trackId;
+  _sjmAnchor  = anchorEl || null;
+  const menu  = document.createElement('div');
+  menu.id = 'sjm-menu';
+  menu.className = 'sjm-menu';
+  menu.onmousedown = (e) => e.stopPropagation();
+  menu.onclick     = (e) => e.stopPropagation();
+  document.body.appendChild(menu);
+  sjmRenderRoot();
+  sjmPosition();
+  if (anchorEl) anchorEl.setAttribute('aria-expanded', 'true');
+  setTimeout(() => {
+    document.addEventListener('mousedown', _sjmOutside, true);
+    window.addEventListener('scroll', sjmClose, true);
+    window.addEventListener('resize', sjmClose);
+  }, 0);
+}
+
+// Open for whatever the player is playing right now.
+function sjmOpenForPlayer(anchorEl, ev) {
+  const item = ytQueue[ytQueueIdx];
+  const tid  = item?.trackId || nowPlayingTrackId;
+  if (!tid) { openReportModal(); return; }   // nothing identifiable - report is still useful
+  sjmOpen(tid, anchorEl, ev);
+}
+
+function sjmPosition() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu) return;
+  if (!_sjmAnchor) {
+    menu.style.left = Math.max(8, (window.innerWidth - menu.offsetWidth) / 2) + 'px';
+    menu.style.top  = '20vh';
+    return;
+  }
+  const r = _sjmAnchor.getBoundingClientRect();
+  // Right-align to the button so a row-end ⋯ never pushes the menu off screen.
+  const left = Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8);
+  menu.style.left = Math.max(8, left) + 'px';
+  const below = window.innerHeight - r.bottom;
+  menu.style.top = (below < menu.offsetHeight + 12 && r.top > menu.offsetHeight + 12)
+    ? Math.max(8, r.top - menu.offsetHeight - 6) + 'px'
+    : Math.min(r.bottom + 6, window.innerHeight - menu.offsetHeight - 8) + 'px';
+}
+
+function _sjmHeader(title, backFn) {
+  return '<div class="sjm-hd">' +
+    (backFn ? '<button class="sjm-back" onclick="' + backFn + '" title="Back">‹</button>' : '') +
+    '<span class="sjm-hd-name">' + escHtml(title) + '</span></div>';
+}
+
+function sjmRenderRoot() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_sjmTrackId) return;
+  const tid     = _sjmTrackId;
+  const track   = findTrackById(tid);
+  const blocked = isTrackBlocked(tid);
+  const vid     = ytData[tid]?.video_id;
+  const nPl     = googleUser ? playlists.filter(p => (p._tracks || []).some(r => r.track_id === tid)).length : 0;
+
+  menu.innerHTML =
+    _sjmHeader(track?.name || 'Track') +
+    '<button class="sjm-item" onclick="sjmOpenPlaylists()">' +
+      '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
+      (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
+    '</button>' +
+    (googleUser
+      ? '<button class="sjm-item' + (blocked ? '' : ' sjm-danger') + '" onclick="sjmBlock()">' +
+          '<span class="sjm-ic">' + (blocked ? '↺' : '⊘') + '</span>' +
+          '<span class="sjm-label">' + (blocked ? 'Let this play again' : 'Never play this again') + '</span>' +
+        '</button>'
+      : '') +
+    '<button class="sjm-item" onclick="sjmReport()">' +
+      '<span class="sjm-ic">⚑</span><span class="sjm-label">Report a problem</span></button>' +
+    (vid
+      ? '<a class="sjm-item" href="https://www.youtube.com/watch?v=' + vid + '" target="_blank" rel="noopener" onclick="sjmClose()">' +
+          '<span class="sjm-ic">↗</span><span class="sjm-label">Open on YouTube</span></a>'
+      : '');
+  sjmPosition();
+}
+
+function sjmBlock() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) toggleBlockTrack(tid);
+}
+
+function sjmReport() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  openReportModal(tid);
+}
+
+// ── Add to playlist ───────────────────────────────────────────────────────
+async function sjmOpenPlaylists() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_sjmTrackId) return;
+  const track = findTrackById(_sjmTrackId);
+  const head  = _sjmHeader('Add to playlist', 'sjmRenderRoot()');
+
+  if (!googleUser) {
+    menu.innerHTML = head +
+      '<div class="sjm-empty">Playlists are saved to your account.</div>' +
+      '<button class="sjm-item" onclick="sjmClose();handleAuthClick()">' +
+        '<span class="sjm-ic">→</span><span class="sjm-label">Sign in with Google</span></button>';
+    sjmPosition();
+    return;
+  }
+
+  if (!_playlistsLoaded) {
+    menu.innerHTML = head + '<div class="sjm-empty">Loading your playlists…</div>';
+    sjmPosition();
+    const want = _sjmTrackId;
+    await loadPlaylists();
+    _playlistsLoaded = true;
+    if (_sjmTrackId !== want || !document.getElementById('sjm-menu')) return;
+  }
+  sjmRenderPlaylists();
+}
+
+function sjmRenderPlaylists(newFormOpen) {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_sjmTrackId) return;
+  const tid  = _sjmTrackId;
+  const mine = playlists.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const rows = mine.length
+    ? mine.map(p => {
+        const on = (p._tracks || []).some(r => r.track_id === tid);
+        const n  = (p._tracks || []).length;
+        return '<button class="sjm-item' + (on ? ' sjm-on' : '') + '" onclick="sjmTogglePlaylist(\'' + p.id + '\')"' +
+               ' title="' + (on ? 'Remove from this playlist' : 'Add to this playlist') + '">' +
+                 '<span class="sjm-ic">' + (on ? '✓' : '+') + '</span>' +
+                 '<span class="sjm-label">' + escHtml(p.name || 'Untitled') + '</span>' +
+                 '<span class="sjm-sub">' + n + '</span>' +
+               '</button>';
+      }).join('')
+    : '<div class="sjm-empty">No playlists yet.<br>Make your first one below.</div>';
+
+  menu.innerHTML = _sjmHeader('Add to playlist', 'sjmRenderRoot()') +
+    '<div class="sjm-scroll">' + rows + '</div>' +
+    '<div class="sjm-sep"></div>' +
+    (newFormOpen
+      ? '<div class="sjm-newform">' +
+          '<input id="sjm-new-name" placeholder="Playlist name" maxlength="80" ' +
+            'onkeydown="if(event.key===\'Enter\'){event.preventDefault();sjmCreatePlaylist()}if(event.key===\'Escape\'){sjmRenderPlaylists()}">' +
+          '<button id="sjm-new-go" onclick="sjmCreatePlaylist()">Create</button>' +
+        '</div>'
+      : '<button class="sjm-item" onclick="sjmRenderPlaylists(true)">' +
+          '<span class="sjm-ic">+</span><span class="sjm-label">New playlist…</span></button>');
+  sjmPosition();
+  if (newFormOpen) document.getElementById('sjm-new-name')?.focus();
+}
+
+// Adds if the track is not on the playlist, removes if it is - the tick in the
+// list is the toggle, so one control does both and nothing needs confirming.
+async function sjmTogglePlaylist(playlistId) {
+  const tid = _sjmTrackId;
+  const p   = playlists.find(x => x.id === playlistId);
+  if (!tid || !p) return;
+  const on = (p._tracks || []).some(r => r.track_id === tid);
+  try {
+    if (on) {
+      await dbDelete('/playlist_tracks?playlist_id=eq.' + playlistId + '&track_id=eq.' + tid);
+      p._tracks = (p._tracks || []).filter(r => r.track_id !== tid);
+      showToast('Removed from ' + (p.name || 'playlist') + '.');
+    } else {
+      const pos = (p._tracks || []).length;
+      await dbPost('/playlist_tracks', { playlist_id: playlistId, track_id: tid, position: pos });
+      p._tracks = (p._tracks || []).concat([{ playlist_id: playlistId, track_id: tid, position: pos }]);
+      showToast('Added to ' + (p.name || 'playlist') + '.');
+    }
+    sjmRenderPlaylists();
+    _sjmRefreshPlaylistView();
+  } catch (e) {
+    showToast('Could not update that playlist.');
+  }
+}
+
+async function sjmCreatePlaylist() {
+  const inp = document.getElementById('sjm-new-name');
+  const go  = document.getElementById('sjm-new-go');
+  const tid = _sjmTrackId;
+  const name = (inp?.value || '').trim();
+  if (!name || !tid || !googleUser) return;
+  if (go) { go.disabled = true; go.textContent = '…'; }
+  try {
+    const [pl] = await dbPost('/playlists', {
+      name,
+      is_public:  false,
+      user_email: googleUser.email,
+      user_name:  googleUser.displayName || googleUser.name || '',
+      context:    _playlistContext(),
+    });
+    await dbPost('/playlist_tracks', { playlist_id: pl.id, track_id: tid, position: 0 });
+    pl._tracks = [{ playlist_id: pl.id, track_id: tid, position: 0 }];
+    playlists.unshift(pl);
+    _savedPlaylists.unshift(pl);
+    showToast('Created "' + name + '" and added this song.');
+    sjmRenderPlaylists();
+    _sjmRefreshPlaylistView();
+  } catch (e) {
+    if (go) { go.disabled = false; go.textContent = 'Create'; }
+    showToast('Could not create that playlist.');
+  }
+}
+
+// Keep the Playlists tab honest if it happens to be on screen behind the menu.
+function _sjmRefreshPlaylistView() {
+  const wrap = document.getElementById('tl-wrap');
+  if (wrap && viewMode === 'playlists') wrap.innerHTML = buildPlaylistsHTML(_savedPlaylists);
+  if (typeof syncManagePlaylistsBtn === 'function') { try { syncManagePlaylistsBtn(); } catch (e) {} }
+}
+
 function parseLRC(lrc) {
   if (!lrc) return null;
   const lines = [];
@@ -8459,7 +8767,7 @@ function _buildAccordionContent(trackId) {
     <div style="display:flex;align-items:center;gap:8px;padding:4px 0 8px;flex-wrap:wrap">
       ${vid ? `<a class="sc-link yt" href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeTitle}','${trackId}',event)" style="margin:0">▶ Play</a>` : ''}
       ${spotifyId ? `<a class="sc-link" href="https://open.spotify.com/track/${spotifyId}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#1db954;border-color:#1db954;margin:0">Spotify ↗</a>` : ''}
-      ${googleUser ? `<button class="sc-link sj-block${isTrackBlocked(trackId) ? ' blocked' : ''}" data-block-track="${trackId}" onclick="event.preventDefault();event.stopPropagation();toggleBlockTrack('${trackId}')" title="Never play this song again" style="margin:0">${isTrackBlocked(trackId) ? '↺ Unblock' : '⊘ Never Again'}</button>` : ''}
+      <button class="sc-link" onclick="sjmOpen('${trackId}',this,event)" title="Add to playlist, report a problem, and more" style="margin:0">+ Playlist &amp; more ⋯</button>
       ${SJ_COMMENTS_ENABLED ? `<button class="cmt-btn" data-cmt-badge="track:${trackId}" onclick="event.preventDefault();event.stopPropagation();openComments('track','${trackId}')" title="Comment on this track">Comment</button>` : ''}
       ${statParts ? `<span style="font-size:.42rem;color:var(--text-muted)">${statParts}</span>` : ''}
     </div>
@@ -10635,6 +10943,7 @@ function renderTrackLines(alb, mode = 'inline') {
       <button class="trk-unblock" onclick="toggleBlockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
       ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ Play</button>` : `<span class="trk-play-spacer"></span>`}
+      <button class="trk-more" onclick="sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button>
     </div>
     <div class="trk-accordion" data-acc="${t.id}"></div>`;
   }).join('') + (alb.added_by_name
@@ -12865,6 +13174,8 @@ const SJ_CHANGELOG = [
     'A Versions button appears in the player when a song has more than one video. Switch between them while it plays, in the window or fullscreen, and it picks up where you left off.',
     'Karaoke timing can be adjusted per video. If a music video opens with a long intro, admins and whoever imported the music can nudge the lyrics into place and save it for everyone.',
     'The nightly link repair no longer accepts a video from a different artist just because the song title matches.',
+    'Add any song to a playlist from the new ⋯ button on its row. Pick one of your playlists or type a name to start a new one - the tick shows what the song is already on, and tapping it again takes it back off.',
+    'Never play again and Report a problem moved into that same ⋯ menu, on the track rows and in the player, so a row reads as a song rather than a row of buttons.',
   ]},
   { date: '2026-08-11', items: [
     'Explore Artists is now the first tab on the home page; My Jukebox sits second.',
