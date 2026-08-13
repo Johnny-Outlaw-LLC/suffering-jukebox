@@ -1256,43 +1256,86 @@ textarea.report-input { resize:vertical; }
    the middle, transport on the right. One bar, fixed height, so the page never
    reflows underneath it when the lyric font size changes. */
 .ytp-mini-footer {
-  display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4990;
-  align-items: center; gap: 16px; padding: 10px 16px;
+  display: flex; flex-direction: column; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4990;
+  gap: 0; padding: 10px 16px 8px;
   --mf-body: 76px;                     /* height of the art / lyric window */
-  min-height: calc(var(--mf-body) + 20px);
+  min-height: calc(var(--mf-body) + 36px);
   background: var(--bg-card); border-top: 1px solid var(--border);
   box-shadow: 0 -4px 20px rgba(0,0,0,.35); cursor: pointer;
   transform: translateY(110%); transition: transform .32s ease; pointer-events: none;
 }
 .ytp-mini-footer.open { transform: translateY(0); pointer-events: auto; }
+.ytp-mf-main {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr) auto;
+  grid-template-areas:
+    "now lyr right"
+    "scrub scrub scrub";
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
 
 /* ── Left: art + header ── */
-.ytp-mf-now { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 0 1 300px; }
+.ytp-mf-now { grid-area: now; display: flex; align-items: center; gap: 11px; min-width: 0; }
 .ytp-mf-art {
   width: var(--mf-body); height: var(--mf-body); flex-shrink: 0; border-radius: 6px;
   object-fit: cover; background: var(--bg-elevated); border: 1px solid var(--border);
 }
-.ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+.ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; }
 .ytp-mf-artist {
   font-size: .46rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.ytp-mf-song-row {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+}
 .ytp-mf-song {
   font-size: .74rem; font-weight: 700; color: var(--text); line-height: 1.25;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .2s ease;
+  min-width: 0; flex: 1 1 auto;
 }
 .ytp-mf-song.now-playing { color: var(--accent); }
+.ytp-mf-song-row #ytp-mf-vote {
+  width: 26px; height: 26px; font-size: .7rem; flex-shrink: 0;
+}
 .ytp-mf-album {
   font-size: .5rem; color: var(--text-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* ── Scrub / seek bar ── */
+.ytp-mf-scrub {
+  grid-area: scrub; display: flex; align-items: center; gap: 8px; width: 100%;
+  cursor: default; flex-shrink: 0; padding: 0 2px;
+}
+.ytp-mf-scrub-time {
+  font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
+  min-width: 2.4em; flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+.ytp-mf-scrub-time.dur { text-align: right; }
+.ytp-mf-seek {
+  -webkit-appearance: none; appearance: none; flex: 1 1 auto; min-width: 0;
+  height: 4px; border-radius: 2px; background: var(--border); outline: none; cursor: pointer;
+}
+.ytp-mf-seek::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: none; cursor: pointer;
+}
+.ytp-mf-seek::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: none; cursor: pointer;
+}
+.ytp-mf-seek::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
 
 /* ── Centre: the lines being sung ──
    A fixed-height window over a taller stack of lines. The stack slides so the
    active line sits in the same slot every time, which is what reads as
    scrolling rather than flashing. */
 .ytp-mf-lyr {
-  flex: 1 1 auto; min-width: 0; display: none; align-items: center; gap: 10px;
+  grid-area: lyr; min-width: 0; display: none; align-items: center; gap: 10px;
   height: var(--mf-body); cursor: default;
 }
 .ytp-mf-lyr.show { display: flex; }
@@ -1311,7 +1354,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-lyr-empty { font-size: .55rem; color: var(--text-muted); opacity: .6; }
 
 /* ── Right: transport + window buttons ── */
-.ytp-mf-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }
+.ytp-mf-right { grid-area: right; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .ytp-mf-win { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 @keyframes ytpMfAttention {
   0%, 100% { transform: scale(1); }
@@ -1341,27 +1384,32 @@ textarea.report-input { resize:vertical; }
 @media (max-width: 640px) {
   /* Mobile mini bar: title row + big transport row. No windowed chrome —
      restore expands to fullscreen; maximize is unused (hidden). */
-  /* Phone: art + header on top, lyrics under it, big transport last. */
+  /* Phone: art + header on top, lyrics under it, scrub, big transport last. */
   .ytp-mini-footer {
+    --mf-body: 56px;
+    min-height: 0;
+    gap: 8px;
+    padding: 12px calc(16px + env(safe-area-inset-right, 0px))
+             calc(14px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+  }
+  .ytp-mf-main {
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-areas:
       "now win"
       "lyr lyr"
+      "scrub scrub"
       "controls controls";
     align-items: center;
-    --mf-body: 56px;
-    min-height: 0;
     column-gap: 8px;
     row-gap: 10px;
-    padding: 12px calc(16px + env(safe-area-inset-right, 0px))
-             calc(14px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
   }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
   .ytp-mf-lyr { grid-area: lyr; margin-left: 0; }
-  #ytp-mf-vote { width: 44px; height: 44px; }
+  .ytp-mf-scrub { grid-area: scrub; }
+  .ytp-mf-song-row #ytp-mf-vote { width: 36px; height: 36px; font-size: .85rem; }
   .ytp-mf-song   { font-size: .78rem; }
   .ytp-mf-artist { font-size: .5rem; }
   .ytp-mf-album  { font-size: .52rem; }
@@ -1372,6 +1420,9 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-controls .ytp-mf-btn { width: 52px; height: 52px; font-size: 1.25rem; }
   #ytp-mf-playpause { width: 60px; height: 60px; font-size: 1.45rem; border-color: var(--accent); color: var(--accent); }
   .ytp-mf-sep, #ytp-mf-maximize { display: none !important; }
+  .ytp-mf-seek { height: 6px; }
+  .ytp-mf-seek::-webkit-slider-thumb { width: 16px; height: 16px; }
+  .ytp-mf-seek::-moz-range-thumb { width: 16px; height: 16px; }
   /* The slider is hidden on phones (see .ytp-lyr-font-ctrl above), so the
      line count follows the phone font size instead. */
   /* No Maximize on mobile — only fullscreen ↔ minimized. */
@@ -2171,34 +2222,48 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 <div id="mob-alb-panel"></div>
 
 <div id="ytp-mini-footer" class="ytp-mini-footer" onclick="ytpMiniFooterBarClick(event)">
-  <div class="ytp-mf-now">
-    <button class="ytp-mf-btn" data-vote-track="" onclick="event.stopPropagation();ytpCycleVote()" title="Rate" id="ytp-mf-vote">-</button>
-    <img class="ytp-mf-art" id="ytp-mf-art" alt="" src="/favicon.png" onerror="this.src='/favicon.png'">
-    <div class="ytp-mf-meta">
-      <div class="ytp-mf-artist" id="ytp-mf-artist"></div>
-      <div class="ytp-mf-song"   id="ytp-mf-song">-</div>
-      <div class="ytp-mf-album"  id="ytp-mf-album"></div>
+  <div class="ytp-mf-main">
+    <div class="ytp-mf-now">
+      <img class="ytp-mf-art" id="ytp-mf-art" alt="" src="/favicon.png" data-yt="" onerror="ytpMfArtFallback(this)">
+      <div class="ytp-mf-meta">
+        <div class="ytp-mf-artist" id="ytp-mf-artist"></div>
+        <div class="ytp-mf-song-row">
+          <div class="ytp-mf-song" id="ytp-mf-song">-</div>
+          <button class="ytp-mf-btn" data-vote-track="" onclick="event.stopPropagation();ytpCycleVote()" title="Rate" id="ytp-mf-vote">-</button>
+        </div>
+        <div class="ytp-mf-album" id="ytp-mf-album"></div>
+      </div>
     </div>
-  </div>
-  <div class="ytp-mf-lyr" id="ytp-mf-lyrics-pane" onclick="event.stopPropagation()">
-    <div class="ytp-mf-lyr-view" id="ytp-mf-lyr-view"><div class="ytp-mf-lyr-track" id="ytp-mf-lyr-track"></div></div>
-    <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
-  </div>
-  <div class="ytp-mf-right">
-    <div class="ytp-mf-controls">
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleLyricStrip()" title="Show lyrics" id="ytp-mf-lyrics" style="display:none">♫</button>
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpOpenComments()" title="Comment on this track" id="ytp-mf-comment">🗩</button>
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleShuffle()" title="Shuffle" id="ytp-mf-shuffle">⇄</button>
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytPrevTrack()" title="Previous" id="ytp-mf-prev">⏮</button>
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
+    <div class="ytp-mf-lyr" id="ytp-mf-lyrics-pane" onclick="event.stopPropagation()">
+      <div class="ytp-mf-lyr-view" id="ytp-mf-lyr-view"><div class="ytp-mf-lyr-track" id="ytp-mf-lyr-track"></div></div>
+      <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
     </div>
-    <span class="ytp-mf-sep" aria-hidden="true"></span>
-    <div class="ytp-mf-win">
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Expand" id="ytp-mf-restore"></button>
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleFullscreen()" title="Maximize" id="ytp-mf-maximize"></button>
-      <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
-      <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close" id="ytp-mf-close">✕</button>
+    <div class="ytp-mf-right">
+      <div class="ytp-mf-controls">
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleLyricStrip()" title="Show lyrics" id="ytp-mf-lyrics" style="display:none">♫</button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpOpenComments()" title="Comment on this track" id="ytp-mf-comment">🗩</button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleShuffle()" title="Shuffle" id="ytp-mf-shuffle">⇄</button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytPrevTrack()" title="Previous" id="ytp-mf-prev">⏮</button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
+        <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
+      </div>
+      <span class="ytp-mf-sep" aria-hidden="true"></span>
+      <div class="ytp-mf-win">
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Expand" id="ytp-mf-restore"></button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleFullscreen()" title="Maximize" id="ytp-mf-maximize"></button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close" id="ytp-mf-close">✕</button>
+      </div>
+    </div>
+    <div class="ytp-mf-scrub" id="ytp-mf-scrub" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+      <span class="ytp-mf-scrub-time" id="ytp-mf-cur">0:00</span>
+      <input class="ytp-mf-seek" id="ytp-mf-seek" type="range" min="0" max="0" value="0" step="0.25"
+        aria-label="Seek"
+        oninput="ytpMfSeekInput(this)"
+        onchange="ytpMfSeekCommit(this)"
+        onpointerdown="ytpMfSeekStart()"
+        onpointerup="ytpMfSeekEnd()">
+      <span class="ytp-mf-scrub-time dur" id="ytp-mf-dur">0:00</span>
     </div>
   </div>
 </div>
@@ -5026,6 +5091,7 @@ function hideYtpMiniFooter() {
   if (el) el.classList.remove('open');
   const pane = document.getElementById('ytp-mf-lyrics-pane');
   if (pane) pane.classList.remove('show');
+  ytpMfStopProgress();
   sjmClose();
 }
 
@@ -5156,9 +5222,19 @@ function ytpUpdateMiniFooter() {
   const artEl    = document.getElementById('ytp-mf-art');
   if (songEl)   songEl.textContent   = (meta?.title) || item?.title || '-';
   if (artistEl) artistEl.textContent = meta?.artist || '';
-  if (albumEl)  albumEl.textContent  = [meta?.album, meta?.year].filter(Boolean).join(' · ');
+  if (albumEl) {
+    const alb = meta?.album || '';
+    const yr  = meta?.year || '';
+    albumEl.textContent = alb ? (yr ? (alb + ' (' + yr + ')') : alb) : (yr ? '(' + yr + ')' : '');
+  }
   if (artEl) {
-    const src = meta?.artwork || '/favicon.png';
+    const ytThumb = (item?.videoId)
+      ? ('https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg')
+      : '';
+    artEl.setAttribute('data-yt', ytThumb);
+    const src = (meta?.artwork && meta.artwork !== '/favicon.png')
+      ? meta.artwork
+      : (ytThumb || '/favicon.png');
     if (artEl.getAttribute('src') !== src) artEl.setAttribute('src', src);
   }
   const prevBtn = document.getElementById('ytp-mf-prev');
@@ -5169,6 +5245,98 @@ function ytpUpdateMiniFooter() {
   ytpSyncBlockBtn(item?.trackId || null);
   setYtShuffleEnabled(ytShuffle); // paints the mini-footer shuffle button state
   ytpMfRefreshLyricBtn(item?.trackId || null);
+  ytpMfStartProgress();
+  if (item?.trackId) ytpEnsureTrackMeta(item.trackId);
+}
+
+function ytpMfArtFallback(img) {
+  if (!img) return;
+  const yt = img.getAttribute('data-yt') || '';
+  const cur = img.getAttribute('src') || '';
+  if (yt && cur !== yt) { img.setAttribute('src', yt); return; }
+  if (cur !== '/favicon.png') img.setAttribute('src', '/favicon.png');
+}
+
+let _mfSeeking = false;
+let _mfProgTimer = null;
+
+function ytpFmtClock(sec) {
+  if (!isFinite(sec) || sec < 0) return '0:00';
+  sec = Math.floor(sec);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function ytpMfPlaybackPos() {
+  if (_taBgActive && _taAudioEl) {
+    return {
+      pos: _taAudioEl.currentTime || 0,
+      dur: (Number.isFinite(_taAudioEl.duration) && _taAudioEl.duration > 0) ? _taAudioEl.duration : 0,
+    };
+  }
+  let pos = 0, dur = 0;
+  try { pos = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
+  try { dur = ytAPIPlayer?.getDuration?.() || 0; } catch (_) {}
+  if (!dur && ytQueue[ytQueueIdx]?.trackId) {
+    const ms = (typeof findTrackById === 'function' ? findTrackById(ytQueue[ytQueueIdx].trackId) : null)?.duration_ms;
+    if (ms) dur = ms / 1000;
+  }
+  return { pos, dur };
+}
+
+function ytpMfPaintProgress() {
+  if (_mfSeeking) return;
+  const scrub = document.getElementById('ytp-mf-scrub');
+  if (!scrub || !document.getElementById('ytp-mini-footer')?.classList.contains('open')) return;
+  const { pos, dur } = ytpMfPlaybackPos();
+  const seek = document.getElementById('ytp-mf-seek');
+  const curEl = document.getElementById('ytp-mf-cur');
+  const durEl = document.getElementById('ytp-mf-dur');
+  if (durEl) durEl.textContent = ytpFmtClock(dur);
+  if (curEl) curEl.textContent = ytpFmtClock(pos);
+  if (seek) {
+    const max = dur > 0 ? dur : 0;
+    if (Number(seek.max) !== max) seek.max = String(max);
+    seek.value = String(Math.min(pos, max || 0));
+    seek.disabled = max <= 0;
+  }
+}
+
+function ytpMfStartProgress() {
+  ytpMfPaintProgress();
+  if (_mfProgTimer) return;
+  _mfProgTimer = setInterval(() => {
+    if (!document.getElementById('ytp-mini-footer')?.classList.contains('open')) {
+      clearInterval(_mfProgTimer); _mfProgTimer = null; return;
+    }
+    ytpMfPaintProgress();
+  }, 250);
+}
+
+function ytpMfStopProgress() {
+  if (_mfProgTimer) { clearInterval(_mfProgTimer); _mfProgTimer = null; }
+}
+
+function ytpMfSeekStart() { _mfSeeking = true; }
+function ytpMfSeekEnd() {
+  _mfSeeking = false;
+  ytpMfPaintProgress();
+}
+function ytpMfSeekInput(el) {
+  _mfSeeking = true;
+  const curEl = document.getElementById('ytp-mf-cur');
+  if (curEl) curEl.textContent = ytpFmtClock(Number(el.value) || 0);
+}
+function ytpMfSeekCommit(el) {
+  const sec = Number(el.value) || 0;
+  if (_taBgActive && _taAudioEl) {
+    try { _taAudioEl.currentTime = sec; } catch (_) {}
+  } else if (ytAPIPlayer?.seekTo) {
+    try { ytAPIPlayer.seekTo(sec, true); } catch (_) {}
+  }
+  _mfSeeking = false;
+  ytpMfPaintProgress();
 }
 
 let _ytpFs = false;
@@ -5220,15 +5388,22 @@ function ytpTrackMeta(trackId, fallbackTitle) {
   // current queue item (which we stamp + persist), so the title never goes bare.
   const cache = SJ_TRACK_META[trackId] || null;
   const qItem = (typeof ytQueue !== 'undefined' && Array.isArray(ytQueue))
-    ? ytQueue.find(q => q && q.trackId === trackId) : null;
+    ? (ytQueue[ytQueueIdx]?.trackId === trackId ? ytQueue[ytQueueIdx] : ytQueue.find(q => q && q.trackId === trackId))
+    : null;
   const artistName = (artist && artist.name) || (cache && cache.artist) || (qItem && qItem.artist) || '';
   const albumName  = (album && album.name)   || (cache && cache.album)  || (qItem && qItem.album)  || '';
   const year       = (album && (album.release_date || '').slice(0, 4)) || (cache && cache.year) || (qItem && qItem.year) || '';
   // Cover first, then whatever the album resolver can find, then the video's own
-  // thumbnail - a community album with no artwork still gets something to show.
-  const art = (albumName ? ALBUM_ART[albumName] : null)
+  // thumbnail (or a constructed YouTube thumb from the queue video id) - never
+  // leave the mini bar on the app favicon when a track is actually playing.
+  const qVid = (qItem && qItem.videoId) || (typeof ytVideoId !== 'undefined' ? ytVideoId : null) || null;
+  const art = (cache && cache.artwork)
+    || (qItem && qItem.artwork)
+    || (albumName ? ALBUM_ART[albumName] : null)
     || (album ? albumThumb(album) : null)
+    || (album && album.art_url)
     || (trackId ? ytData[trackId]?.thumbnail : null)
+    || (qVid ? ('https://i.ytimg.com/vi/' + qVid + '/hqdefault.jpg') : null)
     || '/favicon.png';
   return {
     title: (track && track.name) || fallbackTitle || 'Unknown',
@@ -5277,6 +5452,58 @@ function ytpStampQueueMeta(trackId) {
   if (m.artist) item.artist = m.artist;
   if (m.album)  item.album  = m.album;
   if (m.year)   item.year   = m.year;
+  if (m.artwork && m.artwork !== '/favicon.png') item.artwork = m.artwork;
+  if (m.artist || m.album) {
+    SJ_TRACK_META[trackId] = Object.assign({}, SJ_TRACK_META[trackId] || {}, {
+      artist: m.artist || '',
+      album: m.album || '',
+      year: m.year || '',
+      artwork: (m.artwork && m.artwork !== '/favicon.png') ? m.artwork : (SJ_TRACK_META[trackId]?.artwork || undefined),
+    });
+  }
+}
+
+// When the page has not loaded this artist yet (shuffle, restore, search), pull
+// artist / album / cover from the DB so the mini bar is not left on favicon + title-only.
+let _ytpMetaFetch = {};
+async function ytpEnsureTrackMeta(trackId) {
+  if (!trackId) return;
+  const cur = ytpTrackMeta(trackId, null);
+  const artOk = cur.artwork && cur.artwork !== '/favicon.png' && !/\/favicon\.png(?:$|\?)/.test(cur.artwork);
+  if (cur.artist && cur.album && artOk) return;
+  if (_ytpMetaFetch[trackId]) return;
+  _ytpMetaFetch[trackId] = true;
+  try {
+    const rows = await dbGet('/tracks?id=eq.' + trackId + '&select=id,name,album_id&limit=1');
+    const t = rows[0];
+    if (!t?.album_id) return;
+    const albs = await dbGet('/albums?id=eq.' + t.album_id + '&select=id,name,artist_id,release_date,art_url&limit=1');
+    const alb = albs[0];
+    let artName = '';
+    if (alb?.artist_id) {
+      const arts = await dbGet('/artists?id=eq.' + alb.artist_id + '&select=id,name&limit=1');
+      artName = arts[0]?.name || '';
+    }
+    const artwork = (alb && (ALBUM_ART[alb.name] || alb.art_url))
+      || ytData[trackId]?.thumbnail
+      || null;
+    SJ_TRACK_META[trackId] = Object.assign({}, SJ_TRACK_META[trackId] || {}, {
+      artist: artName || (SJ_TRACK_META[trackId]?.artist || ''),
+      album: (alb && alb.name) || (SJ_TRACK_META[trackId]?.album || ''),
+      year: (alb && (alb.release_date || '').slice(0, 4)) || (SJ_TRACK_META[trackId]?.year || ''),
+      artwork: artwork || SJ_TRACK_META[trackId]?.artwork,
+    });
+    ytpStampQueueMeta(trackId);
+    if (nowPlayingTrackId === trackId) {
+      ytpApplyTitle(trackId, t.name);
+      ytpUpdateMiniFooter();
+      if (ytPlayerEl && _ytUserWantsPlay) ytpUpdateMediaSession();
+    }
+  } catch (_) {
+    /* leave whatever we already have */
+  } finally {
+    delete _ytpMetaFetch[trackId];
+  }
 }
 
 // ── Playback-issue detection: watchdog + silent auto-report + auto-skip ──
@@ -8185,6 +8412,7 @@ function ytpOnTrackChange(videoId, trackId, title) {
   ytpSyncBlockBtn(trackId || null);
   applyNowPlayingHighlight();
   ytpUpdateMiniFooter();
+  if (trackId) ytpEnsureTrackMeta(trackId);
   taSyncAudioBtn();
   // Ensure background-play audio metadata is loaded for the current track
   // (landing / shuffle paths can open the player before loadTrackAudio finishes).
@@ -10152,7 +10380,7 @@ async function resolvePlaylistTracks(trackIds) {
     const aChunks = [];
     for (let i = 0; i < albumIds.length; i += 50) aChunks.push(albumIds.slice(i, i + 50));
     const albRows = (await Promise.all(aChunks.map(c =>
-      dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,artist_id,release_date`)))).flat();
+      dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,artist_id,release_date,art_url`)))).flat();
     albRows.forEach(a => { albById[a.id] = a; });
     const artistIds = [...new Set(albRows.map(a => a.artist_id).filter(Boolean))];
     if (artistIds.length) {
@@ -10165,7 +10393,12 @@ async function resolvePlaylistTracks(trackIds) {
       tRows.forEach(t => {
         const alb = albById[t.album_id];
         const art = alb && artById[alb.artist_id];
-        if (art) SJ_TRACK_META[t.id] = { artist: art.name || '', album: alb.name || '', year: (alb.release_date || '').slice(0, 4) };
+        if (art) SJ_TRACK_META[t.id] = {
+          artist: art.name || '',
+          album: alb.name || '',
+          year: (alb.release_date || '').slice(0, 4),
+          artwork: ALBUM_ART[alb.name] || alb.art_url || undefined,
+        };
       });
     }
   }
@@ -10183,7 +10416,7 @@ async function landingShuffleAll() {
     if (!artistIds.length) return;
     // Albums + artist names together — still no YouTube stats here.
     let [albRows, artRows] = await Promise.all([
-      dbGet(`/albums?artist_id=in.(${artistIds.join(',')})&select=id,name,artist_id,release_date&order=release_date.asc`),
+      dbGet(`/albums?artist_id=in.(${artistIds.join(',')})&select=id,name,artist_id,release_date,art_url&order=release_date.asc`),
       dbGet(`/artists?id=in.(${artistIds.join(',')})&select=id,name`),
     ]);
     albRows = albRows.filter(a => !a.name.toLowerCase().includes('early times'));
@@ -10198,7 +10431,12 @@ async function landingShuffleAll() {
     trackRows.forEach(t => {
       const alb = albById[t.album_id];
       const art = alb && artById[alb.artist_id];
-      if (art) SJ_TRACK_META[t.id] = { artist: art.name || '', album: alb.name || '', year: (alb.release_date || '').slice(0, 4) };
+      if (art) SJ_TRACK_META[t.id] = {
+        artist: art.name || '',
+        album: alb.name || '',
+        year: (alb.release_date || '').slice(0, 4),
+        artwork: ALBUM_ART[alb.name] || alb.art_url || undefined,
+      };
     });
     // Video ids only — views/likes/thumbnails belong on artist-page chart loads.
     const yt = await loadYTVideoIds(trackRows.map(t => t.id));
@@ -10359,7 +10597,8 @@ async function laEnsureArtistData(row) {
   albRows.forEach(a => { _albMetaById[a.id] = a; });
   trackRows.forEach(t => {
     const _a = _albMetaById[t.album_id];
-    SJ_TRACK_META[t.id] = { artist: row.name || '', album: (_a && _a.name) || '', year: ((_a && _a.release_date) || '').slice(0, 4) };
+    const _art = (_a && (ALBUM_ART[_a.name] || _a.art_url)) || null;
+    SJ_TRACK_META[t.id] = { artist: row.name || '', album: (_a && _a.name) || '', year: ((_a && _a.release_date) || '').slice(0, 4), artwork: _art || undefined };
   });
   const yt = await loadYT(trackRows.map(t => t.id));
   Object.assign(ytData, yt);
@@ -13292,7 +13531,7 @@ const SJ_CHANGELOG = [
     'The nightly link repair no longer accepts a video from a different artist just because the song title matches.',
     'Add any song to a playlist from the new ⋯ button on its row. Pick one of your playlists or type a name to start a new one - the tick shows what the song is already on, and tapping it again takes it back off.',
     'Never play again and Report a problem moved into that same ⋯ menu, on the track rows and in the player, so a row reads as a song rather than a row of buttons.',
-    'The minimized player was rebuilt: album art on the left with the artist, song, and album and year underneath it, and the ⋯ menu alongside the transport buttons.',
+    'The minimized player shows the album cover, artist name, song title with a thumbs-up beside it, and album name with year. Drag the new timeline under the lyrics to jump around in the song. The ⋯ menu sits next to Next, not next to Close.',
     'Lyrics in the minimized player now scroll through the middle of the bar instead of sitting on one line above it. The font size slider sets how many lines you see - one big line, or up to four small ones.',
   ]},
   { date: '2026-08-11', items: [
@@ -13708,9 +13947,19 @@ async function restorePlaybackState() {
     openYTPlayer(item.videoId, item.title, item.trackId || null);
     ytQueue = row.queue;
     ytQueueIdx = idx;
-    row.queue.forEach(q => { if (q && q.trackId && q.artist) SJ_TRACK_META[q.trackId] = { artist: q.artist, album: q.album || '', year: q.year || '' }; });
+    row.queue.forEach(q => {
+      if (q && q.trackId && q.artist) {
+        SJ_TRACK_META[q.trackId] = {
+          artist: q.artist,
+          album: q.album || '',
+          year: q.year || '',
+          artwork: q.artwork || undefined,
+        };
+      }
+    });
     ytpApplyTitle(item.trackId || null, item.title);
     ytpUpdateMiniFooter();
+    if (item.trackId) ytpEnsureTrackMeta(item.trackId);
     ytpUpdateTabTitle(item.trackId || null, item.title);
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
