@@ -70,9 +70,15 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 /* Two toolbars sat side by side with nothing saying which was which. Each is
    now a named box: what the jukebox shows on the left, what plays on the right. */
 .ctrl-group { display: flex; flex-direction: column; gap: .25rem; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: .28rem .5rem .4rem; }
-.ctrl-group-hd { font-family: var(--mono); font-size: .4rem; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; line-height: 1; }
+.ctrl-group-hd { display: flex; align-items: center; justify-content: space-between; gap: .45rem; width: 100%; background: none; border: none; padding: 0; margin: 0; cursor: pointer; font-family: var(--mono); font-size: .4rem; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; line-height: 1; text-align: left; }
+.ctrl-group-hd:hover { color: var(--text); }
+.ctrl-group-caret { font-size: .58rem; line-height: 1; opacity: .75; flex-shrink: 0; }
+.ctrl-group--collapsed { padding-bottom: .28rem; }
+.ctrl-group--collapsed .ctrl-group-hd { color: var(--accent); letter-spacing: .1em; }
+.ctrl-group--collapsed .ctrl-group-hd:hover { color: var(--text); }
 #view-controls-header .ctrl-group { align-items: stretch; }
-#lwytb-header .ctrl-group { align-items: flex-end; }
+#lwytb-header .ctrl-group { align-items: stretch; }
+#lwytb-header .ctrl-group:not(.ctrl-group--collapsed) .lwytb-row { align-self: flex-end; }
 .hdr-r1-left { display: flex; align-items: center; gap: 1rem; min-width: 0; flex: 1 1 auto; max-width: 100%; }
 #filter-header { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 #filter-header-mobile { display: none; }
@@ -151,10 +157,10 @@ main > * { min-width: 0; }
 .sort-btn.active, .sort-btn:hover { border-color: var(--text); color: var(--text); }
 
 /* ── METRIC BUTTONS (desktop) ── */
-.metric-btn-row { display: flex; gap: .25rem; align-items: center; flex-wrap: wrap; }
-.metric-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: .42rem; letter-spacing: .05em; padding: .18rem .5rem; cursor: pointer; border-radius: 5px; transition: all .15s; white-space: nowrap; }
-.metric-btn:hover { border-color: var(--text-muted); color: var(--text); }
-.metric-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent)18; }
+.metric-btn-row { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.metric-btn { background: none; border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .5rem; letter-spacing: .04em; padding: .28rem .58rem; cursor: pointer; border-radius: 5px; transition: all .15s; white-space: nowrap; opacity: .82; }
+.metric-btn:hover { border-color: var(--text-muted); opacity: 1; }
+.metric-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent)18; opacity: 1; font-weight: 600; }
 .metric-sel-mobile { display: none; }
 @media (max-width: 640px) {
   .metric-btn-row { display: none; }
@@ -633,7 +639,7 @@ body:not(.light) .tt-num { color: var(--text); }
   .tl-panel { overscroll-behavior: contain; }
   .metric-btn-row { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .metric-btn-row::-webkit-scrollbar { display: none; }
-  .metric-btn { font-size: .4rem !important; padding: .16rem .35rem !important; white-space: nowrap; }
+  .metric-btn { font-size: .46rem !important; padding: .22rem .42rem !important; white-space: nowrap; }
   .auth-btn { font-size: .5rem; padding: 3px 8px; min-height: 26px; }
   header, main { padding-left: 1rem !important; padding-right: 1rem !important; }
 
@@ -724,7 +730,7 @@ body:not(.light) .tt-num { color: var(--text); }
   /* Metric: show inline toggle buttons instead of dropdown; bigger tap targets */
   .metric-btn-row { display: flex !important; flex-wrap: wrap; gap: .2rem; }
   .metric-sel-mobile { display: none !important; }
-  .metric-btn { font-size: .48rem; padding: .22rem .5rem; }
+  .metric-btn { font-size: .5rem; padding: .26rem .52rem; }
   /* Hide expand/collapse on mobile */
   .expand-collapse-btn { display: none !important; }
   /* Hide lyric font-size sliders on mobile */
@@ -3428,6 +3434,20 @@ let viewMode            = 'byyear';
 let listSort            = 'views';
 let expandedAlbumIds    = new Set();
 let _initialExpansionSet = false;
+
+// How many open track panels fit side-by-side before they crush each other.
+// Matches calcTLLayout's MIN_PANEL_W / PANEL_GAP. Phones use the tap-to-open
+// chart, so they get 0 (never auto-expand every album into panels).
+function maxComfortableExpandedAlbums() {
+  if (window.innerWidth <= 640) return 0;
+  const MIN_PANEL_W = 220;
+  const PANEL_GAP = 5;
+  const _padRem = window.innerWidth <= 820 ? 1.0 : 1.5;
+  const _basePx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const MAIN_H_PAD = Math.round(2 * _padRem * _basePx);
+  const scrollW = Math.max(200, document.documentElement.clientWidth - MAIN_H_PAD);
+  return Math.max(1, Math.floor((scrollW - PANEL_GAP) / (MIN_PANEL_W + PANEL_GAP)));
+}
 let ytLastSync          = null;
 let ytPlayerEl          = null;
 let ytVideoId           = null;
@@ -5101,7 +5121,10 @@ function ytClearQueue() {
   closeYTPlayer();
 }
 
-function updateYTQueueUI() {
+// opts.preserveScroll — keep the queue list where it was (reorder arrows).
+// opts.keepIdx — after preserve, nudge only if that row left the viewport.
+function updateYTQueueUI(opts) {
+  opts = opts || {};
   if (!ytPlayerEl) return;
 
   // Keep the mini-player thumbs up/down in sync with the current track
@@ -5114,6 +5137,8 @@ function updateYTQueueUI() {
 
   const resizeHandle  = ytPlayerEl.querySelector('.sc-resize');
   const existingWrap  = ytPlayerEl.querySelector('.yt-queue-wrap');
+  const existingSection = ytPlayerEl.querySelector('.yt-queue-section');
+  const savedScroll = existingSection ? existingSection.scrollTop : 0;
 
   // The phone's Playlist tab is a panel of its own - it still needs the list
   // (and the Load Playlist bar) when only one song is queued.
@@ -5164,11 +5189,27 @@ function updateYTQueueUI() {
   // Rebuilding the queue wrap replaces the DOM node, which would silently
   // un-hide it even while the player is minimized (e.g. after Next/shuffle
   // advances the track). Re-apply the minimized state to the fresh nodes.
+  const freshQueue = ytPlayerEl.querySelector('.yt-queue-section');
   if (_ytpMinimized) {
-    const freshQueue = ytPlayerEl.querySelector('.yt-queue-section');
     const freshPlBar = ytPlayerEl.querySelector('.yt-playlist-bar');
     if (freshQueue) freshQueue.style.display = 'none';
     if (freshPlBar) freshPlBar.style.display = 'none';
+  } else if (opts.preserveScroll && freshQueue) {
+    // Reorder rebuild used to reset scroll then jump to the playing row.
+    // Stay put; only nudge if the moved row left the visible strip.
+    freshQueue.scrollTop = savedScroll;
+    if (opts.keepIdx != null) {
+      const row = freshQueue.querySelector('.yt-queue-row[data-queue-idx="' + opts.keepIdx + '"]');
+      if (row) {
+        const rowRect = row.getBoundingClientRect();
+        const secRect = freshQueue.getBoundingClientRect();
+        if (rowRect.top < secRect.top) {
+          freshQueue.scrollTop -= (secRect.top - rowRect.top);
+        } else if (rowRect.bottom > secRect.bottom) {
+          freshQueue.scrollTop += (rowRect.bottom - secRect.bottom);
+        }
+      }
+    }
   } else {
     requestAnimationFrame(() => ytScrollQueueToCurrent());
   }
@@ -5190,7 +5231,7 @@ function ytMoveQueue(from, to) {
   ytQueue.splice(to, 0, item);
   if (ytQueueIdx === from) ytQueueIdx = to;
   else if (ytQueueIdx === to) ytQueueIdx = from;
-  updateYTQueueUI();
+  updateYTQueueUI({ preserveScroll: true, keepIdx: to });
 }
 
 function ytQueueResizeStart(e) {
@@ -11871,9 +11912,12 @@ async function loadData() {
       if (pmArtistDefault) {
         (albums[pmArtistDefault.id] || []).forEach(a => excludedAlbumIds.add(a.id));
       }
-      albRows.forEach(alb => {
-        if (isAlbumVisible(alb.id)) expandedAlbumIds.add(alb.id);
-      });
+      // Open every album's tracks only when they all fit. Too many and the
+      // cards crush each other — same idea as phones, which start collapsed.
+      const visAlbs = albRows.filter(alb => isAlbumVisible(alb.id));
+      if (visAlbs.length <= maxComfortableExpandedAlbums()) {
+        visAlbs.forEach(alb => expandedAlbumIds.add(alb.id));
+      }
     }
 
     render();
@@ -12216,6 +12260,28 @@ function updateFilterHeader() {
 }
 // LISTEN WHILE YOU BROWSE - renders into header #lwytb-header
 // ══════════════════════════════════════════════════════════════
+function isCtrlGroupHidden(key) {
+  try { return localStorage.getItem('sj_hide_' + key) === '1'; } catch (e) { return false; }
+}
+function toggleCtrlGroup(key) {
+  const next = !isCtrlGroupHidden(key);
+  try { localStorage.setItem('sj_hide_' + key, next ? '1' : '0'); } catch (e) {}
+  if (key === 'jukebox') updateViewControlsHeader();
+  else {
+    if (typeof isLandingMode !== 'undefined' && isLandingMode) updateLandingActionsHeader();
+    else updateLWYTBHeader();
+  }
+}
+function ctrlGroupHdHTML(key, openLabel, showLabel) {
+  const hide = isCtrlGroupHidden(key);
+  const label = hide ? showLabel : openLabel;
+  const tip = hide ? ('Show ' + openLabel) : ('Hide ' + openLabel + ' - click again to bring them back');
+  return `<button type="button" class="ctrl-group-hd" onclick="toggleCtrlGroup('${key}')" title="${tip}" aria-expanded="${hide ? 'false' : 'true'}">
+    <span>${label}</span>
+    <span class="ctrl-group-caret" aria-hidden="true">${hide ? '▸' : '▾'}</span>
+  </button>`;
+}
+
 function renderLWYTBHTML(landing) {
   const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
   const _myPls  = _savedPlaylists.filter(p => p.user_email === (googleUser && googleUser.email));
@@ -12225,13 +12291,14 @@ function renderLWYTBHTML(landing) {
   const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
   const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
-  return `<div class="ctrl-group"><div class="ctrl-group-hd">Player Controls</div>
-    <div class="lwytb-row">
+  const hide = isCtrlGroupHidden('playlists');
+  return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('playlists', 'Quick Playlists', 'Show Quick Playlists')}
+    ${hide ? '' : `<div class="lwytb-row">
       <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
       ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'my',event)">▶ My Playlists ▾</button></div>` : ''}
       ${_pubPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'pub',event)">▶ Public Playlists ▾</button></div>` : ''}
-    </div>
+    </div>`}
   </div>`;
 }
 
@@ -12277,37 +12344,39 @@ function renderViewToggle() {
     </div>` : '';
   // Row 2: metric + expand/collapse (tight, no extra padding)
   const _metricOpts = [
-    { val: 'yt',     lbl: _mobNav ? 'YouTube Views' : 'Total YouTube Views' },
-    { val: 'score',  lbl: 'Jukebox Score' },
-    { val: 'total',  lbl: 'Jukebox Plays' },
-    ...(googleUser ? [{ val: 'mine', lbl: 'My Jukebox Plays' }] : []),
-    { val: 'hidden', lbl: 'Hide Bars' },
+    { val: 'yt',     lbl: _mobNav ? 'YouTube Views' : 'Total YouTube Views', tip: 'Bar height shows each album\'s total YouTube views' },
+    { val: 'score',  lbl: 'Jukebox Score', tip: 'Bar height shows the jukebox score from thumbs-up votes' },
+    { val: 'total',  lbl: 'Jukebox Plays', tip: 'Bar height shows how many times each album has been played in this app' },
+    ...(googleUser ? [{ val: 'mine', lbl: 'My Jukebox Plays', tip: 'Bar height shows how many times you have played each album here' }] : []),
+    { val: 'hidden', lbl: 'Hide Bars', tip: 'Hide the chart bars and just show album covers' },
   ];
   const ctrlRow = (viewMode !== 'alltracks' && viewMode !== 'playlists') ? `
     <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;padding-top:.2rem">
       <div class="metric-btn-row">
-        ${_metricOpts.map(o => `<button class="metric-btn${barChartMode===o.val?' active':''}" data-mode="${o.val}" onclick="setBarChartMode('${o.val}')">${o.lbl}</button>`).join('')}
+        ${_metricOpts.map(o => `<button class="metric-btn${barChartMode===o.val?' active':''}" data-mode="${o.val}" onclick="setBarChartMode('${o.val}')" title="${o.tip}">${o.lbl}</button>`).join('')}
       </div>
-      <select id="bar-chart-mode-sel" class="metric-sel-mobile" onchange="setBarChartMode(this.value)" style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);font-family:var(--mono);font-size:.45rem;padding:.2rem .45rem;border-radius:5px;cursor:pointer;letter-spacing:.04em">
-        ${_metricOpts.map(o => `<option value="${o.val}"${barChartMode===o.val?' selected':''}>${o.lbl}</option>`).join('')}
+      <select id="bar-chart-mode-sel" class="metric-sel-mobile" onchange="setBarChartMode(this.value)" title="What the chart bars measure" style="background:var(--bg-card);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .5rem;border-radius:5px;cursor:pointer;letter-spacing:.04em">
+        ${_metricOpts.map(o => `<option value="${o.val}"${barChartMode===o.val?' selected':''} title="${o.tip}">${o.lbl}</option>`).join('')}
       </select>
-      <button class="expand-collapse-btn" onclick="expandAllTracks()" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-family:var(--mono);font-size:.45rem;padding:.2rem .55rem;border-radius:5px;cursor:pointer;letter-spacing:.06em;transition:all .15s" onmouseover="this.style.borderColor='var(--text-muted)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">⊕ Expand All Tracks</button>
-      <button class="expand-collapse-btn" onclick="collapseAllTracks()" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-family:var(--mono);font-size:.45rem;padding:.2rem .55rem;border-radius:5px;cursor:pointer;letter-spacing:.06em;transition:all .15s" onmouseover="this.style.borderColor='var(--text-muted)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">⊖ Collapse All Tracks</button>
+      <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
+      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>
     </div>` : '';
-  return `<div class="ctrl-group"><div class="ctrl-group-hd">Jukebox Controls</div>
-  <div class="view-toggle-row" style="display:flex;flex-direction:column;gap:0;align-items:stretch;flex:0 1 auto;min-width:0">
+  const hide = isCtrlGroupHidden('jukebox');
+  return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('jukebox', 'Jukebox Controls', 'Show Jukebox Controls')}
+  ${hide ? '' : `<div class="view-toggle-row" style="display:flex;flex-direction:column;gap:0;align-items:stretch;flex:0 1 auto;min-width:0">
     <div style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
       <div class="view-seg">
-        <button class="vseg-btn ${viewMode==='byyear'?'active':''}" onclick="setViewMode('byyear')">${_mobNav?'By Year':'↔ By Year'}</button>
-        ${_mobNav ? '' : `<button class="vseg-btn ${viewMode==='timeline'?'active':''}" onclick="setViewMode('timeline')">↔ Timeline</button>`}
-        <button class="vseg-btn ${viewMode==='byviews'?'active':''}" onclick="setViewMode('byviews')">${_mobNav?'By Views':'↔ By Views'}</button>
-        <button class="vseg-btn ${viewMode==='list'?'active':''}" onclick="setViewMode('list')">${_mobNav?'Albums':'↕ Albums List'}</button>
-        <button class="vseg-btn ${viewMode==='alltracks'?'active':''}" onclick="setViewMode('alltracks')">${_mobNav?'All Tracks':'↕ All Tracks'}</button>
+        <button class="vseg-btn ${viewMode==='byyear'?'active':''}" onclick="setViewMode('byyear')" title="View the discography in chronological order">By Year</button>
+        ${_mobNav ? '' : `<button class="vseg-btn ${viewMode==='timeline'?'active':''}" onclick="setViewMode('timeline')" title="See the discography on a timeline to spot gaps in releases">Timeline</button>`}
+        <button class="vseg-btn ${viewMode==='byviews'?'active':''}" onclick="setViewMode('byviews')" title="Sort by the most popular albums">By Views</button>
+        <button class="vseg-btn ${viewMode==='list'?'active':''}" onclick="setViewMode('list')" title="Scroll albums and tracks with no charts">${_mobNav?'Albums':'Albums List'}</button>
+        <button class="vseg-btn ${viewMode==='alltracks'?'active':''}" onclick="setViewMode('alltracks')" title="View and sort all tracks">All Tracks</button>
       </div>
       ${listSort_}
     </div>
     ${ctrlRow}
-  </div></div>`;
+  </div>`}
+  </div>`;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -12662,7 +12731,7 @@ function renderTopTracks(trackList) {
 
 function ttSort(col) {
   if (ttSortCol === col) { ttSortDir *= -1; }
-  else { ttSortCol = col; ttSortDir = (col === 'name' || col === 'album' || col === 'chrono' || col === 'tracknum') ? 1 : -1; }
+  else { ttSortCol = col; ttSortDir = 1; } // numbers: largest first; text/chrono: natural order
   const tbl = document.getElementById('all-tracks-tbl');
   if (tbl) {
     const tmp = document.createElement('div');
@@ -14432,6 +14501,12 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-13';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-13', items: [
+    'Moving a song up or down in a long queue no longer jumps the list back to the bottom. It stays where you were looking, and only scoots if the song you moved would leave the screen.',
+    'When a jukebox has more albums than fit comfortably across the screen, the track cards start closed. Open the ones you want with ▼ tracks — same idea as on a phone, where albums start collapsed so the chart can breathe.',
+    'Jukebox Controls and Quick Playlists (formerly Player Controls) each have a caret so you can tuck them away. When they are hidden the label turns into “Show …” so it is obvious how to bring them back.',
+    'Hover the view buttons (By Year, Timeline, and the rest) for a short explanation of what each one does. The little arrows on those labels are gone.',
+    'The chart metric buttons under Jukebox Controls are a bit larger and easier to read, and each one has a tooltip explaining what the bars measure.',
+    'In All Tracks, clicking a number column for the first time sorts largest first (most views, most plays, longest duration). Click again to flip it.',
     'The player on a phone has been rebuilt around big, thumb-sized buttons: shuffle, previous, a large play/pause, next and repeat sit in a row under the video, with the timeline above them.',
     'One panel at the bottom of the phone player, and a Lyrics / Playlist pair of buttons to say which one you want. The playlist shows what is coming up with the song that is playing marked, and it fills the screen instead of a short scrolling strip.',
     'Whichever of the two you last had open is the one you get next time you open the player.',
