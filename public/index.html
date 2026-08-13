@@ -67,10 +67,16 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 .hdr-r1 { display: flex; align-items: center; justify-content: space-between; gap: 0.45rem 0.75rem; min-height: 48px; flex-wrap: wrap; }
 .hdr-r1-filters { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 100%; min-width: 0; }
 .hdr-r2 { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); min-height: 28px; flex-wrap: wrap; }
+/* Two toolbars sat side by side with nothing saying which was which. Each is
+   now a named box: what the jukebox shows on the left, what plays on the right. */
+.ctrl-group { display: flex; flex-direction: column; gap: .25rem; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: .28rem .5rem .4rem; }
+.ctrl-group-hd { font-family: var(--mono); font-size: .4rem; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; line-height: 1; }
+#view-controls-header .ctrl-group { align-items: stretch; }
+#lwytb-header .ctrl-group { align-items: flex-end; }
 .hdr-r1-left { display: flex; align-items: center; gap: 1rem; min-width: 0; flex: 1 1 auto; max-width: 100%; }
 #filter-header { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 #filter-header-mobile { display: none; }
-#view-controls-header { flex: 1; min-width: 0; }
+#view-controls-header { flex: 0 1 auto; min-width: 0; }
 .hdr-brand-mobile { display: none; }
 .hdr-r1-filters { display: none; }
 .brand-block { flex-shrink: 0; }
@@ -617,6 +623,8 @@ body:not(.light) .tt-num { color: var(--text); }
   .auth-label-full { display: none; }
   .auth-label-short { display: inline; }
   #view-controls-header { order: 0; width: 100%; }
+  .ctrl-group { padding: .25rem .4rem .3rem; gap: .2rem; }
+  #lwytb-header .ctrl-group { align-items: stretch; }
   #themeIcon { filter: grayscale(1); opacity: .75; }
   .trk-accordion.open .trk-acc-lyrics { max-height: 42vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
   #mob-alb-expand.open { overscroll-behavior: contain; }
@@ -2002,15 +2010,15 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .spl-sub { font-size:.52rem; color:var(--text-muted); }
 
 /* ── HEADER SEARCH BOX ── */
-.hdr-search-wrap { position:relative; flex-shrink:0; }
+.hdr-search-wrap { position:relative; flex:1 1 265px; min-width:170px; max-width:340px; }
 .hdr-search-icon { position:absolute; left:8px; top:50%; transform:translateY(-50%); font-size:.6rem; color:var(--text-muted); pointer-events:none; line-height:1; }
 .hdr-search-input {
   background:var(--bg-card); border:1px solid var(--border); border-radius:8px;
   color:var(--text); font-family:var(--mono); font-size:.55rem;
   padding:.38rem .65rem .38rem 1.65rem; outline:none;
-  width:190px; transition:border-color .15s, width .2s;
+  width:100%; transition:border-color .15s;
 }
-.hdr-search-input:focus { border-color:var(--accent); width:230px; }
+.hdr-search-input:focus { border-color:var(--accent); }
 .hdr-search-input::placeholder { color:var(--text-muted); }
 @media (max-width:640px) { .hdr-search-wrap { display:none !important; } }
 
@@ -3316,28 +3324,24 @@ const fmtV = (n) => {
 // Distinct single colors for community artists (indexed by their position in communityArtists)
 const OA_PALETTE = ['#e05656', '#4f9d69', '#c9902e', '#5b8dd6', '#b467c9', '#3aa8a8', '#d66b9e', '#8a9a3b'];
 
-// Artist-level color: one color per artist (SJ/PM keep their signature colors)
-const colorOf = (artistId) => {
-  const a = allArtists.find(x => x.id === artistId) || communityArtists.find(x => x.id === artistId);
-  const name = (a?.name || '').toLowerCase();
-  if (name.includes('purple mountains')) return '#7040a8';
-  if (name.includes('silver jews'))      return '#6a8aa0';
-  if (a?.color) return a.color;   // user-set default from the Add Music fine-tune step
-  const i = communityArtists.findIndex(x => x.id === artistId);
-  return i >= 0 ? OA_PALETTE[i % OA_PALETTE.length] : '#ff6b35';
-};
+// There is no artist colour any more. An artist added to a jukebox used to
+// claim a palette slot and paint every one of its albums the same, which made
+// a new artist's bars a wall of one colour and fought the album art. Colour is
+// a property of an album now; this is only the placeholder shown before the
+// cover's own colour has been pulled out of the image.
+const DEFAULT_BAR_COLOR = '#6f7178';
 
 // Dominant-color cache extracted from album art (featured artist jukebox)
 const artColorCache = {};   // albumId -> hex
 
 // Album-specific color - this is what makes the bars pretty. Every album
 // defaults to the dominant color pulled from its own cover art (artColorCache,
-// filled in by extractArtColors); colorOf(artist_id) is only the placeholder
+// filled in by extractArtColors); DEFAULT_BAR_COLOR is only the placeholder
 // shown before that extraction lands, or the true fallback if it never does.
 const albumColor = (alb) => {
   if (alb.color) return alb.color;   // per-album override from the fine-tune step
   if (ALBUM_COLORS[alb.name]) return ALBUM_COLORS[alb.name];   // curated SJ/PM catalog color - keep it no matter which of the two is "featured"
-  return artColorCache[alb.id] || colorOf(alb.artist_id);
+  return artColorCache[alb.id] || DEFAULT_BAR_COLOR;
 };
 
 // ── Dominant color extraction from album art ──
@@ -12176,7 +12180,8 @@ function renderLWYTBHTML(landing) {
   const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
   const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
-  return `<div class="lwytb-row">
+  return `<div class="ctrl-group"><div class="ctrl-group-hd">Player Controls</div>
+    <div class="lwytb-row">
       <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
       ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<select class="ctrl-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
@@ -12187,6 +12192,7 @@ function renderLWYTBHTML(landing) {
         <option value="">▶ Public Playlists</option>
         ${_plSelectOptions(_pubPls)}
       </select>` : ''}
+    </div>
   </div>`;
 }
 
@@ -12249,7 +12255,8 @@ function renderViewToggle() {
       <button class="expand-collapse-btn" onclick="expandAllTracks()" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-family:var(--mono);font-size:.45rem;padding:.2rem .55rem;border-radius:5px;cursor:pointer;letter-spacing:.06em;transition:all .15s" onmouseover="this.style.borderColor='var(--text-muted)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">⊕ Expand All Tracks</button>
       <button class="expand-collapse-btn" onclick="collapseAllTracks()" style="background:none;border:1px solid var(--border);color:var(--text-muted);font-family:var(--mono);font-size:.45rem;padding:.2rem .55rem;border-radius:5px;cursor:pointer;letter-spacing:.06em;transition:all .15s" onmouseover="this.style.borderColor='var(--text-muted)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">⊖ Collapse All Tracks</button>
     </div>` : '';
-  return `<div class="view-toggle-row" style="display:flex;flex-direction:column;gap:0;align-items:stretch;flex:1;min-width:0">
+  return `<div class="ctrl-group"><div class="ctrl-group-hd">Jukebox Controls</div>
+  <div class="view-toggle-row" style="display:flex;flex-direction:column;gap:0;align-items:stretch;flex:0 1 auto;min-width:0">
     <div style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
       <div class="view-seg">
         <button class="vseg-btn ${viewMode==='byyear'?'active':''}" onclick="setViewMode('byyear')">${_mobNav?'By Year':'↔ By Year'}</button>
@@ -12261,7 +12268,7 @@ function renderViewToggle() {
       ${listSort_}
     </div>
     ${ctrlRow}
-  </div>`;
+  </div></div>`;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -12583,7 +12590,7 @@ function renderTopTracks(trackList) {
     </tr></thead>
     <tbody>
     ${rows.map((t, i) => {
-      const color    = t._alb ? albumColor(t._alb) : colorOf(t.artist_id);
+      const color    = t._alb ? albumColor(t._alb) : DEFAULT_BAR_COLOR;
       const vid      = ytData[t.id]?.video_id;
       const thumb    = t._alb ? albumThumb(t._alb) : (ytData[t.id]?.thumbnail || '');
       const viewsPct = (t._views / maxViews * 100).toFixed(1);
@@ -12808,7 +12815,6 @@ let amStep     = 1;     // wizard pane: 1 artist · 2 albums · 3 lyrics · 4 fi
 let amArtistId = null;  // artist row id once the import lands
 let amImportOk = false; // import + lyric discovery finished
 let amFt       = null;  // fine-tune data from the edge function
-let amFtColor  = null;  // chosen chart color
 let amMinimized = false; // wizard hidden, work continuing in the background
 let _amLastStatus = ''; // last step-status line, mirrored on the minimized pill
 let amBgBusy = false;      // background lyrics/date enrichment in flight
@@ -13374,7 +13380,7 @@ function amSetFooter(backVisible, nextLabel, nextDisabled, cancelVisible = true)
 }
 function amResetWizard() {
   amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
-  amArtistId = null; amImportOk = false; amFt = null; amFtColor = null;
+  amArtistId = null; amImportOk = false; amFt = null;
   amMinimized = false; _amLastStatus = '';
   _amWizardDone = false; _amBgStatus = '';
   const mb = document.getElementById('am-minibar');
@@ -13468,20 +13474,10 @@ async function amGoFinetune() {
 
 function amFtRender() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  amFtColor = amFt.artist.color || null;
-  const cur = amFt.artist.color || colorOf(amFt.artist.id);
-  const swatches = OA_PALETTE.map(c =>
-    `<button type="button" class="am-swatch${cur === c ? ' sel' : ''}" style="background:${c}" data-c="${c}" onclick="amFtPickColor('${c}')" title="${c}"></button>`).join('');
   document.getElementById('amFtBody').innerHTML = `
     <div class="am-ft-section">
       <div class="m-fl">Artist name</div>
       <input type="text" class="m-input" id="amFtArtistName" maxlength="80" value="${esc(amFt.artist.name)}" autocorrect="off" autocapitalize="words" spellcheck="false">
-    </div>
-    <div class="am-ft-section">
-      <div class="m-fl">Chart color: this artist’s bars in the view charts</div>
-      <div class="am-swatches" id="amFtSwatches">${swatches}
-        <input type="color" class="am-swatch-custom" id="amFtCustomColor" value="${cur}" title="Custom color" oninput="amFtPickColor(this.value)">
-      </div>
     </div>
     <div class="am-ft-section">
       <div class="m-fl">Albums: cover, name &amp; year</div>
@@ -13650,12 +13646,6 @@ async function amGoToArtist() {
   amStowWizard();
   landingExploreArtist(a.slug, a.id);
 }
-function amFtPickColor(c) {
-  amFtColor = c;
-  document.querySelectorAll('#amFtSwatches .am-swatch').forEach(el => el.classList.toggle('sel', el.dataset.c === c));
-  const custom = document.getElementById('amFtCustomColor');
-  if (custom && custom.value !== c) { try { custom.value = c; } catch (_) {} }
-}
 function amFtPickArt(i, el) {
   amFt.albums[i]._pickedArt = el.dataset.u;
   document.getElementById('amFtCover' + i).src = el.dataset.u;
@@ -13668,7 +13658,6 @@ async function amFtSave() {
   const payload = { artist_id: amArtistId, albums: [] };
   const nm = (document.getElementById('amFtArtistName')?.value || '').trim();
   if (nm && nm !== amFt.artist.name) payload.artist_name = nm;
-  if (amFtColor && amFtColor !== (amFt.artist.color || null)) payload.color = amFtColor;
   amFt.albums.forEach((al, i) => {
     const d = { id: al.id };
     const nn = (document.getElementById('amFtName' + i)?.value || '').trim();
@@ -13678,7 +13667,7 @@ async function amFtSave() {
     if (al._pickedArt && al._pickedArt !== al.art_url) d.art_url = al._pickedArt;
     if (Object.keys(d).length > 1) payload.albums.push(d);
   });
-  if (payload.artist_name || payload.color || payload.albums.length) {
+  if (payload.artist_name || payload.albums.length) {
     await amFetch('?action=finetune', { method: 'POST', body: JSON.stringify(payload) });
   }
 }
@@ -14319,6 +14308,9 @@ const SJ_CHANGELOG = [
     'The Background Play panel asks one question about rights instead of two tick boxes that could disagree. Pick Personal playback (already selected, and the safe one) or Public play. You can no longer end up with both.',
     'Your audio storage now shows as a bar across the bottom of that panel with a percentage, turning amber and then red as it fills, rather than a line of numbers.',
     'A new button in the Background Play panel adds a whole folder of songs for the artist you are listening to, matching the files to tracks by name.',
+    'The two rows of buttons under the header are now two labelled boxes: Jukebox Controls on the left for what the page shows, Player Controls on the right for what plays.',
+    'The search box is wider and grows into whatever room the header has, so you can read the whole of what you typed.',
+    'Chart bar colours now come from each album, taken from its own cover art. Adding an artist no longer paints every one of their albums the same colour, which used to turn a new jukebox into a wall of one shade.',
   ]},
   { date: '2026-08-12', items: [
     'The play queue and saved playlists now show each track as Artist - Song, matching the player title.',
