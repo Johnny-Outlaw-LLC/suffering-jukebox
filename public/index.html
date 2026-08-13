@@ -1280,6 +1280,7 @@ textarea.report-input { resize:vertical; }
   display: flex; flex-direction: column; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4990;
   gap: 0; padding: 10px 16px 8px;
   --mf-body: 76px;                     /* height of the art / lyric window */
+  --mf-btn: 30px;                      /* every button in the bar is this square */
   min-height: calc(var(--mf-body) + 36px);
   background: var(--bg-card); border-top: 1px solid var(--border);
   box-shadow: 0 -4px 20px rgba(0,0,0,.35); cursor: pointer;
@@ -1319,9 +1320,7 @@ textarea.report-input { resize:vertical; }
   min-width: 0; flex: 1 1 auto;
 }
 .ytp-mf-song.now-playing { color: var(--accent); }
-.ytp-mf-song-row #ytp-mf-vote {
-  width: 26px; height: 26px; font-size: .7rem; flex-shrink: 0;
-}
+.ytp-mf-song-row #ytp-mf-vote { font-size: .7rem; flex-shrink: 0; }
 .ytp-mf-album {
   font-size: .5rem; color: var(--text-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1387,7 +1386,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .ytp-mf-btn {
   background: none; border: 1px solid var(--border); color: var(--text);
-  width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: .8rem;
+  width: var(--mf-btn); height: var(--mf-btn); border-radius: 8px; cursor: pointer; font-size: .8rem;
   display: flex; align-items: center; justify-content: center; transition: all .15s; flex-shrink: 0;
 }
 .ytp-mf-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -1410,6 +1409,8 @@ textarea.report-input { resize:vertical; }
   /* Phone: art + header on top, lyrics under it, scrub, big transport last. */
   .ytp-mini-footer {
     --mf-body: 56px;
+    /* Six buttons plus their gaps have to cross the narrowest phone. */
+    --mf-btn: clamp(42px, 12vw, 46px);
     min-height: 0;
     gap: 8px;
     padding: 12px calc(16px + env(safe-area-inset-right, 0px))
@@ -1432,19 +1433,22 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-right { display: contents; }
   .ytp-mf-lyr { grid-area: lyr; margin-left: 0; }
   .ytp-mf-scrub { grid-area: scrub; }
-  .ytp-mf-song-row #ytp-mf-vote { width: 36px; height: 36px; font-size: .85rem; }
+  .ytp-mf-song-row #ytp-mf-vote { font-size: .85rem; }
   .ytp-mf-song   { font-size: .78rem; }
   .ytp-mf-artist { font-size: .5rem; }
   .ytp-mf-album  { font-size: .52rem; }
   .ytp-mf-controls {
-    grid-area: controls; justify-content: center; gap: 12px; width: 100%;
+    grid-area: controls; justify-content: center; gap: clamp(6px, 2vw, 10px); width: 100%;
   }
-  .ytp-mf-btn { width: 48px; height: 48px; font-size: 1.15rem; border-radius: 14px; }
-  .ytp-mf-controls .ytp-mf-btn { width: 52px; height: 52px; font-size: 1.25rem; }
-  #ytp-mf-playpause { width: 60px; height: 60px; font-size: 1.45rem; border-color: var(--accent); color: var(--accent); }
+  /* One square for every button in the bar - rate, expand and close included.
+     Play/pause stands out by colour, not by being a different size. */
+  .ytp-mf-btn { font-size: 1.2rem; border-radius: 14px; }
+  #ytp-mf-playpause { font-size: 1.35rem; border-color: var(--accent); color: var(--accent); }
   .ytp-mf-sep, #ytp-mf-maximize { display: none !important; }
-  /* Already minimized: restore uses the fullscreen glyph (not the tiled window). */
-  #ytp-mf-restore { width: 44px; height: 44px; }
+  /* The window glyphs are drawn at 10px for the desktop title bar - scale them
+     up so they carry a button this size. */
+  #ytp-mf-restore svg { width: 16px; height: 16px; }
+  #ytp-mf-vote svg { width: 17px; height: 17px; }
   .ytp-mf-seek { height: 6px; }
   .ytp-mf-seek::-webkit-slider-thumb { width: 16px; height: 16px; }
   .ytp-mf-seek::-moz-range-thumb { width: 16px; height: 16px; }
@@ -1456,6 +1460,121 @@ textarea.report-input { resize:vertical; }
   #yt-player-container.ytp-fs .sc-close {
     width: 40px; height: 40px; min-width: 40px; font-size: 1rem;
   }
+}
+
+/* ── Maximized player on a phone ──────────────────────────────────────────
+   Shaped like a phone music app: video on top, a deck of thumb-sized
+   transport controls under it, and one panel at the bottom that is either
+   the lyrics or the queue. The desktop toolbar row (checkboxes, volume,
+   version pill) folds into the deck so no control lives in two places. */
+.ytp-mob-deck { display: none; flex-direction: column; gap: 9px; flex-shrink: 0;
+  padding: 9px 14px 11px; background: var(--bg-card); border-top: 1px solid var(--border); }
+.ytp-md-scrub { display: flex; align-items: center; gap: 9px; }
+.ytp-md-time { font-size: .5rem; font-family: var(--mono); color: var(--text-muted);
+  min-width: 2.6em; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.ytp-md-time.dur { text-align: right; }
+.ytp-md-seek { -webkit-appearance: none; appearance: none; flex: 1 1 auto; min-width: 0;
+  height: 6px; border-radius: 3px; background: var(--border); outline: none; cursor: pointer; }
+.ytp-md-seek::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+  width: 17px; height: 17px; border-radius: 50%; background: var(--accent); border: none; }
+.ytp-md-seek::-moz-range-thumb { width: 17px; height: 17px; border-radius: 50%;
+  background: var(--accent); border: none; }
+.ytp-md-seek::-moz-range-track { height: 6px; border-radius: 3px; background: var(--border); }
+.ytp-md-transport { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+/* Sized off the viewport so five buttons still fit across a 320px phone. */
+.ytp-md-btn { display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: clamp(44px, 14vw, 54px); height: clamp(44px, 14vw, 54px);
+  border-radius: 16px; background: none; border: 1px solid var(--border);
+  color: var(--text); cursor: pointer; transition: transform .1s, color .12s, border-color .12s;
+  -webkit-tap-highlight-color: transparent; }
+.ytp-md-btn svg { width: 23px; height: 23px; display: block; pointer-events: none; }
+.ytp-md-btn:active { transform: scale(.93); }
+.ytp-md-btn.on { color: var(--accent); border-color: var(--accent); background: rgba(255,107,53,.14); }
+.ytp-md-btn:disabled { opacity: .32; cursor: default; }
+.ytp-md-play { width: clamp(58px, 18vw, 68px); height: clamp(58px, 18vw, 68px); border-radius: 50%;
+  background: var(--accent); border-color: var(--accent); color: #fff; }
+.ytp-md-play svg { width: 28px; height: 28px; }
+.ytp-md-chips { display: flex; align-items: center; gap: 6px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.ytp-md-chips::-webkit-scrollbar { display: none; }
+.ytp-md-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; min-height: 36px;
+  background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted);
+  font-family: var(--mono); font-size: .52rem; padding: 0 13px; cursor: pointer; white-space: nowrap; }
+.ytp-md-chip.on { color: var(--accent); border-color: var(--accent); }
+.ytp-md-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 13px; }
+.ytp-md-tab { min-height: 38px; border: none; border-radius: 10px; background: none;
+  color: var(--text-muted); font-family: var(--mono); font-size: .55rem; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; }
+.ytp-md-tab.on { background: var(--accent); color: #fff; }
+/* Short phones: give the deck's padding back to the panel underneath it. */
+@media (max-width: 640px) and (max-height: 700px) {
+  .ytp-mob-deck { gap: 7px; padding: 7px 12px 9px; }
+  .ytp-md-tab { min-height: 34px; }
+  .ytp-md-chip { min-height: 32px; }
+}
+
+@media (max-width: 640px) {
+  #yt-player-container.ytp-fs.ytp-mob-fs {
+    display: flex; flex-direction: column; box-sizing: border-box;
+    height: 100dvh !important; max-height: 100dvh !important;
+    background: var(--bg-card);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  #yt-player-container.ytp-mob-fs .ytp-mob-deck { display: flex; }
+  /* Everything the deck now carries lives in one place only. */
+  #yt-player-container.ytp-mob-fs .ytp-toolbar-row { display: none !important; }
+  #yt-player-container.ytp-mob-fs .yt-player {
+    order: 1; width: 100% !important; min-width: 0 !important;
+    height: auto !important; min-height: 0; border: none;
+    display: flex; flex-direction: column;
+  }
+  #yt-player-container.ytp-mob-fs .yt-player > *:not(.sc-edge) { border-radius: 0; }
+  /* The video keeps its shape; the panel below takes whatever is left. */
+  #yt-player-container.ytp-mob-fs .yt-player-frame {
+    flex: 0 0 auto; height: auto !important; min-height: 0; aspect-ratio: 16 / 9;
+  }
+  #yt-player-container.ytp-mob-fs .yt-player-frame iframe { height: 100% !important; }
+  #yt-player-container.ytp-mob-fs .ytp-title { font-size: .7rem; }
+
+  /* ── Bottom panel: lyrics or queue, never both ──
+     Both carry an inline display of their own, so the panel that is off has
+     to say so with weight. */
+  #yt-player-container.ytp-mob-fs .yt-queue-wrap { display: none !important; }
+  #yt-player-container.ytp-mob-fs #ytp-lyrics-pane { display: none !important; }
+
+  #yt-player-container.ytp-mob-fs.ytp-tab-lyrics .yt-player { flex: 0 0 auto; }
+  #yt-player-container.ytp-mob-fs.ytp-tab-lyrics #ytp-lyrics-pane {
+    display: flex !important; order: 2; flex: 1 1 auto; min-height: 0;
+    width: 100% !important; height: auto !important; max-height: none !important;
+    border: none; border-top: 1px solid var(--border); border-radius: 0;
+  }
+  #yt-player-container.ytp-mob-fs.ytp-tab-playlist .yt-player { flex: 1 1 auto; }
+  /* The wrap carries an inline flex-shrink:0 for the floating desktop window;
+     as a full-height panel it has to give way to the deck above it instead. */
+  #yt-player-container.ytp-mob-fs.ytp-tab-playlist .yt-queue-wrap {
+    display: flex !important; flex: 1 1 auto !important; min-height: 0;
+  }
+  #yt-player-container.ytp-mob-fs.ytp-tab-playlist .yt-queue-section {
+    flex: 1 1 auto; min-height: 0; height: auto !important; max-height: none !important;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
+  /* Queue rows are a tap target on a phone, not a dense desktop list. */
+  #yt-player-container.ytp-mob-fs .yt-playlist-bar { padding: 8px 12px; gap: 8px; }
+  #yt-player-container.ytp-mob-fs .yt-pl-dd-btn { font-size: .56rem; padding: 8px 10px; }
+  #yt-player-container.ytp-mob-fs .yt-pl-save-btn { font-size: .5rem; padding: 8px 12px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-head { font-size: .48rem; padding: 9px 12px 8px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-clear { font-size: .48rem; padding: 4px 0; }
+  #yt-player-container.ytp-mob-fs .yt-queue-row { padding: 9px 12px; gap: 10px; border-left: 3px solid transparent; }
+  #yt-player-container.ytp-mob-fs .yt-queue-row.active { border-left-color: var(--accent); }
+  #yt-player-container.ytp-mob-fs .yt-queue-row.active .yt-queue-title,
+  #yt-player-container.ytp-mob-fs .yt-queue-row.active .yt-queue-num { color: var(--accent); }
+  #yt-player-container.ytp-mob-fs .yt-queue-num { font-size: .58rem; min-width: 24px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-title { font-size: .66rem; }
+  #yt-player-container.ytp-mob-fs .yt-queue-move { font-size: .55rem; padding: 2px 6px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-remove { font-size: .72rem; padding: 6px 4px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-row .tvb-cycle { width: 32px; height: 32px; }
 }
 .ytp-play-overlay {
   position: absolute; inset: 0;
@@ -4079,6 +4198,52 @@ function ytpSetWinIcon(btn, kind) {
   if (btn && YTP_WIN_ICONS[kind]) btn.innerHTML = YTP_WIN_ICONS[kind];
 }
 
+// Transport glyphs for the phone control deck. Text arrows render at wildly
+// different sizes across phones, so the big buttons draw their own.
+const YTP_DECK_ICONS = {
+  play:  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.29-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14Z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4.2" height="15" rx="1.3"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.3"/></svg>',
+  prev:  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5.4" width="2.4" height="13.2" rx="1.2"/><path d="M19 6.9v10.2a1 1 0 0 1-1.55.83l-7.65-5.1a1 1 0 0 1 0-1.66l7.65-5.1A1 1 0 0 1 19 6.9Z"/></svg>',
+  next:  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="16.6" y="5.4" width="2.4" height="13.2" rx="1.2"/><path d="M5 6.9v10.2a1 1 0 0 0 1.55.83l7.65-5.1a1 1 0 0 0 0-1.66L6.55 6.07A1 1 0 0 0 5 6.9Z"/></svg>',
+  shuffle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3.5h4.5V8"/><path d="M3.5 20.5 20.5 3.5"/><path d="M16 20.5h4.5V16"/><path d="m14.5 14.5 6 6"/><path d="m3.5 3.5 5 5"/></svg>',
+  repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.5 2.5 3.5 3.5-3.5 3.5"/><path d="M4 12v-2a4 4 0 0 1 4-4h12"/><path d="M7.5 21.5 4 18l3.5-3.5"/><path d="M20 12v2a4 4 0 0 1-4 4H4"/></svg>',
+};
+
+// The phone deck. Built for every player (desktop included) and shown by CSS
+// only while the player is maximized on a phone, so a rotation or a resize
+// needs no rebuild.
+function ytpMobDeckHTML() {
+  return `
+    <div class="ytp-mob-deck" id="ytp-mob-deck" onmousedown="event.stopPropagation()">
+      <div class="ytp-md-scrub" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
+        <span class="ytp-md-time" id="ytp-md-cur">0:00</span>
+        <input class="ytp-md-seek" id="ytp-md-seek" type="range" min="0" max="0" value="0" step="0.25"
+          aria-label="Seek"
+          oninput="ytpMfSeekInput(this)"
+          onchange="ytpMfSeekCommit(this)"
+          onpointerdown="ytpMfSeekStart()"
+          onpointerup="ytpMfSeekEnd()">
+        <span class="ytp-md-time dur" id="ytp-md-dur">0:00</span>
+      </div>
+      <div class="ytp-md-transport">
+        <button class="ytp-md-btn" id="ytp-md-shuffle" onclick="ytpMfToggleShuffle();event.stopPropagation()" title="Shuffle" aria-label="Shuffle">${YTP_DECK_ICONS.shuffle}</button>
+        <button class="ytp-md-btn" id="ytp-md-prev" onclick="ytPrevTrack();event.stopPropagation()" title="Previous" aria-label="Previous track">${YTP_DECK_ICONS.prev}</button>
+        <button class="ytp-md-btn ytp-md-play" id="ytp-md-playpause" onclick="ytTogglePlayPause();event.stopPropagation()" title="Pause" aria-label="Play or pause">${YTP_DECK_ICONS.pause}</button>
+        <button class="ytp-md-btn" id="ytp-md-next" onclick="ytNextTrack();event.stopPropagation()" title="Next" aria-label="Next track">${YTP_DECK_ICONS.next}</button>
+        <button class="ytp-md-btn" id="ytp-md-repeat" onclick="ytpMobToggleRepeat();event.stopPropagation()" title="Repeat" aria-label="Repeat">${YTP_DECK_ICONS.repeat}</button>
+      </div>
+      <div class="ytp-md-chips">
+        <button class="ytp-md-chip" id="ytp-md-bg" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()">Background Play</button>
+        <button class="ytp-md-chip" id="ytp-md-ver" style="display:none" onclick="ytpToggleVersionMenu();event.stopPropagation()">⇄ Versions ▾</button>
+        <button class="ytp-md-chip" id="ytp-md-more" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem">⋯ More</button>
+      </div>
+      <div class="ytp-md-tabs" role="tablist">
+        <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics');event.stopPropagation()">Lyrics</button>
+        <button class="ytp-md-tab" id="ytp-md-tab-playlist" role="tab" onclick="ytpMobSetTab('playlist');event.stopPropagation()">Playlist</button>
+      </div>
+    </div>`;
+}
+
 function openYTPlayer(videoId, title, trackId, ev) {
   loadYTAPI(); // ensure YT iframe API is loading
   ytVideoId = videoId;
@@ -4171,12 +4336,12 @@ function openYTPlayer(videoId, title, trackId, ev) {
           <button class="sc-close" onclick="ytpCloseToMini()" title="Pause &amp; minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">✕</button>
         </div>
       </div>
-      <div style="display:flex;align-items:center;flex-wrap:wrap;row-gap:4px;gap:5px;padding:2px 8px 6px 10px">
+      <div class="ytp-toolbar-row" style="display:flex;align-items:center;flex-wrap:wrap;row-gap:4px;gap:5px;padding:2px 8px 6px 10px">
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭</button>
         <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">⏸</button>
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Lyrics</span></label>
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="setYtShuffleEnabled(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Shuffle</span></label>
-        <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytRepeat=this.checked" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
+        <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytpSetRepeat(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem">Repeat</span></label>
         <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">⇄ Versions ▾</button>
         <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
@@ -4193,6 +4358,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
     <div class="yt-player-frame" style="height:${cH}px">
       ${ytpIframeHTML(videoId, cH, !restorePaused)}
     </div>
+    ${ytpMobDeckHTML()}
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
   _ytpContainerEl.appendChild(ytPlayerEl);
   // Sync the newly-created Shuffle/Repeat checkboxes to whatever state
@@ -4563,8 +4729,19 @@ function ytpSetPlayPauseIcon(playing) {
   if (btn) { btn.textContent = playing ? '⏸' : '▶'; btn.title = playing ? 'Pause' : 'Play'; }
   const mfBtn = document.getElementById('ytp-mf-playpause');
   if (mfBtn) { mfBtn.textContent = playing ? '⏸' : '▶'; mfBtn.title = playing ? 'Pause' : 'Play'; }
+  const mdBtn = document.getElementById('ytp-md-playpause');
+  if (mdBtn) {
+    mdBtn.innerHTML = playing ? YTP_DECK_ICONS.pause : YTP_DECK_ICONS.play;
+    mdBtn.title = playing ? 'Pause' : 'Play';
+  }
   const mfTitle = document.getElementById('ytp-mf-song');
   if (mfTitle) mfTitle.classList.toggle('now-playing', playing);
+}
+
+// Whether sound is coming out right now, whichever source is carrying it.
+function ytpIsPlaying() {
+  if (_taBgActive && _taAudioEl) return !_taAudioEl.paused;
+  try { return ytAPIPlayer?.getPlayerState?.() === 1; } catch (_) { return false; }
 }
 
 // ── Mini-player rating for the currently playing track ──
@@ -4830,7 +5007,9 @@ function updateYTQueueUI() {
   const resizeHandle  = ytPlayerEl.querySelector('.sc-resize');
   const existingWrap  = ytPlayerEl.querySelector('.yt-queue-wrap');
 
-  if (ytQueue.length <= 1) {
+  // The phone's Playlist tab is a panel of its own - it still needs the list
+  // (and the Load Playlist bar) when only one song is queued.
+  if (ytQueue.length <= 1 && !ytpMobFsOn()) {
     if (existingWrap) existingWrap.remove();
     return;
   }
@@ -4841,7 +5020,7 @@ function updateYTQueueUI() {
     ${ytPlaylistBarHTML()}
     <div class="yt-queue-section">
       <div class="yt-queue-head">
-        <span>Queue · ${ytQueue.length} tracks</span>
+        <span>Queue · ${ytQueue.length} track${ytQueue.length === 1 ? '' : 's'}</span>
         <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
       </div>
       ${ytQueue.map((item, i) => {
@@ -4884,6 +5063,16 @@ function updateYTQueueUI() {
   } else {
     requestAnimationFrame(() => ytScrollQueueToCurrent());
   }
+  ytpMobSyncDeck();
+}
+
+// Undo the inline hiding above. A queue rebuilt while the player was minimized
+// carries display:none on its own nodes, which would leave the Playlist tab
+// blank once the player is opened back up.
+function ytpShowQueueChrome() {
+  if (!ytPlayerEl) return;
+  ytPlayerEl.querySelectorAll('.yt-queue-section, .yt-playlist-bar')
+    .forEach(el => { el.style.display = ''; });
 }
 
 function ytMoveQueue(from, to) {
@@ -4970,6 +5159,102 @@ function ytpLyrResizeStart(e) {
 
 let _ytpMinimized = false;
 
+// ── Maximized phone player: deck + bottom tab ────────────────────────────
+// The maximized player on a phone shows one panel at the bottom, either the
+// lyrics or the queue, chosen by the tab pair in the deck. The choice sticks
+// between sessions the way the lyric strip does.
+let _ytpMobTab = 'lyrics';
+try {
+  const _t = localStorage.getItem('sj_mob_player_tab');
+  if (_t === 'lyrics' || _t === 'playlist') _ytpMobTab = _t;
+} catch (e) {}
+
+function ytpMobFsOn() {
+  return !!(_ytpFs && _ytpContainerEl && _ytpContainerEl.classList.contains('ytp-mob-fs'));
+}
+
+// Turn the phone layout on or off. Off leaves the desktop fullscreen rules
+// (and the toolbar row) exactly as they were.
+function ytpMobApplyFs(on) {
+  if (!_ytpContainerEl) return;
+  if (!on) {
+    _ytpContainerEl.classList.remove('ytp-mob-fs', 'ytp-tab-lyrics', 'ytp-tab-playlist');
+    return;
+  }
+  _ytpContainerEl.classList.add('ytp-mob-fs');
+  ytpMobSetTab(_ytpMobTab);
+}
+
+function ytpMobSetTab(tab) {
+  if (tab !== 'playlist') tab = 'lyrics';
+  _ytpMobTab = tab;
+  try { localStorage.setItem('sj_mob_player_tab', tab); } catch (e) {}
+  if (!_ytpContainerEl) return;
+  const lyrics = tab === 'lyrics';
+  _ytpContainerEl.classList.toggle('ytp-tab-lyrics', lyrics);
+  _ytpContainerEl.classList.toggle('ytp-tab-playlist', !lyrics);
+  document.getElementById('ytp-md-tab-lyrics')?.classList.toggle('on', lyrics);
+  document.getElementById('ytp-md-tab-playlist')?.classList.toggle('on', !lyrics);
+  // The pane only loads (and the karaoke sync only runs) while it is the
+  // panel on screen, so the tab drives the same switch the checkbox does.
+  const chk = document.getElementById('ytp-lyrics-chk');
+  if (chk) chk.checked = lyrics;
+  if (lyrics !== _ytpLyricsOpen) ytpToggleLyrics(lyrics);
+  if (!lyrics) {
+    updateYTQueueUI();
+    requestAnimationFrame(ytScrollQueueToCurrent);
+  }
+  ytpMobSyncDeck();
+}
+
+// Mirror the state the deck shares with the desktop toolbar onto the big
+// buttons: queue position, shuffle/repeat, background play, versions.
+function ytpMobSyncDeck() {
+  if (!ytPlayerEl) return;
+  const n = ytQueue.length;
+  const prev = document.getElementById('ytp-md-prev');
+  if (prev) prev.disabled = !(n > 1 && (ytQueueIdx > 0 || ytRepeat));
+  const next = document.getElementById('ytp-md-next');
+  if (next) next.disabled = !(n > 1 && (ytQueueIdx < n - 1 || ytRepeat));
+  const sh = document.getElementById('ytp-md-shuffle');
+  if (sh) { sh.classList.toggle('on', !!ytShuffle); sh.title = ytShuffle ? 'Shuffle on' : 'Shuffle off'; }
+  const rp = document.getElementById('ytp-md-repeat');
+  if (rp) { rp.classList.toggle('on', !!ytRepeat); rp.title = ytRepeat ? 'Repeat on' : 'Repeat off'; }
+  // Background Play and Versions keep their own show/hide rules - read them
+  // off the toolbar buttons rather than duplicating the conditions.
+  const bg = document.getElementById('ytp-md-bg'), bgSrc = document.getElementById('ytp-audio-btn');
+  if (bg && bgSrc) {
+    bg.style.display = bgSrc.style.display === 'none' ? 'none' : '';
+    bg.textContent = bgSrc.textContent;
+    bg.title = bgSrc.title;
+    bg.classList.toggle('on', !!bgSrc.style.color);
+  }
+  const ver = document.getElementById('ytp-md-ver'), verSrc = document.getElementById('ytp-ver-btn');
+  if (ver && verSrc) {
+    ver.style.display = verSrc.style.display === 'none' ? 'none' : '';
+    ver.textContent = verSrc.textContent;
+    ver.title = verSrc.title;
+  }
+  const tab = document.getElementById('ytp-md-tab-playlist');
+  if (tab) tab.textContent = n > 1 ? ('Playlist · ' + n) : 'Playlist';
+}
+
+function ytpSetRepeat(on) {
+  ytRepeat = !!on;
+  const chk = document.getElementById('ytp-repeat-chk');
+  if (chk) chk.checked = ytRepeat;
+  ytpMobSyncDeck();
+}
+
+function ytpMobToggleRepeat() { ytpSetRepeat(!ytRepeat); }
+
+// The version menu anchors itself to whichever control opened it.
+function ytpVerAnchorBtn() {
+  const deck = document.getElementById('ytp-md-ver');
+  if (deck && deck.offsetParent !== null) return deck;
+  return document.getElementById('ytp-ver-btn');
+}
+
 // Enter fullscreen without toggling. Used by mobile open and restore-from-mini.
 function ytpEnterFullscreen() {
   if (!_ytpContainerEl || !ytPlayerEl || _ytpFs) {
@@ -4990,6 +5275,13 @@ function ytpEnterFullscreen() {
   const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
   ytpSetWinIcon(fsBtn, 'restore');
   if (fsBtn) fsBtn.title = ytpIsMob() ? 'Minimize' : 'Restore down';
+  // Phones get the deck + tab layout; the panel is whichever tab was last used.
+  if (ytpIsMob()) {
+    ytpMobApplyFs(true);
+    ytpSetPlayPauseIcon(ytpIsPlaying());
+    ytpMfStartProgress();
+    return;
+  }
   ytpUpdateFsLayout();
   if (!_ytpLyricsOpen) {
     _ytpFsAutoLyrics = true;
@@ -5005,6 +5297,7 @@ function ytpMobExitFsToMini() {
   if (!_ytpContainerEl || !ytPlayerEl) return;
   _ytpFsAutoLyrics = false;
   _ytpFs = false;
+  ytpMobApplyFs(false);
   _ytpContainerEl.classList.remove('ytp-fs');
   const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
   ytpSetWinIcon(fsBtn, 'maximize');
@@ -5026,13 +5319,11 @@ function ytpToggleMinimize() {
       target.style.opacity = '1';
       target.style.transform = '';
       hideYtpMiniFooter();
-      if (_mfLyricStripOn !== _ytpLyricsOpen) ytpToggleLyrics(_mfLyricStripOn);
+      ytpShowQueueChrome();
+      // The maximized phone player picks its own panel from the tab pair, so
+      // the mini bar's lyric strip setting stays the mini bar's business.
       ytpEnterFullscreen();
       return;
-    }
-    if (_mfLyricStripOn !== _ytpLyricsOpen) {
-      _mfLyricStripOn = _ytpLyricsOpen;
-      try { localStorage.setItem('sj_mf_lyric_strip', _mfLyricStripOn ? '1' : '0'); } catch(e) {}
     }
     if (_ytpFs) ytpMobExitFsToMini();
     _ytpMinimized = true;
@@ -5070,6 +5361,7 @@ function ytpToggleMinimize() {
     target.style.opacity = '1';
     setTimeout(() => { target.style.transition = ''; target.style.transform = ''; }, 320);
     hideYtpMiniFooter();
+    ytpShowQueueChrome();
     // Carry the mini bar's lyrics setting back onto the restored window.
     if (_mfLyricStripOn !== _ytpLyricsOpen) ytpToggleLyrics(_mfLyricStripOn);
     if (_ytpFs) ytpUpdateFsLayout();
@@ -5311,29 +5603,47 @@ function ytpMfPlaybackPos() {
   return { pos, dur };
 }
 
+// The mini bar and the maximized phone deck each carry a scrub bar; only one
+// of them is ever on screen, and the same clock drives whichever it is.
+function ytpScrubPrefixes() {
+  const out = [];
+  if (document.getElementById('ytp-mini-footer')?.classList.contains('open')) out.push('mf');
+  if (ytpMobFsOn()) out.push('md');
+  return out;
+}
+
+function ytpSetScrubCur(sec) {
+  ['ytp-mf-cur', 'ytp-md-cur'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = ytpFmtClock(sec);
+  });
+}
+
 function ytpMfPaintProgress() {
   if (_mfSeeking) return;
-  const scrub = document.getElementById('ytp-mf-scrub');
-  if (!scrub || !document.getElementById('ytp-mini-footer')?.classList.contains('open')) return;
+  const prefixes = ytpScrubPrefixes();
+  if (!prefixes.length) return;
   const { pos, dur } = ytpMfPlaybackPos();
-  const seek = document.getElementById('ytp-mf-seek');
-  const curEl = document.getElementById('ytp-mf-cur');
-  const durEl = document.getElementById('ytp-mf-dur');
-  if (durEl) durEl.textContent = ytpFmtClock(dur);
-  if (curEl) curEl.textContent = ytpFmtClock(pos);
-  if (seek) {
-    const max = dur > 0 ? dur : 0;
-    if (Number(seek.max) !== max) seek.max = String(max);
-    seek.value = String(Math.min(pos, max || 0));
-    seek.disabled = max <= 0;
-  }
+  const max = dur > 0 ? dur : 0;
+  prefixes.forEach(p => {
+    const seek  = document.getElementById('ytp-' + p + '-seek');
+    const curEl = document.getElementById('ytp-' + p + '-cur');
+    const durEl = document.getElementById('ytp-' + p + '-dur');
+    if (durEl) durEl.textContent = ytpFmtClock(dur);
+    if (curEl) curEl.textContent = ytpFmtClock(pos);
+    if (seek) {
+      if (Number(seek.max) !== max) seek.max = String(max);
+      seek.value = String(Math.min(pos, max || 0));
+      seek.disabled = max <= 0;
+    }
+  });
 }
 
 function ytpMfStartProgress() {
   ytpMfPaintProgress();
   if (_mfProgTimer) return;
   _mfProgTimer = setInterval(() => {
-    if (!document.getElementById('ytp-mini-footer')?.classList.contains('open')) {
+    if (!ytpScrubPrefixes().length) {
       clearInterval(_mfProgTimer); _mfProgTimer = null; return;
     }
     ytpMfPaintProgress();
@@ -5351,8 +5661,7 @@ function ytpMfSeekEnd() {
 }
 function ytpMfSeekInput(el) {
   _mfSeeking = true;
-  const curEl = document.getElementById('ytp-mf-cur');
-  if (curEl) curEl.textContent = ytpFmtClock(Number(el.value) || 0);
+  ytpSetScrubCur(Number(el.value) || 0);
 }
 function ytpMfSeekCommit(el) {
   const sec = Number(el.value) || 0;
@@ -7376,6 +7685,7 @@ function taSyncAudioBtn() {
     btn.title = signedIn
       ? 'No uploaded audio on this track yet — open Manage My Artists → Audio to add it'
       : 'Sign in and upload audio for this track to use Background Play';
+    ytpMobSyncDeck();
     return;
   }
   btn.textContent = on ? 'Background Play ✓' : (_taPreferBg && has ? 'Background Play' : 'Enable Background Play');
@@ -7385,6 +7695,7 @@ function taSyncAudioBtn() {
                  : (_taPreferBg
                     ? 'Background play stays on for tracks with audio - tap to turn off'
                     : 'Audio-only mode - keeps playing with the screen off or in the background');
+  ytpMobSyncDeck();
 }
 
 // Queue moved while audio-only mode had the sound: line the on-screen player
@@ -8145,6 +8456,8 @@ function ytpPlayerChromeH() {
 }
 
 function ytpMobLayoutLyrics() {
+  // The phone layout is flexbox all the way down - nothing to measure.
+  if (ytpMobFsOn()) return;
   if (!ytpIsMob() || !_ytpFs || !_ytpLyricsOpen || !_ytpContainerEl || !ytPlayerEl || !_ytpLyricsPaneEl) return;
   const chromeH = ytpPlayerChromeH();
   const frame   = ytPlayerEl.querySelector('.yt-player-frame');
@@ -8156,6 +8469,8 @@ function ytpMobLayoutLyrics() {
 
 function ytpUpdateFsLayout() {
   if (!_ytpFs || !_ytpContainerEl || !ytPlayerEl) return;
+  // Phone: the deck layout sizes itself in CSS, so leave the pixels alone.
+  if (ytpMobFsOn()) return;
   const isMob  = ytpIsMob();
   const frame  = ytPlayerEl.querySelector('.yt-player-frame');
   const iframe = frame?.querySelector('iframe');
@@ -8234,6 +8549,7 @@ function ytpToggleFullscreen() {
   }
   _ytpFsAutoLyrics = false;
   _ytpFs = false;
+  ytpMobApplyFs(false);
   _ytpContainerEl.classList.remove('ytp-fs');
   ytpSetWinIcon(fsBtn, 'maximize');
   if (fsBtn) fsBtn.title = 'Maximize';
@@ -8251,7 +8567,18 @@ function ytpClampToViewport() {
   if (left !== r.left) _ytpContainerEl.style.left = left + 'px';
   if (top !== r.top) _ytpContainerEl.style.top = top + 'px';
 }
-window.addEventListener('resize', () => { if (_ytpFs) ytpUpdateFsLayout(); else ytpClampToViewport(); }, { passive: true });
+// Rotating a phone, or resizing a desktop window, can cross the mobile
+// breakpoint while the player is maximized - swap layouts rather than
+// stranding the one that no longer fits.
+function ytpSyncFsMode() {
+  if (!_ytpFs || !_ytpContainerEl) return;
+  const want = ytpIsMob();
+  if (want !== ytpMobFsOn()) ytpMobApplyFs(want);
+}
+window.addEventListener('resize', () => {
+  if (_ytpFs) { ytpSyncFsMode(); ytpUpdateFsLayout(); }
+  else ytpClampToViewport();
+}, { passive: true });
 
 function ytpEdgeResize(e, dir) {
   if (e.button !== 0 || !ytPlayerEl || _ytpFs) return;
@@ -8308,7 +8635,7 @@ function ytpToggleLyrics(open) {
       if (_ytpLyrResizeHandleEl && !_ytpFs && !isMob) _ytpLyrResizeHandleEl.style.display = 'block';
       if (isMob) {
         _ytpLyricsPaneEl.style.width = '100%';
-        if (_ytpFs) {
+        if (_ytpFs && !ytpMobFsOn()) {
           const frame  = ytPlayerEl?.querySelector('.yt-player-frame');
           const iframe = frame?.querySelector('iframe');
           const avail  = window.innerHeight - ytpPlayerChromeH();
@@ -8339,6 +8666,7 @@ function ytpToggleLyrics(open) {
     _ytpLyricsPaneEl.style.display = 'none';
     if (_ytpLyrResizeHandleEl) _ytpLyrResizeHandleEl.style.display = 'none';
     if (isMob && _ytpFs) {
+      if (ytpMobFsOn()) return;
       const frame  = ytPlayerEl?.querySelector('.yt-player-frame');
       const iframe = frame?.querySelector('iframe');
       const h      = Math.max(200, window.innerHeight - ytpPlayerChromeH());
@@ -8469,11 +8797,12 @@ function ytpSyncVersionBtn(trackId, videoId) {
   const btn = document.getElementById('ytp-ver-btn');
   if (!btn) return;
   const vs = tvList(trackId);
-  if (vs.length < 2) { btn.style.display = 'none'; return; }
+  if (vs.length < 2) { btn.style.display = 'none'; ytpMobSyncDeck(); return; }
   const cur = tvFor(trackId, videoId);
   btn.style.display = '';
   btn.textContent   = '⇄ ' + (cur ? tvLabel(cur) : 'Versions') + ' ▾';
   btn.title         = vs.length + ' versions of this song on YouTube - tap to switch';
+  ytpMobSyncDeck();
 }
 
 function ytpCloseVersionMenu() {
@@ -8481,7 +8810,8 @@ function ytpCloseVersionMenu() {
   document.removeEventListener('mousedown', _tvMenuOutside, true);
 }
 function _tvMenuOutside(e) {
-  if (_tvMenuEl && !_tvMenuEl.contains(e.target) && e.target.id !== 'ytp-ver-btn') ytpCloseVersionMenu();
+  const onBtn = e.target.id === 'ytp-ver-btn' || e.target.id === 'ytp-md-ver';
+  if (_tvMenuEl && !_tvMenuEl.contains(e.target) && !onBtn) ytpCloseVersionMenu();
 }
 
 async function ytpToggleVersionMenu() {
@@ -8490,7 +8820,7 @@ async function ytpToggleVersionMenu() {
   const trackId = item?.trackId || nowPlayingTrackId;
   const vs      = tvList(trackId);
   if (!trackId || vs.length < 2) return;
-  const btn = document.getElementById('ytp-ver-btn');
+  const btn = ytpVerAnchorBtn();
   if (!btn) return;
 
   const menu = document.createElement('div');
@@ -13543,11 +13873,17 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-12';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-13';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-13', items: [
+    'The player on a phone has been rebuilt around big, thumb-sized buttons: shuffle, previous, a large play/pause, next and repeat sit in a row under the video, with the timeline above them.',
+    'One panel at the bottom of the phone player, and a Lyrics / Playlist pair of buttons to say which one you want. The playlist shows what is coming up with the song that is playing marked, and it fills the screen instead of a short scrolling strip.',
+    'Whichever of the two you last had open is the one you get next time you open the player.',
+    'Background Play and Versions moved onto the phone player as buttons of their own, next to ⋯ More. The old row of tick boxes is gone from phones.',
+  ]},
   { date: '2026-08-12', items: [
     'The play queue and saved playlists now show each track as Artist - Song, matching the player title.',
     'A song can now hold more than one YouTube video - the album audio, an official music video, a live take. Nothing gets thrown away when the app finds a replacement for a broken link.',
@@ -16418,6 +16754,7 @@ function setYtShuffleEnabled(on) {
     mfBtn.classList.toggle('on', ytShuffle);
     mfBtn.title = ytShuffle ? 'Shuffle on' : 'Shuffle off';
   }
+  ytpMobSyncDeck();
 }
 
 // Mini-footer shuffle toggle - same state the player window's checkbox drives.
