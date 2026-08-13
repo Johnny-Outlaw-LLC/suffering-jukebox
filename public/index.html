@@ -911,6 +911,30 @@ mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
 .m-log-line { color: #444; } .m-log-line.ok { color: #22c55e; } .m-log-line.err { color: #ef4444; } .m-log-line.head { color: var(--accent); font-weight: 600; }
 .modal-footer { padding: .9rem 1.5rem; border-top: 1px solid #2a2a2a; display: flex; align-items: center; gap: .75rem; flex-shrink: 0; }
 .mf-status { font-size: .56rem; margin-left: auto; }
+
+/* Background Play setup sheet (bgs*) - one popup that explains screen-off
+   playback, takes the rights consent and takes the file, on phone or desktop. */
+.bgs-card { border: 1px solid #2a2a2a; border-radius: 10px; padding: .65rem .8rem; display: flex; gap: .7rem; align-items: center; background: #0d0d0d; }
+.bgs-card img { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+.bgs-art { width: 46px; height: 46px; border-radius: 6px; flex-shrink: 0; background: #1a1a1a; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: .9rem; }
+.bgs-lede { font-size: .55rem; line-height: 1.65; color: var(--text); }
+.bgs-note { font-size: .5rem; line-height: 1.6; color: var(--text-muted); }
+.bgs-ok { font-family: var(--mono); font-size: .52rem; letter-spacing: .05em; color: #22c55e; border: 1px solid #22c55e44; background: #22c55e12; border-radius: 8px; padding: .55rem .7rem; }
+.bgs-quota { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); }
+.bgs-drop { display: block; text-align: center; cursor: pointer; background: #0d0d0d; border: 1px dashed #3a3a3a; border-radius: 10px; padding: 1.3rem 1rem; transition: border-color .15s, background .15s; }
+.bgs-drop:hover, .bgs-drop.drag { border-color: var(--accent); background: rgba(255,107,53,.07); }
+.bgs-drop.busy { opacity: .6; pointer-events: none; }
+.bgs-ic { display: block; font-size: 1.4rem; line-height: 1; margin-bottom: .5rem; }
+.bgs-t { display: block; font-size: .62rem; font-weight: 600; }
+.bgs-s { display: block; font-size: .5rem; color: var(--text-muted); margin-top: .35rem; line-height: 1.5; }
+.bgs-row { display: flex; align-items: flex-start; gap: .45rem; font-size: .55rem; cursor: pointer; user-select: none; line-height: 1.5; border-radius: 6px; padding: .2rem; margin: -.2rem; }
+.bgs-row input { margin-top: 2px; flex-shrink: 0; accent-color: var(--accent); }
+.bgs-row.need { box-shadow: 0 0 0 1px #f59e0b; background: #f59e0b12; }
+.bgs-warn { border: 1px solid #f59e0b66; background: #f59e0b14; color: #f59e0b; font-size: .52rem; padding: .55rem .7rem; border-radius: 6px; line-height: 1.6; }
+@media (max-width: 640px) {
+  .bgs-drop { padding: 1.6rem 1rem; }
+  .bgs-row { padding: .35rem; margin: -.35rem; }
+}
 @media (max-width: 640px) {
   /* Phones: modals become full-width bottom sheets so the wizard gets the
      whole screen width instead of losing 4rem to the overlay inset. */
@@ -2620,6 +2644,18 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <button class="m-btn ghost" onclick="closeMyArtists()">Close</button>
       <span class="mf-status" id="maStatus"></span>
     </div>
+  </div>
+</div>
+
+<!-- BACKGROUND PLAY SET-UP SHEET (explains it, takes consent + the file) -->
+<div class="modal-overlay" id="bgSetupOverlay" onclick="if(event.target===this)closeBgSetup()">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <span class="modal-title">Background Play</span>
+      <button class="modal-close" onclick="closeBgSetup()">&#10005;</button>
+    </div>
+    <div class="modal-body" id="bgsBody" style="gap:.9rem"></div>
+    <div class="modal-footer" id="bgsFoot"></div>
   </div>
 </div>
 
@@ -7648,12 +7684,12 @@ function taToggleAudioMode() {
     return;
   }
   if (!googleUser) {
-    showToast('Sign in to use Background Play.');
+    openBgSetup();   // the sheet explains it and offers sign-in
     return;
   }
   const item = ytQueue[ytQueueIdx];
   if (!taTrackAudio(item?.trackId)) {
-    showToast('No uploaded audio for this track yet. Use Manage My Artists → Audio to add it.');
+    openBgSetup(item?.trackId);   // no audio yet - offer the upload, not a dead end
     taSyncAudioBtn();
     return;
   }
@@ -7696,6 +7732,230 @@ function taSyncAudioBtn() {
                     ? 'Background play stays on for tracks with audio - tap to turn off'
                     : 'Audio-only mode - keeps playing with the screen off or in the background');
   ytpMobSyncDeck();
+}
+
+// ── Background Play set-up sheet ───────────────────────────────────────
+// The one place a song gets ready for screen-off listening: what it is, the
+// rights consent, the file, and a door through to Manage My Artists for a
+// whole album. Reached from the phone player button when the track has no
+// audio yet, and from "Enable Mobile Background Play" in the desktop ⋯ menu.
+// Consent lives in this sheet on purpose - stacking the old consent modal on
+// top of it would be two popups for one job on a phone.
+let _bgsTrackId = null;
+let _bgsPending = null;   // file picked before the rights box was ticked
+let _bgsBusy    = false;
+
+function openBgSetup(trackId) {
+  const tid = trackId || ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId || null;
+  _bgsTrackId = tid;
+  _bgsPending = null;
+  _bgsBusy = false;
+  const ov = document.getElementById('bgSetupOverlay');
+  if (!ov) { showToast('Background Play needs an uploaded audio file for this song.'); return; }
+  ov.classList.add('open');
+  bgsRender();
+  if (!googleUser) return;
+  // A row menu can open this before the track's audio has been looked up.
+  if (tid && !taData[tid]) {
+    loadTrackAudio([tid]).then(() => { if (_bgsTrackId === tid) bgsRender(); }).catch(() => {});
+  }
+  refreshBgUnlock().then(() => taSyncQuotaLabel('bgsQuota')).catch(() => {});
+}
+
+function closeBgSetup() {
+  if (_bgsBusy) return;   // don't pull the sheet out from under an upload
+  document.getElementById('bgSetupOverlay')?.classList.remove('open');
+  _bgsTrackId = null;
+  _bgsPending = null;
+}
+
+function bgsMeta() {
+  const tid = _bgsTrackId;
+  const t   = tid ? findTrackById(tid) : null;
+  const m   = (tid && SJ_TRACK_META[tid]) || {};
+  const q   = ytQueue[ytQueueIdx];
+  return {
+    tid,
+    name:   t?.name || (q && q.trackId === tid ? q.title : '') || 'This song',
+    artist: m.artist || '',
+    album:  m.album || '',
+    art:    m.artwork || '',
+    ms:     t?.duration_ms || null,
+  };
+}
+
+function bgsCardHtml(meta) {
+  return '<div class="bgs-card">' +
+      (meta.art ? '<img src="' + escHtml(meta.art) + '" alt="">' : '<div class="bgs-art">♪</div>') +
+      '<div style="min-width:0">' +
+        '<div style="font-size:.66rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(meta.name) + '</div>' +
+        '<div style="font-size:.5rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          escHtml([meta.artist, meta.album].filter(Boolean).join(' · ') || 'Now playing') + '</div>' +
+      '</div>' +
+    '</div>';
+}
+
+function bgsPickerHtml(title, sub) {
+  return '<label class="bgs-drop" id="bgsDrop" ondragover="bgsDrag(event,1)" ondragleave="bgsDrag(event,0)" ondrop="bgsDropFile(event)">' +
+      '<input type="file" accept="audio/*,.mp3,.m4a,.wav,.flac" style="display:none" onchange="bgsPick(this)">' +
+      '<span class="bgs-ic">🎧</span>' +
+      '<span class="bgs-t">' + escHtml(title) + '</span>' +
+      '<span class="bgs-s" id="bgsHint">' + escHtml(sub) + '</span>' +
+    '</label>';
+}
+
+function bgsConsentHtml() {
+  return '<label class="bgs-row" id="bgsOwnRow">' +
+      '<input type="checkbox" id="bgsOwn" onchange="bgsConsentChanged()"' + (_taConsentOk ? ' checked' : '') + '>' +
+      '<span>I own the rights to personally stream this song. Make background play available for me only</span>' +
+    '</label>' +
+    '<label class="bgs-row">' +
+      '<input type="checkbox" id="bgsPub" onchange="bgsConsentChanged()"' + (_taPublicPlay ? ' checked' : '') + '>' +
+      '<span>Public play — make background play available to everyone on this track</span>' +
+    '</label>' +
+    '<div class="bgs-warn" id="bgsWarn" style="display:' + (_taPublicPlay ? '' : 'none') + '">' +
+      '⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted ' +
+      'music you do not own. Your account and consent date are recorded with every file, and all plays are logged.' +
+    '</div>';
+}
+
+function bgsRender() {
+  const body = document.getElementById('bgsBody');
+  const foot = document.getElementById('bgsFoot');
+  if (!body || !foot) return;
+  const meta = bgsMeta();
+  const has  = !!taTrackAudio(meta.tid);
+  const mob  = taIsMobileDevice();
+  const card = bgsCardHtml(meta);
+
+  if (!googleUser) {
+    body.innerHTML = card +
+      '<div class="bgs-lede">YouTube stops the moment your phone locks. Upload your own audio file for a song and it keeps playing with the screen off, on the lock screen, and over CarPlay or Android Auto.</div>' +
+      '<div class="bgs-note">Uploads are tied to your account and stay private to you unless you choose to share them. Every account gets 500 MB free.</div>';
+    foot.innerHTML =
+      '<button class="m-btn ghost" onclick="closeBgSetup()">Not now</button>' +
+      '<button class="m-btn" style="margin-left:auto" onclick="closeBgSetup();handleAuthClick()">Sign in with Google</button>';
+    return;
+  }
+
+  if (has) {
+    body.innerHTML = card +
+      '<div class="bgs-ok">✓ Ready for background play</div>' +
+      '<div class="bgs-lede">' + (mob
+        ? 'Turn it on and the uploaded audio takes over from the video, so this keeps playing with your screen off.'
+        : 'Background play runs on phones. Open Suffering Jukebox on your phone, play this song, and tap <b>Background Play</b> in the player — it is already set up.') +
+      '</div>' +
+      bgsPickerHtml('Replace the audio file', 'Drop a file here or click to choose a different one') +
+      bgsConsentHtml() +
+      '<div class="bgs-quota" id="bgsQuota"></div>';
+    foot.innerHTML =
+      '<button class="m-btn ghost" onclick="bgsOpenArtists()">Manage my audio</button>' +
+      (mob
+        ? '<button class="m-btn" style="margin-left:auto" onclick="bgsTurnOn()">Turn it on</button>'
+        : '<button class="m-btn ghost" style="margin-left:auto" onclick="closeBgSetup()">Done</button>');
+    return;
+  }
+
+  body.innerHTML = card +
+    '<div class="bgs-lede">YouTube stops the moment your phone locks. Upload your own audio file for this song and it keeps playing with the screen off, on the lock screen, and over CarPlay or Android Auto.</div>' +
+    bgsPickerHtml(mob ? 'Choose an audio file' : 'Drop an audio file here',
+                  mob ? 'MP3, M4A, WAV or FLAC · up to 30 MB' : 'or click to browse · MP3, M4A, WAV or FLAC · up to 30 MB') +
+    bgsConsentHtml() +
+    '<div class="bgs-quota" id="bgsQuota"></div>';
+  foot.innerHTML =
+    '<button class="m-btn ghost" onclick="bgsOpenArtists()">Upload a whole album</button>' +
+    '<button class="m-btn ghost" style="margin-left:auto" onclick="closeBgSetup()">Close</button>';
+}
+
+function bgsHint(msg, color) {
+  const el = document.getElementById('bgsHint');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = color || '';
+}
+
+function bgsConsentChanged() {
+  const own = !!document.getElementById('bgsOwn')?.checked;
+  const pub = !!document.getElementById('bgsPub')?.checked;
+  _taConsentOk  = own;
+  _taPublicPlay = pub;
+  const w = document.getElementById('bgsWarn');
+  if (w) w.style.display = pub ? '' : 'none';
+  if (own) {
+    document.getElementById('bgsOwnRow')?.classList.remove('need');
+    // They picked a file first and ticked the box second - go now.
+    if (_bgsPending) { const f = _bgsPending; _bgsPending = null; bgsUpload(f); }
+  }
+}
+
+function bgsDrag(e, on) {
+  e.preventDefault();
+  document.getElementById('bgsDrop')?.classList.toggle('drag', !!on);
+}
+
+function bgsDropFile(e) {
+  e.preventDefault();
+  document.getElementById('bgsDrop')?.classList.remove('drag');
+  const f = e.dataTransfer?.files?.[0];
+  if (f) bgsTake(f);
+}
+
+function bgsPick(inp) {
+  const f = inp.files?.[0];
+  inp.value = '';
+  if (f) bgsTake(f);
+}
+
+function bgsTake(file) {
+  if (_bgsBusy) return;
+  const audioish = /^audio\//.test(file.type || '') || /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i.test(file.name || '');
+  if (!audioish) { bgsHint('That does not look like an audio file.', '#ef4444'); return; }
+  if (file.size > 30 * 1024 * 1024) { bgsHint('That file is bigger than 30 MB.', '#ef4444'); return; }
+  if (!document.getElementById('bgsOwn')?.checked) {
+    _bgsPending = file;
+    document.getElementById('bgsOwnRow')?.classList.add('need');
+    bgsHint('Tick the rights box below and ' + file.name + ' uploads straight away.', '#f59e0b');
+    return;
+  }
+  bgsUpload(file);
+}
+
+async function bgsUpload(file) {
+  const meta = bgsMeta();
+  if (!meta.tid) { bgsHint('No song selected.', '#ef4444'); return; }
+  const drop = document.getElementById('bgsDrop');
+  _bgsBusy = true;
+  if (drop) drop.classList.add('busy');
+  bgsHint('Uploading ' + file.name + '…', 'var(--accent)');
+  const r = await taUploadOneFile(meta.tid, file, meta.ms, !!document.getElementById('bgsPub')?.checked);
+  _bgsBusy = false;
+  if (drop) drop.classList.remove('busy');
+  if (!r.ok) { bgsHint('✗ ' + r.msg, '#ef4444'); return; }
+  showToast(r.warn ? 'Uploaded — ' + r.warn + 's off the video length' : 'Background Play is ready for this song.');
+  bgsRender();
+  taSyncQuotaLabel('bgsQuota');
+}
+
+// Hand off to the artist page for a whole album's worth of files, landing on
+// the right artist by seeding the search box before the list renders.
+function bgsOpenArtists() {
+  if (_bgsBusy) return;
+  const meta = bgsMeta();
+  closeBgSetup();
+  const inp = document.getElementById('maSearchInput');
+  if (inp) inp.value = meta.artist || '';
+  openMyArtists();
+}
+
+function bgsTurnOn() {
+  if (_bgsBusy) return;
+  const tid = _bgsTrackId;
+  const cur = ytQueue[ytQueueIdx]?.trackId;
+  closeBgSetup();
+  if (tid && cur === tid && !(_taManualAudio && _taBgActive)) { taToggleAudioMode(); return; }
+  taSetPreferBg(true);
+  taSyncAudioBtn();
+  showToast('Background Play is on for songs with uploaded audio.');
 }
 
 // Queue moved while audio-only mode had the sound: line the on-screen player
@@ -9122,6 +9382,12 @@ function sjmRenderRoot() {
           '<span class="sjm-label">' + (blocked ? 'Let this play again' : 'Never play this again') + '</span>' +
         '</button>'
       : '') +
+    (taIsMobileDevice()
+      ? ''   // phones already carry a Background Play button in the player
+      : '<button class="sjm-item" onclick="sjmBgPlay()">' +
+          '<span class="sjm-ic">🎧</span><span class="sjm-label">Enable Mobile Background Play</span>' +
+          (taTrackAudio(tid) ? '<span class="sjm-sub">✓ ready</span>' : '<span class="sjm-sub">›</span>') +
+        '</button>') +
     '<button class="sjm-item" onclick="sjmReport()">' +
       '<span class="sjm-ic">⚑</span><span class="sjm-label">Report a problem</span></button>' +
     (vid
@@ -9141,6 +9407,12 @@ function sjmReport() {
   const tid = _sjmTrackId;
   sjmClose();
   openReportModal(tid);
+}
+
+function sjmBgPlay() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  openBgSetup(tid);
 }
 
 // ── Add to playlist ───────────────────────────────────────────────────────
@@ -13883,6 +14155,8 @@ const SJ_CHANGELOG = [
     'One panel at the bottom of the phone player, and a Lyrics / Playlist pair of buttons to say which one you want. The playlist shows what is coming up with the song that is playing marked, and it fills the screen instead of a short scrolling strip.',
     'Whichever of the two you last had open is the one you get next time you open the player.',
     'Background Play and Versions moved onto the phone player as buttons of their own, next to ⋯ More. The old row of tick boxes is gone from phones.',
+    'Tapping Background Play on a song that has no audio file yet no longer shows a message and stop there. It opens a panel that explains what background play does, lets you drop in or choose your own audio file for that song right where you are, and takes you to your artist page if you want to add a whole album at once.',
+    'You can set a song up for phone background play from a computer too: open the ⋯ menu on any song and choose Enable Mobile Background Play. Drag an audio file onto the panel and it is waiting for you next time you open the song on your phone.',
   ]},
   { date: '2026-08-12', items: [
     'The play queue and saved playlists now show each track as Artist - Song, matching the player title.',
