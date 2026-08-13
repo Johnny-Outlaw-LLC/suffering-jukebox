@@ -606,6 +606,8 @@ body:not(.light) .tt-num { color: var(--text); }
   #lwytb-header .lwytb-row {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem; width: 100%;
   }
+  #lwytb-header .plsel-wrap { display: flex; }
+  #lwytb-header .plsel-wrap > .ctrl-btn { width: 100%; }
   #lwytb-header .ctrl-btn, #lwytb-header .ctrl-select {
     width: 100%; max-width: none; font-size: .5rem !important;
     padding: 3px 6px !important; min-height: 26px !important;
@@ -1669,8 +1671,31 @@ textarea.report-input { resize:vertical; }
   white-space: nowrap; touch-action: manipulation; font-weight: 500; letter-spacing: .03em;
 }
 .ctrl-btn:hover { background: var(--bg-elevated); }
+/* Playlist picker. A native <select> cannot carry a second smaller line or a
+   hover tooltip, so this is a real menu - body-appended and fixed so no header
+   box can clip it. */
+.plsel-wrap { position: relative; display: inline-flex; }
+.plsel-menu { position: fixed; z-index: 9200; min-width: 236px; max-width: 340px; max-height: 62vh; overflow-y: auto;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 4px;
+  box-shadow: 0 12px 34px rgba(0,0,0,.5); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.plsel-item { display: flex; flex-direction: column; gap: 2px; padding: 7px 9px; border-radius: 6px; cursor: pointer; }
+.plsel-item:hover { background: var(--bg-card); }
+.plsel-name { font-size: .55rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plsel-artists { font-family: var(--mono); font-size: .42rem; letter-spacing: .03em; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plsel-empty { font-size: .48rem; color: var(--text-muted); padding: 11px 9px; text-align: center; }
+#plsel-tip { position: fixed; z-index: 9300; display: none; pointer-events: none; font-family: var(--mono);
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.55); min-width: 160px; max-width: 270px; }
+#plsel-tip.on { display: block; }
+.plsel-tip-hd { font-size: .44rem; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+.plsel-tip-row { display: flex; justify-content: space-between; gap: 12px; font-size: .5rem; padding: 2px 0; color: var(--text); }
+.plsel-tip-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plsel-tip-n { color: var(--accent); flex-shrink: 0; }
+.plsel-tip-tot { border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px; color: var(--text-muted); }
+@media (hover: none) { #plsel-tip { display: none !important; } .plsel-item { padding: 11px 10px; } }
 .ctrl-btn--accent { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.12); }
 .ctrl-btn--partial { border-color: var(--accent); color: var(--accent); }
+.oa-act.part { border-style: dashed; }
 select.ctrl-select {
   appearance: none; -webkit-appearance: none;
   display: inline-flex; align-items: center;
@@ -1737,6 +1762,9 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-pl-dd-item { display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:5px; cursor:pointer; color:var(--text); font-size:.52rem; transition:background .1s; }
 .yt-pl-dd-item:hover { background:var(--bg-card); }
 .yt-pl-dd-item-meta { font-size:.44rem; color:var(--text-muted); margin-left:auto; white-space:nowrap; }
+.yt-pl-dd-item2 { flex-direction:column; align-items:stretch; gap:2px; }
+.yt-pl-dd-nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.yt-pl-dd-sub { font-family:var(--mono); font-size:.42rem; letter-spacing:.03em; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .yt-pl-dd-sep { font-size:.4rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); padding:4px 8px 2px; font-weight:600; border-top:1px solid var(--border); margin-top:3px; }
 .yt-pl-save-btn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.46rem; letter-spacing:.05em; padding:3px 8px; border-radius:5px; cursor:pointer; transition:color .1s,border-color .1s; white-space:nowrap; text-transform:uppercase; flex-shrink:0; }
 .yt-pl-save-btn:hover { color:#ff6b35; border-color:#ff6b35; }
@@ -10166,15 +10194,23 @@ function renderLyrics(trackId, lyric, source) {
 // ══════════════════════════════════════════════════════════════
 function ytPlaylistBarHTML() {
   const has = playlists.length > 0 || pubPlaylists.length > 0;
-  const _plItem = (p, meta) => `<div class="yt-pl-dd-item" onclick="playPlaylist('${p.id}');closeYTPlaylistDD()"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name.replace(/</g,'&lt;')}</span><span class="yt-pl-dd-item-meta">${meta}</span></div>`;
-  const _plGroups = (arr, meta, tag) => _plGroupByJukebox(arr).map(([label, pls]) =>
-    `<div class="yt-pl-dd-sep">${tag}${label.replace(/</g,'&lt;')}</div>` + pls.map(p => _plItem(p, meta(p))).join('')
-  ).join('');
-  const items = [
-    _plGroups(playlists, p => `${p._tracks?.length||0} tracks`, ''),
-    _plGroups(pubPlaylists, p => (p.user_name||p.user_email||'').split('@')[0], 'Public \u2014 ')
-  ].filter(Boolean).join('');
+  const items = ytPlDDItemsHTML();
   return `<div class="yt-playlist-bar" id="yt-playlist-bar"><div class="yt-pl-dd-wrap" id="yt-pl-dd-wrap"><button class="yt-pl-dd-btn" onclick="toggleYTPlaylistDD(event)"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">♪ ${has?'Load Playlist':'No Playlists'}</span><span>▾</span></button><div class="yt-pl-dd-menu" id="yt-pl-dd-menu" style="display:none">${has?items:'<div class="yt-pl-dd-item" style="color:#444;cursor:default">No playlists yet</div>'}</div></div>${googleUser?`<button class="yt-pl-save-btn" onclick="openSavePlaylistDialog()">💾 Save</button>`:''}</div>`;
+}
+
+// Flat list, no jukebox headers, each row carrying its real artist make-up.
+// Public rows name their owner on the same line, which is what the removed
+// "Public - <jukebox>" separator used to be for.
+function ytPlDDItemsHTML() {
+  const row = (p, own) => {
+    const who = own ? '' : ((p.user_name || p.user_email || '').split('@')[0]);
+    const sub = plArtistSummary(p) + (who ? ' \u00b7 by ' + who : '');
+    return '<div class="yt-pl-dd-item yt-pl-dd-item2" onclick="playPlaylist(\'' + p.id + '\');closeYTPlaylistDD()"' +
+      ' onmouseenter="plselTip(this,\'' + p.id + '\')" onmouseleave="plselTipHide()">' +
+      '<span class="yt-pl-dd-nm">' + escHtml(p.name || 'Untitled') + '</span>' +
+      '<span class="yt-pl-dd-sub">' + escHtml(sub) + '</span></div>';
+  };
+  return playlists.map(p => row(p, true)).join('') + pubPlaylists.map(p => row(p, false)).join('');
 }
 
 function toggleYTPlaylistDD(e) {
@@ -10183,6 +10219,12 @@ function toggleYTPlaylistDD(e) {
   if (!menu) return;
   const open = menu.style.display !== 'none';
   menu.style.display = open ? 'none' : 'block';
+  if (!open && (playlists.length || pubPlaylists.length)) {
+    plEnsureArtistIndex().then(() => {
+      const m = document.getElementById('yt-pl-dd-menu');
+      if (m && m.style.display !== 'none') m.innerHTML = ytPlDDItemsHTML();
+    });
+  }
   if (!open) setTimeout(() => document.addEventListener('click', function c(ev) {
     const w = document.getElementById('yt-pl-dd-wrap');
     if (!w || !w.contains(ev.target)) { closeYTPlaylistDD(); document.removeEventListener('click', c); }
@@ -10192,6 +10234,7 @@ function toggleYTPlaylistDD(e) {
 function closeYTPlaylistDD() {
   const m = document.getElementById('yt-pl-dd-menu');
   if (m) m.style.display = 'none';
+  plselTipHide();
 }
 
 async function playPlaylist(playlistId) {
@@ -12186,14 +12229,8 @@ function renderLWYTBHTML(landing) {
     <div class="lwytb-row">
       <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
       ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
-      ${_myPls.length ? `<select class="ctrl-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
-        <option value="">▶ My Playlists</option>
-        ${_plSelectOptions(_myPls)}
-      </select>` : ''}
-      ${_pubPls.length ? `<select class="ctrl-select" onchange="if(this.value){playFromPlaylist(this.value);this.value=''}">
-        <option value="">▶ Public Playlists</option>
-        ${_plSelectOptions(_pubPls)}
-      </select>` : ''}
+      ${_myPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'my',event)">▶ My Playlists ▾</button></div>` : ''}
+      ${_pubPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'pub',event)">▶ Public Playlists ▾</button></div>` : ''}
     </div>
   </div>`;
 }
@@ -12846,14 +12883,47 @@ function oaFindArtist(id) {
   return communityArtists.find(c => c.id === id) || mainCatalogArtists.find(c => c.id === id) || null;
 }
 
+// Which albums of an added artist are switched off, per jukebox. Deliberately
+// keyed by artist rather than one flat list: excludedAlbumIds also carries the
+// main Silver Jews / Purple Mountains album filter, which is a session thing
+// and must not start persisting itself off the back of this.
+const OA_ALB_KEY = OA_STORE_KEY + '_albs';
+
+function oaReadAlbStore() {
+  try { const m = JSON.parse(localStorage.getItem(OA_ALB_KEY) || '{}'); return (m && typeof m === 'object') ? m : {}; }
+  catch (e) { return {}; }
+}
+
+function oaPersist() {
+  try {
+    localStorage.setItem(OA_STORE_KEY, JSON.stringify([...addedCommunityIds]));
+    const prev = oaReadAlbStore();
+    const m = {};
+    addedCommunityIds.forEach(aid => {
+      const albs = oaAlbumsOf(aid);
+      if (!albs.length) {
+        // Albums not loaded this session - keep whatever was already stored
+        // rather than reading "nothing excluded" out of an empty cache.
+        if (prev[aid]) m[aid] = prev[aid];
+        return;
+      }
+      const ex = albs.filter(al => excludedAlbumIds.has(al.id)).map(al => al.id);
+      if (ex.length) m[aid] = ex;
+    });
+    localStorage.setItem(OA_ALB_KEY, JSON.stringify(m));
+  } catch (e) {}
+}
+
 function restoreOtherArtists() {
   let saved = [];
   try { saved = JSON.parse(localStorage.getItem(OA_STORE_KEY) || '[]'); } catch (e) {}
+  const exMap = oaReadAlbStore();
   saved.forEach(id => {
     const a = oaFindArtist(id);
     if (!a) return;
     addedCommunityIds.add(id);
     if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
+    (exMap[id] || []).forEach(albId => excludedAlbumIds.add(albId));
   });
 }
 
@@ -12890,27 +12960,81 @@ async function oaToggleExpand(id) {
   }
 }
 
+// Albums this artist has, from whichever cache is warm.
+function oaAlbumsOf(id) {
+  return communityAlbumsCache[id] || albums[id] || [];
+}
+
+function oaDropArtist(id) {
+  addedCommunityIds.delete(id);
+  selectedIds.delete(id);
+  allArtists = allArtists.filter(x => x.id !== id);
+  delete albums[id]; delete tracks[id];
+}
+
+function oaAddArtist(a) {
+  addedCommunityIds.add(a.id);
+  if (!allArtists.find(x => x.id === a.id)) allArtists.push(a);
+  selectedIds.add(a.id);
+}
+
+// Three states, because an artist can now be half in: out -> all albums in,
+// partly in -> the rest join, fully in -> out again.
 async function oaToggleJukebox(id) {
   const a = oaFindArtist(id);
   if (!a) return;
+  const albs = oaAlbumsOf(id);
   if (addedCommunityIds.has(id)) {
-    addedCommunityIds.delete(id);
-    selectedIds.delete(id);
-    allArtists = allArtists.filter(x => x.id !== id);
-    delete albums[id]; delete tracks[id];
+    const hidden = albs.filter(al => !isAlbumVisible(al.id));
+    if (hidden.length && hidden.length < albs.length) {
+      hidden.forEach(al => excludedAlbumIds.delete(al.id));   // finish the set
+    } else {
+      albs.forEach(al => excludedAlbumIds.delete(al.id));     // leave nothing stale behind
+      oaDropArtist(id);
+    }
   } else {
-    addedCommunityIds.add(id);
-    if (!allArtists.find(x => x.id === id)) allArtists.push(a);
-    selectedIds.add(id);
+    albs.forEach(al => excludedAlbumIds.delete(al.id));
+    oaAddArtist(a);
   }
-  try { localStorage.setItem(OA_STORE_KEY, JSON.stringify([...addedCommunityIds])); } catch (e) {}
+  oaPersist();
   await loadData();
   oaRerenderOpen();
 }
 
-function oaToggleAlbum(albumId, show) {
+// Ticking an album on an artist that is not in the jukebox brings in that
+// album alone, which is the whole point: a jukebox does not have to swallow a
+// discography to get one record. Unticking the last one takes the artist back
+// out, so the box you tick is the box you untick.
+async function oaToggleAlbum(albumId, show, artistId) {
+  const albs   = artistId ? oaAlbumsOf(artistId) : [];
+  const inJuke = !!(artistId && addedCommunityIds.has(artistId));
+
+  if (artistId && !inJuke) {
+    if (!show) return;
+    const a = oaFindArtist(artistId);
+    if (!a) return;
+    albs.forEach(al => { if (al.id !== albumId) excludedAlbumIds.add(al.id); });
+    excludedAlbumIds.delete(albumId);
+    oaAddArtist(a);
+    oaPersist();
+    await loadData();
+    oaRerenderOpen();
+    return;
+  }
+
   if (show) excludedAlbumIds.delete(albumId);
   else excludedAlbumIds.add(albumId);
+
+  if (!show && artistId && albs.length && albs.every(al => excludedAlbumIds.has(al.id))) {
+    albs.forEach(al => excludedAlbumIds.delete(al.id));
+    oaDropArtist(artistId);
+    oaPersist();
+    await loadData();
+    oaRerenderOpen();
+    return;
+  }
+
+  oaPersist();
   render();
   oaRerenderOpen();
 }
@@ -13058,7 +13182,7 @@ function renderOtherArtistsBtn() {
     if (isExp) {
       if (albs === undefined)  albRows = '<div class="oa-albs-note">Loading albums…</div>';
       else if (!albs.length)   albRows = '<div class="oa-albs-note">No albums yet</div>';
-      else albRows = albs.map(al => `<div class="oa-alb">${(!IS_COMMUNITY || _featuredId) && inJuke ? `<input type="checkbox" ${isAlbumVisible(al.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="oaToggleAlbum('${al.id}', this.checked)" title="Include this album in the jukebox chart">` : ''}${(al.art_url || ALBUM_ART[al.name]) ? `<img src="${al.art_url || ALBUM_ART[al.name]}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
+      else albRows = albs.map(al => `<div class="oa-alb">${(!IS_COMMUNITY || _featuredId) ? `<input type="checkbox" ${inJuke && isAlbumVisible(al.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="oaToggleAlbum('${al.id}', this.checked, '${a.id}')" title="${inJuke ? 'Include this album in the jukebox chart' : 'Add just this album to the jukebox'}">` : ''}${(al.art_url || ALBUM_ART[al.name]) ? `<img src="${al.art_url || ALBUM_ART[al.name]}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date || '').slice(0, 4)}</span></div>`).join('');
     }
     return `<div class="oa-artist" data-oa-name="${escA((a.name || '').toLowerCase())}" data-oa-by="${escA(a.added_by_name || '__official__')}"${oaIsMine(a) ? ' data-oa-mine="1"' : ''}>
       <div class="oa-artist-row" onclick="event.stopPropagation();oaToggleExpand('${a.id}')" title="Show albums">
@@ -13067,7 +13191,16 @@ function renderOtherArtistsBtn() {
           <div class="oa-name">${esc(a.name)}</div>
           <div class="oa-meta">${a.is_community === false ? 'main jukebox artist' : (a.added_by_name ? 'added by ' + esc(a.added_by_name) : 'community artist')}</div>
         </div>
-        ${(!IS_COMMUNITY || _featuredId) ? `<button type="button" class="oa-act${inJuke ? ' in' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${inJuke ? 'Remove this artist from the chart' : 'Add this artist to the jukebox chart'}">${inJuke ? '✓ In Jukebox' : '＋ Add to Jukebox'}</button>` : ''}
+        ${(!IS_COMMUNITY || _featuredId) ? (() => {
+          const _albs = communityAlbumsCache[a.id] || albums[a.id] || [];
+          const _vis  = inJuke && _albs.length ? _albs.filter(al => isAlbumVisible(al.id)).length : 0;
+          const _part = inJuke && _albs.length > 0 && _vis < _albs.length;
+          const _lbl  = !inJuke ? '＋ Add to Jukebox' : (_part ? `✓ ${_vis} of ${_albs.length} albums` : '✓ In Jukebox');
+          const _tip  = !inJuke ? 'Add every album by this artist to the jukebox chart'
+                      : (_part ? 'Some albums are in the chart. Click to add the rest'
+                               : 'Remove this artist from the chart');
+          return `<button type="button" class="oa-act${inJuke ? ' in' : ''}${_part ? ' part' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${_tip}">${_lbl}</button>`;
+        })() : ''}
         ${SJ_COMMENTS_ENABLED ? `<button type="button" class="cmt-btn" data-cmt-badge="artist:${a.id}" onclick="event.stopPropagation();openComments('artist','${a.id}')" title="Comment on this artist">Comment</button>` : ''}
         <button type="button" class="oa-act go" onclick="event.stopPropagation();oaGoToArtist('${a.id}')" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
       </div>
@@ -14314,6 +14447,11 @@ const SJ_CHANGELOG = [
     'The search box is wider and grows into whatever room the header has, so you can read the whole of what you typed.',
     'Chart bar colours now come from each album, taken from its own cover art. Adding an artist no longer paints every one of their albums the same colour, which used to turn a new jukebox into a wall of one shade.',
     'Artist colours are switched off everywhere. Artist cards on the home page used to each get their own colour, which meant the borders, play buttons and headings never matched from one card to the next. Everything now uses the one jukebox orange.',
+    'The playlist menus no longer sort playlists under the jukebox they happened to be saved on, which never told you much. Each playlist now shows what is actually inside it, like “Silver Jews 99, Pavement 24”, read from the songs themselves.',
+    'Hover a playlist on a computer and you get the full count by artist, every artist in it, with a total at the bottom.',
+    'You can add a single album to your jukebox instead of the artist’s whole catalogue. Open an artist under Other Artists, tick the album you want, and only that record joins the chart.',
+    'Tick and untick albums any time to add or drop them. The artist button tells you where you stand, reading something like “2 of 6 albums”, and clicking it brings the rest in. Unticking the last album takes the artist back out.',
+    'Which albums you picked is now remembered between visits instead of resetting every time you reload the page.',
   ]},
   { date: '2026-08-12', items: [
     'The play queue and saved playlists now show each track as Artist - Song, matching the player title.',
@@ -17321,11 +17459,174 @@ function _plCurPage() {
   return _SLUG_ARTIST?.slug || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null);
 }
 
-function _plSelectOptions(arr) {
-  const opt = p => '<option value="' + p.id + '">' + (p.name||'Untitled').replace(/</g,'&lt;') + '</option>';
-  return _plGroupByJukebox(arr).map(([label, pls]) =>
-    '<optgroup label="' + label.replace(/</g,'&lt;').replace(/"/g,'&quot;') + '">' + pls.map(opt).join('') + '</optgroup>'
-  ).join('');
+// ── Playlist picker ──────────────────────────────────────────────────────
+// The old <select> grouped playlists under the jukebox they were saved on,
+// which said nothing about what is actually in them - a playlist saved on the
+// Silver Jews page can be mostly Pavement. Those headers are gone; each row
+// now carries its real artist make-up, read off the tracks themselves.
+
+// trackId -> artist name, built once for every track in every saved playlist.
+// Three cheap id lookups, not the full resolvePlaylistTracks() chain, which
+// also pulls YouTube ids this has no use for.
+let _plArtistMap     = null;
+let _plArtistLoading = null;
+
+function _plChunk(arr, n) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+function plEnsureArtistIndex() {
+  if (_plArtistMap) return Promise.resolve(_plArtistMap);
+  if (_plArtistLoading) return _plArtistLoading;
+  _plArtistLoading = (async () => {
+    const map = {};
+    try {
+      const ids = [...new Set(_savedPlaylists.flatMap(p => (p._tracks || []).map(r => r.track_id)).filter(Boolean))];
+      if (ids.length) {
+        const tRows = (await Promise.all(_plChunk(ids, 50).map(c =>
+          dbGet(`/tracks?id=in.(${c.join(',')})&select=id,album_id`)))).flat();
+        const albIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
+        const aRows = albIds.length ? (await Promise.all(_plChunk(albIds, 50).map(c =>
+          dbGet(`/albums?id=in.(${c.join(',')})&select=id,artist_id`)))).flat() : [];
+        const artIds = [...new Set(aRows.map(a => a.artist_id).filter(Boolean))];
+        const rRows = artIds.length ? (await Promise.all(_plChunk(artIds, 50).map(c =>
+          dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat() : [];
+        const albArtist = {}; aRows.forEach(a => { albArtist[a.id] = a.artist_id; });
+        const artName   = {}; rRows.forEach(a => { artName[a.id] = a.name; });
+        tRows.forEach(t => { const n = artName[albArtist[t.album_id]]; if (n) map[t.id] = n; });
+      }
+    } catch (_) { /* the names are a nicety - the picker still works without them */ }
+    _plArtistMap = map;
+    return map;
+  })();
+  return _plArtistLoading;
+}
+
+// [[artistName, count], ...] biggest first. null until the index has landed.
+function plArtistBreakdown(p) {
+  if (!_plArtistMap) return null;
+  const c = {};
+  (p._tracks || []).forEach(r => { const n = _plArtistMap[r.track_id]; if (n) c[n] = (c[n] || 0) + 1; });
+  return Object.entries(c).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+// The one-line sample under a playlist name. Two artists then a count of the
+// rest, because the row has to stay on one line at any width.
+function plArtistSummary(p) {
+  const n = (p._tracks || []).length;
+  const tally = plArtistBreakdown(p);
+  if (!tally) return n + (n === 1 ? ' track' : ' tracks');
+  if (!tally.length) return n + (n === 1 ? ' track' : ' tracks');
+  const head = tally.slice(0, 2).map(([a, k]) => a + ' ' + k).join(', ');
+  return tally.length > 2 ? head + ', +' + (tally.length - 2) + ' more' : head;
+}
+
+let _plselOpen   = null;   // 'my' | 'pub'
+let _plselAnchor = null;
+
+function plselList(which) {
+  return which === 'my'
+    ? _savedPlaylists.filter(p => p.user_email === (googleUser && googleUser.email))
+    : _savedPlaylists.filter(p => p.is_public);
+}
+
+function plselClose() {
+  document.getElementById('plsel-menu')?.remove();
+  plselTipHide();
+  if (_plselAnchor) { _plselAnchor.removeAttribute('aria-expanded'); _plselAnchor = null; }
+  _plselOpen = null;
+  document.removeEventListener('mousedown', _plselOutside, true);
+  window.removeEventListener('resize', plselClose);
+  window.removeEventListener('scroll', plselClose, true);
+}
+
+function _plselOutside(e) {
+  const m = document.getElementById('plsel-menu');
+  if (m && !m.contains(e.target) && e.target !== _plselAnchor && !_plselAnchor?.contains(e.target)) plselClose();
+}
+
+function plselToggle(btn, which, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const already = _plselOpen === which && document.getElementById('plsel-menu');
+  plselClose();
+  if (already) return;
+  _plselOpen   = which;
+  _plselAnchor = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  const menu = document.createElement('div');
+  menu.id = 'plsel-menu';
+  menu.className = 'plsel-menu';
+  menu.onmousedown = e => e.stopPropagation();
+  document.body.appendChild(menu);
+  plselRender();
+  plselPosition();
+  setTimeout(() => {
+    document.addEventListener('mousedown', _plselOutside, true);
+    window.addEventListener('resize', plselClose);
+    window.addEventListener('scroll', plselClose, true);
+  }, 0);
+  // Names arrive after the menu does; repaint in place when they land.
+  plEnsureArtistIndex().then(() => { if (_plselOpen === which) { plselRender(); plselPosition(); } });
+}
+
+function plselRender() {
+  const menu = document.getElementById('plsel-menu');
+  if (!menu || !_plselOpen) return;
+  const list = plselList(_plselOpen);
+  if (!list.length) { menu.innerHTML = '<div class="plsel-empty">No playlists yet</div>'; return; }
+  menu.innerHTML = list.map(p =>
+    '<div class="plsel-item" onclick="plselPick(\'' + p.id + '\')"' +
+      ' onmouseenter="plselTip(this,\'' + p.id + '\')" onmouseleave="plselTipHide()">' +
+      '<span class="plsel-name">' + escHtml(p.name || 'Untitled') + '</span>' +
+      '<span class="plsel-artists">' + escHtml(plArtistSummary(p)) + '</span>' +
+    '</div>').join('');
+}
+
+function plselPosition() {
+  const menu = document.getElementById('plsel-menu');
+  if (!menu) return;
+  if (!_plselAnchor || !_plselAnchor.isConnected) { plselClose(); return; }
+  const r = _plselAnchor.getBoundingClientRect();
+  const left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8);
+  menu.style.left = Math.max(8, left) + 'px';
+  const below = window.innerHeight - r.bottom;
+  menu.style.top = (below < menu.offsetHeight + 12 && r.top > menu.offsetHeight + 12)
+    ? Math.max(8, r.top - menu.offsetHeight - 6) + 'px'
+    : Math.min(r.bottom + 6, Math.max(8, window.innerHeight - menu.offsetHeight - 8)) + 'px';
+}
+
+function plselPick(id) {
+  plselClose();
+  playFromPlaylist(id);
+}
+
+// Full breakdown on hover. Pointer-events are off on the tip so it can never
+// steal the mouseleave that hides it.
+function plselTip(el, id) {
+  const p = _savedPlaylists.find(x => x.id === id);
+  if (!p) return;
+  const tally = plArtistBreakdown(p);
+  if (!tally || !tally.length) return;
+  let tip = document.getElementById('plsel-tip');
+  if (!tip) { tip = document.createElement('div'); tip.id = 'plsel-tip'; document.body.appendChild(tip); }
+  const total = tally.reduce((n, [, k]) => n + k, 0);
+  tip.innerHTML = '<div class="plsel-tip-hd">' + escHtml(p.name || 'Untitled') + '</div>' +
+    tally.map(([a, k]) => '<div class="plsel-tip-row"><span>' + escHtml(a) + '</span>' +
+      '<span class="plsel-tip-n">' + k + '</span></div>').join('') +
+    '<div class="plsel-tip-row plsel-tip-tot"><span>Total</span><span>' + total + '</span></div>';
+  tip.classList.add('on');
+  const r = el.getBoundingClientRect();
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let left = r.right + 8;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 8);
+  tip.style.left = left + 'px';
+  tip.style.top  = Math.max(8, Math.min(r.top, window.innerHeight - h - 8)) + 'px';
+}
+
+function plselTipHide() {
+  document.getElementById('plsel-tip')?.classList.remove('on');
 }
 
 async function playFromPlaylist(playlistId) {
