@@ -14547,6 +14547,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-14';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-14', items: [
+    'Fixed the daily view-trend chart on a track or album tooltip only showing up for a handful of songs. A database page-size limit meant most of the catalog was silently missing the data behind that chart, both in what gets tracked nightly and in what the page loaded to draw it. Both are fixed, so the chart should now show up for any track or album that has YouTube view history.',
+  ] },
     'Help moved to the last button in the top toolbar row, after Share, Search, and the theme toggle.',
     'The Quick Playlists buttons (Shuffle All, Shuffle Favorites, My/Public Playlists) now match the filled, rounded look of the buttons at the bottom of My Jukebox, instead of the thinner outlined style used elsewhere in the toolbar.',
     'Fixed a readability problem in light mode: the Add Music from YouTube window (and its search results, artist cards, and log) stayed dark internally, so text was nearly invisible against it. It now follows the same light or dark theme as the rest of the page.',
@@ -16248,14 +16250,33 @@ async function loadPlayCounts(trackIds) {
 }
 
 // ── Daily metric data for tooltip sparklines ────────────────────────────────
+// PostgREST caps an unpaginated response at 1000 rows. yt_daily_snapshots
+// alone runs to ~18,000 rows over a 30-day window (hundreds of tracks x up
+// to 30 days each), so a single fetch silently returned only whichever ~40
+// tracks sorted first by track_id - the daily trend chart looked like it
+// worked for a handful of tracks and was simply missing for everyone else.
+// Page through with Range until a page comes back short of pageSize.
+async function dbGetAllPages(url, hdrs, pageSize = 1000) {
+  let all = [];
+  let offset = 0;
+  for (;;) {
+    const r = await fetch(url, { headers: { ...hdrs, Range: `${offset}-${offset + pageSize - 1}` } });
+    const page = await r.json();
+    if (!Array.isArray(page) || !page.length) break;
+    all = all.concat(page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
 async function loadDailyMetrics() {
   const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
   const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   try {
-    const ytRows = await fetch(
+    const ytRows = await dbGetAllPages(
       `${REST}/yt_daily_snapshots?select=track_id,snapshot_date,view_count&snapshot_date=gte.${since}&order=track_id.asc,snapshot_date.asc`,
-      { headers: hdrs }
-    ).then(r => r.json());
+      hdrs
+    );
     if (Array.isArray(ytRows)) {
       ytRows.forEach(r => {
         const tid = r.track_id;
@@ -16265,10 +16286,10 @@ async function loadDailyMetrics() {
     }
   } catch (e) { console.warn('loadDailyMetrics yt error', e); }
   try {
-    const peRows = await fetch(
+    const peRows = await dbGetAllPages(
       `${REST}/play_events?select=track_id,played_at&played_at=gte.${since}T00:00:00Z&track_id=neq.test-verify&album_id=not.is.null`,
-      { headers: hdrs }
-    ).then(r => r.json());
+      hdrs
+    );
     if (Array.isArray(peRows)) {
       const _tmp = {};
       peRows.forEach(r => {
@@ -16285,10 +16306,10 @@ async function loadDailyMetrics() {
     }
   } catch (e) { console.warn('loadDailyMetrics plays error', e); }
   try {
-    const reRows = await fetch(
+    const reRows = await dbGetAllPages(
       `${REST}/rating_events?select=track_id,rated_at,new_rating&rated_at=gte.${since}T00:00:00Z&album_id=not.is.null`,
-      { headers: hdrs }
-    ).then(r => r.json());
+      hdrs
+    );
     if (Array.isArray(reRows)) {
       const _tmp = {};
       reRows.forEach(r => {
