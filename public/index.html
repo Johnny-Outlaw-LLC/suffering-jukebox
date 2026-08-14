@@ -4295,7 +4295,7 @@ function openSongCard(trackId) {
           ${likes ? `<div class="sc-metric"><span class="sc-metric-icon" style="color:${color}">♥</span><div><div class="sc-metric-val">${fmtV(likes)}</div><div class="sc-metric-lbl">YouTube Likes</div></div></div>` : ''}
           ${googleUser ? `<div class="sc-metric" style="${barChartMode==='mine'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-myplays-${trackId}">${fmtV(myInAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">My Jukebox Plays${barChartMode==='mine'?' ◆':''}</div></div></div>` : ''}
           <div class="sc-metric" style="${barChartMode==='total'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-inapp-${trackId}">${fmtV(inAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">Jukebox Plays${barChartMode==='total'?' ◆':''}</div></div></div>
-          ${vid ? `<a class="sc-link yt" style="margin-left:6px;flex-shrink:0" href="#" onclick="event.preventDefault();openYTPlayer('${vid}','${(track.name||'').replace(/'/g,"\\'")}',null,event)">▶ Play</a>` : ''}
+          ${vid ? `<a class="sc-link yt" style="margin-left:6px;flex-shrink:0" href="#" onclick="event.preventDefault();openYTPlayer('${vid}','${(track.name||'').replace(/'/g,"\\'")}','${trackId}',event)">▶ Play</a>` : ''}
         </div>
       </div>` : ''}
       <div style="flex:1;display:flex;flex-direction:column;min-height:80px">
@@ -12837,7 +12837,7 @@ function renderTopTracks(trackList) {
         <td><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${viewsPct}%;background:${color}"></div></div><div class="tt-num">${fmtV(t._views)}</div></div></td>
         ${googleUser ? `<td data-myplays="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._myPlays/maxMyPlays*100).toFixed(1)}%;background:${color}88"></div></div><div class="tt-num" style="${t._myPlays?'color:var(--accent)':''}">${t._myPlays ? fmtV(t._myPlays) : '-'}</div></div></td>` : ''}
         <td data-inapp="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._plays/maxTotalPlays*100).toFixed(1)}%;background:${color}66"></div></div><div class="tt-num" style="${t._plays?'color:var(--accent)':''}">${t._plays ? fmtV(t._plays) : '-'}</div></div></td>
-        <td class="td-yt">${vid ? `<a href="#" title="Play YouTube Video" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${(t.name||'').replace(/'/g,"\\'")}',null,event)">▶</a>` : ''}</td>
+        <td class="td-yt">${vid ? `<a href="#" title="Play YouTube Video" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${(t.name||'').replace(/'/g,"\\'")}','${t.id}',event)">▶</a>` : ''}</td>
       </tr>`;
     }).join('')}
     </tbody>
@@ -15752,7 +15752,7 @@ function closeAdminMetrics() {
 // ── MY DATA & ANALYTICS (signed-in listener's own stats) ──────
 let _msRaw = null;        // { plays:[], ratings:[], days }
 let _msDays = 90;
-let _msFilter = { artist_id: null, track_id: null, dow: null, hour: null, day: null };
+let _msFilter = { artist_ids: [], track_ids: [], dow_hours: [], days: [] };
 let _msFetchSeq = 0;
 
 const MS_DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -15779,7 +15779,7 @@ async function loadMyStats() {
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load your stats.');
     if (seq !== _msFetchSeq) return;
     _msRaw = data.dashboard;
-    _msFilter = { artist_id: null, track_id: null, dow: null, hour: null, day: null };
+    _msFilter = { artist_ids: [], track_ids: [], dow_hours: [], days: [] };
     body.classList.remove('sjd-dim');
     renderMyStats();
   } catch (e) {
@@ -15805,71 +15805,69 @@ function msLocalDay(iso) {
 function msFilteredPlays() {
   const f = _msFilter, rows = _msRaw?.plays || [];
   return rows.filter(p => {
-    if (f.artist_id && p.artist_id !== f.artist_id) return false;
-    if (f.track_id && p.track_id !== f.track_id) return false;
-    if (f.day) {
-      if (msLocalDay(p.played_at) !== f.day) return false;
-    } else {
-      if (f.dow != null && new Date(p.played_at).getDay() !== f.dow) return false;
-      if (f.hour != null && new Date(p.played_at).getHours() !== f.hour) return false;
-    }
+    if (f.artist_ids.length && !f.artist_ids.includes(p.artist_id)) return false;
+    if (f.track_ids.length && !f.track_ids.includes(p.track_id)) return false;
+    const day = msLocalDay(p.played_at), dow = new Date(p.played_at).getDay(), hour = new Date(p.played_at).getHours();
+    if (f.days.length && !f.days.includes(day)) return false;
+    if (f.dow_hours.length && !f.dow_hours.some(x => x.dow === dow && (x.hour == null || x.hour === hour))) return false;
     return true;
   });
 }
 
+function msRowsWithout(kind) {
+  const saved = _msFilter;
+  _msFilter = { ...saved,
+    artist_ids: kind === 'artist' ? [] : saved.artist_ids,
+    track_ids: kind === 'track' ? [] : saved.track_ids,
+    dow_hours: kind === 'time' ? [] : saved.dow_hours,
+    days: kind === 'day' ? [] : saved.days
+  };
+  const rows = msFilteredPlays();
+  _msFilter = saved;
+  return rows;
+}
+
 function msClearFilters() {
-  _msFilter = { artist_id: null, track_id: null, dow: null, hour: null, day: null };
+  _msFilter = { artist_ids: [], track_ids: [], dow_hours: [], days: [] };
   renderMyStats();
 }
 
 function msClickArtist(id) {
-  _msFilter.artist_id = (_msFilter.artist_id === id) ? null : id;
-  _msFilter.track_id = null; // a track pick is a narrower slice of the same dimension as artist
+  const i = _msFilter.artist_ids.indexOf(id);
+  if (i >= 0) _msFilter.artist_ids.splice(i, 1); else _msFilter.artist_ids.push(id);
   renderMyStats();
 }
 
 function msClickTrack(id) {
-  _msFilter.track_id = (_msFilter.track_id === id) ? null : id;
+  const i = _msFilter.track_ids.indexOf(id);
+  if (i >= 0) _msFilter.track_ids.splice(i, 1); else _msFilter.track_ids.push(id);
   renderMyStats();
 }
 
 function msClickCell(dow, hour) {
-  const same = _msFilter.dow === dow && _msFilter.hour === hour && _msFilter.day == null;
-  _msFilter.day = null;
-  _msFilter.dow = same ? null : dow;
-  _msFilter.hour = same ? null : hour;
+  const i = _msFilter.dow_hours.findIndex(x => x.dow === dow && x.hour === hour);
+  if (i >= 0) _msFilter.dow_hours.splice(i, 1); else _msFilter.dow_hours.push({ dow, hour });
   renderMyStats();
 }
 
 function msClickDow(dow) {
-  const same = _msFilter.dow === dow && _msFilter.hour == null && _msFilter.day == null;
-  _msFilter.day = null;
-  _msFilter.dow = same ? null : dow;
-  _msFilter.hour = null;
+  const i = _msFilter.dow_hours.findIndex(x => x.dow === dow && x.hour == null);
+  if (i >= 0) _msFilter.dow_hours.splice(i, 1); else _msFilter.dow_hours.push({ dow, hour: null });
   renderMyStats();
 }
 
 function msClickDay(day) {
-  const same = _msFilter.day === day;
-  _msFilter.day = same ? null : day;
-  _msFilter.dow = null;
-  _msFilter.hour = null;
+  const i = _msFilter.days.indexOf(day);
+  if (i >= 0) _msFilter.days.splice(i, 1); else _msFilter.days.push(day);
   renderMyStats();
 }
 
 function msFilterChipsHTML() {
   const f = _msFilter, chips = [];
-  if (f.artist_id) {
-    const row = (_msRaw.plays || []).find(p => p.artist_id === f.artist_id) || (_msRaw.ratings || []).find(r => r.artist_id === f.artist_id);
-    chips.push(row ? row.artist : 'Artist');
-  }
-  if (f.track_id) {
-    const row = (_msRaw.plays || []).find(p => p.track_id === f.track_id);
-    chips.push(row ? row.track : 'Track');
-  }
-  if (f.day) chips.push(fmtAdminDay(f.day));
-  else if (f.dow != null && f.hour != null) chips.push(MS_DOWS[f.dow] + ' ' + (f.hour % 12 || 12) + (f.hour < 12 ? 'am' : 'pm'));
-  else if (f.dow != null) chips.push(MS_DOWS[f.dow] + 's');
+  f.artist_ids.forEach(id => { const row = (_msRaw.plays || []).find(p => p.artist_id === id) || (_msRaw.ratings || []).find(r => r.artist_id === id); if (row) chips.push(row.artist); });
+  f.track_ids.forEach(id => { const row = (_msRaw.plays || []).find(p => p.track_id === id); if (row) chips.push(row.track); });
+  f.days.forEach(day => chips.push(fmtAdminDay(day)));
+  f.dow_hours.forEach(x => chips.push(MS_DOWS[x.dow] + (x.hour == null ? 's' : ' ' + (x.hour % 12 || 12) + (x.hour < 12 ? 'am' : 'pm'))));
   if (!chips.length) return '';
   return chips.map(label => '<span class="sjd-filter-chip" onclick="msClearFilters()" title="Clear filters">' + escAdmin(label) + ' <span>✕</span></span>').join('');
 }
@@ -15897,7 +15895,7 @@ function msArtistsHTML(rows) {
   if (!items.length) return '<div class="sjd-nodata">No plays in this range.</div>';
   const max = Math.max(...items.map(i => i.count), 1);
   return '<div class="sjd-bars">' + items.map(it => {
-    const on = _msFilter.artist_id === it.id;
+    const on = _msFilter.artist_ids.includes(it.id);
     return '<div class="sjd-bar-row sjd-click' + (on ? ' on' : '') + '" style="cursor:pointer" onclick="msClickArtist(\'' + it.id + '\')" title="' + (on ? 'Clear filter' : 'Filter to ' + escAdmin(it.name)) + '">'
       + '<span class="lbl" title="' + escAdmin(it.name) + '">' + (on ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(it.name) + '</span>'
       + '<div class="sjd-bar-track"><i style="width:' + Math.max(2, Math.round((it.count / max) * 100)) + '%"></i></div>'
@@ -15912,19 +15910,19 @@ function msFavoritesHTML() {
   ratings.forEach(r => {
     if (!r.artist_id) return;
     const e = map[r.artist_id] || (map[r.artist_id] = { id: r.artist_id, name: r.artist, sum: 0, count: 0 });
-    e.sum += Number(r.rating) || 0;
+    e.sum += Number(r.jukebox_score) || 0;
     e.count++;
   });
-  const items = Object.values(map).map(e => ({ ...e, avg: e.sum / e.count }))
-    .sort((a, b) => b.avg - a.avg || b.count - a.count).slice(0, 10);
+  const items = Object.values(map).sort((a, b) => b.sum - a.sum || b.count - a.count).slice(0, 10);
   if (!items.length) return '<div class="sjd-nodata">Rate some tracks to see your favorite artists.</div>';
   return '<div class="sjd-bars">' + items.map(it => {
-    const on = _msFilter.artist_id === it.id;
-    const color = it.avg >= 1 ? '#4ade80' : it.avg > 0 ? '#a3e635' : it.avg === 0 ? '#9ca3af' : '#f87171';
+    const on = _msFilter.artist_ids.includes(it.id);
+    const maxSum = Math.max(...items.map(x => Math.abs(x.sum)), 1);
+    const color = it.sum > 0 ? '#4ade80' : it.sum === 0 ? '#9ca3af' : '#f87171';
     return '<div class="sjd-bar-row sjd-click' + (on ? ' on' : '') + '" style="cursor:pointer" onclick="msClickArtist(\'' + it.id + '\')" title="Filter plays to ' + escAdmin(it.name) + '">'
       + '<span class="lbl" title="' + escAdmin(it.name) + '">' + (on ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(it.name) + '</span>'
-      + '<div class="sjd-bar-track"><i style="width:' + Math.max(2, Math.round(((it.avg + 2) / 4) * 100)) + '%;background:' + color + '"></i></div>'
-      + '<span class="cnt" style="color:' + color + '">' + (it.avg > 0 ? '+' : '') + it.avg.toFixed(1) + ' <span style="opacity:.6">(' + it.count + ')</span></span></div>';
+      + '<div class="sjd-bar-track"><i style="width:' + Math.max(2, Math.round((Math.abs(it.sum) / maxSum) * 100)) + '%;background:' + color + '"></i></div>'
+      + '<span class="cnt" style="color:' + color + '">' + (it.sum > 0 ? '+' : '') + it.sum + ' <span style="opacity:.6">(' + it.count + ')</span></span></div>';
   }).join('') + '</div>';
 }
 
@@ -15940,7 +15938,7 @@ function msTracksHTML(rows) {
   const max = Math.max(...items.map(i => i.count), 1);
   return '<table class="sjd-table"><thead><tr><th>Track</th><th class="num">Plays</th></tr></thead><tbody>'
     + items.map(it => {
-      const on = _msFilter.track_id === it.id;
+      const on = _msFilter.track_ids.includes(it.id);
       return '<tr class="sjd-click' + (on ? ' on' : '') + '" onclick="msClickTrack(\'' + it.id + '\')" title="' + (on ? 'Clear filter' : 'Filter to this track') + '">'
         + '<td><span class="sjd-song-name" title="' + escAdmin(it.name) + '">' + (on ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(it.name) + '</span>'
         + '<span class="sjd-song-track"><i style="width:' + Math.round((it.count / max) * 100) + '%"></i></span></td>'
@@ -15964,11 +15962,11 @@ function msPunchHTML(rows) {
     html += '<div class="sjd-punch-hlbl">' + lbl + '</div>';
   }
   for (let d = 0; d < 7; d++) {
-    const dowOn = _msFilter.dow === d && _msFilter.hour == null && _msFilter.day == null;
+    const dowOn = _msFilter.dow_hours.some(x => x.dow === d && x.hour == null);
     html += '<div class="sjd-punch-lbl" style="cursor:pointer' + (dowOn ? ';color:var(--accent)' : '') + '" onclick="msClickDow(' + d + ')" title="Filter to all ' + MS_DOWS[d] + 's">' + MS_DOWS[d] + '</div>';
     for (let h = 0; h < 24; h++) {
       const c = map[d + '-' + h] || 0;
-      const on = _msFilter.dow === d && _msFilter.hour === h;
+      const on = _msFilter.dow_hours.some(x => x.dow === d && x.hour === h);
       const bg = on ? 'var(--accent)' : (c ? 'rgba(255,107,53,' + (0.16 + 0.84 * (c / max)).toFixed(2) + ')' : 'var(--sjd-cell)');
       html += '<div class="sjd-punch-cell" style="cursor:pointer;background:' + bg + '" onclick="msClickCell(' + d + ',' + h + ')" title="' + MS_DOWS[d] + ' ' + h + ':00 — ' + c + ' play' + (c === 1 ? '' : 's') + '"></div>';
     }
@@ -15992,7 +15990,7 @@ function msTimeHTML(rows) {
   const step = Math.max(1, Math.ceil(series.length / 120));
   const shown = series.filter((_, i) => i % step === 0 || i === series.length - 1);
   return '<div class="ms-time-chart">' + shown.map(s => {
-    const on = _msFilter.day === s.day;
+    const on = _msFilter.days.includes(s.day);
     return '<div class="ms-time-bar' + (on ? ' on' : '') + '" style="height:' + Math.max(3, Math.round((s.count / max) * 100)) + '%" onclick="msClickDay(\'' + s.day + '\')" title="' + escAdmin(fmtAdminDay(s.day)) + ' — ' + s.count + ' play' + (s.count === 1 ? '' : 's') + '"></div>';
   }).join('') + '</div>';
 }
@@ -16007,14 +16005,14 @@ function renderMyStats() {
   body.innerHTML =
     msKpisHTML(rows)
     + '<div class="sjd-grid2">'
-    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Artist <em>click to filter</em></div>' + msArtistsHTML(rows) + '</div>'
-    + '<div class="sjd-card"><div class="sjd-card-title">Favorite Artists <em>by your rating, all time</em></div>' + msFavoritesHTML() + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Artist <em>click to filter · select multiple</em></div>' + msArtistsHTML(msRowsWithout('artist')) + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Favorite Artists <em>by summed Jukebox score</em></div>' + msFavoritesHTML() + '</div>'
     + '</div>'
     + '<div class="sjd-grid2">'
-    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Track <em>click to filter</em></div>' + msTracksHTML(rows) + '</div>'
-    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Day &amp; Time of Week <em>local time · click a cell or day</em></div>' + msPunchHTML(rows) + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Track <em>click to filter · select multiple</em></div>' + msTracksHTML(msRowsWithout('track')) + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Day &amp; Time of Week <em>local time · click a cell or day</em></div>' + msPunchHTML(msRowsWithout('time')) + '</div>'
     + '</div>'
-    + '<div class="sjd-card"><div class="sjd-card-title">Plays over Time <em>click a bar to filter to that day</em></div>' + msTimeHTML(rows) + '</div>';
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays over Time <em>click a bar to filter · select multiple</em></div>' + msTimeHTML(msRowsWithout('day')) + '</div>';
 }
 
 function msToggleExportMenu(e) {
@@ -16045,11 +16043,11 @@ function msExportHistory() {
   document.getElementById('ms-export-menu')?.classList.remove('open');
   const rows = (_msRaw?.plays || []).slice().sort((a, b) => new Date(a.played_at) - new Date(b.played_at));
   if (!rows.length) { showToast('No play history in this range.'); return; }
-  const header = ['Artist', 'Track', 'Album', 'Album Year', 'Track Rating', 'Track Length', 'Play Time', 'Play Date/Time'];
+  const header = ['Artist', 'Track', 'Album', 'Playlist Name', 'Album Year', 'Track Rating', 'Track Length', 'Play Time', 'Play Date/Time', 'YouTube Link', 'Secondary YouTube Link', 'Added to Jukebox By'];
   const body = rows.map(r => [
-    r.artist || '', r.track || '', r.album || '', r.album_year || '',
+    r.artist || '', r.track || '', r.album || '', r.playlist_name || r.album || '', r.album_year || '',
     r.rating ?? '', fmtDur(r.duration_ms) || '', fmtDur(r.duration_played_ms) || '',
-    new Date(r.played_at).toLocaleString()
+    new Date(r.played_at).toLocaleString(), r.youtube_link || '', r.secondary_youtube_link || '', r.added_to_jukebox_by || ''
   ]);
   downloadCSV('my-play-history.csv', header, body);
 }
@@ -16064,9 +16062,9 @@ async function msExportArtists() {
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load artist details.');
     const rows = data.artists || [];
     if (!rows.length) { showToast('No artist details to export yet — play something first.'); return; }
-    const header = ['Artist', 'Album', 'Album Year', 'Track', 'Links', 'Background Audio Uploaded', 'Background Audio Size', 'Total Track Plays in Jukebox', 'My Total Track Plays', 'Date Added', 'Date Last Played'];
+    const header = ['Artist', 'Album', 'Album Year', 'Track', 'YouTube Link', 'Secondary YouTube Link', 'Background Audio Uploaded', 'Background Audio Size', 'Total Track Plays in Jukebox', 'My Total Track Plays', 'Date Added', 'Date Last Played'];
     const body = rows.map(r => [
-      r.artist || '', r.album || '', r.album_year || '', r.track || '', r.links || '',
+      r.artist || '', r.album || '', r.album_year || '', r.track || '', r.youtube_link || '', r.secondary_youtube_link || '',
       r.has_bg_audio ? 'Yes' : 'No', r.has_bg_audio ? fmtBytes(r.bg_audio_bytes || 0) : '',
       r.total_plays || 0, r.my_plays || 0,
       r.date_added ? new Date(r.date_added).toLocaleDateString() : '',
