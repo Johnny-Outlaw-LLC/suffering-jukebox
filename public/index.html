@@ -6079,10 +6079,20 @@ function ytpConfirmPendingStalls() {
   _ytpStallEnv = false;
 }
 
+// 2026-08-14: a locked/backgrounded phone raced through 343 unrelated tracks
+// in under 2 minutes, auto-reporting every one as a broken video (see the
+// hidden-tab guard in ytpHandlePlaybackFailure for the actual cause). This
+// cap is a backstop against any future cascade, whatever triggers it.
+const YTP_AUTO_REPORT_MAX_PER_MIN = 5;
+let _ytpAutoReportTimes = [];
 async function ytpAutoReportPlaybackIssue(videoId, trackId, title, kind, code) {
   const dedupeKey = trackId || videoId;
   if (dedupeKey && _ytpAutoReportedIds.has(dedupeKey)) return;
   if (dedupeKey) _ytpAutoReportedIds.add(dedupeKey);
+  const now = Date.now();
+  _ytpAutoReportTimes = _ytpAutoReportTimes.filter(t => now - t < 60000);
+  if (_ytpAutoReportTimes.length >= YTP_AUTO_REPORT_MAX_PER_MIN) return;
+  _ytpAutoReportTimes.push(now);
   const meta = trackId ? ytpTrackMeta(trackId, title) : null;
   const desc = kind === 'error'
     ? 'Auto-detected: playback error (code ' + code + ') - the app skipped this track automatically.'
@@ -6125,6 +6135,15 @@ function ytpSkipAfterFailure(reported) {
 function ytpHandlePlaybackFailure(videoId, trackId, title, kind, code) {
   if (!videoId || videoId !== ytVideoId) return; // stale callback for a track we've already moved past
   if (_ytpFailureHandledFor === videoId) return;  // error + stall both firing for the same track
+  // A hidden tab (locked screen, backgrounded app) makes every subsequent
+  // track fail to autoplay the same way - that is an environment problem,
+  // not a broken video. Racing ahead and reporting each one individually is
+  // what flooded Issue Reports with 343 false positives in ~90 seconds on
+  // 2026-08-14. Leave the queue where it is; ytpKickBackgroundPlay's resume
+  // timer keeps retrying the current track, and coming back to the tab
+  // resolves it normally (mirrors the existing hidden check in the stall
+  // watchdog above).
+  if (document.visibilityState === 'hidden') return;
   _ytpFailureHandledFor = videoId;
   ytpClearPlaybackWatchdog();
   if (kind === 'error') {
@@ -14547,6 +14566,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-14';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-14', items: [
+    'Fixed a bug where a locked phone screen during playback could cause a burst of tracks to get auto-reported as broken and skipped in rapid succession. Playback problems detected while the app is in the background are no longer reported or auto-skipped - they resolve normally once you come back to the app.',
+  ] },
     'Fixed the daily view-trend chart on a track or album tooltip only showing up for a handful of songs. A database page-size limit meant most of the catalog was silently missing the data behind that chart, both in what gets tracked nightly and in what the page loaded to draw it. Both are fixed, so the chart should now show up for any track or album that has YouTube view history.',
   ] },
     'Help moved to the last button in the top toolbar row, after Share, Search, and the theme toggle.',
