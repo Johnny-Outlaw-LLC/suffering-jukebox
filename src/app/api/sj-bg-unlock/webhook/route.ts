@@ -28,10 +28,7 @@ export async function POST(req: NextRequest) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    if (session.metadata?.app && session.metadata.app !== "suffering-jukebox") {
-      return NextResponse.json({ ok: true, skipped: true });
-    }
-    if (session.metadata?.sku && session.metadata.sku !== "bg_play_forever") {
+    if (session.metadata?.app !== "suffering-jukebox" || session.metadata?.sku !== "bg_play_forever") {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
