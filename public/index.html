@@ -1969,6 +1969,22 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sjd-table tr.sjd-click { cursor:pointer; }
 .sjd-table tr.sjd-click:hover td { background:rgba(255,107,53,.06); }
 .sjd-table tr.sjd-click.on td { background:rgba(255,107,53,.1); }
+/* ── MY DATA & ANALYTICS (personal stats) ── */
+.ms-filter-row { display:flex; flex-wrap:wrap; gap:.4rem; }
+.ms-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:.6rem; }
+.ms-kpi { background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; padding:.6rem .7rem; min-width:0; }
+.ms-kpi-lbl { font-family:var(--sjd-mono); font-size:.38rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ms-kpi-val { font-family:var(--sjd-disp); font-size:1.15rem; font-weight:600; color:var(--text); margin-top:.15rem; }
+.ms-export-wrap { position:relative; }
+.ms-export-menu { display:none; position:absolute; top:calc(100% + .3rem); right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:.3rem; min-width:12rem; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+.ms-export-menu.open { display:block; }
+.ms-export-menu button { display:block; width:100%; text-align:left; background:none; border:none; color:var(--text); font-size:.46rem; padding:.42rem .55rem; border-radius:6px; cursor:pointer; font-family:inherit; }
+.ms-export-menu button:hover { background:rgba(255,107,53,.1); color:var(--accent); }
+.ms-time-chart { display:flex; align-items:flex-end; gap:1px; height:6rem; }
+.ms-time-bar { flex:1; min-width:1px; background:var(--accent); opacity:.35; border-radius:1px 1px 0 0; cursor:pointer; transition:opacity .1s; }
+.ms-time-bar:hover { opacity:.6; }
+.ms-time-bar.on { opacity:1; }
+@media (max-width:900px) { .ms-kpis { grid-template-columns:repeat(2,1fr); } }
 /* ── SHARE ── */
 .share-btn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; letter-spacing:.06em; padding:.38rem .75rem; cursor:pointer; border-radius:8px; transition:all .15s; display:flex; align-items:center; gap:5px; white-space:nowrap; flex-shrink:0; }
 .share-btn:hover { border-color:var(--accent); color:var(--accent); }
@@ -2579,6 +2595,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
+          <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">FAQ / How-To Guide</button>
           <button type="button" class="user-menu-item" id="user-menu-updates" style="display:none" onclick="userMenuAction('updates')">What's New</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
@@ -3164,6 +3181,39 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     </div>
     <div class="sjd-body" id="admin-metrics-body">
       <div class="admin-metrics-loading">Loading analytics…</div>
+    </div>
+  </div>
+</div>
+
+<!-- MY DATA & ANALYTICS MODAL (signed-in listener's own stats) -->
+<div class="pl-modal-overlay" id="myStatsOverlay" onclick="if(event.target===this)closeMyStats()">
+  <div class="pl-modal sjd-modal" id="my-stats-modal">
+    <div class="sjd-header">
+      <div>
+        <div class="sjd-eyebrow">Suffering Jukebox</div>
+        <div class="sjd-title">My Data &amp; <span>Analytics</span></div>
+      </div>
+      <div class="sjd-header-actions">
+        <span id="ms-filter-slot"></span>
+        <div class="sjd-seg" id="ms-range">
+          <button type="button" data-days="30" onclick="msSetRange(30)">30D</button>
+          <button type="button" data-days="90" class="on" onclick="msSetRange(90)">90D</button>
+          <button type="button" data-days="365" onclick="msSetRange(365)">1Y</button>
+          <button type="button" data-days="3650" onclick="msSetRange(3650)">All</button>
+        </div>
+        <div class="ms-export-wrap">
+          <button type="button" class="sjd-icon-btn ms-export-btn" onclick="msToggleExportMenu(event)" title="Export my data">⤓</button>
+          <div class="ms-export-menu" id="ms-export-menu">
+            <button type="button" onclick="msExportHistory()">My Play History (CSV)</button>
+            <button type="button" onclick="msExportArtists()">My Artist Details (CSV)</button>
+          </div>
+        </div>
+        <button type="button" class="sjd-icon-btn" onclick="loadMyStats()" title="Refresh">⟳</button>
+        <button type="button" class="sjd-icon-btn" onclick="closeMyStats()" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="sjd-body" id="my-stats-body">
+      <div class="admin-metrics-loading">Loading your stats…</div>
     </div>
   </div>
 </div>
@@ -14577,6 +14627,8 @@ const SJ_CHANGELOG = [
     'The Lyrics label and its Edit / History buttons are hidden on a phone track panel to save space. When a song has no lyrics yet, the placeholder text is smaller and, if you are signed in, has an Add Lyrics button.',
     'The logo now spans the full width of the header on a phone, with the sign-in button on its own line below it, instead of squeezing both onto one crowded row.',
     'My Jukebox now has a small info button next to the title instead of a paragraph of explanation taking up the top of the page - tap or hover it to read what My Jukebox includes.',
+    'The account menu has a new Data & Analytics page showing your own listening stats: plays by artist, your favorite artists by rating, plays by track, plays by day and time of week, and plays over time. Click any bar, track, or day/time cell to filter the rest of the page to that slice - click it again to clear.',
+    'Data & Analytics has an Export button that downloads a CSV of your full play history, or a CSV of every artist you have played with albums, tracks, links, background audio info, and play counts.',
   ] },
   { date: '2026-08-13', items: [
     'Moving a song up or down in a long queue no longer jumps the list back to the bottom. It stays where you were looking, and only scoots if the song you moved would leave the screen.',
@@ -14906,6 +14958,10 @@ async function userMenuAction(action) {
   }
   if (action === 'faq') {
     openFaq();
+    return;
+  }
+  if (action === 'mystats') {
+    openMyStats();
     return;
   }
   if (action === 'updates') {
@@ -15689,6 +15745,337 @@ function openAdminMetrics() {
 
 function closeAdminMetrics() {
   document.getElementById('adminMetricsOverlay')?.classList.remove('open');
+}
+
+// ── MY DATA & ANALYTICS (signed-in listener's own stats) ──────
+let _msRaw = null;        // { plays:[], ratings:[], days }
+let _msDays = 90;
+let _msFilter = { artist_id: null, track_id: null, dow: null, hour: null, day: null };
+let _msFetchSeq = 0;
+
+const MS_DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function openMyStats() {
+  if (!googleUser) return;
+  document.getElementById('myStatsOverlay')?.classList.add('open');
+  loadMyStats();
+}
+function closeMyStats() {
+  document.getElementById('myStatsOverlay')?.classList.remove('open');
+  document.getElementById('ms-export-menu')?.classList.remove('open');
+}
+
+async function loadMyStats() {
+  const body = document.getElementById('my-stats-body');
+  if (!body) return;
+  const seq = ++_msFetchSeq;
+  if (body.querySelector('.ms-kpis')) body.classList.add('sjd-dim');
+  else body.innerHTML = '<div class="admin-metrics-loading">Loading your stats…</div>';
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-my-stats?days=' + _msDays), { headers: await sjAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load your stats.');
+    if (seq !== _msFetchSeq) return;
+    _msRaw = data.dashboard;
+    _msFilter = { artist_id: null, track_id: null, dow: null, hour: null, day: null };
+    body.classList.remove('sjd-dim');
+    renderMyStats();
+  } catch (e) {
+    if (seq !== _msFetchSeq) return;
+    body.classList.remove('sjd-dim');
+    body.innerHTML = '<div class="admin-metrics-error">' + escAdmin(e.message || 'Could not load your stats.') + '</div>';
+  }
+}
+
+function msSetRange(d) {
+  if (_msDays === d && _msRaw) return;
+  _msDays = d;
+  document.querySelectorAll('#ms-range button').forEach(b => b.classList.toggle('on', Number(b.dataset.days) === d));
+  loadMyStats();
+}
+
+// Local calendar day (YYYY-MM-DD) for a played_at ISO timestamp, in the listener's own timezone.
+function msLocalDay(iso) {
+  const d = new Date(iso);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function msFilteredPlays() {
+  const f = _msFilter, rows = _msRaw?.plays || [];
+  return rows.filter(p => {
+    if (f.artist_id && p.artist_id !== f.artist_id) return false;
+    if (f.track_id && p.track_id !== f.track_id) return false;
+    if (f.day) {
+      if (msLocalDay(p.played_at) !== f.day) return false;
+    } else {
+      if (f.dow != null && new Date(p.played_at).getDay() !== f.dow) return false;
+      if (f.hour != null && new Date(p.played_at).getHours() !== f.hour) return false;
+    }
+    return true;
+  });
+}
+
+function msClearFilters() {
+  _msFilter = { artist_id: null, track_id: null, dow: null, hour: null, day: null };
+  renderMyStats();
+}
+
+function msClickArtist(id) {
+  _msFilter.artist_id = (_msFilter.artist_id === id) ? null : id;
+  _msFilter.track_id = null; // a track pick is a narrower slice of the same dimension as artist
+  renderMyStats();
+}
+
+function msClickTrack(id) {
+  _msFilter.track_id = (_msFilter.track_id === id) ? null : id;
+  renderMyStats();
+}
+
+function msClickCell(dow, hour) {
+  const same = _msFilter.dow === dow && _msFilter.hour === hour && _msFilter.day == null;
+  _msFilter.day = null;
+  _msFilter.dow = same ? null : dow;
+  _msFilter.hour = same ? null : hour;
+  renderMyStats();
+}
+
+function msClickDow(dow) {
+  const same = _msFilter.dow === dow && _msFilter.hour == null && _msFilter.day == null;
+  _msFilter.day = null;
+  _msFilter.dow = same ? null : dow;
+  _msFilter.hour = null;
+  renderMyStats();
+}
+
+function msClickDay(day) {
+  const same = _msFilter.day === day;
+  _msFilter.day = same ? null : day;
+  _msFilter.dow = null;
+  _msFilter.hour = null;
+  renderMyStats();
+}
+
+function msFilterChipsHTML() {
+  const f = _msFilter, chips = [];
+  if (f.artist_id) {
+    const row = (_msRaw.plays || []).find(p => p.artist_id === f.artist_id) || (_msRaw.ratings || []).find(r => r.artist_id === f.artist_id);
+    chips.push(row ? row.artist : 'Artist');
+  }
+  if (f.track_id) {
+    const row = (_msRaw.plays || []).find(p => p.track_id === f.track_id);
+    chips.push(row ? row.track : 'Track');
+  }
+  if (f.day) chips.push(fmtAdminDay(f.day));
+  else if (f.dow != null && f.hour != null) chips.push(MS_DOWS[f.dow] + ' ' + (f.hour % 12 || 12) + (f.hour < 12 ? 'am' : 'pm'));
+  else if (f.dow != null) chips.push(MS_DOWS[f.dow] + 's');
+  if (!chips.length) return '';
+  return chips.map(label => '<span class="sjd-filter-chip" onclick="msClearFilters()" title="Clear filters">' + escAdmin(label) + ' <span>✕</span></span>').join('');
+}
+
+function msKpisHTML(rows) {
+  const artists = new Set(rows.map(r => r.artist_id).filter(Boolean)).size;
+  const tracks = new Set(rows.map(r => r.track_id).filter(Boolean)).size;
+  const listenMs = rows.reduce((s, r) => s + (r.duration_played_ms || 0), 0);
+  return '<div class="ms-kpis">'
+    + '<div class="ms-kpi"><div class="ms-kpi-lbl">Plays</div><div class="ms-kpi-val">' + fmtAdminNum(rows.length) + '</div></div>'
+    + '<div class="ms-kpi"><div class="ms-kpi-lbl">Artists</div><div class="ms-kpi-val">' + fmtAdminNum(artists) + '</div></div>'
+    + '<div class="ms-kpi"><div class="ms-kpi-lbl">Tracks</div><div class="ms-kpi-val">' + fmtAdminNum(tracks) + '</div></div>'
+    + '<div class="ms-kpi"><div class="ms-kpi-lbl">Listening Time</div><div class="ms-kpi-val">' + fmtAdminDuration(listenMs) + '</div></div>'
+    + '</div>';
+}
+
+function msArtistsHTML(rows) {
+  if (!rows.length) return '<div class="sjd-nodata">No plays in this range.</div>';
+  const map = {};
+  rows.forEach(r => {
+    if (!r.artist_id) return;
+    (map[r.artist_id] || (map[r.artist_id] = { id: r.artist_id, name: r.artist, count: 0 })).count++;
+  });
+  const items = Object.values(map).sort((a, b) => b.count - a.count).slice(0, 12);
+  if (!items.length) return '<div class="sjd-nodata">No plays in this range.</div>';
+  const max = Math.max(...items.map(i => i.count), 1);
+  return '<div class="sjd-bars">' + items.map(it => {
+    const on = _msFilter.artist_id === it.id;
+    return '<div class="sjd-bar-row sjd-click' + (on ? ' on' : '') + '" style="cursor:pointer" onclick="msClickArtist(\'' + it.id + '\')" title="' + (on ? 'Clear filter' : 'Filter to ' + escAdmin(it.name)) + '">'
+      + '<span class="lbl" title="' + escAdmin(it.name) + '">' + (on ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(it.name) + '</span>'
+      + '<div class="sjd-bar-track"><i style="width:' + Math.max(2, Math.round((it.count / max) * 100)) + '%"></i></div>'
+      + '<span class="cnt">' + it.count.toLocaleString() + '</span></div>';
+  }).join('') + '</div>';
+}
+
+function msFavoritesHTML() {
+  const ratings = _msRaw?.ratings || [];
+  if (!ratings.length) return '<div class="sjd-nodata">Rate some tracks to see your favorite artists.</div>';
+  const map = {};
+  ratings.forEach(r => {
+    if (!r.artist_id) return;
+    const e = map[r.artist_id] || (map[r.artist_id] = { id: r.artist_id, name: r.artist, sum: 0, count: 0 });
+    e.sum += Number(r.rating) || 0;
+    e.count++;
+  });
+  const items = Object.values(map).map(e => ({ ...e, avg: e.sum / e.count }))
+    .sort((a, b) => b.avg - a.avg || b.count - a.count).slice(0, 10);
+  if (!items.length) return '<div class="sjd-nodata">Rate some tracks to see your favorite artists.</div>';
+  return '<div class="sjd-bars">' + items.map(it => {
+    const on = _msFilter.artist_id === it.id;
+    const color = it.avg >= 1 ? '#4ade80' : it.avg > 0 ? '#a3e635' : it.avg === 0 ? '#9ca3af' : '#f87171';
+    return '<div class="sjd-bar-row sjd-click' + (on ? ' on' : '') + '" style="cursor:pointer" onclick="msClickArtist(\'' + it.id + '\')" title="Filter plays to ' + escAdmin(it.name) + '">'
+      + '<span class="lbl" title="' + escAdmin(it.name) + '">' + (on ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(it.name) + '</span>'
+      + '<div class="sjd-bar-track"><i style="width:' + Math.max(2, Math.round(((it.avg + 2) / 4) * 100)) + '%;background:' + color + '"></i></div>'
+      + '<span class="cnt" style="color:' + color + '">' + (it.avg > 0 ? '+' : '') + it.avg.toFixed(1) + ' <span style="opacity:.6">(' + it.count + ')</span></span></div>';
+  }).join('') + '</div>';
+}
+
+function msTracksHTML(rows) {
+  if (!rows.length) return '<div class="sjd-nodata">No plays in this range.</div>';
+  const map = {};
+  rows.forEach(r => {
+    if (!r.track_id) return;
+    (map[r.track_id] || (map[r.track_id] = { id: r.track_id, name: r.track, count: 0 })).count++;
+  });
+  const items = Object.values(map).sort((a, b) => b.count - a.count).slice(0, 12);
+  if (!items.length) return '<div class="sjd-nodata">No plays in this range.</div>';
+  const max = Math.max(...items.map(i => i.count), 1);
+  return '<table class="sjd-table"><thead><tr><th>Track</th><th class="num">Plays</th></tr></thead><tbody>'
+    + items.map(it => {
+      const on = _msFilter.track_id === it.id;
+      return '<tr class="sjd-click' + (on ? ' on' : '') + '" onclick="msClickTrack(\'' + it.id + '\')" title="' + (on ? 'Clear filter' : 'Filter to this track') + '">'
+        + '<td><span class="sjd-song-name" title="' + escAdmin(it.name) + '">' + (on ? '<span style="color:var(--accent)">●</span> ' : '') + escAdmin(it.name) + '</span>'
+        + '<span class="sjd-song-track"><i style="width:' + Math.round((it.count / max) * 100) + '%"></i></span></td>'
+        + '<td class="num">' + it.count.toLocaleString() + '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function msPunchHTML(rows) {
+  if (!rows.length) return '<div class="sjd-nodata">No plays in this range.</div>';
+  const map = {};
+  let max = 1;
+  rows.forEach(r => {
+    const d = new Date(r.played_at), dow = d.getDay(), hr = d.getHours();
+    const k = dow + '-' + hr;
+    map[k] = (map[k] || 0) + 1;
+    if (map[k] > max) max = map[k];
+  });
+  let html = '<div class="sjd-punch"><div class="sjd-punch-lbl"></div>';
+  for (let h = 0; h < 24; h++) {
+    const lbl = h % 6 === 0 ? (h === 0 ? '12a' : h < 12 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p') : '';
+    html += '<div class="sjd-punch-hlbl">' + lbl + '</div>';
+  }
+  for (let d = 0; d < 7; d++) {
+    const dowOn = _msFilter.dow === d && _msFilter.hour == null && _msFilter.day == null;
+    html += '<div class="sjd-punch-lbl" style="cursor:pointer' + (dowOn ? ';color:var(--accent)' : '') + '" onclick="msClickDow(' + d + ')" title="Filter to all ' + MS_DOWS[d] + 's">' + MS_DOWS[d] + '</div>';
+    for (let h = 0; h < 24; h++) {
+      const c = map[d + '-' + h] || 0;
+      const on = _msFilter.dow === d && _msFilter.hour === h;
+      const bg = on ? 'var(--accent)' : (c ? 'rgba(255,107,53,' + (0.16 + 0.84 * (c / max)).toFixed(2) + ')' : 'var(--sjd-cell)');
+      html += '<div class="sjd-punch-cell" style="cursor:pointer;background:' + bg + '" onclick="msClickCell(' + d + ',' + h + ')" title="' + MS_DOWS[d] + ' ' + h + ':00 — ' + c + ' play' + (c === 1 ? '' : 's') + '"></div>';
+    }
+  }
+  return html + '</div>';
+}
+
+function msTimeHTML(rows) {
+  if (!rows.length) return '<div class="sjd-nodata">No plays in this range.</div>';
+  const byDay = {};
+  rows.forEach(r => { const d = msLocalDay(r.played_at); byDay[d] = (byDay[d] || 0) + 1; });
+  const days = Object.keys(byDay).sort();
+  const first = new Date(days[0] + 'T12:00:00'), last = new Date(days[days.length - 1] + 'T12:00:00');
+  const series = [];
+  for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+    const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    series.push({ day: key, count: byDay[key] || 0 });
+  }
+  const max = Math.max(...series.map(s => s.count), 1);
+  // Long ranges (a year+) would render one sliver per day - thin them out so bars stay a clickable width.
+  const step = Math.max(1, Math.ceil(series.length / 120));
+  const shown = series.filter((_, i) => i % step === 0 || i === series.length - 1);
+  return '<div class="ms-time-chart">' + shown.map(s => {
+    const on = _msFilter.day === s.day;
+    return '<div class="ms-time-bar' + (on ? ' on' : '') + '" style="height:' + Math.max(3, Math.round((s.count / max) * 100)) + '%" onclick="msClickDay(\'' + s.day + '\')" title="' + escAdmin(fmtAdminDay(s.day)) + ' — ' + s.count + ' play' + (s.count === 1 ? '' : 's') + '"></div>';
+  }).join('') + '</div>';
+}
+
+function renderMyStats() {
+  const body = document.getElementById('my-stats-body');
+  if (!body || !_msRaw) return;
+  const rows = msFilteredPlays();
+  const chips = msFilterChipsHTML();
+  const slot = document.getElementById('ms-filter-slot');
+  if (slot) slot.innerHTML = chips;
+  body.innerHTML =
+    msKpisHTML(rows)
+    + '<div class="sjd-grid2">'
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Artist <em>click to filter</em></div>' + msArtistsHTML(rows) + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Favorite Artists <em>by your rating, all time</em></div>' + msFavoritesHTML() + '</div>'
+    + '</div>'
+    + '<div class="sjd-grid2">'
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Track <em>click to filter</em></div>' + msTracksHTML(rows) + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays by Day &amp; Time of Week <em>local time · click a cell or day</em></div>' + msPunchHTML(rows) + '</div>'
+    + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Plays over Time <em>click a bar to filter to that day</em></div>' + msTimeHTML(rows) + '</div>';
+}
+
+function msToggleExportMenu(e) {
+  e?.stopPropagation();
+  document.getElementById('ms-export-menu')?.classList.toggle('open');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.ms-export-wrap')) document.getElementById('ms-export-menu')?.classList.remove('open');
+});
+
+function csvEscapeField(v) {
+  const s = v === null || v === undefined ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function downloadCSV(filename, header, rows) {
+  const lines = [header.map(csvEscapeField).join(',')].concat(rows.map(r => r.map(csvEscapeField).join(',')));
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function msExportHistory() {
+  document.getElementById('ms-export-menu')?.classList.remove('open');
+  const rows = (_msRaw?.plays || []).slice().sort((a, b) => new Date(a.played_at) - new Date(b.played_at));
+  if (!rows.length) { showToast('No play history in this range.'); return; }
+  const header = ['Artist', 'Track', 'Album', 'Album Year', 'Track Rating', 'Track Length', 'Play Time', 'Play Date/Time'];
+  const body = rows.map(r => [
+    r.artist || '', r.track || '', r.album || '', r.album_year || '',
+    r.rating ?? '', fmtDur(r.duration_ms) || '', fmtDur(r.duration_played_ms) || '',
+    new Date(r.played_at).toLocaleString()
+  ]);
+  downloadCSV('my-play-history.csv', header, body);
+}
+
+async function msExportArtists() {
+  document.getElementById('ms-export-menu')?.classList.remove('open');
+  const btn = document.querySelector('.ms-export-btn');
+  try {
+    if (btn) btn.disabled = true;
+    const res = await fetch(sjApiUrl('/api/sj-my-stats?export=artists'), { headers: await sjAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load artist details.');
+    const rows = data.artists || [];
+    if (!rows.length) { showToast('No artist details to export yet — play something first.'); return; }
+    const header = ['Artist', 'Album', 'Album Year', 'Track', 'Links', 'Background Audio Uploaded', 'Background Audio Size', 'Total Track Plays in Jukebox', 'My Total Track Plays', 'Date Added', 'Date Last Played'];
+    const body = rows.map(r => [
+      r.artist || '', r.album || '', r.album_year || '', r.track || '', r.links || '',
+      r.has_bg_audio ? 'Yes' : 'No', r.has_bg_audio ? fmtBytes(r.bg_audio_bytes || 0) : '',
+      r.total_plays || 0, r.my_plays || 0,
+      r.date_added ? new Date(r.date_added).toLocaleDateString() : '',
+      r.my_last_played ? new Date(r.my_last_played).toLocaleString() : 'Never'
+    ]);
+    downloadCSV('my-artist-details.csv', header, body);
+  } catch (e) {
+    showToast(e.message || 'Could not export artist details.');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ── Admin: User Management ───────────────────────────────────
