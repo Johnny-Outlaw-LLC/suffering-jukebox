@@ -1788,7 +1788,13 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-pl-save-btn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.5rem; letter-spacing:.02em; padding:3px 8px; border-radius:5px; cursor:pointer; transition:color .1s,border-color .1s; white-space:nowrap; flex-shrink:0; }
 .yt-pl-save-btn:hover { color:var(--text); border-color:var(--text-muted); }
 .yt-queue-section { background:var(--bg-card); max-height:280px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
-.yt-queue-head { display:flex; align-items:center; gap:6px; font-size:.42rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); padding:6px 10px 5px; font-weight:600; position:sticky; top:0; background:var(--bg-card); z-index:2; border-bottom:1px solid var(--border); }
+.yt-queue-sticky { position:sticky; top:0; z-index:3; background:var(--bg-card); border-bottom:1px solid var(--border); }
+.yt-queue-head { display:flex; align-items:center; gap:6px; font-size:.42rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); padding:6px 10px 5px; font-weight:600; }
+.yt-queue-up-next { display:flex; align-items:center; gap:7px; min-width:0; padding:5px 10px 6px; background:var(--bg-elevated); border-top:1px solid var(--border); }
+.yt-queue-up-next-lbl { color:var(--accent); font-size:.42rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; flex-shrink:0; }
+.yt-queue-up-next-title { flex:1; min-width:0; color:var(--text); font-size:.55rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.yt-queue-up-next-skip { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.45rem; font-weight:600; padding:2px 6px; border-radius:5px; cursor:pointer; flex-shrink:0; }
+.yt-queue-up-next-skip:hover { color:var(--text); border-color:var(--accent); }
 .yt-queue-row { display:flex; align-items:center; gap:7px; padding:5px 10px; cursor:pointer; background:transparent; transition:background .1s; }
 .yt-queue-row:hover { background:var(--bg-elevated); }
 .yt-queue-row.active { background:var(--bg-elevated); }
@@ -2637,6 +2643,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <p style="margin:0;color:var(--text-muted);font-size:.58rem;line-height:1.55">Choose how Suffering Jukebox selects the next song when Shuffle is on.</p>
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="discovery" style="margin-top:2px;accent-color:var(--accent)"><span><b>Discovery</b><span class="bgs-row-sub" style="display:block">Gives less-listened-to tracks more weight in your personal shuffle.</span></span></label>
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="favorites" style="margin-top:2px;accent-color:var(--accent)"><span><b>Favorites First</b><span class="bgs-row-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
+      <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="less_repeats" style="margin-top:2px;accent-color:var(--accent)"><span><b>Less Repeats</b><span class="bgs-row-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="none" style="margin-top:2px;accent-color:var(--accent)"><span><b>No Preferences</b><span class="bgs-row-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
       <p style="margin:.1rem 0 0;color:var(--text-muted);font-size:.48rem;line-height:1.5">This preference is saved on this browser. Your play history and ratings stay private to your account.</p>
     </div>
@@ -3570,10 +3577,10 @@ let _ytShuffleBag        = [];   // indices not yet played in the current shuffl
 let _ytShuffleBagQueue   = null; // ytQueue reference the bag was built for (invalidates on new queue)
 let _ytShufflePreviewIdx = null; // reserved next track shown in the player
 let _ytShuffleRecent     = [];   // short history prevents weighted modes clustering at a cycle boundary
-let sjShufflePreference  = 'none'; // 'discovery' | 'favorites' | 'none'
+let sjShufflePreference  = 'none'; // 'discovery' | 'favorites' | 'less_repeats' | 'none'
 try {
   const savedShufflePreference = localStorage.getItem('sj_shuffle_preference');
-  if (['discovery', 'favorites', 'none'].includes(savedShufflePreference)) sjShufflePreference = savedShufflePreference;
+  if (['discovery', 'favorites', 'less_repeats', 'none'].includes(savedShufflePreference)) sjShufflePreference = savedShufflePreference;
 } catch (_) {}
 let _ytUserWantsPlay    = false; // user intent - not paused by user
 let _ytBgAudio          = null;  // silent keepalive for mobile background playback
@@ -4580,7 +4587,6 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.5rem">Lyrics</span></label>
         <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="setYtShuffleEnabled(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.5rem">Shuffle</span></label>
         <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytpSetRepeat(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.5rem">Repeat</span></label>
-        <span id="ytp-up-next" style="display:none;align-items:center;gap:4px;min-width:0;font-size:.45rem;white-space:nowrap"></span>
         <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">⇄ Versions ▾</button>
         <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
@@ -4929,12 +4935,16 @@ function _ytShuffleWeight(idx) {
   const plays = Math.max(0, Number(myInAppPlays[item.trackId]) || 0);
   const favorite = item.trackId && getMyVote(item.trackId) > 0;
   if (sjShufflePreference === 'discovery') return 1 + (4 / (1 + Math.sqrt(plays)));
+  if (sjShufflePreference === 'less_repeats') {
+    const recentPos = _ytShuffleRecent.indexOf(item.trackId);
+    return recentPos === -1 ? 1 : 0.1 + (recentPos * 0.1);
+  }
   return 1 + (favorite ? 6 : 0) + Math.min(3, Math.log2(plays + 1));
 }
 
 function _ytWeightedShufflePick(candidates) {
   if (!candidates.length) return -1;
-  const fresh = sjShufflePreference === 'none'
+  const fresh = (sjShufflePreference === 'none' || sjShufflePreference === 'less_repeats')
     ? candidates
     : candidates.filter(idx => !_ytShuffleRecent.includes(ytQueue[idx]?.trackId));
   const pool = fresh.length ? fresh : candidates;
@@ -4973,29 +4983,26 @@ function ytUpNextIndex() {
   return ytRepeat ? 0 : -1;
 }
 
-function ytPickAnotherNext() {
+function ytSkipUpNext() {
   if (!ytShuffle || ytQueue.length < 2) return;
   const current = ytUpNextIndex();
   const candidates = _ytShuffleCandidates().filter(idx => idx !== current);
   if (!candidates.length) { showToast('That is the only other track in this shuffle.'); return; }
   _ytShufflePreviewIdx = _ytWeightedShufflePick(candidates);
   updateYTQueueUI({ preserveScroll: true });
-  showToast('New song queued up next.');
+  showToast('Skipped — another song is queued up next.');
 }
 
-function ytpUpdateUpNextPreview() {
-  const el = document.getElementById('ytp-up-next');
-  if (!el) return;
+function ytpUpNextQueueHTML() {
   const idx = ytUpNextIndex();
-  if (idx < 0 || !ytQueue[idx]) { el.style.display = 'none'; return; }
+  if (idx < 0 || !ytQueue[idx]) return '';
   const item = ytQueue[idx];
   const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
   const artist = (meta && meta.artist) || item.artist || '';
   const label = (artist ? artist + ' - ' : '') + (item.title || 'Track');
   const safeLabel = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\"/g, '&quot;');
-  el.style.display = 'inline-flex';
-  el.innerHTML = '<span style="color:var(--text-muted)">Up next:</span> <span title="' + safeLabel + '" style="max-width:125px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + safeLabel + '</span>' +
-    (ytShuffle ? '<button class="ytp-btn" onclick="event.stopPropagation();ytPickAnotherNext()" onmousedown="event.stopPropagation()" title="Choose a different song to play next" style="font-size:.43rem;padding:1px 4px">Pick another</button>' : '');
+  return '<div class="yt-queue-up-next"><span class="yt-queue-up-next-lbl">Up next</span><span class="yt-queue-up-next-title" title="' + safeLabel + '">' + safeLabel + '</span>' +
+    (ytShuffle ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another song to play next">Skip</button>' : '') + '</div>';
 }
 
 function ytNextTrack() {
@@ -5323,7 +5330,6 @@ function updateYTQueueUI(opts) {
   // Show/hide the Next button in the header
   const nextBtn = ytPlayerEl.querySelector('.ytp-next-btn');
   if (nextBtn) nextBtn.style.display = (ytQueue.length > 1 && ytQueueIdx < ytQueue.length - 1) ? '' : 'none';
-  ytpUpdateUpNextPreview();
 
   const resizeHandle  = ytPlayerEl.querySelector('.sc-resize');
   const existingWrap  = ytPlayerEl.querySelector('.yt-queue-wrap');
@@ -5342,9 +5348,12 @@ function updateYTQueueUI(opts) {
   const queueHTML = `<div class="yt-queue-wrap" style="display:flex;flex-direction:column;flex-shrink:0">
     ${ytPlaylistBarHTML()}
     <div class="yt-queue-section">
-      <div class="yt-queue-head">
-        <span>Queue · ${ytQueue.length} track${ytQueue.length === 1 ? '' : 's'}</span>
-        <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
+      <div class="yt-queue-sticky">
+        <div class="yt-queue-head">
+          <span>Queue · ${ytQueue.length} track${ytQueue.length === 1 ? '' : 's'}</span>
+          <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
+        </div>
+        ${ytpUpNextQueueHTML()}
       </div>
       ${ytQueue.map((item, i) => {
         const _qm = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
@@ -8694,15 +8703,36 @@ function taProbeDuration(file) {
   });
 }
 
+const TA_HARD_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const TA_MAX_BYTES_PER_SECOND = 64 * 1024; // 512 kbps: roomy for high-quality MP3/AAC.
+
+function taMaxUploadBytes(expectMs, actualSeconds) {
+  const expectedSeconds = Number(expectMs) > 0 ? Number(expectMs) / 1000 : 0;
+  const seconds = expectedSeconds || Number(actualSeconds) || 0;
+  if (!seconds) return TA_HARD_MAX_UPLOAD_BYTES;
+  // A small floor keeps very short tracks practical; the hard ceiling still
+  // protects the bucket if a track has an unusually long runtime.
+  return Math.min(TA_HARD_MAX_UPLOAD_BYTES, Math.max(1024 * 1024, Math.ceil(seconds * TA_MAX_BYTES_PER_SECOND)));
+}
+
+function taUploadSizeMessage(maxBytes, expectMs) {
+  const trackLength = Number(expectMs) > 0
+    ? ' for this ' + Math.round(Number(expectMs) / 1000) + 's track'
+    : '';
+  return 'Too big (max ' + fmtBytes(maxBytes) + trackLength + '; 50 MB absolute max)';
+}
+
 // Upload one File for one track. Returns {ok, msg, warn} - no DOM side effects,
 // so both the per-track inputs and the batch uploader can share it.
 // isPublic overrides the session Public-play checkbox when provided.
 async function taUploadOneFile(trackId, file, expectMs, isPublic) {
   if (!file) return { ok: false, msg: 'No file' };
-  if (file.size > 30 * 1024 * 1024) return { ok: false, msg: 'Too big (max 30 MB)' };
   try {
     const { data: { session } } = await sbAuth.auth.getSession();
     if (!session) return { ok: false, msg: 'Not signed in' };
+    const dur = await taProbeDuration(file);
+    const maxBytes = taMaxUploadBytes(expectMs, dur);
+    if (file.size > maxBytes) return { ok: false, msg: taUploadSizeMessage(maxBytes, expectMs) };
     if (!(await sjEnsureUploadQuota(file.size, 'upload'))) {
       sjTrackProductEvent('bg_upload_blocked_locked', { trackId });
       return { ok: false, msg: 'Sign in and free up storage to upload' };
@@ -8710,7 +8740,6 @@ async function taUploadOneFile(trackId, file, expectMs, isPublic) {
     const pub = (typeof isPublic === 'boolean') ? isPublic : !!_taPublicPlay;
     const ext = ((file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'mp3';
     const path = `${trackId}/${Date.now()}-${Math.floor(performance.now())}.${ext}`;
-    const dur = await taProbeDuration(file);
     const { error } = await sbAuth.storage.from('jukebox-audio')
       .upload(path, file, { contentType: file.type || 'audio/mpeg', upsert: false });
     if (error) throw new Error(error.message);
@@ -11206,19 +11235,6 @@ async function sjEnsureUploadQuota(fileSize, reason) {
     showToast('Not enough storage left in your 500 MB. Delete some uploads to free space.');
     return false;
   }
-  // Soft rate limit: 40 uploads / rolling hour (abuse guard)
-  const now = Date.now();
-  try {
-    const raw = JSON.parse(localStorage.getItem('sj_upload_ts') || '[]');
-    const recent = (Array.isArray(raw) ? raw : []).filter(t => now - t < 60 * 60 * 1000);
-    if (recent.length >= 40) {
-      sjTrackProductEvent('bg_upload_rate_limited', { count: recent.length });
-      showToast('Slow down — too many uploads in the last hour. Try again shortly.');
-      return false;
-    }
-    recent.push(now);
-    localStorage.setItem('sj_upload_ts', JSON.stringify(recent));
-  } catch (_) {}
   return true;
 }
 
@@ -14730,8 +14746,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-15';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-15', items: [
-    'Shuffle can now follow your listening taste. Choose Discovery to bring less-played songs forward, Favorites First to favor your liked and familiar songs, or No Preferences for an even shuffle.',
-    'The player now shows what is up next. In Shuffle, Pick another swaps that next song without interrupting the one you are listening to.',
+    'Shuffle can now follow your listening taste. Choose Discovery to bring less-played songs forward, Favorites First to favor your liked and familiar songs, Less Repeats to push recent plays back, or No Preferences for an even shuffle.',
+    'Up Next is now pinned at the top of the queue. In Shuffle, Skip picks a different next song without interrupting the one you are listening to.',
+    'Background-music uploads can continue through a whole catalog as long as it fits your storage. File limits now scale with track length up to 50 MB, and the storage meter is reconciled against the audio files actually uploaded.',
   ] },
   { date: '2026-08-14', items: [
     'Fixed a bug where a locked phone screen during playback could cause a burst of tracks to get auto-reported as broken and skipped in rapid succession. Playback problems detected while the app is in the background are no longer reported or auto-skipped - they resolve normally once you come back to the app.',
@@ -15128,13 +15145,13 @@ function closePlaybackPreferences() {
 function savePlaybackPreferences() {
   const selected = document.querySelector('input[name="sj-shuffle-preference"]:checked');
   const preference = selected?.value;
-  if (!['discovery', 'favorites', 'none'].includes(preference)) return;
+  if (!['discovery', 'favorites', 'less_repeats', 'none'].includes(preference)) return;
   sjShufflePreference = preference;
   try { localStorage.setItem('sj_shuffle_preference', sjShufflePreference); } catch (_) {}
   _ytShufflePreviewIdx = null;
   closePlaybackPreferences();
   if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
-  const labels = { discovery: 'Discovery', favorites: 'Favorites First', none: 'No Preferences' };
+  const labels = { discovery: 'Discovery', favorites: 'Favorites First', less_repeats: 'Less Repeats', none: 'No Preferences' };
   showToast('Playback preference: ' + labels[sjShufflePreference]);
 }
 
@@ -18032,7 +18049,6 @@ function setYtShuffleEnabled(on) {
     mfBtn.title = ytShuffle ? 'Shuffle on' : 'Shuffle off';
   }
   ytpMobSyncDeck();
-  ytpUpdateUpNextPreview();
 }
 
 // Mini-footer shuffle toggle - same state the player window's checkbox drives.

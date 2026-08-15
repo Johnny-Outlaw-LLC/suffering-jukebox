@@ -27,14 +27,41 @@ export async function recalcStorageUsed(
   sb: SupabaseClient,
   userId: string,
 ): Promise<number> {
-  const { data: rows } = await sb
+  const { data: rows, error: rowsError } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("track_audio")
-    .select("file_bytes")
+    .select("storage_path, file_bytes")
     .eq("uploaded_by", userId);
+  if (rowsError) throw rowsError;
+
+  // file_bytes is useful as a fallback for legacy rows, but Storage owns the
+  // actual object size. Read its metadata so the UI reflects what was truly
+  // uploaded, even if a past row was written without file_bytes.
+  const paths = (rows || [])
+    .map((row) => String((row as { storage_path?: string | null }).storage_path || ""))
+    .filter(Boolean);
+  if (!paths.length) return 0;
+
+  const objectBytes = new Map<string, number>();
+  const storage = (sb as any).schema("storage");
+  for (let start = 0; start < paths.length; start += 100) {
+    const names = paths.slice(start, start + 100);
+    const { data: objects, error } = await storage
+      .from("objects")
+      .select("name, metadata")
+      .eq("bucket_id", "jukebox-audio")
+      .in("name", names);
+    if (error) throw error;
+    for (const object of objects || []) {
+      const size = Number((object as { metadata?: { size?: number | string } }).metadata?.size || 0);
+      if (Number.isFinite(size) && size > 0) objectBytes.set(object.name, size);
+    }
+  }
+
   let total = 0;
   for (const r of rows || []) {
-    const n = Number((r as { file_bytes?: number | null }).file_bytes || 0);
+    const path = String((r as { storage_path?: string | null }).storage_path || "");
+    const n = objectBytes.get(path) ?? Number((r as { file_bytes?: number | null }).file_bytes || 0);
     if (Number.isFinite(n) && n > 0) total += n;
   }
   return total;
