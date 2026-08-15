@@ -30,41 +30,18 @@ export async function recalcStorageUsed(
   const { data: rows, error: rowsError } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("track_audio")
-    .select("storage_path, file_bytes")
+    .select("file_bytes")
     .eq("uploaded_by", userId);
   if (rowsError) throw rowsError;
 
-  // file_bytes is useful as a fallback for legacy rows, but Storage owns the
-  // actual object size. Read its metadata so the UI reflects what was truly
-  // uploaded, even if a past row was written without file_bytes.
-  const paths = (rows || [])
-    .map((row) => String((row as { storage_path?: string | null }).storage_path || ""))
-    .filter(Boolean);
-  if (!paths.length) return 0;
-
-  const objectBytes = new Map<string, number>();
-  const storage = (sb as any).schema("storage");
-  for (let start = 0; start < paths.length; start += 100) {
-    const names = paths.slice(start, start + 100);
-    const { data: objects, error } = await storage
-      .from("objects")
-      .select("name, metadata")
-      .eq("bucket_id", "jukebox-audio")
-      .in("name", names);
-    if (error) throw error;
-    for (const object of objects || []) {
-      const size = Number((object as { metadata?: { size?: number | string } }).metadata?.size || 0);
-      if (Number.isFinite(size) && size > 0) objectBytes.set(object.name, size);
-    }
-  }
-
-  let total = 0;
-  for (const r of rows || []) {
-    const path = String((r as { storage_path?: string | null }).storage_path || "");
-    const n = objectBytes.get(path) ?? Number((r as { file_bytes?: number | null }).file_bytes || 0);
-    if (Number.isFinite(n) && n > 0) total += n;
-  }
-  return total;
+  // Every upload writes its byte size to track_audio in the same flow that
+  // creates the object. Keep quota reads inside the exposed jukebox schema;
+  // Supabase intentionally does not expose its private storage schema through
+  // the Data API. Deleting an upload removes this metadata row as well.
+  return (rows || []).reduce((total, row) => {
+    const bytes = Number((row as { file_bytes?: number | null }).file_bytes || 0);
+    return Number.isFinite(bytes) && bytes > 0 ? total + bytes : total;
+  }, 0);
 }
 
 export async function getEntitlement(userId: string): Promise<BgEntitlement | null> {
@@ -130,13 +107,23 @@ export async function grantEntitlement(opts: {
   return data as BgEntitlement;
 }
 
-export async function syncEntitlementUsage(userId: string): Promise<BgEntitlement | null> {
+export async function syncEntitlementUsage(
+  userId: string,
+  storageBytesLimit?: number,
+): Promise<BgEntitlement | null> {
   const sb = createSjServiceClient();
   const used = await recalcStorageUsed(sb, userId);
+  const updates: Record<string, number | string> = {
+    storage_bytes_used: used,
+    updated_at: new Date().toISOString(),
+  };
+  if (Number.isFinite(storageBytesLimit) && Number(storageBytesLimit) >= 0) {
+    updates.storage_bytes_limit = Number(storageBytesLimit);
+  }
   const { data, error } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("bg_entitlements")
-    .update({ storage_bytes_used: used, updated_at: new Date().toISOString() })
+    .update(updates)
     .eq("user_id", userId)
     .select(
       "user_id, email, unlocked_at, unlock_until, storage_bytes_limit, storage_bytes_used, source",

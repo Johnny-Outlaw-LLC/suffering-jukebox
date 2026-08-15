@@ -5,7 +5,7 @@ import {
   recalcStorageUsed,
   syncEntitlementUsage,
 } from "@/lib/bg-entitlement";
-import { SJ_BG_STORAGE_BYTES } from "@/lib/stripe";
+import { getUserLevel, USER_STORAGE_LIMITS } from "@/lib/user-levels";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +20,14 @@ export async function GET(req: NextRequest) {
   let source: string | null = "free";
 
   const existing = await getEntitlement(user.id);
+  let level = await getUserLevel(user.email);
+  // Existing unlock records predate named tiers and represent Standard unless
+  // the account has since been explicitly promoted or made an admin.
+  if (level === "free" && existing) level = "standard";
+  const limit = USER_STORAGE_LIMITS[level];
   if (existing) {
     try {
-      const synced = await syncEntitlementUsage(user.id);
+      const synced = await syncEntitlementUsage(user.id, limit);
       used = synced?.storage_bytes_used ?? existing.storage_bytes_used ?? 0;
       unlockedAt = synced?.unlocked_at || existing.unlocked_at || null;
       source = synced?.source || existing.source || "free";
@@ -40,14 +45,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Uploads and background play are free for signed-in users (500 MB cap).
   return NextResponse.json({
     ok: true,
     unlocked: true,
     until: null,
     unlockedAt,
     used,
-    limit: SJ_BG_STORAGE_BYTES,
-    source,
+    limit,
+    source: level === "free" ? source : level,
+    level,
   });
 }

@@ -6,7 +6,7 @@ import { SJ_SUPABASE_ANON_KEY } from "@/lib/sj-admin-auth";
 export const dynamic = "force-dynamic";
 
 const SUPABASE_URL = "https://ntyvtpimesfoesuykuyi.supabase.co";
-const REACTIONS = ["heart", "sad", "guitar", "drums", "mic", "pencil"] as const;
+const REACTIONS = ["heart", "sad"] as const;
 type Reaction = (typeof REACTIONS)[number];
 
 const REACTION_SET = new Set<string>(REACTIONS);
