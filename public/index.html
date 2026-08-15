@@ -1486,6 +1486,8 @@ textarea.report-input { resize:vertical; }
 #ytp-mini-footer .tvb-up { color: #22c55e; }
 #ytp-mf-vote:not(.tvb-up) { opacity: .45; }
 #ytp-mf-vote.tvb-up { opacity: 1; color: #22c55e; }
+#ytp-mf-react-heart { color: #ff5a72; border-color: rgba(255,90,114,.55); }
+#ytp-mf-react-heart:active { transform: scale(.88); }
 @media (max-width: 640px) {
   /* Mobile mini bar: title row + big transport row. No windowed chrome —
      restore expands to fullscreen; maximize is unused (hidden). */
@@ -1584,6 +1586,11 @@ textarea.report-input { resize:vertical; }
   background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted);
   font-family: var(--mono); font-size: .52rem; padding: 0 13px; cursor: pointer; white-space: nowrap; }
 .ytp-md-chip.on { color: var(--accent); border-color: var(--accent); }
+.ytp-md-reactions { display: flex; flex-direction: column; gap: 5px; }
+.ytp-md-reactions .sj-reaction-rail { width: 100%; flex-direction: column; align-items: stretch; gap: 5px; }
+.ytp-md-reactions .sj-reaction-label { font-size: .44rem; }
+.ytp-md-reactions .sj-reaction-buttons { width: 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.ytp-md-reactions .sj-reaction-btn { width: 100%; height: 44px; font-size: 1.12rem; border-radius: 13px; }
 .ytp-md-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 13px; }
 .ytp-md-tab { min-height: 38px; border: none; border-radius: 10px; background: none;
@@ -1608,6 +1615,7 @@ textarea.report-input { resize:vertical; }
   #yt-player-container.ytp-mob-fs .ytp-mob-deck { display: flex; }
   /* Everything the deck now carries lives in one place only. */
   #yt-player-container.ytp-mob-fs .ytp-toolbar-row { display: none !important; }
+  #yt-player-container.ytp-mob-fs .ytp-reaction-row { display: none !important; }
   #yt-player-container.ytp-mob-fs .yt-player {
     order: 1; width: 100% !important; min-width: 0 !important;
     height: auto !important; min-height: 0; border: none;
@@ -1767,6 +1775,30 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .tvb-cycle{background:none;border:none;cursor:pointer;padding:1px 5px;line-height:1;font-size:.6rem;opacity:.45;transition:opacity .15s,color .15s;border-radius:4px;flex-shrink:0;color:var(--text-muted)}
 .tvb-cycle:hover{opacity:.9}
 .tvb-cycle.tvb-up{color:#22c55e;opacity:1}
+
+/* ── One-tap live reactions ─────────────────────────────────────────────── */
+.ytp-reaction-row { padding: 0 8px 7px 10px; }
+.sj-reaction-rail { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.sj-reaction-label { flex: 0 0 auto; color: var(--text-muted); font-family: var(--mono);
+  font-size: .42rem; letter-spacing: .08em; text-transform: uppercase; }
+.sj-reaction-buttons { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.sj-reaction-btn { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 31px; padding: 0; background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 10px; color: var(--text); cursor: pointer; font-size: .88rem; line-height: 1;
+  transition: transform .1s, border-color .12s, background .12s; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent; }
+.sj-reaction-btn:hover { border-color: var(--accent); background: var(--bg-card); }
+.sj-reaction-btn:active, .sj-reaction-btn.sent { transform: scale(.86); }
+.sj-reaction-btn[data-reaction="heart"] { color: #ff5a72; }
+.sj-reaction-count { position: absolute; right: 2px; bottom: 1px; min-width: 10px; color: var(--text-muted);
+  font-family: var(--mono); font-size: .34rem; font-variant-numeric: tabular-nums; text-align: right; }
+.sj-reaction-burst { position: fixed; z-index: 12000; pointer-events: none; line-height: 1;
+  font-size: 1.35rem; animation: sjReactionFloat 1.15s cubic-bezier(.18,.7,.25,1) forwards; }
+@keyframes sjReactionFloat {
+  0% { opacity: 0; transform: translate(-50%, 3px) scale(.5) rotate(-7deg); }
+  14% { opacity: 1; transform: translate(-50%, -7px) scale(1.12) rotate(4deg); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--sj-drift, 0px)), -92px) scale(1.35) rotate(var(--sj-rot, 8deg)); }
+}
 
 
 
@@ -2247,7 +2279,8 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   overflow: hidden; cursor: pointer; text-align: left; padding: 0; font: inherit; color: var(--text);
   display: flex; flex-direction: column; min-height: 0;
 }
-.home-artist-card:hover { border-color: var(--accent); }
+.home-artist-card:hover, .home-artist-card:focus-visible { border-color: var(--accent); }
+.home-artist-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .home-artist-art {
   aspect-ratio: 1; background: var(--bg-elevated) center/cover no-repeat; display: flex;
   align-items: center; justify-content: center; font-size: 1.6rem; color: var(--text-muted);
@@ -2258,9 +2291,15 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .home-artist-bg {
   font-family: var(--mono); font-size: .42rem; color: #22c55e; letter-spacing: .04em;
 }
-.home-artist-acts { display: flex; gap: 6px; margin-top: 4px; }
+.home-artist-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .home-artist-acts .landing-play-btn,
-.home-artist-acts .landing-explore-btn { font-size: .45rem; padding: .28rem .5rem; }
+.home-artist-acts .landing-explore-btn,
+.home-artist-acts .home-upload-btn { font-size: .45rem; padding: .28rem .5rem; }
+.home-upload-btn {
+  background: none; border: 1px solid var(--accent); color: var(--accent);
+  font-family: var(--mono); border-radius: 8px; cursor: pointer; white-space: nowrap;
+}
+.home-upload-btn:hover { background: var(--accent); color: #0a0a0a; }
 .landing-controls { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin: 0 0 18px; }
 .landing-control-group { display: flex; align-items: center; gap: 10px; }
 .landing-control-lbl { font-size: .5rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
@@ -2528,6 +2567,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
         <div class="ytp-mf-song-row">
           <div class="ytp-mf-song" id="ytp-mf-song">-</div>
           <button class="ytp-mf-btn" data-vote-track="" onclick="event.stopPropagation();ytpCycleVote()" title="Rate" id="ytp-mf-vote">-</button>
+          <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('heart',this,event)" title="Send a heart reaction" aria-label="Send a heart reaction" id="ytp-mf-react-heart">❤️</button>
         </div>
         <div class="ytp-mf-album" id="ytp-mf-album"></div>
       </div>
@@ -4456,7 +4496,7 @@ const YTP_DECK_ICONS = {
 // The phone deck. Built for every player (desktop included) and shown by CSS
 // only while the player is maximized on a phone, so a rotation or a resize
 // needs no rebuild.
-function ytpMobDeckHTML() {
+function ytpMobDeckHTML(trackId) {
   return `
     <div class="ytp-mob-deck" id="ytp-mob-deck" onmousedown="event.stopPropagation()">
       <div class="ytp-md-scrub" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
@@ -4476,14 +4516,15 @@ function ytpMobDeckHTML() {
         <button class="ytp-md-btn" id="ytp-md-next" onclick="ytNextTrack();event.stopPropagation()" title="Next" aria-label="Next track">${YTP_DECK_ICONS.next}</button>
         <button class="ytp-md-btn" id="ytp-md-repeat" onclick="ytpMobToggleRepeat();event.stopPropagation()" title="Repeat" aria-label="Repeat">${YTP_DECK_ICONS.repeat}</button>
       </div>
+      <div class="ytp-md-reactions">${ytpReactionRailHTML(trackId, 'ytp-md-reaction-rail')}</div>
       <div class="ytp-md-chips">
         <button class="ytp-md-chip" id="ytp-md-bg" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()">Background Play</button>
         <button class="ytp-md-chip" id="ytp-md-ver" style="display:none" onclick="ytpToggleVersionMenu();event.stopPropagation()">⇄ Versions ▾</button>
         <button class="ytp-md-chip" id="ytp-md-more" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem">⋯ More</button>
       </div>
       <div class="ytp-md-tabs" role="tablist">
-        <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics');event.stopPropagation()">Lyrics</button>
-        <button class="ytp-md-tab" id="ytp-md-tab-playlist" role="tab" onclick="ytpMobSetTab('playlist');event.stopPropagation()">Playlist</button>
+        <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics',true);event.stopPropagation()">Lyrics</button>
+        <button class="ytp-md-tab" id="ytp-md-tab-playlist" role="tab" onclick="ytpMobSetTab('playlist',true);event.stopPropagation()">Playlist</button>
       </div>
     </div>`;
 }
@@ -4598,11 +4639,12 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
         <button class="ytp-btn" id="ytp-more-btn" onclick="sjmOpenForPlayer(this,event)" onmousedown="event.stopPropagation()" title="Add to playlist, never play again, report a problem">⋯</button>
       </div>
+      <div class="ytp-reaction-row">${ytpReactionRailHTML(trackId, 'ytp-desktop-reaction-rail')}</div>
     </div>
     <div class="yt-player-frame" style="height:${cH}px">
       ${ytpIframeHTML(videoId, cH, !restorePaused)}
     </div>
-    ${ytpMobDeckHTML()}
+    ${ytpMobDeckHTML(trackId)}
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
   _ytpContainerEl.appendChild(ytPlayerEl);
   // Sync the newly-created Shuffle/Repeat checkboxes to whatever state
@@ -4979,7 +5021,7 @@ function ytUpNextIndex() {
     return _ytShufflePreviewIdx;
   }
   if (ytQueueIdx < ytQueue.length - 1) return ytQueueIdx + 1;
-  return ytRepeat ? 0 : -1;
+  return ytQueue.length > 1 ? 0 : -1;
 }
 
 function ytSkipUpNext() {
@@ -4990,7 +5032,9 @@ function ytSkipUpNext() {
   // so Skip is useful even when Shuffle is off, without touching playback.
   if (!ytShuffle) {
     const candidates = [];
-    for (let i = ytQueueIdx + 2; i < ytQueue.length; i++) candidates.push(i);
+    for (let hop = 2; hop < ytQueue.length; hop++) {
+      candidates.push((ytQueueIdx + hop) % ytQueue.length);
+    }
     if (!candidates.length) { showToast('There is no other queued song to choose next.'); return; }
     const replacement = candidates[Math.floor(Math.random() * candidates.length)];
     [ytQueue[current], ytQueue[replacement]] = [ytQueue[replacement], ytQueue[current]];
@@ -5019,11 +5063,12 @@ function ytpUpNextQueueHTML() {
 }
 
 function ytNextTrack() {
+  if (ytQueue.length <= 1) return;
   if (ytShuffle && ytQueue.length > 1) {
     ytPlayQueueIdx(_ytShuffleNextIdx());
   } else if (ytQueueIdx < ytQueue.length - 1) {
     ytPlayQueueIdx(ytQueueIdx + 1);
-  } else if (ytRepeat && ytQueue.length > 0) {
+  } else {
     ytPlayQueueIdx(0);
   }
 }
@@ -5095,11 +5140,13 @@ function ytpSyncVoteBtn(trackId) {
   if (!trackId) {
     if (btn) { btn.style.display = 'none'; btn.removeAttribute('data-vote-track'); }
     if (mfBtn) { mfBtn.style.visibility = 'hidden'; mfBtn.removeAttribute('data-vote-track'); }
+    ytpSyncReactions(null);
     return;
   }
   if (btn) { btn.style.display = ''; btn.setAttribute('data-vote-track', trackId); }
   if (mfBtn) { mfBtn.style.visibility = ''; mfBtn.setAttribute('data-vote-track', trackId); }
   refreshVoteUI(trackId); // updates this button along with every other instance
+  ytpSyncReactions(trackId);
 }
 
 // ── YouTube iframe API: dynamic loader + auto-advance on video end ─
@@ -5342,7 +5389,7 @@ function updateYTQueueUI(opts) {
 
   // Show/hide the Next button in the header
   const nextBtn = ytPlayerEl.querySelector('.ytp-next-btn');
-  if (nextBtn) nextBtn.style.display = (ytQueue.length > 1 && ytQueueIdx < ytQueue.length - 1) ? '' : 'none';
+  if (nextBtn) nextBtn.style.display = ytQueue.length > 1 ? '' : 'none';
 
   const resizeHandle  = ytPlayerEl.querySelector('.sc-resize');
   const existingWrap  = ytPlayerEl.querySelector('.yt-queue-wrap');
@@ -5527,9 +5574,10 @@ let _ytpMinimized = false;
 // lyrics or the queue, chosen by the tab pair in the deck. The choice sticks
 // between sessions the way the lyric strip does.
 let _ytpMobTab = 'lyrics';
+let _ytpMobTabUserSet = false;
 try {
   const _t = localStorage.getItem('sj_mob_player_tab');
-  if (_t === 'lyrics' || _t === 'playlist') _ytpMobTab = _t;
+  if (_t === 'lyrics' || _t === 'playlist') { _ytpMobTab = _t; _ytpMobTabUserSet = true; }
 } catch (e) {}
 
 function ytpMobFsOn() {
@@ -5545,11 +5593,12 @@ function ytpMobApplyFs(on) {
     return;
   }
   _ytpContainerEl.classList.add('ytp-mob-fs');
-  ytpMobSetTab(_ytpMobTab);
+  ytpMobSetTab(_ytpMobTab, false);
 }
 
-function ytpMobSetTab(tab) {
+function ytpMobSetTab(tab, userSet) {
   if (tab !== 'playlist') tab = 'lyrics';
+  if (userSet) _ytpMobTabUserSet = true;
   _ytpMobTab = tab;
   try { localStorage.setItem('sj_mob_player_tab', tab); } catch (e) {}
   if (!_ytpContainerEl) return;
@@ -5578,7 +5627,7 @@ function ytpMobSyncDeck() {
   const prev = document.getElementById('ytp-md-prev');
   if (prev) prev.disabled = !(n > 1 && (ytQueueIdx > 0 || ytRepeat));
   const next = document.getElementById('ytp-md-next');
-  if (next) next.disabled = !(n > 1 && (ytQueueIdx < n - 1 || ytRepeat));
+  if (next) next.disabled = n <= 1;
   const sh = document.getElementById('ytp-md-shuffle');
   if (sh) { sh.classList.toggle('on', !!ytShuffle); sh.title = ytShuffle ? 'Shuffle on' : 'Shuffle off'; }
   const rp = document.getElementById('ytp-md-repeat');
@@ -5618,6 +5667,40 @@ function ytpVerAnchorBtn() {
   return document.getElementById('ytp-ver-btn');
 }
 
+async function ytpTrackHasLyrics(trackId) {
+  if (!trackId) return false;
+  let plain = lyricsCache[trackId];
+  if (plain === undefined) {
+    try {
+      const rows = await dbGet('/lyrics?track_id=eq.' + trackId + '&select=lyrics&limit=1');
+      plain = lyricsCache[trackId] = rows[0]?.lyrics?.trim() || null;
+    } catch (_) {
+      plain = null;
+    }
+  }
+  if (plain) return true;
+  const sync = await fetchSyncedLyrics(trackId);
+  return !!(sync && sync.length);
+}
+
+async function ytpAutoOpenFullscreenLyrics() {
+  const trackId = ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId || null;
+  if (!trackId) return;
+  const hasLyrics = await ytpTrackHasLyrics(trackId);
+  if (!_ytpFs || !ytPlayerEl || (ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId) !== trackId) return;
+  if (hasLyrics) {
+    if (!_ytpLyricsOpen) {
+      _ytpFsAutoLyrics = true;
+      const lyrChk = document.getElementById('ytp-lyrics-chk');
+      if (lyrChk) lyrChk.checked = true;
+      ytpToggleLyrics(true);
+    }
+    if (ytpIsMob() && !_ytpMobTabUserSet && _ytpMobTab !== 'lyrics') ytpMobSetTab('lyrics', false);
+  } else if (ytpIsMob() && !_ytpMobTabUserSet && _ytpMobTab === 'lyrics') {
+    ytpMobSetTab('playlist', false);
+  }
+}
+
 // Enter fullscreen without toggling. Used by mobile open and restore-from-mini.
 function ytpEnterFullscreen() {
   if (!_ytpContainerEl || !ytPlayerEl || _ytpFs) {
@@ -5643,15 +5726,11 @@ function ytpEnterFullscreen() {
     ytpMobApplyFs(true);
     ytpSetPlayPauseIcon(ytpIsPlaying());
     ytpMfStartProgress();
+    ytpAutoOpenFullscreenLyrics();
     return;
   }
   ytpUpdateFsLayout();
-  if (!_ytpLyricsOpen) {
-    _ytpFsAutoLyrics = true;
-    const lyrChk = document.getElementById('ytp-lyrics-chk');
-    if (lyrChk) lyrChk.checked = true;
-    ytpToggleLyrics(true);
-  }
+  ytpAutoOpenFullscreenLyrics();
 }
 
 // Drop out of fullscreen into the mini bar on mobile (never the windowed sheet).
@@ -5698,11 +5777,6 @@ function ytpToggleMinimize() {
   if (_ytpFs) ytpToggleFullscreen();
   _ytpMinimized = !_ytpMinimized;
   if (_ytpMinimized) {
-    // Carry the lyrics setting into the mini bar: the strip mirrors the pane.
-    if (_mfLyricStripOn !== _ytpLyricsOpen) {
-      _mfLyricStripOn = _ytpLyricsOpen;
-      try { localStorage.setItem('sj_mf_lyric_strip', _mfLyricStripOn ? '1' : '0'); } catch(e) {}
-    }
     // Animate the tiled window dropping down toward the footer before hiding it.
     target.style.transition = 'opacity .32s ease, transform .32s ease';
     target.style.transform = 'translateY(70px) scale(.85)';
@@ -5725,8 +5799,6 @@ function ytpToggleMinimize() {
     setTimeout(() => { target.style.transition = ''; target.style.transform = ''; }, 320);
     hideYtpMiniFooter();
     ytpShowQueueChrome();
-    // Carry the mini bar's lyrics setting back onto the restored window.
-    if (_mfLyricStripOn !== _ytpLyricsOpen) ytpToggleLyrics(_mfLyricStripOn);
     if (_ytpFs) ytpUpdateFsLayout();
   }
 }
@@ -5783,8 +5855,8 @@ function hideYtpMiniFooter() {
 // lines are on screen follows the lyric font size: one at the largest, four at
 // the smallest.
 // The ♫ button appears only for tracks that have LRC data in the database.
-let _mfLyricStripOn = false;
-try { _mfLyricStripOn = localStorage.getItem('sj_mf_lyric_strip') === '1'; } catch(e) {}
+let _mfLyricStripOn = true;
+try { _mfLyricStripOn = localStorage.getItem('sj_mf_lyric_strip') !== '0'; } catch(e) {}
 let _mfLyrBuiltFor = null;   // trackId the line stack was built from
 
 function ytpMfToggleLyricStrip() {
@@ -5921,7 +5993,7 @@ function ytpUpdateMiniFooter() {
   const prevBtn = document.getElementById('ytp-mf-prev');
   if (prevBtn) prevBtn.style.visibility = (ytQueue.length > 1 && ytQueueIdx > 0) ? 'visible' : 'hidden';
   const nextBtn = document.getElementById('ytp-mf-next');
-  if (nextBtn) nextBtn.style.visibility = (ytQueue.length > 1 && ytQueueIdx < ytQueue.length - 1) ? 'visible' : 'hidden';
+  if (nextBtn) nextBtn.style.visibility = ytQueue.length > 1 ? 'visible' : 'hidden';
   ytpSyncVoteBtn(item?.trackId || null);
   ytpSyncBlockBtn(item?.trackId || null);
   setYtShuffleEnabled(ytShuffle); // paints the mini-footer shuffle button state
@@ -8503,12 +8575,10 @@ function taPreloadNextBg() {
   if (ytShuffle && ytQueue.length > 1 && _ytShuffleBagQueue === ytQueue && _ytShuffleBag.length) {
     ni = ytUpNextIndex();
   } else {
-    for (let hops = 1; hops <= ytQueue.length; hops++) {
+    for (let hops = 1; hops < ytQueue.length; hops++) {
       const cand = ytQueueIdx + hops;
-      const idx = cand < ytQueue.length ? cand : (ytRepeat ? cand % ytQueue.length : -1);
-      if (idx < 0) break;
+      const idx = cand % ytQueue.length;
       if (taTrackAudio(ytQueue[idx]?.trackId)) { ni = idx; break; }
-      if (!ytRepeat && cand >= ytQueue.length) break;
     }
   }
   if (ni < 0) return;
@@ -8599,7 +8669,7 @@ function taAdvanceBg() {
     let ni;
     if (ytShuffle && ytQueue.length > 1) ni = _ytShuffleNextIdx();
     else if (ytQueueIdx < ytQueue.length - 1) ni = ytQueueIdx + 1;
-    else if (ytRepeat) ni = 0;
+    else if (ytQueue.length > 1) ni = 0;
     else { taStopBg(); return; }
     if (taPlayBgIdx(ni)) return;
   }
@@ -10830,7 +10900,9 @@ async function confirmDeletePlaylist(id, name) {
 let landingStats       = [];
 const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
-let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // home | explore
+const _savedLandingTab  = localStorage.getItem('sj_landing_tab_v2');
+const _mobileLandingDefault = window.matchMedia?.('(max-width: 640px)').matches;
+let landingTab          = _savedLandingTab || (_mobileLandingDefault ? 'home' : 'explore'); // home | explore
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
@@ -11139,6 +11211,32 @@ function setHomeBgOnly(on) {
   renderLanding();
 }
 
+async function landingUploadAudio(artistId, ev) {
+  if (ev) ev.stopPropagation();
+  if (!googleUser) {
+    if (confirm('Sign in with Google to upload audio. Sign in now?')) handleAuthClick();
+    return;
+  }
+  const btn = ev?.currentTarget;
+  const original = btn?.textContent || '＋ Upload Audio';
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  try {
+    // The batch uploader uses the managed-artist roster to resolve album IDs.
+    // Load that roster here so this shortcut can open the correct artist directly.
+    await loadMyArtists();
+    if (!_maData.some(a => a.id === artistId)) {
+      openMyArtists();
+      showToast('Open Manage My Artists to upload audio for this artist.');
+      return;
+    }
+    await taBatchOpen(artistId, null);
+  } catch (e) {
+    showToast(e.message || 'Could not open audio upload.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
+  }
+}
+
 // Artists I added, plus artists where I have uploaded background-play audio.
 function getHomeArtistRows() {
   let rows = (landingStats || []).filter(r => {
@@ -11285,8 +11383,9 @@ function renderLandingHomeHTML(esc) {
         const thumb = landingThumb(r);
         const hasBg = _homeBgArtistIds.has(r.artist_id)
           || (Array.isArray(r.member_ids) && r.member_ids.some(id => _homeBgArtistIds.has(id)));
-        return `<button type="button" class="home-artist-card" style="--card-accent:${landingColor(r, i)}"
-            onclick="landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">
+        return `<div class="home-artist-card" role="button" tabindex="0" style="--card-accent:${landingColor(r, i)}"
+            onclick="landingExploreArtist('${esc(r.slug)}','${r.artist_id}')"
+            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')}" aria-label="Open ${esc(r.name)} jukebox">
           <div class="home-artist-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
           <div class="home-artist-body">
             <div class="home-artist-name">${esc(r.name)}</div>
@@ -11294,9 +11393,10 @@ function renderLandingHomeHTML(esc) {
             ${hasBg ? '<div class="home-artist-bg">🎧 Background play ready</div>' : ''}
             <div class="home-artist-acts">
               <span class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</span>
+              ${!hasBg ? `<button type="button" class="home-upload-btn" title="Upload audio for Background Play" onclick="landingUploadAudio('${r.artist_id}', event)">＋ Upload Audio</button>` : ''}
             </div>
           </div>
-        </button>`;
+        </div>`;
       }).join('')}</div>`
     : `<div class="landing-no-results">${googleUser
       ? (homeBgOnly
@@ -16440,6 +16540,163 @@ function getDeviceId() {
   if (!id) { id = crypto.randomUUID(); localStorage.setItem('sj_device_id', id); }
   return id;
 }
+
+// Every press is an event, not a toggle. That keeps the interaction as loose
+// and immediate as a live-stream reaction while preserving the exact moment in
+// the song that prompted it.
+const SJ_REACTION_TYPES = [
+  { key: 'heart',  emoji: '❤️', label: 'Heart' },
+  { key: 'sad',    emoji: '😢', label: 'Sad' },
+  { key: 'guitar', emoji: '🎸', label: 'Guitar' },
+  { key: 'drums',  emoji: '🥁', label: 'Drums' },
+  { key: 'mic',    emoji: '🎤', label: 'Vocals' },
+  { key: 'pencil', emoji: '✏️', label: 'Writing / lyrics' },
+];
+const trackReactionCounts = {}; // trackId -> { reaction: all-time count }
+const trackReactionLoads = {};  // trackId -> in-flight Promise
+let _ytpReactionTrackId = null;
+
+function ytpReactionCountLabel(count) {
+  const n = Number(count) || 0;
+  return n ? (n > 999 ? fmtV(n) : String(n)) : '';
+}
+
+function ytpReactionButtonsHTML(trackId) {
+  const counts = trackReactionCounts[trackId] || {};
+  return SJ_REACTION_TYPES.map(r => `
+    <button type="button" class="sj-reaction-btn" data-track-reaction="${r.key}" data-track-id="${trackId || ''}"
+      onclick="ytpReact('${r.key}',this,event)" title="Send ${r.label} reaction" aria-label="Send ${r.label} reaction">
+      <span aria-hidden="true">${r.emoji}</span><span class="sj-reaction-count">${ytpReactionCountLabel(counts[r.key])}</span>
+    </button>`).join('');
+}
+
+function ytpReactionRailHTML(trackId, id) {
+  return `<div class="sj-reaction-rail" id="${id}" data-reaction-rail data-reaction-track="${trackId || ''}">
+    <span class="sj-reaction-label">React live</span>
+    <div class="sj-reaction-buttons">${ytpReactionButtonsHTML(trackId)}</div>
+  </div>`;
+}
+
+function ytpReactionPositionMs() {
+  try {
+    if (_taBgActive && _taAudioEl && Number.isFinite(_taAudioEl.currentTime)) {
+      return Math.max(0, Math.round(_taAudioEl.currentTime * 1000));
+    }
+    const sec = ytAPIPlayer?.getCurrentTime?.();
+    return Number.isFinite(sec) ? Math.max(0, Math.round(sec * 1000)) : null;
+  } catch (_) { return null; }
+}
+
+function ytpReactionBurst(emoji, anchor) {
+  if (!anchor) return;
+  const box = anchor.getBoundingClientRect();
+  for (let i = 0; i < 3; i++) {
+    const bit = document.createElement('span');
+    bit.className = 'sj-reaction-burst';
+    bit.textContent = emoji;
+    bit.style.left = (box.left + box.width / 2 + (i - 1) * 4) + 'px';
+    bit.style.top = (box.top + box.height / 2) + 'px';
+    bit.style.setProperty('--sj-drift', ((i - 1) * 21 + Math.round(Math.random() * 10 - 5)) + 'px');
+    bit.style.setProperty('--sj-rot', ((i - 1) * 12) + 'deg');
+    bit.style.animationDelay = (i * 55) + 'ms';
+    document.body.appendChild(bit);
+    setTimeout(() => bit.remove(), 1450);
+  }
+}
+
+function refreshTrackReactionUI(trackId) {
+  const counts = trackReactionCounts[trackId] || {};
+  document.querySelectorAll('[data-reaction-rail]').forEach(rail => {
+    if (rail.getAttribute('data-reaction-track') !== trackId) return;
+    rail.querySelectorAll('[data-track-reaction]').forEach(btn => {
+      const key = btn.getAttribute('data-track-reaction');
+      const count = btn.querySelector('.sj-reaction-count');
+      if (count) count.textContent = ytpReactionCountLabel(counts[key]);
+    });
+  });
+}
+
+async function loadTrackReactionCounts(trackId, force) {
+  if (!trackId) return;
+  if (!force && trackReactionCounts[trackId]) { refreshTrackReactionUI(trackId); return; }
+  if (trackReactionLoads[trackId]) return trackReactionLoads[trackId];
+  trackReactionLoads[trackId] = (async () => {
+    try {
+      const res = await fetch(sjApiUrl('/api/sj-reaction?track_id=' + encodeURIComponent(trackId)), { cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || 'Could not load reactions.');
+      trackReactionCounts[trackId] = body.counts || {};
+      refreshTrackReactionUI(trackId);
+    } catch (e) {
+      if (!trackReactionCounts[trackId]) trackReactionCounts[trackId] = {};
+      console.warn('loadTrackReactionCounts error', e);
+    } finally {
+      delete trackReactionLoads[trackId];
+    }
+  })();
+  return trackReactionLoads[trackId];
+}
+
+function ytpSyncReactions(trackId) {
+  _ytpReactionTrackId = trackId || null;
+  document.querySelectorAll('[data-reaction-rail]').forEach(rail => {
+    rail.setAttribute('data-reaction-track', trackId || '');
+    const buttons = rail.querySelector('.sj-reaction-buttons');
+    if (buttons) buttons.innerHTML = ytpReactionButtonsHTML(trackId);
+  });
+  const quick = document.getElementById('ytp-mf-react-heart');
+  if (quick) {
+    quick.style.visibility = trackId ? '' : 'hidden';
+    quick.setAttribute('data-reaction-track', trackId || '');
+  }
+  if (trackId) loadTrackReactionCounts(trackId, false);
+}
+
+async function ytpReact(reaction, anchor, ev) {
+  if (ev) ev.stopPropagation();
+  const def = SJ_REACTION_TYPES.find(r => r.key === reaction);
+  const current = ytQueue[ytQueueIdx];
+  const trackId = anchor?.getAttribute('data-track-id') || anchor?.getAttribute('data-reaction-track') || current?.trackId;
+  if (!def || !trackId) return;
+
+  const counts = trackReactionCounts[trackId] || (trackReactionCounts[trackId] = {});
+  counts[reaction] = (Number(counts[reaction]) || 0) + 1;
+  refreshTrackReactionUI(trackId);
+  if (anchor) {
+    anchor.classList.add('sent');
+    setTimeout(() => anchor.classList.remove('sent'), 140);
+  }
+  ytpReactionBurst(def.emoji, anchor);
+
+  try {
+    const headers = Object.assign({ 'Content-Type': 'application/json' }, await sjAuthHeaders());
+    const res = await fetch(sjApiUrl('/api/sj-reaction'), {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        track_id: trackId,
+        reaction,
+        device_id: getDeviceId(),
+        position_ms: ytpReactionPositionMs(),
+      })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.ok) throw new Error(body.error || 'Could not save reaction.');
+    trackReactionCounts[trackId] = body.counts || counts;
+    refreshTrackReactionUI(trackId);
+  } catch (e) {
+    counts[reaction] = Math.max(0, (Number(counts[reaction]) || 1) - 1);
+    refreshTrackReactionUI(trackId);
+    showToast(e.message || 'Could not save reaction.');
+  }
+}
+
+// Refresh the shared totals while a song is playing so reactions from other
+// listeners drift into view without a page reload.
+setInterval(() => {
+  if (document.visibilityState !== 'visible' || !ytPlayerEl || !_ytpReactionTrackId) return;
+  loadTrackReactionCounts(_ytpReactionTrackId, true);
+}, 15000);
+
 function loadLocalVotes() {
   try { localVotes = JSON.parse(localStorage.getItem('sj_votes') || '{}'); } catch(e) { localVotes = {}; }
 }
