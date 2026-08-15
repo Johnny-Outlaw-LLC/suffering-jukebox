@@ -2645,7 +2645,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="favorites" style="margin-top:2px;accent-color:var(--accent)"><span><b>Favorites First</b><span class="bgs-row-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="less_repeats" style="margin-top:2px;accent-color:var(--accent)"><span><b>Less Repeats</b><span class="bgs-row-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="none" style="margin-top:2px;accent-color:var(--accent)"><span><b>No Preferences</b><span class="bgs-row-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
-      <p style="margin:.1rem 0 0;color:var(--text-muted);font-size:.48rem;line-height:1.5">This preference is saved on this browser. Your play history and ratings stay private to your account.</p>
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closePlaybackPreferences()">Cancel</button>
@@ -4984,8 +4983,22 @@ function ytUpNextIndex() {
 }
 
 function ytSkipUpNext() {
-  if (!ytShuffle || ytQueue.length < 2) return;
   const current = ytUpNextIndex();
+  if (current < 0 || ytQueue.length < 2) return;
+
+  // A normal queue has a fixed next index. Swap it with another upcoming item
+  // so Skip is useful even when Shuffle is off, without touching playback.
+  if (!ytShuffle) {
+    const candidates = [];
+    for (let i = ytQueueIdx + 2; i < ytQueue.length; i++) candidates.push(i);
+    if (!candidates.length) { showToast('There is no other queued song to choose next.'); return; }
+    const replacement = candidates[Math.floor(Math.random() * candidates.length)];
+    [ytQueue[current], ytQueue[replacement]] = [ytQueue[replacement], ytQueue[current]];
+    updateYTQueueUI({ preserveScroll: true });
+    showToast('Skipped — another queued song is up next.');
+    return;
+  }
+
   const candidates = _ytShuffleCandidates().filter(idx => idx !== current);
   if (!candidates.length) { showToast('That is the only other track in this shuffle.'); return; }
   _ytShufflePreviewIdx = _ytWeightedShufflePick(candidates);
@@ -5002,7 +5015,7 @@ function ytpUpNextQueueHTML() {
   const label = (artist ? artist + ' - ' : '') + (item.title || 'Track');
   const safeLabel = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\"/g, '&quot;');
   return '<div class="yt-queue-up-next"><span class="yt-queue-up-next-lbl">Up next</span><span class="yt-queue-up-next-title" title="' + safeLabel + '">' + safeLabel + '</span>' +
-    (ytShuffle ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another song to play next">Skip</button>' : '') + '</div>';
+    (ytQueue.length > 2 ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another queued song to play next">Skip</button>' : '') + '</div>';
 }
 
 function ytNextTrack() {
@@ -14747,7 +14760,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-15';
 const SJ_CHANGELOG = [
   { date: '2026-08-15', items: [
     'Shuffle can now follow your listening taste. Choose Discovery to bring less-played songs forward, Favorites First to favor your liked and familiar songs, Less Repeats to push recent plays back, or No Preferences for an even shuffle.',
-    'Up Next is now pinned at the top of the queue. In Shuffle, Skip picks a different next song without interrupting the one you are listening to.',
+    'Up Next is now pinned at the top of the queue. Skip picks a different queued song to play next without interrupting the one you are listening to.',
     'Background-music uploads can continue through a whole catalog as long as it fits your storage. File limits now scale with track length up to 50 MB, and the storage meter is reconciled against the audio files actually uploaded.',
   ] },
   { date: '2026-08-14', items: [
