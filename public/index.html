@@ -2674,6 +2674,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
+          <button type="button" class="user-menu-item cta" id="user-menu-artist-rights" onclick="userMenuAction('artist-rights')">License My Music for Discovery</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-playback" onclick="userMenuAction('playback')">Playback preferences</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">FAQ / How-To Guide</button>
@@ -2681,6 +2682,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-issues" onclick="userMenuAction('issues')">Issue Reports</button>
+          <button type="button" class="user-menu-item admin-only" id="user-menu-rights-review" onclick="userMenuAction('rights-review')">Rights &amp; DMCA Review</button>
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
         </div>
       </div>
@@ -2905,6 +2907,9 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
         Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
+      <div style="border-top:1px solid var(--border);padding-top:.7rem;font-size:.52rem;line-height:1.55;color:var(--text-muted)">
+        Are you the artist or authorized label? Public discovery uses a separate, signed catalog license and manual review. <a href="/artist-upload" style="color:var(--accent);font-weight:700">Open artist rights submission</a>.
+      </div>
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="taConsentDecide(false)">Cancel</button>
@@ -2931,6 +2936,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
         Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
+      <div style="font-size:.5rem;color:var(--text-muted)">Artists who want these files considered for public discovery must complete the separate <a href="/artist-upload" style="color:var(--accent)">artist catalog license</a>.</div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap" id="taBatchPickRow">
         <label class="m-btn" style="cursor:pointer;margin:0">＋ Select files<input type="file" accept="audio/*" multiple style="display:none" onchange="taBatchAddFiles(this)"></label>
         <label class="m-btn ghost" style="cursor:pointer;margin:0">📁 Select a folder<input type="file" accept="audio/*" multiple webkitdirectory style="display:none" onchange="taBatchAddFiles(this)"></label>
@@ -8329,7 +8335,7 @@ function bgsRender() {
   if (!googleUser) {
     body.innerHTML = card +
       '<div class="bgs-lede">YouTube stops the moment your phone locks. Upload your own audio file for a song and it keeps playing with the screen off, on the lock screen, and over CarPlay or Android Auto.</div>' +
-      '<div class="bgs-note">Uploads are tied to your account and stay private to you unless you choose to share them. Storage is available on Standard, Premium, and Admin accounts.</div>';
+      '<div class="bgs-note">Personal uploads are tied to your account and stay private to you. Artist-authorized public discovery uses a separate signed license and manual review. Storage is available on Standard, Premium, and Admin accounts.</div>';
     foot.innerHTML =
       '<button class="m-btn ghost" onclick="closeBgSetup()">Not now</button>' +
       '<button class="m-btn" style="margin-left:auto" onclick="closeBgSetup();handleAuthClick()">Sign in with Google</button>';
@@ -12430,38 +12436,61 @@ async function loadYTVideoIds(trackIds) {
   return map;
 }
 
-// Load only the signed-in user's own audio metadata, then exchange the private
-// paths for time-limited Storage URLs. RLS independently enforces both steps.
+// Personal audio always wins and remains owner-only. Missing tracks may then
+// receive public-discovery audio only from the separately reviewed artist
+// catalog endpoint. Both paths keep the bucket private and use expiring URLs.
 async function loadTrackAudio(trackIds) {
   if (!trackIds.length) return;
   try {
     const uid = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session?.user?.id || null;
-    if (!uid) return;
+    const ids = [...new Set(trackIds.filter(Boolean))];
     const chunks = [];
-    for (let i = 0; i < trackIds.length; i += 50) chunks.push(trackIds.slice(i, i + 50));
-    const results = await Promise.all(chunks.map(c =>
-      dbGetAuth(`/track_audio?track_id=in.(${c.join(',')})&uploaded_by=eq.${uid}&select=track_id,storage_path,duration_seconds,uploaded_by`)));
-    const mine = results.flat().filter(r => r.uploaded_by === uid && r.storage_path);
-    const pathChunks = [];
-    for (let i = 0; i < mine.length; i += 50) pathChunks.push(mine.slice(i, i + 50).map(r => r.storage_path));
-    const signedGroups = await Promise.all(pathChunks.map(paths =>
-      sbAuth.storage.from('jukebox-audio').createSignedUrls(paths, TA_SIGNED_URL_SECONDS)));
-    const signedByPath = new Map();
-    signedGroups.forEach(({ data, error }) => {
-      if (error) throw error;
-      (data || []).forEach(item => {
-        if (item.path && item.signedUrl) signedByPath.set(item.path, item.signedUrl);
+    for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+    if (uid) {
+      const results = await Promise.all(chunks.map(c =>
+        dbGetAuth(`/track_audio?track_id=in.(${c.join(',')})&uploaded_by=eq.${uid}&select=track_id,storage_path,duration_seconds,uploaded_by`)));
+      const mine = results.flat().filter(r => r.uploaded_by === uid && r.storage_path);
+      const pathChunks = [];
+      for (let i = 0; i < mine.length; i += 50) pathChunks.push(mine.slice(i, i + 50).map(r => r.storage_path));
+      const signedGroups = await Promise.all(pathChunks.map(paths =>
+        sbAuth.storage.from('jukebox-audio').createSignedUrls(paths, TA_SIGNED_URL_SECONDS)));
+      const signedByPath = new Map();
+      signedGroups.forEach(({ data, error }) => {
+        if (error) throw error;
+        (data || []).forEach(item => {
+          if (item.path && item.signedUrl) signedByPath.set(item.path, item.signedUrl);
+        });
       });
-    });
-    mine.forEach(r => {
-      const signedUrl = signedByPath.get(r.storage_path);
-      if (!signedUrl) return;
-      taData[r.track_id] = {
-        url: signedUrl,
-        path: r.storage_path,
-        duration: Number(r.duration_seconds) || null,
-        isPublic: false,
-        uploadedBy: uid,
+      mine.forEach(r => {
+        const signedUrl = signedByPath.get(r.storage_path);
+        if (!signedUrl) return;
+        taData[r.track_id] = {
+          url: signedUrl,
+          path: r.storage_path,
+          duration: Number(r.duration_seconds) || null,
+          isPublic: false,
+          artistLicensed: false,
+          uploadedBy: uid,
+        };
+      });
+    }
+    const missingChunks = chunks.map(c => c.filter(id => !taData[id])).filter(c => c.length);
+    const licensedResponses = await Promise.all(missingChunks.map(async c => {
+      const res = await fetch(sjApiUrl('/api/sj-artist-audio?track_ids=' + encodeURIComponent(c.join(','))), { cache: 'no-store' });
+      if (!res.ok) return [];
+      const body = await res.json();
+      return body.ok ? (body.tracks || []) : [];
+    }));
+    licensedResponses.flat().forEach(r => {
+      if (!r.trackId || !r.url || taData[r.trackId]) return;
+      taData[r.trackId] = {
+        url: r.url,
+        path: null,
+        duration: Number(r.duration) || null,
+        isPublic: true,
+        artistLicensed: true,
+        licensedArtist: r.artist || null,
+        uploadedBy: null,
       };
     });
     taSyncAudioBtn();
@@ -14845,6 +14874,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-15';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-15', items: [
+    'Independent artists now have a separate, versioned catalog-license submission with manual authority review before anything can become public.',
+    'Approved artist-owned tracks can power discovery playback through short-lived links while the audio storage bucket remains private.',
+    'Copyright notices, counter-notices, review records, strikes, and repeat-infringer account termination now have a dedicated workflow.',
     'Background-play audio is now private end to end. Only the account that uploaded a file can see its metadata or request a time-limited playback link, and public/cross-user audio playback has been removed.',
     'Shuffle can now follow your listening taste. Choose Discovery to bring less-played songs forward, Favorites First to favor your liked and familiar songs, Less Repeats to push recent plays back, or No Preferences for an even shuffle.',
     'Up Next is now pinned at the top of the queue. Skip picks a different queued song to play next without interrupting the one you are listening to.',
@@ -15195,6 +15227,10 @@ async function userMenuAction(action) {
     openMyArtists();
     return;
   }
+  if (action === 'artist-rights') {
+    window.location.href = '/artist-upload';
+    return;
+  }
   if (action === 'faq') {
     openFaq();
     return;
@@ -15228,6 +15264,11 @@ async function userMenuAction(action) {
   if (action === 'issues') {
     if (!sjIsAdmin) return;
     openAdminIssues();
+    return;
+  }
+  if (action === 'rights-review') {
+    if (!sjIsAdmin) return;
+    window.location.href = '/artist-rights-admin';
     return;
   }
 }
@@ -18196,6 +18237,9 @@ _initPromise = init();
 <footer style="text-align:center;padding:1.5rem 2rem 2rem;font-family:var(--mono);font-size:.46rem;color:var(--text-muted);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:2rem">
   a <a href="https://outlawapps.online" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">Johnny Outlaw</a> Project
   · <a href="/privacy" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">Privacy</a>
+  · <a href="/terms" style="color:var(--text-muted);text-decoration:none">Terms</a>
+  · <a href="/dmca" style="color:var(--text-muted);text-decoration:none">Copyright</a>
+  · <a href="/artist-upload" style="color:var(--text-muted);text-decoration:none">Artist Upload</a>
 </footer>
 <!-- Lyrics edit history modal -->
 <div id="lyr-hist-modal" onclick="if(event.target===this)closeLyricsHistory()">
