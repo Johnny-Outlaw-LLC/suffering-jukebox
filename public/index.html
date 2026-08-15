@@ -2900,15 +2900,10 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     <div class="modal-body" style="gap:.9rem">
       <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
         <input type="checkbox" id="taConsentPersonal" onchange="taConsentSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>I own the rights to personally stream this song. Make background play available for me only</span>
+        <span>I have the right to store and personally play this audio. Keep it private to my signed-in account.</span>
       </label>
-      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
-        <input type="checkbox" id="taConsentPublic" onchange="taConsentSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>Public play — make background play available to everyone on this track</span>
-      </label>
-      <div id="taConsentWarn" style="display:none;border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
-        ⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted
-        music you do not own. Your account and consent date are recorded with every file, and all plays are logged.
+      <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
+        Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
     </div>
     <div class="modal-footer">
@@ -2931,15 +2926,10 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
     <div class="modal-body" style="gap:.9rem">
       <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
         <input type="checkbox" id="taBatchConsent" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>I own the rights to personally stream this song. Make background play available for me only</span>
+        <span>I have the right to store and personally play these files. Keep them private to my signed-in account.</span>
       </label>
-      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
-        <input type="checkbox" id="taBatchPublic" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>Public play — make background play available to everyone on these tracks</span>
-      </label>
-      <div id="taBatchWarn" style="display:none;border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
-        ⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted
-        music you do not own. Your account and consent date are recorded with every file, and all plays are logged.
+      <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
+        Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap" id="taBatchPickRow">
         <label class="m-btn" style="cursor:pointer;margin:0">＋ Select files<input type="file" accept="audio/*" multiple style="display:none" onchange="taBatchAddFiles(this)"></label>
@@ -3023,7 +3013,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <ul>
             <li>Type an artist name to <b>auto-match</b>, or paste a <b>YouTube playlist link</b> to import it manually.</li>
             <li>YouTube playback works free on desktop and phone. To keep music going with the screen off, sign in and upload your own audio file for a track, then tap <b>Enable Background Play</b> on your phone.</li>
-            <li>Upload storage follows your account level: <b>Standard 500 MB</b>, <b>Premium 2 GB</b>, and <b>Admin 10 GB</b>. You must own the rights to personally stream what you upload. Public play for everyone else is a separate, optional checkbox with an extra confirmation.</li>
+            <li>Upload storage follows your account level: <b>Standard 500 MB</b>, <b>Premium 2 GB</b>, and <b>Admin 10 GB</b>. You must have the right to store and personally play what you upload. Audio stays private to your signed-in account and is never used for another listener.</li>
           </ul>
         </div>
       </div>
@@ -3659,14 +3649,13 @@ let _ytBgAudio          = null;  // silent keepalive for mobile background playb
 let _ytBgResumeTimer    = null;  // retries playVideo while tab is hidden
 let _ytMediaPosTimer    = null;  // media session position updates
 let _ytMediaSessionReady = false;
-let taData              = {};    // trackId -> {url, duration}: rights-holder audio for background play
+let taData              = {};    // trackId -> the signed-in user's private background audio + signed URL
 let _taAudioEl          = null;  // real <audio> element that plays while the page is hidden
 let _taPreloadEl        = null;  // hidden <audio> that warms the next track's HTTP cache
 let _taBgActive         = false; // sound is currently coming from the uploaded audio, not the embed
 let _taBgLogged         = false; // play_event already logged for the current background track
 let _taBgStartPos       = 0;     // where background audio started (for the 10s play threshold)
 let _taConsentOk        = false; // personal-rights checkbox acknowledged this session
-let _taPublicPlay       = false; // Public play option chosen for the current upload flow
 let _taConsentResolve   = null;  // pending in-app consent modal resolver
 let _taBatch            = null;  // { artistId, albumId, tracks, files, assign, uploadedThisRun } for the batch uploader
 let _taBatchBusy        = false; // upload loop currently running
@@ -8069,18 +8058,21 @@ function ytpOpenInYouTube() {
   window.open(url, '_blank', 'noopener');
 }
 
-// ── True background play via rights-holder-uploaded audio ──────
+// ── True background play via private user-uploaded audio ───────
 // The YouTube embed can't sound while the page is hidden, but tracks whose
-// rights holder uploaded an audio file (jukebox.track_audio) can: on hide we
+// signed-in user uploaded an audio file (jukebox.track_audio) can: on hide we
 // hand the sound to a real <audio> element at the same position, and on
 // return we hand it back to the embed. The OS media pipeline owns the audio
 // element, so lock-screen play/pause/next/prev and screen-off playback work.
-function taPublicUrl(path) {
-  // Same-origin audio front (/api/sj-audio). ?v=2 busts an older CDN cache
-  // that answered Range requests with full-body 200s (silent mid-track handoff).
+const TA_SIGNED_URL_SECONDS = 6 * 60 * 60;
+
+async function taSignAudioPath(path) {
   if (!path) return '';
-  const parts = String(path).split('/').map(encodeURIComponent).join('/');
-  return sjApiUrl('/api/sj-audio/' + parts + '?v=2');
+  const { data, error } = await sbAuth.storage
+    .from('jukebox-audio')
+    .createSignedUrl(path, TA_SIGNED_URL_SECONDS);
+  if (error) throw error;
+  return data?.signedUrl || '';
 }
 
 function taTrackAudio(trackId) { return (trackId && taData[trackId]) || null; }
@@ -8252,24 +8244,14 @@ function bgsPickerHtml(title, sub) {
     '</label>';
 }
 
-// Personal or public, never both - they were two ticks that could contradict
-// each other. Personal is the default because it is the safe one.
+// Background-play uploads are always private to the signed-in uploader.
 function bgsConsentHtml() {
-  const pub = !!_taPublicPlay;
   return '<div class="bgs-rights">' +
-      '<div class="bgs-rights-lede">By uploading you confirm you own the rights to this recording. Your account and the date are recorded with every file.</div>' +
+      '<div class="bgs-rights-lede">By uploading you confirm you have the right to store and personally play this audio. Your account and the date are recorded with every file.</div>' +
       '<label class="bgs-row">' +
-        '<input type="radio" name="bgsRights" value="personal" onchange="bgsConsentChanged()"' + (pub ? '' : ' checked') + '>' +
-        '<span><b>Personal playback</b><span class="bgs-row-sub">Background play for you only. Nobody else can hear this file.</span></span>' +
+        '<input type="radio" name="bgsRights" value="personal" checked disabled>' +
+        '<span><b>Private personal playback</b><span class="bgs-row-sub">Only your signed-in account can load this file. It is never used for another listener.</span></span>' +
       '</label>' +
-      '<label class="bgs-row">' +
-        '<input type="radio" name="bgsRights" value="public" onchange="bgsConsentChanged()"' + (pub ? ' checked' : '') + '>' +
-        '<span><b>Public play</b><span class="bgs-row-sub">Background play for everyone on this track.</span></span>' +
-      '</label>' +
-      '<div class="bgs-warn" id="bgsWarn" style="display:' + (pub ? '' : 'none') + '">' +
-        '⚠ Only choose Public play if you own the rights to this music. It must not be applied to copyrighted ' +
-        'music you do not own. All plays are logged.' +
-      '</div>' +
     '</div>';
 }
 
@@ -8394,13 +8376,6 @@ function bgsHint(msg, color) {
   el.style.color = color || '';
 }
 
-function bgsConsentChanged() {
-  const pub = document.querySelector('input[name="bgsRights"]:checked')?.value === 'public';
-  _taPublicPlay = pub;
-  const w = document.getElementById('bgsWarn');
-  if (w) w.style.display = pub ? '' : 'none';
-}
-
 function bgsDrag(e, on) {
   e.preventDefault();
   document.getElementById('bgsDrop')?.classList.toggle('drag', !!on);
@@ -8434,7 +8409,7 @@ async function bgsUpload(file) {
   _bgsBusy = true;
   if (drop) drop.classList.add('busy');
   bgsHint('Uploading ' + file.name + '…', 'var(--accent)');
-  const r = await taUploadOneFile(meta.tid, file, meta.ms, !!_taPublicPlay);
+  const r = await taUploadOneFile(meta.tid, file, meta.ms);
   _bgsBusy = false;
   if (drop) drop.classList.remove('busy');
   if (!r.ok) { bgsHint('✗ ' + r.msg, '#ef4444'); return; }
@@ -8764,29 +8739,18 @@ function taOnAudioTime() {
   if (dur > 20 && isFinite(dur) && _taAudioEl.currentTime >= dur - 18) taPreloadNextBg();
 }
 
-// ── Audio upload (personal / public rights) ────────────────────
-// In-app rights-consent modal. Personal checkbox required; Public play is
-// optional and is the only option that shows the ownership warning.
+// ── Private personal audio upload ──────────────────────────────
+// In-app rights consent is required; sharing/public playback is not offered.
 function taConsentSync() {
   const personal = !!document.getElementById('taConsentPersonal')?.checked;
-  const pub = !!document.getElementById('taConsentPublic')?.checked;
-  const warn = document.getElementById('taConsentWarn');
   const btn = document.getElementById('taConsentContinue');
-  if (warn) warn.style.display = pub ? '' : 'none';
   if (btn) btn.disabled = !personal;
-  // Public play implies the personal-rights base consent.
-  if (pub && !personal) {
-    const p = document.getElementById('taConsentPersonal');
-    if (p) { p.checked = true; if (btn) btn.disabled = false; }
-  }
 }
 function taConsentModal() {
   return new Promise(res => {
     _taConsentResolve = res;
     const p = document.getElementById('taConsentPersonal');
-    const pub = document.getElementById('taConsentPublic');
     if (p) p.checked = _taConsentOk;
-    if (pub) pub.checked = _taPublicPlay;
     taConsentSync();
     document.getElementById('audioConsentOverlay').classList.add('open');
   });
@@ -8795,7 +8759,6 @@ function taConsentDecide(ok) {
   document.getElementById('audioConsentOverlay').classList.remove('open');
   if (ok) {
     _taConsentOk = !!document.getElementById('taConsentPersonal')?.checked;
-    _taPublicPlay = !!document.getElementById('taConsentPublic')?.checked;
     if (!_taConsentOk) ok = false;
   }
   const r = _taConsentResolve; _taConsentResolve = null;
@@ -8844,10 +8807,9 @@ function taUploadSizeMessage(maxBytes, expectMs) {
   return 'Too big (max ' + fmtBytes(maxBytes) + trackLength + '; 50 MB absolute max)';
 }
 
-// Upload one File for one track. Returns {ok, msg, warn} - no DOM side effects,
-// so both the per-track inputs and the batch uploader can share it.
-// isPublic overrides the session Public-play checkbox when provided.
-async function taUploadOneFile(trackId, file, expectMs, isPublic) {
+// Upload one private File for one track. Returns {ok, msg, warn} - no DOM side
+// effects, so both the per-track inputs and the batch uploader can share it.
+async function taUploadOneFile(trackId, file, expectMs) {
   if (!file) return { ok: false, msg: 'No file' };
   try {
     const { data: { session } } = await sbAuth.auth.getSession();
@@ -8859,9 +8821,10 @@ async function taUploadOneFile(trackId, file, expectMs, isPublic) {
       sjTrackProductEvent('bg_upload_blocked_locked', { trackId });
       return { ok: false, msg: 'Sign in and free up storage to upload' };
     }
-    const pub = (typeof isPublic === 'boolean') ? isPublic : !!_taPublicPlay;
     const ext = ((file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'mp3';
-    const path = `${trackId}/${Date.now()}-${Math.floor(performance.now())}.${ext}`;
+    // User id first gives the storage policy a second ownership check in
+    // addition to Supabase's immutable object owner_id.
+    const path = `${session.user.id}/${trackId}/${Date.now()}-${Math.floor(performance.now())}.${ext}`;
     const { error } = await sbAuth.storage.from('jukebox-audio')
       .upload(path, file, { contentType: file.type || 'audio/mpeg', upsert: false });
     if (error) throw new Error(error.message);
@@ -8874,22 +8837,22 @@ async function taUploadOneFile(trackId, file, expectMs, isPublic) {
       uploader_email: session.user.email || null,
       uploader_name: googleUser?.name || null,
       consent_at: new Date().toISOString(),
-      is_public: pub,
+      is_public: false,
       file_bytes: file.size || null,
     });
-    taData[trackId] = { url: taPublicUrl(path), path, duration: dur, isPublic: pub, uploadedBy: session.user.id };
+    const signedUrl = await taSignAudioPath(path);
+    if (!signedUrl) throw new Error('Could not authorize private playback');
+    taData[trackId] = { url: signedUrl, path, duration: dur, isPublic: false, uploadedBy: session.user.id };
     _homeLibLoaded = false;
     await refreshBgUnlock();
     taSyncQuotaLabel('taBatchQuota');
     taSyncAudioBtn();
     const diff = (expectMs && dur) ? Math.abs(dur - expectMs / 1000) : 0;
-    const ready = pub ? '✓ Ready for public background play' : '✓ Ready for your background play only';
+    const ready = '✓ Ready for your private background play';
     return { ok: true, path, warn: diff > 3 ? Math.round(diff) : 0,
              msg: diff > 3 ? `✓ Uploaded - ${Math.round(diff)}s off the video` : ready };
   } catch (e) {
-    const msg = /one_public|duplicate key|unique/i.test(e.message || '')
-      ? 'Someone already made public audio for this track'
-      : /policy|denied|row-level/i.test(e.message || '')
+    const msg = /policy|denied|row-level/i.test(e.message || '')
         ? 'Could not save audio for this track' : (e.message || 'Upload failed');
     return { ok: false, msg };
   }
@@ -8899,13 +8862,10 @@ async function taUploadFile(trackId, inputEl, expectMs) {
   const file = inputEl.files?.[0];
   if (!file) return;
   inputEl.value = '';
-  // Prefer the fine-tune Public play checkbox when that panel is open.
-  const amPub = document.getElementById('amTaPublic');
-  if (amPub) _taPublicPlay = !!amPub.checked;
   const st = document.getElementById('ta-st-' + trackId);
   const setSt = (t, color) => { if (st) { st.textContent = t; st.style.color = color || ''; } };
   setSt('Uploading…', '');
-  const r = await taUploadOneFile(trackId, file, expectMs, _taPublicPlay);
+  const r = await taUploadOneFile(trackId, file, expectMs);
   setSt(r.ok ? r.msg : '✗ ' + r.msg, r.ok ? (r.warn ? '#f59e0b' : '#22c55e') : '#ef4444');
 }
 
@@ -8956,8 +8916,6 @@ async function taBatchOpen(artistId, albumId) {
   document.getElementById('taBatchTitle').textContent =
     'Background audio · ' + (artist?.name || '') + (album ? ' · ' + album.name : ' · all albums');
   document.getElementById('taBatchConsent').checked = _taConsentOk;
-  const pubEl = document.getElementById('taBatchPublic');
-  if (pubEl) pubEl.checked = _taPublicPlay;
   document.getElementById('taBatchStatus').textContent = '';
   document.getElementById('taBatchUploadBtn').disabled = true;
   document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
@@ -9142,15 +9100,6 @@ function taBatchReassign(tid, val) {
 }
 
 function taBatchSync() {
-  const consent = document.getElementById('taBatchConsent')?.checked;
-  const pub = document.getElementById('taBatchPublic')?.checked;
-  const warn = document.getElementById('taBatchWarn');
-  if (warn) warn.style.display = pub ? '' : 'none';
-  // Public play implies the personal-rights base consent.
-  if (pub && !consent) {
-    const c = document.getElementById('taBatchConsent');
-    if (c) c.checked = true;
-  }
   const personal = !!document.getElementById('taBatchConsent')?.checked;
   const n = _taBatch ? Object.values(_taBatch.assign).filter(v => v != null).length : 0;
   const btn = document.getElementById('taBatchUploadBtn');
@@ -9174,7 +9123,6 @@ function taBatchSync() {
 async function taBatchUpload() {
   if (!_taBatch || _taBatchBusy || !document.getElementById('taBatchConsent').checked) return;
   _taConsentOk = true;
-  _taPublicPlay = !!document.getElementById('taBatchPublic')?.checked;
   const entries = Object.entries(_taBatch.assign).filter(([, fi]) => fi != null);
   if (!entries.length) return;
   const btn = document.getElementById('taBatchUploadBtn');
@@ -9191,7 +9139,7 @@ async function taBatchUpload() {
     const cell = document.getElementById('tabx-' + tid);
     if (cell) { cell.textContent = 'uploading…'; cell.style.color = ''; }
     const t = _taBatch.tracks.find(x => x.id === tid);
-    const r = await taUploadOneFile(tid, _taBatch.files[fi], t?.duration_ms, _taPublicPlay);
+    const r = await taUploadOneFile(tid, _taBatch.files[fi], t?.duration_ms);
     if (!_taBatch) return; // session dismissed somehow
     done++; if (r.ok) {
       ok++;
@@ -12482,32 +12430,38 @@ async function loadYTVideoIds(trackIds) {
   return map;
 }
 
-// Uploaded audio files (background play) for these tracks.
-// Prefer the signed-in user's own file; otherwise use a public file.
+// Load only the signed-in user's own audio metadata, then exchange the private
+// paths for time-limited Storage URLs. RLS independently enforces both steps.
 async function loadTrackAudio(trackIds) {
   if (!trackIds.length) return;
   try {
     const uid = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session?.user?.id || null;
+    if (!uid) return;
     const chunks = [];
     for (let i = 0; i < trackIds.length; i += 50) chunks.push(trackIds.slice(i, i + 50));
     const results = await Promise.all(chunks.map(c =>
-      dbGetAuth(`/track_audio?track_id=in.(${c.join(',')})&select=track_id,storage_path,duration_seconds,is_public,uploaded_by`)));
-    const best = {};
-    results.flat().forEach(r => {
-      const cur = best[r.track_id];
-      const mine = !!(uid && r.uploaded_by === uid);
-      const curMine = !!(uid && cur && cur.uploaded_by === uid);
-      if (!cur) { best[r.track_id] = r; return; }
-      if (mine && !curMine) { best[r.track_id] = r; return; }
-      if (!mine && !curMine && r.is_public && !cur.is_public) best[r.track_id] = r;
+      dbGetAuth(`/track_audio?track_id=in.(${c.join(',')})&uploaded_by=eq.${uid}&select=track_id,storage_path,duration_seconds,uploaded_by`)));
+    const mine = results.flat().filter(r => r.uploaded_by === uid && r.storage_path);
+    const pathChunks = [];
+    for (let i = 0; i < mine.length; i += 50) pathChunks.push(mine.slice(i, i + 50).map(r => r.storage_path));
+    const signedGroups = await Promise.all(pathChunks.map(paths =>
+      sbAuth.storage.from('jukebox-audio').createSignedUrls(paths, TA_SIGNED_URL_SECONDS)));
+    const signedByPath = new Map();
+    signedGroups.forEach(({ data, error }) => {
+      if (error) throw error;
+      (data || []).forEach(item => {
+        if (item.path && item.signedUrl) signedByPath.set(item.path, item.signedUrl);
+      });
     });
-    Object.values(best).forEach(r => {
+    mine.forEach(r => {
+      const signedUrl = signedByPath.get(r.storage_path);
+      if (!signedUrl) return;
       taData[r.track_id] = {
-        url: taPublicUrl(r.storage_path),
+        url: signedUrl,
         path: r.storage_path,
         duration: Number(r.duration_seconds) || null,
-        isPublic: !!r.is_public,
-        uploadedBy: r.uploaded_by || null,
+        isPublic: false,
+        uploadedBy: uid,
       };
     });
     taSyncAudioBtn();
@@ -14120,16 +14074,10 @@ function amFtRender() {
       <div class="m-fl">Background play (optional)</div>
       <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
         <input type="checkbox" id="amTaChk" onchange="amTaToggle(this.checked)" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>I own the rights to personally stream this song. Make background play available for me only</span>
+        <span>I have the right to store and personally play these files. Keep them private to my signed-in account.</span>
       </label>
-      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5;margin-top:.45rem">
-        <input type="checkbox" id="amTaPublic" onchange="amTaPublicToggle(this.checked)" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>Public play — make background play available to everyone on these tracks</span>
-      </label>
-      <div id="amTaWarn" style="display:none;border:1px solid #f59e0b66;background:#f59e0b14;color:#f59e0b;font-size:.5rem;padding:.5rem .6rem;border-radius:6px;margin-top:.55rem;line-height:1.5">
-        ⚠ Only enable Public play if you own the rights to this music. It must not be applied to copyrighted
-        music you do not own the rights to. Your account and the date of this consent are recorded with every
-        uploaded file, and all plays are logged.
+      <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.5rem;padding:.5rem .6rem;border-radius:6px;margin-top:.55rem;line-height:1.5">
+        Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
       <div id="amTaBody" style="display:none;margin-top:.6rem"></div>
     </div>`;
@@ -14137,34 +14085,14 @@ function amFtRender() {
   amFtDedupArts();   // fire-and-forget: hide duplicate cover options as hashes come in
 }
 
-function amTaPublicToggle(checked) {
-  const warn = document.getElementById('amTaWarn');
-  if (warn) warn.style.display = checked ? '' : 'none';
-  _taPublicPlay = !!checked;
-  if (checked) {
-    const personal = document.getElementById('amTaChk');
-    if (personal && !personal.checked) {
-      personal.checked = true;
-      amTaToggle(true);
-      return;
-    }
-  }
-}
-
 async function amTaToggle(checked) {
   const body = document.getElementById('amTaBody');
   if (!body) return;
   if (!checked) {
     body.style.display = 'none';
-    const pub = document.getElementById('amTaPublic');
-    if (pub) { pub.checked = false; }
-    const warn = document.getElementById('amTaWarn');
-    if (warn) warn.style.display = 'none';
-    _taPublicPlay = false;
     return;
   }
   _taConsentOk = true;
-  _taPublicPlay = !!document.getElementById('amTaPublic')?.checked;
   body.style.display = '';
   body.innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
   try {
@@ -14917,6 +14845,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-15';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-15', items: [
+    'Background-play audio is now private end to end. Only the account that uploaded a file can see its metadata or request a time-limited playback link, and public/cross-user audio playback has been removed.',
     'Shuffle can now follow your listening taste. Choose Discovery to bring less-played songs forward, Favorites First to favor your liked and familiar songs, Less Repeats to push recent plays back, or No Preferences for an even shuffle.',
     'Up Next is now pinned at the top of the queue. Skip picks a different queued song to play next without interrupting the one you are listening to.',
     'Background-music uploads can continue through a whole catalog as long as it fits your storage. File limits now scale with track length up to 50 MB, and the storage meter is reconciled against the audio files actually uploaded.',
@@ -14953,7 +14882,7 @@ const SJ_CHANGELOG = [
     'You can set a song up for phone background play from a computer too: open the ⋯ menu on any song and choose Enable Mobile Background Play. Drag an audio file onto the panel and it is waiting for you next time you open the song on your phone.',
     'Every song in the play queue now has a ⋯ button next to the thumbs up. It opens the same menu the song rows use, plus the queue actions: play it now, move it up or down the running order, and take it off the queue.',
     'On a phone the two tiny reorder arrows have left the queue rows. Moving a song up or down now lives in that ⋯ menu, where the buttons are big enough to hit, and the song titles get the space back.',
-    'The Background Play panel asks one question about rights instead of two tick boxes that could disagree. Pick Personal playback (already selected, and the safe one) or Public play. You can no longer end up with both.',
+    'The Background Play panel now uses one clear personal-playback rights confirmation for uploaded audio.',
     'Your audio storage now shows as a bar across the bottom of that panel with a percentage, turning amber and then red as it fills, rather than a line of numbers.',
     'A new button in the Background Play panel adds a whole folder of songs for the artist you are listening to, matching the files to tracks by name.',
     'The two rows of buttons under the header are now two labelled boxes: Jukebox Controls on the left for what the page shows, Player Controls on the right for what plays.',
@@ -14998,9 +14927,9 @@ const SJ_CHANGELOG = [
   { date: '2026-08-09', items: [
     'Home is now My Jukebox — continue with favorites, playlists, and a clear door into Explore Artists (the full community catalogue).',
     'Background Play Forever — $5 unlocks uploading your own audio for screen-off listening on your phone, with 5 GB of personal storage. Forever means ten years; in today\'s technology world, that\'s forever.',
-    'Uploaded audio now plays through the jukebox\'s own edge cache, so repeat listens stay fast and cheap.',
+    'Uploaded audio playback was moved off the YouTube embed so screen-off listening can continue on mobile.',
     'The old catalogue totals line at the top of the artist grid is gone.',
-    'Background-play audio uploads now start as personal: check “I own the rights to personally stream this song. Make background play available for me only,” and the audio stays on your account. There is a separate Public play checkbox if you want everyone to get background play on that track — the ownership warning only appears when you turn Public play on.',
+    'Background-play audio uploads now require a personal-playback rights confirmation and stay on the uploader’s account.',
     'Shuffle All and Shuffle Favorites on the home page start much faster — they no longer pull YouTube view/like stats just to build a play queue.',
     'The minimized player bar has a Maximize button, so you can jump straight to full screen without restoring the floating window first.',
     'Long lyrics inside an album card now scroll in place instead of stretching the card forever.',
@@ -15074,7 +15003,7 @@ const SJ_CHANGELOG = [
     'New Report-a-problem button — tell us when a song won’t play and it goes straight into the fix queue.',
     'New FAQ / How-To guide, plus a ✕ on each card to hide artists you don’t want to see.',
     'New home page controls: Card Size, a Submitted By filter with artist counts, sort by YouTube plays, an Artists include/exclude multi-select, and a queue popup per artist.',
-    'New “Enable Background Play” button on phones for songs with rights-holder-uploaded audio, so playback keeps going with the screen off. Only some tracks have this so far.',
+    'New “Enable Background Play” button on phones for songs with your uploaded audio, so playback keeps going with the screen off.',
     'Adding an artist now opens their jukebox automatically, the player header shows a one-line “Artist - Song”, and ✕ pauses and minimizes the player instead of closing it.',
     'Synced lyrics now highlight in the track card too, not just the main player pane.',
     'Fixed the player labelling unknown tracks as “Silver Jews”.',

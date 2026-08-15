@@ -7,9 +7,9 @@ Applied remotely via Supabase MCP on 2026-08-09:
 - `jukebox.track_audio.file_bytes` — quota accounting
 - Existing uploaders grandfathered
 
-## Audio CDN
+## Private audio delivery
 
-Public files are served via `/api/sj-audio/*` (same-origin edge cache with
-long `Cache-Control` / `CDN-Cache-Control`). Playback URLs no longer hit
-`supabase.co` storage on every listen. If Cloudflare is later put in front
-of the domain, those cache headers are honored automatically.
+The `jukebox-audio` bucket is private. `jukebox.track_audio` metadata and
+Storage objects are readable only by their uploader under RLS. The browser
+uses the signed-in Supabase session to create time-limited signed playback
+URLs; there is no anonymous same-origin audio proxy or cross-user fallback.
