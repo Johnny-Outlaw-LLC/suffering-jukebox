@@ -2674,7 +2674,6 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
-          <button type="button" class="user-menu-item cta" id="user-menu-artist-rights" onclick="userMenuAction('artist-rights')">License My Music for Discovery</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-playback" onclick="userMenuAction('playback')">Playback preferences</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">FAQ / How-To Guide</button>
@@ -2908,7 +2907,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
         Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
       <div style="border-top:1px solid var(--border);padding-top:.7rem;font-size:.52rem;line-height:1.55;color:var(--text-muted)">
-        Are you the artist or authorized label? Public discovery uses a separate, signed catalog license and manual review. <a href="/artist-upload" style="color:var(--accent);font-weight:700">Open artist rights submission</a>.
+        YouTube remains the source for discovery and normal playback. Artists can separately license uploaded audio only for public mobile background play. <a href="/artist-upload" style="color:var(--accent);font-weight:700">Publish My Music for Public Background Mobile Play</a>.
       </div>
     </div>
     <div class="modal-footer">
@@ -2929,18 +2928,23 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       </div>
     </div>
     <div class="modal-body" style="gap:.9rem">
-      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
-        <input type="checkbox" id="taBatchConsent" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>I have the right to store and personally play these files. Keep them private to my signed-in account.</span>
-      </label>
-      <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
-        Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
-      </div>
-      <div style="font-size:.5rem;color:var(--text-muted)">Artists who want these files considered for public discovery must complete the separate <a href="/artist-upload" style="color:var(--accent)">artist catalog license</a>.</div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap" id="taBatchPickRow">
         <label class="m-btn" style="cursor:pointer;margin:0">＋ Select files<input type="file" accept="audio/*" multiple style="display:none" onchange="taBatchAddFiles(this)"></label>
         <label class="m-btn ghost" style="cursor:pointer;margin:0">📁 Select a folder<input type="file" accept="audio/*" multiple webkitdirectory style="display:none" onchange="taBatchAddFiles(this)"></label>
         <span style="font-size:.48rem;color:var(--text-muted)">Pick a whole album at once — files are matched to tracks by name.</span>
+      </div>
+      <div id="taBatchAfterPick" style="display:none">
+        <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
+          <input type="checkbox" id="taBatchConsent" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
+          <span>I have the right to store and personally play these files. Keep them private to my signed-in account.</span>
+        </label>
+        <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;margin-top:.55rem;line-height:1.6">
+          This upload stays private to your account. YouTube remains the source for discovery and normal playback.
+        </div>
+        <div style="border-top:1px solid var(--border);margin-top:.75rem;padding-top:.75rem">
+          <div style="font-size:.5rem;color:var(--text-muted);line-height:1.55;margin-bottom:.5rem">If you own and control this music, you can separately publish the uploaded audio so any listener can use it only for mobile background play. A signed license and manual approval are required.</div>
+          <button type="button" class="m-btn ghost" id="taBatchPublishBtn" onclick="taBatchPublish()" disabled>Publish My Music for Public Background Mobile Play</button>
+        </div>
       </div>
       <div id="taBatchQuota" style="font-family:var(--mono);font-size:.48rem;color:var(--text-muted)"></div>
       <div id="taBatchList"><div class="oa-albs-note">Loading tracks…</div></div>
@@ -8132,12 +8136,13 @@ function taToggleAudioMode() {
     taExitBgAudio(); // also clears _taManualAudio + resyncs the button
     return;
   }
-  if (!googleUser) {
+  const item = ytQueue[ytQueueIdx];
+  const audio = taTrackAudio(item?.trackId);
+  if (!googleUser && !audio?.artistLicensed) {
     openBgSetup();   // the sheet explains it and offers sign-in
     return;
   }
-  const item = ytQueue[ytQueueIdx];
-  if (!taTrackAudio(item?.trackId)) {
+  if (!audio) {
     openBgSetup(item?.trackId);   // no audio yet - offer the upload, not a dead end
     taSyncAudioBtn();
     return;
@@ -8201,11 +8206,11 @@ function openBgSetup(trackId) {
   if (!ov) { showToast('Background Play needs an uploaded audio file for this song.'); return; }
   ov.classList.add('open');
   bgsRender();
-  if (!googleUser) return;
   // A row menu can open this before the track's audio has been looked up.
   if (tid && !taData[tid]) {
     loadTrackAudio([tid]).then(() => { if (_bgsTrackId === tid) bgsRender(); }).catch(() => {});
   }
+  if (!googleUser) return;
   refreshBgUnlock().then(() => bgsSyncQuota()).catch(() => {});
 }
 
@@ -8328,14 +8333,16 @@ function bgsRender() {
   const foot = document.getElementById('bgsFoot');
   if (!body || !foot) return;
   const meta = bgsMeta();
-  const has  = !!taTrackAudio(meta.tid);
+  const audio = taTrackAudio(meta.tid);
+  const has  = !!audio;
+  const publicBg = !!audio?.artistLicensed;
   const mob  = taIsMobileDevice();
   const card = bgsCardHtml(meta);
 
-  if (!googleUser) {
+  if (!googleUser && !publicBg) {
     body.innerHTML = card +
       '<div class="bgs-lede">YouTube stops the moment your phone locks. Upload your own audio file for a song and it keeps playing with the screen off, on the lock screen, and over CarPlay or Android Auto.</div>' +
-      '<div class="bgs-note">Personal uploads are tied to your account and stay private to you. Artist-authorized public discovery uses a separate signed license and manual review. Storage is available on Standard, Premium, and Admin accounts.</div>';
+      '<div class="bgs-note">YouTube is always used for discovery and normal playback. Personal uploads stay private; artist-approved audio is available to everyone only for mobile background play.</div>';
     foot.innerHTML =
       '<button class="m-btn ghost" onclick="closeBgSetup()">Not now</button>' +
       '<button class="m-btn" style="margin-left:auto" onclick="closeBgSetup();handleAuthClick()">Sign in with Google</button>';
@@ -8349,16 +8356,15 @@ function bgsRender() {
         ? 'Turn it on and the uploaded audio takes over from the video, so this keeps playing with your screen off.'
         : 'Background play runs on phones. Open Suffering Jukebox on your phone, play this song, and tap <b>Background Play</b> in the player — it is already set up.') +
       '</div>' +
-      bgsPickerHtml('Replace the audio file', 'Drop a file here or click to choose a different one') +
-      bgsFolderHtml(meta) +
-      bgsConsentHtml() +
-      bgsMeterHtml();
+      (googleUser
+        ? bgsPickerHtml('Replace the audio file', 'Drop a file here or click to choose a different one') + bgsFolderHtml(meta) + bgsConsentHtml() + bgsMeterHtml()
+        : '<div class="bgs-note">The artist approved this audio for public mobile background play. Normal listening and discovery still use YouTube.</div>');
     foot.innerHTML =
-      '<button class="m-btn ghost" onclick="bgsOpenArtists()">Manage my audio</button>' +
+      (googleUser ? '<button class="m-btn ghost" onclick="bgsOpenArtists()">Manage my audio</button>' : '<button class="m-btn ghost" onclick="closeBgSetup()">Not now</button>') +
       (mob
         ? '<button class="m-btn" style="margin-left:auto" onclick="bgsTurnOn()">Turn it on</button>'
         : '<button class="m-btn ghost" style="margin-left:auto" onclick="closeBgSetup()">Done</button>');
-    bgsSyncQuota();
+    if (googleUser) bgsSyncQuota();
     return;
   }
 
@@ -8521,7 +8527,7 @@ function taFailBgAudio(reason) {
 function taEnterBgAudio() {
   const item = ytQueue[ytQueueIdx];
   const ta = taTrackAudio(item?.trackId);
-  if (!googleUser) return false;
+  if (!googleUser && !ta?.artistLicensed) return false;
   // Sticky preference counts as "on" for tracks that have uploaded audio.
   if (!_taManualAudio && !(_taPreferBg && taIsMobileDevice() && ta)) return false;
   if (_taPreferBg && ta) _taManualAudio = true;
@@ -8746,7 +8752,8 @@ function taOnAudioTime() {
 }
 
 // ── Private personal audio upload ──────────────────────────────
-// In-app rights consent is required; sharing/public playback is not offered.
+// This consent creates a private upload only. Public mobile background play
+// requires the separate signed artist license and manual approval.
 function taConsentSync() {
   const personal = !!document.getElementById('taConsentPersonal')?.checked;
   const btn = document.getElementById('taConsentContinue');
@@ -8914,7 +8921,15 @@ async function taBatchOpen(artistId, albumId) {
     taBatchRestore();
     return;
   }
-  const artist = _maData.find(a => a.id === artistId);
+  let artist = _maData.find(a => a.id === artistId);
+  if (!artist) {
+    await loadMyArtists();
+    artist = _maData.find(a => a.id === artistId);
+  }
+  if (!artist) {
+    showToast('Could not load the imported artist for audio matching.');
+    return;
+  }
   const album  = albumId ? (artist?.albums || []).find(x => x.id === albumId) : null;
   _taBatch = { artistId, albumId: albumId || null, tracks: [], files: [], assign: {}, uploadedThisRun: [] };
   _taBatchCancel = false;
@@ -9108,6 +9123,9 @@ function taBatchReassign(tid, val) {
 function taBatchSync() {
   const personal = !!document.getElementById('taBatchConsent')?.checked;
   const n = _taBatch ? Object.values(_taBatch.assign).filter(v => v != null).length : 0;
+  const hasPicked = !!(_taBatch?.files?.length);
+  const afterPick = document.getElementById('taBatchAfterPick');
+  if (afterPick) afterPick.style.display = hasPicked ? '' : 'none';
   const btn = document.getElementById('taBatchUploadBtn');
   if (btn) {
     btn.disabled = _taBatchBusy || !(personal && n > 0);
@@ -9122,8 +9140,33 @@ function taBatchSync() {
   }
   const pick = document.getElementById('taBatchPickRow');
   if (pick) pick.style.opacity = _taBatchBusy ? '0.45' : '';
+  const publish = document.getElementById('taBatchPublishBtn');
+  if (publish) {
+    const hasUploadedAudio = !!(_taBatch && (
+      (_taBatch.uploadedThisRun || []).length ||
+      Object.keys(_taBatch.assign || {}).some(tid => !!taData[tid])
+    ));
+    publish.disabled = _taBatchBusy || !hasUploadedAudio;
+    publish.title = hasUploadedAudio
+      ? 'Open the signed license and review process for public mobile background play'
+      : 'Upload at least one matched audio file first';
+  }
   const closeBtn = document.getElementById('taBatchCloseBtn');
   if (closeBtn) closeBtn.textContent = _taBatchBusy ? 'Minimize' : 'Close';
+}
+
+function taBatchPublish() {
+  if (_taBatchBusy) return;
+  const hasUploadedAudio = !!(_taBatch && (
+    (_taBatch.uploadedThisRun || []).length ||
+    Object.keys(_taBatch.assign || {}).some(tid => !!taData[tid])
+  ));
+  if (!hasUploadedAudio) {
+    const status = document.getElementById('taBatchStatus');
+    if (status) status.textContent = 'Upload at least one matched audio file first.';
+    return;
+  }
+  window.location.href = '/artist-upload';
 }
 
 async function taBatchUpload() {
@@ -12436,9 +12479,9 @@ async function loadYTVideoIds(trackIds) {
   return map;
 }
 
-// Personal audio always wins and remains owner-only. Missing tracks may then
-// receive public-discovery audio only from the separately reviewed artist
-// catalog endpoint. Both paths keep the bucket private and use expiring URLs.
+// Personal audio always wins and remains owner-only. On mobile only, missing
+// tracks may receive approved artist audio for the explicit Background Play
+// toggle. Discovery and normal playback always remain on YouTube.
 async function loadTrackAudio(trackIds) {
   if (!trackIds.length) return;
   try {
@@ -12474,9 +12517,10 @@ async function loadTrackAudio(trackIds) {
         };
       });
     }
+    if (!taIsMobileDevice()) { taSyncAudioBtn(); return; }
     const missingChunks = chunks.map(c => c.filter(id => !taData[id])).filter(c => c.length);
     const licensedResponses = await Promise.all(missingChunks.map(async c => {
-      const res = await fetch(sjApiUrl('/api/sj-artist-audio?track_ids=' + encodeURIComponent(c.join(','))), { cache: 'no-store' });
+      const res = await fetch(sjApiUrl('/api/sj-artist-audio?purpose=mobile-background&track_ids=' + encodeURIComponent(c.join(','))), { cache: 'no-store' });
       if (!res.ok) return [];
       const body = await res.json();
       return body.ok ? (body.tracks || []) : [];
@@ -14101,53 +14145,18 @@ function amFtRender() {
     </div>
     <div class="am-ft-section">
       <div class="m-fl">Background play (optional)</div>
-      <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
-        <input type="checkbox" id="amTaChk" onchange="amTaToggle(this.checked)" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-        <span>I have the right to store and personally play these files. Keep them private to my signed-in account.</span>
-      </label>
-      <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.5rem;padding:.5rem .6rem;border-radius:6px;margin-top:.55rem;line-height:1.5">
-        Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
+      <button type="button" class="m-btn" onclick="amOpenAudioUpload()">Add Audio files for Mobile Background Playback (optional)</button>
+      <div style="font-size:.5rem;color:var(--text-muted);margin-top:.55rem;line-height:1.5">
+        Choose individual files or a whole folder. Files are matched to the imported tracks by name. YouTube remains the source for discovery and normal playback.
       </div>
-      <div id="amTaBody" style="display:none;margin-top:.6rem"></div>
     </div>`;
   amBgSync();
   amFtDedupArts();   // fire-and-forget: hide duplicate cover options as hashes come in
 }
 
-async function amTaToggle(checked) {
-  const body = document.getElementById('amTaBody');
-  if (!body) return;
-  if (!checked) {
-    body.style.display = 'none';
-    return;
-  }
-  _taConsentOk = true;
-  body.style.display = '';
-  body.innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
-  try {
-    const albumIds = (amFt?.albums || []).map(a => a.id);
-    if (!albumIds.length) throw new Error('No albums to load tracks for');
-    const rows = await dbGet(`/tracks?album_id=in.(${albumIds.join(',')})&select=id,name,album_id,track_number,duration_ms&order=album_id,track_number`);
-    const yt = await loadYT(rows.map(t => t.id));   // also refreshes taData + video ids
-    Object.assign(ytData, yt);
-    const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-    const albName = {};
-    (amFt.albums || []).forEach(a => { albName[a.id] = a.name; });
-    body.innerHTML = albumIds.map(aid => {
-      const trs = rows.filter(t => t.album_id === aid);
-      if (!trs.length) return '';
-      return `<div style="font-size:.5rem;font-weight:600;margin:.5rem 0 .25rem;opacity:.8">${esc(albName[aid] || '')}</div>` +
-        trs.map(t => `
-        <div style="display:flex;align-items:center;gap:.45rem;font-size:.52rem;padding:.18rem 0">
-          <span style="opacity:.5;width:1.1rem;text-align:right;flex-shrink:0">${t.track_number || ''}</span>
-          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</span>
-          <span id="ta-st-${t.id}" style="font-size:.46rem;flex-shrink:0;${taData[t.id] ? 'color:#22c55e' : 'opacity:.7'}">${taData[t.id] ? '✓ Ready' : ''}</span>
-          <label class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0;cursor:pointer">${taData[t.id] ? '↻ Replace' : '＋ Audio'}<input type="file" accept="audio/*" style="display:none" onchange="taUploadFile('${t.id}', this, ${t.duration_ms || null})"></label>
-        </div>`).join('');
-    }).join('');
-  } catch (e) {
-    body.innerHTML = `<div style="color:#ef4444;font-size:.55rem">${(e.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
-  }
+async function amOpenAudioUpload() {
+  if (!amArtistId) return;
+  await taBatchOpen(amArtistId, null);
 }
 // Hide visually-duplicate cover options (same art served from different video thumbnails).
 // Tiny 8x8 average-hash per image; CORS-blocked images are kept visible.
@@ -14868,14 +14877,19 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-15';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-16';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-16', items: [
+    'Step 4 of music import now starts background-play audio with one clear button. Choose individual audio files or a whole folder, then confirm your personal playback rights after the files are selected.',
+    'Artists can now start “Publish My Music for Public Background Mobile Play” from the audio-upload window. The old discovery-license shortcut has been removed from the account menu.',
+    'YouTube remains the source for music discovery and normal listening. Uploaded audio is used only when mobile Background Play is deliberately turned on.',
+  ] },
   { date: '2026-08-15', items: [
     'Independent artists now have a separate, versioned catalog-license submission with manual authority review before anything can become public.',
-    'Approved artist-owned tracks can power discovery playback through short-lived links while the audio storage bucket remains private.',
+    'Approved artist-owned audio can power public mobile background play through short-lived links while discovery and normal playback stay on YouTube.',
     'Copyright notices, counter-notices, review records, strikes, and repeat-infringer account termination now have a dedicated workflow.',
     'Background-play audio is now private end to end. Only the account that uploaded a file can see its metadata or request a time-limited playback link, and public/cross-user audio playback has been removed.',
     'Shuffle can now follow your listening taste. Choose Discovery to bring less-played songs forward, Favorites First to favor your liked and familiar songs, Less Repeats to push recent plays back, or No Preferences for an even shuffle.',
@@ -15225,10 +15239,6 @@ async function userMenuAction(action) {
   }
   if (action === 'myartists') {
     openMyArtists();
-    return;
-  }
-  if (action === 'artist-rights') {
-    window.location.href = '/artist-upload';
     return;
   }
   if (action === 'faq') {

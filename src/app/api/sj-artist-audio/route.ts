@@ -3,11 +3,18 @@ import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { isUuid } from "@/lib/artist-rights";
 
 export const dynamic = "force-dynamic";
-// Approved artist audio is intentionally public, but the bucket remains private.
-// A six-hour URL prevents longer discovery queues from expiring mid-session.
+// Approved artist audio is available only for the explicit mobile Background
+// Play path. Discovery and normal listening continue to use YouTube.
+// The storage bucket remains private and delivery uses expiring URLs.
 const PUBLIC_SIGNED_URL_SECONDS = 6 * 60 * 60;
 
 export async function GET(req: NextRequest) {
+  if (req.nextUrl.searchParams.get("purpose") !== "mobile-background") {
+    return NextResponse.json(
+      { ok: false, error: "Artist audio is only available for mobile background play." },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const requested = (req.nextUrl.searchParams.get("track_ids") || "")
     .split(",")
     .map((value) => value.trim())
@@ -82,7 +89,7 @@ export async function GET(req: NextRequest) {
         url,
         duration: audio.duration_seconds,
         artist: artist ? { name: artist.name, slug: artist.slug } : null,
-        license: "artist-approved",
+        license: "artist-approved-mobile-background",
         expiresIn: PUBLIC_SIGNED_URL_SECONDS,
       }];
     });

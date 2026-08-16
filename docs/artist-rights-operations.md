@@ -1,14 +1,14 @@
 # Artist Rights and Copyright Operations
 
-This runbook separates private personal uploads from artist-authorized public discovery.
+This runbook separates private personal uploads from artist-authorized public mobile background play. Discovery and normal playback always use YouTube.
 
 ## Non-negotiable boundary
 
 - `jukebox.track_audio` and the `jukebox-audio` bucket are owner-private.
 - Uploading a file never publishes it.
-- Public playback requires an approved `artist_rights_agreements` row and an approved `artist_catalog_tracks` row.
-- Public playback uses a server-created expiring URL. The storage bucket remains private.
-- The artist can withdraw an active application; withdrawal disables new discovery URLs.
+- Public mobile background play requires an approved `artist_rights_agreements` row and an approved `artist_catalog_tracks` row.
+- Public mobile background play uses a server-created expiring URL. The storage bucket remains private.
+- The artist can withdraw an active application; withdrawal disables new public background-play URLs.
 
 ## Artist application review
 
@@ -32,7 +32,7 @@ Public intake is at `/dmca`; the restricted queue is in `/artist-rights-admin`.
 3. Disable access promptly when a complete, credible notice requires it. Record when the subscriber is notified.
 4. Accept a valid counter-notice only when linked to the original reference. Record when it is forwarded to the claimant.
 5. The console calculates a conservative fourteen-business-day restoration date. Do not restore when court action has been recorded.
-6. Record strikes consistently. Termination immediately blocks private-audio reads/writes, suspends discovery catalogs, and applies a long Supabase Auth ban. Preserve owner deletion/data-erasure handling.
+6. Record strikes consistently. Termination immediately blocks private-audio reads/writes, suspends public background-play catalogs, and applies a long Supabase Auth ban. Preserve owner deletion/data-erasure handling.
 
 Do not create fake notices in production to test the workflow. Use invalid requests that cannot be stored, or test in a non-production project.
 

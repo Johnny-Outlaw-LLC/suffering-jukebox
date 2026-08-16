@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
 
-export const ARTIST_AGREEMENT_VERSION = "2026-08-15.1";
+export const ARTIST_AGREEMENT_VERSION = "2026-08-16.1";
 export const ARTIST_OPERATOR = "Johnny Outlaw, LLC";
 export const ARTIST_RIGHTS_EMAIL = "support@outlawapps.online";
 
@@ -15,8 +15,8 @@ export const ARTIST_AGREEMENT_SECTIONS = [
     body: "You represent that you control the sound recording and the underlying music and lyrics, including the authority to directly license the digital performances, reproductions, and displays described here. You have disclosed and cleared every label, publisher, administrator, performing-rights organization, collective, performer, producer, writer, featured artist, artwork owner, and other contributor whose rights or agreement could affect this grant. You will promptly tell Suffering Jukebox if that changes.",
   },
   {
-    title: "Nonexclusive discovery license",
-    body: "You grant Suffering Jukebox and its hosting and delivery vendors a worldwide, nonexclusive license to host, reproduce, encode, transcode, cache, publicly perform by digital audio transmission, make incidental delivery copies of, and display the submitted recordings, names, artwork, credits, and metadata solely to operate, secure, demonstrate, and promote Suffering Jukebox and the artist catalog on it.",
+    title: "Nonexclusive mobile background-play license",
+    body: "You grant Suffering Jukebox and its hosting and delivery vendors a worldwide, nonexclusive license to host, reproduce, encode, transcode, cache, publicly perform by digital audio transmission, and make incidental delivery copies of the submitted recordings solely when a listener deliberately uses mobile background play. Music discovery and normal playback continue to use the artist's YouTube links, not these uploaded audio files.",
   },
   {
     title: "No ownership transfer",
@@ -24,11 +24,11 @@ export const ARTIST_AGREEMENT_SECTIONS = [
   },
   {
     title: "Current compensation",
-    body: "As between you and Suffering Jukebox, this license is royalty-free and neither party owes the other a fee for current discovery streams unless both parties enter a separate written payment program. This does not waive, transfer, or excuse any payment, reporting, or consent obligation owed to a publisher, performing-rights organization, collective, label, contributor, or other third party. You may submit only if those obligations have been disclosed and do not prevent this direct grant.",
+    body: "As between you and Suffering Jukebox, this license is royalty-free and neither party owes the other a fee for current mobile background-play streams unless both parties enter a separate written payment program. This does not waive, transfer, or excuse any payment, reporting, or consent obligation owed to a publisher, performing-rights organization, collective, label, contributor, or other third party. You may submit only if those obligations have been disclosed and do not prevent this direct grant.",
   },
   {
     title: "Review, removal, and termination",
-    body: "Nothing is public until Suffering Jukebox approves it. Either party may end the license for future use. Your withdrawal disables new discovery access promptly; reasonable time may be needed to clear temporary caches and backups. Suffering Jukebox may suspend or remove material immediately for a rights dispute, legal request, security issue, policy violation, or risk to the service.",
+    body: "Nothing is available for public mobile background play until Suffering Jukebox approves it. Either party may end the license for future use. Your withdrawal disables new public background-play access promptly; reasonable time may be needed to clear temporary caches and backups. Suffering Jukebox may suspend or remove material immediately for a rights dispute, legal request, security issue, policy violation, or risk to the service.",
   },
   {
     title: "Notices and cooperation",
