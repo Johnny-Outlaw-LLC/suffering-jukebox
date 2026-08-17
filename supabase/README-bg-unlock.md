@@ -9,7 +9,14 @@ Applied remotely via Supabase MCP on 2026-08-09:
 
 ## Private audio delivery
 
-The `jukebox-audio` bucket is private. `jukebox.track_audio` metadata and
-Storage objects are readable only by their uploader under RLS. The browser
-uses the signed-in Supabase session to create time-limited signed playback
-URLs; there is no anonymous same-origin audio proxy or cross-user fallback.
+Audio files are stored in the private Backblaze B2 bucket
+`suffering-jukebox-audio`. `jukebox.track_audio` remains the authoritative
+Supabase metadata and quota ledger. The app server verifies the signed-in
+Supabase user before issuing a short-lived B2 upload or playback URL; neither
+the B2 key nor a public bucket URL is exposed in the browser.
+
+`scripts/migrate-sj-audio-to-b2.mjs` copies every existing object, verifies
+the B2 byte count, and deliberately retains Supabase originals for rollback.
+Run it again immediately before cutover so uploads made during a prior copy
+are included. `scripts/configure-sj-b2-cors.mjs` restricts browser access to
+the Suffering Jukebox origins while keeping the bucket private.

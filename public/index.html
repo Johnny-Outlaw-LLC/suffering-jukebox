@@ -8185,15 +8185,16 @@ function ytpOpenInYouTube() {
 // hand the sound to a real <audio> element at the same position, and on
 // return we hand it back to the embed. The OS media pipeline owns the audio
 // element, so lock-screen play/pause/next/prev and screen-off playback work.
-const TA_SIGNED_URL_SECONDS = 6 * 60 * 60;
-
-async function taSignAudioPath(path) {
-  if (!path) return '';
-  const { data, error } = await sbAuth.storage
-    .from('jukebox-audio')
-    .createSignedUrl(path, TA_SIGNED_URL_SECONDS);
-  if (error) throw error;
-  return data?.signedUrl || '';
+async function taOwnAudioUrls(trackIds) {
+  const ids = [...new Set((trackIds || []).filter(Boolean))].slice(0, 50);
+  if (!ids.length) return [];
+  const res = await fetch(sjApiUrl('/api/sj-audio?track_ids=' + encodeURIComponent(ids.join(','))), {
+    headers: { ...(await sjAuthHeaders()) },
+    cache: 'no-store',
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not authorize private playback');
+  return data.tracks || [];
 }
 
 function taTrackAudio(trackId) { return (trackId && taData[trackId]) || null; }
@@ -8945,27 +8946,37 @@ async function taUploadOneFile(trackId, file, expectMs) {
       sjTrackProductEvent('bg_upload_blocked_locked', { trackId });
       return { ok: false, msg: 'Sign in and free up storage to upload' };
     }
-    const ext = ((file.name.split('.').pop() || 'mp3').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'mp3';
-    // User id first gives the storage policy a second ownership check in
-    // addition to Supabase's immutable object owner_id.
-    const path = `${session.user.id}/${trackId}/${Date.now()}-${Math.floor(performance.now())}.${ext}`;
-    const { error } = await sbAuth.storage.from('jukebox-audio')
-      .upload(path, file, { contentType: file.type || 'audio/mpeg', upsert: false });
-    if (error) throw new Error(error.message);
-    await dbUpsert('/track_audio', 'track_id,uploaded_by', {
-      track_id: trackId,
-      storage_path: path,
-      source_video_id: ytData[trackId]?.video_id || null,
-      duration_seconds: dur,
-      uploaded_by: session.user.id,
-      uploader_email: session.user.email || null,
-      uploader_name: googleUser?.name || null,
-      consent_at: new Date().toISOString(),
-      is_public: false,
-      file_bytes: file.size || null,
+    const authHeaders = await sjAuthHeaders();
+    const createRes = await fetch(sjApiUrl('/api/sj-audio'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({
+        action: 'upload-url', trackId, fileName: file.name,
+        contentType: file.type || 'audio/mpeg', fileBytes: file.size,
+      }),
     });
-    const signedUrl = await taSignAudioPath(path);
-    if (!signedUrl) throw new Error('Could not authorize private playback');
+    const createData = await createRes.json();
+    if (!createRes.ok || !createData.ok) throw new Error(createData.error || 'Could not prepare audio upload');
+    const uploadRes = await fetch(createData.uploadUrl, {
+      method: 'PUT', body: file,
+      headers: { 'Content-Type': file.type || 'audio/mpeg' },
+    });
+    if (!uploadRes.ok) throw new Error('Could not upload audio');
+    const completeRes = await fetch(sjApiUrl('/api/sj-audio'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({
+        action: 'complete', trackId, path: createData.path,
+        sourceVideoId: ytData[trackId]?.video_id || null,
+        durationSeconds: dur, uploaderName: googleUser?.name || null,
+      }),
+    });
+    const completeData = await completeRes.json();
+    if (!completeRes.ok || !completeData.ok || !completeData.audio?.url) {
+      throw new Error(completeData.error || 'Could not finish audio upload');
+    }
+    const path = completeData.audio.path;
+    const signedUrl = completeData.audio.url;
     taData[trackId] = { url: signedUrl, path, duration: dur, isPublic: false, uploadedBy: session.user.id };
     _homeLibLoaded = false;
     await refreshBgUnlock();
@@ -9122,10 +9133,13 @@ function taBatchMiniSync() {
 async function taDeleteUploaded(trackId, path) {
   const { data: { session } } = await sbAuth.auth.getSession();
   if (!session) throw new Error('Not signed in');
-  if (path) {
-    try { await sbAuth.storage.from('jukebox-audio').remove([path]); } catch (_) {}
-  }
-  await dbDelete(`/track_audio?track_id=eq.${trackId}&uploaded_by=eq.${session.user.id}`);
+  const res = await fetch(sjApiUrl('/api/sj-audio'), {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+    body: JSON.stringify({ trackId }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not delete audio');
   if (taData[trackId] && (!taData[trackId].uploadedBy || taData[trackId].uploadedBy === session.user.id)) {
     delete taData[trackId];
   }
@@ -12641,27 +12655,13 @@ async function loadTrackAudio(trackIds) {
     const chunks = [];
     for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
     if (uid) {
-      const results = await Promise.all(chunks.map(c =>
-        dbGetAuth(`/track_audio?track_id=in.(${c.join(',')})&uploaded_by=eq.${uid}&select=track_id,storage_path,duration_seconds,uploaded_by`)));
-      const mine = results.flat().filter(r => r.uploaded_by === uid && r.storage_path);
-      const pathChunks = [];
-      for (let i = 0; i < mine.length; i += 50) pathChunks.push(mine.slice(i, i + 50).map(r => r.storage_path));
-      const signedGroups = await Promise.all(pathChunks.map(paths =>
-        sbAuth.storage.from('jukebox-audio').createSignedUrls(paths, TA_SIGNED_URL_SECONDS)));
-      const signedByPath = new Map();
-      signedGroups.forEach(({ data, error }) => {
-        if (error) throw error;
-        (data || []).forEach(item => {
-          if (item.path && item.signedUrl) signedByPath.set(item.path, item.signedUrl);
-        });
-      });
+      const mine = (await Promise.all(chunks.map(c => taOwnAudioUrls(c)))).flat();
       mine.forEach(r => {
-        const signedUrl = signedByPath.get(r.storage_path);
-        if (!signedUrl) return;
-        taData[r.track_id] = {
-          url: signedUrl,
-          path: r.storage_path,
-          duration: Number(r.duration_seconds) || null,
+        if (!r.url || !r.path) return;
+        taData[r.trackId] = {
+          url: r.url,
+          path: r.path,
+          duration: Number(r.duration) || null,
           isPublic: false,
           artistLicensed: false,
           uploadedBy: uid,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { isUuid } from "@/lib/artist-rights";
+import { createB2DownloadUrl } from "@/lib/b2-audio";
 
 export const dynamic = "force-dynamic";
 // Approved artist audio is available only for the explicit mobile Background
@@ -63,12 +64,6 @@ export async function GET(req: NextRequest) {
     if (audioError) throw audioError;
     const audioMap = new Map((audioRows ?? []).map((row) => [row.id, row]));
     const withAudio = selected.filter((row) => audioMap.get(row.track_audio_id)?.storage_path);
-    const paths = withAudio.map((row) => audioMap.get(row.track_audio_id)!.storage_path);
-    const { data: signed, error: signedError } = await sb.storage
-      .from("jukebox-audio")
-      .createSignedUrls(paths, PUBLIC_SIGNED_URL_SECONDS);
-    if (signedError) throw signedError;
-
     const artistIds = [...new Set(withAudio.map((row) => row.artist_id))];
     const { data: artists } = await sb
       .schema(JUKEBOX_SCHEMA)
@@ -76,23 +71,19 @@ export async function GET(req: NextRequest) {
       .select("id,name,slug")
       .in("id", artistIds);
     const artistMap = new Map((artists ?? []).map((artist) => [artist.id, artist]));
-    const signedByPath = new Map(
-      (signed ?? []).filter((row) => row.signedUrl).map((row) => [row.path, row.signedUrl]),
-    );
-    const tracks = withAudio.flatMap((row) => {
+    const tracks = await Promise.all(withAudio.map(async (row) => {
       const audio = audioMap.get(row.track_audio_id)!;
-      const url = signedByPath.get(audio.storage_path);
-      if (!url) return [];
+      const url = await createB2DownloadUrl(audio.storage_path!, PUBLIC_SIGNED_URL_SECONDS);
       const artist = artistMap.get(row.artist_id);
-      return [{
+      return {
         trackId: row.track_id,
         url,
         duration: audio.duration_seconds,
         artist: artist ? { name: artist.name, slug: artist.slug } : null,
         license: "artist-approved-mobile-background",
         expiresIn: PUBLIC_SIGNED_URL_SECONDS,
-      }];
-    });
+      };
+    }));
     return NextResponse.json(
       { ok: true, tracks },
       { headers: { "Cache-Control": "private, no-store, max-age=0" } },
