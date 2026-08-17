@@ -14,6 +14,8 @@ export const dynamic = "force-dynamic";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const AUDIO_CONTENT_TYPE = /^audio\/[a-z0-9.+-]+$/i;
+const LEGACY_AUDIO_BUCKET = "jukebox-audio";
+const PLAYBACK_URL_SECONDS = 6 * 60 * 60;
 
 function noStore(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -30,8 +32,28 @@ function extensionFrom(name: string): string {
   return ["mp3", "m4a", "aac", "ogg", "oga", "opus", "wav", "flac", "webm"].includes(ext) ? ext : "mp3";
 }
 
-function isOwnPath(path: string, userId: string, trackId: string): boolean {
-  return path.startsWith(`${userId}/${trackId}/`) && !path.includes("..");
+function isSafeAudioPath(path: string): boolean {
+  return !path.includes("\\")
+    && !path.includes("..")
+    && path.split("/").every(Boolean);
+}
+
+// B2 preserves the original key when moving an object. Existing personal
+// uploads therefore use the legacy `trackId/file` layout, whereas all new
+// uploads use `userId/trackId/file`. The database ownership predicate is the
+// authority in both cases; this check only makes sure the stored key belongs
+// to the requested track and cannot escape its expected prefix.
+function isAuthorizedStoredPath(path: string, userId: string, trackId: string): boolean {
+  if (!isSafeAudioPath(path)) return false;
+  return path.startsWith(`${userId}/${trackId}/`) || path.startsWith(`${trackId}/`);
+}
+
+function isNewUploadPath(path: string, userId: string, trackId: string): boolean {
+  return isSafeAudioPath(path) && path.startsWith(`${userId}/${trackId}/`);
+}
+
+function isLegacyUploadPath(path: string, trackId: string): boolean {
+  return isSafeAudioPath(path) && path.startsWith(`${trackId}/`);
 }
 
 export async function GET(req: NextRequest) {
@@ -50,13 +72,27 @@ export async function GET(req: NextRequest) {
       .in("track_id", trackIds);
     if (error) throw error;
     const ownRows = (data || []).filter((row) =>
-      Boolean(row.storage_path) && isOwnPath(row.storage_path!, user.id, row.track_id),
+      Boolean(row.storage_path) && isAuthorizedStoredPath(row.storage_path!, user.id, row.track_id),
     );
     const tracks = await Promise.all(ownRows.map(async (row) => {
+      const legacy = isLegacyUploadPath(row.storage_path!, row.track_id);
+      let url: string | undefined;
+      if (legacy) {
+        // The source bucket stays private and was retained during the B2 move.
+        // Serve old uploads from it until their legacy keys are migrated.
+        const { data: signed, error: signedError } = await sb.storage
+          .from(LEGACY_AUDIO_BUCKET)
+          .createSignedUrl(row.storage_path!, PLAYBACK_URL_SECONDS);
+        if (signedError) throw signedError;
+        url = signed?.signedUrl;
+      } else {
+        url = await createB2DownloadUrl(row.storage_path!);
+      }
+      if (!url) throw new Error("Could not create a private audio URL.");
       return {
         trackId: row.track_id,
         path: row.storage_path,
-        url: await createB2DownloadUrl(row.storage_path!),
+        url,
         duration: Number(row.duration_seconds) || null,
         uploadedBy: row.uploaded_by,
       };
@@ -112,7 +148,7 @@ export async function POST(req: NextRequest) {
     if (action === "complete") {
       const path = String(body.path || "");
       const durationSeconds = Number(body.durationSeconds);
-      if (!isOwnPath(path, user.id, trackId)) return noStore({ ok: false, error: "Invalid audio path." }, 400);
+      if (!isNewUploadPath(path, user.id, trackId)) return noStore({ ok: false, error: "Invalid audio path." }, 400);
       const fileBytes = await getB2AudioObjectSize(path);
       if (fileBytes <= 0 || fileBytes > MAX_UPLOAD_BYTES) return noStore({ ok: false, error: "Invalid uploaded audio." }, 400);
 
@@ -172,8 +208,13 @@ export async function DELETE(req: NextRequest) {
       .maybeSingle();
     if (rowError) throw rowError;
     if (!row) return noStore({ ok: true });
-    if (row.storage_path && isOwnPath(row.storage_path, user.id, trackId)) {
-      await deleteB2AudioObject(row.storage_path);
+    if (row.storage_path && isAuthorizedStoredPath(row.storage_path, user.id, trackId)) {
+      if (isLegacyUploadPath(row.storage_path, trackId)) {
+        const { error: removeError } = await sb.storage.from(LEGACY_AUDIO_BUCKET).remove([row.storage_path]);
+        if (removeError) throw removeError;
+      } else {
+        await deleteB2AudioObject(row.storage_path);
+      }
     }
     const { error: deleteError } = await sb
       .schema(JUKEBOX_SCHEMA)
