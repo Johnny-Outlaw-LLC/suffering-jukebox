@@ -8242,14 +8242,21 @@ function taSetPreferBg(on) {
   try { localStorage.setItem('sj_bg_play', on ? '1' : '0'); } catch (_) {}
 }
 
-function taToggleAudioMode() {
+async function taToggleAudioMode() {
   if (_taManualAudio && _taBgActive) {
     taSetPreferBg(false);
     taExitBgAudio(); // also clears _taManualAudio + resyncs the button
     return;
   }
   const item = ytQueue[ytQueueIdx];
-  const audio = taTrackAudio(item?.trackId);
+  let audio = taTrackAudio(item?.trackId);
+  // A player can open before its private playback URL finishes loading. Wait
+  // for that lookup before sending an owner with an existing upload to setup.
+  if (!audio && item?.trackId) {
+    await loadTrackAudio([item.trackId]);
+    if (ytQueue[ytQueueIdx]?.trackId !== item.trackId) return;
+    audio = taTrackAudio(item.trackId);
+  }
   if (!googleUser && !audio?.artistLicensed) {
     openBgSetup();   // the sheet explains it and offers sign-in
     return;
@@ -15038,11 +15045,14 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-16';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-17';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-17', items: [
+    'Mobile Background Play recognizes your existing private audio again after the audio-delivery update, so tapping it on an uploaded song takes you straight into screen-off listening instead of sending you to setup.',
+  ] },
   { date: '2026-08-16', items: [
     'The song rating thumb now sits beside the heart reactions. Right-click a heart on desktop or long-press it on mobile to undo the last or all reactions you sent for that song during this session.',
     'Player and playlist actions now use the same rounded primary/outline button system as Play and Explore Artist Jukebox, including Lyrics, Shuffle, Repeat, Load, Save, Skip, and Clear Playlist.',
