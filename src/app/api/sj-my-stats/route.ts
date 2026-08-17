@@ -18,10 +18,14 @@ export async function GET(req: NextRequest) {
   const email = user.email.toLowerCase();
 
   try {
-    if (req.nextUrl.searchParams.get("export") === "artists") {
+    const exportKind = req.nextUrl.searchParams.get("export");
+    if (exportKind === "artists" || exportKind === "all-artists") {
       const { data, error } = await sb
         .schema(JUKEBOX_SCHEMA)
-        .rpc("my_artist_details", { p_user: email });
+        .rpc("my_artist_details", {
+          p_user: email,
+          p_scope: exportKind === "all-artists" ? "all" : "mine",
+        });
       if (error) throw error;
       return NextResponse.json({ ok: true, artists: data ?? [] });
     }

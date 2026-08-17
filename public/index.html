@@ -2061,7 +2061,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .ms-kpi-lbl { font-family:var(--sjd-mono); font-size:.38rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ms-kpi-val { font-family:var(--sjd-disp); font-size:1.15rem; font-weight:600; color:var(--text); margin-top:.15rem; }
 .ms-export-wrap { position:relative; }
-.ms-export-menu { display:none; position:absolute; top:calc(100% + .3rem); right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:.3rem; min-width:12rem; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+.ms-export-menu { display:none; position:absolute; top:calc(100% + .3rem); right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:.3rem; min-width:13.5rem; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.35); }
 .ms-export-menu.open { display:block; }
 .ms-export-menu button { display:block; width:100%; text-align:left; background:none; border:none; color:var(--text); font-size:.46rem; padding:.42rem .55rem; border-radius:6px; cursor:pointer; font-family:inherit; }
 .ms-export-menu button:hover { background:rgba(255,107,53,.1); color:var(--accent); }
@@ -3324,6 +3324,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
           <div class="ms-export-menu" id="ms-export-menu">
             <button type="button" onclick="msExportHistory()">My Play History (CSV)</button>
             <button type="button" onclick="msExportArtists()">My Artist Details (CSV)</button>
+            <button type="button" onclick="msExportArtists('all')">All Artist Details (CSV)</button>
           </div>
         </div>
         <button type="button" class="sjd-icon-btn" onclick="loadMyStats()" title="Refresh">⟳</button>
@@ -15052,6 +15053,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-17';
 const SJ_CHANGELOG = [
   { date: '2026-08-17', items: [
     'Mobile Background Play recognizes your existing private audio again after the audio-delivery update, so tapping it on an uploaded song takes you straight into screen-off listening instead of sending you to setup.',
+    'My Artist Details in Data & Analytics now downloads only the artists you added to the jukebox, not every artist you have listened to. A new All Artist Details option downloads every artist in the catalog.',
   ] },
   { date: '2026-08-16', items: [
     'The song rating thumb now sits beside the heart reactions. Right-click a heart on desktop or long-press it on mobile to undo the last or all reactions you sent for that song during this session.',
@@ -16546,16 +16548,20 @@ function msExportHistory() {
   downloadCSV('my-play-history.csv', header, body);
 }
 
-async function msExportArtists() {
+async function msExportArtists(scope) {
   document.getElementById('ms-export-menu')?.classList.remove('open');
   const btn = document.querySelector('.ms-export-btn');
+  const all = scope === 'all';
   try {
     if (btn) btn.disabled = true;
-    const res = await fetch(sjApiUrl('/api/sj-my-stats?export=artists'), { headers: await sjAuthHeaders() });
+    const res = await fetch(sjApiUrl('/api/sj-my-stats?export=' + (all ? 'all-artists' : 'artists')), { headers: await sjAuthHeaders() });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load artist details.');
     const rows = data.artists || [];
-    if (!rows.length) { showToast('No artist details to export yet — play something first.'); return; }
+    if (!rows.length) {
+      showToast(all ? 'No artist details to export.' : 'No artist details to export yet — add an artist first.');
+      return;
+    }
     const header = ['Artist', 'Album', 'Album Year', 'Track', 'YouTube Link', 'Secondary YouTube Link', 'Background Audio Uploaded', 'Background Audio Size', 'Total Track Plays in Jukebox', 'My Total Track Plays', 'Date Added', 'Date Last Played'];
     const body = rows.map(r => [
       r.artist || '', r.album || '', r.album_year || '', r.track || '', r.youtube_link || '', r.secondary_youtube_link || '',
@@ -16564,7 +16570,7 @@ async function msExportArtists() {
       r.date_added ? new Date(r.date_added).toLocaleDateString() : '',
       r.my_last_played ? new Date(r.my_last_played).toLocaleString() : 'Never'
     ]);
-    downloadCSV('my-artist-details.csv', header, body);
+    downloadCSV(all ? 'all-artist-details.csv' : 'my-artist-details.csv', header, body);
   } catch (e) {
     showToast(e.message || 'Could not export artist details.');
   } finally {
