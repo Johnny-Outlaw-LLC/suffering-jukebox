@@ -181,7 +181,7 @@ export async function fetchYouTubeVideoInfo(
 }
 
 // Search YouTube for embeddable candidate video ids for a track.
-export async function searchYouTubeVideoIds(query: string): Promise<string[]> {
+export async function searchYouTubeVideoIds(query: string, maxResults = 10): Promise<string[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) throw new Error("YouTube API key not configured.");
   const url = new URL("https://www.googleapis.com/youtube/v3/search");
@@ -189,7 +189,7 @@ export async function searchYouTubeVideoIds(query: string): Promise<string[]> {
   url.searchParams.set("q", query);
   url.searchParams.set("type", "video");
   url.searchParams.set("videoEmbeddable", "true");
-  url.searchParams.set("maxResults", "10");
+  url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 15)));
   url.searchParams.set("key", key);
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`YouTube search error (${res.status})`);

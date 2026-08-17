@@ -1,9 +1,9 @@
 // Refresh view/like counts for every video in jukebox.track_videos.
 //
 // The nightly YouTube snapshot only ever knew about the one video a track was
-// pointing at. Alternate versions need their own numbers, otherwise the chart
-// bar (which reads the most-viewed version) would be frozen at whatever we
-// happened to record the day the version was added.
+// pointing at. Alternate versions need their own numbers for the Versions menu.
+// Chart bars only read versions with counts_for_charts, so a cover's count can
+// sit here without inflating the album.
 //
 // Costs 1 quota unit per 50 ids, so a full pass over ~3,100 videos is ~63 units.
 
