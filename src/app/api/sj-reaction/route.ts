@@ -118,21 +118,68 @@ export async function POST(req: NextRequest) {
     }
 
     const sb = createSjClient();
-    const { error } = await sb.from("track_reactions").insert({
+    const { data, error } = await sb.from("track_reactions").insert({
       track_id: trackId,
       reaction,
       user_id: await verifiedUserId(req),
       device_id: device,
       position_ms: positionMs(body.position_ms),
-    });
+    }).select("id").single();
     if (error) {
       console.error("[sj-reaction:insert]", error.message);
       return NextResponse.json({ ok: false, error: "Could not save the reaction." }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, counts: await reactionCounts(trackId) });
+    return NextResponse.json({ ok: true, reaction_id: data.id, counts: await reactionCounts(trackId) });
   } catch (error) {
     console.error("[sj-reaction:post]", error);
+    return NextResponse.json({ ok: false, error: "Bad request." }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const ip = clientIp(req);
+    if (rateLimited(ip)) {
+      return NextResponse.json({ ok: false, error: "Easy there — give the reactions a second." }, { status: 429 });
+    }
+
+    const body = await req.json();
+    const trackId = uuid(body.track_id);
+    const reaction = typeof body.reaction === "string" && REACTION_SET.has(body.reaction)
+      ? body.reaction as Reaction
+      : null;
+    const device = deviceId(body.device_id);
+    const rawReactionIds: unknown[] = Array.isArray(body.reaction_ids) ? body.reaction_ids : [];
+    const reactionIds = rawReactionIds.length
+      ? [...new Set(rawReactionIds.map(uuid).filter((id): id is string => Boolean(id)))].slice(0, 100)
+      : [];
+    if (!trackId || !reaction || !device || !reactionIds.length) {
+      return NextResponse.json({ ok: false, error: "Invalid reaction undo." }, { status: 400 });
+    }
+
+    // IDs are returned only to the browser that created them. Device + track +
+    // reaction matching keeps an undo tightly scoped to this session's presses.
+    const { data, error } = await createSjClient()
+      .from("track_reactions")
+      .delete()
+      .eq("track_id", trackId)
+      .eq("reaction", reaction)
+      .eq("device_id", device)
+      .in("id", reactionIds)
+      .select("id");
+    if (error) {
+      console.error("[sj-reaction:delete]", error.message);
+      return NextResponse.json({ ok: false, error: "Could not undo the reaction." }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      deleted: (data ?? []).map((row) => row.id),
+      counts: await reactionCounts(trackId),
+    });
+  } catch (error) {
+    console.error("[sj-reaction:delete]", error);
     return NextResponse.json({ ok: false, error: "Bad request." }, { status: 400 });
   }
 }
