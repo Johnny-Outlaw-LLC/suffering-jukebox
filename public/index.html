@@ -1160,10 +1160,11 @@ mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
 .sjm-item:hover .sjm-ic { color: inherit; }
 .sjm-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sjm-sub { font-size: .44rem; color: var(--text-muted); flex-shrink: 0; }
-.sjm-scroll { max-height: 210px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.sjm-scroll { max-height: 260px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .sjm-on .sjm-ic, .sjm-on .sjm-label { color: var(--accent); }
 .sjm-empty { font-size: .48rem; color: var(--text-muted); padding: 10px 8px; text-align: center; line-height: 1.5; }
 .sjm-sep { border-top: 1px solid var(--border); margin: 3px 0; }
+.sjm-sec { font-size: .4rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); padding: 7px 10px 3px; font-weight: 600; }
 .sjm-item:disabled { opacity: .35; cursor: default; }
 .sjm-item:disabled:hover { background: none; }
 /* Touch: the menu is the only place some of these actions live, so the rows
@@ -1519,8 +1520,10 @@ textarea.report-input { resize:vertical; }
 /* Match the restore glyph's square fill to the bar, not the player window. */
 #ytp-mf-restore svg rect { fill: var(--bg-card); }
 #ytp-mini-footer .tvb-up { color: #22c55e; }
-#ytp-mf-vote:not(.tvb-up) { opacity: .45; }
+#ytp-mini-footer .tvb-down { color: #ef4444; }
+#ytp-mf-vote:not(.tvb-up):not(.tvb-down) { opacity: .45; }
 #ytp-mf-vote.tvb-up { opacity: 1; color: #22c55e; }
+#ytp-mf-vote.tvb-down { opacity: 1; color: #ef4444; }
 @media (max-width: 640px) {
   /* Mobile mini bar: title row + big transport row. No windowed chrome —
      restore expands to fullscreen; maximize is unused (hidden). */
@@ -1802,6 +1805,7 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .tvb-cycle{background:none;border:none;cursor:pointer;padding:1px 5px;line-height:1;font-size:.6rem;opacity:.45;transition:opacity .15s,color .15s;border-radius:4px;flex-shrink:0;color:var(--text-muted)}
 .tvb-cycle:hover{opacity:.9}
 .tvb-cycle.tvb-up{color:#22c55e;opacity:1}
+.tvb-cycle.tvb-down{color:#ef4444;opacity:1}
 
 
 
@@ -5362,7 +5366,7 @@ function updateYTQueueUI(opts) {
         return `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" onclick="ytPlayQueueIdx(${i})">
         <span class="yt-queue-num">${i + 1}</span>
         <span class="yt-queue-title">${_qLabel}</span>
-        ${item.trackId ? `<button class="tvb-cycle${getMyVote(item.trackId)>0?' tvb-up':''}" data-vote-track="${item.trackId}" onclick="cycleVote('${item.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(getMyVote(item.trackId))]||'-'}</button>` : ''}
+        ${item.trackId ? `<button class="tvb-cycle${voteClass(getMyVote(item.trackId))}" data-vote-track="${item.trackId}" onclick="cycleVote('${item.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(getMyVote(item.trackId))]||'-'}</button>` : ''}
         ${item.trackId ? `<button class="yt-queue-more" onclick="sjmOpenQueue(${i},this,event)" title="More">⋯</button>` : ''}
         <span class="yt-queue-moves">
           <button onclick="event.stopPropagation();ytMoveQueue(${i},${i}-1)"
@@ -9833,7 +9837,12 @@ function sjmRenderRoot() {
       ? '<button class="sjm-item' + (blocked ? '' : ' sjm-danger') + '" onclick="sjmBlock()">' +
           '<span class="sjm-ic">' + (blocked ? '↺' : '⊘') + '</span>' +
           '<span class="sjm-label">' + (blocked ? 'Let this play again' : 'Never play this again') + '</span>' +
-        '</button>'
+        '</button>' +
+        (blocked ? '' :
+          '<button class="sjm-item" onclick="sjmOpenBreak()">' +
+            '<span class="sjm-ic">⏸</span>' +
+            '<span class="sjm-label">' + (isTrackOnBreak(tid) ? ('On break until ' + sjBreakUntilLabel(tid)) : 'Take a break from this song') + '</span>' +
+            '<span class="sjm-sub">›</span></button>')
       : '') +
     (taIsMobileDevice()
       ? ''   // phones already carry a Background Play button in the player
@@ -9854,6 +9863,44 @@ function sjmBlock() {
   const tid = _sjmTrackId;
   sjmClose();
   if (tid) toggleBlockTrack(tid);
+}
+
+const SJ_BREAK_OPTS = [
+  { days: 7, label: '1 week' },
+  { days: 30, label: '30 days' },
+  { days: 90, label: '90 days' },
+  { days: 180, label: '180 days' },
+];
+
+function sjmOpenBreak() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_sjmTrackId) return;
+  const tid = _sjmTrackId;
+  const until = snoozeUntil(tid);
+  menu.innerHTML = _sjmHeader('Take a break', 'sjmRenderRoot()') +
+    (until
+      ? '<div class="sjm-empty">Parked until ' + sjBreakUntilLabel(tid) + '.</div>' +
+        '<button class="sjm-item" onclick="sjmClearBreak()">' +
+          '<span class="sjm-ic">↺</span><span class="sjm-label">Play this again now</span></button>' +
+        '<div class="sjm-sep"></div>'
+      : '<div class="sjm-empty">Skip this song in shuffle and the queue. You can still play it yourself.</div>') +
+    SJ_BREAK_OPTS.map(o =>
+      '<button class="sjm-item" onclick="sjmSetBreak(' + o.days + ')">' +
+        '<span class="sjm-ic">⏸</span><span class="sjm-label">' + o.label + '</span></button>'
+    ).join('');
+  sjmPosition();
+}
+
+function sjmSetBreak(days) {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) setTrackSnooze(tid, days);
+}
+
+function sjmClearBreak() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) clearTrackSnooze(tid);
 }
 
 function sjmReport() {
@@ -10099,27 +10146,39 @@ async function sjmOpenPlaylists() {
   sjmRenderPlaylists();
 }
 
+function sjmPlaylistButton(p) {
+  const tid = _sjmTrackId;
+  const on = (p._tracks || []).some(r => r.track_id === tid);
+  const n  = (p._tracks || []).length;
+  return '<button class="sjm-item' + (on ? ' sjm-on' : '') + '" onclick="sjmTogglePlaylist(\'' + p.id + '\')"' +
+         ' title="' + (on ? 'Remove from this playlist' : 'Add to this playlist') + '">' +
+           '<span class="sjm-ic">' + (on ? '✓' : '+') + '</span>' +
+           '<span class="sjm-label">' + escHtml(p.name || 'Untitled') + '</span>' +
+           '<span class="sjm-sub">' + n + '</span>' +
+         '</button>';
+}
+
 function sjmRenderPlaylists(newFormOpen) {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_sjmTrackId) return;
-  const tid  = _sjmTrackId;
   const mine = playlists.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const personal = mine.filter(p => !p.is_public);
+  const myPublic = mine.filter(p => !!p.is_public);
 
-  const rows = mine.length
-    ? mine.map(p => {
-        const on = (p._tracks || []).some(r => r.track_id === tid);
-        const n  = (p._tracks || []).length;
-        return '<button class="sjm-item' + (on ? ' sjm-on' : '') + '" onclick="sjmTogglePlaylist(\'' + p.id + '\')"' +
-               ' title="' + (on ? 'Remove from this playlist' : 'Add to this playlist') + '">' +
-                 '<span class="sjm-ic">' + (on ? '✓' : '+') + '</span>' +
-                 '<span class="sjm-label">' + escHtml(p.name || 'Untitled') + '</span>' +
-                 '<span class="sjm-sub">' + n + '</span>' +
-               '</button>';
-      }).join('')
-    : '<div class="sjm-empty">No playlists yet.<br>Make your first one below.</div>';
+  const personalRows = personal.length
+    ? personal.map(sjmPlaylistButton).join('')
+    : '<div class="sjm-empty">No personal playlists yet.<br>Make your first one below.</div>';
+  const publicRows = myPublic.length
+    ? myPublic.map(sjmPlaylistButton).join('')
+    : '<div class="sjm-empty">None yet. Make a playlist public from Manage Playlists.</div>';
 
   menu.innerHTML = _sjmHeader('Add to playlist', 'sjmRenderRoot()') +
-    '<div class="sjm-scroll">' + rows + '</div>' +
+    '<div class="sjm-scroll">' +
+      '<div class="sjm-sec">Personal Playlists</div>' +
+      personalRows +
+      '<div class="sjm-sec">My Public Playlists</div>' +
+      publicRows +
+    '</div>' +
     '<div class="sjm-sep"></div>' +
     (newFormOpen
       ? '<div class="sjm-newform">' +
@@ -10723,7 +10782,7 @@ async function playPlaylist(playlistId) {
     const info = await resolvePlaylistTracks(rows.map(r => r.track_id));
     let q = rows.map(r => info[r.track_id]?.videoId
       ? { videoId: info[r.track_id].videoId, title: info[r.track_id].name || 'Track', trackId: r.track_id }
-      : null).filter(Boolean).filter(it => !isTrackBlocked(it.trackId));
+      : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
     q = filterQueueForHomeBg(q);
     if (!q.length) {
       alert(homeJukeboxBgFilterOn()
@@ -12086,7 +12145,7 @@ function renderManageJukeboxList() {
   wrap.innerHTML = rows.map(r => `
     <div class="mj-row" style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--border)">
       <span style="flex:1;font-size:.62rem;color:${r.hidden ? 'var(--text-muted)' : 'var(--text)'}">${esc(r.name)}${r.hidden ? ' (hidden)' : ''}</span>
-      <button type="button" class="tvb-cycle${(r.my_rating || 0) > 0 ? ' tvb-up' : ''}" onclick="cycleArtistRating('${r.artist_id}')" title="Rate this artist">${VOTE_LABELS[String(r.my_rating || 0)] || '-'}</button>
+      <button type="button" class="tvb-cycle${voteClass(r.my_rating || 0)}" onclick="cycleArtistRating('${r.artist_id}')" title="Rate this artist">${VOTE_LABELS[String(r.my_rating || 0)] || '-'}</button>
       <button type="button" class="m-btn ghost" style="font-size:.5rem;padding:.3rem .6rem" onclick="toggleArtistHidden('${r.artist_id}')">${r.hidden ? 'Show' : 'Hide'}</button>
     </div>
   `).join('');
@@ -12120,10 +12179,8 @@ async function saveArtistFeedback(artistId, patch) {
 function cycleArtistRating(artistId) {
   const row = landingStats.find(r => r.artist_id === artistId);
   if (!row || !googleUser) return;
-  const cycle = [0, 1, 2];
-  const cur   = row.my_rating || 0;
-  const idx   = cycle.indexOf(cur);
-  const next  = cycle[(idx === -1 ? 1 : idx + 1) % cycle.length];
+  const cur  = normalizeVote(row.my_rating);
+  const next = nextVote(cur);
   row.my_rating = next;
   saveArtistFeedback(artistId, { vote: next || null });
   renderManageJukeboxList();
@@ -15016,6 +15073,9 @@ const SJ_CHANGELOG = [
   { date: '2026-08-18', items: [
     'Discover alternative version now searches with the artist and song that is actually playing, even when you are looking at a different artist. It no longer fills in “Unknown” for the song name.',
     'Opening Discover alternative version fades the music out over two seconds instead of cutting it off, and closing the window fades it back in the same way.',
+    'When you add a song to a playlist, personal playlists and the public playlists you own are now in two labeled sections.',
+    'Song ratings can be one thumbs up, two thumbs up, one thumbs down, or no rating. Tap the thumb to cycle through them.',
+    'Next to Never play this again, Take a break from this song parks a track for 1 week, 30 days, 90 days, or 180 days so it stays out of shuffle and the queue until then.',
   ] },
   { date: '2026-08-17', items: [
     'Adding an artist no longer mixes up albums that share a name. Self-titled records (Weezer’s Blue and Green albums, and others like them) now keep their own year, cover, and track list, matched against the real song titles.',
@@ -15405,7 +15465,7 @@ async function handleLogout() {
   googleUser = null;
   sjIsAdmin = false;
   _pbRestoreDone = false; // allow restore again next time someone signs in
-  blockedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
+  blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
   updateAuthBtn();
 }
 
@@ -15565,7 +15625,7 @@ function initGoogleAuth() {
       _homeBgArtistIds = new Set();
       _homeBgTrackIds = new Set();
       myInAppPlays = {};
-      blockedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
+      blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
     }
     updateAuthBtn();
   });
@@ -16685,8 +16745,24 @@ function loadLocalVotes() {
   try { localVotes = JSON.parse(localStorage.getItem('sj_votes') || '{}'); } catch(e) { localVotes = {}; }
 }
 function saveLocalVotes() { localStorage.setItem('sj_votes', JSON.stringify(localVotes)); }
-function normalizeVote(v) { return v > 0 ? v : 0; }
+function normalizeVote(v) {
+  const n = Number(v);
+  if (n >= 2) return 2;
+  if (n === 1) return 1;
+  if (n <= -1) return -1;
+  return 0;
+}
 function getMyVote(trackId) { return normalizeVote(localVotes[trackId]); }
+function voteClass(v) {
+  const n = normalizeVote(v);
+  return n > 0 ? ' tvb-up' : n < 0 ? ' tvb-down' : '';
+}
+function nextVote(cur) {
+  const cycle = [0, 1, 2, -1];
+  const n = normalizeVote(cur);
+  const idx = cycle.indexOf(n);
+  return cycle[((idx < 0 ? 0 : idx) + 1) % cycle.length];
+}
 
 // ══════════════════════════════════════════════════════════════
 // BLOCKED TRACKS - "never play this song again", per signed-in account
@@ -16695,16 +16771,32 @@ function getMyVote(trackId) { return normalizeVote(localVotes[trackId]); }
 // with an inline Unblock button; they're filtered out of every queue.
 // ══════════════════════════════════════════════════════════════
 let blockedTracks = {};
+let snoozedTracks = {}; // trackId -> until epoch ms
 
 function loadLocalBlocked() {
   try { blockedTracks = JSON.parse(localStorage.getItem('sj_blocked') || '{}'); } catch (e) { blockedTracks = {}; }
+  try { snoozedTracks = JSON.parse(localStorage.getItem('sj_snooze') || '{}'); } catch (e) { snoozedTracks = {}; }
 }
 function saveLocalBlocked() {
   try { localStorage.setItem('sj_blocked', JSON.stringify(blockedTracks)); } catch (e) {}
+  try { localStorage.setItem('sj_snooze', JSON.stringify(snoozedTracks)); } catch (e) {}
 }
 // Blocking is an account-level setting, so it only applies while signed in.
 function isTrackBlocked(trackId) { return !!(trackId && googleUser && blockedTracks[trackId]); }
-function sjNoBlocked(q) { return (q || []).filter(it => it && !isTrackBlocked(it.trackId)); }
+function snoozeUntil(trackId) {
+  const t = Number(snoozedTracks[trackId]) || 0;
+  if (!t) return 0;
+  if (t <= Date.now()) { delete snoozedTracks[trackId]; saveLocalBlocked(); return 0; }
+  return t;
+}
+function isTrackOnBreak(trackId) { return !!(trackId && googleUser && snoozeUntil(trackId)); }
+function isTrackSkipped(trackId) { return isTrackBlocked(trackId) || isTrackOnBreak(trackId); }
+function sjBreakUntilLabel(trackId) {
+  const t = snoozeUntil(trackId);
+  if (!t) return '';
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function sjNoBlocked(q) { return (q || []).filter(it => it && !isTrackSkipped(it.trackId)); }
 
 function refreshBlockedUI(trackId) {
   const apply = tid => {
@@ -16726,11 +16818,18 @@ function refreshBlockedUI(trackId) {
 }
 
 async function loadMyBlockedTracks() {
-  if (!googleUser) { blockedTracks = {}; saveLocalBlocked(); refreshBlockedUI(); return; }
+  if (!googleUser) { blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI(); return; }
   try {
-    const rows = await dbGetAuth('/blocked_tracks?select=track_id');  // RLS scopes this to the signed-in user
+    const rows = await dbGetAuth('/blocked_tracks?select=track_id,until');  // RLS scopes this to the signed-in user
     blockedTracks = {};
-    (rows || []).forEach(r => { if (r.track_id) blockedTracks[r.track_id] = true; });
+    snoozedTracks = {};
+    const now = Date.now();
+    (rows || []).forEach(r => {
+      if (!r.track_id) return;
+      if (!r.until) { blockedTracks[r.track_id] = true; return; }
+      const ms = Date.parse(r.until);
+      if (Number.isFinite(ms) && ms > now) snoozedTracks[r.track_id] = ms;
+    });
     saveLocalBlocked();
     refreshBlockedUI();
   } catch (e) { console.warn('loadMyBlockedTracks error', e); }
@@ -16764,7 +16863,8 @@ async function toggleBlockTrack(trackId) {
   if (!trackId) return;
   if (!googleUser) { showToast('Sign in to block songs.'); return; }
   const wasBlocked = !!blockedTracks[trackId];
-  if (wasBlocked) delete blockedTracks[trackId]; else blockedTracks[trackId] = true;
+  if (wasBlocked) delete blockedTracks[trackId];
+  else { blockedTracks[trackId] = true; delete snoozedTracks[trackId]; }
   saveLocalBlocked();
   refreshBlockedUI(trackId);
   if (!wasBlocked) { pruneBlockedFromQueue(trackId); showToast('Blocked - this song won\u2019t play again.'); }
@@ -16773,9 +16873,41 @@ async function toggleBlockTrack(trackId) {
     const { data: { session } } = await sbAuth.auth.getSession();
     const userId = session?.user?.id;
     if (!userId) return;
-    if (wasBlocked) await dbDelete('/blocked_tracks?track_id=eq.' + trackId);
-    else await dbPost('/blocked_tracks', { user_id: userId, user_email: googleUser.email, track_id: trackId });
+    await dbDelete('/blocked_tracks?track_id=eq.' + trackId);
+    if (!wasBlocked) await dbPost('/blocked_tracks', { user_id: userId, user_email: googleUser.email, track_id: trackId });
   } catch (e) { console.warn('toggleBlockTrack sync error', e); }
+}
+
+async function setTrackSnooze(trackId, days) {
+  if (!trackId || !(days > 0)) return;
+  if (!googleUser) { showToast('Sign in to take a break from songs.'); return; }
+  const untilMs = Date.now() + days * 86400000;
+  delete blockedTracks[trackId];
+  snoozedTracks[trackId] = untilMs;
+  saveLocalBlocked();
+  refreshBlockedUI(trackId);
+  pruneBlockedFromQueue(trackId);
+  showToast('Taking a break until ' + sjBreakUntilLabel(trackId) + '.');
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    await dbDelete('/blocked_tracks?track_id=eq.' + trackId);
+    await dbPost('/blocked_tracks', {
+      user_id: userId, user_email: googleUser.email, track_id: trackId,
+      until: new Date(untilMs).toISOString(),
+    });
+  } catch (e) { console.warn('setTrackSnooze sync error', e); }
+}
+
+async function clearTrackSnooze(trackId) {
+  if (!trackId) return;
+  delete snoozedTracks[trackId];
+  saveLocalBlocked();
+  refreshBlockedUI(trackId);
+  showToast('This song can play again.');
+  try { await dbDelete('/blocked_tracks?track_id=eq.' + trackId); }
+  catch (e) { console.warn('clearTrackSnooze sync error', e); }
 }
 
 function ytpBlockCurrent() {
@@ -16791,15 +16923,17 @@ function ytpSyncBlockBtn(trackId) {
 }
 
 const _SVG_TH_UP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
+const _SVG_TH_DN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;transform:scaleY(-1);display:inline-block"><path d="M7 10v12"/><path d="M15 5.88L14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>';
 // Unrated shows the thumbs outline (not a bare "-"), so the mini bar never looks
 // like it has a second Minimize control next to Expand / Close.
-const VOTE_LABELS = {'2':'<span class="tvb-dbl">'+_SVG_TH_UP+_SVG_TH_UP+'</span>','1':_SVG_TH_UP,'0':_SVG_TH_UP};
+const VOTE_LABELS = {
+  '2': '<span class="tvb-dbl">' + _SVG_TH_UP + _SVG_TH_UP + '</span>',
+  '1': _SVG_TH_UP,
+  '0': _SVG_TH_UP,
+  '-1': _SVG_TH_DN,
+};
 function cycleVote(trackId) {
-  const cycle = [0,1,2];
-  const cur   = getMyVote(trackId);
-  const idx   = cycle.indexOf(cur);
-  const next  = cycle[(idx === -1 ? 1 : idx + 1) % cycle.length];
-  instantVote(trackId, next);
+  instantVote(trackId, nextVote(getMyVote(trackId)));
 }
 function refreshVoteUI(trackId) {
   const v   = getMyVote(trackId);
@@ -16807,6 +16941,7 @@ function refreshVoteUI(trackId) {
   document.querySelectorAll('[data-vote-track="' + trackId + '"]').forEach(btn => {
     btn.innerHTML = lbl;
     btn.classList.toggle('tvb-up', v > 0);
+    btn.classList.toggle('tvb-down', v < 0);
   });
 }
 
@@ -18115,7 +18250,7 @@ async function hydratePlaylistLink() {
     const info = await resolvePlaylistTracks(pl._tracks.map(pt => pt.track_id));
     const q = pl._tracks.map(pt => info[pt.track_id]?.videoId
       ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
-      : null).filter(Boolean).filter(it => !isTrackBlocked(it.trackId));
+      : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
     if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
     const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
@@ -18614,7 +18749,7 @@ async function playFromPlaylist(playlistId) {
   const info = await resolvePlaylistTracks(sorted.map(pt => pt.track_id));
   const q = sorted.map(pt => info[pt.track_id]?.videoId
     ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
-    : null).filter(Boolean).filter(it => !isTrackBlocked(it.trackId));
+    : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
   if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
   _queueHasAdditions = false;
   const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
