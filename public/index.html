@@ -14789,20 +14789,30 @@ async function amImport() {
   amLogLine('head', `▶ Finding the best YouTube playlist for ${picked.length} album${picked.length === 1 ? '' : 's'}…`);
   try {
     const matches = [];
+    const usedPl = new Set();
     for (let i = 0; i < picked.length; i++) {
       const a = picked[i];
       amStepGo(3, `Album ${i + 1} of ${picked.length}: “${a.title}”: finding the best YouTube playlist…`);
       try {
         if (a.playlist_id) {
+          if (usedPl.has(a.playlist_id)) {
+            amLogLine('err', `  ⚠ “${a.title}”, playlist already used for another album, skipped`);
+            continue;
+          }
+          usedPl.add(a.playlist_id);
           matches.push({ id: a.playlist_id, title: a.title });
           amLogLine('ok', `  ✓ “${a.title}”, using your playlist (${a.track_count} tracks)`);
           continue;
         }
         const m = await amFetch(`?action=match_album&artist=${encodeURIComponent(amIdent.artist_name)}&album=${encodeURIComponent(a.title)}` +
           (a.rg ? `&rg=${encodeURIComponent(a.rg)}` : '') +
+          (a.date ? `&year=${encodeURIComponent(String(a.date).slice(0, 4))}` : '') +
           `&channel_id=${encodeURIComponent(amChannel.channel_id)}`);
-        if (m.match) {
-          matches.push({ id: m.match.playlist_id, title: a.title, release_date: a.date || undefined });
+        if (m.match && usedPl.has(m.match.playlist_id)) {
+          amLogLine('err', `  ⚠ “${a.title}”, playlist already used for another album, skipped`);
+        } else if (m.match) {
+          usedPl.add(m.match.playlist_id);
+          matches.push({ id: m.match.playlist_id, title: a.title, release_date: a.date || undefined, rg: a.rg || undefined });
           amLogLine('ok', `  ✓ “${a.title}” → “${m.match.title}” · ${m.match.track_count} tracks · ${fmtV(m.match.views)} views`);
         } else {
           amLogLine('err', `  ⚠ “${a.title}”, no good playlist found, skipped`);
@@ -14897,6 +14907,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-17';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-17', items: [
+    'Adding an artist no longer mixes up albums that share a name. Self-titled records (Weezer’s Blue and Green albums, and others like them) now keep their own year, cover, and track list, matched against the real song titles.',
     'On My Jukebox, turning on Background play enabled only now limits Shuffle All, Shuffle Favorites, and every Play button to songs you have uploaded background-play audio for — not just the artist list on screen.',
     'The ⋯ menu on a song now has Discover alternative version. Search YouTube for other uploads of the same song, preview them, and add them so everyone can switch to them from Versions. Alternative versions do not change the YouTube view counts in the bar charts — those stay with the official video.',
     'Friday Night Fever on Bright Flight now plays the Silver Jews recording by default. The George Strait upload is kept as an alternative version and no longer fills the chart bar.',
