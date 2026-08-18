@@ -3595,7 +3595,7 @@ let ytPlayerEl          = null;
 let ytVideoId           = null;
 let ytQueue             = [];   // [{videoId, title}]
 let ytQueueIdx          = -1;   // index of currently playing item
-let SJ_TRACK_META = {}; // trackId -> {artist, album, year}; populated as data loads so community/landing playback resolves the title
+let SJ_TRACK_META = {}; // trackId -> {title, artist, album, year}; populated as data loads so community/landing playback resolves the title
 let _sjBaseTitle = 'Suffering Jukebox'; // tab title to restore to when the player closes
 let nowPlayingTrackId   = null;  // trackId of the row to highlight orange in track lists
 let ytShuffle           = false;
@@ -4988,6 +4988,62 @@ function ytpSetVolume(val) {
   if (_taAudioEl) { try { _taAudioEl.volume = Math.max(0, Math.min(1, val / 100)); } catch (_) {} }
 }
 
+function ytpSliderVolume() {
+  const slider = document.getElementById('ytp-vol-slider');
+  const n = slider ? Number(slider.value) : NaN;
+  if (Number.isFinite(n)) return n;
+  try { if (ytAPIPlayer?.getVolume) return ytAPIPlayer.getVolume(); } catch (_) {}
+  return 100;
+}
+
+function ytpGetVolume() {
+  try {
+    if (_taBgActive && _taAudioEl) return Math.round((_taAudioEl.volume || 0) * 100);
+    if (ytAPIPlayer?.getVolume) return ytAPIPlayer.getVolume();
+  } catch (_) {}
+  return ytpSliderVolume();
+}
+
+let _ytpFadeRaf = null;
+function ytpCancelFade() {
+  if (_ytpFadeRaf) { cancelAnimationFrame(_ytpFadeRaf); _ytpFadeRaf = null; }
+}
+
+function ytpFadeTo(toVol, ms) {
+  ytpCancelFade();
+  const target = Math.max(0, Math.min(100, toVol));
+  return new Promise((resolve) => {
+    const from = ytpGetVolume();
+    const t0 = performance.now();
+    if (!ms || Math.abs(from - target) < 0.5) {
+      ytpSetVolume(target);
+      resolve();
+      return;
+    }
+    const tick = (now) => {
+      const t = Math.min(1, (now - t0) / ms);
+      ytpSetVolume(Math.round(from + (target - from) * t));
+      if (t < 1) _ytpFadeRaf = requestAnimationFrame(tick);
+      else { _ytpFadeRaf = null; resolve(); }
+    };
+    _ytpFadeRaf = requestAnimationFrame(tick);
+  });
+}
+
+function ytpPauseNow() {
+  try {
+    if (_taBgActive && _taAudioEl) _taAudioEl.pause();
+    else ytAPIPlayer?.pauseVideo?.();
+  } catch (_) {}
+}
+
+function ytpPlayNow() {
+  try {
+    if (_taBgActive && _taAudioEl) _taAudioEl.play().catch(() => {});
+    else ytAPIPlayer?.playVideo?.();
+  } catch (_) {}
+}
+
 function ytpSyncVolumeSlider() {
   const slider = document.getElementById('ytp-vol-slider');
   if (!slider || !ytAPIPlayer || typeof ytAPIPlayer.getVolume !== 'function') return;
@@ -6033,7 +6089,7 @@ function ytpTrackMeta(trackId, fallbackTitle) {
     || (qVid ? ('https://i.ytimg.com/vi/' + qVid + '/hqdefault.jpg') : null)
     || '/favicon.png';
   return {
-    title: (track && track.name) || fallbackTitle || 'Unknown',
+    title: (track && track.name) || fallbackTitle || (cache && cache.title) || (qItem && qItem.title) || 'Unknown',
     artist: artistName,
     album: albumName,
     year: year,
@@ -6080,8 +6136,9 @@ function ytpStampQueueMeta(trackId) {
   if (m.album)  item.album  = m.album;
   if (m.year)   item.year   = m.year;
   if (m.artwork && m.artwork !== '/favicon.png') item.artwork = m.artwork;
-  if (m.artist || m.album) {
+  if (m.artist || m.album || (m.title && m.title !== 'Unknown')) {
     SJ_TRACK_META[trackId] = Object.assign({}, SJ_TRACK_META[trackId] || {}, {
+      title: (m.title && m.title !== 'Unknown') ? m.title : (SJ_TRACK_META[trackId]?.title || ''),
       artist: m.artist || '',
       album: m.album || '',
       year: m.year || '',
@@ -6115,6 +6172,7 @@ async function ytpEnsureTrackMeta(trackId) {
       || ytData[trackId]?.thumbnail
       || null;
     SJ_TRACK_META[trackId] = Object.assign({}, SJ_TRACK_META[trackId] || {}, {
+      title: t.name || (SJ_TRACK_META[trackId]?.title || ''),
       artist: artName || (SJ_TRACK_META[trackId]?.artist || ''),
       album: (alb && alb.name) || (SJ_TRACK_META[trackId]?.album || ''),
       year: (alb && (alb.release_date || '').slice(0, 4)) || (SJ_TRACK_META[trackId]?.year || ''),
@@ -9825,6 +9883,44 @@ function sjmDiscoverFromPlayer() {
 let _dvTrackId = null;
 let _dvPick = null;
 let _dvWasPlaying = false;
+let _dvRestoreVol = 100;
+let _dvFadeGen = 0;
+let _dvPreferServerQuery = false;
+
+function dvRealTitle(trackId) {
+  const qItem = (typeof ytQueue !== 'undefined' && Array.isArray(ytQueue))
+    ? (ytQueue[ytQueueIdx]?.trackId === trackId ? ytQueue[ytQueueIdx] : ytQueue.find(q => q && q.trackId === trackId))
+    : null;
+  const meta = (typeof ytpTrackMeta === 'function') ? ytpTrackMeta(trackId, qItem && qItem.title) : {};
+  const title = (meta.title && meta.title !== 'Unknown') ? meta.title : ((qItem && qItem.title) || '');
+  return { artist: meta.artist || '', title: title, album: meta.album || '' };
+}
+
+async function dvFadeOutThenPause() {
+  const gen = ++_dvFadeGen;
+  _dvRestoreVol = ytpSliderVolume();
+  _dvWasPlaying = (typeof ytpIsPlaying === 'function') ? ytpIsPlaying() : false;
+  if (!_dvWasPlaying) return;
+  await ytpFadeTo(0, 2000);
+  if (gen !== _dvFadeGen) return;
+  ytpPauseNow();
+}
+
+async function dvResumeWithFade() {
+  const gen = ++_dvFadeGen;
+  const shouldResume = _dvWasPlaying;
+  _dvWasPlaying = false;
+  const vol = Number.isFinite(_dvRestoreVol) ? _dvRestoreVol : ytpSliderVolume();
+  if (!shouldResume) {
+    ytpCancelFade();
+    ytpSetVolume(vol);
+    return;
+  }
+  ytpCancelFade();
+  ytpPlayNow();
+  await ytpFadeTo(vol, 2000);
+  if (gen !== _dvFadeGen) return;
+}
 
 function openDiscoverVersions(trackId) {
   if (!trackId) return;
@@ -9835,10 +9931,11 @@ function openDiscoverVersions(trackId) {
   }
   _dvTrackId = trackId;
   _dvPick = null;
-  const meta = (typeof ytpTrackMeta === 'function') ? ytpTrackMeta(trackId) : {};
+  const meta = dvRealTitle(trackId);
+  _dvPreferServerQuery = !meta.title;
   const q = [meta.artist, meta.title].filter(Boolean).join(' ');
   const sub = document.getElementById('dvSub');
-  if (sub) sub.textContent = (meta.artist && meta.title) ? (meta.artist + ' — ' + meta.title) : (meta.title || '');
+  if (sub) sub.textContent = (meta.artist && meta.title) ? (meta.artist + ' — ' + meta.title) : (meta.title || meta.artist || '');
   const inp = document.getElementById('dvSearchInput');
   if (inp) inp.value = q;
   const prev = document.getElementById('dvPreview');
@@ -9846,10 +9943,7 @@ function openDiscoverVersions(trackId) {
   const list = document.getElementById('dvResults');
   if (list) list.innerHTML = '<div class="dv-empty">Searching YouTube…</div>';
   document.getElementById('discoverOverlay')?.classList.add('open');
-  try {
-    _dvWasPlaying = ytAPIPlayer?.getPlayerState?.() === 1;
-    if (_dvWasPlaying) ytAPIPlayer.pauseVideo();
-  } catch (e) { _dvWasPlaying = false; }
+  dvFadeOutThenPause();
   dvSearch();
 }
 
@@ -9859,10 +9953,8 @@ function closeDiscoverVersions() {
   if (prev) { prev.style.display = 'none'; prev.innerHTML = ''; }
   _dvTrackId = null;
   _dvPick = null;
-  if (_dvWasPlaying) {
-    try { ytAPIPlayer?.playVideo?.(); } catch (e) {}
-  }
-  _dvWasPlaying = false;
+  _dvPreferServerQuery = false;
+  dvResumeWithFade();
 }
 
 async function dvSearch() {
@@ -9871,7 +9963,10 @@ async function dvSearch() {
   const list = document.getElementById('dvResults');
   const inp = document.getElementById('dvSearchInput');
   if (!tid || !list) return;
-  const query = (inp?.value || '').trim();
+  let query = (inp?.value || '').trim();
+  const useServer = _dvPreferServerQuery;
+  if (useServer) query = '';
+  _dvPreferServerQuery = false;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   list.innerHTML = '<div class="dv-empty">Searching YouTube…</div>';
   _dvPick = null;
@@ -9886,7 +9981,19 @@ async function dvSearch() {
     const data = await res.json();
     if (_dvTrackId !== tid) return;
     if (!data.ok) { list.innerHTML = '<div class="dv-empty">' + escHtml(data.error || 'Search failed.') + '</div>'; return; }
-    if (inp && data.query && !query) inp.value = data.query;
+    const tr = data.track;
+    if (tr) {
+      const artist = tr.artist || '';
+      const name = tr.name || '';
+      const sub = document.getElementById('dvSub');
+      if (sub && (artist || name)) sub.textContent = (artist && name) ? (artist + ' — ' + name) : (name || artist);
+      if (typeof ytpStampQueueMeta === 'function' && name) {
+        SJ_TRACK_META[tid] = Object.assign({}, SJ_TRACK_META[tid] || {}, {
+          title: name, artist: artist || (SJ_TRACK_META[tid]?.artist || ''), album: tr.album || (SJ_TRACK_META[tid]?.album || ''),
+        });
+      }
+    }
+    if (inp && data.query && (!inp.value.trim() || useServer)) inp.value = data.query;
     const rows = data.results || [];
     if (!rows.length) {
       list.innerHTML = '<div class="dv-empty">No embeddable videos for that search. Try a different artist name, or paste a YouTube link.</div>';
@@ -14901,11 +15008,15 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-17';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-18';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-18', items: [
+    'Discover alternative version now searches with the artist and song that is actually playing, even when you are looking at a different artist. It no longer fills in “Unknown” for the song name.',
+    'Opening Discover alternative version fades the music out over two seconds instead of cutting it off, and closing the window fades it back in the same way.',
+  ] },
   { date: '2026-08-17', items: [
     'Adding an artist no longer mixes up albums that share a name. Self-titled records (Weezer’s Blue and Green albums, and others like them) now keep their own year, cover, and track list, matched against the real song titles.',
     'On My Jukebox, turning on Background play enabled only now limits Shuffle All, Shuffle Favorites, and every Play button to songs you have uploaded background-play audio for — not just the artist list on screen.',
@@ -15392,6 +15503,7 @@ async function restorePlaybackState() {
     row.queue.forEach(q => {
       if (q && q.trackId && q.artist) {
         SJ_TRACK_META[q.trackId] = {
+          title: q.title || '',
           artist: q.artist,
           album: q.album || '',
           year: q.year || '',
