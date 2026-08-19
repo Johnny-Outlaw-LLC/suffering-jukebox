@@ -11568,6 +11568,7 @@ let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
 let _sjQuota90Logged    = false;
+const LANDING_SUBMITTER_NONE = '__none__'; // persisted sentinel: empty grid, all boxes unchecked
 let landingSubmitterFilter = new Set(JSON.parse(localStorage.getItem('sj_landing_submitters') || '[]'));
 let _landingSubmitterKeys = [];
 let landingSearchQ = '';
@@ -11666,7 +11667,8 @@ function defaultLandingCompare(a, b) {
 
 function getVisibleLandingStats() {
   let visible = landingStats.filter(r => !r.hidden);
-  if (landingSubmitterFilter.size) {
+  if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
+  else if (landingSubmitterFilter.size) {
     visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
   }
   const _q = landingSearchQ.trim().toLowerCase();
@@ -11729,6 +11731,7 @@ function landingSubmitterOptions() {
 }
 
 function submitterBtnLabel() {
+  if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) return 'None selected';
   const n = landingSubmitterFilter.size;
   if (!n) return 'All submitters';
   if (n === 1) {
@@ -11764,28 +11767,48 @@ function closeSubmitterDD() {
 function toggleSubmitterFilter(idx) {
   const key = _landingSubmitterKeys[idx];
   if (key === undefined) return;
-  // An empty set means "all submitters", and every box renders checked, so the
-  // first uncheck has to start from everything-selected.
-  if (!landingSubmitterFilter.size) _landingSubmitterKeys.forEach(k => landingSubmitterFilter.add(k));
-  if (landingSubmitterFilter.has(key)) landingSubmitterFilter.delete(key);
+  if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) {
+    landingSubmitterFilter.clear();
+    landingSubmitterFilter.add(key);
+  } else if (!landingSubmitterFilter.size) {
+    // Empty set means every box is checked; first uncheck starts from all-selected.
+    _landingSubmitterKeys.forEach(k => landingSubmitterFilter.add(k));
+    landingSubmitterFilter.delete(key);
+  } else if (landingSubmitterFilter.has(key)) landingSubmitterFilter.delete(key);
   else landingSubmitterFilter.add(key);
-  // Everything selected (or nothing left) is the same as no filter at all.
-  if (!landingSubmitterFilter.size || landingSubmitterFilter.size === _landingSubmitterKeys.length) landingSubmitterFilter.clear();
+  // Full selection is the same as no filter; zero left means none selected.
+  if (landingSubmitterFilter.size === _landingSubmitterKeys.length) landingSubmitterFilter.clear();
+  else if (!landingSubmitterFilter.size) landingSubmitterFilter.add(LANDING_SUBMITTER_NONE);
   try { localStorage.setItem('sj_landing_submitters', JSON.stringify([...landingSubmitterFilter])); } catch (e) {}
   renderLanding();
 }
 
-// The "All" row at the top of each menu: checked means nothing is filtered out.
-// Clicking it when it is already checked is a no-op (it stays checked) so the
-// grid can never end up empty.
-function selectAllSubmitters(el) {
-  if (el && !el.checked) { el.checked = true; return; }
-  clearSubmitterFilter();
+// "All" toggles every submitter checkbox: checked = show everyone, unchecked = show no one.
+function selectAllSubmitters() {
+  if (landingSubmitterFilter.size === 0) landingSubmitterFilter = new Set([LANDING_SUBMITTER_NONE]);
+  else landingSubmitterFilter.clear();
+  try { localStorage.setItem('sj_landing_submitters', JSON.stringify([...landingSubmitterFilter])); } catch (e) {}
+  renderLanding();
 }
 
-function selectAllArtists(el) {
-  if (el && !el.checked) { el.checked = true; return; }
-  clearArtistsFilter();
+function selectAllArtists() {
+  if (!googleUser) { showToast('Sign in to customize your jukebox.'); renderLanding(); return; }
+  const opts = landingArtistOptions();
+  const allShown = opts.length > 0 && !opts.some(r => r.hidden);
+  if (allShown) {
+    opts.forEach(r => {
+      if (!r.hidden) {
+        r.hidden = true;
+        landingExpandedIds.delete(r.artist_id);
+        saveArtistFeedback(r.artist_id, { hidden: true });
+      }
+    });
+  } else {
+    opts.forEach(r => {
+      if (r.hidden) { r.hidden = false; saveArtistFeedback(r.artist_id, { hidden: false }); }
+    });
+  }
+  renderLanding();
 }
 
 function clearSubmitterFilter(e) {
@@ -12136,12 +12159,13 @@ function renderLanding() {
   const sizeOpt = (v, lbl) => `<option value="${v}"${landingDetailLevel === v ? ' selected' : ''}>${lbl}</option>`;
   const _subOpts = landingSubmitterOptions();
   _landingSubmitterKeys = _subOpts.map(o => o[0]);
+  const _subNone = landingSubmitterFilter.has(LANDING_SUBMITTER_NONE);
   const _subAllOn = landingSubmitterFilter.size === 0;
-  const _subAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_subAllOn ? ' checked' : ''} onchange="selectAllSubmitters(this)"><span class="lsm-name">All</span></label>`;
-  const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${_subAllOn || landingSubmitterFilter.has(o[0]) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
+  const _subAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_subAllOn ? ' checked' : ''} onchange="selectAllSubmitters()"><span class="lsm-name">All</span></label>`;
+  const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${!_subNone && (_subAllOn || landingSubmitterFilter.has(o[0])) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
   const _artistOpts = landingArtistOptions();
   _landingArtistKeys = _artistOpts.map(o => o.artist_id);
-  const _artistAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_artistOpts.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists(this)"><span class="lsm-name">All</span></label>`;
+  const _artistAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_artistOpts.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists()"><span class="lsm-name">All</span></label>`;
   const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
@@ -15586,6 +15610,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-19';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-19', items: [
+    'On Explore Artists, the All row in the Artists and Submitted By filters now toggles every checkbox in that menu — check all or uncheck all in one click.',
     'When you add an artist from search, album covers now default to the Wikipedia artwork. In fine-tune you can still swap to a YouTube thumbnail.',
     'The video scrub bar is draggable again, and tapping the video still play-pauses.',
     'A back button in the player toolbar returns to the last song you were listening to, even when shuffle skipped around the queue.',
