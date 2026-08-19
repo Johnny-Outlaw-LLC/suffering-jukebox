@@ -404,8 +404,10 @@ body:not(.light) .tt-num { color: var(--text); }
 .ma-search-row .m-input { width: 100%; box-sizing: border-box; }
 /* block context, so the flex:1 from .m-input does nothing */
 #amManName { width: 100%; }
-.am-ft-arts { display: flex; gap: .35rem; flex-wrap: wrap; }
+.am-ft-arts { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
+.am-ft-art-lbl { font-size: .44rem; color: var(--text-muted); line-height: 1.45; margin-top: .15rem; }
 .am-ft-arts img { width: 34px; height: 34px; object-fit: cover; border-radius: 4px; cursor: pointer; border: 2px solid transparent; opacity: .65; transition: opacity .15s, border-color .15s; }
+.am-ft-arts img[data-src="wiki"] { box-shadow: 0 0 0 1px #ffffff22; }
 .am-ft-arts img:hover { opacity: 1; }
 .am-ft-arts img.sel { border-color: var(--accent); opacity: 1; }
 .am-swatches { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
@@ -14730,6 +14732,14 @@ async function amGoFinetune() {
   }
 }
 
+function amFtCoverUrl(al) {
+  return al._pickedArt || al.art_wiki || al.art_url || (al.art_options || [])[0] || '';
+}
+function amFtCoverSelected(u, al) {
+  if (al._pickedArt) return u === al._pickedArt;
+  return u === (al.art_wiki || al.art_url || (al.art_options || [])[0] || '');
+}
+
 function amFtRender() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   document.getElementById('amFtBody').innerHTML = `
@@ -14739,19 +14749,25 @@ function amFtRender() {
     </div>
     <div class="am-ft-section">
       <div class="m-fl">Albums: cover, name &amp; year</div>
-      <div style="display:flex;flex-direction:column;gap:.6rem">${amFt.albums.map((al, i) => `
+      <div style="display:flex;flex-direction:column;gap:.6rem">${amFt.albums.map((al, i) => {
+        const wikiUrl = al.art_wiki || null;
+        const ytOpts = (al.art_options || []).filter(u => u !== wikiUrl);
+        const showPicker = !!(wikiUrl && ytOpts.length) || ytOpts.length > 1;
+        return `
         <div class="am-ft-row">
-          <img class="am-ft-cover" id="amFtCover${i}" src="${esc(al.art_url || (al.art_options || [])[0] || '')}" alt="">
+          <img class="am-ft-cover" id="amFtCover${i}" src="${esc(amFtCoverUrl(al))}" alt="">
           <div class="am-ft-fields">
             <div style="display:flex;gap:.5rem">
               <input type="text" class="m-input" id="amFtName${i}" maxlength="120" value="${esc(al.name)}" autocorrect="off" autocapitalize="words" spellcheck="false" style="flex:1;min-width:0">
               <input type="text" class="m-input am-ft-yr" id="amFtYear${i}" maxlength="4" inputmode="numeric" placeholder="Year" value="${(al.release_date || '').slice(0, 4)}">
             </div>
-            ${(al.art_options || []).length > 1 ? `<div class="am-ft-arts">${al.art_options.map(u =>
-              `<img src="${esc(u)}" loading="lazy" class="${u === al.art_url ? 'sel' : ''}" data-u="${esc(u)}" onclick="amFtPickArt(${i}, this)">`).join('')}</div>` : ''}
+            ${showPicker ? `<div class="am-ft-art-lbl">${wikiUrl ? 'Wikipedia cover is the default. Tap a YouTube thumbnail to use that instead.' : 'Pick a cover from the YouTube thumbnails below.'}</div>
+            <div class="am-ft-arts">${wikiUrl ? `<img src="${esc(wikiUrl)}" loading="lazy" class="${amFtCoverSelected(wikiUrl, al) ? 'sel' : ''}" data-u="${esc(wikiUrl)}" data-src="wiki" title="Wikipedia" onclick="amFtPickArt(${i}, this)">` : ''}${ytOpts.map(u =>
+              `<img src="${esc(u)}" loading="lazy" class="${amFtCoverSelected(u, al) ? 'sel' : ''}" data-u="${esc(u)}" data-src="youtube" title="YouTube" onclick="amFtPickArt(${i}, this)">`).join('')}</div>` : ''}
 
           </div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
       </div>
     </div>
     <div class="am-ft-section">
@@ -14922,7 +14938,8 @@ async function amFtSave() {
     const yy = (document.getElementById('amFtYear' + i)?.value || '').trim();
     if (nn && nn !== al.name) d.name = nn;
     if (/^\d{4}$/.test(yy) && yy !== (al.release_date || '').slice(0, 4)) d.release_date = yy;
-    if (al._pickedArt && al._pickedArt !== al.art_url) d.art_url = al._pickedArt;
+    const cover = al._pickedArt || al.art_wiki || al.art_url;
+    if (cover && cover !== al.art_url) d.art_url = cover;
     if (Object.keys(d).length > 1) payload.albums.push(d);
   });
   if (payload.artist_name || payload.albums.length) {
@@ -15458,7 +15475,7 @@ async function amImport() {
             continue;
           }
           usedPl.add(a.playlist_id);
-          matches.push({ id: a.playlist_id, title: a.title });
+          matches.push({ id: a.playlist_id, title: a.title, wiki_page: a.wiki_page || undefined });
           amLogLine('ok', `  ✓ “${a.title}”, using your playlist (${a.track_count} tracks)`);
           continue;
         }
@@ -15470,7 +15487,11 @@ async function amImport() {
           amLogLine('err', `  ⚠ “${a.title}”, playlist already used for another album, skipped`);
         } else if (m.match) {
           usedPl.add(m.match.playlist_id);
-          matches.push({ id: m.match.playlist_id, title: a.title, release_date: a.date || undefined, rg: a.rg || undefined });
+          matches.push({
+            id: m.match.playlist_id, title: a.title,
+            release_date: a.date || undefined, rg: a.rg || undefined,
+            wiki_page: a.wiki_page || undefined,
+          });
           amLogLine('ok', `  ✓ “${a.title}” → “${m.match.title}” · ${m.match.track_count} tracks · ${fmtV(m.match.views)} views`);
         } else {
           amLogLine('err', `  ⚠ “${a.title}”, no good playlist found, skipped`);
@@ -15565,6 +15586,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-19';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-19', items: [
+    'When you add an artist from search, album covers now default to the Wikipedia artwork. In fine-tune you can still swap to a YouTube thumbnail.',
     'The video scrub bar is draggable again, and tapping the video still play-pauses.',
     'A back button in the player toolbar returns to the last song you were listening to, even when shuffle skipped around the queue.',
     'Hover a synced lyric line to send a heart or heartbreak for that moment in the song, even while another part is playing.',
