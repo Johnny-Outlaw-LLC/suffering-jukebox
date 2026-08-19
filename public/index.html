@@ -1471,18 +1471,28 @@ textarea.report-input { resize:vertical; }
 }
 .ytp-mf-seek::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
 
-/* Reaction density chart — shown while hovering any scrub zone */
+/* Reaction markers — shown while hovering any scrub zone */
 .ytp-scrub-zone { position: relative; }
-.ytp-scrub-chart-wrap {
-  display: none; position: absolute; left: 0; right: 0; bottom: calc(100% + 4px);
-  height: 36px; pointer-events: none; z-index: 4;
+.ytp-scrub-rxn-wrap {
+  display: none; position: absolute; left: 0; right: 0; bottom: calc(100% + 3px);
+  height: 26px; pointer-events: none; z-index: 4; overflow: visible;
 }
-.ytp-scrub-zone:hover .ytp-scrub-chart-wrap,
-.ytp-scrub-zone:focus-within .ytp-scrub-chart-wrap { display: block; }
-.ytp-scrub-chart { width: 100%; height: 100%; display: block; overflow: visible; }
-.ytp-scrub-chart .rxn-area-heart { fill: rgba(255, 107, 53, .55); }
-.ytp-scrub-chart .rxn-area-sad { fill: rgba(130, 155, 185, .5); }
-.ytp-scrub-chart .rxn-chart-base { stroke: var(--border); stroke-width: .35; fill: none; opacity: .5; }
+.ytp-scrub-zone:hover .ytp-scrub-rxn-wrap,
+.ytp-scrub-zone:focus-within .ytp-scrub-rxn-wrap { display: block; }
+.ytp-scrub-rxn-track { position: relative; width: 100%; height: 100%; }
+.ytp-scrub-rxn-mark {
+  position: absolute; bottom: 0; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.ytp-scrub-rxn-item {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: .42rem; font-family: var(--mono); line-height: 1; white-space: nowrap;
+  background: rgba(0, 0, 0, .62); border-radius: 5px; padding: 1px 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+.ytp-scrub-rxn-item svg { width: 10px; height: 10px; display: block; flex-shrink: 0; }
+.ytp-scrub-rxn-item.heart { color: var(--accent); }
+.ytp-scrub-rxn-item.sad { color: #8ea0b8; }
 
 /* Frame overlay scrub — replaces YouTube native controls */
 .ytp-frame-scrub {
@@ -2693,7 +2703,7 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
       </div>
     </div>
     <div class="ytp-mf-scrub ytp-scrub-zone" id="ytp-mf-scrub" data-scrub-prefix="mf" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
-      <div class="ytp-scrub-chart-wrap"><svg class="ytp-scrub-chart" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+      <div class="ytp-scrub-rxn-wrap" aria-hidden="true"><div class="ytp-scrub-rxn-track"></div></div>
       <span class="ytp-mf-scrub-time" id="ytp-mf-cur">0:00</span>
       <input class="ytp-mf-seek" id="ytp-mf-seek" type="range" min="0" max="0" value="0" step="0.25"
         aria-label="Seek"
@@ -4629,7 +4639,7 @@ function ytpMobDeckHTML(trackId) {
   return `
     <div class="ytp-mob-deck" id="ytp-mob-deck" onmousedown="event.stopPropagation()">
       <div class="ytp-md-scrub ytp-scrub-zone" data-scrub-prefix="md" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
-        <div class="ytp-scrub-chart-wrap"><svg class="ytp-scrub-chart" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+        <div class="ytp-scrub-rxn-wrap" aria-hidden="true"><div class="ytp-scrub-rxn-track"></div></div>
         <span class="ytp-md-time" id="ytp-md-cur">0:00</span>
         <input class="ytp-md-seek" id="ytp-md-seek" type="range" min="0" max="0" value="0" step="0.25"
           aria-label="Seek"
@@ -4823,7 +4833,7 @@ function ytpIframeHTML(videoId, h, autoplay) {
 
 function ytpFrameScrubHTML() {
   return `<div class="ytp-frame-scrub ytp-scrub-zone" id="ytp-frame-scrub" data-scrub-prefix="dk">
-    <div class="ytp-scrub-chart-wrap"><svg class="ytp-scrub-chart" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+    <div class="ytp-scrub-rxn-wrap" aria-hidden="true"><div class="ytp-scrub-rxn-track"></div></div>
     <div class="ytp-frame-scrub-row">
       <span class="ytp-frame-scrub-time" id="ytp-dk-cur">0:00</span>
       <input class="ytp-dk-seek" id="ytp-dk-seek" type="range" min="0" max="0" value="0" step="0.25"
@@ -15470,8 +15480,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-19';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-19', items: [
-    'Hover the playback bar to see where hearts and heartbreaks landed on the song — orange is hearts, blue-gray is heartbreaks.',
-    'The player now uses its own scrub bar over the video instead of YouTube\'s, so seeking and reaction charts stay in sync with the app.',
+    'Hover the playback bar to see heart and heartbreak icons with counts where listeners reacted.',
+    'The player now uses its own scrub bar over the video instead of YouTube\'s, so seeking and reaction markers stay in sync with the app.',
     'With Sync on, lyric lines that got reactions show a small heart or heartbreak count beside the line.',
   ] },
   { date: '2026-08-18', items: [
@@ -17486,34 +17496,37 @@ function _lyrRefreshReactionBadges(trackId) {
   });
 }
 
-const _RXN_CHART_BUCKETS = 80;
+const _RXN_SCRUB_BUCKETS = 60;
 
-function ytpReactionChartBuckets(timeline, durSec) {
-  const heart = new Array(_RXN_CHART_BUCKETS).fill(0);
-  const sad = new Array(_RXN_CHART_BUCKETS).fill(0);
+function ytpReactionScrubMarkers(timeline, durSec) {
   const durMs = Math.max(1, (Number(durSec) || 0) * 1000);
+  const heart = new Array(_RXN_SCRUB_BUCKETS).fill(0);
+  const sad = new Array(_RXN_SCRUB_BUCKETS).fill(0);
   (timeline?.heart || []).forEach(ms => {
-    const i = Math.min(_RXN_CHART_BUCKETS - 1, Math.max(0, Math.floor((ms / durMs) * _RXN_CHART_BUCKETS)));
+    const i = Math.min(_RXN_SCRUB_BUCKETS - 1, Math.max(0, Math.floor((ms / durMs) * _RXN_SCRUB_BUCKETS)));
     heart[i]++;
   });
   (timeline?.sad || []).forEach(ms => {
-    const i = Math.min(_RXN_CHART_BUCKETS - 1, Math.max(0, Math.floor((ms / durMs) * _RXN_CHART_BUCKETS)));
+    const i = Math.min(_RXN_SCRUB_BUCKETS - 1, Math.max(0, Math.floor((ms / durMs) * _RXN_SCRUB_BUCKETS)));
     sad[i]++;
   });
-  return { heart, sad };
+  const marks = [];
+  for (let i = 0; i < _RXN_SCRUB_BUCKETS; i++) {
+    if (!heart[i] && !sad[i]) continue;
+    marks.push({
+      pct: ((i + 0.5) / _RXN_SCRUB_BUCKETS) * 100,
+      heart: heart[i],
+      sad: sad[i],
+    });
+  }
+  return marks;
 }
 
-function ytpAreaPath(values, maxVal, yBase, yTop) {
-  if (!values.length) return '';
-  const span = yBase - yTop;
-  const step = 100 / (values.length - 1 || 1);
-  let d = 'M 0 ' + yBase;
-  values.forEach((v, i) => {
-    const y = yBase - (maxVal ? (v / maxVal) * span : 0);
-    d += ' L ' + (i * step).toFixed(2) + ' ' + y.toFixed(2);
-  });
-  d += ' L 100 ' + yBase + ' Z';
-  return d;
+function ytpScrubRxnItemHTML(type, count) {
+  const n = Number(count) || 0;
+  if (!n) return '';
+  const icon = SJ_REACTION_ICONS[type] || '';
+  return `<span class="ytp-scrub-rxn-item ${type}">${icon}<span>${ytpReactionCountLabel(n)}</span></span>`;
 }
 
 function ytpPaintScrubCharts() {
@@ -17521,17 +17534,18 @@ function ytpPaintScrubCharts() {
   const tl = trackId ? trackReactionTimeline[trackId] : null;
   const { dur } = ytpMfPlaybackPos();
   const hasData = tl && ((tl.heart && tl.heart.length) || (tl.sad && tl.sad.length));
-  document.querySelectorAll('.ytp-scrub-zone .ytp-scrub-chart').forEach(svg => {
+  document.querySelectorAll('.ytp-scrub-rxn-track').forEach(track => {
     if (!hasData || !dur) {
-      svg.innerHTML = '';
+      track.innerHTML = '';
       return;
     }
-    const { heart, sad } = ytpReactionChartBuckets(tl, dur);
-    const maxH = Math.max(1, ...heart, ...sad);
-    svg.innerHTML =
-      '<path class="rxn-area-sad" d="' + ytpAreaPath(sad, maxH, 31, 4) + '"></path>' +
-      '<path class="rxn-area-heart" d="' + ytpAreaPath(heart, maxH, 31, 4) + '"></path>' +
-      '<path class="rxn-chart-base" d="M0 31 L100 31"></path>';
+    const marks = ytpReactionScrubMarkers(tl, dur);
+    track.innerHTML = marks.map(m =>
+      `<div class="ytp-scrub-rxn-mark" style="left:${m.pct.toFixed(2)}%">` +
+      ytpScrubRxnItemHTML('heart', m.heart) +
+      ytpScrubRxnItemHTML('sad', m.sad) +
+      '</div>'
+    ).join('');
   });
 }
 
@@ -17650,6 +17664,7 @@ async function ytpUndoSessionReactions(trackId, reaction, all) {
     sessionTrackReactions[trackId][reaction] = bucket.filter(id => !deleted.has(id));
     trackReactionCounts[trackId] = body.counts || counts;
     refreshTrackReactionUI(trackId);
+    loadTrackReactionTimeline(trackId, true);
     showToast(`${deleted.size || ids.length} ${reaction === 'sad' ? 'heartbreak' : 'heart'} reaction${(deleted.size || ids.length) === 1 ? '' : 's'} undone.`);
   } catch (e) {
     counts[reaction] = before;
