@@ -903,7 +903,11 @@ mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
   padding: 4px 7px; border-radius: 5px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
 .llt-btn:hover { background: rgba(255,255,255,.08); }
 .llt-btn:disabled { opacity: .5; cursor: default; }
-.llt-react.active { color: var(--accent); }
+.llt-btn.llt-rxn { color: var(--text-muted); padding: 4px 6px; gap: 2px; }
+.llt-btn.llt-rxn svg { width: 13px; height: 13px; display: block; flex-shrink: 0; }
+.llt-btn.llt-rxn.heart { color: var(--accent); }
+.llt-btn.llt-rxn.sad { color: #8ea0b8; }
+.llt-rxn-count { font-size: .44rem; min-width: .8em; text-align: center; }
 /* Reaction button inside the comment modal's cited-lyric quote */
 .cmt-quote { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .cmt-quote-text { flex: 1; min-width: 0; }
@@ -7521,9 +7525,9 @@ document.addEventListener('click', e => {
 // ── Karaoke line hover (desktop) / long-press (touch) toolbar ──────────────
 // Clicking a .lyr-line seeks the track - fine for navigating, but jumping the
 // song just to comment or react disrupts listening. Hovering (or, on touch,
-// holding) a line for a moment instead surfaces a small Comment/\u{1F44D} toolbar
-// that never touches playback.
-const _lyrReactionCache = {}; // trackId -> { [quote]: {count, reacted} }
+// holding) a line for a moment instead surfaces heart/heartbreak + Comment
+// without moving playback.
+const _lyrReactionCache = {}; // trackId -> { [quote]: {count, reacted} } — comment modal quote thumbs only
 
 async function _lyrEnsureReactions(trackId) {
   if (!trackId) return {};
@@ -7554,7 +7558,19 @@ async function _lyrToggleReaction(trackId, quote, start, end) {
   return result;
 }
 
-let _lyrToolbarCtx = null; // { trackId, quote, start, end, lineEl }
+let _lyrToolbarCtx = null; // { trackId, quote, start, end, lineEl, lineIdx, positionMs }
+
+function _lyrLinePositionMs(trackId, lineIdx) {
+  const sync = syncedLyricsCache[trackId];
+  if (!sync || !Number.isFinite(lineIdx) || lineIdx < 0 || !sync[lineIdx]) return null;
+  let offset = 0;
+  if (trackId === nowPlayingTrackId && ytVideoId) offset = tvOffset(trackId, ytVideoId);
+  else {
+    const v = tvPrimary(trackId);
+    offset = v ? tvOffset(trackId, v.video_id) : 0;
+  }
+  return Math.max(0, Math.round((sync[lineIdx].t + offset) * 1000));
+}
 
 function _lyrLineToolbarEl() {
   let el = document.getElementById('lyr-line-toolbar');
@@ -7563,12 +7579,26 @@ function _lyrLineToolbarEl() {
     el.id = 'lyr-line-toolbar';
     el.className = 'lyr-line-toolbar';
     el.innerHTML =
-      '<button class="llt-btn llt-react" onclick="lyrQuickReact(event)" title="Thumbs up this lyric">\u{1F44D} <span class="llt-count">0</span></button>' +
+      `<button type="button" class="llt-btn llt-rxn heart" data-rxn="heart" onclick="lyrLineReact('heart',event)" title="Heart this moment">${SJ_REACTION_ICONS.heart}<span class="llt-rxn-count"></span></button>` +
+      `<button type="button" class="llt-btn llt-rxn sad" data-rxn="sad" onclick="lyrLineReact('sad',event)" title="Heartbreak this moment">${SJ_REACTION_ICONS.sad}<span class="llt-rxn-count"></span></button>` +
       (SJ_COMMENTS_ENABLED ? '<button class="llt-btn llt-comment" onclick="lyrCommentFromToolbar(event)" title="Comment on this lyric">\u{1F4AC} Comment</button>' : '');
-    el.addEventListener('mousedown', e => e.preventDefault()); // don't clear the user's selection before the click lands
+    el.addEventListener('mousedown', e => e.preventDefault());
     document.body.appendChild(el);
   }
   return el;
+}
+
+function _lyrRefreshToolbarCounts(ctx) {
+  const el = document.getElementById('lyr-line-toolbar');
+  if (!el || !ctx || !Number.isFinite(ctx.lineIdx)) return;
+  const rxnLines = _lyrLineReactionCounts(ctx.trackId, syncedLyricsCache[ctx.trackId]);
+  const rxn = rxnLines ? rxnLines[ctx.lineIdx] : null;
+  el.querySelectorAll('[data-rxn]').forEach(btn => {
+    const key = btn.getAttribute('data-rxn');
+    const countEl = btn.querySelector('.llt-rxn-count');
+    const n = rxn ? (Number(rxn[key]) || 0) : 0;
+    if (countEl) countEl.textContent = n ? ytpReactionCountLabel(n) : '';
+  });
 }
 
 function hideLyrLineToolbar() {
@@ -7583,7 +7613,9 @@ async function _lyrRevealLineToolbar(lineEl) {
   if (_lyrHideTimer) { clearTimeout(_lyrHideTimer); _lyrHideTimer = null; }
   const info = _lyricHostOf(lineEl);
   if (!info) return;
-  let quote = (lineEl.textContent || '').trim();
+  const lineIdx = Number(lineEl.getAttribute('data-i'));
+  const textNode = lineEl.querySelector('.lyr-line-text');
+  let quote = (textNode ? textNode.textContent : lineEl.textContent || '').trim();
   let start = null, end = null;
   const sel = window.getSelection();
   if (sel && !sel.isCollapsed && sel.rangeCount) {
@@ -7595,7 +7627,8 @@ async function _lyrRevealLineToolbar(lineEl) {
   }
   if (!quote) return;
   const trackId = info.trackId;
-  _lyrToolbarCtx = { trackId, quote, start, end, lineEl };
+  const positionMs = _lyrLinePositionMs(trackId, lineIdx);
+  _lyrToolbarCtx = { trackId, quote, start, end, lineEl, lineIdx, positionMs };
 
   const el = _lyrLineToolbarEl();
   const r = lineEl.getBoundingClientRect();
@@ -7604,15 +7637,10 @@ async function _lyrRevealLineToolbar(lineEl) {
   el.style.left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left)) + 'px';
   el.style.top  = Math.max(6, r.top - 36) + 'px';
 
-  const countEl = el.querySelector('.llt-count');
-  const reactBtn = el.querySelector('.llt-react');
-  if (countEl) countEl.textContent = '\u2026';
-  if (reactBtn) reactBtn.classList.remove('active');
-  const state = await _lyrEnsureReactions(trackId);
-  if (!_lyrToolbarCtx || _lyrToolbarCtx.lineEl !== lineEl) return; // moved on while fetching
-  const s = state[quote];
-  if (countEl) countEl.textContent = s ? s.count : 0;
-  if (reactBtn) reactBtn.classList.toggle('active', !!(s && s.reacted));
+  el.querySelectorAll('[data-rxn] .llt-rxn-count').forEach(c => { c.textContent = '\u2026'; });
+  await loadTrackReactionTimeline(trackId, false);
+  if (!_lyrToolbarCtx || _lyrToolbarCtx.lineEl !== lineEl) return;
+  _lyrRefreshToolbarCounts(_lyrToolbarCtx);
 }
 
 async function lyrCommentFromToolbar(e) {
@@ -7623,20 +7651,21 @@ async function lyrCommentFromToolbar(e) {
   openComments('lyric', ctx.trackId, { lyric: { quote: ctx.quote, start: ctx.start, end: ctx.end } });
 }
 
-async function lyrQuickReact(e) {
+async function lyrLineReact(reaction, e) {
   e?.stopPropagation();
   const ctx = _lyrToolbarCtx;
   if (!ctx) return;
+  if (ctx.positionMs == null) { showToast('Could not place that reaction on this line.'); return; }
   const el = document.getElementById('lyr-line-toolbar');
-  const btn = el?.querySelector('.llt-react');
-  const countEl = el?.querySelector('.llt-count');
+  const btn = el?.querySelector('[data-rxn="' + reaction + '"]');
   if (btn) btn.disabled = true;
   try {
-    const r = await _lyrToggleReaction(ctx.trackId, ctx.quote, ctx.start, ctx.end);
-    if (countEl) countEl.textContent = r.count;
-    if (btn) btn.classList.toggle('active', r.reacted);
-  } catch (err) { showToast('Could not save that.'); }
-  finally { if (btn) btn.disabled = false; }
+    await ytpSendReaction(ctx.trackId, reaction, ctx.positionMs, btn);
+    _lyrRefreshToolbarCounts(ctx);
+    _lyrRefreshReactionBadges(ctx.trackId);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // Desktop: hover-and-dwell (doesn't fight the existing click-to-seek).
@@ -15480,6 +15509,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-19';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-19', items: [
+    'Hover a synced lyric line to send a heart or heartbreak for that moment in the song, even while another part is playing.',
     'Hover the playback bar to see heart and heartbreak icons with counts where listeners reacted.',
     'The player now uses its own scrub bar over the video instead of YouTube\'s, so seeking and reaction markers stay in sync with the app.',
     'With Sync on, lyric lines that got reactions show a small heart or heartbreak count beside the line.',
@@ -17779,17 +17809,9 @@ function ytpSyncReactions(trackId) {
   }
 }
 
-async function ytpReact(reaction, anchor, ev) {
-  if (ev) ev.stopPropagation();
-  if (_ytpReactionSuppressClick) {
-    if (ev) ev.preventDefault();
-    _ytpReactionSuppressClick = false;
-    return;
-  }
+async function ytpSendReaction(trackId, reaction, positionMs, anchor) {
   const def = SJ_REACTION_TYPES.find(r => r.key === reaction);
-  const current = ytQueue[ytQueueIdx];
-  const trackId = anchor?.getAttribute('data-track-id') || anchor?.getAttribute('data-reaction-track') || current?.trackId;
-  if (!def || !trackId) return;
+  if (!def || !trackId) return false;
 
   const counts = trackReactionCounts[trackId] || (trackReactionCounts[trackId] = {});
   counts[reaction] = (Number(counts[reaction]) || 0) + 1;
@@ -17808,7 +17830,7 @@ async function ytpReact(reaction, anchor, ev) {
         track_id: trackId,
         reaction,
         device_id: getDeviceId(),
-        position_ms: ytpReactionPositionMs(),
+        position_ms: Number.isFinite(positionMs) ? positionMs : null,
       })
     });
     const body = await res.json().catch(() => ({}));
@@ -17820,12 +17842,26 @@ async function ytpReact(reaction, anchor, ev) {
     }
     trackReactionCounts[trackId] = body.counts || counts;
     refreshTrackReactionUI(trackId);
-    ytpPushReactionTimeline(trackId, reaction, ytpReactionPositionMs());
+    if (Number.isFinite(positionMs)) ytpPushReactionTimeline(trackId, reaction, positionMs);
+    return true;
   } catch (e) {
     counts[reaction] = Math.max(0, (Number(counts[reaction]) || 1) - 1);
     refreshTrackReactionUI(trackId);
     showToast(e.message || 'Could not save reaction.');
+    return false;
   }
+}
+
+async function ytpReact(reaction, anchor, ev) {
+  if (ev) ev.stopPropagation();
+  if (_ytpReactionSuppressClick) {
+    if (ev) ev.preventDefault();
+    _ytpReactionSuppressClick = false;
+    return;
+  }
+  const current = ytQueue[ytQueueIdx];
+  const trackId = anchor?.getAttribute('data-track-id') || anchor?.getAttribute('data-reaction-track') || current?.trackId;
+  await ytpSendReaction(trackId, reaction, ytpReactionPositionMs(), anchor);
 }
 
 // Refresh the shared totals while a song is playing so reactions from other
