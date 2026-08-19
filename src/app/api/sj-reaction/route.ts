@@ -89,11 +89,41 @@ async function reactionCounts(trackId: string) {
   return counts;
 }
 
+const TIMELINE_CAP = 2500;
+
+async function reactionTimeline(trackId: string) {
+  const timeline = Object.fromEntries(REACTIONS.map((reaction) => [reaction, [] as number[]])) as Record<Reaction, number[]>;
+  const { data, error } = await createSjClient()
+    .from("track_reactions")
+    .select("reaction,position_ms")
+    .eq("track_id", trackId)
+    .not("position_ms", "is", null)
+    .in("reaction", [...REACTIONS])
+    .order("position_ms", { ascending: true })
+    .limit(TIMELINE_CAP);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    if (!REACTION_SET.has(row.reaction)) continue;
+    const ms = Number(row.position_ms);
+    if (Number.isFinite(ms) && ms >= 0) timeline[row.reaction as Reaction].push(ms);
+  }
+  return timeline;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const trackId = uuid(req.nextUrl.searchParams.get("track_id"));
     if (!trackId) return NextResponse.json({ ok: false, error: "Invalid track." }, { status: 400 });
-    return NextResponse.json({ ok: true, counts: await reactionCounts(trackId) });
+    const withTimeline = req.nextUrl.searchParams.get("timeline") === "1";
+    const [counts, timeline] = await Promise.all([
+      reactionCounts(trackId),
+      withTimeline ? reactionTimeline(trackId) : Promise.resolve(null),
+    ]);
+    return NextResponse.json({
+      ok: true,
+      counts,
+      ...(timeline ? { timeline } : {}),
+    });
   } catch (error) {
     console.error("[sj-reaction:get]", error);
     return NextResponse.json({ ok: false, error: "Could not load reactions." }, { status: 500 });
