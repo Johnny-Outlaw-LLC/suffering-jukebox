@@ -1943,11 +1943,15 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-queue-section { background:var(--bg-card); max-height:280px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
 .yt-queue-sticky { position:sticky; top:0; z-index:3; background:var(--bg-card); border-bottom:1px solid var(--border); }
 .yt-queue-head { display:flex; align-items:center; gap:6px; font-size:.42rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); padding:6px 10px 5px; font-weight:600; }
-.yt-queue-up-next { display:flex; align-items:center; gap:7px; min-width:0; padding:5px 10px 6px; background:var(--bg-elevated); border-top:1px solid var(--border); }
+.yt-queue-up-next { display:flex; align-items:center; gap:7px; min-width:0; padding:5px 10px 6px; background:var(--bg-elevated); border-bottom:1px solid var(--border); }
 .yt-queue-up-next-lbl { color:var(--accent); font-size:.42rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; flex-shrink:0; }
 .yt-queue-up-next-title { flex:1; min-width:0; color:var(--text); font-size:.55rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .yt-queue-up-next-skip { background:var(--accent); border:1px solid var(--accent); color:#0a0a0a; font-family:var(--mono); font-size:.45rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:.38rem .62rem; border-radius:8px; cursor:pointer; flex-shrink:0; transition:all .15s; }
 .yt-queue-up-next-skip:hover { color:#0a0a0a; filter:brightness(1.12); }
+#ytp-up-next-slot:empty { display:none; }
+.ytp-tog { background:none; border:none; color:var(--text-muted); font-family:var(--mono); font-size:.5rem; font-weight:700; letter-spacing:.02em; padding:2px 4px; cursor:pointer; line-height:1.5; white-space:nowrap; border-radius:4px; transition:color .12s; }
+.ytp-tog:hover { color:var(--text); }
+.ytp-tog.on { color:var(--accent); }
 .yt-queue-row { display:flex; align-items:center; gap:7px; padding:5px 10px; cursor:pointer; background:transparent; transition:background .1s; }
 .yt-queue-row:hover { background:var(--bg-elevated); }
 .yt-queue-row.active { background:var(--bg-elevated); }
@@ -4774,9 +4778,9 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <button class="ytp-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">⏮</button>
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭</button>
         <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">⏸</button>
-        <label class="ytp-btn ytp-lyrics-chk-wrap" title="Show lyrics" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyrics-chk" onchange="ytpToggleLyrics(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.5rem">Lyrics</span></label>
-        <label class="ytp-btn" title="Shuffle queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-shuffle-chk" onchange="setYtShuffleEnabled(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.5rem">Shuffle</span></label>
-        <label class="ytp-btn" title="Repeat queue" style="display:flex;align-items:center;gap:3px;cursor:pointer;user-select:none" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-repeat-chk" onchange="ytpSetRepeat(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.5rem">Repeat</span></label>
+        <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen);event.stopPropagation()">Lyrics</button>
+        <button type="button" class="ytp-tog" id="ytp-shuffle-tog" title="Shuffle queue" onmousedown="event.stopPropagation()" onclick="setYtShuffleEnabled(!ytShuffle);event.stopPropagation()">Shuffle</button>
+        <button type="button" class="ytp-tog" id="ytp-repeat-tog" title="Repeat queue" onmousedown="event.stopPropagation()" onclick="ytpSetRepeat(!ytRepeat);event.stopPropagation()">Repeat</button>
         <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">⇄ Versions ▾</button>
         <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
         <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
@@ -4791,19 +4795,17 @@ function openYTPlayer(videoId, title, trackId, ev) {
         ${ytpReactionRailHTML(trackId, 'ytp-desktop-reaction-rail', true)}
       </div>
     </div>
+    <div id="ytp-up-next-slot"></div>
     <div class="yt-player-frame" style="height:${cH}px">
       ${ytpIframeHTML(videoId, cH, !restorePaused)}${ytpFrameScrubHTML()}
     </div>
     ${ytpMobDeckHTML(trackId)}
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
   _ytpContainerEl.appendChild(ytPlayerEl);
-  // Sync the newly-created Shuffle/Repeat checkboxes to whatever state
+  // Sync the newly-created Shuffle/Repeat toggles to whatever state
   // was set before the player existed (e.g. shuffleAllVisible() calling
   // setYtShuffleEnabled() ahead of openYTPlayer()).
-  const _shChk0 = ytPlayerEl.querySelector('#ytp-shuffle-chk');
-  if (_shChk0) _shChk0.checked = ytShuffle;
-  const _rpChk0 = ytPlayerEl.querySelector('#ytp-repeat-chk');
-  if (_rpChk0) _rpChk0.checked = ytRepeat;
+  ytpPaintTogs();
 
   // Initialize queue with this first track
   ytQueue = [ytQueueItem(videoId, title, trackId)];
@@ -5299,6 +5301,22 @@ function ytpUpNextQueueHTML() {
     (ytQueue.length > 2 ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another queued song to play next">Skip</button>' : '') + '</div>';
 }
 
+function ytpPaintUpNext() {
+  if (!ytPlayerEl) return;
+  const slot = ytPlayerEl.querySelector('#ytp-up-next-slot');
+  if (!slot) return;
+  slot.innerHTML = (ytQueue.length > 1) ? ytpUpNextQueueHTML() : '';
+}
+
+function ytpPaintTogs() {
+  const lyr = document.getElementById('ytp-lyrics-tog');
+  if (lyr) lyr.classList.toggle('on', !!_ytpLyricsOpen);
+  const sh = document.getElementById('ytp-shuffle-tog');
+  if (sh) sh.classList.toggle('on', !!ytShuffle);
+  const rp = document.getElementById('ytp-repeat-tog');
+  if (rp) rp.classList.toggle('on', !!ytRepeat);
+}
+
 function ytNextTrack() {
   if (ytShuffle && ytQueue.length > 1) {
     ytPlayQueueIdx(_ytShuffleNextIdx());
@@ -5705,6 +5723,7 @@ function updateYTQueueUI(opts) {
 
   // The phone's Playlist tab is a panel of its own - it still needs the list
   // (and the Load Playlist bar) when only one song is queued.
+  ytpPaintUpNext();
   if (ytQueue.length <= 1 && !ytpMobFsOn()) {
     if (existingWrap) existingWrap.remove();
     return;
@@ -5720,7 +5739,6 @@ function updateYTQueueUI(opts) {
           <span>Queue · ${ytQueue.length} track${ytQueue.length === 1 ? '' : 's'}</span>
           <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
         </div>
-        ${ytpUpNextQueueHTML()}
       </div>
       ${ytQueue.map((item, i) => {
         const _qm = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
@@ -5916,8 +5934,7 @@ function ytpMobSetTab(tab, userSet) {
   document.getElementById('ytp-md-tab-playlist')?.classList.toggle('on', !lyrics);
   // The pane only loads (and the karaoke sync only runs) while it is the
   // panel on screen, so the tab drives the same switch the checkbox does.
-  const chk = document.getElementById('ytp-lyrics-chk');
-  if (chk) chk.checked = lyrics;
+  ytpPaintTogs();
   if (lyrics !== _ytpLyricsOpen) ytpToggleLyrics(lyrics);
   if (!lyrics) {
     updateYTQueueUI();
@@ -5960,8 +5977,7 @@ function ytpMobSyncDeck() {
 
 function ytpSetRepeat(on) {
   ytRepeat = !!on;
-  const chk = document.getElementById('ytp-repeat-chk');
-  if (chk) chk.checked = ytRepeat;
+  ytpPaintTogs();
   ytpMobSyncDeck();
 }
 
@@ -5998,8 +6014,6 @@ async function ytpAutoOpenFullscreenLyrics() {
   if (hasLyrics) {
     if (!_ytpLyricsOpen) {
       _ytpFsAutoLyrics = true;
-      const lyrChk = document.getElementById('ytp-lyrics-chk');
-      if (lyrChk) lyrChk.checked = true;
       ytpToggleLyrics(true);
     }
     if (ytpIsMob() && !_ytpMobTabUserSet && _ytpMobTab !== 'lyrics') ytpMobSetTab('lyrics', false);
@@ -9683,8 +9697,6 @@ function ytpToggleFullscreen() {
   // Close the pane while _ytpFs is still true so ytpToggleLyrics() takes the
   // fullscreen path instead of trying to shift the floating container back.
   if (_ytpLyricsOpen && _ytpFsAutoLyrics) {
-    const chk = document.getElementById('ytp-lyrics-chk');
-    if (chk) chk.checked = false;
     ytpToggleLyrics(false);
   }
   _ytpFsAutoLyrics = false;
@@ -9766,6 +9778,7 @@ let _ytpFsAutoLyrics = false;  // true when fullscreen auto-opened the lyrics pa
 
 function ytpToggleLyrics(open) {
   _ytpLyricsOpen = open;
+  ytpPaintTogs();
   if (!_ytpLyricsPaneEl || !_ytpContainerEl) return;
   const isMob = ytpIsMob();
   if (isMob && open && !_ytpFs) return;
@@ -10187,9 +10200,21 @@ function sjmClose() {
 
 // Scrolling closes the menu, except while we are the ones causing the scroll -
 // reordering rebuilds the queue list, and that must not shut the menu the user
-// is still using to move the track further.
+// is still using to move the track further. Lyric sync and queue auto-scroll
+// also fire capture-phase scroll events; those must not steal the menu either.
 let _sjmScrollGuard = false;
-function _sjmScroll() { if (!_sjmScrollGuard) sjmClose(); }
+function _sjmScroll(e) {
+  if (_sjmScrollGuard) return;
+  const t = e && e.target;
+  if (t && t.nodeType === 1) {
+    if (t.id === 'ytp-lyr-body' || t.id === 'ytp-lyr-text' ||
+        t.classList.contains('yt-queue-section') ||
+        (typeof t.closest === 'function' && (t.closest('#ytp-lyrics-pane') || t.closest('.yt-queue-wrap') || t.closest('#ytp-up-next-slot')))) {
+      return;
+    }
+  }
+  sjmClose();
+}
 function _sjmOutside(e) {
   const m = document.getElementById('sjm-menu');
   if (m && !m.contains(e.target) && e.target !== _sjmAnchor && !_sjmAnchor?.contains(e.target)) sjmClose();
@@ -10260,6 +10285,86 @@ function sjmQueueRemove() {
   if (q >= 0) ytRemoveFromQueue(q);
 }
 
+// Drop every queued song by the same artist or album as the menu track.
+function sjmQueueRemoveGroup(kind) {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (!tid || ytQueue.length <= 1) return;
+  const meta = ytpTrackMeta(tid, null);
+  const key = kind === 'album'
+    ? (meta.album || '').trim().toLowerCase()
+    : (meta.artist || '').trim().toLowerCase();
+  if (!key) {
+    showToast(kind === 'album' ? 'No album on that track.' : 'No artist on that track.');
+    return;
+  }
+  const track = findTrackById(tid);
+  const albumId = track && track.album_id;
+  let artistId = null;
+  if (kind === 'artist') {
+    for (const aid of Object.keys(tracks)) {
+      if ((tracks[aid] || []).some(t => t.id === tid)) { artistId = aid; break; }
+    }
+  }
+  const before = ytQueue.length;
+  const kept = [];
+  let newIdx = -1;
+  for (let i = 0; i < ytQueue.length; i++) {
+    const item = ytQueue[i];
+    let drop = false;
+    if (item && item.trackId) {
+      const t = findTrackById(item.trackId);
+      if (kind === 'album') {
+        if (albumId && t && t.album_id === albumId) drop = true;
+        else {
+          const m = ytpTrackMeta(item.trackId, item.title);
+          if ((m.album || item.album || '').trim().toLowerCase() === key) drop = true;
+        }
+      } else {
+        if (artistId && t) {
+          for (const aid of Object.keys(tracks)) {
+            if ((tracks[aid] || []).some(x => x.id === item.trackId)) {
+              if (aid === artistId) drop = true;
+              break;
+            }
+          }
+        }
+        if (!drop) {
+          const m = ytpTrackMeta(item.trackId, item.title);
+          if ((m.artist || item.artist || '').trim().toLowerCase() === key) drop = true;
+        }
+      }
+    }
+    if (drop) continue;
+    if (i === ytQueueIdx) newIdx = kept.length;
+    kept.push(item);
+  }
+  const removed = before - kept.length;
+  if (!removed) {
+    showToast(kind === 'album' ? 'No other songs from that album in the playlist.' : 'No other songs by that artist in the playlist.');
+    return;
+  }
+  if (!kept.length) {
+    ytQueue = [];
+    ytQueueIdx = -1;
+    closeYTPlayer();
+    showToast('Removed ' + removed + ' song' + (removed === 1 ? '' : 's') + ' — playlist empty.');
+    return;
+  }
+  const lostCurrent = newIdx < 0;
+  ytQueue = kept;
+  ytResetShufflePool();
+  if (lostCurrent) {
+    ytQueueIdx = Math.min(Math.max(0, ytQueueIdx), kept.length - 1);
+    ytPlayQueueIdx(ytQueueIdx);
+  } else {
+    ytQueueIdx = newIdx;
+    updateYTQueueUI();
+  }
+  const label = kind === 'album' ? (meta.album || 'album') : (meta.artist || 'artist');
+  showToast('Removed ' + removed + ' from playlist (' + label + ').');
+}
+
 function sjmOpenForPlayer(anchorEl, ev) {
   const item = ytQueue[ytQueueIdx];
   const tid  = item?.trackId || nowPlayingTrackId;
@@ -10319,6 +10424,21 @@ function sjmRenderRoot() {
           '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from queue</span></button>' +
         '<div class="sjm-sep"></div>'
       : '') +
+    (function () {
+      // Player ⋯ and queue ⋯ both offer these while a multi-track playlist is loaded.
+      if (!tid || ytQueue.length <= 1) return '';
+      if (!ytQueue.some(item => item && item.trackId === tid)) return '';
+      const meta = ytpTrackMeta(tid, null);
+      let html = '';
+      if (meta.artist) html +=
+        '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'artist\')">' +
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove artist from playlist</span></button>';
+      if (meta.album) html +=
+        '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'album\')">' +
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Album from Playlist</span></button>';
+      if (html) html += '<div class="sjm-sep"></div>';
+      return html;
+    })() +
     '<button class="sjm-item" onclick="sjmOpenPlaylists()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
       (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
@@ -10845,8 +10965,15 @@ function lyrSyncTick() {
       const el = body.querySelector('.lyr-line[data-i="' + idx + '"]');
       if (el) {
         el.classList.add('lyr-active');
+        // Scroll only the lyrics scroller — never scrollIntoView, which walks
+        // ancestors, can steal focus, and closes open right-click menus.
         if (body.id === 'ytp-lyr-text' && Date.now() > _lyrSyncScrollHold) {
-          try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(e) { el.scrollIntoView(); }
+          const scroller = document.getElementById('ytp-lyr-body') || body.parentElement;
+          if (scroller && typeof scroller.scrollTop === 'number') {
+            const er = el.getBoundingClientRect();
+            const cr = scroller.getBoundingClientRect();
+            scroller.scrollTop += (er.top + er.height / 2) - (cr.top + cr.height / 2);
+          }
         }
       }
     }
@@ -15604,11 +15731,17 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-19';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-20';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-20', items: [
+    'Synced lyrics keep scrolling in the background without closing a right-click menu or stealing focus when the line changes.',
+    'The song ⋯ menu can remove every track by that artist, or from that album, from the playlist you are playing.',
+    'Up next sits under the play controls, above the video, instead of down in the queue list.',
+    'Lyrics, Shuffle, and Repeat in the player are bold orange when on and gray when off.',
+  ] },
   { date: '2026-08-19', items: [
     'On Explore Artists, the All row in the Artists and Submitted By filters now toggles every checkbox in that menu — check all or uncheck all in one click.',
     'When you add an artist from search, album covers now default to the Wikipedia artwork. In fine-tune you can still swap to a YouTube thumbnail.',
@@ -19223,8 +19356,7 @@ async function hydrateSharedLink() {
       ytQueueIdx = idx;
       setYtShuffleEnabled(!!p.shuffle);
       ytRepeat = !!p.repeat;
-      const rpChk = document.getElementById('ytp-repeat-chk');
-      if (rpChk) rpChk.checked = ytRepeat;
+      ytpPaintTogs();
       updateYTQueueUI();
 
       // Layout + lyrics once the player element exists
@@ -19232,8 +19364,6 @@ async function hydrateSharedLink() {
         if (p.layout === 'fullscreen' && !_ytpFs) ytpToggleFullscreen();
         if (p.layout === 'minimized' && !_ytpMinimized) ytpToggleMinimize();
         if (p.lyrics?.open) {
-          const chk = document.getElementById('ytp-lyrics-chk');
-          if (chk) chk.checked = true;
           ytpToggleLyrics(true);
         }
       }, 300);
@@ -19462,8 +19592,7 @@ function getVisibleTracksWithVideo(shuffle) {
 function setYtShuffleEnabled(on) {
   const was = ytShuffle;
   ytShuffle = !!on;
-  const chk = document.getElementById('ytp-shuffle-chk');
-  if (chk) chk.checked = ytShuffle;
+  ytpPaintTogs();
   const mfBtn = document.getElementById('ytp-mf-shuffle');
   if (mfBtn) {
     mfBtn.classList.toggle('on', ytShuffle);
