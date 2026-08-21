@@ -3367,6 +3367,9 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
         <button type="button" onclick="sjExportSelectShots(false)">Select none</button>
       </div>
       <div id="sj-export-shots" style="display:flex;flex-direction:column;gap:0"></div>
+      <div class="sj-export-section">Artists to include</div>
+      <label class="sj-export-opt"><input type="radio" name="sj-export-scope" value="artist" checked><span>Artist name only<span class="sj-export-opt-sub">Only the artist named on this jukebox page</span></span></label>
+      <label class="sj-export-opt"><input type="radio" name="sj-export-scope" value="all"><span>All artists currently in Jukebox<span class="sj-export-opt-sub">Includes Purple Mountains and any other artists currently loaded</span></span></label>
       <div class="sj-export-section">Download</div>
       <label class="sj-export-opt"><input type="checkbox" id="sj-export-zip" checked><span>Download as one ZIP<span class="sj-export-opt-sub">Otherwise each PNG saves separately</span></span></label>
       <div class="sj-export-status" id="sj-export-status" role="status"></div>
@@ -3405,6 +3408,9 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
         <button type="button" onclick="sjSocialSelectShots(false)">Select none</button>
       </div>
       <div id="sj-social-shots" style="display:flex;flex-direction:column;gap:0"></div>
+      <div class="sj-export-section">Artists to include</div>
+      <label class="sj-export-opt"><input type="radio" name="sj-social-scope" value="artist" checked><span>Artist name only<span class="sj-export-opt-sub">Only the artist named on this jukebox page</span></span></label>
+      <label class="sj-export-opt"><input type="radio" name="sj-social-scope" value="all"><span>All artists currently in Jukebox<span class="sj-export-opt-sub">Includes Purple Mountains and any other artists currently loaded</span></span></label>
       <div class="sj-export-section">Your message <span style="text-transform:none;letter-spacing:0">(optional)</span></div>
       <textarea id="sj-social-text" class="sj-social-text" maxlength="1000" placeholder="Add a note for your post…"></textarea>
       <div class="sj-export-section">Jukebox link</div>
@@ -13050,7 +13056,12 @@ async function loadArtistPageData() {
   const _artistRows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
   communityArtists = _artistRows.filter(a => a.is_community);
   mainCatalogArtists = _artistRows.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
-  allArtists = filterPageArtists(_artistRows);
+  // Export captures may request a precise artist set from the live jukebox.
+  // This lets a Silver Jews export include Purple Mountains (or added artists)
+  // even though the ordinary page starts with Purple Mountains hidden.
+  allArtists = SJ_EXPORT_ARTIST_IDS.length
+    ? _artistRows.filter(a => SJ_EXPORT_ARTIST_IDS.includes(a.id))
+    : filterPageArtists(_artistRows);
   const _ap = FEATURED_ARTIST_ID;
   const _one = _ap && allArtists.find(a => a.id === _ap);
   if (_one) {
@@ -13248,9 +13259,10 @@ async function loadData() {
     // Default initial state
     if (!_initialExpansionSet) {
       _initialExpansionSet = true;
-      // Exclude Purple Mountains by default
+      // Exclude Purple Mountains by default, except when an export explicitly
+      // asks for all artists currently in the source jukebox.
       const pmArtistDefault = allArtists.find(a => a.name.toLowerCase().includes('purple mountains'));
-      if (pmArtistDefault) {
+      if (pmArtistDefault && !SJ_EXPORT_ALL_ARTISTS) {
         (albums[pmArtistDefault.id] || []).forEach(a => excludedAlbumIds.add(a.id));
       }
       // Open every album's tracks only when they all fit. Too many and the
@@ -19037,6 +19049,11 @@ const SJ_EXPORT_SHOTS = [
   { id: 'alltracks', label: 'All Tracks', view: 'alltracks', expand: false },
 ];
 const SJ_EXPORT_SLAVE = /(?:\?|&)sj_export=1(?:&|$)/.test(location.search);
+const SJ_EXPORT_ARTIST_IDS = SJ_EXPORT_SLAVE
+  ? (new URLSearchParams(location.search).get('sj_export_artists') || '').split(',').filter(Boolean)
+  : [];
+const SJ_EXPORT_ALL_ARTISTS = SJ_EXPORT_SLAVE
+  && new URLSearchParams(location.search).get('sj_export_scope') === 'all';
 let _sjExportBusy = false;
 let _sjExportFrame = null;
 
@@ -19050,6 +19067,29 @@ function sjExportArtistMeta() {
     || (_SLUG_ARTIST && _SLUG_ARTIST.slug)
     || String(name).toLowerCase().replace(/['\u2019]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
     || 'jukebox';
+  return { name, slug };
+}
+
+function sjExportScope(scope, form) {
+  if (scope === 'all' || scope === 'artist') return scope;
+  return document.querySelector(`input[name="${form === 'social' ? 'sj-social-scope' : 'sj-export-scope'}"]:checked`)?.value === 'all'
+    ? 'all'
+    : 'artist';
+}
+
+function sjExportScopeArtistIds(scope) {
+  if (scope === 'all') return [...selectedIds];
+  const primaryId = _SLUG_ARTIST?.id || FEATURED_ARTIST_ID || allArtists[0]?.id;
+  return primaryId ? [primaryId] : [...selectedIds].slice(0, 1);
+}
+
+function sjExportScopeMeta(scope) {
+  const artists = sjExportScopeArtistIds(scope)
+    .map(id => allArtists.find(a => a.id === id))
+    .filter(Boolean);
+  if (scope !== 'all' || artists.length < 2) return sjExportArtistMeta();
+  const name = artists.map(a => a.name).join(' + ');
+  const slug = artists.map(a => a.slug || String(a.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')).join('-');
   return { name, slug };
 }
 
@@ -19093,6 +19133,7 @@ async function sjExportEnsureLibs(needZip) {
 }
 
 let _sjSocialFiles = [];
+let _sjSocialScope = 'artist';
 
 function sjJukeboxShareUrl() {
   const { slug } = sjExportArtistMeta();
@@ -19128,6 +19169,7 @@ function openJukeboxSocialModal() {
   if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
   closeJukeboxShareModal();
   _sjSocialFiles = [];
+  _sjSocialScope = 'artist';
   const { name } = sjExportArtistMeta();
   const artistEl = document.getElementById('sj-social-artist');
   if (artistEl) artistEl.textContent = 'Create a post for ' + name + '. The jukebox link is included by default.';
@@ -19137,6 +19179,7 @@ function openJukeboxSocialModal() {
   ).join('');
   const text = document.getElementById('sj-social-text');
   if (text) text.value = '';
+  document.querySelectorAll('input[name="sj-social-scope"]').forEach(input => { input.checked = input.value === 'artist'; });
   const link = document.getElementById('sj-social-link');
   if (link) link.textContent = sjJukeboxShareUrl();
   sjSocialSetStatus('');
@@ -19172,11 +19215,12 @@ async function sjCopySocialPostText() {
   catch (_) { return false; }
 }
 
-async function sjExportCaptureFiles(shots, onStatus) {
-  const catalog = sjExportMeasureCatalog();
+async function sjExportCaptureFiles(shots, onStatus, scope) {
+  const exportScope = sjExportScope(scope);
+  const catalog = sjExportMeasureCatalog(exportScope);
   onStatus?.('Preparing hidden capture…');
   const firstVp = sjExportViewportFor(catalog, shots[0]);
-  const { iframe, win, doc } = await sjExportEnsureFrame(firstVp);
+  const { iframe, win, doc } = await sjExportEnsureFrame(firstVp, exportScope);
   const files = [];
   try {
     for (let i = 0; i < shots.length; i++) {
@@ -19197,11 +19241,13 @@ async function sjSocialPrepareImages() {
   const shotIds = [...document.querySelectorAll('.sj-social-shot:checked')].map(el => el.value);
   if (!shotIds.length) { sjSocialSetStatus('Pick at least one screenshot.'); return; }
   const shots = SJ_EXPORT_SHOTS.filter(s => shotIds.includes(s.id));
+  const scope = sjExportScope(null, 'social');
   const btn = document.getElementById('sj-social-prepare-btn');
   _sjExportBusy = true;
   if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
   try {
-    _sjSocialFiles = await sjExportCaptureFiles(shots, sjSocialSetStatus);
+    _sjSocialScope = scope;
+    _sjSocialFiles = await sjExportCaptureFiles(shots, sjSocialSetStatus, scope);
     sjSocialSetStatus(`${_sjSocialFiles.length} screenshot${_sjSocialFiles.length === 1 ? '' : 's'} ready. Choose where to share.`);
   } catch (err) {
     console.error(err);
@@ -19221,7 +19267,7 @@ function sjSocialEnsureFiles() {
 
 async function sjSocialShareNative() {
   if (!sjSocialEnsureFiles()) return;
-  const { name, slug } = sjExportArtistMeta();
+  const { name, slug } = sjExportScopeMeta(_sjSocialScope);
   const files = _sjSocialFiles.map(f => new File([f.blob], `${slug}-${f.path}`, { type: 'image/png' }));
   const data = { title: name + ' Jukebox', text: sjSocialPostText(), url: sjJukeboxShareUrl(), files };
   if (!navigator.share || (navigator.canShare && !navigator.canShare({ files }))) {
@@ -19237,7 +19283,7 @@ async function sjSocialShareNative() {
 }
 
 function sjSocialDownloadFiles() {
-  const { slug } = sjExportArtistMeta();
+  const { slug } = sjExportScopeMeta(_sjSocialScope);
   _sjSocialFiles.forEach((f, i) => {
     setTimeout(() => sjExportDownloadBlob(f.blob, `${slug}-${f.path.replace(/\\//g, '-')}`), i * 350);
   });
@@ -19274,6 +19320,7 @@ function openExportImageModal() {
       `<label class="sj-export-opt"><input type="checkbox" class="sj-export-shot" value="${s.id}"${['byyear-expanded','timeline-expanded'].includes(s.id) ? ' checked' : ''}><span>${s.label}</span></label>`
     ).join('');
   }
+  document.querySelectorAll('input[name="sj-export-scope"]').forEach(input => { input.checked = input.value === 'artist'; });
   const st = document.getElementById('sj-export-status');
   if (st) st.textContent = '';
   const btn = document.getElementById('sj-export-run-btn');
@@ -19332,11 +19379,11 @@ function sjExportProxyUrl(src) {
   }
 }
 
-function sjExportMeasureCatalog() {
-  const ids = typeof selectedIds !== 'undefined' ? [...selectedIds] : [];
+function sjExportMeasureCatalog(scope) {
+  const ids = typeof selectedIds !== 'undefined' ? sjExportScopeArtistIds(scope || 'artist') : [];
   const vis = ids
     .flatMap((aid) => (albums[aid] || []))
-    .filter((a) => (typeof isAlbumVisible === 'function' ? isAlbumVisible(a.id) : true));
+    .filter((a) => scope === 'all' || (typeof isAlbumVisible === 'function' ? isAlbumVisible(a.id) : true));
   let maxTracks = 0;
   for (const alb of vis) {
     const n = (tracks[alb.artist_id] || []).filter((t) => t.album_id === alb.id).length;
@@ -19366,13 +19413,15 @@ function sjExportDestroyFrame() {
   }
 }
 
-function sjExportFrameUrl() {
+function sjExportFrameUrl(scope) {
   const u = new URL(location.href);
   u.searchParams.set('sj_export', '1');
+  u.searchParams.set('sj_export_scope', scope || 'artist');
+  u.searchParams.set('sj_export_artists', sjExportScopeArtistIds(scope || 'artist').join(','));
   return u.toString();
 }
 
-async function sjExportEnsureFrame(viewport) {
+async function sjExportEnsureFrame(viewport, scope) {
   sjExportDestroyFrame();
   const iframe = document.createElement('iframe');
   iframe.id = 'sj-export-frame';
@@ -19387,7 +19436,7 @@ async function sjExportEnsureFrame(viewport) {
     const t = setTimeout(() => reject(new Error('Capture frame timed out loading')), 90000);
     iframe.onload = () => { clearTimeout(t); resolve(); };
     iframe.onerror = () => { clearTimeout(t); reject(new Error('Capture frame failed to load')); };
-    iframe.src = sjExportFrameUrl();
+    iframe.src = sjExportFrameUrl(scope);
   });
 
   const win = iframe.contentWindow;
@@ -19592,7 +19641,8 @@ async function runExportImageBatch() {
   if (!shotIds.length) { sjExportSetStatus('Pick at least one view.'); return; }
 
   const shots = SJ_EXPORT_SHOTS.filter(s => shotIds.includes(s.id));
-  const { slug } = sjExportArtistMeta();
+  const scope = sjExportScope(null, 'export');
+  const { slug } = sjExportScopeMeta(scope);
   const btn = document.getElementById('sj-export-run-btn');
   _sjExportBusy = true;
   if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
@@ -19601,7 +19651,7 @@ async function runExportImageBatch() {
     sjExportSetStatus('Loading tools…');
     await sjExportEnsureLibs(wantZip);
 
-    const files = await sjExportCaptureFiles(shots, sjExportSetStatus);
+    const files = await sjExportCaptureFiles(shots, sjExportSetStatus, scope);
 
     if (wantZip) {
       sjExportSetStatus('Zipping…');
