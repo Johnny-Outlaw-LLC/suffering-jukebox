@@ -1852,6 +1852,12 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .lwytb-row { display: flex; gap: .25rem; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 #lwytb-header .ctrl-btn { background: var(--bg-card); padding: .5rem .85rem; border-radius: 8px; font-size: .54rem; min-height: 0; }
 #lwytb-header .ctrl-btn:hover { background: var(--bg-card); border-color: var(--accent); color: var(--accent); }
+.quick-now-playing { width:100%; margin-top:.5rem; padding:.55rem .65rem; box-sizing:border-box; border:1px solid #2a2a2a; border-radius:8px; background:#0a0a0a; display:flex; align-items:center; gap:.65rem; }
+.quick-now-playing-copy { min-width:0; flex:1; }
+.quick-now-playing-label { color:var(--text-muted); font-family:var(--mono); font-size:.43rem; letter-spacing:.1em; text-transform:uppercase; }
+.quick-now-playing-song { color:var(--text); font-size:.57rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+.quick-now-playing-meta { color:var(--text-muted); font-family:var(--mono); font-size:.46rem; margin-top:2px; }
+.quick-now-playing .ctrl-btn { flex-shrink:0; }
 
 /* ── FILTER DROPDOWN ── */
 .filter-dd-wrap { position: relative; }
@@ -2177,6 +2183,16 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sj-export-actions button { font-family:var(--mono); font-size:.48rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border); background:none; color:var(--text-muted); cursor:pointer; }
 .sj-export-actions button:hover { color:var(--text); border-color:var(--text-muted); }
 #exportImageOverlay .pl-modal-body { gap:.28rem; padding:.85rem 1.15rem; }
+.sj-share-choices { display:grid; gap:.55rem; }
+.sj-share-choice { width:100%; box-sizing:border-box; appearance:none; text-align:left; border:1px solid var(--border); border-radius:8px; background:#0a0a0a; color:var(--text); cursor:pointer; padding:.75rem .8rem; font-family:var(--mono); }
+.sj-share-choice:hover { border-color:var(--accent); background:#111; }
+.sj-share-choice-title { display:block; color:var(--text); font-size:.58rem; font-weight:700; }
+.sj-share-choice-sub { display:block; color:var(--text-muted); font-size:.48rem; margin-top:.22rem; line-height:1.45; }
+.sj-social-text { width:100%; min-height:70px; box-sizing:border-box; resize:vertical; border:1px solid var(--border); border-radius:7px; background:#0a0a0a; color:var(--text); font:inherit; font-size:.56rem; padding:.55rem .6rem; outline:none; }
+.sj-social-text:focus { border-color:var(--accent); }
+.sj-social-link { color:var(--accent); font-family:var(--mono); font-size:.5rem; overflow-wrap:anywhere; line-height:1.45; }
+.sj-social-note { color:var(--text-muted); font-size:.47rem; line-height:1.45; margin:0; }
+#sjSocialOverlay .pl-modal-body { gap:.42rem; padding:.85rem 1.15rem; }
 #sj-export-frame {
   position: fixed;
   left: -14000px;
@@ -2792,7 +2808,6 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       </div>
       <a class="btn hdr-page-link" id="page-switch-link" href="/" style="display:none">♪ <span class="lbl">Silver Jews</span></a>
       <button class="btn hdr-add-music-btn" id="add-music-btn" onclick="openAddMusic()" style="display:none">＋<span class="lbl"> Add Music</span></button>
-      <button class="btn hdr-share-btn" onclick="openPlShareModal()" title="Share the current playlist">⤴ Share</button>
       <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()" title="Sign in with Google"><span class="auth-label-full">Sign In to Remember Ratings and Play History</span><span class="auth-label-short">Sign In</span></button>
       <div class="user-menu-wrap" id="user-menu-wrap" style="display:none">
         <button class="auth-btn signed-in" id="user-menu-btn" onclick="toggleUserMenu(event)" title="Account menu"></button>
@@ -2817,7 +2832,6 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
         </div>
       </div>
       <div class="hdr-icon-btns">
-        <button type="button" class="hdr-search-btn hdr-share-icon-btn hdr-icon-btn-labeled" onclick="openPlShareModal()" title="Share the current playlist" aria-label="Share">⤴ Share</button>
         <button type="button" class="hdr-search-btn hdr-icon-btn-labeled" onclick="openSearchModal('')" title="Search songs or lyrics" aria-label="Search songs or lyrics">🔍 Search</button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark"><span id="themeIcon">☀</span></button>
         <button type="button" class="hdr-search-btn" onclick="openFaq()" title="FAQ &amp; how-to guide" aria-label="FAQ and how-to guide">?</button>
@@ -3346,6 +3360,52 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closeExportImageModal()">Cancel</button>
       <button class="pl-btn" id="sj-export-run-btn" onclick="runExportImageBatch()">Download</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARE JUKEBOX MODALS -->
+<div class="pl-modal-overlay" id="sjShareOverlay" onclick="if(event.target===this)closeJukeboxShareModal()">
+  <div class="pl-modal" style="width:430px">
+    <div class="pl-modal-header"><span class="pl-modal-title">Share Jukebox</span><button class="modal-close" onclick="closeJukeboxShareModal()">✕</button></div>
+    <div class="pl-modal-body">
+      <p id="sj-share-artist" style="font-size:.54rem;color:#888;line-height:1.45;margin:0"></p>
+      <div class="sj-share-choices">
+        <button type="button" class="sj-share-choice" onclick="openExportFromJukeboxShare()"><span class="sj-share-choice-title">Export Images</span><span class="sj-share-choice-sub">Download high-resolution PNG screenshots of the jukebox.</span></button>
+        <button type="button" class="sj-share-choice" onclick="openJukeboxSocialModal()"><span class="sj-share-choice-title">Share to Social Media</span><span class="sj-share-choice-sub">Prepare screenshots, add an optional message, and share the artist jukebox link.</span></button>
+      </div>
+    </div>
+    <div class="pl-modal-footer"><button class="pl-btn ghost" onclick="closeJukeboxShareModal()">Close</button></div>
+  </div>
+</div>
+
+<div class="pl-modal-overlay" id="sjSocialOverlay" onclick="if(event.target===this)closeJukeboxSocialModal()">
+  <div class="pl-modal" style="width:460px">
+    <div class="pl-modal-header"><span class="pl-modal-title">Share to Social Media</span><button class="modal-close" onclick="closeJukeboxSocialModal()">✕</button></div>
+    <div class="pl-modal-body">
+      <p id="sj-social-artist" style="font-size:.54rem;color:#888;line-height:1.45;margin:0"></p>
+      <div class="sj-export-section">Screenshots to include</div>
+      <div class="sj-export-actions">
+        <button type="button" onclick="sjSocialSelectShots(true)">Select all</button>
+        <button type="button" onclick="sjSocialSelectShots(false)">Select none</button>
+      </div>
+      <div id="sj-social-shots" style="display:flex;flex-direction:column;gap:0"></div>
+      <div class="sj-export-section">Your message <span style="text-transform:none;letter-spacing:0">(optional)</span></div>
+      <textarea id="sj-social-text" class="sj-social-text" maxlength="1000" placeholder="Add a note for your post…"></textarea>
+      <div class="sj-export-section">Jukebox link</div>
+      <div class="sj-social-link" id="sj-social-link"></div>
+      <p class="sj-social-note">Prepare the selected screenshots first. On a phone, Share via Device sends the images and link together; Facebook, Reddit, and Instagram open with the caption/link ready while the images download for attachment.</p>
+      <div class="sj-export-status" id="sj-social-status" role="status"></div>
+      <div class="share-grid">
+        <button type="button" class="share-opt" onclick="sjSocialShareNative()"><span class="share-opt-icon">↗</span><span class="share-opt-lbl">Share via Device</span></button>
+        <button type="button" class="share-opt" onclick="sjSocialShareVia('facebook')"><span class="share-opt-icon">f</span><span class="share-opt-lbl">Facebook</span></button>
+        <button type="button" class="share-opt" onclick="sjSocialShareVia('reddit')"><span class="share-opt-icon">●</span><span class="share-opt-lbl">Reddit</span></button>
+        <button type="button" class="share-opt" onclick="sjSocialShareVia('instagram')"><span class="share-opt-icon">◎</span><span class="share-opt-lbl">Instagram</span></button>
+      </div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closeJukeboxSocialModal()">Cancel</button>
+      <button class="pl-btn" id="sj-social-prepare-btn" onclick="sjSocialPrepareImages()">Prepare Screenshots</button>
     </div>
   </div>
 </div>
@@ -4875,6 +4935,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
   // Initialize queue with this first track
   ytQueue = [ytQueueItem(videoId, title, trackId)];
   ytQueueIdx = 0;
+  refreshQuickPlaylistNowPlaying();
   ytpSyncVoteBtn(trackId || null);
   ytpSetPlayPauseIcon(!restorePaused);
   setTimeout(ytpSyncVolumeSlider, 600);
@@ -5028,6 +5089,7 @@ function closeYTPlayer() {
     _ytpContainerEl = null; ytPlayerEl = null; _ytpLyricsPaneEl = null;
     ytVideoId = null; ytQueue = []; ytQueueIdx = -1; _ytLastPlayed = null; _queueHasAdditions = false;
     nowPlayingTrackId = null; applyNowPlayingHighlight();
+    refreshQuickPlaylistNowPlaying();
     document.title = _sjBaseTitle || 'Suffering Jukebox';
   }, 140);
 }
@@ -5769,6 +5831,7 @@ function ytClearQueue() {
 // opts.keepIdx — after preserve, nudge only if that row left the viewport.
 function updateYTQueueUI(opts) {
   opts = opts || {};
+  refreshQuickPlaylistNowPlaying();
   if (!ytPlayerEl) return;
 
   // Keep the mini-player thumbs up/down in sync with the current track
@@ -13560,14 +13623,40 @@ function renderLWYTBHTML(landing) {
   const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
   const hide = isCtrlGroupHidden('playlists');
+  const nowPlaying = landing ? '' : quickPlaylistNowPlayingHTML();
   return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('playlists', 'Quick Playlists', 'Show Quick Playlists')}
     ${hide ? '' : `<div class="lwytb-row">
       <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
       ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'my',event)">▶ My Playlists ▾</button></div>` : ''}
       ${_pubPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'pub',event)">▶ Public Playlists ▾</button></div>` : ''}
-    </div>`}
+    </div><div id="quick-now-playing-slot">${nowPlaying}</div>`}
   </div>`;
+}
+
+function quickPlaylistNowPlayingHTML() {
+  if (!ytPlayerEl || ytQueueIdx < 0 || !ytQueue.length) return '';
+  const item = ytQueue[ytQueueIdx] || ytQueue[0];
+  if (!item) return '';
+  const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
+  const artist = (meta && meta.artist) || item.artist || '';
+  const song = item.title || (meta && meta.title) || 'Track';
+  const label = (artist ? artist + ' — ' : '') + song;
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const count = ytQueue.length;
+  return `<div class="quick-now-playing">
+    <div class="quick-now-playing-copy">
+      <div class="quick-now-playing-label">Now Playing</div>
+      <div class="quick-now-playing-song" title="${esc(label)}">${esc(label)}</div>
+      <div class="quick-now-playing-meta">Track ${ytQueueIdx + 1} of ${count} · ${count} song${count === 1 ? '' : 's'}</div>
+    </div>
+    <button type="button" class="ctrl-btn" onclick="openPlShareModal()">Share Playlist</button>
+  </div>`;
+}
+
+function refreshQuickPlaylistNowPlaying() {
+  const slot = document.getElementById('quick-now-playing-slot');
+  if (slot) slot.innerHTML = quickPlaylistNowPlayingHTML();
 }
 
 function updateLWYTBHeader() {
@@ -13640,7 +13729,7 @@ function renderViewToggle() {
         <button class="vseg-btn ${viewMode==='list'?'active':''}" onclick="setViewMode('list')" title="Scroll albums and tracks with no charts">${_mobNav?'Albums':'Albums List'}</button>
         <button class="vseg-btn ${viewMode==='alltracks'?'active':''}" onclick="setViewMode('alltracks')" title="View and sort all tracks">All Tracks</button>
       </div>
-      <button type="button" class="sj-export-btn" onclick="openExportImageModal()" title="Export PNG screenshots of this jukebox">Export Image</button>
+      <button type="button" class="sj-export-btn" onclick="openJukeboxShareModal()" title="Export images or share this artist jukebox">Share Jukebox</button>
       ${listSort_}
     </div>
     ${ctrlRow}
@@ -18988,6 +19077,167 @@ async function sjExportEnsureLibs(needZip) {
   if (needZip && !window.JSZip) throw new Error('ZIP library failed to load');
 }
 
+let _sjSocialFiles = [];
+
+function sjJukeboxShareUrl() {
+  const { slug } = sjExportArtistMeta();
+  return new URL('/' + slug, location.origin).toString();
+}
+
+function openJukeboxShareModal() {
+  if (SJ_EXPORT_SLAVE) return;
+  if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
+  const { name } = sjExportArtistMeta();
+  const el = document.getElementById('sj-share-artist');
+  if (el) el.textContent = 'Share ' + name + ' with screenshots and a direct link to this jukebox.';
+  document.getElementById('sjShareOverlay')?.classList.add('open');
+}
+
+function closeJukeboxShareModal() {
+  document.getElementById('sjShareOverlay')?.classList.remove('open');
+}
+
+function openExportFromJukeboxShare() {
+  closeJukeboxShareModal();
+  openExportImageModal();
+}
+
+function openJukeboxSocialModal() {
+  if (SJ_EXPORT_SLAVE || _sjExportBusy) return;
+  if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
+  closeJukeboxShareModal();
+  _sjSocialFiles = [];
+  const { name } = sjExportArtistMeta();
+  const artistEl = document.getElementById('sj-social-artist');
+  if (artistEl) artistEl.textContent = 'Create a post for ' + name + '. The jukebox link is included by default.';
+  const host = document.getElementById('sj-social-shots');
+  if (host) host.innerHTML = SJ_EXPORT_SHOTS.map(s =>
+    `<label class="sj-export-opt"><input type="checkbox" class="sj-social-shot" value="${s.id}" checked><span>${s.label}</span></label>`
+  ).join('');
+  const text = document.getElementById('sj-social-text');
+  if (text) text.value = '';
+  const link = document.getElementById('sj-social-link');
+  if (link) link.textContent = sjJukeboxShareUrl();
+  sjSocialSetStatus('');
+  const btn = document.getElementById('sj-social-prepare-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Prepare Screenshots'; }
+  document.getElementById('sjSocialOverlay')?.classList.add('open');
+}
+
+function closeJukeboxSocialModal() {
+  if (_sjExportBusy) return;
+  document.getElementById('sjSocialOverlay')?.classList.remove('open');
+}
+
+function sjSocialSelectShots(on) {
+  document.querySelectorAll('.sj-social-shot').forEach(cb => { cb.checked = !!on; });
+  _sjSocialFiles = [];
+  sjSocialSetStatus('');
+}
+
+function sjSocialSetStatus(msg) {
+  const el = document.getElementById('sj-social-status');
+  if (el) el.textContent = msg || '';
+}
+
+function sjSocialPostText() {
+  const note = document.getElementById('sj-social-text')?.value.trim() || '';
+  return [note, sjJukeboxShareUrl()].filter(Boolean).join('\n\n');
+}
+
+async function sjCopySocialPostText() {
+  const text = sjSocialPostText();
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (_) { return false; }
+}
+
+async function sjExportCaptureFiles(shots, onStatus) {
+  const catalog = sjExportMeasureCatalog();
+  onStatus?.('Preparing hidden capture…');
+  const firstVp = sjExportViewportFor(catalog, shots[0]);
+  const { iframe, win, doc } = await sjExportEnsureFrame(firstVp);
+  const files = [];
+  try {
+    for (let i = 0; i < shots.length; i++) {
+      const shot = shots[i];
+      onStatus?.(`Capturing ${i + 1}/${shots.length}: ${shot.label}…`);
+      const root = await sjExportApplyShotInFrame(win, doc, iframe, catalog, shot);
+      const stageBlob = await sjExportCaptureStageInFrame(win, root);
+      files.push({ path: `${shot.id}.png`, blob: stageBlob });
+    }
+    return files;
+  } finally {
+    sjExportDestroyFrame();
+  }
+}
+
+async function sjSocialPrepareImages() {
+  if (_sjExportBusy || SJ_EXPORT_SLAVE) return;
+  const shotIds = [...document.querySelectorAll('.sj-social-shot:checked')].map(el => el.value);
+  if (!shotIds.length) { sjSocialSetStatus('Pick at least one screenshot.'); return; }
+  const shots = SJ_EXPORT_SHOTS.filter(s => shotIds.includes(s.id));
+  const btn = document.getElementById('sj-social-prepare-btn');
+  _sjExportBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing…'; }
+  try {
+    _sjSocialFiles = await sjExportCaptureFiles(shots, sjSocialSetStatus);
+    sjSocialSetStatus(`${_sjSocialFiles.length} screenshot${_sjSocialFiles.length === 1 ? '' : 's'} ready. Choose where to share.`);
+  } catch (err) {
+    console.error(err);
+    _sjSocialFiles = [];
+    sjSocialSetStatus('Could not prepare screenshots: ' + sjExportErrMsg(err));
+  } finally {
+    _sjExportBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Prepare Screenshots'; }
+  }
+}
+
+function sjSocialEnsureFiles() {
+  if (_sjSocialFiles.length) return true;
+  sjSocialSetStatus('Prepare screenshots first.');
+  return false;
+}
+
+async function sjSocialShareNative() {
+  if (!sjSocialEnsureFiles()) return;
+  const { name, slug } = sjExportArtistMeta();
+  const files = _sjSocialFiles.map(f => new File([f.blob], `${slug}-${f.path}`, { type: 'image/png' }));
+  const data = { title: name + ' Jukebox', text: sjSocialPostText(), url: sjJukeboxShareUrl(), files };
+  if (!navigator.share || (navigator.canShare && !navigator.canShare({ files }))) {
+    sjSocialSetStatus('This browser cannot send image files directly. Choose a social site below; the images will download and the caption/link will be copied.');
+    return;
+  }
+  try {
+    await navigator.share(data);
+    sjSocialSetStatus('Share sheet opened.');
+  } catch (err) {
+    if (err?.name !== 'AbortError') sjSocialSetStatus('Could not open the share sheet. Choose a social site below instead.');
+  }
+}
+
+function sjSocialDownloadFiles() {
+  const { slug } = sjExportArtistMeta();
+  _sjSocialFiles.forEach((f, i) => {
+    setTimeout(() => sjExportDownloadBlob(f.blob, `${slug}-${f.path.replace(/\\//g, '-')}`), i * 350);
+  });
+}
+
+async function sjSocialShareVia(medium) {
+  if (!sjSocialEnsureFiles()) return;
+  const url = sjJukeboxShareUrl();
+  const text = sjSocialPostText();
+  sjSocialDownloadFiles();
+  const copied = await sjCopySocialPostText();
+  if (medium === 'facebook') {
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  } else if (medium === 'reddit') {
+    window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  } else if (medium === 'instagram') {
+    window.open('https://www.instagram.com/', '_blank', 'noopener,noreferrer');
+  }
+  sjSocialSetStatus(`Images are downloading. ${copied ? 'The caption and jukebox link are copied.' : 'Copy the caption and jukebox link above.'} Attach the images in ${medium === 'instagram' ? 'Instagram' : medium === 'facebook' ? 'Facebook' : 'Reddit'}.`);
+}
+
 function openExportImageModal() {
   if (SJ_EXPORT_SLAVE) return;
   if (!selectedIds.size) {
@@ -19322,7 +19572,6 @@ async function runExportImageBatch() {
 
   const shots = SJ_EXPORT_SHOTS.filter(s => shotIds.includes(s.id));
   const { slug } = sjExportArtistMeta();
-  const catalog = sjExportMeasureCatalog();
   const btn = document.getElementById('sj-export-run-btn');
   _sjExportBusy = true;
   if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
@@ -19331,18 +19580,7 @@ async function runExportImageBatch() {
     sjExportSetStatus('Loading tools…');
     await sjExportEnsureLibs(wantZip);
 
-    sjExportSetStatus('Preparing hidden capture…');
-    const firstVp = sjExportViewportFor(catalog, shots[0]);
-    const { iframe, win, doc } = await sjExportEnsureFrame(firstVp);
-    const files = [];
-
-    for (let i = 0; i < shots.length; i++) {
-      const shot = shots[i];
-      sjExportSetStatus(`Capturing ${i + 1}/${shots.length}: ${shot.label}…`);
-      const root = await sjExportApplyShotInFrame(win, doc, iframe, catalog, shot);
-      const stageBlob = await sjExportCaptureStageInFrame(win, root);
-      files.push({ path: `${shot.id}.png`, blob: stageBlob });
-    }
+    const files = await sjExportCaptureFiles(shots, sjExportSetStatus);
 
     if (wantZip) {
       sjExportSetStatus('Zipping…');
