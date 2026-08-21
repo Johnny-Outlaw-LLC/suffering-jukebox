@@ -2164,6 +2164,34 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .share-toast.show { opacity:1; }
 @media (max-width:640px) { .share-btn-label { display:none; } }
 @media (max-width:520px) { .admin-metrics-grid { grid-template-columns:1fr; } }
+/* ── EXPORT IMAGE ── */
+.sj-export-btn { background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; padding:.26rem .58rem; border-radius:5px; cursor:pointer; letter-spacing:.04em; transition:all .15s; opacity:.9; white-space:nowrap; }
+.sj-export-btn:hover { border-color:var(--accent); color:var(--accent); opacity:1; }
+.sj-export-opt { display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:.55rem; color:var(--text); padding:.28rem 0; line-height:1.35; }
+.sj-export-opt input { margin-top:2px; accent-color:var(--accent); flex-shrink:0; }
+.sj-export-opt .sj-export-opt-sub { display:block; color:var(--text-muted); font-size:.48rem; margin-top:2px; }
+.sj-export-section { font-size:.48rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); margin:0.85rem 0 0.35rem; }
+.sj-export-section:first-child { margin-top:0; }
+.sj-export-status { font-size:.52rem; color:var(--text-muted); min-height:1.2em; margin-top:.55rem; line-height:1.4; }
+.sj-export-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:.35rem; }
+.sj-export-actions button { font-family:var(--mono); font-size:.48rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border); background:none; color:var(--text-muted); cursor:pointer; }
+.sj-export-actions button:hover { color:var(--text); border-color:var(--text-muted); }
+html.sj-capture #yt-player-container,
+html.sj-capture #ytp-mini-footer,
+html.sj-capture .ytp-mini-footer,
+html.sj-capture .yt-player,
+html.sj-capture #auth-btn,
+html.sj-capture #user-menu-wrap,
+html.sj-capture #themeToggle,
+html.sj-capture .theme-toggle,
+html.sj-capture #cookie-banner,
+html.sj-capture .toast,
+html.sj-capture #toast-host,
+html.sj-capture footer,
+html.sj-capture .footer-note,
+html.sj-capture #shareModalOverlay,
+html.sj-capture #exportImageOverlay,
+html.sj-capture .sj-export-btn { display:none !important; visibility:hidden !important; }
 /* ── PLAYLIST MODAL ── */
 .pl-modal-overlay { position:fixed; inset:0; z-index:5100; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:2rem; }
 .pl-modal-overlay.open { display:flex; }
@@ -3284,6 +3312,31 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
   </div>
 </div>
 <div id="share-toast" class="share-toast" role="status"></div>
+
+<!-- EXPORT IMAGE MODAL -->
+<div class="pl-modal-overlay" id="exportImageOverlay" onclick="if(event.target===this)closeExportImageModal()">
+  <div class="pl-modal" style="width:440px">
+    <div class="pl-modal-header"><span class="pl-modal-title">Export Image</span><button class="modal-close" onclick="closeExportImageModal()">✕</button></div>
+    <div class="pl-modal-body">
+      <p id="sj-export-artist" style="font-size:.54rem;color:#888;line-height:1.45;margin:0 0 .35rem"></p>
+      <div class="sj-export-section">Views to include</div>
+      <div class="sj-export-actions">
+        <button type="button" onclick="sjExportSelectShots(true)">Select all</button>
+        <button type="button" onclick="sjExportSelectShots(false)">Select none</button>
+      </div>
+      <div id="sj-export-shots" style="display:flex;flex-direction:column;gap:2px;margin-top:.25rem"></div>
+      <div class="sj-export-section">Output</div>
+      <label class="sj-export-opt"><input type="checkbox" id="sj-export-stage" checked><span>Jukebox stage PNG<span class="sj-export-opt-sub">Full discography view, same as on screen</span></span></label>
+      <label class="sj-export-opt"><input type="checkbox" id="sj-export-reel" checked><span>Instagram reel frame (9:16)<span class="sj-export-opt-sub">1080×1920 with title and link</span></span></label>
+      <label class="sj-export-opt"><input type="checkbox" id="sj-export-zip" checked><span>Download as one ZIP<span class="sj-export-opt-sub">Otherwise each PNG saves separately</span></span></label>
+      <div class="sj-export-status" id="sj-export-status" role="status"></div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closeExportImageModal()">Cancel</button>
+      <button class="pl-btn" id="sj-export-run-btn" onclick="runExportImageBatch()">Download</button>
+    </div>
+  </div>
+</div>
 
 <!-- SHARE PLAYLIST MODAL -->
 <div class="pl-modal-overlay" id="plShareModalOverlay" onclick="if(event.target===this)closePlShareModal()">
@@ -13575,6 +13628,7 @@ function renderViewToggle() {
         <button class="vseg-btn ${viewMode==='list'?'active':''}" onclick="setViewMode('list')" title="Scroll albums and tracks with no charts">${_mobNav?'Albums':'Albums List'}</button>
         <button class="vseg-btn ${viewMode==='alltracks'?'active':''}" onclick="setViewMode('alltracks')" title="View and sort all tracks">All Tracks</button>
       </div>
+      <button type="button" class="sj-export-btn" onclick="openExportImageModal()" title="Export PNG screenshots of this jukebox">⬇ Export Image</button>
       ${listSort_}
     </div>
     ${ctrlRow}
@@ -15731,11 +15785,14 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-20';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-21';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-21', items: [
+    'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
+  ] },
   { date: '2026-08-20', items: [
     'Synced lyrics keep scrolling in the background without closing a right-click menu or stealing focus when the line changes.',
     'The song ⋯ menu can remove every track by that artist, or from that album, from the playlist you are playing.',
@@ -18851,6 +18908,307 @@ function showShareToast(msg) {
 }
 
 const SJ_MOB_UA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+// ── Export Image (client-side batch PNG / reel frames) ────────
+const SJ_EXPORT_SHOTS = [
+  { id: 'byyear-collapsed', label: 'By Year', view: 'byyear', expand: false },
+  { id: 'byyear-expanded', label: 'By Year · Tracks Open', view: 'byyear', expand: true },
+  { id: 'timeline-collapsed', label: 'Timeline', view: 'timeline', expand: false },
+  { id: 'byviews-collapsed', label: 'By Views', view: 'byviews', expand: false },
+  { id: 'alltracks', label: 'All Tracks', view: 'alltracks', expand: false },
+];
+let _sjExportBusy = false;
+
+function sjExportArtistMeta() {
+  const a = _SLUG_ARTIST
+    || (allArtists.length === 1 ? allArtists[0] : null)
+    || allArtists[0]
+    || null;
+  const name = (a && a.name) || 'Suffering Jukebox';
+  const slug = (a && a.slug)
+    || (_SLUG_ARTIST && _SLUG_ARTIST.slug)
+    || String(name).toLowerCase().replace(/['\u2019]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    || 'jukebox';
+  return { name, slug };
+}
+
+function sjExportSleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function sjExportLoadScript(src) {
+  return new Promise((resolve, reject) => {
+    if ([...document.scripts].some(s => s.src === src)) {
+      resolve();
+      return;
+    }
+    const el = document.createElement('script');
+    el.src = src;
+    el.async = true;
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error('Failed to load ' + src));
+    document.head.appendChild(el);
+  });
+}
+
+async function sjExportEnsureLibs(needZip) {
+  if (!window.htmlToImage) {
+    await sjExportLoadScript('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js');
+  }
+  if (!window.htmlToImage) throw new Error('Screenshot library failed to load');
+  if (needZip && !window.JSZip) {
+    await sjExportLoadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+  }
+  if (needZip && !window.JSZip) throw new Error('ZIP library failed to load');
+}
+
+function openExportImageModal() {
+  if (!selectedIds.size) {
+    showToast('Load an artist jukebox first');
+    return;
+  }
+  const { name } = sjExportArtistMeta();
+  const artEl = document.getElementById('sj-export-artist');
+  if (artEl) artEl.textContent = 'Download PNGs of ' + name + ' for Instagram or anything else. Pick the views you want.';
+  const host = document.getElementById('sj-export-shots');
+  if (host) {
+    host.innerHTML = SJ_EXPORT_SHOTS.map(s =>
+      `<label class="sj-export-opt"><input type="checkbox" class="sj-export-shot" value="${s.id}" checked><span>${s.label}</span></label>`
+    ).join('');
+  }
+  const st = document.getElementById('sj-export-status');
+  if (st) st.textContent = '';
+  const btn = document.getElementById('sj-export-run-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Download'; }
+  document.getElementById('exportImageOverlay')?.classList.add('open');
+}
+
+function closeExportImageModal() {
+  if (_sjExportBusy) return;
+  document.getElementById('exportImageOverlay')?.classList.remove('open');
+}
+
+function sjExportSelectShots(on) {
+  document.querySelectorAll('.sj-export-shot').forEach(cb => { cb.checked = !!on; });
+}
+
+function sjExportSetStatus(msg) {
+  const el = document.getElementById('sj-export-status');
+  if (el) el.textContent = msg || '';
+}
+
+function sjExportDownloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function sjExportWaitImages(root) {
+  if (!root) return;
+  const imgs = [...root.querySelectorAll('img')];
+  await Promise.all(imgs.map(img => {
+    try {
+      if (!img.crossOrigin) img.crossOrigin = 'anonymous';
+    } catch (_) {}
+    if (img.complete) return Promise.resolve();
+    return new Promise(res => {
+      img.addEventListener('load', res, { once: true });
+      img.addEventListener('error', res, { once: true });
+      setTimeout(res, 2500);
+    });
+  }));
+}
+
+async function sjExportApplyShot(shot) {
+  setViewMode(shot.view);
+  await sjExportSleep(shot.view === 'alltracks' ? 700 : 850);
+  if (shot.view !== 'alltracks' && shot.view !== 'list' && shot.view !== 'playlists') {
+    if (shot.expand) expandAllTracks();
+    else collapseAllTracks();
+    await sjExportSleep(shot.expand ? 900 : 450);
+  }
+  document.documentElement.classList.add('sj-capture');
+  const root =
+    (shot.view === 'alltracks' && document.getElementById('alltracks-wrap'))
+    || document.getElementById('tl-wrap')
+    || document.getElementById('alltracks-wrap')
+    || document.querySelector('main');
+  await sjExportWaitImages(root);
+  await sjExportSleep(200);
+  return root;
+}
+
+async function sjExportCaptureStage(root) {
+  const filter = (node) => {
+    if (!(node instanceof Element)) return true;
+    if (node.id === 'yt-player-container' || node.id === 'ytp-mini-footer') return false;
+    if (node.classList && (node.classList.contains('yt-player') || node.classList.contains('ytp-mini-footer'))) return false;
+    return true;
+  };
+  const dataUrl = await window.htmlToImage.toPng(root, {
+    pixelRatio: 2,
+    backgroundColor: getComputedStyle(document.body).backgroundColor || '#0a0a0a',
+    cacheBust: true,
+    filter,
+    style: { transform: 'none' },
+  });
+  const res = await fetch(dataUrl);
+  return res.blob();
+}
+
+function sjExportEscape(s) {
+  return String(s || '');
+}
+
+async function sjExportComposeReel({ artistName, slug, label, stageBlob }) {
+  const W = 1080, H = 1920;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(W / 2, 0, 40, W / 2, 0, 900);
+  g.addColorStop(0, '#1a1220');
+  g.addColorStop(0.55, '#0a0a0a');
+  g.addColorStop(1, '#0a0a0a');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#9b7bb8';
+  ctx.font = '800 28px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SUFFERING JUKEBOX', W / 2, 90);
+
+  ctx.fillStyle = '#f5f5f5';
+  ctx.font = '700 48px Inter, system-ui, sans-serif';
+  const name = sjExportEscape(artistName);
+  ctx.fillText(name.length > 28 ? name.slice(0, 27) + '…' : name, W / 2, 160);
+
+  const mode = String(label || '').toUpperCase();
+  ctx.font = '600 18px Inter, system-ui, sans-serif';
+  const tw = Math.min(520, ctx.measureText(mode).width + 36);
+  const mx = (W - tw) / 2;
+  const my = 190;
+  ctx.strokeStyle = '#ff6b3544';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(mx, my, tw, 36, 18);
+  else ctx.rect(mx, my, tw, 36);
+  ctx.stroke();
+  ctx.fillStyle = '#ff6b35';
+  ctx.fillText(mode, W / 2, my + 24);
+
+  const boxX = 28, boxY = 260, boxW = W - 56, boxH = H - 260 - 200;
+  ctx.fillStyle = '#050505';
+  ctx.strokeStyle = '#ffffff14';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(boxX, boxY, boxW, boxH, 20);
+  else ctx.rect(boxX, boxY, boxW, boxH);
+  ctx.fill();
+  ctx.stroke();
+
+  const bmp = await createImageBitmap(stageBlob);
+  const scale = Math.min(boxW / bmp.width, boxH / bmp.height);
+  const dw = bmp.width * scale;
+  const dh = bmp.height * scale;
+  const dx = boxX + (boxW - dw) / 2;
+  const dy = boxY + Math.max(0, (boxH - dh) / 2) * 0.15;
+  ctx.save();
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(boxX, boxY, boxW, boxH, 20);
+  else ctx.rect(boxX, boxY, boxW, boxH);
+  ctx.clip();
+  ctx.drawImage(bmp, dx, dy, dw, dh);
+  ctx.restore();
+  try { bmp.close(); } catch (_) {}
+
+  ctx.fillStyle = '#bdbdbd';
+  ctx.font = '400 22px Inter, system-ui, sans-serif';
+  ctx.fillText('Open & play', W / 2, H - 110);
+  ctx.fillStyle = '#ff6b35';
+  ctx.font = '600 26px Inter, system-ui, sans-serif';
+  const url = 'sufferingjukebox.stream/' + slug;
+  ctx.fillText(url, W / 2, H - 70);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Reel frame failed'))), 'image/png');
+  });
+}
+
+async function runExportImageBatch() {
+  if (_sjExportBusy) return;
+  const shotIds = [...document.querySelectorAll('.sj-export-shot:checked')].map(el => el.value);
+  const wantStage = !!document.getElementById('sj-export-stage')?.checked;
+  const wantReel = !!document.getElementById('sj-export-reel')?.checked;
+  const wantZip = !!document.getElementById('sj-export-zip')?.checked;
+  if (!shotIds.length) { sjExportSetStatus('Pick at least one view.'); return; }
+  if (!wantStage && !wantReel) { sjExportSetStatus('Pick stage, reel, or both.'); return; }
+
+  const shots = SJ_EXPORT_SHOTS.filter(s => shotIds.includes(s.id));
+  const { name: artistName, slug } = sjExportArtistMeta();
+  const btn = document.getElementById('sj-export-run-btn');
+  _sjExportBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+
+  const prevMode = viewMode;
+  const prevExpanded = new Set(expandedAlbumIds);
+
+  try {
+    sjExportSetStatus('Loading tools…');
+    await sjExportEnsureLibs(wantZip);
+    const files = [];
+
+    for (let i = 0; i < shots.length; i++) {
+      const shot = shots[i];
+      sjExportSetStatus(`Capturing ${i + 1}/${shots.length}: ${shot.label}…`);
+      const root = await sjExportApplyShot(shot);
+      if (!root) throw new Error('Could not find jukebox stage');
+      const stageBlob = await sjExportCaptureStage(root);
+      if (wantStage) files.push({ path: `${shot.id}.png`, blob: stageBlob });
+      if (wantReel) {
+        sjExportSetStatus(`Framing reel ${i + 1}/${shots.length}: ${shot.label}…`);
+        const reelBlob = await sjExportComposeReel({
+          artistName, slug, label: shot.label, stageBlob,
+        });
+        files.push({ path: `reel/${shot.id}.png`, blob: reelBlob });
+      }
+    }
+
+    if (wantZip) {
+      sjExportSetStatus('Zipping…');
+      const zip = new window.JSZip();
+      for (const f of files) zip.file(f.path, f.blob);
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      sjExportDownloadBlob(zipBlob, `${slug}-jukebox-export.zip`);
+    } else {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const base = f.path.replace(/\//g, '-');
+        sjExportDownloadBlob(f.blob, `${slug}-${base}`);
+        await sjExportSleep(350);
+      }
+    }
+
+    sjExportSetStatus(`Done — ${files.length} file${files.length === 1 ? '' : 's'} saved to your downloads.`);
+    showToast('Export saved to Downloads');
+  } catch (err) {
+    console.error(err);
+    sjExportSetStatus('Export failed: ' + (err?.message || err));
+    showToast('Export failed');
+  } finally {
+    document.documentElement.classList.remove('sj-capture');
+    expandedAlbumIds = prevExpanded;
+    viewMode = prevMode;
+    try { render(); } catch (_) {}
+    _sjExportBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Download'; }
+  }
+}
 
 function openShareModal() {
   const sms0 = document.getElementById('share-sms-opt');
