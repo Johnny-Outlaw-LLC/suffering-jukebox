@@ -18968,9 +18968,9 @@ function sjExportLoadScript(src) {
   });
 }
 
-async function sjExportLoadScriptIn(doc, src) {
+async function sjExportLoadScriptIn(doc, src, globalName) {
   const win = doc.defaultView;
-  if (win && win.htmlToImage) return;
+  if (win && globalName && win[globalName]) return;
   await new Promise((resolve, reject) => {
     const el = doc.createElement('script');
     el.src = src;
@@ -19047,7 +19047,7 @@ function sjExportDownloadBlob(blob, filename) {
 }
 
 const SJ_EXPORT_IMG_PLACEHOLDER =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 function sjExportProxyUrl(src) {
   if (!src || src.startsWith('data:') || src.startsWith('blob:')) return src;
@@ -19149,8 +19149,8 @@ async function sjExportEnsureFrame(viewport) {
   }
 
   doc.documentElement.classList.add('sj-capture');
-  await sjExportLoadScriptIn(doc, 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js');
-  if (!win.htmlToImage) throw new Error('Screenshot library failed to load in capture frame');
+  await sjExportLoadScriptIn(doc, 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js', 'html2canvas');
+  if (!win.html2canvas) throw new Error('Screenshot library failed to load in capture frame');
   return { iframe, win, doc };
 }
 
@@ -19208,40 +19208,23 @@ async function sjExportApplyShotInFrame(win, doc, iframe, catalog, shot) {
 }
 
 async function sjExportCaptureStageInFrame(win, root) {
-  const filter = (node) => {
-    if (!(node instanceof Element)) return true;
-    if (node.id === 'yt-player-container' || node.id === 'ytp-mini-footer') return false;
-    if (node.classList && (node.classList.contains('yt-player') || node.classList.contains('ytp-mini-footer'))) return false;
-    return true;
+  const ignoreElements = (node) => {
+    if (!(node instanceof win.Element)) return false;
+    if (node.id === 'yt-player-container' || node.id === 'ytp-mini-footer') return true;
+    return !!(node.classList && (node.classList.contains('yt-player') || node.classList.contains('ytp-mini-footer')));
   };
   const bg = (win.getComputedStyle && win.getComputedStyle(win.document.body).backgroundColor) || '#0a0a0a';
-  let dataUrl;
-  try {
-    dataUrl = await win.htmlToImage.toPng(root, {
-      pixelRatio: 2,
-      backgroundColor: bg,
-      cacheBust: false,
-      skipFonts: true,
-      filter,
-      style: { transform: 'none' },
-    });
-  } catch (err) {
-    root.querySelectorAll('img').forEach((img) => {
-      const src = img.currentSrc || img.src || '';
-      if (src && !src.startsWith('data:')) img.src = SJ_EXPORT_IMG_PLACEHOLDER;
-    });
-    await sjExportSleep(80);
-    dataUrl = await win.htmlToImage.toPng(root, {
-      pixelRatio: 2,
-      backgroundColor: bg,
-      cacheBust: false,
-      skipFonts: true,
-      filter,
-      style: { transform: 'none' },
-    });
-  }
-  const res = await fetch(dataUrl);
-  return res.blob();
+  const canvas = await win.html2canvas(root, {
+    backgroundColor: bg,
+    useCORS: true,
+    allowTaint: false,
+    scale: 2,
+    logging: false,
+    ignoreElements,
+  });
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture canvas could not be encoded')), 'image/png');
+  });
 }
 
 function sjExportEscape(s) {
