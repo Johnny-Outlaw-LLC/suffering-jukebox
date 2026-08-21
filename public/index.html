@@ -3341,7 +3341,6 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       <div id="sj-export-shots" style="display:flex;flex-direction:column;gap:0"></div>
       <div class="sj-export-section">Output</div>
       <label class="sj-export-opt"><input type="checkbox" id="sj-export-stage" checked><span>Jukebox stage PNG<span class="sj-export-opt-sub">Full discography view, same as on screen</span></span></label>
-      <label class="sj-export-opt"><input type="checkbox" id="sj-export-reel" checked><span>Instagram reel frame (9:16)<span class="sj-export-opt-sub">1080×1920 with title and link</span></span></label>
       <label class="sj-export-opt"><input type="checkbox" id="sj-export-zip" checked><span>Download as one ZIP<span class="sj-export-opt-sub">Otherwise each PNG saves separately</span></span></label>
       <div class="sj-export-status" id="sj-export-status" role="status"></div>
     </div>
@@ -18929,7 +18928,9 @@ const SJ_EXPORT_SHOTS = [
   { id: 'byyear-collapsed', label: 'By Year', view: 'byyear', expand: false },
   { id: 'byyear-expanded', label: 'By Year · Tracks Open', view: 'byyear', expand: true },
   { id: 'timeline-collapsed', label: 'Timeline', view: 'timeline', expand: false },
+  { id: 'timeline-expanded', label: 'Timeline · Tracks Open', view: 'timeline', expand: true },
   { id: 'byviews-collapsed', label: 'By Views', view: 'byviews', expand: false },
+  { id: 'byviews-expanded', label: 'By Views · Tracks Open', view: 'byviews', expand: true },
   { id: 'alltracks', label: 'All Tracks', view: 'alltracks', expand: false },
 ];
 const SJ_EXPORT_SLAVE = /(?:\?|&)sj_export=1(?:&|$)/.test(location.search);
@@ -19048,6 +19049,7 @@ function sjExportDownloadBlob(blob, filename) {
 
 const SJ_EXPORT_IMG_PLACEHOLDER =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+const _sjExportImageDataCache = new Map();
 
 function sjExportProxyUrl(src) {
   if (!src || src.startsWith('data:') || src.startsWith('blob:')) return src;
@@ -19159,27 +19161,16 @@ function sjExportResizeFrame(iframe, viewport) {
   iframe.style.height = viewport.height + 'px';
 }
 
-async function sjExportPrepImages(doc) {
-  const imgs = [...doc.querySelectorAll('#tl-wrap img, #alltracks-wrap img, main img')];
+async function sjExportPrepImages(root) {
+  const imgs = [...root.querySelectorAll('img')];
   await Promise.all(imgs.map(async (img) => {
     const src = img.getAttribute('data-sj-export-orig') || img.currentSrc || img.getAttribute('src') || '';
     if (!src || src.startsWith('data:')) return;
     if (!img.getAttribute('data-sj-export-orig')) img.setAttribute('data-sj-export-orig', src);
-    const proxied = sjExportProxyUrl(src);
-    await new Promise((resolve) => {
-      const done = () => resolve();
-      img.addEventListener('load', done, { once: true });
-      img.addEventListener('error', done, { once: true });
-      try { img.crossOrigin = 'anonymous'; } catch (_) {}
-      img.src = proxied;
-      setTimeout(done, 4000);
-    });
-    if (!img.complete || img.naturalWidth === 0) {
-      try { img.removeAttribute('crossorigin'); } catch (_) {}
-      img.src = SJ_EXPORT_IMG_PLACEHOLDER;
-    }
+    img.removeAttribute('crossorigin');
+    img.src = await sjExportImageDataUrl(src);
+    try { await img.decode(); } catch (_) { img.src = SJ_EXPORT_IMG_PLACEHOLDER; }
   }));
-  await sjExportSleep(120);
 }
 
 async function sjExportApplyShotInFrame(win, doc, iframe, catalog, shot) {
@@ -19195,15 +19186,14 @@ async function sjExportApplyShotInFrame(win, doc, iframe, catalog, shot) {
     else win.collapseAllTracks();
     await sjExportSleep(shot.expand ? 1000 : 500);
   }
-  doc.documentElement.classList.add('sj-capture');
-  await sjExportPrepImages(doc);
-
   const root =
     (shot.view === 'alltracks' && doc.getElementById('alltracks-wrap'))
     || doc.getElementById('tl-wrap')
     || doc.getElementById('alltracks-wrap')
     || doc.querySelector('main');
   if (!root) throw new Error('Could not find jukebox stage in capture frame');
+  doc.documentElement.classList.add('sj-capture');
+  await sjExportPrepImages(root);
   return root;
 }
 
@@ -19225,6 +19215,25 @@ async function sjExportCaptureStageInFrame(win, root) {
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Capture canvas could not be encoded')), 'image/png');
   });
+}
+
+function sjExportImageDataUrl(src) {
+  if (!src || src.startsWith('data:')) return Promise.resolve(src || SJ_EXPORT_IMG_PLACEHOLDER);
+  if (_sjExportImageDataCache.has(src)) return _sjExportImageDataCache.get(src);
+  const task = fetch(sjExportProxyUrl(src), { credentials: 'same-origin' })
+    .then(res => {
+      if (!res.ok) throw new Error('Cover proxy returned ' + res.status);
+      return res.blob();
+    })
+    .then(blob => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Could not encode cover'));
+      reader.readAsDataURL(blob);
+    }))
+    .catch(() => SJ_EXPORT_IMG_PLACEHOLDER);
+  _sjExportImageDataCache.set(src, task);
+  return task;
 }
 
 function sjExportEscape(s) {
@@ -19310,13 +19319,12 @@ async function runExportImageBatch() {
   if (_sjExportBusy || SJ_EXPORT_SLAVE) return;
   const shotIds = [...document.querySelectorAll('.sj-export-shot:checked')].map(el => el.value);
   const wantStage = !!document.getElementById('sj-export-stage')?.checked;
-  const wantReel = !!document.getElementById('sj-export-reel')?.checked;
   const wantZip = !!document.getElementById('sj-export-zip')?.checked;
   if (!shotIds.length) { sjExportSetStatus('Pick at least one view.'); return; }
-  if (!wantStage && !wantReel) { sjExportSetStatus('Pick stage, reel, or both.'); return; }
+  if (!wantStage) { sjExportSetStatus('Pick the stage PNG output.'); return; }
 
   const shots = SJ_EXPORT_SHOTS.filter(s => shotIds.includes(s.id));
-  const { name: artistName, slug } = sjExportArtistMeta();
+  const { slug } = sjExportArtistMeta();
   const catalog = sjExportMeasureCatalog();
   const btn = document.getElementById('sj-export-run-btn');
   _sjExportBusy = true;
@@ -19336,14 +19344,7 @@ async function runExportImageBatch() {
       sjExportSetStatus(`Capturing ${i + 1}/${shots.length}: ${shot.label}…`);
       const root = await sjExportApplyShotInFrame(win, doc, iframe, catalog, shot);
       const stageBlob = await sjExportCaptureStageInFrame(win, root);
-      if (wantStage) files.push({ path: `${shot.id}.png`, blob: stageBlob });
-      if (wantReel) {
-        sjExportSetStatus(`Framing reel ${i + 1}/${shots.length}: ${shot.label}…`);
-        const reelBlob = await sjExportComposeReel({
-          artistName, slug, label: shot.label, stageBlob,
-        });
-        files.push({ path: `reel/${shot.id}.png`, blob: reelBlob });
-      }
+      files.push({ path: `${shot.id}.png`, blob: stageBlob });
     }
 
     if (wantZip) {
