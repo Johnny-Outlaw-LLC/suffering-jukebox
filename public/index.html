@@ -1852,6 +1852,20 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .lwytb-row { display: flex; gap: .25rem; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 #lwytb-header .ctrl-btn { background: var(--bg-card); padding: .5rem .85rem; border-radius: 8px; font-size: .54rem; min-height: 0; }
 #lwytb-header .ctrl-btn:hover { background: var(--bg-card); border-color: var(--accent); color: var(--accent); }
+/* Keep both header control groups on the same desktop rhythm. The playlist
+   buttons are 40px tall, so the jukebox controls use the same target. */
+@media (min-width: 641px) {
+  .hdr-r2 { align-items:stretch; }
+  #view-controls-header .ctrl-group,
+  #lwytb-header .ctrl-group { height:100%; box-sizing:border-box; }
+  #view-controls-header .vseg-btn,
+  #view-controls-header .sj-export-btn,
+  #view-controls-header .metric-btn,
+  #view-controls-header .expand-collapse-btn { min-height:40px; box-sizing:border-box; }
+  #lwytb-header .ctrl-btn { min-height:40px; box-sizing:border-box; }
+  #view-controls-header .vseg-btn { display:inline-flex; align-items:center; padding:.5rem .9rem; }
+  #view-controls-header .sj-export-btn { padding:.5rem .7rem; }
+}
 .quick-now-playing { width:100%; margin-top:.5rem; padding:.55rem .65rem; box-sizing:border-box; border:1px solid #2a2a2a; border-radius:8px; background:#0a0a0a; display:flex; align-items:center; gap:.65rem; }
 .quick-now-playing-copy { min-width:0; flex:1; }
 .quick-now-playing-label { color:var(--text-muted); font-family:var(--mono); font-size:.43rem; letter-spacing:.1em; text-transform:uppercase; }
@@ -3358,6 +3372,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       <div class="sj-export-status" id="sj-export-status" role="status"></div>
     </div>
     <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="backToJukeboxShareOptions()">← Share Options</button>
       <button class="pl-btn ghost" onclick="closeExportImageModal()">Cancel</button>
       <button class="pl-btn" id="sj-export-run-btn" onclick="runExportImageBatch()">Download</button>
     </div>
@@ -19102,6 +19117,12 @@ function openExportFromJukeboxShare() {
   openExportImageModal();
 }
 
+function backToJukeboxShareOptions() {
+  if (_sjExportBusy) return;
+  closeExportImageModal();
+  openJukeboxShareModal();
+}
+
 function openJukeboxSocialModal() {
   if (SJ_EXPORT_SLAVE || _sjExportBusy) return;
   if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
@@ -19250,7 +19271,7 @@ function openExportImageModal() {
   const host = document.getElementById('sj-export-shots');
   if (host) {
     host.innerHTML = SJ_EXPORT_SHOTS.map(s =>
-      `<label class="sj-export-opt"><input type="checkbox" class="sj-export-shot" value="${s.id}" checked><span>${s.label}</span></label>`
+      `<label class="sj-export-opt"><input type="checkbox" class="sj-export-shot" value="${s.id}"${['byyear-expanded','timeline-expanded'].includes(s.id) ? ' checked' : ''}><span>${s.label}</span></label>`
     ).join('');
   }
   const st = document.getElementById('sj-export-status');
