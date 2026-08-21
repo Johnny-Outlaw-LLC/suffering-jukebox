@@ -2177,6 +2177,18 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sj-export-actions button { font-family:var(--mono); font-size:.48rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border); background:none; color:var(--text-muted); cursor:pointer; }
 .sj-export-actions button:hover { color:var(--text); border-color:var(--text-muted); }
 #exportImageOverlay .pl-modal-body { gap:.28rem; padding:.85rem 1.15rem; }
+#sj-export-frame {
+  position: fixed;
+  left: -14000px;
+  top: 0;
+  width: 1600px;
+  height: 1000px;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+  background: #0a0a0a;
+}
 html.sj-capture #yt-player-container,
 html.sj-capture #ytp-mini-footer,
 html.sj-capture .ytp-mini-footer,
@@ -2191,8 +2203,9 @@ html.sj-capture #toast-host,
 html.sj-capture footer,
 html.sj-capture .footer-note,
 html.sj-capture #shareModalOverlay,
-html.sj-capture #exportImageOverlay,
-html.sj-capture .sj-export-btn { display:none !important; visibility:hidden !important; }
+html.sj-capture .sj-export-btn,
+html.sj-capture header .hdr-icon-btns,
+html.sj-capture #view-controls-header { display:none !important; visibility:hidden !important; }
 /* ── PLAYLIST MODAL ── */
 .pl-modal-overlay { position:fixed; inset:0; z-index:5100; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:2rem; }
 .pl-modal-overlay.open { display:flex; }
@@ -18911,7 +18924,7 @@ function showShareToast(msg) {
 
 const SJ_MOB_UA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-// ── Export Image (client-side batch PNG / reel frames) ────────
+// ── Export Image (hidden iframe batch — parent UI stays put) ──
 const SJ_EXPORT_SHOTS = [
   { id: 'byyear-collapsed', label: 'By Year', view: 'byyear', expand: false },
   { id: 'byyear-expanded', label: 'By Year · Tracks Open', view: 'byyear', expand: true },
@@ -18919,7 +18932,9 @@ const SJ_EXPORT_SHOTS = [
   { id: 'byviews-collapsed', label: 'By Views', view: 'byviews', expand: false },
   { id: 'alltracks', label: 'All Tracks', view: 'alltracks', expand: false },
 ];
+const SJ_EXPORT_SLAVE = /(?:\?|&)sj_export=1(?:&|$)/.test(location.search);
 let _sjExportBusy = false;
+let _sjExportFrame = null;
 
 function sjExportArtistMeta() {
   const a = _SLUG_ARTIST
@@ -18953,11 +18968,20 @@ function sjExportLoadScript(src) {
   });
 }
 
+async function sjExportLoadScriptIn(doc, src) {
+  const win = doc.defaultView;
+  if (win && win.htmlToImage) return;
+  await new Promise((resolve, reject) => {
+    const el = doc.createElement('script');
+    el.src = src;
+    el.async = true;
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error('Failed to load capture library'));
+    doc.head.appendChild(el);
+  });
+}
+
 async function sjExportEnsureLibs(needZip) {
-  if (!window.htmlToImage) {
-    await sjExportLoadScript('https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js');
-  }
-  if (!window.htmlToImage) throw new Error('Screenshot library failed to load');
   if (needZip && !window.JSZip) {
     await sjExportLoadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
   }
@@ -18965,6 +18989,7 @@ async function sjExportEnsureLibs(needZip) {
 }
 
 function openExportImageModal() {
+  if (SJ_EXPORT_SLAVE) return;
   if (!selectedIds.size) {
     showToast('Load an artist jukebox first');
     return;
@@ -18988,6 +19013,7 @@ function openExportImageModal() {
 function closeExportImageModal() {
   if (_sjExportBusy) return;
   document.getElementById('exportImageOverlay')?.classList.remove('open');
+  sjExportDestroyFrame();
 }
 
 function sjExportSelectShots(on) {
@@ -19004,7 +19030,7 @@ function sjExportErrMsg(err) {
   if (typeof err === 'string') return err;
   if (err.message) return err.message;
   if (typeof Event !== 'undefined' && err instanceof Event) {
-    return 'A cover image could not be captured (try again, or pick fewer views)';
+    return 'Capture hit a blocked image. Try again in a moment.';
   }
   try { return String(err); } catch (_) { return 'Unknown error'; }
 }
@@ -19023,112 +19049,185 @@ function sjExportDownloadBlob(blob, filename) {
 const SJ_EXPORT_IMG_PLACEHOLDER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-async function sjExportUrlToDataUrl(url) {
-  if (!url || url.startsWith('data:')) return url || SJ_EXPORT_IMG_PLACEHOLDER;
+function sjExportProxyUrl(src) {
+  if (!src || src.startsWith('data:') || src.startsWith('blob:')) return src;
+  if (src.includes('/api/sj-img-proxy?')) return src;
   try {
-    const r = await fetch(url, { mode: 'cors', credentials: 'omit' });
-    if (!r.ok) throw new Error('fetch ' + r.status);
-    const blob = await r.blob();
-    return await new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result);
-      fr.onerror = () => reject(new Error('Could not read image'));
-      fr.readAsDataURL(blob);
-    });
-  } catch (_) {
-    try {
-      return await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          try {
-            const c = document.createElement('canvas');
-            c.width = Math.max(1, img.naturalWidth || 1);
-            c.height = Math.max(1, img.naturalHeight || 1);
-            c.getContext('2d').drawImage(img, 0, 0);
-            resolve(c.toDataURL('image/png'));
-          } catch (e) { reject(e); }
-        };
-        img.onerror = () => reject(new Error('img failed'));
-        img.src = url;
-      });
-    } catch {
-      return SJ_EXPORT_IMG_PLACEHOLDER;
-    }
+    const abs = new URL(src, location.origin).toString();
+    return '/api/sj-img-proxy?u=' + encodeURIComponent(abs);
+  } catch {
+    return src;
   }
 }
 
-async function sjExportInlineImages(root) {
-  if (!root) return;
-  const imgs = [...root.querySelectorAll('img')];
-  await Promise.all(imgs.map(async (img) => {
-    const src = img.currentSrc || img.src;
-    if (!src || src.startsWith('data:')) return;
-    if (!img.getAttribute('data-sj-export-orig')) {
-      img.setAttribute('data-sj-export-orig', src);
-    }
-    const dataUrl = await sjExportUrlToDataUrl(src);
-    img.removeAttribute('crossorigin');
-    img.src = dataUrl;
-  }));
-  await sjExportSleep(80);
+function sjExportMeasureCatalog() {
+  const ids = typeof selectedIds !== 'undefined' ? [...selectedIds] : [];
+  const vis = ids
+    .flatMap((aid) => (albums[aid] || []))
+    .filter((a) => (typeof isAlbumVisible === 'function' ? isAlbumVisible(a.id) : true));
+  let maxTracks = 0;
+  for (const alb of vis) {
+    const n = (tracks[alb.artist_id] || []).filter((t) => t.album_id === alb.id).length;
+    if (n > maxTracks) maxTracks = n;
+  }
+  return { albumCount: vis.length || 1, maxTracks };
 }
 
-function sjExportRestoreImages(root) {
-  if (!root) return;
-  root.querySelectorAll('img[data-sj-export-orig]').forEach((img) => {
-    const orig = img.getAttribute('data-sj-export-orig');
-    if (orig) img.src = orig;
-    img.removeAttribute('data-sj-export-orig');
+function sjExportViewportFor(catalog, shot) {
+  const n = Math.max(1, catalog.albumCount || 1);
+  const expanded = !!shot.expand;
+  const per = expanded ? 240 : 200;
+  const width = Math.min(5200, Math.max(n <= 2 ? 960 : 1280, Math.ceil(n * per + 280)));
+  const trackRows = Math.max(catalog.maxTracks || 8, 8);
+  const height = expanded
+    ? Math.min(3200, Math.max(900, 460 + trackRows * 48 + 320))
+    : shot.view === 'alltracks'
+      ? 1400
+      : 1000;
+  return { width, height };
+}
+
+function sjExportDestroyFrame() {
+  if (_sjExportFrame) {
+    try { _sjExportFrame.remove(); } catch (_) {}
+    _sjExportFrame = null;
+  }
+}
+
+function sjExportFrameUrl() {
+  const u = new URL(location.href);
+  u.searchParams.set('sj_export', '1');
+  return u.toString();
+}
+
+async function sjExportEnsureFrame(viewport) {
+  sjExportDestroyFrame();
+  const iframe = document.createElement('iframe');
+  iframe.id = 'sj-export-frame';
+  iframe.title = 'Export capture';
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.width = viewport.width + 'px';
+  iframe.style.height = viewport.height + 'px';
+  document.body.appendChild(iframe);
+  _sjExportFrame = iframe;
+
+  await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('Capture frame timed out loading')), 90000);
+    iframe.onload = () => { clearTimeout(t); resolve(); };
+    iframe.onerror = () => { clearTimeout(t); reject(new Error('Capture frame failed to load')); };
+    iframe.src = sjExportFrameUrl();
   });
+
+  const win = iframe.contentWindow;
+  const doc = iframe.contentDocument;
+  if (!win || !doc) throw new Error('Capture frame unavailable');
+
+  const readyDeadline = Date.now() + 90000;
+  while (Date.now() < readyDeadline) {
+    try {
+      const hasArtists = !!(win.selectedIds && win.selectedIds.size);
+      const wrap = doc.getElementById('tl-wrap') || doc.getElementById('alltracks-wrap');
+      const hasStage = !!(wrap && (
+        wrap.querySelector('[data-tl-item]') ||
+        wrap.querySelector('.list-album-row') ||
+        wrap.querySelector('.top-tracks-tbl tbody tr') ||
+        wrap.querySelector('img') ||
+        wrap.querySelector('.mob-chart-art')
+      ));
+      if (hasArtists && hasStage) break;
+    } catch (_) {}
+    await sjExportSleep(350);
+  }
+  if (!(win.selectedIds && win.selectedIds.size)) {
+    throw new Error('Capture frame never finished loading the jukebox');
+  }
+
+  doc.documentElement.classList.add('sj-capture');
+  await sjExportLoadScriptIn(doc, 'https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js');
+  if (!win.htmlToImage) throw new Error('Screenshot library failed to load in capture frame');
+  return { iframe, win, doc };
 }
 
-async function sjExportApplyShot(shot) {
-  setViewMode(shot.view);
-  await sjExportSleep(shot.view === 'alltracks' ? 700 : 850);
+function sjExportResizeFrame(iframe, viewport) {
+  iframe.style.width = viewport.width + 'px';
+  iframe.style.height = viewport.height + 'px';
+}
+
+async function sjExportPrepImages(doc) {
+  const imgs = [...doc.querySelectorAll('#tl-wrap img, #alltracks-wrap img, main img')];
+  await Promise.all(imgs.map(async (img) => {
+    const src = img.getAttribute('data-sj-export-orig') || img.currentSrc || img.getAttribute('src') || '';
+    if (!src || src.startsWith('data:')) return;
+    if (!img.getAttribute('data-sj-export-orig')) img.setAttribute('data-sj-export-orig', src);
+    const proxied = sjExportProxyUrl(src);
+    await new Promise((resolve) => {
+      const done = () => resolve();
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+      try { img.crossOrigin = 'anonymous'; } catch (_) {}
+      img.src = proxied;
+      setTimeout(done, 4000);
+    });
+    if (!img.complete || img.naturalWidth === 0) {
+      try { img.removeAttribute('crossorigin'); } catch (_) {}
+      img.src = SJ_EXPORT_IMG_PLACEHOLDER;
+    }
+  }));
+  await sjExportSleep(120);
+}
+
+async function sjExportApplyShotInFrame(win, doc, iframe, catalog, shot) {
+  const vp = sjExportViewportFor(catalog, shot);
+  sjExportResizeFrame(iframe, vp);
+  await sjExportSleep(200);
+
+  if (typeof win.setViewMode !== 'function') throw new Error('Capture frame missing setViewMode');
+  win.setViewMode(shot.view);
+  await sjExportSleep(shot.view === 'alltracks' ? 800 : 900);
   if (shot.view !== 'alltracks' && shot.view !== 'list' && shot.view !== 'playlists') {
-    if (shot.expand) expandAllTracks();
-    else collapseAllTracks();
-    await sjExportSleep(shot.expand ? 900 : 450);
+    if (shot.expand) win.expandAllTracks();
+    else win.collapseAllTracks();
+    await sjExportSleep(shot.expand ? 1000 : 500);
   }
-  document.documentElement.classList.add('sj-capture');
+  doc.documentElement.classList.add('sj-capture');
+  await sjExportPrepImages(doc);
+
   const root =
-    (shot.view === 'alltracks' && document.getElementById('alltracks-wrap'))
-    || document.getElementById('tl-wrap')
-    || document.getElementById('alltracks-wrap')
-    || document.querySelector('main');
-  await sjExportInlineImages(root);
+    (shot.view === 'alltracks' && doc.getElementById('alltracks-wrap'))
+    || doc.getElementById('tl-wrap')
+    || doc.getElementById('alltracks-wrap')
+    || doc.querySelector('main');
+  if (!root) throw new Error('Could not find jukebox stage in capture frame');
   return root;
 }
 
-async function sjExportCaptureStage(root) {
+async function sjExportCaptureStageInFrame(win, root) {
   const filter = (node) => {
     if (!(node instanceof Element)) return true;
     if (node.id === 'yt-player-container' || node.id === 'ytp-mini-footer') return false;
     if (node.classList && (node.classList.contains('yt-player') || node.classList.contains('ytp-mini-footer'))) return false;
     return true;
   };
+  const bg = (win.getComputedStyle && win.getComputedStyle(win.document.body).backgroundColor) || '#0a0a0a';
   let dataUrl;
   try {
-    dataUrl = await window.htmlToImage.toPng(root, {
+    dataUrl = await win.htmlToImage.toPng(root, {
       pixelRatio: 2,
-      backgroundColor: getComputedStyle(document.body).backgroundColor || '#0a0a0a',
+      backgroundColor: bg,
       cacheBust: false,
       skipFonts: true,
       filter,
       style: { transform: 'none' },
-      preferredFontFormat: 'woff2',
     });
   } catch (err) {
-    // Retry once after replacing any remaining remote imgs with placeholders
     root.querySelectorAll('img').forEach((img) => {
       const src = img.currentSrc || img.src || '';
       if (src && !src.startsWith('data:')) img.src = SJ_EXPORT_IMG_PLACEHOLDER;
     });
-    await sjExportSleep(50);
-    dataUrl = await window.htmlToImage.toPng(root, {
+    await sjExportSleep(80);
+    dataUrl = await win.htmlToImage.toPng(root, {
       pixelRatio: 2,
-      backgroundColor: getComputedStyle(document.body).backgroundColor || '#0a0a0a',
+      backgroundColor: bg,
       cacheBust: false,
       skipFonts: true,
       filter,
@@ -19219,7 +19318,7 @@ async function sjExportComposeReel({ artistName, slug, label, stageBlob }) {
 }
 
 async function runExportImageBatch() {
-  if (_sjExportBusy) return;
+  if (_sjExportBusy || SJ_EXPORT_SLAVE) return;
   const shotIds = [...document.querySelectorAll('.sj-export-shot:checked')].map(el => el.value);
   const wantStage = !!document.getElementById('sj-export-stage')?.checked;
   const wantReel = !!document.getElementById('sj-export-reel')?.checked;
@@ -19229,29 +19328,25 @@ async function runExportImageBatch() {
 
   const shots = SJ_EXPORT_SHOTS.filter(s => shotIds.includes(s.id));
   const { name: artistName, slug } = sjExportArtistMeta();
+  const catalog = sjExportMeasureCatalog();
   const btn = document.getElementById('sj-export-run-btn');
   _sjExportBusy = true;
   if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
 
-  const prevMode = viewMode;
-  const prevExpanded = new Set(expandedAlbumIds);
-
   try {
     sjExportSetStatus('Loading tools…');
     await sjExportEnsureLibs(wantZip);
+
+    sjExportSetStatus('Preparing hidden capture…');
+    const firstVp = sjExportViewportFor(catalog, shots[0]);
+    const { iframe, win, doc } = await sjExportEnsureFrame(firstVp);
     const files = [];
 
     for (let i = 0; i < shots.length; i++) {
       const shot = shots[i];
       sjExportSetStatus(`Capturing ${i + 1}/${shots.length}: ${shot.label}…`);
-      const root = await sjExportApplyShot(shot);
-      if (!root) throw new Error('Could not find jukebox stage');
-      let stageBlob;
-      try {
-        stageBlob = await sjExportCaptureStage(root);
-      } finally {
-        sjExportRestoreImages(root);
-      }
+      const root = await sjExportApplyShotInFrame(win, doc, iframe, catalog, shot);
+      const stageBlob = await sjExportCaptureStageInFrame(win, root);
       if (wantStage) files.push({ path: `${shot.id}.png`, blob: stageBlob });
       if (wantReel) {
         sjExportSetStatus(`Framing reel ${i + 1}/${shots.length}: ${shot.label}…`);
@@ -19284,15 +19379,7 @@ async function runExportImageBatch() {
     sjExportSetStatus('Export failed: ' + sjExportErrMsg(err));
     showToast('Export failed');
   } finally {
-    document.documentElement.classList.remove('sj-capture');
-    document.querySelectorAll('img[data-sj-export-orig]').forEach((img) => {
-      const orig = img.getAttribute('data-sj-export-orig');
-      if (orig) img.src = orig;
-      img.removeAttribute('data-sj-export-orig');
-    });
-    expandedAlbumIds = prevExpanded;
-    viewMode = prevMode;
-    try { render(); } catch (_) {}
+    sjExportDestroyFrame();
     _sjExportBusy = false;
     if (btn) { btn.disabled = false; btn.textContent = 'Download'; }
   }
