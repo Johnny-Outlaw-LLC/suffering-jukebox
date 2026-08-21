@@ -19123,9 +19123,9 @@ async function sjExportEnsureFrame(viewport) {
   if (!win || !doc) throw new Error('Capture frame unavailable');
 
   const readyDeadline = Date.now() + 90000;
+  let frameReady = false;
   while (Date.now() < readyDeadline) {
     try {
-      const hasArtists = !!(win.selectedIds && win.selectedIds.size);
       const wrap = doc.getElementById('tl-wrap') || doc.getElementById('alltracks-wrap');
       const hasStage = !!(wrap && (
         wrap.querySelector('[data-tl-item]') ||
@@ -19134,12 +19134,18 @@ async function sjExportEnsureFrame(viewport) {
         wrap.querySelector('img') ||
         wrap.querySelector('.mob-chart-art')
       ));
-      if (hasArtists && hasStage) break;
+      // selectedIds is declared with top-level `let` in the frame, which is
+      // intentionally not exposed as iframe.contentWindow.selectedIds. The
+      // rendered jukebox stage is the reliable cross-frame readiness signal.
+      if (hasStage) {
+        frameReady = true;
+        break;
+      }
     } catch (_) {}
     await sjExportSleep(350);
   }
-  if (!(win.selectedIds && win.selectedIds.size)) {
-    throw new Error('Capture frame never finished loading the jukebox');
+  if (!frameReady) {
+    throw new Error('Capture frame never finished rendering the jukebox');
   }
 
   doc.documentElement.classList.add('sj-capture');
