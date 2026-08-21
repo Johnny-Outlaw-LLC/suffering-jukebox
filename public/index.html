@@ -2167,15 +2167,16 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 /* ── EXPORT IMAGE ── */
 .sj-export-btn { background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; padding:.26rem .58rem; border-radius:5px; cursor:pointer; letter-spacing:.04em; transition:all .15s; opacity:.9; white-space:nowrap; }
 .sj-export-btn:hover { border-color:var(--accent); color:var(--accent); opacity:1; }
-.sj-export-opt { display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:.55rem; color:var(--text); padding:.28rem 0; line-height:1.35; }
+.sj-export-opt { display:flex; align-items:flex-start; gap:7px; cursor:pointer; font-size:.55rem; color:var(--text); padding:.08rem 0; line-height:1.3; }
 .sj-export-opt input { margin-top:2px; accent-color:var(--accent); flex-shrink:0; }
-.sj-export-opt .sj-export-opt-sub { display:block; color:var(--text-muted); font-size:.48rem; margin-top:2px; }
-.sj-export-section { font-size:.48rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); margin:0.85rem 0 0.35rem; }
-.sj-export-section:first-child { margin-top:0; }
-.sj-export-status { font-size:.52rem; color:var(--text-muted); min-height:1.2em; margin-top:.55rem; line-height:1.4; }
-.sj-export-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:.35rem; }
-.sj-export-actions button { font-family:var(--mono); font-size:.48rem; padding:3px 8px; border-radius:4px; border:1px solid var(--border); background:none; color:var(--text-muted); cursor:pointer; }
+.sj-export-opt .sj-export-opt-sub { display:block; color:var(--text-muted); font-size:.48rem; margin-top:1px; }
+.sj-export-section { font-size:.48rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); margin:.55rem 0 .15rem; }
+.sj-export-section:first-of-type { margin-top:.15rem; }
+.sj-export-status { font-size:.52rem; color:var(--text-muted); min-height:1em; margin-top:.35rem; line-height:1.35; }
+.sj-export-actions { display:flex; gap:6px; flex-wrap:wrap; margin:0; }
+.sj-export-actions button { font-family:var(--mono); font-size:.48rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border); background:none; color:var(--text-muted); cursor:pointer; }
 .sj-export-actions button:hover { color:var(--text); border-color:var(--text-muted); }
+#exportImageOverlay .pl-modal-body { gap:.28rem; padding:.85rem 1.15rem; }
 html.sj-capture #yt-player-container,
 html.sj-capture #ytp-mini-footer,
 html.sj-capture .ytp-mini-footer,
@@ -3318,13 +3319,13 @@ html.sj-capture .sj-export-btn { display:none !important; visibility:hidden !imp
   <div class="pl-modal" style="width:440px">
     <div class="pl-modal-header"><span class="pl-modal-title">Export Image</span><button class="modal-close" onclick="closeExportImageModal()">✕</button></div>
     <div class="pl-modal-body">
-      <p id="sj-export-artist" style="font-size:.54rem;color:#888;line-height:1.45;margin:0 0 .35rem"></p>
+      <p id="sj-export-artist" style="font-size:.54rem;color:#888;line-height:1.4;margin:0"></p>
       <div class="sj-export-section">Views to include</div>
       <div class="sj-export-actions">
         <button type="button" onclick="sjExportSelectShots(true)">Select all</button>
         <button type="button" onclick="sjExportSelectShots(false)">Select none</button>
       </div>
-      <div id="sj-export-shots" style="display:flex;flex-direction:column;gap:2px;margin-top:.25rem"></div>
+      <div id="sj-export-shots" style="display:flex;flex-direction:column;gap:0"></div>
       <div class="sj-export-section">Output</div>
       <label class="sj-export-opt"><input type="checkbox" id="sj-export-stage" checked><span>Jukebox stage PNG<span class="sj-export-opt-sub">Full discography view, same as on screen</span></span></label>
       <label class="sj-export-opt"><input type="checkbox" id="sj-export-reel" checked><span>Instagram reel frame (9:16)<span class="sj-export-opt-sub">1080×1920 with title and link</span></span></label>
@@ -15792,6 +15793,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-21';
 const SJ_CHANGELOG = [
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
+    'Export Image is more reliable when album covers come from sites that block screenshots, and the picker layout is tighter.',
   ] },
   { date: '2026-08-20', items: [
     'Synced lyrics keep scrolling in the background without closing a right-click menu or stealing focus when the line changes.',
@@ -18969,7 +18971,7 @@ function openExportImageModal() {
   }
   const { name } = sjExportArtistMeta();
   const artEl = document.getElementById('sj-export-artist');
-  if (artEl) artEl.textContent = 'Download PNGs of ' + name + ' for Instagram or anything else. Pick the views you want.';
+  if (artEl) artEl.textContent = 'Download PNGs of ' + name + '. Pick the views you want.';
   const host = document.getElementById('sj-export-shots');
   if (host) {
     host.innerHTML = SJ_EXPORT_SHOTS.map(s =>
@@ -18997,6 +18999,16 @@ function sjExportSetStatus(msg) {
   if (el) el.textContent = msg || '';
 }
 
+function sjExportErrMsg(err) {
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') return err;
+  if (err.message) return err.message;
+  if (typeof Event !== 'undefined' && err instanceof Event) {
+    return 'A cover image could not be captured (try again, or pick fewer views)';
+  }
+  try { return String(err); } catch (_) { return 'Unknown error'; }
+}
+
 function sjExportDownloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -19008,20 +19020,67 @@ function sjExportDownloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-async function sjExportWaitImages(root) {
+const SJ_EXPORT_IMG_PLACEHOLDER =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+async function sjExportUrlToDataUrl(url) {
+  if (!url || url.startsWith('data:')) return url || SJ_EXPORT_IMG_PLACEHOLDER;
+  try {
+    const r = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    if (!r.ok) throw new Error('fetch ' + r.status);
+    const blob = await r.blob();
+    return await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(new Error('Could not read image'));
+      fr.readAsDataURL(blob);
+    });
+  } catch (_) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            const c = document.createElement('canvas');
+            c.width = Math.max(1, img.naturalWidth || 1);
+            c.height = Math.max(1, img.naturalHeight || 1);
+            c.getContext('2d').drawImage(img, 0, 0);
+            resolve(c.toDataURL('image/png'));
+          } catch (e) { reject(e); }
+        };
+        img.onerror = () => reject(new Error('img failed'));
+        img.src = url;
+      });
+    } catch {
+      return SJ_EXPORT_IMG_PLACEHOLDER;
+    }
+  }
+}
+
+async function sjExportInlineImages(root) {
   if (!root) return;
   const imgs = [...root.querySelectorAll('img')];
-  await Promise.all(imgs.map(img => {
-    try {
-      if (!img.crossOrigin) img.crossOrigin = 'anonymous';
-    } catch (_) {}
-    if (img.complete) return Promise.resolve();
-    return new Promise(res => {
-      img.addEventListener('load', res, { once: true });
-      img.addEventListener('error', res, { once: true });
-      setTimeout(res, 2500);
-    });
+  await Promise.all(imgs.map(async (img) => {
+    const src = img.currentSrc || img.src;
+    if (!src || src.startsWith('data:')) return;
+    if (!img.getAttribute('data-sj-export-orig')) {
+      img.setAttribute('data-sj-export-orig', src);
+    }
+    const dataUrl = await sjExportUrlToDataUrl(src);
+    img.removeAttribute('crossorigin');
+    img.src = dataUrl;
   }));
+  await sjExportSleep(80);
+}
+
+function sjExportRestoreImages(root) {
+  if (!root) return;
+  root.querySelectorAll('img[data-sj-export-orig]').forEach((img) => {
+    const orig = img.getAttribute('data-sj-export-orig');
+    if (orig) img.src = orig;
+    img.removeAttribute('data-sj-export-orig');
+  });
 }
 
 async function sjExportApplyShot(shot) {
@@ -19038,8 +19097,7 @@ async function sjExportApplyShot(shot) {
     || document.getElementById('tl-wrap')
     || document.getElementById('alltracks-wrap')
     || document.querySelector('main');
-  await sjExportWaitImages(root);
-  await sjExportSleep(200);
+  await sjExportInlineImages(root);
   return root;
 }
 
@@ -19050,13 +19108,33 @@ async function sjExportCaptureStage(root) {
     if (node.classList && (node.classList.contains('yt-player') || node.classList.contains('ytp-mini-footer'))) return false;
     return true;
   };
-  const dataUrl = await window.htmlToImage.toPng(root, {
-    pixelRatio: 2,
-    backgroundColor: getComputedStyle(document.body).backgroundColor || '#0a0a0a',
-    cacheBust: true,
-    filter,
-    style: { transform: 'none' },
-  });
+  let dataUrl;
+  try {
+    dataUrl = await window.htmlToImage.toPng(root, {
+      pixelRatio: 2,
+      backgroundColor: getComputedStyle(document.body).backgroundColor || '#0a0a0a',
+      cacheBust: false,
+      skipFonts: true,
+      filter,
+      style: { transform: 'none' },
+      preferredFontFormat: 'woff2',
+    });
+  } catch (err) {
+    // Retry once after replacing any remaining remote imgs with placeholders
+    root.querySelectorAll('img').forEach((img) => {
+      const src = img.currentSrc || img.src || '';
+      if (src && !src.startsWith('data:')) img.src = SJ_EXPORT_IMG_PLACEHOLDER;
+    });
+    await sjExportSleep(50);
+    dataUrl = await window.htmlToImage.toPng(root, {
+      pixelRatio: 2,
+      backgroundColor: getComputedStyle(document.body).backgroundColor || '#0a0a0a',
+      cacheBust: false,
+      skipFonts: true,
+      filter,
+      style: { transform: 'none' },
+    });
+  }
   const res = await fetch(dataUrl);
   return res.blob();
 }
@@ -19168,7 +19246,12 @@ async function runExportImageBatch() {
       sjExportSetStatus(`Capturing ${i + 1}/${shots.length}: ${shot.label}…`);
       const root = await sjExportApplyShot(shot);
       if (!root) throw new Error('Could not find jukebox stage');
-      const stageBlob = await sjExportCaptureStage(root);
+      let stageBlob;
+      try {
+        stageBlob = await sjExportCaptureStage(root);
+      } finally {
+        sjExportRestoreImages(root);
+      }
       if (wantStage) files.push({ path: `${shot.id}.png`, blob: stageBlob });
       if (wantReel) {
         sjExportSetStatus(`Framing reel ${i + 1}/${shots.length}: ${shot.label}…`);
@@ -19198,10 +19281,15 @@ async function runExportImageBatch() {
     showToast('Export saved to Downloads');
   } catch (err) {
     console.error(err);
-    sjExportSetStatus('Export failed: ' + (err?.message || err));
+    sjExportSetStatus('Export failed: ' + sjExportErrMsg(err));
     showToast('Export failed');
   } finally {
     document.documentElement.classList.remove('sj-capture');
+    document.querySelectorAll('img[data-sj-export-orig]').forEach((img) => {
+      const orig = img.getAttribute('data-sj-export-orig');
+      if (orig) img.src = orig;
+      img.removeAttribute('data-sj-export-orig');
+    });
     expandedAlbumIds = prevExpanded;
     viewMode = prevMode;
     try { render(); } catch (_) {}
