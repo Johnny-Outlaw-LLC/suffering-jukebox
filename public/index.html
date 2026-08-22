@@ -15936,6 +15936,7 @@ const SJ_CHANGELOG = [
     'Export Image and Share to Social Media now name the actual artist instead of a generic label, and only offer an All Artists option when another artist is really loaded alongside it, naming who they are. Share to Social Media now starts with the same views checked as Export Image.',
     'The ⋯ menu on a track now shows Artist - Song at the top instead of just Track.',
     'Export Image turns off the All Artists option once the loaded artists add up to more than 30 albums, with a note explaining why - a batch that large was slow and produced an unwieldy download.',
+    'Fixed album covers looking stretched or squished in exported images.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -19548,6 +19549,29 @@ async function sjExportPrepImages(root) {
     img.src = await sjExportImageDataUrl(src);
     try { await img.decode(); } catch (_) { img.src = SJ_EXPORT_IMG_PLACEHOLDER; }
   }));
+  // html2canvas does not honor object-fit: cover on <img> elements - it just
+  // stretches the raw bitmap to fill the box, distorting non-square album
+  // art. Swap each cover image for a background-image div (which it renders
+  // correctly) in this disposable capture-frame DOM only, right before the
+  // snapshot is taken.
+  const win = root.ownerDocument.defaultView;
+  root.querySelectorAll('img').forEach((img) => {
+    const cs = win.getComputedStyle(img);
+    if (cs.objectFit !== 'cover') return;
+    const rect = img.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const div = root.ownerDocument.createElement('div');
+    div.style.width = rect.width + 'px';
+    div.style.height = rect.height + 'px';
+    div.style.borderRadius = cs.borderRadius;
+    div.style.flexShrink = cs.flexShrink;
+    div.style.display = cs.display === 'inline' ? 'block' : cs.display;
+    div.style.backgroundImage = `url("${img.src}")`;
+    div.style.backgroundSize = 'cover';
+    div.style.backgroundPosition = 'center';
+    div.style.backgroundRepeat = 'no-repeat';
+    img.replaceWith(div);
+  });
 }
 
 async function sjExportApplyShotInFrame(win, doc, iframe, catalog, shot) {
