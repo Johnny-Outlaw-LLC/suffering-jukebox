@@ -15937,6 +15937,7 @@ const SJ_CHANGELOG = [
     'The ⋯ menu on a track now shows Artist - Song at the top instead of just Track.',
     'Export Image turns off the All Artists option once the loaded artists add up to more than 30 albums, with a note explaining why - a batch that large was slow and produced an unwieldy download.',
     'Fixed album covers looking stretched or squished in exported images.',
+    'Fixed the Timeline export sometimes drawing the connector lines between an album cover and its track panel out of alignment.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -19580,6 +19581,12 @@ async function sjExportApplyShotInFrame(win, doc, iframe, catalog, shot) {
   await sjExportSleep(200);
 
   if (typeof win.setViewMode !== 'function') throw new Error('Capture frame missing setViewMode');
+  // expandedAlbumIds carries over between shots in the same capture session,
+  // so a prior expanded shot left the next shot's very first render already
+  // expanded from stale state - which is what misaligned the timeline
+  // connector lines. Collapsing first, same as manually toggling the panels
+  // off and back on, forces every shot to lay out from a clean baseline.
+  if (typeof win.collapseAllTracks === 'function') win.collapseAllTracks();
   win.setViewMode(shot.view);
   await sjExportSleep(shot.view === 'alltracks' ? 800 : 900);
   if (shot.view !== 'alltracks' && shot.view !== 'list' && shot.view !== 'playlists') {
