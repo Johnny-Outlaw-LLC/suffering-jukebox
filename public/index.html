@@ -2198,6 +2198,15 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sj-export-actions { display:flex; gap:6px; flex-wrap:wrap; margin:0; }
 .sj-export-actions button { font-family:var(--mono); font-size:.48rem; padding:2px 7px; border-radius:4px; border:1px solid var(--border); background:none; color:var(--text-muted); cursor:pointer; }
 .sj-export-actions button:hover { color:var(--text); border-color:var(--text-muted); }
+.sj-shot-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:.5rem; margin:.15rem 0 .05rem; }
+.sj-shot-card { position:relative; display:flex; flex-direction:column; align-items:center; gap:.3rem; padding:.5rem .35rem .4rem; border:1px solid var(--border); border-radius:8px; background:var(--bg-elevated); cursor:pointer; transition:border-color .15s,background .15s; }
+.sj-shot-card:hover { border-color:var(--accent); }
+.sj-shot-card.checked { border-color:var(--accent); background:rgba(255,107,53,.1); }
+.sj-shot-card input { position:absolute; top:.35rem; right:.35rem; margin:0; accent-color:var(--accent); width:12px; height:12px; cursor:pointer; }
+.sj-shot-thumb { width:100%; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; color:var(--text-muted); }
+.sj-shot-thumb svg { width:76%; height:76%; }
+.sj-shot-card.checked .sj-shot-thumb { color:var(--accent); }
+.sj-shot-lbl { font-size:.48rem; color:var(--text); text-align:center; line-height:1.25; }
 .sj-social-text { width:100%; min-height:70px; box-sizing:border-box; resize:vertical; border:1px solid var(--border); border-radius:7px; background:#0a0a0a; color:var(--text); font:inherit; font-size:.56rem; padding:.55rem .6rem; outline:none; }
 .sj-social-text:focus { border-color:var(--accent); }
 .sj-social-link { color:var(--accent); font-family:var(--mono); font-size:.5rem; overflow-wrap:anywhere; line-height:1.45; }
@@ -3368,7 +3377,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
         <button type="button" onclick="sjSocialSelectShots(true)">Select all</button>
         <button type="button" onclick="sjSocialSelectShots(false)">Select none</button>
       </div>
-      <div id="sj-social-shots" style="display:flex;flex-direction:column;gap:0"></div>
+      <div id="sj-social-shots" class="sj-shot-grid"></div>
       <div class="sj-export-section">Artists to include</div>
       <div id="sj-social-scope-opts"></div>
       <div class="sj-export-section">Your message <span style="text-transform:none;letter-spacing:0">(optional)</span></div>
@@ -15984,6 +15993,7 @@ const SJ_CHANGELOG = [
     'Share to Social Media now tries your device\'s share sheet first for Facebook, Reddit, and Instagram, so the screenshots can attach straight to the post instead of only carrying the link.',
     'Share Jukebox is one screen now instead of a choice between Export Images and Share to Social Media. Prepare screenshots once, then Download Images, Share via Device, Facebook, Reddit, or Instagram all use them.',
     'Share Jukebox now offers Download Individually, Download Single Zip (Share via SMS on a phone), Share to r/sufferingjukebox, and Copy Link. Facebook, Instagram, and the separate Share via Device button are gone for now.',
+    'Screenshots to include in Share Jukebox are now picture thumbnails with a simple icon for each layout, instead of a plain checklist.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -19115,6 +19125,19 @@ const SJ_EXPORT_SHOTS = [
   { id: 'byviews-expanded', label: 'By Views · Tracks Open', view: 'byviews', expand: true },
   { id: 'alltracks', label: 'All Tracks', view: 'alltracks', expand: false },
 ];
+
+function sjShotIconSvg(view, expand) {
+  const shapes = {
+    byyear: '<rect x="4" y="10" width="6" height="12" rx="1"/><rect x="13" y="4" width="6" height="18" rx="1"/><rect x="22" y="14" width="6" height="8" rx="1"/><rect x="31" y="7" width="6" height="15" rx="1"/>',
+    timeline: '<rect x="4" y="12" width="32" height="2" rx="1"/><circle cx="10" cy="13" r="3"/><circle cx="20" cy="13" r="3"/><circle cx="30" cy="13" r="3"/>',
+    byviews: '<rect x="4" y="4" width="30" height="5" rx="1"/><rect x="4" y="11" width="22" height="5" rx="1"/><rect x="4" y="18" width="14" height="5" rx="1"/>',
+    alltracks: '<rect x="4" y="4" width="32" height="4" rx="1"/><rect x="4" y="10" width="32" height="4" rx="1"/><rect x="4" y="16" width="32" height="4" rx="1"/><rect x="4" y="22" width="32" height="4" rx="1"/>',
+  };
+  const rows = expand
+    ? '<rect x="4" y="27" width="26" height="2.5" rx="1" opacity=".55"/><rect x="4" y="32" width="20" height="2.5" rx="1" opacity=".55"/><rect x="4" y="37" width="24" height="2.5" rx="1" opacity=".55"/>'
+    : '';
+  return `<svg viewBox="0 0 40 40" fill="currentColor">${shapes[view] || shapes.alltracks}${rows}</svg>`;
+}
 const SJ_EXPORT_SLAVE = /(?:\?|&)sj_export=1(?:&|$)/.test(location.search);
 const SJ_EXPORT_ARTIST_IDS = SJ_EXPORT_SLAVE
   ? (new URLSearchParams(location.search).get('sj_export_artists') || '').split(',').filter(Boolean)
@@ -19255,9 +19278,10 @@ function openJukeboxSocialModal() {
   const artistEl = document.getElementById('sj-social-artist');
   if (artistEl) artistEl.textContent = 'Download images or create a post for ' + name + '. The jukebox link is included by default.';
   const host = document.getElementById('sj-social-shots');
-  if (host) host.innerHTML = SJ_EXPORT_SHOTS.map(s =>
-    `<label class="sj-export-opt"><input type="checkbox" class="sj-social-shot" value="${s.id}"${['byyear-expanded','timeline-expanded'].includes(s.id) ? ' checked' : ''}><span>${s.label}</span></label>`
-  ).join('');
+  if (host) host.innerHTML = SJ_EXPORT_SHOTS.map(s => {
+    const checked = ['byyear-expanded','timeline-expanded'].includes(s.id);
+    return `<label class="sj-shot-card${checked ? ' checked' : ''}"><input type="checkbox" class="sj-social-shot" value="${s.id}"${checked ? ' checked' : ''} onchange="this.closest('.sj-shot-card').classList.toggle('checked',this.checked)"><span class="sj-shot-thumb">${sjShotIconSvg(s.view, s.expand)}</span><span class="sj-shot-lbl">${s.label}</span></label>`;
+  }).join('');
   const text = document.getElementById('sj-social-text');
   if (text) text.value = '';
   sjExportRenderScopeOpts('sj-social-scope-opts', 'sj-social-scope');
@@ -19279,7 +19303,10 @@ function closeJukeboxSocialModal() {
 }
 
 function sjSocialSelectShots(on) {
-  document.querySelectorAll('.sj-social-shot').forEach(cb => { cb.checked = !!on; });
+  document.querySelectorAll('.sj-social-shot').forEach(cb => {
+    cb.checked = !!on;
+    cb.closest('.sj-shot-card')?.classList.toggle('checked', cb.checked);
+  });
   _sjSocialFiles = [];
   sjSocialSetStatus('');
 }
