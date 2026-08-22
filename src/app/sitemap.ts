@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { SITE_URL } from "@/lib/site";
+import { shareImageUrl, type ShareImage } from "@/lib/share-images";
 
 const REST = "https://ntyvtpimesfoesuykuyi.supabase.co/rest/v1";
 const ANON =
@@ -56,7 +57,45 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly",
       priority: 0.7,
     },
+    {
+      url: `${SITE_URL}/share`,
+      lastModified,
+      changeFrequency: "daily",
+      priority: 0.7,
+    },
   ];
+
+  // Nightly chart images, grouped per artist. The `images` field emits proper
+  // <image:image> entries, which is how Google Images finds them at all.
+  const shotsBySlug = new Map<string, ShareImage[]>();
+  try {
+    const r = await fetch(
+      `${REST}/share_images?format=eq.stage&select=slug,b2_key,captured_at&order=slug.asc&limit=2000`,
+      {
+        headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, "Accept-Profile": "jukebox" },
+        next: { revalidate: 3600 },
+      }
+    );
+    if (r.ok) {
+      const rows: ShareImage[] = await r.json();
+      for (const row of rows) {
+        if (!shotsBySlug.has(row.slug)) shotsBySlug.set(row.slug, []);
+        shotsBySlug.get(row.slug)!.push(row);
+      }
+    }
+  } catch {
+    /* artist pages still get listed below, just without image entries */
+  }
+
+  for (const [slug, rows] of shotsBySlug) {
+    entries.push({
+      url: `${SITE_URL}/share/${slug}`,
+      lastModified: new Date(rows.map((r) => r.captured_at).sort().reverse()[0] || lastModified),
+      changeFrequency: "daily",
+      priority: 0.7,
+      images: rows.map((r) => shareImageUrl(r)),
+    });
+  }
 
   // Community artist jukebox pages (/pavement etc.)
   try {

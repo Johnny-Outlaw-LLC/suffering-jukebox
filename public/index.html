@@ -16035,6 +16035,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-22';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-22', items: [
+    'Export Image is instant now for most artists. The screenshots are made fresh every night, so Prepare Screenshots just fetches the ready ones instead of redrawing the whole jukebox on your device. If you have hidden any albums, or have a second artist loaded, it still draws them live so you get exactly what you are looking at.',
+    'Every artist now has its own chart page showing all the layouts and the numbers behind them, listed together under Album Charts. The pictures refresh every night and each one links straight back into the player.',
+    'Sharing a link to an artist now previews that artist\'s own chart instead of an album cover, so a link posted anywhere shows what the jukebox actually looks like.',
     'Fixed the trend chart in track and album tooltips so it starts at zero. It used to zoom in on small day-to-day changes, which could make a normal dip look like views dropped to almost nothing.',
     'Search now groups matches into Artists, Albums, and Tracks. An artist match gets Shuffle All Songs and Go to Jukebox; an album match gets Play Album and View Album in Jukebox.',
     'The Skip button next to Up Next in the player now matches the look of the other player buttons instead of standing out in orange, and it sits right next to the Up Next label instead of over on the right edge.',
@@ -19399,17 +19402,80 @@ function sjExportSetStatus(msg) {
   if (el) el.textContent = msg || '';
 }
 
+// ── Ready-made nightly images ─────────────────────────────────────────
+// A nightly job renders every artist's charts and publishes them at a stable
+// URL. When the export is the plain single-artist scope with nothing hidden,
+// those are the same picture a live capture would make, so fetch them instead
+// of spending half a minute re-rendering in a hidden iframe.
+//
+// Anything the user has customised - a second artist in scope, a hidden album,
+// or a view we do not pre-render - falls through to live capture, because the
+// ready-made image would not be what they are looking at.
+let _sjReadyMade = null;
+
+async function sjReadyMadeFor(slug) {
+  if (_sjReadyMade && _sjReadyMade.slug === slug) return _sjReadyMade.rows;
+  try {
+    const r = await fetch(
+      `${REST}/share_images?slug=eq.${encodeURIComponent(slug)}&format=eq.stage&select=shot_id,captured_at`,
+      { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } }
+    );
+    const rows = r.ok ? await r.json() : [];
+    _sjReadyMade = { slug, rows };
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+function sjExportCanUseReadyMade(scope) {
+  if (scope !== 'artist') return false;
+  const ids = sjExportScopeArtistIds('artist');
+  if (ids.length !== 1) return false;
+  const all = albums[ids[0]] || [];
+  if (!all.length) return false;
+  const visible = all.filter(a => (typeof isAlbumVisible === 'function' ? isAlbumVisible(a.id) : true));
+  return visible.length === all.length;
+}
+
 async function sjExportCaptureFiles(shots, onStatus, scope) {
   const exportScope = sjExportScope(scope);
+  const files = [];
+  let pending = shots;
+
+  if (sjExportCanUseReadyMade(exportScope)) {
+    const { slug } = sjExportArtistMeta();
+    const rows = await sjReadyMadeFor(slug);
+    const have = new Set(rows.map(r => r.shot_id));
+    const ready = shots.filter(s => have.has(s.id));
+    if (ready.length) {
+      const missed = [];
+      for (let i = 0; i < ready.length; i++) {
+        const shot = ready[i];
+        onStatus?.(`Fetching ${i + 1}/${ready.length}: ${shot.label}…`);
+        try {
+          const r = await fetch(`/share-image/${encodeURIComponent(slug)}/${shot.id}.png`);
+          if (!r.ok) throw new Error(String(r.status));
+          files.push({ path: `${shot.id}.png`, blob: await r.blob() });
+        } catch {
+          missed.push(shot);
+        }
+      }
+      const readyIds = new Set(ready.filter(s => !missed.includes(s)).map(s => s.id));
+      pending = shots.filter(s => !readyIds.has(s.id));
+    }
+  }
+
+  if (!pending.length) return files;
+
   const catalog = sjExportMeasureCatalog(exportScope);
   onStatus?.('Preparing hidden capture…');
-  const firstVp = sjExportViewportFor(catalog, shots[0]);
+  const firstVp = sjExportViewportFor(catalog, pending[0]);
   const { iframe, win, doc } = await sjExportEnsureFrame(firstVp, exportScope);
-  const files = [];
   try {
-    for (let i = 0; i < shots.length; i++) {
-      const shot = shots[i];
-      onStatus?.(`Capturing ${i + 1}/${shots.length}: ${shot.label}…`);
+    for (let i = 0; i < pending.length; i++) {
+      const shot = pending[i];
+      onStatus?.(`Capturing ${i + 1}/${pending.length}: ${shot.label}…`);
       const root = await sjExportApplyShotInFrame(win, doc, iframe, catalog, shot);
       const stageBlob = await sjExportCaptureStageInFrame(win, root);
       files.push({ path: `${shot.id}.png`, blob: stageBlob });

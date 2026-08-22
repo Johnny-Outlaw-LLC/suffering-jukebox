@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { getOgImage, shareImageUrl } from "@/lib/share-images";
 
 export const dynamic = "force-dynamic";
 
@@ -44,14 +45,25 @@ export async function GET(
     return NextResponse.redirect(home, 302);
   }
 
+  // Social preview: prefer the nightly 1200x630 chart card, which shows what
+  // this site actually does. Album art is the fallback for an artist added
+  // since the last capture run; the generic site image is the last resort.
   let art = "";
   try {
-    const albs = await sb(
-      `/albums?artist_id=eq.${artist.id}&select=art_url&order=release_date.asc&limit=8`
-    );
-    art = albs.map((a: any) => a.art_url).find(Boolean) || "";
+    const card = await getOgImage(artist.slug);
+    if (card) art = shareImageUrl(card);
   } catch {
-    /* generic og:image below */
+    /* album art below */
+  }
+  if (!art) {
+    try {
+      const albs = await sb(
+        `/albums?artist_id=eq.${artist.id}&select=art_url&order=release_date.asc&limit=8`
+      );
+      art = albs.map((a: any) => a.art_url).find(Boolean) || "";
+    } catch {
+      /* generic og:image below */
+    }
   }
 
   const name = (artist.name || "").trim();
