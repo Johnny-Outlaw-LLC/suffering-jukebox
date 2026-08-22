@@ -1966,8 +1966,8 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-queue-up-next { display:flex; align-items:center; gap:7px; min-width:0; padding:5px 10px 6px; background:var(--bg-elevated); border-bottom:1px solid var(--border); }
 .yt-queue-up-next-lbl { color:var(--accent); font-size:.42rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; flex-shrink:0; }
 .yt-queue-up-next-title { flex:1; min-width:0; color:var(--text); font-size:.55rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.yt-queue-up-next-skip { background:var(--accent); border:1px solid var(--accent); color:#0a0a0a; font-family:var(--mono); font-size:.45rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:.38rem .62rem; border-radius:8px; cursor:pointer; flex-shrink:0; transition:all .15s; }
-.yt-queue-up-next-skip:hover { color:#0a0a0a; filter:brightness(1.12); }
+.yt-queue-up-next-skip { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.45rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:.38rem .62rem; border-radius:6px; cursor:pointer; flex-shrink:0; transition:color .1s, border-color .1s; }
+.yt-queue-up-next-skip:hover { color:var(--text); border-color:var(--text-muted); }
 #ytp-up-next-slot:empty { display:none; }
 .ytp-tog { background:none; border:none; color:var(--text-muted); font-family:var(--mono); font-size:.5rem; font-weight:700; letter-spacing:.02em; padding:2px 4px; cursor:pointer; line-height:1.5; white-space:nowrap; border-radius:4px; transition:color .12s; }
 .ytp-tog:hover { color:var(--text); }
@@ -2411,6 +2411,12 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
   max-height:200px; overflow-y:auto;
 }
 .srch-lyr-panel mark { background:transparent; color:var(--accent); font-weight:700; }
+.srch-section { margin-bottom: 14px; }
+.srch-section:last-child { margin-bottom: 0; }
+.srch-section-hdr {
+  font-size:.5rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted);
+  font-weight:700; margin: 4px 2px 6px;
+}
 
 /* ── Landing page (artist card grid) ── */
 #main.main-landing { display: block; padding: 0; }
@@ -5445,8 +5451,9 @@ function ytpUpNextQueueHTML() {
   const artist = (meta && meta.artist) || item.artist || '';
   const label = (artist ? artist + ' - ' : '') + (item.title || 'Track');
   const safeLabel = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  return '<div class="yt-queue-up-next"><span class="yt-queue-up-next-lbl">Up next</span><span class="yt-queue-up-next-title" title="' + safeLabel + '">' + safeLabel + '</span>' +
-    (ytQueue.length > 2 ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another queued song to play next">Skip</button>' : '') + '</div>';
+  return '<div class="yt-queue-up-next"><span class="yt-queue-up-next-lbl">Up next</span>' +
+    (ytQueue.length > 2 ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another queued song to play next">Skip</button>' : '') +
+    '<span class="yt-queue-up-next-title" title="' + safeLabel + '">' + safeLabel + '</span></div>';
 }
 
 function ytpPaintUpNext() {
@@ -15920,6 +15927,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-22';
 const SJ_CHANGELOG = [
   { date: '2026-08-22', items: [
     'Fixed the trend chart in track and album tooltips so it starts at zero. It used to zoom in on small day-to-day changes, which could make a normal dip look like views dropped to almost nothing.',
+    'Search now groups matches into Artists, Albums, and Tracks. An artist match gets Shuffle All Songs and Go to Jukebox; an album match gets Play Album and View Album in Jukebox.',
+    'The Skip button next to Up Next in the player now matches the look of the other player buttons instead of standing out in orange, and it sits right next to the Up Next label instead of over on the right edge.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -21094,6 +21103,8 @@ async function srchPlayTrack(trackId, el) {
 
 let _srchTimer = null;
 const _srchHitMeta = {}; // trackId → { name } for play when the page hasn't loaded that artist
+const _srchArtistMeta = {}; // artistId → {id,name,slug,color,is_community,added_by_name}
+const _srchAlbumMeta = {}; // albumId → {id,name,artist_id,art_url,release_date,artist}
 
 function openSearchModal(query) {
   const overlay = document.getElementById('srch-overlay');
@@ -21162,12 +21173,16 @@ async function _runSearch(query) {
     [trackNameRows, albumNameRows, artistNameRows, lyricsRows] = await Promise.all([
       dbGet(`/tracks?name=ilike.*${qEnc}*&select=id,name,album_id&limit=200`).catch(() => []),
       dbGet(`/albums?name=ilike.*${qEnc}*&select=id,name,artist_id,release_date,art_url&limit=100`).catch(() => []),
-      dbGet(`/artists?name=ilike.*${qEnc}*&select=id,name&limit=50`).catch(() => []),
+      dbGet(`/artists?name=ilike.*${qEnc}*&select=id,name,slug,color,is_community,added_by_name&limit=50`).catch(() => []),
       dbGet(`/lyrics?lyrics=ilike.*${qEnc}*&select=track_id,lyrics&limit=200`).catch(() => []),
     ]);
   } catch (_) { /* non-fatal */ }
 
   if (token !== _srchToken) return;
+
+  // Albums that matched by name directly - kept separate from albumNameRows,
+  // which the artist -> albums expansion below pushes into for hydration.
+  const directAlbumHits = albumNameRows.slice();
 
   lyricsRows.forEach(r => { if (lyricsCache[r.track_id] === undefined) lyricsCache[r.track_id] = r.lyrics; });
   const lyricsByTrackId = {};
@@ -21264,7 +21279,7 @@ async function _runSearch(query) {
       const chunks = [];
       for (let i = 0; i < needArtIds.length; i += 50) chunks.push(needArtIds.slice(i, i + 50));
       const rows = (await Promise.all(chunks.map(c =>
-        dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat();
+        dbGet(`/artists?id=in.(${c.join(',')})&select=id,name,slug,color,is_community,added_by_name`)))).flat();
       rows.forEach(a => { artistById[a.id] = a; });
     } catch (_) {}
   }
@@ -21315,18 +21330,55 @@ async function _runSearch(query) {
     return score(b) - score(a);
   });
 
-  if (countEl) countEl.textContent = hits.length ? `${hits.length} result${hits.length === 1 ? '' : 's'}` : '';
-
-  if (!hits.length) {
-    if (bodyEl) bodyEl.innerHTML = `<div id="srch-status">No results for "${escHtml(query)}".</div>`;
-    return;
-  }
-
   function hl(str) {
     if (!str) return '';
     return escHtml(str).replace(new RegExp(escHtml(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi'),
       m => `<mark>${m}</mark>`);
   }
+
+  // Artists that matched by name - own section up top, own actions.
+  artistNameRows.forEach(a => { _srchArtistMeta[a.id] = a; });
+  const artistCards = artistNameRows.map(a => {
+    const color = a.color || 'var(--accent)';
+    return `<div class="srch-card" data-artist-id="${a.id}">
+      <div class="srch-art-ph" style="background:${color}22;color:${color}">${escHtml((a.name||'?')[0].toUpperCase())}</div>
+      <div class="srch-info">
+        <div class="srch-track-name">${hl(a.name)}</div>
+        <div class="srch-meta">Artist${a.added_by_name ? ' · added by ' + escHtml(a.added_by_name) : ''}</div>
+      </div>
+      <div class="srch-actions">
+        <button class="srch-btn play" onclick="srchShuffleArtist('${a.id}')">▶ Shuffle All Songs</button>
+        <button class="srch-btn" onclick="srchGoToArtist('${a.id}')">Go to Jukebox →</button>
+      </div>
+    </div>`;
+  });
+
+  // Albums that matched by name directly - own section, own actions. (Albums
+  // pulled in only because their artist matched stay out of this section and
+  // still surface through their tracks below, same as before.)
+  const albumCards = directAlbumHits.map(album => {
+    const artist = artistById[album.artist_id] || null;
+    if (artist) _srchArtistMeta[artist.id] = artist;
+    _srchAlbumMeta[album.id] = { ...album, artist };
+    const year  = (album.release_date || '').slice(0, 4);
+    const thumb = album.art_url || albumThumb(album);
+    const art   = thumb
+      ? `<img class="srch-art" src="${escHtml(thumb)}" alt="">`
+      : `<div class="srch-art-ph" style="background:var(--bg-elevated)">${escHtml((album.name||'?')[0].toUpperCase())}</div>`;
+    const meta  = [artist?.name, year].filter(Boolean).join(' · ');
+    const canNav = !!(artist && artist.slug);
+    return `<div class="srch-card" data-album-id="${album.id}">
+      ${art}
+      <div class="srch-info">
+        <div class="srch-track-name">${hl(album.name)}</div>
+        ${meta ? `<div class="srch-meta">${hl(meta)}</div>` : ''}
+      </div>
+      <div class="srch-actions">
+        <button class="srch-btn play" onclick="srchPlayAlbum('${album.id}')" ${canNav ? '' : 'disabled title="Artist page not available"'}>▶ Play Album</button>
+        <button class="srch-btn" onclick="srchGoToAlbum('${album.id}')" ${canNav ? '' : 'disabled title="Artist page not available"'}>View Album in Jukebox</button>
+      </div>
+    </div>`;
+  });
 
   const cards = hits.map(({ track: t, artist, album, snippet }) => {
     const thumb = (album && (album.art_url || albumThumb(album))) || (ytData[t.id]?.thumbnail || '');
@@ -21351,8 +21403,56 @@ async function _runSearch(query) {
     </div>`;
   });
 
-  if (bodyEl) bodyEl.innerHTML = cards.join('');
+  const totalCount = artistCards.length + albumCards.length + cards.length;
+  if (countEl) countEl.textContent = totalCount ? `${totalCount} result${totalCount === 1 ? '' : 's'}` : '';
+
+  if (!totalCount) {
+    if (bodyEl) bodyEl.innerHTML = `<div id="srch-status">No results for "${escHtml(query)}".</div>`;
+    return;
+  }
+
+  const section = (label, list) => list.length
+    ? `<div class="srch-section"><div class="srch-section-hdr">${label}</div>${list.join('')}</div>`
+    : '';
+  if (bodyEl) bodyEl.innerHTML =
+    section('Artists', artistCards) + section('Albums', albumCards) + section('Tracks', cards);
   refreshCommentBadges();
+}
+
+// ── Search result actions for Artist / Album rows - resolve from the small
+// per-search lookup maps above, since the artist may not be the one loaded
+// on the page right now. ─────────────────────────────────────────────────
+async function srchGoToArtist(artistId) {
+  const a = _srchArtistMeta[artistId];
+  if (!a || !a.slug) return;
+  closeSearchModal();
+  await enterArtistJukebox(a);
+}
+
+async function srchShuffleArtist(artistId) {
+  const a = _srchArtistMeta[artistId];
+  if (!a || !a.slug) return;
+  closeSearchModal();
+  await enterArtistJukebox(a);
+  shuffleAllVisible();
+}
+
+async function srchGoToAlbum(albumId) {
+  const m = _srchAlbumMeta[albumId];
+  if (!m || !m.artist || !m.artist.slug) return;
+  closeSearchModal();
+  await enterArtistJukebox(m.artist);
+  expandedAlbumIds.add(albumId);
+  renderTimelineOnly();
+  setTimeout(() => document.querySelector(`[data-alb-id="${albumId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+}
+
+async function srchPlayAlbum(albumId) {
+  const m = _srchAlbumMeta[albumId];
+  if (!m || !m.artist || !m.artist.slug) return;
+  closeSearchModal();
+  await enterArtistJukebox(m.artist);
+  playAlbum(albumId);
 }
 
 // ── Lyrics editing ────────────────────────────────────────────
