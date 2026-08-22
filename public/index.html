@@ -15994,6 +15994,9 @@ const SJ_CHANGELOG = [
     'Share Jukebox is one screen now instead of a choice between Export Images and Share to Social Media. Prepare screenshots once, then Download Images, Share via Device, Facebook, Reddit, or Instagram all use them.',
     'Share Jukebox now offers Download Individually, Download Single Zip (Share via SMS on a phone), Share to r/sufferingjukebox, and Copy Link. Facebook, Instagram, and the separate Share via Device button are gone for now.',
     'Screenshots to include in Share Jukebox are now picture thumbnails with a simple icon for each layout, instead of a plain checklist.',
+    'The screenshot thumbnails in Share Jukebox now sketch the actual layout - album covers with a bar chart over them, evenly spaced for By Year, spaced out for the real year gaps in Timeline, and sorted tallest to shortest for By Views. Tracks Open adds a strip under each cover for the opened track list.',
+    'Sharing a song or playlist now sends just the song or playlist name and artist, instead of a canned "I made you a..." message.',
+    'Fixed playlist share links failing to generate for very large playlists.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -19127,16 +19130,25 @@ const SJ_EXPORT_SHOTS = [
 ];
 
 function sjShotIconSvg(view, expand) {
-  const shapes = {
-    byyear: '<rect x="4" y="10" width="6" height="12" rx="1"/><rect x="13" y="4" width="6" height="18" rx="1"/><rect x="22" y="14" width="6" height="8" rx="1"/><rect x="31" y="7" width="6" height="15" rx="1"/>',
-    timeline: '<rect x="4" y="12" width="32" height="2" rx="1"/><circle cx="10" cy="13" r="3"/><circle cx="20" cy="13" r="3"/><circle cx="30" cy="13" r="3"/>',
-    byviews: '<rect x="4" y="4" width="30" height="5" rx="1"/><rect x="4" y="11" width="22" height="5" rx="1"/><rect x="4" y="18" width="14" height="5" rx="1"/>',
-    alltracks: '<rect x="4" y="4" width="32" height="4" rx="1"/><rect x="4" y="10" width="32" height="4" rx="1"/><rect x="4" y="16" width="32" height="4" rx="1"/><rect x="4" y="22" width="32" height="4" rx="1"/>',
+  // Mirrors the real chart: a bar rising above a square album-cover thumbnail,
+  // bottom-aligned on a shared baseline (see .mob-chart-bar-wrap / .mob-chart-art).
+  if (view === 'alltracks') {
+    return '<svg viewBox="0 0 40 40" fill="currentColor"><rect x="4" y="4" width="32" height="4" rx="1"/><rect x="4" y="10" width="32" height="4" rx="1"/><rect x="4" y="16" width="32" height="4" rx="1"/><rect x="4" y="22" width="32" height="4" rx="1"/></svg>';
+  }
+  const BLOCKS = {
+    byyear:   [ { x: 3,  h: 10 }, { x: 13, h: 16 }, { x: 23, h: 6  }, { x: 33, h: 13 } ],  // even spacing, chronological
+    timeline: [ { x: 3,  h: 10 }, { x: 11, h: 14 }, { x: 27, h: 7  }, { x: 34, h: 16 } ],  // uneven spacing = real year gaps
+    byviews:  [ { x: 3,  h: 16 }, { x: 13, h: 13 }, { x: 23, h: 10 }, { x: 33, h: 6  } ],  // sorted tallest to shortest
   };
-  const rows = expand
-    ? '<rect x="4" y="27" width="26" height="2.5" rx="1" opacity=".55"/><rect x="4" y="32" width="20" height="2.5" rx="1" opacity=".55"/><rect x="4" y="37" width="24" height="2.5" rx="1" opacity=".55"/>'
-    : '';
-  return `<svg viewBox="0 0 40 40" fill="currentColor">${shapes[view] || shapes.alltracks}${rows}</svg>`;
+  const blocks = BLOCKS[view] || BLOCKS.byyear;
+  const w = 6, coverY = 24, coverH = 6;
+  let inner = '';
+  blocks.forEach(b => {
+    inner += `<rect x="${b.x}" y="${coverY - b.h}" width="${w}" height="${b.h}" rx="1"/>`;
+    inner += `<rect x="${b.x}" y="${coverY}" width="${w}" height="${coverH}" rx="1" opacity=".55"/>`;
+    if (expand) inner += `<rect x="${b.x}" y="${coverY + coverH + 2}" width="${w}" height="3" rx="1" opacity=".3"/>`;
+  });
+  return `<svg viewBox="0 0 40 40" fill="currentColor">${inner}</svg>`;
 }
 const SJ_EXPORT_SLAVE = /(?:\?|&)sj_export=1(?:&|$)/.test(location.search);
 const SJ_EXPORT_ARTIST_IDS = SJ_EXPORT_SLAVE
@@ -19169,6 +19181,12 @@ function sjExportOtherArtists() {
     .filter(id => id !== primaryId)
     .map(id => allArtists.find(a => a.id === id))
     .filter(Boolean);
+}
+
+function _shareJoinNamesPlain(names) {
+  if (names.length <= 1) return names[0] || '';
+  if (names.length === 2) return names[0] + ' and ' + names[1];
+  return names.slice(0, -1).join(', ') + ', and ' + names[names.length - 1];
 }
 
 function sjExportJoinNames(names) {
@@ -19851,7 +19869,15 @@ async function shareVia(medium) {
 // anyone can open one. Recent shares (+ open counts) live in localStorage.
 let _plShareUrl  = null;   // last created link (for the channel buttons)
 let _plShareName = '';
+let _plShareArtist = '';   // artist label used in the default share text
 let _plShareAutoName = '';  // last lyric suggestion we auto-filled, so we can safely replace it
+
+function _shareCreateErrorMsg(e) {
+  if (String(e && e.message || '').includes('shared_links_payload_check')) {
+    return 'This playlist is too long to share as one link. Try fewer tracks.';
+  }
+  return 'Could not create link. Try again.';
+}
 
 function _plShareKebab(name) {
   return (name || '').toLowerCase().replace(/['\u2019]/g, '')
@@ -19991,6 +20017,8 @@ async function plShareCreate() {
     const name = (document.getElementById('pls-name').value || '').trim();
     const by   = (document.getElementById('pls-by').value || '').trim();
     _plShareName = name;
+    const queueArtists = [...new Set(payload.queue.map(q => q.trackId ? (ytpTrackMeta(q.trackId, q.title).artist || '') : '').filter(Boolean))];
+    _plShareArtist = queueArtists.length ? _shareJoinNamesPlain(queueArtists) : sjExportArtistMeta().name;
 
     let row = null;
     for (let attempt = 0; attempt < 3 && !row; attempt++) {   // retry on slug collision
@@ -20019,7 +20047,7 @@ async function plShareCreate() {
     _plShareRenderMine();
   } catch (e) {
     console.error('plShareCreate', e);
-    showToast('Could not create link. Try again.');
+    showToast(_shareCreateErrorMsg(e));
     btn.disabled = false; btn.textContent = 'Create Share Link';
   }
 }
@@ -20034,13 +20062,13 @@ function plShareVia(medium) {
   if (!_plShareUrl) return;
   const url  = _plShareUrl;
   const name = _plShareName || 'a Silver Jews playlist';
-  const text = `I made you a playlist on Suffering Jukebox: ${name}.`;
+  const text = _plShareArtist ? `${name} - ${_plShareArtist}` : name;
   if (medium === 'native') { navigator.share({ title: 'Suffering Jukebox', text, url }).catch(() => {}); return; }
   if (medium === 'sms')    { window.open(`sms:?${/iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : ''}body=${encodeURIComponent(text + ' ' + url)}`, '_blank'); return; }
-  if (medium === 'email')  { window.open(`mailto:?subject=${encodeURIComponent('A playlist for you, from Suffering Jukebox')}&body=${encodeURIComponent(text + '\n\n' + url)}`, '_blank'); return; }
+  if (medium === 'email')  { window.open(`mailto:?subject=${encodeURIComponent(text)}&body=${encodeURIComponent(text + '\n\n' + url)}`, '_blank'); return; }
   if (medium === 'twitter'){ window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
   if (medium === 'facebook'){ window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
-  if (medium === 'reddit') { const redditText = `I made a playlist on Suffering Jukebox: ${name}.`; window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(redditText)}`, '_blank', 'noopener,noreferrer'); return; }
+  if (medium === 'reddit') { window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); return; }
 }
 
 // ── Share Song (single-track snapshot links, adjustable start position) ─
@@ -20049,6 +20077,7 @@ let _sssPos       = 0;    // seconds
 let _sssDur       = 300;  // seconds, slider max
 let _sssShareUrl  = null;
 let _sssShareName = '';
+let _sssShareArtist = '';
 
 function _sssSetPos(sec) {
   sec = Math.max(0, Math.min(_sssDur || 300, Math.round(sec) || 0));
@@ -20130,6 +20159,7 @@ async function songShareCreate() {
     const name  = (document.getElementById('sss-name').value || '').trim() || title;
     const by    = (document.getElementById('sss-by').value || '').trim();
     _sssShareName = name;
+    _sssShareArtist = meta.artist || '';
 
     const payload = {
       v: 1,
@@ -20173,7 +20203,7 @@ async function songShareCreate() {
     songShareCopy();
   } catch (e) {
     console.error('songShareCreate', e);
-    showToast('Could not create link. Try again.');
+    showToast(_shareCreateErrorMsg(e));
     btn.disabled = false; btn.textContent = 'Create Share Link';
   }
 }
@@ -20188,13 +20218,13 @@ function songShareVia(medium) {
   if (!_sssShareUrl) return;
   const url  = _sssShareUrl;
   const name = _sssShareName || 'a song';
-  const text = `I made you a song on Suffering Jukebox: ${name}.`;
+  const text = _sssShareArtist ? `${name} - ${_sssShareArtist}` : name;
   if (medium === 'native') { navigator.share({ title: 'Suffering Jukebox', text, url }).catch(() => {}); return; }
   if (medium === 'sms')    { window.open(`sms:?${/iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : ''}body=${encodeURIComponent(text + ' ' + url)}`, '_blank'); return; }
-  if (medium === 'email')  { window.open(`mailto:?subject=${encodeURIComponent('A song for you, from Suffering Jukebox')}&body=${encodeURIComponent(text + '\n\n' + url)}`, '_blank'); return; }
+  if (medium === 'email')  { window.open(`mailto:?subject=${encodeURIComponent(text)}&body=${encodeURIComponent(text + '\n\n' + url)}`, '_blank'); return; }
   if (medium === 'twitter'){ window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
   if (medium === 'facebook'){ window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
-  if (medium === 'reddit') { const redditText = `I made a song share on Suffering Jukebox: ${name}.`; window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(redditText)}`, '_blank', 'noopener,noreferrer'); return; }
+  if (medium === 'reddit') { window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer'); return; }
 }
 
 // ── Manage Shares (expand to view tracks, delete) ────────────────────────
