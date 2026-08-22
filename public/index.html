@@ -16056,6 +16056,7 @@ const SJ_CHANGELOG = [
     'Export Image and Share Jukebox are two buttons again. Export Image is screenshots only. Share Jukebox is just a link to the jukebox now, with the same Text, Email, X, Facebook, and Reddit options as Share Song - no more screenshot step.',
     'Export Image can now include Albums List alongside All Tracks.',
     'Added spacing and a connector line between the view buttons and the row of chart controls below them, so it is clearer the second row belongs to whichever view is selected.',
+    'The daily view count history behind each track and album tooltip trend chart now always tracks the same official upload the view count itself is based on, so picking a different video to play (from a track\'s Versions menu) no longer skews the trend line.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -18723,14 +18724,14 @@ async function loadDailyMetrics() {
   const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   try {
     const ytRows = await dbGetAllPages(
-      `${REST}/yt_daily_snapshots?select=track_id,snapshot_date,view_count&snapshot_date=gte.${since}&order=track_id.asc,snapshot_date.asc`,
+      `${REST}/yt_daily_snapshots?select=track_id,snapshot_date,view_count,video_id&snapshot_date=gte.${since}&order=track_id.asc,snapshot_date.asc`,
       hdrs
     );
     if (Array.isArray(ytRows)) {
       ytRows.forEach(r => {
         const tid = r.track_id;
         if (!tid) return;
-        (dailyYtData[tid] = dailyYtData[tid] || []).push({ date: r.snapshot_date, views: Number(r.view_count) || 0 });
+        (dailyYtData[tid] = dailyYtData[tid] || []).push({ date: r.snapshot_date, views: Number(r.view_count) || 0, videoId: r.video_id || null });
       });
     }
   } catch (e) { console.warn('loadDailyMetrics yt error', e); }
@@ -18803,6 +18804,12 @@ function getDailySparkPoints(trackId) {
     if (!arr || arr.length < 2) return null;
     const pts = [];
     for (let i = 1; i < arr.length; i++) {
+      // A different video_id than the day before means the snapshot switched
+      // which upload it's counting (a new official pick, or the old
+      // metrics-based snapshot before it was fixed to follow track_videos) -
+      // the raw view gap between two different videos isn't a real day's
+      // growth, so skip that one point instead of plotting a fake spike/drop.
+      if (arr[i].videoId && arr[i-1].videoId && arr[i].videoId !== arr[i-1].videoId) continue;
       const delta = Math.max(0, arr[i].views - arr[i-1].views);
       pts.push({ date: arr[i].date, value: delta });
     }
