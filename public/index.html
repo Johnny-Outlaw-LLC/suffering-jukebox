@@ -2190,6 +2190,8 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sj-export-opt { display:flex; align-items:flex-start; gap:7px; cursor:pointer; font-size:.55rem; color:var(--text); padding:.08rem 0; line-height:1.3; }
 .sj-export-opt input { margin-top:2px; accent-color:var(--accent); flex-shrink:0; }
 .sj-export-opt .sj-export-opt-sub { display:block; color:var(--text-muted); font-size:.48rem; margin-top:1px; }
+.sj-export-opt-disabled { opacity:.5; cursor:not-allowed; }
+.sj-export-opt-disabled input { cursor:not-allowed; }
 .sj-export-section { font-size:.48rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); margin:.55rem 0 .15rem; }
 .sj-export-section:first-of-type { margin-top:.15rem; }
 .sj-export-status { font-size:.52rem; color:var(--text-muted); min-height:1em; margin-top:.35rem; line-height:1.35; }
@@ -15933,6 +15935,7 @@ const SJ_CHANGELOG = [
     'The Skip button next to Up Next in the player now matches the look of the other player buttons instead of standing out in orange, and it sits right next to the Up Next label instead of over on the right edge.',
     'Export Image and Share to Social Media now name the actual artist instead of a generic label, and only offer an All Artists option when another artist is really loaded alongside it, naming who they are. Share to Social Media now starts with the same views checked as Export Image.',
     'The ⋯ menu on a track now shows Artist - Song at the top instead of just Track.',
+    'Export Image turns off the All Artists option once the loaded artists add up to more than 30 albums, with a note explaining why - a batch that large was slow and produced an unwieldy download.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -19108,14 +19111,19 @@ function sjExportJoinNames(names) {
 // primary artist's real name shows instead of a generic label, and the All
 // Artists option only appears - naming the artists actually loaded - when
 // there is a second artist to include.
-function sjExportRenderScopeOpts(hostId, formName) {
+function sjExportRenderScopeOpts(hostId, formName, capAlbums) {
   const host = document.getElementById(hostId);
   if (!host) return;
   const { name } = sjExportArtistMeta();
   const others = sjExportOtherArtists();
   let html = `<label class="sj-export-opt"><input type="radio" name="${formName}" value="artist" checked><span>${escHtml(name)} only<span class="sj-export-opt-sub">Only the artist named on this jukebox page</span></span></label>`;
   if (others.length) {
-    html += `<label class="sj-export-opt"><input type="radio" name="${formName}" value="all"><span>All artists currently in Jukebox<span class="sj-export-opt-sub">Includes ${sjExportJoinNames(others.map(a => a.name))}</span></span></label>`;
+    const totalAlbums = [...selectedIds].reduce((sum, aid) => sum + (albums[aid] || []).length, 0);
+    const overCap = !!capAlbums && totalAlbums > capAlbums;
+    const sub = overCap
+      ? `Disabled - ${totalAlbums} albums across these artists. Reduce to ${capAlbums} or fewer albums to enable.`
+      : `Includes ${sjExportJoinNames(others.map(a => a.name))}`;
+    html += `<label class="sj-export-opt${overCap ? ' sj-export-opt-disabled' : ''}"><input type="radio" name="${formName}" value="all"${overCap ? ' disabled' : ''}><span>All artists currently in Jukebox<span class="sj-export-opt-sub">${sub}</span></span></label>`;
   }
   host.innerHTML = html;
 }
@@ -19370,7 +19378,7 @@ function openExportImageModal() {
       `<label class="sj-export-opt"><input type="checkbox" class="sj-export-shot" value="${s.id}"${['byyear-expanded','timeline-expanded'].includes(s.id) ? ' checked' : ''}><span>${s.label}</span></label>`
     ).join('');
   }
-  sjExportRenderScopeOpts('sj-export-scope-opts', 'sj-export-scope');
+  sjExportRenderScopeOpts('sj-export-scope-opts', 'sj-export-scope', 30);
   const st = document.getElementById('sj-export-status');
   if (st) st.textContent = '';
   const btn = document.getElementById('sj-export-run-btn');
