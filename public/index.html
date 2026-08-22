@@ -3484,6 +3484,55 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
   </div>
 </div>
 
+<!-- SONG SHARE MODAL -->
+<div class="pl-modal-overlay" id="songShareModalOverlay" onclick="if(event.target===this)closeSongShareModal()">
+  <div class="pl-modal" style="width:400px">
+    <div class="pl-modal-header"><span class="pl-modal-title">Share This Song</span><button class="modal-close" onclick="closeSongShareModal()">✕</button></div>
+    <div class="pl-modal-body">
+      <!-- Step 1: options -->
+      <div id="sss-step-opts">
+        <p id="sss-summary" style="font-size:.54rem;color:#888;line-height:1.5;margin-bottom:.7rem"></p>
+        <label style="display:block;font-size:.5rem;color:var(--text-muted);margin-bottom:.25rem">Song name</label>
+        <input id="sss-name" type="text" maxlength="120" style="width:100%;box-sizing:border-box;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:.58rem;padding:.5rem .6rem;margin-bottom:.55rem;outline:none">
+        <label style="display:block;font-size:.5rem;color:var(--text-muted);margin-bottom:.25rem">Your name (optional, shown to whoever opens it)</label>
+        <input id="sss-by" type="text" maxlength="80" placeholder="Anonymous" style="width:100%;box-sizing:border-box;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:.58rem;padding:.5rem .6rem;margin-bottom:.75rem;outline:none">
+        <div style="margin-bottom:.4rem">
+          <label style="display:flex;align-items:center;justify-content:space-between;font-size:.5rem;color:var(--text-muted);margin-bottom:.3rem">
+            <span>Start at</span>
+            <span id="sss-pos-lbl" style="color:var(--accent);font-family:var(--mono)">0:00</span>
+          </label>
+          <input id="sss-pos-range" type="range" min="0" max="300" value="0" step="1" oninput="sssPosInput(this.value)" style="width:100%;accent-color:var(--accent)">
+          <div style="display:flex;gap:6px;margin-top:.4rem">
+            <button type="button" class="pl-btn ghost" style="flex:1;padding:.3rem .2rem" onclick="sssNudgePos(-10)">-10s</button>
+            <button type="button" class="pl-btn ghost" style="flex:1;padding:.3rem .2rem" onclick="sssNudgePos(10)">+10s</button>
+            <button type="button" id="sss-use-now-btn" class="pl-btn ghost" style="flex:1.4;padding:.3rem .2rem;display:none" onclick="sssUseCurrentPos()">Use Now</button>
+          </div>
+        </div>
+      </div>
+      <!-- Step 2: result -->
+      <div id="sss-step-done" style="display:none">
+        <p style="font-size:.54rem;color:#888;line-height:1.5;margin-bottom:.55rem">Link ready. Anyone who opens it plays this song starting at the position you picked.</p>
+        <div style="display:flex;gap:6px;margin-bottom:.8rem">
+          <input id="sss-link" type="text" readonly onclick="this.select()" style="flex:1;box-sizing:border-box;background:#0a0a0a;border:1px solid var(--accent);border-radius:6px;color:var(--accent);font-family:var(--mono);font-size:.55rem;padding:.5rem .6rem;outline:none">
+          <button class="pl-btn" onclick="songShareCopy()" style="flex-shrink:0">Copy</button>
+        </div>
+        <div class="share-grid">
+          <button type="button" class="share-opt" id="sss-sms-opt" onclick="songShareVia('sms')"><span class="share-opt-icon">💬</span><span class="share-opt-lbl">Text</span></button>
+          <button type="button" class="share-opt" onclick="songShareVia('email')"><span class="share-opt-icon">✉️</span><span class="share-opt-lbl">Email</span></button>
+          <button type="button" class="share-opt" onclick="songShareVia('twitter')"><span class="share-opt-icon">𝕏</span><span class="share-opt-lbl">X / Twitter</span></button>
+          <button type="button" class="share-opt" id="sss-facebook-opt" onclick="songShareVia('facebook')"><span class="share-opt-icon">f</span><span class="share-opt-lbl">Facebook</span></button>
+          <button type="button" class="share-opt" onclick="songShareVia('reddit')"><span class="share-opt-icon"><svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="#FF4500" d="M12 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 01-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 01.042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 013.16 12.5c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.443 4.744-1.51l.885-4.15a.32.32 0 01.13-.185.36.36 0 01.219-.06l2.906.617a1.214 1.214 0 011.108-.719zm-9.55 8.616c-.72 0-1.313.593-1.313 1.313 0 .72.593 1.312 1.313 1.312.72 0 1.313-.592 1.313-1.312 0-.72-.593-1.313-1.313-1.313zm5.598 0c-.72 0-1.313.593-1.313 1.313 0 .72.593 1.312 1.313 1.312.72 0 1.313-.592 1.313-1.312 0-.72-.593-1.313-1.313-1.313zm-5.394 3.751a.328.328 0 00-.229.567c.63.605 1.664.94 2.926.94h.007c1.262 0 2.296-.335 2.926-.94a.33.33 0 00-.223-.567.35.35 0 00-.233.087c-.517.508-1.396.774-2.47.774h-.007c-1.074 0-1.952-.266-2.47-.774a.33.33 0 00-.227-.087z"/></svg></span><span class="share-opt-lbl">Reddit</span></button>
+          <button type="button" class="share-opt" id="sss-native-btn" style="display:none" onclick="songShareVia('native')"><span class="share-opt-icon">⤴</span><span class="share-opt-lbl">Share via…</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closeSongShareModal()">Close</button>
+      <button class="pl-btn" id="sss-create-btn" onclick="songShareCreate()">Create Share Link</button>
+    </div>
+  </div>
+</div>
+
 <!-- SEARCH RESULTS MODAL -->
 <div id="srch-overlay" onclick="if(event.target===this)closeSearchModal()">
   <div id="srch-box">
@@ -10560,6 +10609,7 @@ function sjmRenderRoot() {
   const blocked = isTrackBlocked(tid);
   const vid     = ytData[tid]?.video_id;
   const nPl     = googleUser ? playlists.filter(p => (p._tracks || []).some(r => r.track_id === tid)).length : 0;
+  const navArtist = _sjmArtistFor(tid);
 
   const q       = _sjmQueueIdx;
   const inQ     = q >= 0 && q < ytQueue.length;
@@ -10603,6 +10653,13 @@ function sjmRenderRoot() {
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
       (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
     '</button>' +
+    (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
+      ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
+          '<span class="sjm-ic">🎵</span><span class="sjm-label">View Artist Jukebox</span></button>'
+      : '') +
+    '<button class="sjm-item" onclick="sjmShareSong()">' +
+      '<span class="sjm-ic">⤴</span><span class="sjm-label">Share</span>' +
+      '<span class="sjm-sub">›</span></button>' +
     '<button class="sjm-item" onclick="sjmDiscover()">' +
       '<span class="sjm-ic">⇄</span><span class="sjm-label">Discover alternative version</span>' +
       '<span class="sjm-sub">›</span></button>' +
@@ -10630,6 +10687,31 @@ function sjmRenderRoot() {
           '<span class="sjm-ic">↗</span><span class="sjm-label">Open on YouTube</span></a>'
       : '');
   sjmPosition();
+}
+
+function _sjmArtistFor(tid) {
+  if (!tid) return null;
+  for (const aid of Object.keys(tracks)) {
+    if ((tracks[aid] || []).some(t => t.id === tid)) {
+      return allArtists.find(a => a.id === aid)
+        || ((typeof communityArtists !== 'undefined' && communityArtists) ? communityArtists.find(a => a.id === aid) : null)
+        || null;
+    }
+  }
+  return null;
+}
+
+function sjmViewArtist() {
+  const tid = _sjmTrackId;
+  const artist = _sjmArtistFor(tid);
+  sjmClose();
+  if (artist) enterArtistJukebox(artist);
+}
+
+function sjmShareSong() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  openSongShareModal(tid);
 }
 
 function sjmBlock() {
@@ -13662,7 +13744,7 @@ function renderLWYTBHTML(landing) {
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
   const hide = isCtrlGroupHidden('playlists');
   const nowPlaying = landing ? '' : quickPlaylistNowPlayingHTML();
-  return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('playlists', 'Quick Playlists', 'Show Quick Playlists')}
+  return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('playlists', 'Playlist Controls', 'Show Playlist Controls')}
     ${hide ? '' : `<div class="lwytb-row">
       <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
       ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
@@ -13688,7 +13770,10 @@ function quickPlaylistNowPlayingHTML() {
       <div class="quick-now-playing-song" title="${esc(label)}">${esc(label)}</div>
       <div class="quick-now-playing-meta">Track ${ytQueueIdx + 1} of ${count} · ${count} song${count === 1 ? '' : 's'}</div>
     </div>
-    <button type="button" class="ctrl-btn" onclick="openPlShareModal()">Share Playlist</button>
+    <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+      <button type="button" class="ctrl-btn" onclick="openPlShareModal()">Share Playlist</button>
+      ${item.trackId ? `<button type="button" class="ctrl-btn" onclick="openSongShareModal('${item.trackId}')">Share Song</button>` : ''}
+    </div>
   </div>`;
 }
 
@@ -15938,6 +16023,8 @@ const SJ_CHANGELOG = [
     'Export Image turns off the All Artists option once the loaded artists add up to more than 30 albums, with a note explaining why - a batch that large was slow and produced an unwieldy download.',
     'Fixed album covers looking stretched or squished in exported images.',
     'Fixed the Timeline export sometimes drawing the connector lines between an album cover and its track panel out of alignment.',
+    'The ⋯ menu on a track now has View Artist Jukebox, to jump straight to that song\'s own artist page, and Share, to get a link to just that song.',
+    'Playlist Controls (renamed from Quick Playlists) now has a Share Song button next to Share Playlist - it makes a link to just the song that is playing, with a slider to pick where the link should start.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -20035,6 +20122,160 @@ function plShareVia(medium) {
   if (medium === 'twitter'){ window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
   if (medium === 'facebook'){ window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
   if (medium === 'reddit') { const redditText = `I made a playlist on Suffering Jukebox: ${name}.`; window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(redditText)}`, '_blank', 'noopener,noreferrer'); return; }
+}
+
+// ── Share Song (single-track snapshot links, adjustable start position) ─
+let _sssTrackId   = null;
+let _sssPos       = 0;    // seconds
+let _sssDur       = 300;  // seconds, slider max
+let _sssShareUrl  = null;
+let _sssShareName = '';
+
+function _sssSetPos(sec) {
+  sec = Math.max(0, Math.min(_sssDur || 300, Math.round(sec) || 0));
+  _sssPos = sec;
+  const range = document.getElementById('sss-pos-range');
+  if (range) range.value = sec;
+  const lbl = document.getElementById('sss-pos-lbl');
+  if (lbl) lbl.textContent = _plShareFmtTime(sec);
+}
+
+function sssPosInput(val) { _sssSetPos(Number(val) || 0); }
+function sssNudgePos(delta) { _sssSetPos((_sssPos || 0) + delta); }
+
+function sssUseCurrentPos() {
+  let pos = 0;
+  try { if (ytAPIPlayer?.getCurrentTime) pos = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
+  _sssSetPos(pos);
+}
+
+function openSongShareModal(trackId) {
+  if (!trackId) return;
+  const videoId = tvPrimary(trackId)?.video_id || ytData[trackId]?.video_id;
+  if (!videoId) { showToast('No video available for this song yet.'); return; }
+  const ov = document.getElementById('songShareModalOverlay');
+  if (!ov) return;
+  _sssTrackId  = trackId;
+  _sssShareUrl = null;
+
+  document.getElementById('sss-step-opts').style.display = '';
+  document.getElementById('sss-step-done').style.display = 'none';
+  document.getElementById('sss-create-btn').style.display = '';
+  document.getElementById('sss-create-btn').disabled = false;
+  document.getElementById('sss-create-btn').textContent = 'Create Share Link';
+
+  const track = findTrackById(trackId);
+  const meta  = ytpTrackMeta(trackId, track?.name);
+  const title = (meta.title && meta.title !== 'Unknown') ? meta.title : (track?.name || 'Track');
+  const label = meta.artist ? (meta.artist + ' - ' + title) : title;
+  document.getElementById('sss-summary').textContent = `Sharing “${label}”.`;
+  document.getElementById('sss-name').value = title;
+
+  const byEl = document.getElementById('sss-by');
+  if (!byEl.value && googleUser?.name) byEl.value = googleUser.name;
+
+  _sssDur = track?.duration_ms ? Math.round(track.duration_ms / 1000) : 300;
+  document.getElementById('sss-pos-range').max = _sssDur;
+
+  const isNowPlaying = ytQueue[ytQueueIdx]?.trackId === trackId;
+  let startPos = 0;
+  if (isNowPlaying) {
+    try { if (ytAPIPlayer?.getCurrentTime) startPos = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
+  }
+  _sssSetPos(startPos);
+  const useNowBtn = document.getElementById('sss-use-now-btn');
+  if (useNowBtn) useNowBtn.style.display = isNowPlaying ? '' : 'none';
+
+  const sms1 = document.getElementById('sss-sms-opt');
+  if (sms1) sms1.style.display = SJ_MOB_UA ? '' : 'none';
+  const fb1 = document.getElementById('sss-facebook-opt');
+  if (fb1) fb1.style.display = SJ_MOB_UA ? 'none' : '';
+
+  ov.classList.add('open');
+}
+
+function closeSongShareModal() {
+  document.getElementById('songShareModalOverlay')?.classList.remove('open');
+}
+
+async function songShareCreate() {
+  const btn = document.getElementById('sss-create-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    const trackId = _sssTrackId;
+    const track   = findTrackById(trackId);
+    const meta    = ytpTrackMeta(trackId, track?.name);
+    const videoId = tvPrimary(trackId)?.video_id || ytData[trackId]?.video_id;
+    if (!videoId) throw new Error('No video available for this track.');
+    const title = (meta.title && meta.title !== 'Unknown') ? meta.title : (track?.name || 'Track');
+    const name  = (document.getElementById('sss-name').value || '').trim() || title;
+    const by    = (document.getElementById('sss-by').value || '').trim();
+    _sssShareName = name;
+
+    const payload = {
+      v: 1,
+      queue: [{ videoId, title, trackId }],
+      idx: 0,
+      shuffle: false,
+      repeat: false,
+      startAt: _sssPos || null,
+      layout: null,
+      lyrics: null,
+      viewMode: viewMode,
+      filters: { excludedAlbumIds: [...excludedAlbumIds], listSort: listSort },
+      page: _SLUG_ARTIST?.slug
+        || (IS_COMMUNITY ? ((FEATURED_ARTIST_ID && allArtists.find(a => a.id === FEATURED_ARTIST_ID)?.slug) || 'community') : null),
+      otherArtists: [...addedCommunityIds],
+      selectedArtists: [...selectedIds],
+    };
+
+    let row = null;
+    for (let attempt = 0; attempt < 3 && !row; attempt++) {   // retry on slug collision
+      try {
+        const rows = await _plShareInsert({ slug: _plShareSlug(), name, payload, shared_by: by, shared_by_email: googleUser?.email || null });
+        row = rows[0];
+      } catch (e) { if (!String(e.message).includes('duplicate')) throw e; }
+    }
+    if (!row) throw new Error('Could not generate a unique link - try again.');
+
+    _sssShareUrl = _plSharePrettyUrl(row.slug, name);
+    try {
+      const mine = _plShareMyShares();
+      mine.unshift({ slug: row.slug, name: name, at: Date.now() });
+      localStorage.setItem('sj_my_shares', JSON.stringify(mine.slice(0, 20)));
+    } catch (e) {}
+    syncManageSharesBtn();
+
+    document.getElementById('sss-step-opts').style.display = 'none';
+    document.getElementById('sss-step-done').style.display = '';
+    btn.style.display = 'none';
+    document.getElementById('sss-link').value = _sssShareUrl;
+    document.getElementById('sss-native-btn').style.display = navigator.share ? '' : 'none';
+    songShareCopy();
+  } catch (e) {
+    console.error('songShareCreate', e);
+    showToast('Could not create link. Try again.');
+    btn.disabled = false; btn.textContent = 'Create Share Link';
+  }
+}
+
+async function songShareCopy() {
+  if (!_sssShareUrl) return;
+  try { await navigator.clipboard.writeText(_sssShareUrl); showShareToast('Link copied'); }
+  catch (e) { const el = document.getElementById('sss-link'); if (el) { el.select(); showShareToast('Press Ctrl/Cmd+C to copy'); } }
+}
+
+function songShareVia(medium) {
+  if (!_sssShareUrl) return;
+  const url  = _sssShareUrl;
+  const name = _sssShareName || 'a song';
+  const text = `I made you a song on Suffering Jukebox: ${name}.`;
+  if (medium === 'native') { navigator.share({ title: 'Suffering Jukebox', text, url }).catch(() => {}); return; }
+  if (medium === 'sms')    { window.open(`sms:?${/iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : ''}body=${encodeURIComponent(text + ' ' + url)}`, '_blank'); return; }
+  if (medium === 'email')  { window.open(`mailto:?subject=${encodeURIComponent('A song for you, from Suffering Jukebox')}&body=${encodeURIComponent(text + '\n\n' + url)}`, '_blank'); return; }
+  if (medium === 'twitter'){ window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
+  if (medium === 'facebook'){ window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
+  if (medium === 'reddit') { const redditText = `I made a song share on Suffering Jukebox: ${name}.`; window.open(`https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(redditText)}`, '_blank', 'noopener,noreferrer'); return; }
 }
 
 // ── Manage Shares (expand to view tracks, delete) ────────────────────────
