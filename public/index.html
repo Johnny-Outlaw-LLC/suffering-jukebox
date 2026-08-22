@@ -3374,8 +3374,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       </div>
       <div id="sj-export-shots" style="display:flex;flex-direction:column;gap:0"></div>
       <div class="sj-export-section">Artists to include</div>
-      <label class="sj-export-opt"><input type="radio" name="sj-export-scope" value="artist" checked><span>Artist name only<span class="sj-export-opt-sub">Only the artist named on this jukebox page</span></span></label>
-      <label class="sj-export-opt"><input type="radio" name="sj-export-scope" value="all"><span>All artists currently in Jukebox<span class="sj-export-opt-sub">Includes Purple Mountains and any other artists currently loaded</span></span></label>
+      <div id="sj-export-scope-opts"></div>
       <div class="sj-export-section">Download</div>
       <label class="sj-export-opt"><input type="checkbox" id="sj-export-zip" checked><span>Download as one ZIP<span class="sj-export-opt-sub">Otherwise each PNG saves separately</span></span></label>
       <div class="sj-export-status" id="sj-export-status" role="status"></div>
@@ -3415,8 +3414,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       </div>
       <div id="sj-social-shots" style="display:flex;flex-direction:column;gap:0"></div>
       <div class="sj-export-section">Artists to include</div>
-      <label class="sj-export-opt"><input type="radio" name="sj-social-scope" value="artist" checked><span>Artist name only<span class="sj-export-opt-sub">Only the artist named on this jukebox page</span></span></label>
-      <label class="sj-export-opt"><input type="radio" name="sj-social-scope" value="all"><span>All artists currently in Jukebox<span class="sj-export-opt-sub">Includes Purple Mountains and any other artists currently loaded</span></span></label>
+      <div id="sj-social-scope-opts"></div>
       <div class="sj-export-section">Your message <span style="text-transform:none;letter-spacing:0">(optional)</span></div>
       <textarea id="sj-social-text" class="sj-social-text" maxlength="1000" placeholder="Add a note for your post…"></textarea>
       <div class="sj-export-section">Jukebox link</div>
@@ -15929,6 +15927,7 @@ const SJ_CHANGELOG = [
     'Fixed the trend chart in track and album tooltips so it starts at zero. It used to zoom in on small day-to-day changes, which could make a normal dip look like views dropped to almost nothing.',
     'Search now groups matches into Artists, Albums, and Tracks. An artist match gets Shuffle All Songs and Go to Jukebox; an album match gets Play Album and View Album in Jukebox.',
     'The Skip button next to Up Next in the player now matches the look of the other player buttons instead of standing out in orange, and it sits right next to the Up Next label instead of over on the right edge.',
+    'Export Image and Share to Social Media now name the actual artist instead of a generic label, and only offer an All Artists option when another artist is really loaded alongside it, naming who they are. Share to Social Media now starts with the same views checked as Export Image.',
   ] },
   { date: '2026-08-21', items: [
     'Every artist jukebox has Export Image next to the view buttons. Pick which layouts to include (By Year, tracks open, Timeline, By Views, All Tracks), choose stage PNGs and/or Instagram reel frames, and download them as a ZIP or separate files to your Downloads folder.',
@@ -19082,6 +19081,40 @@ function sjExportArtistMeta() {
   return { name, slug };
 }
 
+// Every other artist currently loaded alongside the primary/featured one -
+// e.g. Purple Mountains sitting in the Silver Jews jukebox. Empty on a page
+// that only ever has the one artist loaded.
+function sjExportOtherArtists() {
+  const primaryId = _SLUG_ARTIST?.id || FEATURED_ARTIST_ID || allArtists[0]?.id;
+  return [...selectedIds]
+    .filter(id => id !== primaryId)
+    .map(id => allArtists.find(a => a.id === id))
+    .filter(Boolean);
+}
+
+function sjExportJoinNames(names) {
+  const esc = names.map(n => escHtml(n));
+  if (esc.length <= 1) return esc[0] || '';
+  if (esc.length === 2) return esc[0] + ' and ' + esc[1];
+  return esc.slice(0, -1).join(', ') + ', and ' + esc[esc.length - 1];
+}
+
+// Builds the Artists-to-include radios fresh each time a modal opens, so the
+// primary artist's real name shows instead of a generic label, and the All
+// Artists option only appears - naming the artists actually loaded - when
+// there is a second artist to include.
+function sjExportRenderScopeOpts(hostId, formName) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  const { name } = sjExportArtistMeta();
+  const others = sjExportOtherArtists();
+  let html = `<label class="sj-export-opt"><input type="radio" name="${formName}" value="artist" checked><span>${escHtml(name)} only<span class="sj-export-opt-sub">Only the artist named on this jukebox page</span></span></label>`;
+  if (others.length) {
+    html += `<label class="sj-export-opt"><input type="radio" name="${formName}" value="all"><span>All artists currently in Jukebox<span class="sj-export-opt-sub">Includes ${sjExportJoinNames(others.map(a => a.name))}</span></span></label>`;
+  }
+  host.innerHTML = html;
+}
+
 function sjExportScope(scope, form) {
   if (scope === 'all' || scope === 'artist') return scope;
   return document.querySelector(`input[name="${form === 'social' ? 'sj-social-scope' : 'sj-export-scope'}"]:checked`)?.value === 'all'
@@ -19187,11 +19220,11 @@ function openJukeboxSocialModal() {
   if (artistEl) artistEl.textContent = 'Create a post for ' + name + '. The jukebox link is included by default.';
   const host = document.getElementById('sj-social-shots');
   if (host) host.innerHTML = SJ_EXPORT_SHOTS.map(s =>
-    `<label class="sj-export-opt"><input type="checkbox" class="sj-social-shot" value="${s.id}" checked><span>${s.label}</span></label>`
+    `<label class="sj-export-opt"><input type="checkbox" class="sj-social-shot" value="${s.id}"${['byyear-expanded','timeline-expanded'].includes(s.id) ? ' checked' : ''}><span>${s.label}</span></label>`
   ).join('');
   const text = document.getElementById('sj-social-text');
   if (text) text.value = '';
-  document.querySelectorAll('input[name="sj-social-scope"]').forEach(input => { input.checked = input.value === 'artist'; });
+  sjExportRenderScopeOpts('sj-social-scope-opts', 'sj-social-scope');
   const link = document.getElementById('sj-social-link');
   if (link) link.textContent = sjJukeboxShareUrl();
   sjSocialSetStatus('');
@@ -19332,7 +19365,7 @@ function openExportImageModal() {
       `<label class="sj-export-opt"><input type="checkbox" class="sj-export-shot" value="${s.id}"${['byyear-expanded','timeline-expanded'].includes(s.id) ? ' checked' : ''}><span>${s.label}</span></label>`
     ).join('');
   }
-  document.querySelectorAll('input[name="sj-export-scope"]').forEach(input => { input.checked = input.value === 'artist'; });
+  sjExportRenderScopeOpts('sj-export-scope-opts', 'sj-export-scope');
   const st = document.getElementById('sj-export-status');
   if (st) st.textContent = '';
   const btn = document.getElementById('sj-export-run-btn');
