@@ -145,19 +145,37 @@ main > * { min-width: 0; }
 
 /* ── VIEW TOGGLE ── */
 .view-toggle-row { display: flex; align-items: center; gap: 1rem; }
-.view-seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.view-seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: visible; }
 .vseg-btn { background: none; border: none; border-right: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: .52rem; letter-spacing: .08em; padding: .35rem .9rem; cursor: pointer; transition: all .15s; text-transform: uppercase; white-space: nowrap; }
-.vseg-btn:last-child { border-right: none; }
 .vseg-btn.active { background: var(--bg-elevated); color: var(--text); font-weight: 600; }
 .vseg-btn:hover:not(.active) { color: var(--text); }
-/* Tree connector: a dashed stem drops from the active view button into a
-   horizontal bar, which then branches down into every control on the second
-   row - same "these controls belong to that button" idea as the album-to-track
-   connector lines. Drawn as one measured SVG path, because button widths and
-   wrapping vary. */
-.ctrl-row-connected { padding-top: .55rem !important; }
-.view-connector-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; display: none; }
-.view-connector-svg path { fill: none; stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: .5; }
+/* Each view carries its own chart options in a dropdown hung off its own
+   button, so the second row is down to expand/collapse plus the Albums List
+   sort. .view-seg cannot clip any more, so the segment's rounded ends and its
+   last divider are set on the wrappers instead of the buttons. */
+.vdd-wrap { position: relative; display: flex; }
+.vdd-wrap > .vseg-btn { flex: 1; }
+.view-seg > .vdd-wrap:first-child .vseg-btn { border-radius: 7px 0 0 7px; }
+.view-seg > .vdd-wrap:last-child  .vseg-btn { border-radius: 0 7px 7px 0; border-right: none; }
+.vseg-caret { font-size: .5rem; opacity: .55; margin-left: 5px; }
+.vdd-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 4996;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  min-width: 200px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,.65);
+  opacity: 0; pointer-events: none; transform: translateY(-4px);
+  transition: opacity .15s, transform .15s; }
+.vdd-menu.open { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.vdd-sec { font-family: var(--mono); font-size: .4rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); padding: 8px 11px 4px; font-weight: 600; }
+.vdd-item { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 12px; background: none; border: none;
+  text-align: left; font-family: var(--mono); font-size: .58rem; color: var(--text); cursor: pointer; white-space: nowrap; }
+.vdd-item:hover { background: var(--bg-elevated); }
+.vdd-tick { width: 11px; flex-shrink: 0; color: transparent; font-size: .55rem; }
+.vdd-item.on { color: var(--accent); }
+.vdd-item.on .vdd-tick { color: var(--accent); }
+.ctrl-row-sub { padding-top: .55rem !important; }
+.ctrl-row-meta { font-family: var(--mono); font-size: .46rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+.sj-sharehub-btn { display: inline-flex; align-items: center; gap: 6px; }
+.sj-sharehub-btn .sjhub-word { display: none; }
+@media (min-width: 641px) { .sj-sharehub-btn .sjhub-word { display: inline; } }
 
 /* ── SECTION HEADER ── */
 .section-header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.55rem; flex-wrap: wrap; }
@@ -167,14 +185,7 @@ main > * { min-width: 0; }
 .sort-btn.active, .sort-btn:hover { border-color: var(--text); color: var(--text); }
 
 /* ── METRIC BUTTONS (desktop) ── */
-.metric-btn-row { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
-.metric-btn { background: none; border: 1px solid var(--border); color: var(--text); font-family: var(--mono); font-size: .5rem; letter-spacing: .04em; padding: .28rem .58rem; cursor: pointer; border-radius: 5px; transition: all .15s; white-space: nowrap; opacity: .82; }
-.metric-btn:hover { border-color: var(--text-muted); opacity: 1; }
-.metric-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent)18; opacity: 1; font-weight: 600; }
-.metric-sel-mobile { display: none; }
 @media (max-width: 640px) {
-  .metric-btn-row { display: none; }
-  .metric-sel-mobile { display: block; }
 }
 
 /* ── TIMELINE ── explicit JS-set width ensures stage overflow triggers the horizontal scrollbar ── */
@@ -657,9 +668,6 @@ body:not(.light) .tt-num { color: var(--text); }
   .trk-accordion.open .trk-acc-lyrics { max-height: 42vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
   #mob-alb-expand.open { overscroll-behavior: contain; }
   .tl-panel { overscroll-behavior: contain; }
-  .metric-btn-row { flex-wrap: nowrap !important; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .metric-btn-row::-webkit-scrollbar { display: none; }
-  .metric-btn { font-size: .46rem !important; padding: .22rem .42rem !important; white-space: nowrap; }
   .auth-btn { font-size: .58rem; padding: 8px 14px; min-height: 42px; }
   header, main { padding-left: 1rem !important; padding-right: 1rem !important; }
 
@@ -670,9 +678,12 @@ body:not(.light) .tt-num { color: var(--text); }
   .view-toggle-row::-webkit-scrollbar { display: none; }
   /* View buttons: fill width, no icons on mobile */
   .view-seg { flex-shrink: 0; gap: 0; width: 100%; }
-  .vseg-btn { font-size: .5rem; padding: .2rem .3rem; white-space: nowrap; flex: 1; text-align: center; }
-  /* On mobile: wrap expand/collapse/views buttons to a second row */
-  .view-toggle-row { flex-wrap: wrap; }
+  .vseg-btn { font-size: .5rem; padding: .2rem .3rem; white-space: nowrap; flex: 1; text-align: center; justify-content: center; }
+  .vseg-caret { margin-left: 3px; }
+  /* On mobile: wrap expand/collapse/views buttons to a second row. overflow
+     has to go back to visible or the view dropdowns get clipped. */
+  .view-toggle-row { flex-wrap: wrap; overflow: visible; }
+  .view-seg > .vdd-wrap { flex: 1; min-width: 0; }
   .tl-right-btns { width: 100%; margin-left: 0 !important; justify-content: flex-start; }
 
   /* Tighten main grid spacing on mobile */
@@ -747,10 +758,6 @@ body:not(.light) .tt-num { color: var(--text); }
   /* Section header */
   .section-header { gap: .4rem; }
   .section-header h2 { font-size: .85rem; }
-  /* Metric: show inline toggle buttons instead of dropdown; bigger tap targets */
-  .metric-btn-row { display: flex !important; flex-wrap: wrap; gap: .2rem; }
-  .metric-sel-mobile { display: none !important; }
-  .metric-btn { font-size: .5rem; padding: .26rem .52rem; }
   /* Hide expand/collapse on mobile */
   .expand-collapse-btn { display: none !important; }
   /* Hide lyric font-size sliders on mobile */
@@ -1868,7 +1875,6 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
   #lwytb-header .ctrl-group { height:100%; box-sizing:border-box; }
   #view-controls-header .vseg-btn,
   #view-controls-header .sj-export-btn,
-  #view-controls-header .metric-btn,
   #view-controls-header .expand-collapse-btn { min-height:40px; box-sizing:border-box; }
   #lwytb-header .ctrl-btn { min-height:40px; box-sizing:border-box; }
   #view-controls-header .vseg-btn { display:inline-flex; align-items:center; padding:.5rem .9rem; }
@@ -2259,6 +2265,13 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
 .pl-modal-header { padding:1rem 1.3rem; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
 .pl-modal-title { font-size:.8rem; font-weight:700; }
 .pl-modal-body { overflow-y:auto; padding:1rem 1.3rem; flex:1; display:flex; flex-direction:column; gap:1rem; }
+.sjhub-opt { display:flex; align-items:center; gap:.8rem; width:100%; text-align:left; padding:.85rem 1rem;
+  background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; color:var(--text);
+  cursor:pointer; transition:border-color .15s, background .15s; }
+.sjhub-opt:hover { border-color:var(--accent); }
+.sjhub-ic { flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--accent); }
+.sjhub-t { font-size:.66rem; font-weight:700; }
+.sjhub-d { font-size:.5rem; color:var(--text-muted); margin-top:3px; line-height:1.4; }
 /* ── CHANGE LOG ── */
 .clog-link { display:block; background:none; border:none; color:var(--text-muted); font-family:var(--mono); font-size:.46rem; letter-spacing:.03em; cursor:pointer; padding:0 .85rem .55rem; margin:-.3rem 0 0; text-decoration:underline; text-underline-offset:2px; text-align:left; }
 .clog-link:hover { filter:brightness(1.15); }
@@ -3396,6 +3409,24 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
     <div class="pl-modal-footer sj-export-footer">
       <button class="pl-btn ghost" onclick="closeSjExportModal()">Cancel</button>
       <button class="pl-btn" id="sj-export-dl-btn" onclick="sjExportDownload()">Download</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARE HUB - one Share button on the controls row, two paths out of it -->
+<div class="pl-modal-overlay" id="sjShareHubOverlay" onclick="if(event.target===this)closeSjShareHub()">
+  <div class="pl-modal" style="width:420px">
+    <div class="pl-modal-header"><span class="pl-modal-title">Share</span><button class="modal-close" onclick="closeSjShareHub()">✕</button></div>
+    <div class="pl-modal-body">
+      <p id="sjhub-summary" style="font-size:.54rem;color:#888;line-height:1.45;margin:0"></p>
+      <button type="button" class="sjhub-opt" onclick="sjShareHubGo('export')">
+        <span class="sjhub-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
+        <span><span class="sjhub-t">Export Images</span><span class="sjhub-d" style="display:block">Download screenshots of the charts, ready to post.</span></span>
+      </button>
+      <button type="button" class="sjhub-opt" onclick="sjShareHubGo('link')">
+        <span class="sjhub-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
+        <span><span class="sjhub-t">Share Link to Jukebox</span><span class="sjhub-d" style="display:block">Copy or send a link that opens this jukebox.</span></span>
+      </button>
     </div>
   </div>
 </div>
@@ -13910,99 +13941,90 @@ function updateViewControlsHeader() {
   const el = document.getElementById('view-controls-header');
   if (!el) return;
   el.innerHTML = renderViewToggle();
-  // Synchronous, not rAF - reading getBoundingClientRect() below already
-  // forces the layout pass it needs, and a background/throttled tab can
-  // otherwise delay rAF long enough that the connector never appears.
-  positionViewConnector();
 }
 
-// Draws the dashed tree that ties the active view button (By Year / Timeline /
-// By Views / Albums List) to the controls on the second row: a stem down from
-// the button, a horizontal bar, then a short branch down into the top of every
-// control. Button widths and wrapping vary, so it is measured, not CSS-only.
-function positionViewConnector() {
-  const row = document.getElementById('view-toggle-row');
-  const svg = document.getElementById('view-connector-svg');
-  if (!row || !svg) return;
-  const hide = () => { svg.style.display = 'none'; svg.innerHTML = ''; };
-  const active = row.querySelector('.vseg-btn.active');
-  const row1   = row.querySelector('.view-toggle-row1');
-  const row2   = row.querySelector('.ctrl-row-connected');
-  if (!active || !row1 || !row2) return hide();
-  // Whichever controls are actually on screen - the metric buttons collapse to
-  // a single <select> on a phone.
-  const kids = Array.from(row2.querySelectorAll('.metric-btn, .metric-sel-mobile, .expand-collapse-btn'))
-    .map(el => el.getBoundingClientRect())
-    .filter(r => r.width > 0 && r.height > 0);
-  if (!kids.length) return hide();
-  const rowRect = row.getBoundingClientRect();
-  const stemTop = row1.getBoundingClientRect().bottom;
-  // Only the first visual line gets branches - anything that wrapped below it
-  // would need a line straight through the buttons in between.
-  const topY  = Math.min.apply(null, kids.map(r => r.top));
-  const line1 = kids.filter(r => r.top < topY + 4);
-  const gap = topY - stemTop;
-  if (gap < 6) return hide();
-  const px = v => Math.round(v) + 0.5;
-  const y0   = px(stemTop - rowRect.top);
-  const yBar = px(stemTop + gap / 2 - rowRect.top);
-  const y1   = px(topY - rowRect.top);
-  const stemX = px(active.getBoundingClientRect().left + active.getBoundingClientRect().width / 2 - rowRect.left);
-  const xs = line1.map(r => px(r.left + r.width / 2 - rowRect.left));
-  const left  = Math.min.apply(null, xs.concat(stemX));
-  const right = Math.max.apply(null, xs.concat(stemX));
-  let d = `M${stemX} ${y0}V${yBar}M${left} ${yBar}H${right}`;
-  xs.forEach(x => { d += `M${x} ${yBar}V${y1}`; });
-  svg.setAttribute('width',  Math.ceil(rowRect.width));
-  svg.setAttribute('height', Math.ceil(rowRect.height));
-  svg.innerHTML = `<path d="${d}"/>`;
-  svg.style.display = 'block';   // the stylesheet default is none
+// ── View dropdowns ──────────────────────────────────────────────────
+// Each view button owns the chart options for that view. Clicking one switches
+// to the view straight away (the common move stays a single click) and drops
+// the menu open underneath it. Which menu is open is held here rather than in
+// the DOM, because setViewMode() re-renders the whole header out from under it.
+let _viewDDOpen = null;
+
+function toggleViewDD(e, id) {
+  if (e) { e.stopPropagation(); e.preventDefault(); }
+  _viewDDOpen = _viewDDOpen === id ? null : id;
+  if (viewMode !== id) { setViewMode(id); return; }   // render() repaints the header
+  syncViewDD();
+}
+
+function syncViewDD() {
+  document.querySelectorAll('.vdd-menu').forEach(m => m.classList.toggle('open', m.dataset.vdd === _viewDDOpen));
+}
+
+function closeViewDD() {
+  if (!_viewDDOpen) return;
+  _viewDDOpen = null;
+  document.querySelectorAll('.vdd-menu.open').forEach(m => m.classList.remove('open'));
+}
+
+function pickViewMetric(view, metric) {
+  _viewDDOpen = null;
+  setBarChartMode(metric);
+  if (viewMode !== view) setViewMode(view);
+  else updateViewControlsHeader();
 }
 
 function renderViewToggle() {
   const _mobNav = window.innerWidth <= 640;
-  // Row 1: nav buttons + (for list view) sort buttons on the right
+  // Row 2: expand/collapse, plus the Albums List sort. What the bars measure
+  // now lives in a dropdown on the view button itself.
   const listSort_ = viewMode === 'list' ? `
-    <div style="margin-left:auto;display:flex;gap:.4rem;align-items:center">
-      <span style="font-size:.47rem;letter-spacing:.1em;color:var(--text-muted);text-transform:uppercase;margin-right:.15rem">Sort:</span>
+      <span class="ctrl-row-meta" style="margin-left:auto">Sort</span>
       <button class="sort-btn ${listSort==='views'?'active':''}" onclick="setListSort('views')">Views</button>
-      <button class="sort-btn ${listSort==='date'?'active':''}" onclick="setListSort('date')">Date</button>
-    </div>` : '';
-  // Row 2: metric + expand/collapse (tight, no extra padding)
+      <button class="sort-btn ${listSort==='date'?'active':''}" onclick="setListSort('date')">Date</button>` : '';
   const _metricOpts = [
-    { val: 'yt',     lbl: _mobNav ? 'YouTube Views' : 'Total YouTube Views', tip: 'Bar height shows each album\'s total YouTube views' },
+    { val: 'yt',     lbl: 'Total YouTube Views', tip: 'Bar height shows each album\'s total YouTube views' },
     { val: 'score',  lbl: 'Jukebox Score', tip: 'Bar height shows the jukebox score from thumbs-up votes' },
     { val: 'total',  lbl: 'Jukebox Plays', tip: 'Bar height shows how many times each album has been played in this app' },
     ...(googleUser ? [{ val: 'mine', lbl: 'My Jukebox Plays', tip: 'Bar height shows how many times you have played each album here' }] : []),
     { val: 'hidden', lbl: 'Hide Bars', tip: 'Hide the chart bars and just show album covers' },
   ];
-  const ctrlRow = (viewMode !== 'alltracks' && viewMode !== 'playlists') ? `
-    <div class="ctrl-row-connected" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
-      <div class="metric-btn-row">
-        ${_metricOpts.map(o => `<button class="metric-btn${barChartMode===o.val?' active':''}" data-mode="${o.val}" onclick="setBarChartMode('${o.val}')" title="${o.tip}">${o.lbl}</button>`).join('')}
-      </div>
-      <select id="bar-chart-mode-sel" class="metric-sel-mobile" onchange="setBarChartMode(this.value)" title="What the chart bars measure" style="background:var(--bg-card);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .5rem;border-radius:5px;cursor:pointer;letter-spacing:.04em">
-        ${_metricOpts.map(o => `<option value="${o.val}"${barChartMode===o.val?' selected':''} title="${o.tip}">${o.lbl}</option>`).join('')}
-      </select>
+  const _chartView = viewMode !== 'alltracks' && viewMode !== 'playlists';
+  const _metricNow = _metricOpts.find(o => o.val === barChartMode);
+  const _barsLbl = barChartMode === 'hidden' ? 'Bars hidden' : 'Bars: ' + (_metricNow ? _metricNow.lbl : '');
+  const ctrlRow = _chartView ? `
+    <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+      <span class="ctrl-row-meta" title="Change this from the view button above">${_barsLbl}</span>
       <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
-      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>
+      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}
     </div>` : '';
+  // All Tracks has no chart, so it is the one plain button with no menu.
+  const _views = [
+    { id: 'byyear',    lbl: 'By Year',   tip: 'View the discography in chronological order', menu: true },
+    ...(_mobNav ? [] : [{ id: 'timeline', lbl: 'Timeline', tip: 'See the discography on a timeline to spot gaps in releases', menu: true }]),
+    { id: 'byviews',   lbl: 'By Views',  tip: 'Sort by the most popular albums', menu: true },
+    { id: 'list',      lbl: _mobNav ? 'Albums' : 'Albums List', tip: 'Scroll albums and tracks with no charts', menu: true },
+    { id: 'alltracks', lbl: 'All Tracks', tip: 'View and sort all tracks', menu: false },
+  ];
+  const segBtn = v => {
+    const on   = viewMode === v.id;
+    const menu = v.menu ? `<div class="vdd-menu${_viewDDOpen === v.id ? ' open' : ''}" data-vdd="${v.id}">
+          <div class="vdd-sec">Chart bars show</div>
+          ${_metricOpts.map(o => `<button type="button" class="vdd-item${barChartMode === o.val ? ' on' : ''}" onclick="pickViewMetric('${v.id}','${o.val}')" title="${o.tip}"><span class="vdd-tick">✓</span>${o.lbl}</button>`).join('')}
+        </div>` : '';
+    return `<div class="vdd-wrap">
+        <button class="vseg-btn ${on ? 'active' : ''}" onclick="${v.menu ? `toggleViewDD(event,'${v.id}')` : `setViewMode('${v.id}')`}" title="${v.tip}">${v.lbl}${v.menu ? '<span class="vseg-caret">▾</span>' : ''}</button>${menu}
+      </div>`;
+  };
   const hide = isCtrlGroupHidden('jukebox');
   return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('jukebox', 'Jukebox Controls', 'Show Jukebox Controls')}
   ${hide ? '' : `<div class="view-toggle-row" id="view-toggle-row" style="display:flex;flex-direction:column;gap:.65rem;align-items:stretch;flex:0 1 auto;min-width:0;position:relative">
     <div class="view-toggle-row1" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
       <div class="view-seg">
-        <button class="vseg-btn ${viewMode==='byyear'?'active':''}" onclick="setViewMode('byyear')" title="View the discography in chronological order">By Year</button>
-        ${_mobNav ? '' : `<button class="vseg-btn ${viewMode==='timeline'?'active':''}" onclick="setViewMode('timeline')" title="See the discography on a timeline to spot gaps in releases">Timeline</button>`}
-        <button class="vseg-btn ${viewMode==='byviews'?'active':''}" onclick="setViewMode('byviews')" title="Sort by the most popular albums">By Views</button>
-        <button class="vseg-btn ${viewMode==='list'?'active':''}" onclick="setViewMode('list')" title="Scroll albums and tracks with no charts">${_mobNav?'Albums':'Albums List'}</button>
-        <button class="vseg-btn ${viewMode==='alltracks'?'active':''}" onclick="setViewMode('alltracks')" title="View and sort all tracks">All Tracks</button>
+        ${_views.map(segBtn).join('')}
       </div>
-      <button type="button" class="sj-export-btn" onclick="openSjExportModal()" title="Download screenshots of this artist jukebox">Export Image</button>
-      <button type="button" class="sj-export-btn" onclick="openSjShareModal()" title="Share a link to this artist jukebox">Share Jukebox</button>
-      ${listSort_}
+      <button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}<span class="sjhub-word">Share</span></button>
     </div>
-    <svg class="view-connector-svg" id="view-connector-svg" aria-hidden="true"></svg>
     ${ctrlRow}
   </div>`}
   </div>`;
@@ -16083,7 +16105,7 @@ window.addEventListener('resize', () => {
     const w = window.innerWidth;
     const wasMob = _lastRenderWidth <= 640;
     const isMob  = w <= 640;
-    if (w === _lastRenderWidth) { positionViewConnector(); requestAnimationFrame(redrawAllSCLines); return; }
+    if (w === _lastRenderWidth) { requestAnimationFrame(redrawAllSCLines); return; }
     _lastRenderWidth = w;
     // Surgical resize for desktop timeline views - patch stage/panels without nuking DOM
     const tlViews = viewMode === 'byyear' || viewMode === 'timeline' || viewMode === 'byviews';
@@ -16094,7 +16116,6 @@ window.addEventListener('resize', () => {
     } else {
       render();
     }
-    positionViewConnector();
     requestAnimationFrame(redrawAllSCLines);
   }, 250);
 });
@@ -16113,7 +16134,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
-    'The faint grey line joining the view buttons to the row of chart controls underneath now actually shows up. It drops from whichever view you have selected, runs across, and branches down into each control below.',
+    'The Jukebox Controls panel is tidier. Each view button - By Year, Timeline, By Views, Albums List - now opens a small menu of what the chart bars should show, so the row of metric buttons underneath is gone. The connector lines went with it. Expand All Tracks and Collapse All Tracks stay where they were, and the Albums List sort buttons have moved down to join them.',
+    'Export Image and Share Jukebox are now one Share button, which asks whether you want to export images or share a link.',
     'Export Image now has one Download button instead of two. On a computer it saves a single zip; on a phone it hands the pictures to the share sheet so you can save them straight to your photos.',
     'Fixed Export Image saving nothing at all on a phone.',
     'Export Image downloads straight away now. The Prepare Screenshots step is gone - pick the views you want and press Download. It also works on a phone now, because nothing has to be drawn on your device any more.',
@@ -16523,6 +16545,7 @@ function toggleUserMenu(e) {
 
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.user-menu-wrap')) closeUserMenu();
+  if (!e.target.closest('.vdd-wrap')) closeViewDD();
   if (!e.target.closest('.home-hero-info-wrap')) document.querySelectorAll('.home-hero-info-wrap.open').forEach(w => w.classList.remove('open'));
 });
 
@@ -19141,12 +19164,6 @@ function setBarChartMode(mode) {
   else if (mode === 'yt' || mode === 'hidden')           { ttSortCol = 'views';   ttSortDir = -1; }
   else if (mode === 'score')                             { ttSortCol = 'views';   ttSortDir = -1; }
   if (viewMode === 'alltracks') render(); else renderTimelineOnly();
-  // sync both UI controls
-  const sel = document.getElementById('bar-chart-mode-sel');
-  if (sel && sel.value !== mode) sel.value = mode;
-  document.querySelectorAll('.metric-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.mode === mode);
-  });
 }
 
 function refreshMyPlayUI(trackId) {
@@ -19723,6 +19740,27 @@ async function sjExportDownloadZip() {
     sjExportSetStatus('Could not zip the images: ' + sjExportErrMsg(err) + ' - saving them one by one instead.');
     sjExportDownloadFiles();
   }
+}
+
+// ── Share hub - the one Share button on the controls row ────────────
+const SJ_SHARE_ICON = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
+
+function openSjShareHub() {
+  if (SJ_EXPORT_SLAVE || _sjExportBusy) return;
+  if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
+  const { name } = sjExportArtistMeta();
+  const el = document.getElementById('sjhub-summary');
+  if (el) el.textContent = 'Share the ' + name + ' jukebox.';
+  document.getElementById('sjShareHubOverlay')?.classList.add('open');
+}
+
+function closeSjShareHub() {
+  document.getElementById('sjShareHubOverlay')?.classList.remove('open');
+}
+
+function sjShareHubGo(which) {
+  closeSjShareHub();
+  if (which === 'export') openSjExportModal(); else openSjShareModal();
 }
 
 // ── Share Jukebox (link only - no image generation, mirrors Share Song) ──
