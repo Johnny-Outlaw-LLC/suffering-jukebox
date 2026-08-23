@@ -2895,6 +2895,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
           <button type="button" class="user-menu-item" id="user-menu-bgunlock" onclick="userMenuAction('bgunlock')">Audio storage</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
+          <button type="button" class="user-menu-item" id="user-menu-jukebox" onclick="userMenuAction('jukebox')">Interactive Jukebox</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-playback" onclick="userMenuAction('playback')">Playback preferences</button>
@@ -3693,6 +3694,56 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
     </div>
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closeChangelog()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- INTERACTIVE JUKEBOX (HOST CONSOLE) -->
+<style>
+  #sjjOverlay .pl-modal { max-width: 44rem; }
+  .sjj-top { display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap; }
+  .sjj-qr { width:132px; height:132px; flex-shrink:0; background:#fff; border-radius:8px; padding:6px; }
+  .sjj-topinfo { flex:1; min-width:12rem; }
+  .sjj-code { font-size:1.9rem; font-weight:800; letter-spacing:.22em; line-height:1.1; }
+  .sjj-url { font-size:.7rem; color:var(--text-muted); word-break:break-all; margin:.25rem 0 .6rem; }
+  .sjj-live { display:inline-flex; align-items:center; gap:.4rem; font-size:.7rem; font-weight:700;
+              text-transform:uppercase; letter-spacing:.08em; padding:.25rem .6rem; border-radius:999px; }
+  .sjj-live.on  { background:var(--accent); color:#0a0a0a; }
+  .sjj-live.off { border:1px solid var(--border); color:var(--text-muted); }
+  .sjj-row { display:flex; align-items:center; gap:.6rem; padding:.4rem .5rem; border-radius:6px; }
+  .sjj-row + .sjj-row { border-top:1px solid var(--border); }
+  .sjj-pos { width:1.5rem; text-align:right; font-size:.72rem; font-weight:700; color:var(--text-muted); }
+  .sjj-body { flex:1; min-width:0; }
+  .sjj-t { font-size:.82rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sjj-s { font-size:.66rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sjj-by { color:var(--accent); font-weight:600; }
+  .sjj-mini { width:1.7rem; height:1.7rem; display:grid; place-items:center; font-size:.85rem; line-height:1;
+              color:var(--text-muted); background:var(--bg-elevated); border:1px solid var(--border);
+              border-radius:5px; cursor:pointer; flex-shrink:0; }
+  .sjj-mini:hover:not(:disabled) { color:var(--text); border-color:var(--accent); }
+  .sjj-mini:disabled { opacity:.3; cursor:default; }
+  .sjj-h { font-size:.62rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
+           color:var(--text-muted); margin:1.1rem 0 .4rem; }
+  .sjj-set { display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+             padding:.4rem 0; font-size:.78rem; }
+  .sjj-set select, .sjj-set input[type=number] { font:inherit; font-size:.75rem; padding:.25rem .4rem;
+             color:var(--text); background:var(--bg-elevated); border:1px solid var(--border); border-radius:5px; }
+  .sjj-guest { display:inline-flex; align-items:center; gap:.4rem; font-size:.72rem;
+               padding:.25rem .5rem; margin:0 .3rem .3rem 0; border:1px solid var(--border); border-radius:999px; }
+  .sjj-guest.banned { opacity:.5; text-decoration:line-through; }
+  .sjj-empty { padding:1.2rem; text-align:center; font-size:.78rem; color:var(--text-muted); }
+</style>
+<div class="pl-modal-overlay" id="sjjOverlay" onclick="if(event.target===this)closeJukeboxHost()">
+  <div class="pl-modal">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title">&#127903; Interactive Jukebox</span>
+      <button class="modal-close" onclick="closeJukeboxHost()">&#10005;</button>
+    </div>
+    <div class="pl-modal-body" id="sjj-body">
+      <div class="sjj-empty">Loading your jukebox&hellip;</div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closeJukeboxHost()">Close</button>
     </div>
   </div>
 </div>
@@ -16194,6 +16245,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
+    'New: Interactive Jukebox. Turn yours on from the account menu and anyone who scans the code can add songs to the same queue from their own phone, with no sign-in and no app. Their name shows next to whatever they picked.',
+    'You stay in charge of your jukebox: reorder anything, remove anything, ban a guest, set how many songs each person may have waiting, and decide whether people can keep adding while it is off air so their picks are waiting for you next time you switch it on. Guests can only take back their own songs and cannot change the running order.',
     'On a phone the Share button now sits on the same line as the caption telling you what the bars measure, over on the right, instead of taking up a line of its own. The album filter, artist and Home buttons are the same height as everything else too.',
     'On a phone, your name, Search, the light and dark switch and the help button now share one row instead of taking up two, which lifts the whole page up.',
     'On a phone the jukebox view buttons are now the same size as the playlist buttons above them, the Share button says Share instead of showing only an icon, and the arrow that hides or shows a set of controls is much bigger and easier to hit.',
@@ -16638,6 +16691,10 @@ async function userMenuAction(action) {
   }
   if (action === 'shares') {
     openManageShares();
+    return;
+  }
+  if (action === 'jukebox') {
+    openJukeboxHost();
     return;
   }
   if (action === 'myartists') {
@@ -22252,6 +22309,285 @@ function computeLyricsDiff(oldTxt, newTxt) {
 function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// ══════════════════════════════════════════════════════════════
+// INTERACTIVE JUKEBOX - HOST CONSOLE  (sjj*)
+//
+// The guest half of this feature is a separate React app at /j/<code>; this
+// is only the owner's side. Every rule (per-guest cap, duplicates, bans,
+// adding while off air) lives on the server in src/lib/jukebox.ts, so nothing
+// here decides what is allowed - it renders what the API reports and sends
+// actions back.
+//
+// Playback deliberately reuses the ordinary player: the jukebox queue FEEDS
+// ytQueue rather than replacing it, so versions, lyrics and background audio
+// all keep working exactly as they do everywhere else.
+// ══════════════════════════════════════════════════════════════
+
+let _sjjState    = null;   // last payload from /api/jukebox/owner
+let _sjjPoll     = null;   // 5s timer while the console is open
+let _sjjHostOn   = false;  // is this device driving the room's playback?
+let _sjjBusy     = false;
+
+async function _sjjToken() {
+  try {
+    const { data: { session } } = await sbAuth.auth.getSession();
+    return session?.access_token || null;
+  } catch (_) { return null; }
+}
+
+// One call for both GET (no body) and POST (an action).
+async function sjjApi(body) {
+  const tok = await _sjjToken();
+  if (!tok) throw new Error('Sign in to run a jukebox.');
+  const res = await fetch('/api/jukebox/owner', {
+    method: body ? 'POST' : 'GET',
+    headers: Object.assign({ Authorization: 'Bearer ' + tok },
+                           body ? { 'Content-Type': 'application/json' } : {}),
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!d.ok) throw new Error(d.error || ('Request failed (' + res.status + ')'));
+  return d;
+}
+
+async function openJukeboxHost() {
+  if (!googleUser) { alert('Sign in to run a jukebox.'); return; }
+  const overlay = document.getElementById('sjjOverlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  await sjjRefresh();
+  if (_sjjPoll) clearInterval(_sjjPoll);
+  _sjjPoll = setInterval(() => { sjjRefresh().catch(() => {}); }, 5000);
+}
+
+function closeJukeboxHost() {
+  document.getElementById('sjjOverlay')?.classList.remove('open');
+  if (_sjjPoll) { clearInterval(_sjjPoll); _sjjPoll = null; }
+}
+
+async function sjjRefresh() {
+  try {
+    _sjjState = await sjjApi(null);
+    sjjRender();
+    await sjjSyncPlayback();
+  } catch (e) {
+    const body = document.getElementById('sjj-body');
+    if (body) body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>';
+  }
+}
+
+// Any action, then repaint from whatever the server says is true afterwards.
+async function sjjAct(body) {
+  if (_sjjBusy) return;
+  _sjjBusy = true;
+  try {
+    _sjjState = await sjjApi(body);
+    sjjRender();
+    await sjjSyncPlayback();
+  } catch (e) {
+    showToast(e.message);
+  } finally {
+    _sjjBusy = false;
+  }
+}
+
+function sjjRender() {
+  const el = document.getElementById('sjj-body');
+  if (!el || !_sjjState) return;
+  const j = _sjjState.jukebox, st = j.settings, q = _sjjState.queue || [];
+  const guests = _sjjState.guests || [];
+  const np = _sjjState.nowPlaying;
+  const url = location.origin + '/j/' + j.code;
+  const pls = (typeof _savedPlaylists !== 'undefined' && _savedPlaylists?.length)
+    ? _savedPlaylists : (typeof playlists !== 'undefined' ? playlists : []) || [];
+
+  let h = '';
+
+  h += '<div class="sjj-top">'
+    +  '<img class="sjj-qr" alt="Scan to join this jukebox" src="/api/jukebox/qr?code=' + j.code + '">'
+    +  '<div class="sjj-topinfo">'
+    +    '<div class="sjj-code">' + escHtml(j.code) + '</div>'
+    +    '<div class="sjj-url">' + escHtml(url) + '</div>'
+    +    '<span class="sjj-live ' + (j.isLive ? 'on' : 'off') + '">' + (j.isLive ? 'On air' : 'Off air') + '</span>'
+    +    '<div style="margin-top:.6rem;display:flex;gap:.4rem;flex-wrap:wrap">'
+    +      '<button class="pl-btn" onclick="sjjToggleLive()">' + (j.isLive ? 'Take off air' : 'Put on air') + '</button>'
+    +      '<button class="pl-btn ghost" onclick="sjjCopyLink()">Copy link</button>'
+    +      '<button class="pl-btn ghost" onclick="sjjRename()">Rename</button>'
+    +    '</div>'
+    +  '</div>'
+    +  '</div>';
+
+  h += '<div class="sjj-h">Playing here</div>';
+  if (np) {
+    h += '<div class="sjj-row"><div class="sjj-body"><div class="sjj-t">' + escHtml(np.trackName) + '</div>'
+      +  '<div class="sjj-s">' + escHtml(np.artistName || '') + (np.addedByOwner ? '' : ' &middot; <span class="sjj-by">' + escHtml(np.addedByName) + '</span>') + '</div></div></div>';
+  } else {
+    h += '<div class="sjj-s" style="padding:.3rem .5rem">Nothing playing yet.</div>';
+  }
+  h += '<div style="margin-top:.5rem;display:flex;gap:.4rem;flex-wrap:wrap">'
+    +  '<button class="pl-btn" onclick="sjjPlayHere()">' + (_sjjHostOn ? 'Restart from the top' : 'Play on this device') + '</button>'
+    +  (q.length ? '<button class="pl-btn ghost" onclick="sjjClear()">Clear queue</button>' : '')
+    +  '</div>';
+
+  h += '<div class="sjj-h">Up next (' + q.length + ')</div>';
+  if (!q.length) {
+    h += '<div class="sjj-empty">Nobody has queued anything yet.<br>Put the jukebox on air and share the code.</div>';
+  } else {
+    q.forEach(function (item, i) {
+      h += '<div class="sjj-row">'
+        +  '<div class="sjj-pos">' + (i + 1) + '</div>'
+        +  '<div class="sjj-body"><div class="sjj-t">' + escHtml(item.trackName) + '</div>'
+        +  '<div class="sjj-s">' + escHtml(item.artistName || '')
+        +  (item.addedByOwner ? '' : ' &middot; <span class="sjj-by">' + escHtml(item.addedByName) + '</span>') + '</div></div>'
+        +  '<button class="sjj-mini" title="Move up"   ' + (i === 0 ? 'disabled' : '') + ' onclick="sjjMove(' + i + ',-1)">&#9650;</button>'
+        +  '<button class="sjj-mini" title="Move down" ' + (i === q.length - 1 ? 'disabled' : '') + ' onclick="sjjMove(' + i + ',1)">&#9660;</button>'
+        +  '<button class="sjj-mini" title="Remove" onclick="sjjRemove(\'' + item.id + '\')">&#10005;</button>'
+        +  '</div>';
+    });
+  }
+
+  if (pls.length) {
+    h += '<div class="sjj-h">Send a playlist to the jukebox</div>'
+      +  '<div style="display:flex;gap:.4rem;align-items:center">'
+      +  '<select id="sjj-pl" class="sjj-set" style="flex:1">'
+      +  pls.map(function (p) { return '<option value="' + p.id + '">' + escHtml(p.name || 'Playlist') + '</option>'; }).join('')
+      +  '</select><button class="pl-btn" onclick="sjjSendPlaylist()">Send</button></div>';
+  }
+
+  h += '<div class="sjj-h">Settings</div>'
+    +  sjjSetting('Songs each guest may have waiting',
+         '<input type="number" min="0" max="50" value="' + st.maxPendingPerGuest + '" onchange="sjjSet({maxPendingPerGuest:Number(this.value)})">')
+    +  sjjSetting('Order',
+         '<select onchange="sjjSet({fairness:this.value})">'
+         + '<option value="fifo"' + (st.fairness === 'fifo' ? ' selected' : '') + '>First come, first served</option>'
+         + '<option value="round_robin"' + (st.fairness === 'round_robin' ? ' selected' : '') + '>Take turns between guests</option></select>')
+    +  sjjToggle('Allow the same song twice', 'allowDuplicates', st.allowDuplicates)
+    +  sjjToggle('Let guests add while off air', 'allowOfflineAdds', st.allowOfflineAdds)
+    +  sjjToggle('Make guests type a name', 'requireName', st.requireName)
+    +  sjjToggle('Allow explicit songs', 'allowExplicit', st.allowExplicit);
+
+  h += '<div class="sjj-h">Guests (' + guests.length + ')</div>';
+  h += guests.length
+    ? guests.map(function (g) {
+        return '<span class="sjj-guest ' + (g.is_banned ? 'banned' : '') + '">' + escHtml(g.display_name)
+          + '<button class="sjj-mini" style="width:1.2rem;height:1.2rem;font-size:.6rem" title="'
+          + (g.is_banned ? 'Let them back in' : 'Ban this guest') + '" onclick="sjjBan(\'' + g.id + '\',' + (g.is_banned ? 'false' : 'true') + ')">'
+          + (g.is_banned ? '&#8634;' : '&#8856;') + '</button></span>';
+      }).join('')
+    : '<div class="sjj-s" style="padding:.3rem .5rem">Nobody has scanned the code yet.</div>';
+
+  el.innerHTML = h;
+}
+
+function sjjSetting(label, control) {
+  return '<div class="sjj-set"><span>' + label + '</span>' + control + '</div>';
+}
+function sjjToggle(label, key, on) {
+  return '<div class="sjj-set"><span>' + label + '</span>'
+    + '<button class="pl-btn ' + (on ? '' : 'ghost') + '" onclick="sjjSet({' + key + ':' + (on ? 'false' : 'true') + '})">'
+    + (on ? 'On' : 'Off') + '</button></div>';
+}
+
+const sjjSet        = (patch) => sjjAct({ action: 'settings', settings: patch });
+const sjjToggleLive = () => sjjAct({ action: 'live', is_live: !_sjjState?.jukebox?.isLive });
+const sjjRemove     = (id) => sjjAct({ action: 'remove', itemId: id });
+const sjjBan        = (id, on) => sjjAct({ action: on ? 'ban' : 'unban', guestId: id });
+
+function sjjClear() {
+  if (!confirm('Clear every song waiting in the jukebox?')) return;
+  sjjAct({ action: 'clear' });
+}
+
+function sjjRename() {
+  const name = prompt('What should this jukebox be called?', _sjjState?.jukebox?.name || '');
+  if (name && name.trim()) sjjAct({ action: 'rename', name: name.trim() });
+}
+
+function sjjCopyLink() {
+  const url = location.origin + '/j/' + (_sjjState?.jukebox?.code || '');
+  navigator.clipboard?.writeText(url).then(
+    () => showToast('Join link copied'),
+    () => prompt('Copy this link:', url)
+  );
+}
+
+function sjjSendPlaylist() {
+  const id = document.getElementById('sjj-pl')?.value;
+  if (id) sjjAct({ action: 'seed_playlist', playlistId: id });
+}
+
+// Move the row at index i by delta, expressed as the neighbours it lands
+// between. The server works out the actual sort value, so two people dragging
+// at once cannot corrupt the order of the whole queue.
+function sjjMove(i, delta) {
+  const q = _sjjState?.queue || [];
+  const item = q[i];
+  if (!item) return;
+  const target = i + delta;
+  if (target < 0 || target >= q.length) return;
+  const rest = q.filter((_, idx) => idx !== i);
+  sjjAct({
+    action: 'reorder',
+    itemId: item.id,
+    beforeId: rest[target - 1]?.id || null,
+    afterId:  rest[target]?.id || null
+  });
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────
+
+async function _sjjResolve(items) {
+  const info = await resolvePlaylistTracks(items.map(i => i.trackId));
+  return items.map(i => info[i.trackId]?.videoId
+    ? { videoId: info[i.trackId].videoId,
+        title:   info[i.trackId].name || i.trackName,
+        trackId: i.trackId,
+        jbItemId: i.id }
+    : null).filter(Boolean);
+}
+
+async function sjjPlayHere() {
+  const q = _sjjState?.queue || [];
+  if (!q.length) { alert('Nothing in the jukebox queue yet.'); return; }
+  const items = await _sjjResolve(q);
+  if (!items.length) { alert('None of the queued songs have a playable video.'); return; }
+
+  setYtShuffleEnabled(false);
+  _queueHasAdditions = true;
+  // openYTPlayer()/ytPlayNow() reset ytQueue to a single track internally, so
+  // ytQueue must be assigned AFTER starting playback, never before.
+  if (!ytPlayerEl) {
+    openYTPlayer(items[0].videoId, items[0].title, items[0].trackId);
+  } else {
+    ytPlayNow(items[0].videoId, items[0].title, items[0].trackId);
+  }
+  ytQueue = items; ytQueueIdx = 0;
+  updateYTQueueUI();
+  _sjjHostOn = true;
+  sjjAct({ action: 'playing', itemId: items[0].jbItemId });
+}
+
+// Keep the live player and the room's queue in step. New guest adds are
+// appended rather than reloaded, so nothing interrupts what is playing.
+async function sjjSyncPlayback() {
+  if (!_sjjHostOn || !_sjjState) return;
+  try {
+    const known = new Set(ytQueue.map(i => i.jbItemId).filter(Boolean));
+    const fresh = (_sjjState.queue || []).filter(i => !known.has(i.id));
+    if (fresh.length) {
+      const add = await _sjjResolve(fresh);
+      if (add.length) { ytQueue = ytQueue.concat(add); updateYTQueueUI(); }
+    }
+    const cur = ytQueue[ytQueueIdx];
+    if (cur?.jbItemId && _sjjState.nowPlaying?.id !== cur.jbItemId) {
+      await sjjApi({ action: 'playing', itemId: cur.jbItemId });
+    }
+  } catch (_) {
+    // A failed sync just means the next poll tries again five seconds later.
+  }
+}
+
 </script>
 </body>
 </html>
