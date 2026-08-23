@@ -150,12 +150,14 @@ main > * { min-width: 0; }
 .vseg-btn:last-child { border-right: none; }
 .vseg-btn.active { background: var(--bg-elevated); color: var(--text); font-weight: 600; }
 .vseg-btn:hover:not(.active) { color: var(--text); }
-/* Tree connector: a dashed stem drops from the active view button, the second
-   control row's dashed top border reads as the horizontal bar it feeds into -
-   same "these controls belong to that button" idea as the album-to-track
-   connector lines, just static CSS/JS instead of an SVG bezier. */
-.ctrl-row-connected { border-top: 1px dashed var(--border); padding-top: .55rem !important; }
-.view-connector-v { position: absolute; width: 0; border-left: 1px dashed var(--accent); opacity: .6; pointer-events: none; display: none; }
+/* Tree connector: a dashed stem drops from the active view button into a
+   horizontal bar, which then branches down into every control on the second
+   row - same "these controls belong to that button" idea as the album-to-track
+   connector lines. Drawn as one measured SVG path, because button widths and
+   wrapping vary. */
+.ctrl-row-connected { padding-top: .55rem !important; }
+.view-connector-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; display: none; }
+.view-connector-svg path { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
 
 /* ── SECTION HEADER ── */
 .section-header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.55rem; flex-wrap: wrap; }
@@ -13915,27 +13917,47 @@ function updateViewControlsHeader() {
   positionViewConnector();
 }
 
-// Positions the dashed stem that drops from the active view button (By Year /
-// Timeline / By Views / Albums List) down into the second control row's
-// dashed top border - button widths vary, so this is measured, not CSS-only.
+// Draws the dashed tree that ties the active view button (By Year / Timeline /
+// By Views / Albums List) to the controls on the second row: a stem down from
+// the button, a horizontal bar, then a short branch down into the top of every
+// control. Button widths and wrapping vary, so it is measured, not CSS-only.
 function positionViewConnector() {
-  const row  = document.getElementById('view-toggle-row');
-  const line = document.getElementById('view-connector-v');
-  if (!row || !line) return;
+  const row = document.getElementById('view-toggle-row');
+  const svg = document.getElementById('view-connector-svg');
+  if (!row || !svg) return;
+  const hide = () => { svg.style.display = 'none'; svg.innerHTML = ''; };
   const active = row.querySelector('.vseg-btn.active');
   const row1   = row.querySelector('.view-toggle-row1');
   const row2   = row.querySelector('.ctrl-row-connected');
-  if (!active || !row1 || !row2) { line.style.display = 'none'; return; }
-  const rowRect  = row.getBoundingClientRect();
-  const btnRect  = active.getBoundingClientRect();
-  const row1Rect = row1.getBoundingClientRect();
-  const row2Rect = row2.getBoundingClientRect();
-  const gap = row2Rect.top - row1Rect.bottom;
-  if (gap <= 0) { line.style.display = 'none'; return; }
-  line.style.display = '';
-  line.style.left   = (btnRect.left + btnRect.width / 2 - rowRect.left) + 'px';
-  line.style.top    = (row1Rect.bottom - rowRect.top) + 'px';
-  line.style.height = gap + 'px';
+  if (!active || !row1 || !row2) return hide();
+  // Whichever controls are actually on screen - the metric buttons collapse to
+  // a single <select> on a phone.
+  const kids = Array.from(row2.querySelectorAll('.metric-btn, .metric-sel-mobile, .expand-collapse-btn'))
+    .map(el => el.getBoundingClientRect())
+    .filter(r => r.width > 0 && r.height > 0);
+  if (!kids.length) return hide();
+  const rowRect = row.getBoundingClientRect();
+  const stemTop = row1.getBoundingClientRect().bottom;
+  // Only the first visual line gets branches - anything that wrapped below it
+  // would need a line straight through the buttons in between.
+  const topY  = Math.min.apply(null, kids.map(r => r.top));
+  const line1 = kids.filter(r => r.top < topY + 4);
+  const gap = topY - stemTop;
+  if (gap < 6) return hide();
+  const px = v => Math.round(v) + 0.5;
+  const y0   = px(stemTop - rowRect.top);
+  const yBar = px(stemTop + gap / 2 - rowRect.top);
+  const y1   = px(topY - rowRect.top);
+  const stemX = px(active.getBoundingClientRect().left + active.getBoundingClientRect().width / 2 - rowRect.left);
+  const xs = line1.map(r => px(r.left + r.width / 2 - rowRect.left));
+  const left  = Math.min.apply(null, xs.concat(stemX));
+  const right = Math.max.apply(null, xs.concat(stemX));
+  let d = `M${stemX} ${y0}V${yBar}M${left} ${yBar}H${right}`;
+  xs.forEach(x => { d += `M${x} ${yBar}V${y1}`; });
+  svg.setAttribute('width',  Math.ceil(rowRect.width));
+  svg.setAttribute('height', Math.ceil(rowRect.height));
+  svg.innerHTML = `<path d="${d}"/>`;
+  svg.style.display = '';
 }
 
 function renderViewToggle() {
@@ -13981,7 +14003,7 @@ function renderViewToggle() {
       <button type="button" class="sj-export-btn" onclick="openSjShareModal()" title="Share a link to this artist jukebox">Share Jukebox</button>
       ${listSort_}
     </div>
-    <div class="view-connector-v" id="view-connector-v"></div>
+    <svg class="view-connector-svg" id="view-connector-svg" aria-hidden="true"></svg>
     ${ctrlRow}
   </div>`}
   </div>`;
@@ -16092,6 +16114,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
+    'The line joining the view buttons to the row of chart controls underneath is now a proper branch: it drops from whichever view you have selected, runs across, and connects down into each control below, instead of a single line across the whole panel.',
     'Export Image downloads straight away now. The Prepare Screenshots step is gone - pick the views you want and press Download. It also works on a phone now, because nothing has to be drawn on your device any more.',
     'Every view in Export Image now works. Timeline · Tracks Open, By Views · Tracks Open and Albums List used to fail if you picked them; all eight are ready to download.',
     'Download Individually and Download Single Zip now sit on the same row as Cancel, without the icons.',
