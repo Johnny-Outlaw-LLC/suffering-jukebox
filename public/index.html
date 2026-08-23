@@ -157,7 +157,7 @@ main > * { min-width: 0; }
    wrapping vary. */
 .ctrl-row-connected { padding-top: .55rem !important; }
 .view-connector-svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; display: none; }
-.view-connector-svg path { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
+.view-connector-svg path { fill: none; stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: .5; }
 
 /* ── SECTION HEADER ── */
 .section-header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.55rem; flex-wrap: wrap; }
@@ -3395,8 +3395,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
     </div>
     <div class="pl-modal-footer sj-export-footer">
       <button class="pl-btn ghost" onclick="closeSjExportModal()">Cancel</button>
-      <button class="pl-btn" id="sj-export-dl-btn" onclick="sjExportDownloadIndividual()">Download Individually</button>
-      <button class="pl-btn" id="sj-export-zip-opt" onclick="sjExportDownloadZip()">Download Single Zip</button>
+      <button class="pl-btn" id="sj-export-dl-btn" onclick="sjExportDownload()">Download</button>
     </div>
   </div>
 </div>
@@ -13957,7 +13956,7 @@ function positionViewConnector() {
   svg.setAttribute('width',  Math.ceil(rowRect.width));
   svg.setAttribute('height', Math.ceil(rowRect.height));
   svg.innerHTML = `<path d="${d}"/>`;
-  svg.style.display = '';
+  svg.style.display = 'block';   // the stylesheet default is none
 }
 
 function renderViewToggle() {
@@ -16114,7 +16113,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
-    'The line joining the view buttons to the row of chart controls underneath is now a proper branch: it drops from whichever view you have selected, runs across, and connects down into each control below, instead of a single line across the whole panel.',
+    'The faint grey line joining the view buttons to the row of chart controls underneath now actually shows up. It drops from whichever view you have selected, runs across, and branches down into each control below.',
+    'Export Image now has one Download button instead of two. On a computer it saves a single zip; on a phone it hands the pictures to the share sheet so you can save them straight to your photos.',
+    'Fixed Export Image saving nothing at all on a phone.',
     'Export Image downloads straight away now. The Prepare Screenshots step is gone - pick the views you want and press Download. It also works on a phone now, because nothing has to be drawn on your device any more.',
     'Every view in Export Image now works. Timeline · Tracks Open, By Views · Tracks Open and Albums List used to fail if you picked them; all eight are ready to download.',
     'Download Individually and Download Single Zip now sit on the same row as Cancel, without the icons.',
@@ -19465,6 +19466,7 @@ async function sjExportEnsureLibs(needZip) {
 
 let _sjExportFiles = [];
 let _sjExportSelectedScope = 'artist';
+let _sjExportPendingShare = false;
 
 function sjJukeboxShareUrl() {
   const { slug } = sjExportArtistMeta();
@@ -19486,9 +19488,7 @@ function openSjExportModal() {
   }).join('');
   sjExportRenderScopeOpts('sj-export-scope-opts', 'sj-export-scope');
   sjExportSetStatus('');
-  sjExportSetDownloadsBusy(false);
-  const zipOpt = document.getElementById('sj-export-zip-opt');
-  if (zipOpt) zipOpt.style.display = SJ_MOB_UA ? 'none' : '';
+  sjExportResetDownloadBtn();
   document.getElementById('sjExportOverlay')?.classList.add('open');
 }
 
@@ -19503,6 +19503,7 @@ function sjExportSelectShots(on) {
     cb.closest('.sj-shot-card')?.classList.toggle('checked', cb.checked);
   });
   _sjExportFiles = [];
+  sjExportResetDownloadBtn();
   sjExportSetStatus('');
 }
 
@@ -19605,13 +19606,24 @@ async function sjExportCaptureFiles(shots, onStatus, scope) {
 // we have not published yet, or a jukebox the user has hidden albums in, still
 // falls back to drawing in the browser.
 function sjExportSetDownloadsBusy(on, label) {
-  ['sj-export-dl-btn', 'sj-export-zip-opt'].forEach(id => {
-    const b = document.getElementById(id);
-    if (!b) return;
-    b.disabled = !!on;
-    if (!b.dataset.sjLabel) b.dataset.sjLabel = b.textContent;
-    b.textContent = on && label && id === on ? label : b.dataset.sjLabel;
-  });
+  const b = document.getElementById('sj-export-dl-btn');
+  if (!b) return;
+  b.disabled = !!on;
+  if (!b.dataset.sjLabel) b.dataset.sjLabel = b.textContent;
+  b.textContent = on && label ? label : b.dataset.sjLabel;
+}
+
+function sjExportSetDownloadLabel(txt) {
+  const b = document.getElementById('sj-export-dl-btn');
+  if (!b) return;
+  b.dataset.sjLabel = txt;
+  b.textContent = txt;
+}
+
+function sjExportResetDownloadBtn() {
+  _sjExportPendingShare = false;
+  sjExportSetDownloadsBusy(false);
+  sjExportSetDownloadLabel('Download');
 }
 
 async function sjExportGatherFiles(which) {
@@ -19636,25 +19648,67 @@ async function sjExportGatherFiles(which) {
   }
 }
 
-function sjExportDownloadFiles() {
+function sjExportFileName(f) {
   const { slug } = sjExportScopeMeta(_sjExportSelectedScope);
+  return `${slug}-${String(f.path).replace(/[\\/]+/g, '-')}`;
+}
+
+// One <a download> per file, staggered - browsers drop a burst of them.
+function sjExportDownloadFiles() {
   _sjExportFiles.forEach((f, i) => {
-    setTimeout(() => sjExportDownloadBlob(f.blob, `${slug}-${f.path.replace(/\\//g, '-')}`), i * 350);
+    setTimeout(() => sjExportDownloadBlob(f.blob, sjExportFileName(f)), i * 350);
   });
 }
 
-async function sjExportDownloadIndividual() {
+// ── The Download button ───────────────────────────────────────────────
+// One button, because the right answer differs per device and nobody should
+// have to know that. A computer gets a single zip. A phone gets the pictures
+// handed to the share sheet, which is the only route into the camera roll -
+// an <a download> per image saves nothing at all on iOS.
+async function sjExportDownload() {
   if (_sjExportBusy || SJ_EXPORT_SLAVE) return;
+  // Safari revokes the tap once we have awaited the fetch, so the first tap
+  // arms the button and this second one shares what is already in memory.
+  if (_sjExportPendingShare && _sjExportFiles.length) return sjExportSharePhotos(true);
   const files = await sjExportGatherFiles('sj-export-dl-btn');
   if (!files || !files.length) return;
+  if (SJ_MOB_UA) return sjExportSharePhotos(false);
+  return sjExportDownloadZip();
+}
+
+function sjExportShareFileList() {
+  return _sjExportFiles.map(f => new File([f.blob], sjExportFileName(f), { type: f.blob.type || 'image/png' }));
+}
+
+async function sjExportSharePhotos(isRetry) {
+  let list = null;
+  try { list = sjExportShareFileList(); } catch (_) { list = null; }
+  const canShare = !!(list && list.length && navigator.share && navigator.canShare && navigator.canShare({ files: list }));
+  if (canShare) {
+    try {
+      await navigator.share({ files: list });
+      sjExportResetDownloadBtn();
+      sjExportSetStatus(`${list.length} screenshot${list.length === 1 ? '' : 's'} sent - choose Save Image to put them in your photos.`);
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') { sjExportResetDownloadBtn(); sjExportSetStatus(''); return; }
+      if (err && err.name === 'NotAllowedError' && !isRetry) {
+        _sjExportPendingShare = true;
+        sjExportSetDownloadLabel('Save to Photos');
+        sjExportSetStatus('Screenshots ready. Tap Save to Photos, then choose Save Image.');
+        return;
+      }
+      console.error(err);
+    }
+  }
+  // No share sheet (older Android browser, a phone in desktop mode): fall back
+  // to plain downloads, which at least reach the device's download folder.
+  sjExportResetDownloadBtn();
   sjExportDownloadFiles();
-  sjExportSetStatus(`${files.length} screenshot${files.length === 1 ? '' : 's'} saved to your downloads.`);
+  sjExportSetStatus(`${_sjExportFiles.length} screenshot${_sjExportFiles.length === 1 ? '' : 's'} saved to your downloads.`);
 }
 
 async function sjExportDownloadZip() {
-  if (_sjExportBusy || SJ_EXPORT_SLAVE) return;
-  const files = await sjExportGatherFiles('sj-export-zip-opt');
-  if (!files || !files.length) return;
   const { slug } = sjExportScopeMeta(_sjExportSelectedScope);
   try {
     sjExportSetStatus('Zipping…');
@@ -19666,7 +19720,8 @@ async function sjExportDownloadZip() {
     sjExportSetStatus(`Done - ${_sjExportFiles.length} file${_sjExportFiles.length === 1 ? '' : 's'} zipped and saved to your downloads.`);
   } catch (err) {
     console.error(err);
-    sjExportSetStatus('Could not zip the images: ' + sjExportErrMsg(err));
+    sjExportSetStatus('Could not zip the images: ' + sjExportErrMsg(err) + ' - saving them one by one instead.');
+    sjExportDownloadFiles();
   }
 }
 
