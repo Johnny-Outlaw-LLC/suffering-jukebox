@@ -3435,6 +3435,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       <div class="sj-export-status" id="sj-export-status" role="status"></div>
     </div>
     <div class="pl-modal-footer sj-export-footer">
+      <button class="pl-btn ghost" id="sj-export-back-btn" onclick="sjExportBackToShare()">← Share options</button>
       <button class="pl-btn ghost" onclick="closeSjExportModal()">Cancel</button>
       <button class="pl-btn" id="sj-export-dl-btn" onclick="sjExportDownload()">Download</button>
     </div>
@@ -16245,6 +16246,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
+    'The Albums List picture in Export Image now has every album opened up, so the songs are in the picture instead of just the album covers.',
+    'Export Image has a Share options button at the bottom now, so you can step back to the Share menu without closing everything and starting again.',
     'New: Interactive Jukebox. Turn yours on from the account menu and anyone who scans the code can add songs to the same queue from their own phone, with no sign-in and no app. Their name shows next to whatever they picked.',
     'You stay in charge of your jukebox: reorder anything, remove anything, ban a guest, set how many songs each person may have waiting, and decide whether people can keep adding while it is off air so their picks are waiting for you next time you switch it on. Guests can only take back their own songs and cannot change the running order.',
     'On a phone the Share button now sits on the same line as the caption telling you what the bars measure, over on the right, instead of taking up a line of its own. The album filter, artist and Home buttons are the same height as everything else too.',
@@ -19448,7 +19451,7 @@ const SJ_EXPORT_SHOTS = [
   { id: 'timeline-expanded', label: 'Timeline · Tracks Open', view: 'timeline', expand: true },
   { id: 'byviews-collapsed', label: 'By Views', view: 'byviews', expand: false },
   { id: 'byviews-expanded', label: 'By Views · Tracks Open', view: 'byviews', expand: true },
-  { id: 'albumlist', label: 'Albums List', view: 'list', expand: false },
+  { id: 'albumlist', label: 'Albums List', view: 'list', expand: true },
   { id: 'alltracks', label: 'All Tracks', view: 'alltracks', expand: false },
 ];
 
@@ -19637,6 +19640,13 @@ function openSjExportModal() {
 function closeSjExportModal() {
   if (_sjExportBusy) return;
   document.getElementById('sjExportOverlay')?.classList.remove('open');
+}
+
+// Step back to the Share hub rather than closing out of sharing altogether.
+function sjExportBackToShare() {
+  if (_sjExportBusy) return;
+  document.getElementById('sjExportOverlay')?.classList.remove('open');
+  openSjShareHub();
 }
 
 function sjExportSelectShots(on) {
@@ -19985,12 +19995,15 @@ function sjExportViewportFor(catalog, shot) {
   const per = expanded ? 240 : 200;
   const width = Math.min(5200, Math.max(n <= 2 ? 960 : 1280, Math.ceil(n * per + 280)));
   const trackRows = Math.max(catalog.maxTracks || 8, 8);
-  const height = expanded
-    ? Math.min(3200, Math.max(900, 460 + trackRows * 48 + 320))
-    : shot.view === 'alltracks'
-      ? 1400
-      : shot.view === 'list'
-        ? Math.min(6000, Math.max(1200, 260 + n * 130 + (catalog.totalTracks || trackRows) * 40))
+  // Albums List is a vertical stack, so it sizes off albums plus tracks
+  // whether or not the tracks are open - the generic expanded formula below
+  // is for the horizontal charts and would cut the stack short.
+  const height = shot.view === 'list'
+    ? Math.min(6000, Math.max(1200, 260 + n * 130 + (catalog.totalTracks || trackRows) * 40))
+    : expanded
+      ? Math.min(3200, Math.max(900, 460 + trackRows * 48 + 320))
+      : shot.view === 'alltracks'
+        ? 1400
         : 1000;
   return { width, height };
 }
@@ -20118,7 +20131,7 @@ async function sjExportApplyShotInFrame(win, doc, iframe, catalog, shot) {
   if (typeof win.collapseAllTracks === 'function') win.collapseAllTracks();
   win.setViewMode(shot.view);
   await sjExportSleep(shot.view === 'alltracks' ? 800 : 900);
-  if (shot.view !== 'alltracks' && shot.view !== 'list' && shot.view !== 'playlists') {
+  if (shot.view !== 'alltracks' && shot.view !== 'playlists') {
     if (shot.expand) win.expandAllTracks();
     else win.collapseAllTracks();
     await sjExportSleep(shot.expand ? 1000 : 500);

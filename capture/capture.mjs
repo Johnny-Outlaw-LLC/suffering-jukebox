@@ -47,7 +47,7 @@ const ALL_SHOTS = [
   { id: "timeline-expanded", label: "Timeline · Tracks Open", view: "timeline", expand: true },
   { id: "byviews-collapsed", label: "By Views", view: "byviews", expand: false },
   { id: "byviews-expanded", label: "By Views · Tracks Open", view: "byviews", expand: true },
-  { id: "albumlist", label: "Albums List", view: "list", expand: false },
+  { id: "albumlist", label: "Albums List", view: "list", expand: true },
   { id: "alltracks", label: "All Tracks", view: "alltracks", expand: false },
 ];
 
@@ -176,7 +176,7 @@ async function applyState(page, { view, expand }) {
       // Collapsing first forces every shot to start from a clean baseline.
       if (typeof collapseAllTracks === "function") collapseAllTracks();
       setViewMode(view);
-      if (view !== "alltracks" && view !== "list" && view !== "playlists") {
+      if (view !== "alltracks" && view !== "playlists") {
         if (expand) expandAllTracks();
         else collapseAllTracks();
       }
@@ -264,13 +264,17 @@ function viewportForShot(catalog, shot) {
           Math.max(n <= 2 ? 960 : VIEWPORT_MIN_W, Math.ceil(n * per + 280))
         );
   const trackRows = Math.max(catalog.maxTracks || 8, 8);
-  const height = shot.expand
-    ? Math.min(VIEWPORT_MAX_H, Math.max(VIEWPORT_MIN_H, 460 + trackRows * 48 + 320))
-    : shot.view === "alltracks"
-      ? 1200
-      : shot.view === "list"
-        ? Math.min(6000, Math.max(1200, 260 + n * 130 + (catalog.trackCount || trackRows) * 40))
-        : VIEWPORT_BASE.height;
+  // The list branch comes first: Albums List grows with albums AND tracks
+  // whether or not the tracks are open, so the generic expanded formula
+  // (written for the horizontal charts) would cut the stack short.
+  const height =
+    shot.view === "list"
+      ? Math.min(6000, Math.max(1200, 260 + n * 130 + (catalog.trackCount || trackRows) * 40))
+      : shot.expand
+        ? Math.min(VIEWPORT_MAX_H, Math.max(VIEWPORT_MIN_H, 460 + trackRows * 48 + 320))
+        : shot.view === "alltracks"
+          ? 1200
+          : VIEWPORT_BASE.height;
   return { width, height };
 }
 
@@ -475,7 +479,8 @@ async function captureArtist(browser, artist, shots, opts, scope = "artist", all
       await applyState(page, shot);
 
       // Layout can widen further after expand — grow once more if it overflows.
-      if (shot.expand) {
+      // Albums List is a fixed-width vertical stack, so it never needs this.
+      if (shot.expand && shot.view !== "list") {
         const needed = await page.evaluate(() => {
           const wrap = document.getElementById("tl-wrap");
           const sw = wrap?.scrollWidth || 0;
