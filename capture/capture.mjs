@@ -238,7 +238,15 @@ async function measureCatalog(page) {
       total += n;
       if (n > maxTracks) maxTracks = n;
     }
-    return { albumCount: vis.length || 1, maxTracks, trackCount: total };
+    // The page already knows when YouTube counts were last snapshotted, so the
+    // og card can date the numbers it is showing rather than guess.
+    const sync = typeof ytLastSync !== "undefined" && ytLastSync ? new Date(ytLastSync) : null;
+    return {
+      albumCount: vis.length || 1,
+      maxTracks,
+      trackCount: total,
+      ytSync: sync && !isNaN(sync) ? sync.toISOString().slice(0, 10) : null,
+    };
   });
 }
 
@@ -325,11 +333,19 @@ function reelHtml({ artistName, slug, label, stagePng, catalog }) {
 </div></body></html>`;
 }
 
+// mm/dd/yyyy, in UTC, so the label does not shift with the machine the job
+// happens to run on.
+function fmtUpdated(iso) {
+  const d = iso ? new Date(iso + "T00:00:00Z") : new Date();
+  const p = (v) => String(v).padStart(2, "0");
+  return `${p(d.getUTCMonth() + 1)}/${p(d.getUTCDate())}/${d.getUTCFullYear()}`;
+}
+
 function ogHtml({ artistName, slug, stagePng, catalog }) {
   const bits = [
     `${catalog.albumCount} album${catalog.albumCount === 1 ? "" : "s"}`,
     catalog.trackCount ? `${catalog.trackCount} tracks` : null,
-    "ranked by plays",
+    `YouTube Views updated ${fmtUpdated(catalog.ytSync)}`,
   ].filter(Boolean);
   return `<!doctype html><html><head><meta charset="utf-8"/><style>
   * { box-sizing:border-box; margin:0; padding:0; }
