@@ -16246,6 +16246,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
+    'Export Image now always hands you the newest picture. If a view had been redrawn since the last time you downloaded it, your browser could keep giving you the old copy for the rest of the day - which is why the Albums List picture still came out with the albums closed after it was changed to show the songs.',
     'The Albums List picture in Export Image now has every album opened up, so the songs are in the picture instead of just the album covers.',
     'Export Image has a Share options button at the bottom now, so you can step back to the Share menu without closing everything and starting again.',
     'New: Interactive Jukebox. Turn yours on from the account menu and anyone who scans the code can add songs to the same queue from their own phone, with no sign-in and no app. Their name shows next to whatever they picked.',
@@ -19679,7 +19680,7 @@ async function sjReadyMadeFor(slug) {
   if (_sjReadyMade && _sjReadyMade.slug === slug) return _sjReadyMade.rows;
   try {
     const r = await fetch(
-      `${REST}/share_images?slug=eq.${encodeURIComponent(slug)}&format=eq.stage&select=shot_id,scope`,
+      `${REST}/share_images?slug=eq.${encodeURIComponent(slug)}&format=eq.stage&select=shot_id,scope,captured_at`,
       { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } }
     );
     const rows = r.ok ? await r.json() : [];
@@ -19688,6 +19689,14 @@ async function sjReadyMadeFor(slug) {
   } catch {
     return [];
   }
+}
+
+// A short, stable token for one capture run. The serving route builds its
+// bucket key from the path alone, so the query string is free to change and is
+// only ever read by the caches in between.
+function sjExportImgVersion(capturedAt) {
+  const t = Date.parse(capturedAt || '');
+  return isNaN(t) ? '0' : String(Math.floor(t / 1000));
 }
 
 function sjExportCanUseReadyMade(scope) {
@@ -19713,7 +19722,14 @@ async function sjExportCaptureFiles(shots, onStatus, scope) {
     const { slug } = sjExportArtistMeta();
     const rows = await sjReadyMadeFor(slug);
     const prefix = exportScope === 'all' ? 'all-' : '';
-    const have = new Set(rows.filter(r => (r.scope || 'artist') === exportScope).map(r => r.shot_id));
+    // Keyed by shot, valued by the capture stamp: the published file lives at a
+    // stable path that tonight's job overwrites, so without the stamp in the URL
+    // the browser and the CDN can hand back a picture taken before the change
+    // that prompted the re-capture.
+    const have = new Map(
+      rows.filter(r => (r.scope || 'artist') === exportScope)
+          .map(r => [r.shot_id, sjExportImgVersion(r.captured_at)])
+    );
     const ready = shots.filter(s => have.has(s.id));
     if (ready.length) {
       const missed = [];
@@ -19721,7 +19737,9 @@ async function sjExportCaptureFiles(shots, onStatus, scope) {
         const shot = ready[i];
         onStatus?.(`Fetching ${i + 1}/${ready.length}: ${shot.label}…`);
         try {
-          const r = await fetch(`/share-image/${encodeURIComponent(slug)}/${prefix}${shot.id}.png`);
+          const r = await fetch(
+            `/share-image/${encodeURIComponent(slug)}/${prefix}${shot.id}.png?v=${have.get(shot.id)}`
+          );
           if (!r.ok) throw new Error(String(r.status));
           files.push({ path: `${shot.id}.png`, blob: await r.blob() });
         } catch {
