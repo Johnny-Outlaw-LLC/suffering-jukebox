@@ -14,6 +14,7 @@ export type ShareImage = {
   slug: string;
   shot_id: string;
   format: "stage" | "reel" | "og";
+  scope: "artist" | "all";
   b2_key: string;
   width: number | null;
   height: number | null;
@@ -28,7 +29,10 @@ export const SHOT_LABELS: Record<string, string> = {
   "byyear-collapsed": "By Year",
   "byyear-expanded": "By Year, tracks open",
   "timeline-collapsed": "Timeline",
+  "timeline-expanded": "Timeline, tracks open",
   "byviews-collapsed": "By Views",
+  "byviews-expanded": "By Views, tracks open",
+  albumlist: "Albums List",
   alltracks: "All Tracks",
 };
 
@@ -37,6 +41,9 @@ export const SHOT_ORDER = [
   "byviews-collapsed",
   "timeline-collapsed",
   "byyear-expanded",
+  "byviews-expanded",
+  "timeline-expanded",
+  "albumlist",
   "alltracks",
 ];
 
@@ -65,16 +72,16 @@ async function sb<T>(path: string, revalidate = 900): Promise<T[]> {
 /** Every generated image for one artist. */
 export async function getShareImages(slug: string): Promise<ShareImage[]> {
   return sb<ShareImage>(
-    `/share_images?slug=eq.${encodeURIComponent(slug)}` +
-      `&select=slug,shot_id,format,b2_key,width,height,bytes,album_count,track_count,captured_at`,
+    `/share_images?slug=eq.${encodeURIComponent(slug)}&scope=eq.artist` +
+      `&select=slug,shot_id,format,scope,b2_key,width,height,bytes,album_count,track_count,captured_at`,
   );
 }
 
 /** The 1200x630 card for an artist, or null if tonight's job has not made one. */
 export async function getOgImage(slug: string): Promise<ShareImage | null> {
   const rows = await sb<ShareImage>(
-    `/share_images?slug=eq.${encodeURIComponent(slug)}&format=eq.og` +
-      `&select=slug,shot_id,format,b2_key,width,height,bytes,album_count,track_count,captured_at&limit=1`,
+    `/share_images?slug=eq.${encodeURIComponent(slug)}&format=eq.og&scope=eq.artist` +
+      `&select=slug,shot_id,format,scope,b2_key,width,height,bytes,album_count,track_count,captured_at&limit=1`,
   );
   return rows[0] || null;
 }
@@ -82,7 +89,7 @@ export async function getOgImage(slug: string): Promise<ShareImage | null> {
 /** Slugs that have at least one generated image — what /share pages exist. */
 export async function listSharedSlugs(): Promise<string[]> {
   const rows = await sb<{ slug: string }>(
-    `/share_images?format=eq.og&select=slug&order=slug.asc&limit=1000`,
+    `/share_images?format=eq.og&scope=eq.artist&select=slug&order=slug.asc&limit=1000`,
     3600,
   );
   return [...new Set(rows.map((r) => r.slug))];

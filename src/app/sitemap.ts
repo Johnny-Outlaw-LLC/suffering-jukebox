@@ -70,7 +70,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const shotsBySlug = new Map<string, ShareImage[]>();
   try {
     const r = await fetch(
-      `${REST}/share_images?format=eq.stage&select=slug,b2_key,captured_at&order=slug.asc&limit=2000`,
+      `${REST}/share_images?format=eq.stage&scope=eq.artist&select=slug,b2_key,captured_at&order=slug.asc&limit=2000`,
       {
         headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, "Accept-Profile": "jukebox" },
         next: { revalidate: 3600 },

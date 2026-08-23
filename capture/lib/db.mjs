@@ -40,7 +40,7 @@ export async function listArtists() {
 /** Upsert one manifest row on the (slug, shot_id, format) key. */
 export async function recordShareImage(row) {
   const res = await fetch(
-    `${REST}/share_images?on_conflict=slug,shot_id,format`,
+    `${REST}/share_images?on_conflict=slug,shot_id,format,scope`,
     {
       method: "POST",
       headers: headers(serviceKey(), {

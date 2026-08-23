@@ -37,11 +37,17 @@ const VIEWPORT_MAX_W = 5200;
 const VIEWPORT_MIN_H = 900;
 const VIEWPORT_MAX_H = 3200;
 
+// MUST mirror SJ_EXPORT_SHOTS in public/index.html, id for id. The Export modal
+// offers exactly these, and anything missing here makes the modal fall back to
+// rendering in the browser, which is what this job exists to avoid.
 const ALL_SHOTS = [
   { id: "byyear-collapsed", label: "By Year", view: "byyear", expand: false, ogSource: true },
   { id: "byyear-expanded", label: "By Year · Tracks Open", view: "byyear", expand: true },
   { id: "timeline-collapsed", label: "Timeline", view: "timeline", expand: false },
+  { id: "timeline-expanded", label: "Timeline · Tracks Open", view: "timeline", expand: true },
   { id: "byviews-collapsed", label: "By Views", view: "byviews", expand: false },
+  { id: "byviews-expanded", label: "By Views · Tracks Open", view: "byviews", expand: true },
+  { id: "albumlist", label: "Albums List", view: "list", expand: false },
   { id: "alltracks", label: "All Tracks", view: "alltracks", expand: false },
 ];
 
@@ -165,6 +171,10 @@ async function applyState(page, { view, expand }) {
   await page.evaluate(
     ({ view, expand }) => {
       if (typeof setViewMode !== "function") throw new Error("setViewMode missing");
+      // Expanded state carries between shots and leaves the next shot laying
+      // out from stale state, which misaligns the timeline connector lines.
+      // Collapsing first forces every shot to start from a clean baseline.
+      if (typeof collapseAllTracks === "function") collapseAllTracks();
       setViewMode(view);
       if (view !== "alltracks" && view !== "list" && view !== "playlists") {
         if (expand) expandAllTracks();
@@ -232,19 +242,27 @@ async function measureCatalog(page) {
   });
 }
 
+// Mirrors sjExportViewportFor in public/index.html. Albums List is a vertical
+// stack, so its height grows with albums AND tracks rather than with the widest
+// single panel.
 function viewportForShot(catalog, shot) {
   const n = Math.max(1, catalog.albumCount);
   const per = shot.expand ? PX_PER_ALBUM_EXPANDED : PX_PER_ALBUM_COLLAPSED;
-  const width = Math.min(
-    VIEWPORT_MAX_W,
-    Math.max(n <= 2 ? 960 : VIEWPORT_MIN_W, Math.ceil(n * per + 280))
-  );
+  const width =
+    shot.view === "list" || shot.view === "alltracks"
+      ? 1480
+      : Math.min(
+          VIEWPORT_MAX_W,
+          Math.max(n <= 2 ? 960 : VIEWPORT_MIN_W, Math.ceil(n * per + 280))
+        );
   const trackRows = Math.max(catalog.maxTracks || 8, 8);
   const height = shot.expand
     ? Math.min(VIEWPORT_MAX_H, Math.max(VIEWPORT_MIN_H, 460 + trackRows * 48 + 320))
     : shot.view === "alltracks"
       ? 1200
-      : VIEWPORT_BASE.height;
+      : shot.view === "list"
+        ? Math.min(6000, Math.max(1200, 260 + n * 130 + (catalog.trackCount || trackRows) * 40))
+        : VIEWPORT_BASE.height;
   return { width, height };
 }
 
@@ -355,9 +373,13 @@ async function readArtistName(page, fallback) {
 
 const sha = (buf) => createHash("sha256").update(buf).digest("hex").slice(0, 32);
 
-async function publish({ artist, shotId, format, buffer, catalog, opts }) {
-  const file =
+async function publish({ artist, shotId, format, buffer, catalog, opts, scope = "artist" }) {
+  const base =
     format === "og" ? "og.png" : format === "reel" ? `reel-${shotId}.png` : `${shotId}.png`;
+  // The all-artists variant is a different picture of the same page, so it gets
+  // its own filename rather than its own directory - the serving route is two
+  // segments deep and stays that way.
+  const file = scope === "all" ? `all-${base}` : base;
   const key = `${KEY_PREFIX}/${artist.slug}/${file}`;
   // Real pixel dimensions, not the viewport — stage shots are element captures
   // at deviceScaleFactor 2, so the two are never the same number.
@@ -376,6 +398,7 @@ async function publish({ artist, shotId, format, buffer, catalog, opts }) {
     slug: artist.slug,
     shot_id: shotId,
     format,
+    scope,
     b2_key: key,
     width: size.width,
     height: size.height,
@@ -388,11 +411,32 @@ async function publish({ artist, shotId, format, buffer, catalog, opts }) {
   return key;
 }
 
-async function captureArtist(browser, artist, shots, opts) {
+/** Artist ids loaded alongside the primary one, e.g. Purple Mountains on the
+ *  Silver Jews page. Empty for a page that only ever has the one artist. */
+async function readAllScopeIds(page) {
+  return page.evaluate(() => {
+    try {
+      if (typeof sjExportOtherArtists !== "function") return [];
+      if (!sjExportOtherArtists().length) return [];
+      return sjExportScopeArtistIds("all");
+    } catch {
+      return [];
+    }
+  });
+}
+
+async function captureArtist(browser, artist, shots, opts, scope = "artist", allIds = []) {
   const page = await browser.newPage({ viewport: VIEWPORT_BASE, deviceScaleFactor: 2 });
   let published = 0;
+  let scopeIds = [];
   try {
-    await page.goto(`${SITE}/${artist.slug}`, {
+    // The app renders a specific artist set when asked, which is how the
+    // all-artists variant gets captured without any special-casing here.
+    const url =
+      scope === "all"
+        ? `${SITE}/${artist.slug}?sj_export=1&sj_export_scope=all&sj_export_artists=${allIds.join(",")}`
+        : `${SITE}/${artist.slug}`;
+    await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: NAV_TIMEOUT,
     });
@@ -402,7 +446,11 @@ async function captureArtist(browser, artist, shots, opts) {
 
     const artistName = await readArtistName(page, artist.name || artist.slug);
     const catalog = await measureCatalog(page);
-    console.log(`  ${artistName} · ${catalog.albumCount} albums · ${catalog.trackCount} tracks`);
+    if (scope === "artist") scopeIds = await readAllScopeIds(page);
+    console.log(
+      `  ${artistName} · ${catalog.albumCount} albums · ${catalog.trackCount} tracks` +
+        (scope === "all" ? " [all artists]" : "")
+    );
 
     for (const shot of shots) {
       const vp = viewportForShot(catalog, shot);
@@ -440,6 +488,7 @@ async function captureArtist(browser, artist, shots, opts) {
         buffer: stagePng,
         catalog,
         opts,
+        scope,
       });
       published++;
 
@@ -460,10 +509,11 @@ async function captureArtist(browser, artist, shots, opts) {
         buffer: reelPng,
         catalog,
         opts,
+        scope,
       });
       published++;
 
-      if (shot.ogSource) {
+      if (shot.ogSource && scope === "artist") {
         const ogPng = await composeFrame(browser, {
           size: OG,
           html: ogHtml({ artistName, slug: artist.slug, stagePng, catalog }),
@@ -475,6 +525,7 @@ async function captureArtist(browser, artist, shots, opts) {
           buffer: ogPng,
           catalog,
           opts,
+          scope,
         });
         published++;
       }
@@ -483,7 +534,7 @@ async function captureArtist(browser, artist, shots, opts) {
   } finally {
     await page.close();
   }
-  return published;
+  return { published, scopeIds };
 }
 
 // ── run ──────────────────────────────────────────────────────────────────────
@@ -526,7 +577,14 @@ try {
   for (const artist of artists) {
     console.log(`\n-> ${artist.slug}`);
     try {
-      images += await captureArtist(browser, artist, shots, opts);
+      const res = await captureArtist(browser, artist, shots, opts);
+      images += res.published;
+      // Pages that load a second artist (Purple Mountains on the Silver Jews
+      // page) also offer an all-artists export, which is a different picture.
+      if (res.scopeIds.length > 1) {
+        const all = await captureArtist(browser, artist, shots, opts, "all", res.scopeIds);
+        images += all.published;
+      }
       done.push(artist.slug);
       ok++;
     } catch (err) {
