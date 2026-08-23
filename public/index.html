@@ -146,18 +146,24 @@ main > * { min-width: 0; }
 /* ── VIEW TOGGLE ── */
 .view-toggle-row { display: flex; align-items: center; gap: 1rem; }
 .view-seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: visible; }
-.vseg-btn { background: none; border: none; border-right: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: .52rem; letter-spacing: .08em; padding: .35rem .9rem; cursor: pointer; transition: all .15s; text-transform: uppercase; white-space: nowrap; }
+.vseg-btn { background: none; border: none; color: var(--text-muted); font-family: var(--mono); font-size: .52rem; letter-spacing: .08em; padding: .35rem .9rem; cursor: pointer; transition: all .15s; text-transform: uppercase; white-space: nowrap; }
 .vseg-btn.active { background: var(--bg-elevated); color: var(--text); font-weight: 600; }
 .vseg-btn:hover:not(.active) { color: var(--text); }
 /* Each view carries its own chart options in a dropdown hung off its own
    button, so the second row is down to expand/collapse plus the Albums List
    sort. .view-seg cannot clip any more, so the segment's rounded ends and its
    last divider are set on the wrappers instead of the buttons. */
-.vdd-wrap { position: relative; display: flex; }
+.vdd-wrap { position: relative; display: flex; border-right: 1px solid var(--border); }
+.view-seg > .vdd-wrap:last-child { border-right: none; }
 .vdd-wrap > .vseg-btn { flex: 1; }
 .view-seg > .vdd-wrap:first-child .vseg-btn { border-radius: 7px 0 0 7px; }
-.view-seg > .vdd-wrap:last-child  .vseg-btn { border-radius: 0 7px 7px 0; border-right: none; }
-.vseg-caret { font-size: .5rem; opacity: .55; margin-left: 5px; }
+.view-seg > .vdd-wrap:last-child  .vseg-btn { border-radius: 0 7px 7px 0; }
+/* The caret is its own button behind its own divider, so choosing a view never
+   costs you a menu you did not ask for. */
+.vseg-caret-btn { background: none; border: none; border-left: 1px solid var(--border); color: var(--text-muted);
+  font-family: var(--mono); font-size: .5rem; padding: 0 .5rem; cursor: pointer; display: flex; align-items: center; transition: all .15s; }
+.vseg-caret-btn:hover { color: var(--accent); }
+.vdd-wrap.on .vseg-btn, .vdd-wrap.on .vseg-caret-btn { background: var(--bg-elevated); color: var(--text); }
 .vdd-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 4996;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
   min-width: 200px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,.65);
@@ -173,6 +179,9 @@ main > * { min-width: 0; }
 .vdd-item.on .vdd-tick { color: var(--accent); }
 .ctrl-row-sub { padding-top: .55rem !important; }
 .ctrl-row-meta { font-family: var(--mono); font-size: .46rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+/* The sort buttons share a row with expand/collapse, so they match those
+   rather than the smaller sort buttons used inside section headers. */
+.ctrl-row-sub .sort-btn { font-size: .5rem; padding: .26rem .58rem; border-radius: 5px; }
 .sj-sharehub-btn { display: inline-flex; align-items: center; gap: 6px; }
 .sj-sharehub-btn .sjhub-word { display: none; }
 @media (min-width: 641px) { .sj-sharehub-btn .sjhub-word { display: inline; } }
@@ -679,7 +688,7 @@ body:not(.light) .tt-num { color: var(--text); }
   /* View buttons: fill width, no icons on mobile */
   .view-seg { flex-shrink: 0; gap: 0; width: 100%; }
   .vseg-btn { font-size: .5rem; padding: .2rem .3rem; white-space: nowrap; flex: 1; text-align: center; justify-content: center; }
-  .vseg-caret { margin-left: 3px; }
+  .vseg-caret-btn { padding: 0 .3rem; }
   /* On mobile: wrap expand/collapse/views buttons to a second row. overflow
      has to go back to visible or the view dropdowns get clipped. */
   .view-toggle-row { flex-wrap: wrap; overflow: visible; }
@@ -1874,8 +1883,11 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
   #view-controls-header .ctrl-group,
   #lwytb-header .ctrl-group { height:100%; box-sizing:border-box; }
   #view-controls-header .vseg-btn,
+  #view-controls-header .vseg-caret-btn,
   #view-controls-header .sj-export-btn,
+  #view-controls-header .ctrl-row-sub .sort-btn,
   #view-controls-header .expand-collapse-btn { min-height:40px; box-sizing:border-box; }
+  #view-controls-header .ctrl-row-sub .sort-btn { display:inline-flex; align-items:center; padding:.5rem .8rem; }
   #lwytb-header .ctrl-btn { min-height:40px; box-sizing:border-box; }
   #view-controls-header .vseg-btn { display:inline-flex; align-items:center; padding:.5rem .9rem; }
   #view-controls-header .sj-export-btn { padding:.5rem .7rem; }
@@ -13944,16 +13956,15 @@ function updateViewControlsHeader() {
 }
 
 // ── View dropdowns ──────────────────────────────────────────────────
-// Each view button owns the chart options for that view. Clicking one switches
-// to the view straight away (the common move stays a single click) and drops
-// the menu open underneath it. Which menu is open is held here rather than in
-// the DOM, because setViewMode() re-renders the whole header out from under it.
+// Each view button owns the chart options for that view, behind its own caret
+// so that switching view and changing what the bars measure are two separate
+// clicks. Which menu is open is held here rather than in the DOM, because
+// setViewMode() re-renders the whole header out from under it.
 let _viewDDOpen = null;
 
 function toggleViewDD(e, id) {
   if (e) { e.stopPropagation(); e.preventDefault(); }
   _viewDDOpen = _viewDDOpen === id ? null : id;
-  if (viewMode !== id) { setViewMode(id); return; }   // render() repaints the header
   syncViewDD();
 }
 
@@ -14026,8 +14037,9 @@ function renderViewToggle() {
           <div class="vdd-sec">Chart bars show</div>
           ${_metricOpts.map(o => `<button type="button" class="vdd-item${barChartMode === o.val ? ' on' : ''}" onclick="pickViewMetric('${v.id}','${o.val}')" title="${o.tip}"><span class="vdd-tick">✓</span>${o.lbl}</button>`).join('')}
         </div>` : '';
-    return `<div class="vdd-wrap">
-        <button class="vseg-btn ${on ? 'active' : ''}" onclick="${v.menu ? `toggleViewDD(event,'${v.id}')` : `setViewMode('${v.id}')`}" title="${v.tip}">${v.lbl}${v.menu ? '<span class="vseg-caret">▾</span>' : ''}</button>${menu}
+    const caret = v.menu ? `<button class="vseg-caret-btn" onclick="toggleViewDD(event,'${v.id}')" title="Choose what the chart bars show" aria-label="Chart options for ${v.lbl}" aria-haspopup="true">▾</button>` : '';
+    return `<div class="vdd-wrap${on ? ' on' : ''}">
+        <button class="vseg-btn ${on ? 'active' : ''}" onclick="setViewMode('${v.id}')" title="${v.tip}">${v.lbl}</button>${caret}${menu}
       </div>`;
   };
   const hide = isCtrlGroupHidden('jukebox');
@@ -16162,6 +16174,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
+    'The little arrow on each view button is now a separate control with a divider before it, so pressing By Year or Timeline just changes the view. Press the arrow when you want to change what the bars measure.',
+    'The All Tracks sort buttons are the same size as the rest of the buttons in the panel.',
+    'The privacy policy is up to date: live reactions are hearts and heartbreaks, including ones left on a line of lyrics, and personal storage allowances are listed properly. The privacy, terms, copyright and artist upload pages now say plainly that uploads, artist licensing and copyright intake are about mobile background play only. On a computer, and on a phone with the screen on, the jukebox plays public YouTube videos.',
     'The Jukebox Controls panel is tidier. Each view button - By Year, Timeline, By Views, Albums List - now opens a small menu of what the chart bars should show, so the row of metric buttons underneath is gone. The connector lines went with it. Expand All Tracks and Collapse All Tracks stay where they were, and the Albums List sort buttons have moved down to join them.',
     'Export Image and Share Jukebox are now one Share button, which asks whether you want to export images or share a link.',
     'All Tracks now has sort buttons on its second row: Chronological, YouTube Views, My Plays and Total Jukebox Plays. The counts always come highest first, and the column headers still work as before.',
