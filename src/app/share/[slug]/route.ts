@@ -101,7 +101,7 @@ export async function GET(
   const title = `${name} album charts, updated ${fmtDate(updated)} | ${SITE_NAME}`;
   const desc =
     `Charts of every ${name} album ranked by YouTube plays` +
-    (albums ? ` — ${albums} album${albums === 1 ? "" : "s"}` : "") +
+    (albums ? ` - ${albums} album${albums === 1 ? "" : "s"}` : "") +
     (trackTotal ? `, ${trackTotal} tracks` : "") +
     `. Regenerated nightly. Press play on any track at ${SITE_NAME}.`;
 
@@ -117,12 +117,12 @@ export async function GET(
       if (!stage) return "";
       const label = SHOT_LABELS[shotId] || shotId;
       const blurb = SHOT_BLURB[shotId]?.(name) || `The ${name} jukebox, ${label} view.`;
-      const alt = `${name} ${label} chart — every album ranked by YouTube plays on ${SITE_NAME}`;
+      const alt = `${name} ${label} chart - every album ranked by YouTube plays on ${SITE_NAME}`;
       const reelLink = reel
         ? `<a class="dl" href="${esc(shareImageUrl(reel))}" download>Story / reel version (1080&times;1920)</a>`
         : "";
       return `<section class="shot" id="${esc(shotId)}">
-  <h2>${esc(name)} &mdash; ${esc(label)}</h2>
+  <h2>${esc(name)} - ${esc(label)}</h2>
   <p class="blurb">${esc(blurb)}</p>
   <a class="shot-img" href="${esc(shareImageUrl(stage))}" target="_blank" rel="noopener">
     <img src="${esc(shareImageUrl(stage))}" alt="${esc(alt)}" loading="lazy" decoding="async"
@@ -161,7 +161,7 @@ export async function GET(
             return {
               "@type": "ImageObject",
               contentUrl: shareImageUrl(stage),
-              name: `${name} — ${label}`,
+              name: `${name} - ${label}`,
               description: SHOT_BLURB[shotId]?.(name) || label,
               ...(stage.width ? { width: stage.width } : {}),
               ...(stage.height ? { height: stage.height } : {}),
