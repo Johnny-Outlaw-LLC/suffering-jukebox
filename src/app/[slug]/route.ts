@@ -6,6 +6,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { getOgImage, shareImageUrl } from "@/lib/share-images";
+import { getPublicMyJukebox } from "@/lib/my-jukebox";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,38 @@ export async function GET(
   const slug = (raw || "").toLowerCase();
   if (!/^[a-z0-9][a-z0-9-]{1,79}$/.test(slug)) {
     return NextResponse.redirect(home, 302);
+  }
+
+  // Public My Jukeboxes own their vanity slugs.  They deliberately resolve
+  // before artist slugs so a person who claimed /outlaw has a stable address
+  // even if a later community artist happens to use the same string.
+  try {
+    const publicJukebox = await getPublicMyJukebox(slug);
+    if (publicJukebox) {
+      const title = `${publicJukebox.name} | ${SITE_NAME}`;
+      const desc = publicJukebox.description || `Listen to ${publicJukebox.name} on Suffering Jukebox.`;
+      const pageUrl = `${SITE_URL}/${publicJukebox.slug}`;
+      let html = readFileSync(join(process.cwd(), "public", "index.html"), "utf-8");
+      html = html
+        .replace(/<title>[^<]*<\/title>/, `<title>${esc(title)}</title>`)
+        .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${esc(desc)}">`)
+        .replace(/<meta property="og:url" content="[^"]*">/, `<meta property="og:url" content="${esc(pageUrl)}">`)
+        .replace(/<meta property="og:title" content="[^"]*">/, `<meta property="og:title" content="${esc(title)}">`)
+        .replace(/<meta property="og:description" content="[^"]*">/, `<meta property="og:description" content="${esc(desc)}">`)
+        .replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${esc(title)}">`)
+        .replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${esc(desc)}">`);
+      const inject =
+        `<link rel="canonical" href="${esc(pageUrl)}">\n` +
+        `<script>window.__PUBLIC_JUKEBOX__=${JSON.stringify({ slug: publicJukebox.slug })}</script>\n`;
+      html = html.replace("</head>", `${inject}</head>`);
+      return new NextResponse(html, {
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+      });
+    }
+  } catch (error) {
+    // Do not let a temporary public-library query problem take artist URLs
+    // down with it; the normal artist renderer below remains the fallback.
+    console.error("[public-jukebox:slug]", error);
   }
 
   const [artist] = await sb(

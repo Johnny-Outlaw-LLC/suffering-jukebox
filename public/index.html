@@ -2895,7 +2895,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
           <button type="button" class="user-menu-item" id="user-menu-bgunlock" onclick="userMenuAction('bgunlock')">Audio storage</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
-          <button type="button" class="user-menu-item" id="user-menu-jukebox" onclick="userMenuAction('jukebox')">Interactive Jukebox</button>
+          <button type="button" class="user-menu-item" id="user-menu-jukebox" onclick="userMenuAction('jukebox')">My Jukebox &amp; Live Share</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-playback" onclick="userMenuAction('playback')">Playback preferences</button>
@@ -2909,6 +2909,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
         </div>
       </div>
       <div class="hdr-icon-btns">
+        <button type="button" class="hdr-search-btn hdr-icon-btn-labeled" onclick="openPublicJukeboxExplorer()" title="Explore public jukeboxes" aria-label="Explore public jukeboxes">♬ Explore</button>
         <button type="button" class="hdr-search-btn hdr-icon-btn-labeled" onclick="openSearchModal('')" title="Search songs or lyrics" aria-label="Search songs or lyrics">🔍 Search</button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark"><span id="themeIcon">☀</span></button>
         <button type="button" class="hdr-search-btn" onclick="openFaq()" title="FAQ &amp; how-to guide" aria-label="FAQ and how-to guide">?</button>
@@ -3733,11 +3734,31 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
                padding:.25rem .5rem; margin:0 .3rem .3rem 0; border:1px solid var(--border); border-radius:999px; }
   .sjj-guest.banned { opacity:.5; text-decoration:line-through; }
   .sjj-empty { padding:1.2rem; text-align:center; font-size:.78rem; color:var(--text-muted); }
+  .mj-tabs { display:flex; gap:.4rem; border-bottom:1px solid var(--border); padding-bottom:.65rem; margin-bottom:.85rem; }
+  .mj-tabs button { border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-muted); border-radius:999px; padding:.34rem .65rem; font:inherit; font-size:.68rem; cursor:pointer; }
+  .mj-tabs button.on { background:var(--accent); color:#111; border-color:var(--accent); font-weight:700; }
+  .mj-search { display:flex; gap:.45rem; margin:.5rem 0 .75rem; }
+  .mj-search input, .mj-publish input, .mj-publish textarea { flex:1; min-width:0; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text); border-radius:6px; padding:.5rem .6rem; font:inherit; font-size:.75rem; }
+  .mj-publish textarea { min-height:3.6rem; resize:vertical; }
+  .mj-result, .mj-library-row, .mj-public-card { display:flex; gap:.65rem; align-items:center; padding:.55rem 0; border-bottom:1px solid var(--border); }
+  .mj-result img { width:64px; height:40px; object-fit:cover; border-radius:4px; background:#222; }
+  .mj-body { flex:1; min-width:0; } .mj-title { font-size:.78rem; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mj-sub { font-size:.61rem; color:var(--text-muted); margin-top:.14rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mj-library-row .mj-source { color:var(--accent); font-size:.55rem; text-transform:uppercase; letter-spacing:.08em; }
+  .mj-public-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:.65rem; }
+  .mj-public-card { display:block; border:1px solid var(--border); border-radius:8px; padding:.75rem; cursor:pointer; }
+  .mj-public-card:hover { border-color:var(--accent); }
+  .mj-public-card .mj-title { white-space:normal; }
+  .sjj-float-qr { position:fixed; z-index:10020; width:220px; min-width:140px; min-height:170px; resize:both; overflow:auto; background:#101010; color:#fff; border:2px solid var(--accent); border-radius:10px; box-shadow:0 14px 42px #000b; }
+  .sjj-float-hd { display:flex; justify-content:space-between; align-items:center; cursor:move; user-select:none; padding:.42rem .55rem; font-size:.62rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+  .sjj-float-qr img { display:block; width:calc(100% - 1rem); aspect-ratio:1; object-fit:contain; margin:0 .5rem .2rem; background:#fff; border-radius:5px; }
+  .sjj-float-url { font-size:.48rem; color:#bbb; text-align:center; padding:0 .45rem .5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @media (max-width:640px) { .mj-public-grid { grid-template-columns:1fr; } .sjj-float-qr { width:170px; } }
 </style>
 <div class="pl-modal-overlay" id="sjjOverlay" onclick="if(event.target===this)closeJukeboxHost()">
   <div class="pl-modal">
     <div class="pl-modal-header">
-      <span class="pl-modal-title">&#127903; Interactive Jukebox</span>
+      <span class="pl-modal-title">&#127903; My Jukebox Live Share</span>
       <button class="modal-close" onclick="closeJukeboxHost()">&#10005;</button>
     </div>
     <div class="pl-modal-body" id="sjj-body">
@@ -3746,6 +3767,22 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closeJukeboxHost()">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- MY JUKEBOX LIBRARY + PUBLIC EXPLORER -->
+<div class="pl-modal-overlay" id="myJukeboxOverlay" onclick="if(event.target===this)closeMyJukebox()">
+  <div class="pl-modal" style="max-width:50rem">
+    <div class="pl-modal-header"><span class="pl-modal-title">♫ My Jukebox</span><button class="modal-close" onclick="closeMyJukebox()">&#10005;</button></div>
+    <div class="pl-modal-body" id="my-jukebox-body"><div class="sjj-empty">Loading your music&hellip;</div></div>
+    <div class="pl-modal-footer"><button class="pl-btn ghost" onclick="closeMyJukebox()">Close</button></div>
+  </div>
+</div>
+<div class="pl-modal-overlay" id="publicJukeboxOverlay" onclick="if(event.target===this)closePublicJukebox()">
+  <div class="pl-modal" style="max-width:50rem">
+    <div class="pl-modal-header"><span class="pl-modal-title" id="public-jukebox-title">♫ Public Jukeboxes</span><button class="modal-close" onclick="closePublicJukebox()">&#10005;</button></div>
+    <div class="pl-modal-body" id="public-jukebox-body"><div class="sjj-empty">Loading public jukeboxes&hellip;</div></div>
+    <div class="pl-modal-footer"><button class="pl-btn ghost" onclick="closePublicJukebox()">Close</button></div>
   </div>
 </div>
 
@@ -10810,6 +10847,20 @@ function sjmRenderRoot() {
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
       (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
     '</button>' +
+    (googleUser && track
+      ? '<div class="sjm-sep"></div>' +
+        '<div class="sjm-empty" style="padding:6px 8px 3px">Send to My Jukebox</div>' +
+        (navArtist && navArtist.id
+          ? '<button class="sjm-item" onclick="sjmSendToMyJukebox(\'artist\',\'' + navArtist.id + '\',\'' + escHtml(navArtist.name || 'this artist').replace(/'/g, "\\'") + '\')">' +
+              '<span class="sjm-ic">＋</span><span class="sjm-label">Add all ' + escHtml(navArtist.name || 'artist') + ' songs to My Jukebox</span></button>'
+          : '') +
+        (track.album_id
+          ? '<button class="sjm-item" onclick="sjmSendToMyJukebox(\'album\',\'' + track.album_id + '\',\'' + escHtml(_sjmM.album || 'this album').replace(/'/g, "\\'") + '\')">' +
+              '<span class="sjm-ic">＋</span><span class="sjm-label">Add ' + escHtml(_sjmM.album || 'this album') + ' to My Jukebox</span></button>'
+          : '') +
+        '<button class="sjm-item" onclick="sjmSendToMyJukebox(\'track\',\'' + tid + '\',\'' + escHtml(_sjmTitle).replace(/'/g, "\\'") + '\')">' +
+          '<span class="sjm-ic">＋</span><span class="sjm-label">Add ' + escHtml(_sjmTitle) + ' to My Jukebox</span></button>'
+      : '') +
     (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">View Artist Jukebox</span></button>'
@@ -12679,6 +12730,7 @@ function renderLandingHomeHTML(esc) {
     <div>
       <div class="home-hero-title-row">
         <div class="home-hero-title">My Jukebox</div>
+        ${googleUser ? `<button type="button" class="home-action-btn" onclick="openMyJukebox()">Manage My Music</button>` : ''}
         <span class="home-hero-info-wrap" onclick="event.stopPropagation();this.classList.toggle('open')">
           <button type="button" class="home-hero-info-btn" aria-label="About My Jukebox">ⓘ</button>
           <span class="home-hero-info-tip">Artists you have added, artists with your background-play audio, and your playlists. Explore Artists is the full community catalogue.</span>
@@ -12691,6 +12743,7 @@ function renderLandingHomeHTML(esc) {
         <button type="button" class="home-action-btn primary" onclick="landingShuffleAll()">Shuffle All</button>
         <button type="button" class="home-action-btn" onclick="landingShuffleFavorites()">Shuffle Favorites</button>
         <button type="button" class="home-action-btn" onclick="setLandingTab('explore')">Explore Artists →</button>
+        <button type="button" class="home-action-btn" onclick="openPublicJukeboxExplorer()">Explore Public Jukeboxes</button>
         ${googleUser ? `<button type="button" class="home-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : `<button type="button" class="home-action-btn" onclick="handleAuthClick()">Sign in</button>`}
       </div>
     </div>
@@ -22488,6 +22541,8 @@ function sjjRender() {
     +    '<div style="margin-top:.6rem;display:flex;gap:.4rem;flex-wrap:wrap">'
     +      '<button class="pl-btn" onclick="sjjToggleLive()">' + (j.isLive ? 'Take off air' : 'Put on air') + '</button>'
     +      '<button class="pl-btn ghost" onclick="sjjCopyLink()">Copy link</button>'
+    +      '<button class="pl-btn ghost" onclick="sjjToggleFloatingQr()">Show Join QR</button>'
+    +      '<button class="pl-btn ghost" onclick="openMyJukebox()">Manage My Music</button>'
     +      '<button class="pl-btn ghost" onclick="sjjRename()">Rename</button>'
     +    '</div>'
     +  '</div>'
@@ -22662,6 +22717,233 @@ async function sjjSyncPlayback() {
     // A failed sync just means the next poll tries again five seconds later.
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// MY JUKEBOX — persistent personal library, separate from the temporary
+// live-room queue above.  Browsing either library never closes or rebuilds
+// the singleton YouTube player, so a switch is seamless while music plays.
+// ═══════════════════════════════════════════════════════════════════════
+let _mjState = null;
+let _mjSearchResults = [];
+let _publicJukebox = null;
+
+async function mjHeaders() {
+  const tok = await _sjjToken();
+  if (!tok) throw new Error('Sign in to use My Jukebox.');
+  return { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' };
+}
+
+async function mjRequest(path, method, body) {
+  const res = await fetch(path, {
+    method: method || 'GET',
+    headers: method === 'GET' ? { Authorization: 'Bearer ' + (await _sjjToken() || '') } : await mjHeaders(),
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok) throw new Error(data.error || 'Request failed.');
+  return data;
+}
+
+async function openMyJukebox() {
+  if (!googleUser) { alert('Sign in to build your My Jukebox.'); return; }
+  document.getElementById('myJukeboxOverlay')?.classList.add('open');
+  const body = document.getElementById('my-jukebox-body');
+  if (body) body.innerHTML = '<div class="sjj-empty">Loading your music…</div>';
+  try {
+    _mjState = await mjRequest('/api/my-jukebox', 'GET');
+    mjRender();
+  } catch (e) {
+    if (body) body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>';
+  }
+}
+
+function closeMyJukebox() {
+  document.getElementById('myJukeboxOverlay')?.classList.remove('open');
+}
+
+function mjRender() {
+  const el = document.getElementById('my-jukebox-body');
+  if (!el || !_mjState) return;
+  const j = _mjState.jukebox || {};
+  const items = _mjState.items || [];
+  const groups = new Map();
+  const albums = new Map();
+  items.forEach(i => groups.set(i.artistName || 'Unknown artist', (groups.get(i.artistName || 'Unknown artist') || 0) + 1));
+  items.forEach(i => { if (i.albumName) albums.set(i.albumName, (albums.get(i.albumName) || 0) + 1); });
+  const lib = items.length
+    ? items.map(i => '<div class="mj-library-row">' +
+        '<div class="mj-body"><div class="mj-title">' + escHtml(i.title) + '</div>' +
+        '<div class="mj-sub">' + escHtml([i.artistName, i.albumName].filter(Boolean).join(' · ') || 'Personal import') +
+        (i.youtubeViewCount != null ? ' · ' + fmtV(i.youtubeViewCount) + ' YT views at import' : '') + '</div>' +
+        '<div class="mj-source">' + escHtml(i.source) + (i.lyrics ? ' · lyrics saved' : ' · lyrics unavailable') + '</div></div>' +
+        '<button class="sjj-mini" title="Play" onclick="mjPlayItem(\'' + i.id + '\')">▶</button>' +
+        '<button class="sjj-mini" title="Remove from My Jukebox" onclick="mjRemove(\'' + i.id + '\')">✕</button></div>').join('')
+    : '<div class="sjj-empty">Your personal jukebox is empty. Add a song from YouTube, or use Send to My Jukebox on any song, album, or artist.</div>';
+  const search = _mjSearchResults.length
+    ? '<div class="sjj-h">Choose songs to add</div><div style="display:flex;justify-content:flex-end;margin:-.2rem 0 .3rem"><button class="pl-btn" onclick="mjAddSelected()">Add selected</button></div>' +
+      _mjSearchResults.map((r, n) => '<label class="mj-result"><input type="checkbox" class="mj-pick" data-mj-result="' + n + '" checked>' +
+        '<img alt="" src="' + escHtml(r.thumbnail || ('https://i.ytimg.com/vi/' + r.videoId + '/mqdefault.jpg')) + '"><span class="mj-body"><span class="mj-title">' + escHtml(r.title) + '</span><span class="mj-sub">' + escHtml(r.channelTitle || '') + (r.views != null ? ' · ' + fmtV(r.views) + ' views' : '') + '</span></span></label>').join('')
+    : '';
+  el.innerHTML =
+    '<div class="mj-tabs"><button class="on" type="button">My Music (' + items.length + ')</button><button type="button" onclick="openPublicJukeboxExplorer()">Explore Public Jukeboxes</button></div>' +
+    '<div class="sjj-h">Add song to My Jukebox</div><div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube for a song" onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Search</button></div>' +
+    search +
+    '<div class="sjj-h">My library</div>' + lib +
+    '<div class="sjj-h">Quick removal</div>' +
+    (groups.size ? Array.from(groups.entries()).map(([artist, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveArtist(\'' + escHtml(artist).replace(/'/g, "\\'") + '\')">Remove all ' + escHtml(artist) + ' (' + count + ')</button>').join('') : '') +
+    (albums.size ? '<div class="mj-sub" style="margin:.35rem 0">Albums</div>' + Array.from(albums.entries()).map(([album, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveAlbum(\'' + escHtml(album).replace(/'/g, "\\'") + '\')">Remove ' + escHtml(album) + ' (' + count + ')</button>').join('') : '') +
+    '<div class="sjj-h">Public Jukebox</div><div class="mj-publish">' +
+    '<div class="mj-sub" style="margin-bottom:.5rem">Your library is private until you publish it. Live QR sharing remains a separate, revocable room.</div>' +
+    '<div class="mj-search"><span style="padding:.45rem 0;color:var(--text-muted);font-size:.72rem">sufferingjukebox.stream/</span><input id="mj-public-slug" maxlength="60" value="' + escHtml(j.publicSlug || '') + '" placeholder="your-name"></div>' +
+    '<textarea id="mj-public-description" maxlength="280" placeholder="Describe your jukebox (optional)">' + escHtml(j.description || '') + '</textarea>' +
+    '<div style="display:flex;gap:.45rem;margin-top:.55rem;flex-wrap:wrap"><button class="pl-btn" onclick="mjPublish(true)">' + (j.isPublic ? 'Update public page' : 'Make My Jukebox public') + '</button>' +
+    (j.isPublic ? '<button class="pl-btn ghost" onclick="mjPublish(false)">Unpublish</button><a class="pl-btn ghost" href="/' + encodeURIComponent(j.publicSlug) + '" target="_blank" rel="noopener">Open public page</a>' : '') +
+    '<button class="pl-btn ghost" onclick="mjSpotifyInfo()">Connect Spotify</button></div></div>';
+}
+
+async function mjSearchYouTube() {
+  const input = document.getElementById('mj-search-input');
+  const query = (input?.value || '').trim();
+  if (query.length < 2) { showToast('Type at least two characters to search YouTube.'); return; }
+  const el = document.getElementById('my-jukebox-body');
+  try {
+    _mjSearchResults = [];
+    if (el) el.querySelector('.mj-search')?.insertAdjacentHTML('afterend', '<div id="mj-searching" class="sjj-empty">Searching YouTube…</div>');
+    const data = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(query), 'GET');
+    _mjSearchResults = data.results || [];
+    mjRender();
+  } catch (e) { showToast(e.message || 'Could not search YouTube.'); }
+}
+
+async function mjAddSelected() {
+  const checked = Array.from(document.querySelectorAll('.mj-pick:checked'));
+  if (!checked.length) { showToast('Choose at least one song.'); return; }
+  let added = 0;
+  for (const input of checked) {
+    const row = _mjSearchResults[Number(input.dataset.mjResult)];
+    if (!row) continue;
+    try {
+      const data = await mjRequest('/api/my-jukebox', 'POST', { action: 'add_youtube', videoId: row.videoId, artistName: row.channelTitle });
+      if (!data.duplicate) added++;
+      _mjState.items = data.items || _mjState.items;
+    } catch (e) { showToast(e.message || 'One song could not be added.'); }
+  }
+  _mjSearchResults = [];
+  mjRender();
+  showToast(added ? added + ' song' + (added === 1 ? '' : 's') + ' added to My Jukebox.' : 'Those songs are already in My Jukebox.');
+}
+
+async function mjPost(body) {
+  const data = await mjRequest('/api/my-jukebox', 'POST', body);
+  if (data.items) _mjState.items = data.items;
+  if (data.jukebox) _mjState.jukebox = data.jukebox;
+  return data;
+}
+
+async function mjRemove(itemId) {
+  if (!confirm('Remove this song from My Jukebox?')) return;
+  try { const data = await mjPost({ action: 'remove', itemId }); mjRender(); showToast((data.removed || 0) + ' song removed.'); } catch (e) { showToast(e.message); }
+}
+async function mjRemoveArtist(artistName) {
+  const n = (_mjState.items || []).filter(i => (i.artistName || 'Unknown artist').toLowerCase() === artistName.toLowerCase()).length;
+  if (!confirm('Remove all ' + n + ' songs by ' + artistName + ' from My Jukebox?')) return;
+  try { const data = await mjPost({ action: 'remove_artist', artistName }); mjRender(); showToast((data.removed || 0) + ' songs removed.'); } catch (e) { showToast(e.message); }
+}
+async function mjRemoveAlbum(albumName) {
+  const n = (_mjState.items || []).filter(i => (i.albumName || '').toLowerCase() === albumName.toLowerCase()).length;
+  if (!confirm('Remove all ' + n + ' songs from ' + albumName + ' in My Jukebox?')) return;
+  try { const data = await mjPost({ action: 'remove_album', albumName }); mjRender(); showToast((data.removed || 0) + ' songs removed.'); } catch (e) { showToast(e.message); }
+}
+async function mjPublish(isPublic) {
+  const slug = document.getElementById('mj-public-slug')?.value || '';
+  const description = document.getElementById('mj-public-description')?.value || '';
+  if (isPublic && !slug.trim()) { showToast('Choose a public name first.'); return; }
+  try { await mjPost({ action: 'publish', isPublic, slug, description }); mjRender(); showToast(isPublic ? 'Your public jukebox is live.' : 'Your jukebox is private again.'); } catch (e) { showToast(e.message); }
+}
+function mjSpotifyInfo() { showToast('Spotify linking needs the app’s Spotify Client ID and secret before it can be activated. Your My Jukebox is ready for it.'); }
+
+async function sjmSendToMyJukebox(scope, id, label) {
+  if (!googleUser) { showToast('Sign in to add to My Jukebox.'); return; }
+  try {
+    const data = await mjRequest('/api/my-jukebox', 'POST', { action: 'add_catalog', scope, id });
+    sjmClose();
+    showToast((data.added || 0) ? 'Added ' + (data.added || 0) + ' song' + (data.added === 1 ? '' : 's') + ' from ' + label + ' to My Jukebox.' : label + ' is already in My Jukebox.');
+  } catch (e) { showToast(e.message || 'Could not add to My Jukebox.'); }
+}
+
+async function mjPlayItem(itemId, publicSlug) {
+  const source = publicSlug ? (_publicJukebox?.items || []) : (_mjState?.items || []);
+  const item = source.find(i => i.id === itemId);
+  if (!item) return;
+  try {
+    let videoId = item.youtubeVideoId;
+    if (!videoId && item.catalogTrackId) {
+      const resolved = await resolvePlaylistTracks([item.catalogTrackId]);
+      videoId = resolved[item.catalogTrackId]?.videoId;
+    }
+    if (!videoId) throw new Error('No playable YouTube video is available for this song.');
+    if (!ytPlayerEl) openYTPlayer(videoId, item.title, item.catalogTrackId || null);
+    else ytPlayNow(videoId, item.title, item.catalogTrackId || null);
+    if (publicSlug) fetch('/api/my-jukebox/public/' + encodeURIComponent(publicSlug), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ itemId }) }).catch(() => {});
+    else mjRequest('/api/my-jukebox', 'POST', { action:'play', itemId }).catch(() => {});
+  } catch (e) { showToast(e.message || 'Could not play that song.'); }
+}
+
+async function openPublicJukeboxExplorer() {
+  closeMyJukebox();
+  const overlay = document.getElementById('publicJukeboxOverlay');
+  const title = document.getElementById('public-jukebox-title');
+  const body = document.getElementById('public-jukebox-body');
+  if (!overlay || !body) return;
+  overlay.classList.add('open'); title.textContent = '♫ Explore Public Jukeboxes'; body.innerHTML = '<div class="sjj-empty">Loading public jukeboxes…</div>';
+  try {
+    const data = await fetch('/api/my-jukebox/explore').then(r => r.json());
+    if (!data.ok) throw new Error(data.error || 'Could not load public jukeboxes.');
+    body.innerHTML = data.jukeboxes?.length
+      ? '<div class="mj-public-grid">' + data.jukeboxes.map(j => '<button type="button" class="mj-public-card" onclick="openPublicJukebox(\'' + escHtml(j.slug).replace(/'/g, "\\'") + '\')"><div class="mj-title">' + escHtml(j.name) + '</div><div class="mj-sub">/' + escHtml(j.slug) + ' · ' + j.trackCount + ' songs</div>' + (j.description ? '<div class="mj-sub" style="white-space:normal;margin-top:.4rem">' + escHtml(j.description) + '</div>' : '') + '</button>').join('') + '</div>'
+      : '<div class="sjj-empty">No public jukeboxes yet. Be the first to publish one.</div>';
+  } catch (e) { body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>'; }
+}
+
+async function openPublicJukebox(slug) {
+  const overlay = document.getElementById('publicJukeboxOverlay');
+  const title = document.getElementById('public-jukebox-title');
+  const body = document.getElementById('public-jukebox-body');
+  if (!overlay || !body) return;
+  overlay.classList.add('open'); body.innerHTML = '<div class="sjj-empty">Loading jukebox…</div>';
+  try {
+    const data = await fetch('/api/my-jukebox/public/' + encodeURIComponent(slug)).then(r => r.json());
+    if (!data.ok) throw new Error(data.error || 'Could not load this jukebox.');
+    _publicJukebox = data.jukebox;
+    title.textContent = '♫ ' + _publicJukebox.name;
+    body.innerHTML = '<div class="mj-sub" style="font-size:.72rem;margin-bottom:.8rem">' + escHtml(_publicJukebox.description || ('Public jukebox · /' + _publicJukebox.slug)) + '</div>' +
+      (_publicJukebox.items.length ? _publicJukebox.items.map(i => '<div class="mj-library-row"><div class="mj-body"><div class="mj-title">' + escHtml(i.title) + '</div><div class="mj-sub">' + escHtml([i.artistName, i.albumName].filter(Boolean).join(' · ')) + '</div></div><button class="sjj-mini" title="Play" onclick="mjPlayItem(\'' + i.id + '\',\'' + escHtml(_publicJukebox.slug).replace(/'/g, "\\'") + '\')">▶</button></div>').join('') : '<div class="sjj-empty">This jukebox has not added any music yet.</div>');
+  } catch (e) { body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>'; }
+}
+function closePublicJukebox() { document.getElementById('publicJukeboxOverlay')?.classList.remove('open'); }
+
+function sjjToggleFloatingQr() {
+  const old = document.getElementById('sjj-floating-qr');
+  if (old) { old.remove(); return; }
+  const j = _sjjState?.jukebox;
+  if (!j) { showToast('Open your My Jukebox Live Share first.'); return; }
+  const key = 'sj_qr_float_' + j.code;
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch (_) {}
+  const box = document.createElement('div');
+  box.id = 'sjj-floating-qr'; box.className = 'sjj-float-qr';
+  box.style.left = saved.left || '24px'; box.style.top = saved.top || '24px'; if (saved.width) box.style.width = saved.width;
+  box.innerHTML = '<div class="sjj-float-hd"><span>Scan to join</span><button class="sjj-mini" style="width:1.35rem;height:1.35rem" onclick="document.getElementById(\'sjj-floating-qr\')?.remove()">✕</button></div>' +
+    '<img alt="Scan to join ' + escHtml(j.name) + '" src="/api/jukebox/qr?code=' + encodeURIComponent(j.code) + '"><div class="sjj-float-url">' + escHtml(location.origin + '/j/' + j.code) + '</div>';
+  document.body.appendChild(box);
+  const save = () => { try { localStorage.setItem(key, JSON.stringify({ left:box.style.left, top:box.style.top, width:box.style.width })); } catch (_) {} };
+  box.addEventListener('mouseup', save); box.addEventListener('touchend', save, { passive:true });
+  const head = box.querySelector('.sjj-float-hd'); let start = null;
+  head.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; start = { x:e.clientX, y:e.clientY, left:box.offsetLeft, top:box.offsetTop }; head.setPointerCapture(e.pointerId); });
+  head.addEventListener('pointermove', e => { if (!start) return; box.style.left = Math.max(0, start.left + e.clientX - start.x) + 'px'; box.style.top = Math.max(0, start.top + e.clientY - start.y) + 'px'; });
+  head.addEventListener('pointerup', () => { if (start) save(); start = null; });
+}
+
+if (window.__PUBLIC_JUKEBOX__?.slug) setTimeout(() => openPublicJukebox(window.__PUBLIC_JUKEBOX__.slug), 250);
 
 </script>
 </body>

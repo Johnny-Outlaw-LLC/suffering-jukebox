@@ -53,9 +53,16 @@ export type JukeboxRow = {
   name: string;
   is_live: boolean;
   settings: JukeboxSettings;
+  is_public: boolean;
+  public_slug: string | null;
+  description: string | null;
   created_at: string;
+  updated_at: string;
   last_live_at: string | null;
 };
+
+const JUKEBOX_SELECT =
+  "id,owner_email,code,name,is_live,settings,is_public,public_slug,description,created_at,updated_at,last_live_at";
 
 function hydrate(row: any): JukeboxRow {
   return { ...row, settings: normalizeSettings(row.settings) };
@@ -63,7 +70,7 @@ function hydrate(row: any): JukeboxRow {
 
 export async function getJukeboxByCode(sb: ServiceClient, code: string): Promise<JukeboxRow | null> {
   const { data, error } = await T(sb, "jukeboxes")
-    .select("id,owner_email,code,name,is_live,settings,created_at,last_live_at")
+    .select(JUKEBOX_SELECT)
     .ilike("code", code)
     .maybeSingle();
   if (error) throw error;
@@ -72,7 +79,7 @@ export async function getJukeboxByCode(sb: ServiceClient, code: string): Promise
 
 export async function listJukeboxesForOwner(sb: ServiceClient, email: string): Promise<JukeboxRow[]> {
   const { data, error } = await T(sb, "jukeboxes")
-    .select("id,owner_email,code,name,is_live,settings,created_at,last_live_at")
+    .select(JUKEBOX_SELECT)
     .ilike("owner_email", email)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -98,7 +105,7 @@ export async function getOrCreateOwnerJukebox(
     const code = generateCode();
     const { data, error } = await T(sb, "jukeboxes")
       .insert({ owner_email: email, code, name, settings: DEFAULT_SETTINGS })
-      .select("id,owner_email,code,name,is_live,settings,created_at,last_live_at")
+      .select(JUKEBOX_SELECT)
       .single();
     if (!error && data) return hydrate(data);
     // 23505 is unique_violation: the code was taken, so draw another.
@@ -115,7 +122,7 @@ export async function updateJukebox(
   const { data, error } = await T(sb, "jukeboxes")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .select("id,owner_email,code,name,is_live,settings,created_at,last_live_at")
+    .select(JUKEBOX_SELECT)
     .single();
   if (error) throw error;
   return hydrate(data);

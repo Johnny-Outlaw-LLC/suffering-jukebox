@@ -197,6 +197,55 @@ export async function searchYouTubeVideoIds(query: string, maxResults = 10): Pro
   return (json.items ?? []).map((it) => it.id?.videoId).filter(Boolean);
 }
 
+export type YouTubeSearchResult = {
+  videoId: string;
+  title: string;
+  description: string;
+  channelTitle: string;
+  thumbnail: string | null;
+  durationMs: number | null;
+  views: number | null;
+};
+
+/**
+ * Search candidates for a user's personal library.  We verify each candidate
+ * with videos.list before returning it so an unembeddable or removed result
+ * cannot be added from the picker.
+ */
+export async function searchYouTubeVideos(query: string, maxResults = 12): Promise<YouTubeSearchResult[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) throw new Error("YouTube API key not configured.");
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("q", query.trim());
+  url.searchParams.set("type", "video");
+  url.searchParams.set("videoEmbeddable", "true");
+  url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 15)));
+  url.searchParams.set("key", key);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`YouTube search error (${res.status})`);
+  const json = (await res.json()) as { items?: any[] };
+  const candidates = (json.items ?? [])
+    .map((item) => ({ videoId: item.id?.videoId as string | undefined, snippet: item.snippet ?? {} }))
+    .filter((item): item is { videoId: string; snippet: any } => !!item.videoId);
+  const details = await fetchYouTubeVideoInfo(candidates.map((item) => item.videoId));
+  return candidates
+    .filter((item) => details[item.videoId]?.playable)
+    .map((item) => {
+      const detail = details[item.videoId];
+      const thumbs = item.snippet?.thumbnails;
+      return {
+        videoId: item.videoId,
+        title: detail?.title || item.snippet?.title || "Untitled video",
+        description: item.snippet?.description || "",
+        channelTitle: detail?.channelTitle || item.snippet?.channelTitle || "",
+        thumbnail: detail?.thumbnail ?? thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
+        durationMs: null,
+        views: detail?.views ?? null,
+      };
+    });
+}
+
 export async function fetchYouTubeVideoStats(videoId: string) {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) throw new Error("YouTube API key not configured.");
