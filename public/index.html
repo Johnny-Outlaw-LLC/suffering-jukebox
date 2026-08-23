@@ -16110,6 +16110,16 @@ function amBgSync() {
   }
 }
 
+// One album the wizard could not find a playlist for. `id: null` is what tells
+// the server to go and find the songs individually.
+function amSongEntry(a) {
+  return {
+    id: null, title: a.title,
+    release_date: a.date || undefined, rg: a.rg || undefined,
+    wiki_page: a.wiki_page || undefined,
+  };
+}
+
 async function amImport() {
   if (!amIdent || !amPicked.size || amBusy) return;
   if (!amChannel) { amStepFail('No YouTube channel found for this artist.'); return; }
@@ -16143,9 +16153,7 @@ async function amImport() {
           (a.rg ? `&rg=${encodeURIComponent(a.rg)}` : '') +
           (a.date ? `&year=${encodeURIComponent(String(a.date).slice(0, 4))}` : '') +
           `&channel_id=${encodeURIComponent(amChannel.channel_id)}`);
-        if (m.match && usedPl.has(m.match.playlist_id)) {
-          amLogLine('err', `  ⚠ “${a.title}”, playlist already used for another album, skipped`);
-        } else if (m.match) {
+        if (m.match && !usedPl.has(m.match.playlist_id)) {
           usedPl.add(m.match.playlist_id);
           matches.push({
             id: m.match.playlist_id, title: a.title,
@@ -16154,23 +16162,58 @@ async function amImport() {
           });
           amLogLine('ok', `  ✓ “${a.title}” → “${m.match.title}” · ${m.match.track_count} tracks · ${fmtV(m.match.views)} views`);
         } else {
-          amLogLine('err', `  ⚠ “${a.title}”, no good playlist found, skipped`);
+          // No playlist, or the only match is already another album's. The
+          // album is not skipped any more — the server goes after its songs
+          // one at a time instead.
+          matches.push(amSongEntry(a));
+          amLogLine('', `  · “${a.title}”, no album playlist on YouTube — will build it song by song`);
         }
       } catch (e) {
-        amLogLine('err', `  ⚠ “${a.title}”, ${e.message}, skipped`);
+        matches.push(amSongEntry(a));
+        amLogLine('', `  · “${a.title}”, ${e.message} — will build it song by song`);
       }
     }
-    if (!matches.length) throw new Error('No YouTube playlists matched the selected albums.');
+    if (!matches.length) throw new Error('No albums could be matched on YouTube.');
     amSetFooter(false, '<span class="m-spin"></span>Importing…', true);
-    amStepGo(3, `Importing ${matches.length} album${matches.length === 1 ? '' : 's'} from YouTube…`);
-    const data = await amFetch('', {
-      method: 'POST',
-      body: JSON.stringify({ channel_id: amChannel.channel_id, artist_name: amIdent.artist_name, playlists: matches, manual: amIdent.manual === true && amIdent.from_channel !== true }),
-    });
-    if (!data.success) throw new Error(data.error || 'Import failed');
-    (data.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
+
+    // Albums that matched a playlist all go in one request. An album with no
+    // playlist has to be assembled song by song, which is slow enough that each
+    // one needs a request of its own — the gateway cuts a request off at 150s.
+    const withPl = matches.filter(m => m.id);
+    const bySong = matches.filter(m => !m.id);
+    const batches = [];
+    if (withPl.length) batches.push({ list: withPl, label: `Importing ${withPl.length} album${withPl.length === 1 ? '' : 's'} from YouTube…` });
+    bySong.forEach((m, i) => batches.push({
+      list: [m], song: true,
+      label: `Building “${m.title}” song by song (${i + 1} of ${bySong.length})…`,
+    }));
+
+    const data = { success: false, artist_id: null, albums: 0, tracks: 0, albums_detail: [] };
+    let lastErr = null;
+    for (const b of batches) {
+      amStepGo(3, b.label);
+      if (b.song) amLogLine('head', `▶ ${b.label}`);
+      try {
+        const r = await amFetch('', {
+          method: 'POST',
+          body: JSON.stringify({ channel_id: amChannel.channel_id, artist_name: amIdent.artist_name, playlists: b.list, manual: amIdent.manual === true && amIdent.from_channel !== true }),
+        });
+        if (!r.success) throw new Error(r.error || 'Import failed');
+        (r.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
+        data.success = true;
+        data.artist_id = r.artist_id || data.artist_id;
+        data.albums += r.albums || 0;
+        data.tracks += r.tracks || 0;
+        (r.albums_detail || []).forEach(x => data.albums_detail.push(x));
+      } catch (e) {
+        lastErr = e;
+        amLogLine('err', `  ✗ ${b.list.map(x => x.title).join(', ')}: ${e.message}`);
+      }
+    }
+    if (!data.success) throw lastErr || new Error('Import failed');
     amArtistId = data.artist_id || null;
-    picked.forEach(a => { a.already = true; });
+    const _amDone = new Set(data.albums_detail.map(x => String(x.name || '').toLowerCase()));
+    picked.forEach(a => { if (_amDone.has(String(a.title).toLowerCase())) a.already = true; });
     amPicked.clear();
     // Refresh the artist lists so the new artist is findable everywhere, but
     // leave the current jukebox's selection alone. Folding a fresh import into
@@ -16246,6 +16289,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
+    'When you add an artist and YouTube has no playlist for one of their albums, the album is no longer skipped. We go and find each song on its own instead and build the album out of those, using the real track list for the record, so the songs are in the right order and nothing live or unofficial sneaks in.',
     'Export Image now always hands you the newest picture. If a view had been redrawn since the last time you downloaded it, your browser could keep giving you the old copy for the rest of the day - which is why the Albums List picture still came out with the albums closed after it was changed to show the songs.',
     'The Albums List picture in Export Image now has every album opened up, so the songs are in the picture instead of just the album covers.',
     'Export Image has a Share options button at the bottom now, so you can step back to the Share menu without closing everything and starting again.',
