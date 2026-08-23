@@ -182,6 +182,7 @@ main > * { min-width: 0; }
 /* The sort buttons share a row with expand/collapse, so they match those
    rather than the smaller sort buttons used inside section headers. */
 .ctrl-row-sub .sort-btn { font-size: .5rem; padding: .26rem .58rem; border-radius: 5px; }
+.ctrl-row-sub .sj-sharehub-btn { margin-left: auto; }
 .sj-sharehub-btn { display: inline-flex; align-items: center; gap: 6px; }
 .sj-sharehub-btn .sjhub-word { display: inline; }
 
@@ -642,7 +643,7 @@ body:not(.light) .tt-num { color: var(--text); }
   #filter-header-mobile .filter-dd-trigger,
   #filter-header-mobile .filter-pm-btn,
   #filter-header-mobile .ctrl-btn,
-  #filter-header-mobile .ctrl-select { font-size: .5rem !important; padding: 3px 8px !important; min-height: 26px !important; }
+  #filter-header-mobile .ctrl-select { font-size: .52rem !important; padding: 6px 10px !important; min-height: 38px !important; }
   #filter-header-mobile .ctrl-select { padding-right: 20px !important; background-position: right 6px center; }
   /* Shares row 2 with the search/theme/help icons, so a long display name has
      to clip rather than shove them off the edge. */
@@ -14003,8 +14004,13 @@ function renderViewToggle() {
   const _mobNav = window.innerWidth <= 640;
   // Row 2: expand/collapse, plus the Albums List sort. What the bars measure
   // now lives in a dropdown on the view button itself.
+  // On a phone the Share button joins the second row, pushed to the right of
+  // the bars caption, rather than taking a whole line to itself. Playlists is
+  // the one view with no second row, so there it stays put.
+  const _shareBtn = `<button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}<span class="sjhub-word">Share</span></button>`;
+  const _shareR2 = _mobNav && viewMode !== 'playlists';
   const listSort_ = viewMode === 'list' ? `
-      <span class="ctrl-row-meta" style="margin-left:auto">Sort</span>
+      <span class="ctrl-row-meta"${_shareR2 ? '' : ' style="margin-left:auto"'}>Sort</span>
       <button class="sort-btn ${listSort==='views'?'active':''}" onclick="setListSort('views')">Views</button>
       <button class="sort-btn ${listSort==='date'?'active':''}" onclick="setListSort('date')">Date</button>` : '';
   const _metricOpts = [
@@ -14026,7 +14032,7 @@ function renderViewToggle() {
   const ttSortRow = viewMode === 'alltracks' ? `
     <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
       <span class="ctrl-row-meta">Sort</span>
-      ${_ttSortOpts.map(o => `<button class="sort-btn ${ttSortCol === o.col ? 'active' : ''}" onclick="setAllTracksSort('${o.col}')" title="${o.tip}">${o.lbl}</button>`).join('')}
+      ${_ttSortOpts.map(o => `<button class="sort-btn ${ttSortCol === o.col ? 'active' : ''}" onclick="setAllTracksSort('${o.col}')" title="${o.tip}">${o.lbl}</button>`).join('')}${_shareR2 ? _shareBtn : ''}
     </div>` : '';
   const _chartView = viewMode !== 'alltracks' && viewMode !== 'playlists';
   const _metricNow = _metricOpts.find(o => o.val === barChartMode);
@@ -14035,7 +14041,7 @@ function renderViewToggle() {
     <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
       <span class="ctrl-row-meta" title="Change this from the view button above">${_barsLbl}</span>
       <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
-      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}
+      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}${_shareR2 ? _shareBtn : ''}
     </div>` : '';
   // All Tracks has no chart, so it is the one plain button with no menu.
   const _views = [
@@ -14063,7 +14069,7 @@ function renderViewToggle() {
       <div class="view-seg">
         ${_views.map(segBtn).join('')}
       </div>
-      <button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}<span class="sjhub-word">Share</span></button>
+      ${_shareR2 ? '' : _shareBtn}
     </div>
     ${ctrlRow}${ttSortRow}
   </div>`}
@@ -16188,6 +16194,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
+    'On a phone the Share button now sits on the same line as the caption telling you what the bars measure, over on the right, instead of taking up a line of its own. The album filter, artist and Home buttons are the same height as everything else too.',
     'On a phone, your name, Search, the light and dark switch and the help button now share one row instead of taking up two, which lifts the whole page up.',
     'On a phone the jukebox view buttons are now the same size as the playlist buttons above them, the Share button says Share instead of showing only an icon, and the arrow that hides or shows a set of controls is much bigger and easier to hit.',
     'The little arrow on each view button is now a separate control with a divider before it, so pressing By Year or Timeline just changes the view. Press the arrow when you want to change what the bars measure.',
