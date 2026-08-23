@@ -1330,7 +1330,7 @@ mark.lyr-cmt:hover { background: rgba(255,107,53,.28); }
 }
 .yt-player-header:active { cursor: grabbing; }
 .ytp-icon { color: #ff4444; font-size: .65rem; flex-shrink: 0; }
-.ytp-title { flex: 1; font-size: .55rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ytp-title { flex: 1; font-size: .55rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .ytp-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; font-size: .6rem; padding: 2px 7px; border-radius: 5px; transition: color .1s, border-color .1s; line-height: 1.5; white-space: nowrap; font-family: var(--mono); }
 .ytp-btn:hover { color: var(--text); border-color: var(--text-muted); }
 .ytp-report-btn { }
@@ -13989,6 +13989,20 @@ function renderViewToggle() {
     ...(googleUser ? [{ val: 'mine', lbl: 'My Jukebox Plays', tip: 'Bar height shows how many times you have played each album here' }] : []),
     { val: 'hidden', lbl: 'Hide Bars', tip: 'Hide the chart bars and just show album covers' },
   ];
+  // All Tracks has no chart to configure, so its second row carries the sort
+  // instead. Every one of these is highest first - a "least played" list is
+  // not something anyone has ever asked for.
+  const _ttSortOpts = [
+    { col: 'chrono',  lbl: 'Chronological',       tip: 'Album by album in release order, tracks in running order' },
+    { col: 'views',   lbl: 'YouTube Views',       tip: 'Most watched first' },
+    ...(googleUser ? [{ col: 'myplays', lbl: 'My Plays', tip: 'The songs you have played here most' }] : []),
+    { col: 'plays',   lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
+  ];
+  const ttSortRow = viewMode === 'alltracks' ? `
+    <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+      <span class="ctrl-row-meta">Sort</span>
+      ${_ttSortOpts.map(o => `<button class="sort-btn ${ttSortCol === o.col ? 'active' : ''}" onclick="setAllTracksSort('${o.col}')" title="${o.tip}">${o.lbl}</button>`).join('')}
+    </div>` : '';
   const _chartView = viewMode !== 'alltracks' && viewMode !== 'playlists';
   const _metricNow = _metricOpts.find(o => o.val === barChartMode);
   const _barsLbl = barChartMode === 'hidden' ? 'Bars hidden' : 'Bars: ' + (_metricNow ? _metricNow.lbl : '');
@@ -14025,7 +14039,7 @@ function renderViewToggle() {
       </div>
       <button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}<span class="sjhub-word">Share</span></button>
     </div>
-    ${ctrlRow}
+    ${ctrlRow}${ttSortRow}
   </div>`}
   </div>`;
 }
@@ -14383,12 +14397,26 @@ function renderTopTracks(trackList) {
 function ttSort(col) {
   if (ttSortCol === col) { ttSortDir *= -1; }
   else { ttSortCol = col; ttSortDir = 1; } // numbers: largest first; text/chrono: natural order
+  ttRepaint();
+}
+
+// The Sort buttons on the All Tracks control row. Unlike a column header these
+// never toggle direction - dir 1 is largest first for a count, and running
+// order for chrono.
+function setAllTracksSort(col) {
+  ttSortCol = col;
+  ttSortDir = 1;
+  ttRepaint();
+}
+
+function ttRepaint() {
   const tbl = document.getElementById('all-tracks-tbl');
   if (tbl) {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderTopTracks(ttTrackCache);
     tbl.replaceWith(tmp.firstElementChild);
   }
+  if (viewMode === 'alltracks') updateViewControlsHeader();
 }
 
 // ── YT prompt ────────────────────────────────────────────────
@@ -16136,6 +16164,8 @@ const SJ_CHANGELOG = [
   { date: '2026-08-23', items: [
     'The Jukebox Controls panel is tidier. Each view button - By Year, Timeline, By Views, Albums List - now opens a small menu of what the chart bars should show, so the row of metric buttons underneath is gone. The connector lines went with it. Expand All Tracks and Collapse All Tracks stay where they were, and the Albums List sort buttons have moved down to join them.',
     'Export Image and Share Jukebox are now one Share button, which asks whether you want to export images or share a link.',
+    'All Tracks now has sort buttons on its second row: Chronological, YouTube Views, My Plays and Total Jukebox Plays. The counts always come highest first, and the column headers still work as before.',
+    'The player title no longer ends in a "…" when the song name is too long for the bar. It sat next to the buttons and looked like one.',
     'Export Image now has one Download button instead of two. On a computer it saves a single zip; on a phone it hands the pictures to the share sheet so you can save them straight to your photos.',
     'Fixed Export Image saving nothing at all on a phone.',
     'Export Image downloads straight away now. The Prepare Screenshots step is gone - pick the views you want and press Download. It also works on a phone now, because nothing has to be drawn on your device any more.',
@@ -19159,10 +19189,10 @@ function refreshAllAlbumBarsUI() {
 function setBarChartMode(mode) {
   barChartMode = mode;
   // Always sync All Tracks sort to selected metric
-  if      (mode === 'mine')                              { ttSortCol = 'myplays'; ttSortDir = -1; }
-  else if (mode === 'total')                             { ttSortCol = 'plays';   ttSortDir = -1; }
-  else if (mode === 'yt' || mode === 'hidden')           { ttSortCol = 'views';   ttSortDir = -1; }
-  else if (mode === 'score')                             { ttSortCol = 'views';   ttSortDir = -1; }
+  if      (mode === 'mine')                              { ttSortCol = 'myplays'; ttSortDir = 1; }
+  else if (mode === 'total')                             { ttSortCol = 'plays';   ttSortDir = 1; }
+  else if (mode === 'yt' || mode === 'hidden')           { ttSortCol = 'views';   ttSortDir = 1; }
+  else if (mode === 'score')                             { ttSortCol = 'views';   ttSortDir = 1; }
   if (viewMode === 'alltracks') render(); else renderTimelineOnly();
 }
 
