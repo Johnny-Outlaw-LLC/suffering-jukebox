@@ -56,9 +56,13 @@ export async function GET(
       status: 200,
       headers: {
         "Content-Type": "image/png",
-        // Content is replaced nightly at the same key, so cache hard at the CDN
-        // but never permanently. An hour of staleness is fine.
-        "Cache-Control": "public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400",
+        // Content is replaced nightly at the same key, so cache at the CDN but
+        // never permanently. The old day-long stale-while-revalidate window let
+        // a re-captured image keep serving yesterday's picture long after the
+        // job had replaced it, which is exactly what a re-capture is meant to
+        // fix. Callers that need the newest file (the Export Image download)
+        // also carry the capture stamp as a query param.
+        "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=600",
         "Access-Control-Allow-Origin": "*",
         "X-Content-Type-Options": "nosniff",
       },
