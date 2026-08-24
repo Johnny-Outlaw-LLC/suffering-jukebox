@@ -394,6 +394,21 @@ body:not(.light) .tt-num { color: var(--text); }
 .spinner { display: inline-block; width: 9px; height: 9px; border: 2px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 4px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)} }
+.im-opt { display: flex; flex-direction: column; gap: .15rem; width: 100%; text-align: left;
+  padding: .7rem .8rem; margin-bottom: .45rem; border: 1px solid var(--border); border-radius: 10px;
+  background: transparent; cursor: pointer; }
+.im-opt:hover { border-color: var(--accent); background: rgba(255,107,53,.07); }
+.im-opt b { font-size: .6rem; font-weight: 700; color: var(--text); }
+.im-opt em { font-size: .48rem; font-style: normal; color: var(--text-muted); line-height: 1.35; }
+.am-vis { margin-top: .7rem; }
+.am-vis-opt { display: flex; gap: .5rem; align-items: flex-start; padding: .5rem .6rem; margin-top: .35rem;
+  border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.am-vis-opt:hover { border-color: var(--accent); }
+.am-vis-opt input { margin-top: .15rem; accent-color: var(--accent); flex: 0 0 auto; }
+.am-vis-opt span { display: flex; flex-direction: column; gap: .12rem; min-width: 0; }
+.am-vis-opt b { font-size: .55rem; font-weight: 700; color: var(--text); }
+.am-vis-opt em { font-size: .46rem; font-style: normal; color: var(--text-muted); line-height: 1.35; }
+.am-vis-opt:has(input:checked) { border-color: var(--accent); background: rgba(255,107,53,.07); }
 /* ── Community / Add Music ── */
 .am-bg-note { display: flex; align-items: center; gap: .45rem; font-size: .52rem; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .65rem; margin-bottom: .7rem; }
 .am-bg-note.done { color: #22c55e; border-color: rgba(34,197,94,.35); }
@@ -3024,6 +3039,13 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
           </div>
           <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">We’ll identify the artist and pull their studio discography automatically.</div>
         </div>
+        <div class="am-vis">
+          <div class="m-fl">Who should see this music?</div>
+          <label class="am-vis-opt"><input type="radio" name="amVisibility" value="public" checked onchange="amSetVisibility('public')">
+            <span><b>Add to the public catalogue</b><em>Everyone finds it on Explore Artists. Play counts and charts are shared.</em></span></label>
+          <label class="am-vis-opt"><input type="radio" name="amVisibility" value="private" onchange="amSetVisibility('private')">
+            <span><b>Import into My Jukebox only</b><em>Only you see it listed. It stays out of Explore Artists and the public grids.</em></span></label>
+        </div>
         <div class="am-ident-card" id="amIdentCard" style="display:none"></div>
         <div id="amManualLink" style="display:none;margin-top:.55rem">
           <button type="button" class="m-btn ghost" style="font-size:.5rem" onclick="amShowManual()">Can’t find the artist? Add them from their YouTube channel ›</button>
@@ -3073,6 +3095,28 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       <button class="m-btn ghost" id="amBackBtn" onclick="amBack()" style="display:none">‹ Back</button>
       <button class="m-btn" id="amNextBtn" onclick="amNext()" disabled>Next: Choose Albums ›</button>
       <span class="mf-status" id="amFooterStatus"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Import Music: one door, three sizes of import -->
+<div class="modal-overlay" id="importMusicOverlay" onclick="if(event.target===this)closeImportMusic()">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <span class="modal-title">Import Music</span>
+      <button class="modal-close" onclick="closeImportMusic()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:.5rem;color:var(--text-muted);margin-bottom:.6rem">How much do you want to bring in? You choose who can see it on the next step.</div>
+      <button type="button" class="im-opt" onclick="importMusicPick('artist')">
+        <b>An artist</b><em>Their whole studio discography, album by album.</em></button>
+      <button type="button" class="im-opt" onclick="importMusicPick('album')">
+        <b>An album</b><em>Same search, but you tick only the record you want.</em></button>
+      <button type="button" class="im-opt" onclick="importMusicPick('song')">
+        <b>A song</b><em>Search YouTube and drop a single track into My Jukebox.</em></button>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeImportMusic()">Cancel</button>
     </div>
   </div>
 </div>
@@ -12730,7 +12774,6 @@ function renderLandingHomeHTML(esc) {
     <div>
       <div class="home-hero-title-row">
         <div class="home-hero-title">My Jukebox</div>
-        ${googleUser ? `<button type="button" class="home-action-btn" onclick="openMyJukebox()">Manage My Music</button>` : ''}
         <span class="home-hero-info-wrap" onclick="event.stopPropagation();this.classList.toggle('open')">
           <button type="button" class="home-hero-info-btn" aria-label="About My Jukebox">ⓘ</button>
           <span class="home-hero-info-tip">Artists you have added, artists with your background-play audio, and your playlists. Explore Artists is the full community catalogue.</span>
@@ -12738,17 +12781,16 @@ function renderLandingHomeHTML(esc) {
       </div>
     </div>
     <div>
-      <div class="home-section-title">Quick play</div>
       <div class="home-actions">
         <button type="button" class="home-action-btn primary" onclick="landingShuffleAll()">Shuffle All</button>
         <button type="button" class="home-action-btn" onclick="landingShuffleFavorites()">Shuffle Favorites</button>
         <button type="button" class="home-action-btn" onclick="setLandingTab('explore')">Explore Artists →</button>
-        <button type="button" class="home-action-btn" onclick="openPublicJukeboxExplorer()">Explore Public Jukeboxes</button>
+        ${googleUser ? `<button type="button" class="home-action-btn" onclick="openImportMusic()">＋ Import Music</button>` : ''}
+        ${googleUser ? `<button type="button" class="home-action-btn" onclick="openMyJukebox()">Manage My Music</button>` : ''}
         ${googleUser ? `<button type="button" class="home-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : `<button type="button" class="home-action-btn" onclick="handleAuthClick()">Sign in</button>`}
       </div>
     </div>
     <div>
-      <div class="home-section-title">Your artists</div>
       <div class="home-filter-row">
         <label class="home-filter-chk${homeBgOnly ? ' on' : ''}">
           <input type="checkbox"${homeBgOnly ? ' checked' : ''} onchange="setHomeBgOnly(this.checked)">
@@ -12840,7 +12882,7 @@ function renderLanding() {
             ${sizeOpt('full', 'Full Details')}
           </select>
         </div>
-        <button type="button" class="landing-add-artist-btn" onclick="openAddMusic()">＋ Add Artist to the Jukebox</button>
+        <button type="button" class="landing-add-artist-btn" onclick="openImportMusic()">＋ Import Music</button>
       </div>
       ${rows.length ? '' : `<div class="landing-no-results">No artists match ${landingSearchQ ? '“' + esc(landingSearchQ) + '”' : 'the current filters'}.</div>`}
       <div class="landing-grid detail-${landingDetailLevel}${landingExpandedIds.size ? ' la-has-open' : ''}">
@@ -12861,7 +12903,9 @@ function renderLanding() {
             ${r.added_by_name ? `<div class="landing-added-by">Added by ${esc(r.added_by_name)}</div>` : ''}
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-              <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>
+              ${r.discography_complete === false
+                ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
+                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>`}
             </div>
             </div>
           </div>
@@ -13119,7 +13163,9 @@ function laExpandedCardHTML(r, i) {
           ${r.added_by_name ? `<div class="landing-added-by" style="display:block">Added by ${esc(r.added_by_name)}</div>` : ''}
           <div class="la-hero-actions">
             <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-            <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>
+            ${r.discography_complete === false
+                ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
+                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>`}
           </div>
         </div>
         <button type="button" class="la-close" onclick="event.stopPropagation();toggleLandingCard('${r.artist_id}')" title="Collapse" aria-label="Collapse artist card">×</button>
@@ -14742,6 +14788,11 @@ let amBusy    = false;
 let amStep     = 1;     // wizard pane: 1 artist · 2 albums · 3 lyrics · 4 fine-tune
 let amArtistId = null;  // artist row id once the import lands
 let amImportOk = false; // import + lyric discovery finished
+// 'public' puts the artist in the shared catalogue, 'private' keeps it listed
+// for the importer only.  Either way the import writes the same rows to the
+// same tables - visibility is data on those rows, not a second storage path.
+let amVisibility = 'public';
+function amSetVisibility(v) { amVisibility = v === 'private' ? 'private' : 'public'; }
 let amFt       = null;  // fine-tune data from the edge function
 let amMinimized = false; // wizard hidden, work continuing in the background
 let _amLastStatus = ''; // last step-status line, mirrored on the minimized pill
@@ -15108,7 +15159,7 @@ function renderOtherArtistsBtn() {
         <div class="oa-albs-note" data-oa-noresults style="display:none">No artists match those filters.</div>
       </div>
       <div class="filter-dd-footer">
-        <button type="button" class="ctrl-btn" onclick="event.stopPropagation();closeSJDropdown();openAddMusic()">＋ Add Music</button>
+        <button type="button" class="ctrl-btn" onclick="event.stopPropagation();closeSJDropdown();openImportMusic()">＋ Import Music</button>
       </div>
     </div>
   </div>
@@ -15158,6 +15209,38 @@ function renderCommunityEmpty() {
     <p>No community music yet.</p>
     <p style="margin-top:.4rem;color:var(--text-muted);font-size:.6rem">Sign in and add any artist straight from YouTube.</p>
     <button class="btn-gold" style="margin-top:1rem" onclick="openAddMusic()">＋ Add Music</button></div>`;
+}
+
+// The single front door.  Artist and album are the same wizard - an album
+// import is just a narrower tick list on step 2 - so this only has to set the
+// expectation before handing over.  A song never needs the wizard at all.
+function openImportMusic() {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to import music. Sign in now?')) handleAuthClick();
+    return;
+  }
+  document.getElementById('importMusicOverlay')?.classList.add('open');
+}
+function closeImportMusic() { document.getElementById('importMusicOverlay')?.classList.remove('open'); }
+function importMusicPick(kind) {
+  closeImportMusic();
+  if (kind === 'song') { openMyJukebox(); setTimeout(() => document.getElementById('mj-search-input')?.focus(), 250); return; }
+  openAddMusic();
+  if (kind === 'album') showToast('Search the artist, then tick just the album you want on the next step.');
+}
+
+// Finishing a part-imported artist: same wizard, artist name already filled in
+// and searched, so the listener lands straight on the full album list.
+function openImportDiscography(artistName) {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to import music. Sign in now?')) handleAuthClick();
+    return;
+  }
+  openAddMusic();
+  const input = document.getElementById('amSearchInput');
+  if (!input) return;
+  input.value = artistName || '';
+  if (artistName) setTimeout(() => amSearch(), 60);
 }
 
 function openAddMusic() {
@@ -15406,6 +15489,9 @@ function amSetFooter(backVisible, nextLabel, nextDisabled, cancelVisible = true)
 function amResetWizard() {
   amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
   amArtistId = null; amImportOk = false; amFt = null;
+  amVisibility = 'public';
+  const _vr = document.querySelector('input[name="amVisibility"][value="public"]');
+  if (_vr) _vr.checked = true;
   amMinimized = false; _amLastStatus = '';
   _amWizardDone = false; _amAudioUploaded = false; _amBgStatus = '';
   const mb = document.getElementById('am-minibar');
@@ -16184,6 +16270,8 @@ async function amImport() {
   const logEl = document.getElementById('amLog');
   logEl.innerHTML = ''; logEl.classList.add('open');
   const picked = amAlbums.filter((a, i) => amPicked.has(i));
+  // Everything on offer means the discography is complete; a subset does not.
+  const amScope = picked.length >= amAlbums.length ? 'artist' : 'album';
   amLogLine('head', `▶ Finding the best YouTube playlist for ${picked.length} album${picked.length === 1 ? '' : 's'}…`);
   try {
     const matches = [];
@@ -16249,7 +16337,7 @@ async function amImport() {
       try {
         const r = await amFetch('', {
           method: 'POST',
-          body: JSON.stringify({ channel_id: amChannel.channel_id, artist_name: amIdent.artist_name, playlists: b.list, manual: amIdent.manual === true && amIdent.from_channel !== true }),
+          body: JSON.stringify({ channel_id: amChannel.channel_id, artist_name: amIdent.artist_name, playlists: b.list, manual: amIdent.manual === true && amIdent.from_channel !== true, visibility: amVisibility, scope: amScope }),
         });
         if (!r.success) throw new Error(r.error || 'Import failed');
         (r.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
@@ -16336,11 +16424,18 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-23';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-24';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-24', items: [
+    'When you import music you now choose who can see it. Add to the public catalogue puts the artist on Explore Artists for everyone, or Import into My Jukebox only keeps it listed for you and nobody else.',
+    'Add Artist is now Import Music, and it asks first whether you want a whole artist, one album, or a single song.',
+    'If an artist only came in as one album or one song, their button now reads Import Discography into Jukebox instead of Explore artist jukebox, and it takes you straight to the full album list so you can finish the collection.',
+    'My Jukebox is tidier: the Quick play and Your artists headings are gone, Manage My Music sits on the same row as the other buttons, and Import Music is right there beside it.',
+    'When you search YouTube for a single song, the results now start unticked so you can pick the one you want instead of untick the ones you do not.',
+  ] },
   { date: '2026-08-23', items: [
     'When you add an artist and YouTube has no playlist for one of their albums, the album is no longer skipped. We go and find each song on its own instead and build the album out of those, using the real track list for the record, so the songs are in the right order and nothing live or unofficial sneaks in.',
     'Export Image now always hands you the newest picture. If a view had been redrawn since the last time you downloaded it, your browser could keep giving you the old copy for the rest of the day - which is why the Albums List picture still came out with the albums closed after it was changed to show the songs.',
@@ -22781,7 +22876,7 @@ function mjRender() {
     : '<div class="sjj-empty">Your personal jukebox is empty. Add a song from YouTube, or use Send to My Jukebox on any song, album, or artist.</div>';
   const search = _mjSearchResults.length
     ? '<div class="sjj-h">Choose songs to add</div><div style="display:flex;justify-content:flex-end;margin:-.2rem 0 .3rem"><button class="pl-btn" onclick="mjAddSelected()">Add selected</button></div>' +
-      _mjSearchResults.map((r, n) => '<label class="mj-result"><input type="checkbox" class="mj-pick" data-mj-result="' + n + '" checked>' +
+      _mjSearchResults.map((r, n) => '<label class="mj-result"><input type="checkbox" class="mj-pick" data-mj-result="' + n + '">' +
         '<img alt="" src="' + escHtml(r.thumbnail || ('https://i.ytimg.com/vi/' + r.videoId + '/mqdefault.jpg')) + '"><span class="mj-body"><span class="mj-title">' + escHtml(r.title) + '</span><span class="mj-sub">' + escHtml(r.channelTitle || '') + (r.views != null ? ' · ' + fmtV(r.views) + ' views' : '') + '</span></span></label>').join('')
     : '';
   el.innerHTML =
