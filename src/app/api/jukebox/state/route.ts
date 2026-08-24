@@ -21,8 +21,11 @@ export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const ip = clientIp(req);
-    // A 5s poll is 12 requests a minute; this leaves room for a few tabs.
-    if (rateLimited(`state:${ip}`, 90)) return tooMany();
+    // A room is a crowd behind one router, so this bucket is per venue rather
+    // than per person: a 4s poll is 15 a minute, and forty phones on the bar's
+    // wifi all share this IP. Set high enough that a busy room is never the
+    // thing that trips it.
+    if (rateLimited(`state:${ip}`, 900)) return tooMany();
 
     const ctx = await resolveRoom(req, url.searchParams.get("code"));
     if ("error" in ctx) return ctx.error;

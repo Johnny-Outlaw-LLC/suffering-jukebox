@@ -6,8 +6,8 @@
 // the whole dashboard to queue one song.
 
 import type { Metadata, Viewport } from "next";
-import { normalizeCode } from "@/lib/jukebox";
-import { getJukeboxByCode, sjb } from "@/lib/jukebox-db";
+import { normalizeRoomKey } from "@/lib/jukebox";
+import { getJukeboxByKey, sjb } from "@/lib/jukebox-db";
 import GuestApp from "./GuestApp";
 
 export const dynamic = "force-dynamic";
@@ -16,11 +16,13 @@ type Props = { params: Promise<{ code: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { code: raw } = await params;
-  const code = normalizeCode(raw ?? "");
+  // Either a room code or a vanity address: /outlaw is rewritten to /j/outlaw
+  // in src/proxy.ts, so both land here and the database settles which it is.
+  const key = normalizeRoomKey(raw ?? "");
   let name = "Jukebox";
-  if (code) {
+  if (key) {
     try {
-      const room = await getJukeboxByCode(sjb(), code);
+      const room = await getJukeboxByKey(sjb(), key);
       if (room) name = room.name;
     } catch {
       // A missing title is not worth failing the page render over.
@@ -45,13 +47,13 @@ export const viewport: Viewport = {
 
 export default async function JukeboxGuestPage({ params }: Props) {
   const { code: raw } = await params;
-  const code = normalizeCode(raw ?? "");
-  if (!code) {
+  const key = normalizeRoomKey(raw ?? "");
+  if (!key) {
     return (
       <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", background: "#0a0a0a", color: "#888", fontFamily: "Inter, sans-serif", padding: "2rem", textAlign: "center" }}>
-        That jukebox code does not look right. Check the card and try again.
+        That jukebox address does not look right. Check the card and try again.
       </div>
     );
   }
-  return <GuestApp code={code} />;
+  return <GuestApp code={key} />;
 }

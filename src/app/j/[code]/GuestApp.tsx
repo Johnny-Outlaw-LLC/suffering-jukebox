@@ -8,6 +8,7 @@
 // only has to render what it is told.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Stage, { type Playback } from "./Stage";
 import css from "./guest.module.css";
 
 type Settings = {
@@ -19,7 +20,14 @@ type Settings = {
   allowExplicit: boolean;
 };
 
-type Room = { code: string; name: string; isLive: boolean; settings: Settings };
+type Room = {
+  code: string;
+  slug: string | null;
+  name: string;
+  isLive: boolean;
+  settings: Settings;
+  playback: Playback;
+};
 type Guest = { id: string; displayName: string; isBanned: boolean };
 
 type QueueItem = {
@@ -51,7 +59,26 @@ type Album = { id: string; name: string; art: string | null; year: string | null
 
 type Toast = { key: string; title: string; by: string; art: string | null; error?: boolean };
 
-const POLL_MS = 5000;
+// Four seconds. The stage extrapolates the host's position locally between
+// polls, so this is about how fast a guest add appears on everybody else's
+// phone, not about how tight the video sync is.
+const POLL_MS = 4000;
+
+// How long a host may go quiet before the guests stop mirroring it.
+const STALE_MS = 120_000;
+
+const NO_PLAYBACK: Playback = {
+  videoId: null,
+  trackId: null,
+  itemId: null,
+  title: null,
+  artistName: null,
+  positionMs: 0,
+  durationMs: 0,
+  isPlaying: false,
+  lyricOffsetMs: 0,
+  updatedAt: null,
+};
 
 export default function GuestApp({ code }: { code: string }) {
   const [phase, setPhase] = useState<"loading" | "needsName" | "ready" | "error">("loading");
@@ -61,6 +88,11 @@ export default function GuestApp({ code }: { code: string }) {
   const [guest, setGuest] = useState<Guest | null>(null);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [nowPlaying, setNowPlaying] = useState<QueueItem | null>(null);
+  const [playback, setPlayback] = useState<Playback>(NO_PLAYBACK);
+  // Local clock minus server clock. Everything the stage does with time is
+  // measured against the server, because the host and the guest are two
+  // different laptops with two different ideas of what time it is.
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
 
   const [tab, setTab] = useState<"queue" | "browse">("queue");
   const [query, setQuery] = useState("");
@@ -86,10 +118,19 @@ export default function GuestApp({ code }: { code: string }) {
   }, []);
 
   const applyState = useCallback((d: any) => {
-    if (d.jukebox) setRoom(d.jukebox);
+    if (d.jukebox) {
+      setRoom(d.jukebox);
+      setPlayback(d.jukebox.playback ?? NO_PLAYBACK);
+    }
     if (d.guest) setGuest(d.guest);
     if (Array.isArray(d.queue)) setQueue(d.queue);
     setNowPlaying(d.nowPlaying ?? null);
+    if (d.serverTime) {
+      const at = Date.parse(d.serverTime);
+      // Round-trip latency lands in here as a fraction of a second, which is
+      // well inside the drift the stage tolerates before it corrects.
+      if (Number.isFinite(at)) setServerOffsetMs(Date.now() - at);
+    }
   }, []);
 
   // ── Join ────────────────────────────────────────────────────────────
@@ -371,8 +412,20 @@ export default function GuestApp({ code }: { code: string }) {
     </div>
   );
 
+  // The mirror only makes sense while the host is actually driving something,
+  // and only while it is still saying so. A host that closed its laptop stops
+  // writing, and a stale position would have the phone playing a song the room
+  // finished ten minutes ago. Past STALE_MS the stage comes down and the plain
+  // Now playing card takes over.
+  const stampedAt = playback.updatedAt ? Date.parse(playback.updatedAt) : NaN;
+  const fresh =
+    Number.isFinite(stampedAt) && Date.now() - serverOffsetMs - stampedAt < STALE_MS;
+  const showStage = !!playback.videoId && fresh;
+
   return (
     <div className={css.app}>
+      {showStage && <Stage code={code} playback={playback} serverOffsetMs={serverOffsetMs} />}
+
       <header className={css.header}>
         <div className={css.headRow}>
           <div className={css.roomName}>{room?.name}</div>
@@ -420,7 +473,7 @@ export default function GuestApp({ code }: { code: string }) {
         </div>
       )}
 
-      {nowPlaying && (
+      {nowPlaying && !showStage && (
         <div className={css.nowPlaying}>
           {nowPlaying.albumArt && (
             <img className={css.npArt} src={nowPlaying.albumArt} alt="" loading="lazy" />

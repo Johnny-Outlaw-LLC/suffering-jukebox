@@ -2661,6 +2661,13 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
 .landing-grid.detail-name .landing-card-name { font-size: .8rem; }
 .landing-added-by { display: none; font-size: .46rem; color: var(--text-muted); letter-spacing: .02em; }
 .landing-grid.detail-full .landing-added-by { display: block; }
+.landing-grid.detail-full .landing-added-by.la-owned { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+/* Deliberately a plain select rather than a menu: the person who needs it is
+   already looking at the card, and one tap should settle it. */
+.la-vis { font: inherit; font-size: .46rem; padding: .1rem .2rem; border-radius: 4px; cursor: pointer;
+          background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border); max-width: 11rem; }
+.la-vis:hover { border-color: var(--accent); }
+.la-vis-tag { color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .landing-action-btn {
   background: none; border: 1px solid var(--accent); color: var(--accent);
   font-family: var(--mono); font-size: .54rem; letter-spacing: .03em; padding: .42rem .8rem;
@@ -2910,7 +2917,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
           <button type="button" class="user-menu-item" id="user-menu-bgunlock" onclick="userMenuAction('bgunlock')">Audio storage</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-shares" style="display:none" onclick="userMenuAction('shares')">Manage Shares</button>
-          <button type="button" class="user-menu-item" id="user-menu-jukebox" onclick="userMenuAction('jukebox')">My Jukebox &amp; Live Share</button>
+          <button type="button" class="user-menu-item" id="user-menu-jukebox" onclick="userMenuAction('jukebox')">Online Jukebox</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-playback" onclick="userMenuAction('playback')">Playback preferences</button>
@@ -3106,11 +3113,9 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       <button class="modal-close" onclick="closeImportMusic()">✕</button>
     </div>
     <div class="modal-body">
-      <div style="font-size:.5rem;color:var(--text-muted);margin-bottom:.6rem">How much do you want to bring in? You choose who can see it on the next step.</div>
+      <div style="font-size:.5rem;color:var(--text-muted);margin-bottom:.6rem">How much do you want to bring in? You choose who can see it on the next step. To bring in one record, pick An artist and tick just that album.</div>
       <button type="button" class="im-opt" onclick="importMusicPick('artist')">
         <b>An artist</b><em>Their whole studio discography, album by album.</em></button>
-      <button type="button" class="im-opt" onclick="importMusicPick('album')">
-        <b>An album</b><em>Same search, but you tick only the record you want.</em></button>
       <button type="button" class="im-opt" onclick="importMusicPick('song')">
         <b>A song</b><em>Search YouTube and drop a single track into My Jukebox.</em></button>
     </div>
@@ -3785,9 +3790,55 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
   .mj-publish textarea { min-height:3.6rem; resize:vertical; }
   .mj-result, .mj-library-row { display:flex; gap:.65rem; align-items:center; padding:.55rem 0; border-bottom:1px solid var(--border); }
   .mj-result img { width:64px; height:40px; object-fit:cover; border-radius:4px; background:#222; }
-  .mj-body { flex:1; min-width:0; } .mj-title { font-size:.78rem; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .mj-sub { font-size:.61rem; color:var(--text-muted); margin-top:.14rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mj-body { flex:1; min-width:0; }
+  .mj-title { display:block; font-size:.78rem; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mj-sub { display:block; font-size:.61rem; color:var(--text-muted); margin-top:.14rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* Add a song, on a desktop. The row is a grid so the artist field keeps its
+     own column instead of being shoved off the end by a long video title. */
+  .mj-result { display:grid; grid-template-columns:auto 64px minmax(0,1fr) 12rem; gap:.65rem; align-items:center; cursor:pointer; }
+  .mj-result:hover { background:var(--bg-elevated); }
+  .mj-artist { min-width:0; }
+  .mj-artist input { width:100%; box-sizing:border-box; font:inherit; font-size:.7rem; padding:.3rem .4rem;
+                     background:var(--bg-elevated); color:var(--text); border:1px solid var(--border); border-radius:5px; }
+  .mj-artist input:focus { outline:none; border-color:var(--accent); }
+  .mj-artist label { display:block; font-size:.5rem; text-transform:uppercase; letter-spacing:.08em;
+                     color:var(--text-muted); margin-bottom:.15rem; }
+  .mj-addbar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; justify-content:space-between;
+               position:sticky; top:0; z-index:2; background:var(--bg-card,#111); padding:.4rem 0 .5rem; }
+  .mj-vis { display:flex; gap:.3rem; align-items:center; font-size:.62rem; color:var(--text-muted); }
+  @media (max-width:720px) {
+    .mj-result { grid-template-columns:auto 52px minmax(0,1fr); }
+    .mj-artist { grid-column:2 / -1; }
+    .mj-addbar { justify-content:flex-start; }
+  }
   .mj-library-row .mj-source { color:var(--accent); font-size:.55rem; text-transform:uppercase; letter-spacing:.08em; }
+  /* Step one of running a room: on air, or not. The rest of the console is
+     detail, so this block gets the size. */
+  .sjj-stage { display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap;
+               border:1px solid var(--border); border-radius:10px; padding:.85rem; margin-bottom:.4rem; }
+  .sjj-stage-l { flex:1; min-width:13rem; }
+  .sjj-stage-t { font-size:.75rem; color:var(--text-muted); margin:.45rem 0 .6rem; }
+  .sjj-stage-btns { display:flex; gap:.4rem; flex-wrap:wrap; }
+  .sjj-go { font-size:.85rem; font-weight:700; padding:.5rem .95rem; }
+  .sjj-slug { display:flex; align-items:center; gap:.35rem; padding:.15rem .5rem; flex-wrap:wrap; }
+  .sjj-slug-pre { font-size:.72rem; color:var(--text-muted); white-space:nowrap; }
+  .sjj-slug input { font:inherit; font-size:.78rem; padding:.3rem .45rem; flex:1; min-width:7rem;
+                    background:var(--bg-elevated); color:var(--text); border:1px solid var(--border); border-radius:5px; }
+  /* Guest adds, announced over whatever is on screen. The host is usually
+     looking at the room rather than the app, so these are readable at a glance
+     and stack rather than replace each other. */
+  .sjj-add-toasts { position:fixed; right:1rem; bottom:1rem; z-index:10030;
+                    display:flex; flex-direction:column; gap:.4rem; pointer-events:none; max-width:min(22rem,86vw); }
+  .sjj-add-toast { display:flex; align-items:center; gap:.6rem; padding:.55rem .7rem;
+                   background:#111; border:1px solid var(--accent); border-left-width:4px; border-radius:9px;
+                   box-shadow:0 12px 34px #000a; animation:sjjAddIn .28s ease; }
+  .sjj-add-toast.out { opacity:0; transform:translateY(6px); transition:opacity .35s ease, transform .35s ease; }
+  .sjj-add-toast img { width:2.6rem; height:2.6rem; border-radius:4px; object-fit:cover; flex-shrink:0; }
+  .sjj-add-body { min-width:0; }
+  .sjj-add-t { font-size:.82rem; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sjj-add-by { font-size:.68rem; font-weight:600; color:var(--accent); text-transform:uppercase; letter-spacing:.05em; }
+  @keyframes sjjAddIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+  @media (max-width:640px) { .sjj-add-toasts { left:1rem; right:1rem; bottom:.75rem; max-width:none; } }
   .sjj-float-qr { position:fixed; z-index:10020; width:220px; min-width:140px; min-height:170px; resize:both; overflow:auto; background:#101010; color:#fff; border:2px solid var(--accent); border-radius:10px; box-shadow:0 14px 42px #000b; }
   .sjj-float-hd { display:flex; justify-content:space-between; align-items:center; cursor:move; user-select:none; padding:.42rem .55rem; font-size:.62rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
   .sjj-float-qr img { display:block; width:calc(100% - 1rem); aspect-ratio:1; object-fit:contain; margin:0 .5rem .2rem; background:#fff; border-radius:5px; }
@@ -3797,7 +3848,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
 <div class="pl-modal-overlay" id="sjjOverlay" onclick="if(event.target===this)closeJukeboxHost()">
   <div class="pl-modal">
     <div class="pl-modal-header">
-      <span class="pl-modal-title">&#127903; My Jukebox Live Share</span>
+      <span class="pl-modal-title">&#127903; Online Jukebox</span>
       <button class="modal-close" onclick="closeJukeboxHost()">&#10005;</button>
     </div>
     <div class="pl-modal-body" id="sjj-body">
@@ -6075,6 +6126,9 @@ function ytClearQueue() {
 // opts.keepIdx — after preserve, nudge only if that row left the viewport.
 function updateYTQueueUI(opts) {
   opts = opts || {};
+  // The room mirrors this queue, so a change here is worth pushing straight
+  // away rather than waiting out the five second interval.
+  try { if (_sjjLive) sjjNudgeSync(); } catch (_) {}
   refreshQuickPlaylistNowPlaying();
   if (!ytPlayerEl) return;
 
@@ -10341,6 +10395,7 @@ function applyNowPlayingHighlight() {
 
 function ytpOnTrackChange(videoId, trackId, title) {
   schedulePlaybackStateSave(); // remember queue + position for signed-in users
+  try { if (_sjjLive) sjjNudgeSync(); } catch (_) {}
   ytpStartPlaybackWatchdog(videoId, trackId, title);
   nowPlayingTrackId = trackId || null;
   ytpApplyTitle(trackId || null, title);
@@ -12209,6 +12264,48 @@ function landingThumb(row) {
   return ALBUM_ART[row.top_album_name] || row.top_album_art_url || row.top_album_thumb || null;
 }
 
+
+// Who imported this, and - if it is yours - who can see it. The control is a
+// plain select next to the credit rather than a menu somewhere else, because
+// the person who needs it is looking at the card and thinking about that card.
+function landingOwnerLine(r, block) {
+  if (!r.added_by_name && !r.can_manage) return '';
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const credit = r.added_by_name ? 'Added by ' + esc(r.added_by_name) : 'Yours';
+  const priv = r.visibility === 'private';
+  if (!r.can_manage) {
+    return '<div class="landing-added-by"' + (block ? ' style="display:block"' : '') + '>' + credit
+      + (priv ? ' <span class="la-vis-tag">Private</span>' : '') + '</div>';
+  }
+  return '<div class="landing-added-by la-owned"' + (block ? ' style="display:flex"' : '') + '>'
+    + '<span>' + credit + '</span>'
+    + '<select class="la-vis" onclick="event.stopPropagation()" onchange="event.stopPropagation();setArtistVisibility(\'' + r.artist_id + '\',this.value,this)"'
+    + ' title="Who can see this music">'
+    + '<option value="public"' + (priv ? '' : ' selected') + '>Visible to All</option>'
+    + '<option value="private"' + (priv ? ' selected' : '') + '>In My Private Jukebox</option>'
+    + '</select></div>';
+}
+
+// The write is a SECURITY DEFINER function, so the database decides whether
+// this caller may do it - the client never sends who it thinks it is.
+async function setArtistVisibility(artistId, visibility, el) {
+  if (el) el.disabled = true;
+  try {
+    await dbRpcAuth('/rpc/set_artist_visibility', { p_artist_id: artistId, p_visibility: visibility });
+    const row = (landingStats || []).find(r => r.artist_id === artistId);
+    if (row) row.visibility = visibility;
+    showToast(visibility === 'private'
+      ? 'Only you can see this now.'
+      : 'This is on Explore Artists for everyone now.');
+    refreshLandingStats();
+  } catch (e) {
+    showToast('Could not change who can see this.');
+    if (el) el.value = visibility === 'private' ? 'public' : 'private';
+  } finally {
+    if (el) el.disabled = false;
+  }
+}
+
 async function initLanding() {
   isLandingMode = true;
   try {
@@ -12887,7 +12984,7 @@ function renderLanding() {
               <div class="landing-stat landing-stat-albums"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
               <div class="landing-stat landing-stat-tracks"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
             </div>
-            ${r.added_by_name ? `<div class="landing-added-by">Added by ${esc(r.added_by_name)}</div>` : ''}
+            ${landingOwnerLine(r, false)}
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
               ${r.discography_complete === false
@@ -13147,7 +13244,7 @@ function laExpandedCardHTML(r, i) {
             <div class="landing-stat"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
             <div class="landing-stat"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
           </div>
-          ${r.added_by_name ? `<div class="landing-added-by" style="display:block">Added by ${esc(r.added_by_name)}</div>` : ''}
+          ${landingOwnerLine(r, true)}
           <div class="la-hero-actions">
             <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
             ${r.discography_complete === false
@@ -15213,7 +15310,6 @@ function importMusicPick(kind) {
   closeImportMusic();
   if (kind === 'song') { openMyJukebox(); setTimeout(() => document.getElementById('mj-search-input')?.focus(), 250); return; }
   openAddMusic();
-  if (kind === 'album') showToast('Search the artist, then tick just the album you want on the next step.');
 }
 
 // Finishing a part-imported artist: same wizard, artist name already filled in
@@ -16417,6 +16513,16 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-24';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-24', items: [
+    'The Online Jukebox is one queue now. What you are playing IS the jukebox: anything you queue in the player shows up for the room, anything a guest adds drops into what you are already playing, and nobody has to start anything over.',
+    'Guests see what you see. Open the join link on a phone and the same music video is playing, at the same second, with the words lighting up line by line. Tap the picture for sound, or leave it silent and just read along.',
+    'When somebody adds a song, it pops up on your screen: the cover, the artist, the song, and who put it on.',
+    'Your jukebox can have its own web address. Pick a word in the Online Jukebox panel and the join link becomes sufferingjukebox.stream/yourword instead of a six letter code. The code still works, and the QR code follows whichever you chose.',
+    'The account menu entry is now called Online Jukebox, and the panel opens on the one thing that matters: a button to start it, the code to scan, and the link to share.',
+    'Adding a song now knows who made it. We read the artist off the upload, show you the name so you can correct it before it lands, and file every song by that artist together, with the video’s artwork. They get their own card on Explore Artists, like any other artist.',
+    'Songs you add this way are private to you unless you say otherwise, and the Add a song screen now lets you choose before you add.',
+    'Anything you imported carries a Visible to All / In My Private Jukebox setting right next to the Added by line on its card, so you can change your mind about who can see it without asking anybody.',
+    'The Add a song screen fits on a computer now. Long YouTube titles no longer run off the side of the panel and drag a scrollbar across the whole thing.',
+    'Import Music no longer offers An album as a separate choice. It was the artist search with a note attached, so it now says so: pick An artist and tick just the record you want.',
     'Public Jukeboxes have been retired. Browsing other people’s jukeboxes, publishing yours to its own web address, and the Explore button in the header are all gone. Sharing music happens through the catalogue now: import an artist publicly and everybody finds them on Explore Artists.',
     'When you import music you now choose who can see it. Add to the public catalogue puts the artist on Explore Artists for everyone, or Import into My Jukebox only keeps it listed for you and nobody else.',
     'Add Artist is now Import Music, and it asks first whether you want a whole artist, one album, or a single song.',
@@ -17100,6 +17206,7 @@ function initGoogleAuth() {
         refreshSjAdminState().then(updateAuthBtn);
         refreshBgUnlock().then(() => { if (isLandingMode) renderLanding(); });
         restorePlaybackState();
+        sjjResumeBroadcast();
         if (isLandingMode) initLanding();
         try {
           const rp = localStorage.getItem('auth_return_path');
@@ -17111,6 +17218,7 @@ function initGoogleAuth() {
       }
     } else {
       googleUser = null;
+      try { sjjStopBroadcast(); } catch (_) {}
       sjIsAdmin = false;
       sjBgUnlock = null;
       _homeLibLoaded = false;
@@ -17137,6 +17245,7 @@ function initGoogleAuth() {
         loadMyBlockedTracks();
       });
       restorePlaybackState();
+      sjjResumeBroadcast();
       if (isLandingMode) initLanding();
     }
   });
@@ -22536,9 +22645,24 @@ function escHtml(s) {
 // ══════════════════════════════════════════════════════════════
 
 let _sjjState    = null;   // last payload from /api/jukebox/owner
-let _sjjPoll     = null;   // 5s timer while the console is open
-let _sjjHostOn   = false;  // is this device driving the room's playback?
+let _sjjPoll     = null;   // 5s console refresh, only while the modal is open
 let _sjjBusy     = false;
+
+// ── Broadcast ─────────────────────────────────────────────────────────────
+// The mirror runs whether or not the console is on screen: the host puts the
+// jukebox on air, closes the window, and carries on playing music. Everything
+// below is what keeps the room agreeing with this device's player.
+let _sjjLive      = false; // this device is mirroring its player into the room
+let _sjjSyncTimer = null;
+let _sjjSyncBusy  = false;
+let _sjjNudge     = null;  // debounce for "something changed, push it now"
+let _sjjSince     = null;  // serverTime of the last sync; the deletion cutoff
+let _sjjRoom      = null;  // last known { code, slug, name, isLive, settings }
+const SJJ_HOST_KEY = 'sj_jukebox_broadcasting';
+const SJJ_SYNC_MS  = 5000;
+// A stale flag on a phone left in a drawer should not silently seize the room
+// back off the laptop actually playing the party.
+const SJJ_RESUME_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 async function _sjjToken() {
   try {
@@ -22562,6 +22686,14 @@ async function sjjApi(body) {
   return d;
 }
 
+// The address that goes on the card. A room with a chosen name gets that one,
+// because /outlaw is what somebody can retype from across the room.
+function sjjJoinUrl(room) {
+  const j = room || _sjjState?.jukebox || _sjjRoom;
+  if (!j) return location.origin;
+  return location.origin + (j.slug ? '/' + j.slug : '/j/' + j.code);
+}
+
 async function openJukeboxHost() {
   if (!googleUser) { alert('Sign in to run a jukebox.'); return; }
   const overlay = document.getElementById('sjjOverlay');
@@ -22580,8 +22712,8 @@ function closeJukeboxHost() {
 async function sjjRefresh() {
   try {
     _sjjState = await sjjApi(null);
+    _sjjRoom  = _sjjState.jukebox;
     sjjRender();
-    await sjjSyncPlayback();
   } catch (e) {
     const body = document.getElementById('sjj-body');
     if (body) body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>';
@@ -22594,8 +22726,9 @@ async function sjjAct(body) {
   _sjjBusy = true;
   try {
     _sjjState = await sjjApi(body);
+    _sjjRoom  = _sjjState.jukebox;
     sjjRender();
-    await sjjSyncPlayback();
+    if (_sjjLive) sjjNudgeSync();
   } catch (e) {
     showToast(e.message);
   } finally {
@@ -22609,26 +22742,40 @@ function sjjRender() {
   const j = _sjjState.jukebox, st = j.settings, q = _sjjState.queue || [];
   const guests = _sjjState.guests || [];
   const np = _sjjState.nowPlaying;
-  const url = location.origin + '/j/' + j.code;
+  const url = sjjJoinUrl(j);
   const pls = (typeof _savedPlaylists !== 'undefined' && _savedPlaylists?.length)
     ? _savedPlaylists : (typeof playlists !== 'undefined' ? playlists : []) || [];
 
   let h = '';
 
-  h += '<div class="sjj-top">'
-    +  '<img class="sjj-qr" alt="Scan to join this jukebox" src="/api/jukebox/qr?code=' + j.code + '">'
-    +  '<div class="sjj-topinfo">'
-    +    '<div class="sjj-code">' + escHtml(j.code) + '</div>'
-    +    '<div class="sjj-url">' + escHtml(url) + '</div>'
+  // ── Step one: on air, or not. Everything else on this screen is detail.
+  h += '<div class="sjj-stage">'
+    +  '<div class="sjj-stage-l">'
     +    '<span class="sjj-live ' + (j.isLive ? 'on' : 'off') + '">' + (j.isLive ? 'On air' : 'Off air') + '</span>'
-    +    '<div style="margin-top:.6rem;display:flex;gap:.4rem;flex-wrap:wrap">'
-    +      '<button class="pl-btn" onclick="sjjToggleLive()">' + (j.isLive ? 'Take off air' : 'Put on air') + '</button>'
+    +    '<div class="sjj-stage-t">' + (j.isLive
+           ? 'Anyone who scans the code can add to what you are playing.'
+           : 'Put it on air and the room can start adding songs.') + '</div>'
+    +    '<div class="sjj-stage-btns">'
+    +      '<button class="pl-btn sjj-go" onclick="sjjToggleLive()">'
+    +        (j.isLive ? 'Take off air' : 'Start the jukebox') + '</button>'
+    +      (j.isLive ? '<button class="pl-btn ghost" onclick="sjjToggleFloatingQr()">Show QR on screen</button>' : '')
     +      '<button class="pl-btn ghost" onclick="sjjCopyLink()">Copy link</button>'
-    +      '<button class="pl-btn ghost" onclick="sjjToggleFloatingQr()">Show Join QR</button>'
-    +      '<button class="pl-btn ghost" onclick="openMyJukebox()">Manage My Music</button>'
-    +      '<button class="pl-btn ghost" onclick="sjjRename()">Rename</button>'
     +    '</div>'
+    +    '<div class="sjj-url">' + escHtml(url) + '</div>'
     +  '</div>'
+    +  '<img class="sjj-qr" alt="Scan to join this jukebox" src="/api/jukebox/qr?code=' + encodeURIComponent(j.code) + '&v=' + encodeURIComponent(j.slug || j.code) + '">'
+    +  '</div>';
+
+  // ── The address people type.
+  h += '<div class="sjj-h">Web address</div>'
+    +  '<div class="sjj-slug">'
+    +    '<span class="sjj-slug-pre">' + escHtml(location.host) + '/</span>'
+    +    '<input id="sjj-slug-input" value="' + escHtml(j.slug || '') + '" placeholder="' + escHtml(j.code.toLowerCase()) + '" maxlength="32" spellcheck="false" autocapitalize="off">'
+    +    '<button class="pl-btn" onclick="sjjSaveSlug()">Save</button>'
+    +  '</div>'
+    +  '<div class="sjj-s" style="padding:.15rem .5rem .3rem">'
+    +    (j.slug ? 'Guests can also still join with the code ' + escHtml(j.code) + '.'
+                : 'Pick a word and the join address becomes yours instead of a six letter code.')
     +  '</div>';
 
   h += '<div class="sjj-h">Playing here</div>';
@@ -22639,13 +22786,15 @@ function sjjRender() {
     h += '<div class="sjj-s" style="padding:.3rem .5rem">Nothing playing yet.</div>';
   }
   h += '<div style="margin-top:.5rem;display:flex;gap:.4rem;flex-wrap:wrap">'
-    +  '<button class="pl-btn" onclick="sjjPlayHere()">' + (_sjjHostOn ? 'Restart from the top' : 'Play on this device') + '</button>'
+    +  '<button class="pl-btn" onclick="sjjPlayHere()">Play the queue on this device</button>'
     +  (q.length ? '<button class="pl-btn ghost" onclick="sjjClear()">Clear queue</button>' : '')
+    +  '<button class="pl-btn ghost" onclick="openMyJukebox()">Manage My Music</button>'
+    +  '<button class="pl-btn ghost" onclick="sjjRename()">Rename</button>'
     +  '</div>';
 
   h += '<div class="sjj-h">Up next (' + q.length + ')</div>';
   if (!q.length) {
-    h += '<div class="sjj-empty">Nobody has queued anything yet.<br>Put the jukebox on air and share the code.</div>';
+    h += '<div class="sjj-empty">Nothing waiting. Whatever you queue in the player shows up here, and so does anything a guest adds.</div>';
   } else {
     q.forEach(function (item, i) {
       h += '<div class="sjj-row">'
@@ -22702,10 +22851,9 @@ function sjjToggle(label, key, on) {
     + (on ? 'On' : 'Off') + '</button></div>';
 }
 
-const sjjSet        = (patch) => sjjAct({ action: 'settings', settings: patch });
-const sjjToggleLive = () => sjjAct({ action: 'live', is_live: !_sjjState?.jukebox?.isLive });
-const sjjRemove     = (id) => sjjAct({ action: 'remove', itemId: id });
-const sjjBan        = (id, on) => sjjAct({ action: on ? 'ban' : 'unban', guestId: id });
+const sjjSet    = (patch) => sjjAct({ action: 'settings', settings: patch });
+const sjjRemove = (id) => sjjAct({ action: 'remove', itemId: id });
+const sjjBan    = (id, on) => sjjAct({ action: on ? 'ban' : 'unban', guestId: id });
 
 function sjjClear() {
   if (!confirm('Clear every song waiting in the jukebox?')) return;
@@ -22717,8 +22865,14 @@ function sjjRename() {
   if (name && name.trim()) sjjAct({ action: 'rename', name: name.trim() });
 }
 
+function sjjSaveSlug() {
+  const input = document.getElementById('sjj-slug-input');
+  if (!input) return;
+  sjjAct({ action: 'slug', slug: input.value.trim() });
+}
+
 function sjjCopyLink() {
-  const url = location.origin + '/j/' + (_sjjState?.jukebox?.code || '');
+  const url = sjjJoinUrl();
   navigator.clipboard?.writeText(url).then(
     () => showToast('Join link copied'),
     () => prompt('Copy this link:', url)
@@ -22748,7 +22902,236 @@ function sjjMove(i, delta) {
   });
 }
 
-// ── Playback ──────────────────────────────────────────────────────────────
+// ── The mirror ────────────────────────────────────────────────────────────
+// The room's queue IS this device's player queue, seen from the outside. Every
+// few seconds the host pushes what it is holding and where it has got to; the
+// server makes the room agree and hands back the guest adds this device has
+// not seen, which get appended to ytQueue and announced.
+//
+// Playback deliberately still goes through the ordinary player, so versions,
+// lyrics and background audio keep working exactly as they do everywhere else.
+
+async function sjjToggleLive() {
+  const going = !(_sjjState?.jukebox?.isLive);
+  await sjjAct({ action: 'live', is_live: going });
+  if (going) sjjStartBroadcast();
+  else       sjjStopBroadcast();
+}
+
+function sjjSetHostFlag(on) {
+  try {
+    if (on) localStorage.setItem(SJJ_HOST_KEY, String(Date.now()));
+    else    localStorage.removeItem(SJJ_HOST_KEY);
+  } catch (_) {}
+}
+
+function sjjStartBroadcast() {
+  if (_sjjLive) return;
+  _sjjLive = true;
+  _sjjSince = null;
+  sjjSetHostFlag(true);
+  if (_sjjSyncTimer) clearInterval(_sjjSyncTimer);
+  _sjjSyncTimer = setInterval(() => { sjjSyncTick().catch(() => {}); }, SJJ_SYNC_MS);
+  sjjSyncTick().catch(() => {});
+}
+
+function sjjStopBroadcast() {
+  _sjjLive = false;
+  sjjSetHostFlag(false);
+  if (_sjjSyncTimer) { clearInterval(_sjjSyncTimer); _sjjSyncTimer = null; }
+  if (_sjjNudge) { clearTimeout(_sjjNudge); _sjjNudge = null; }
+}
+
+// Something changed here - a track started, a song was queued. Push it now
+// rather than waiting out the interval, debounced so a burst of queue edits is
+// still one request.
+function sjjNudgeSync() {
+  if (!_sjjLive || _sjjNudge) return;
+  _sjjNudge = setTimeout(() => {
+    _sjjNudge = null;
+    sjjSyncTick().catch(() => {});
+  }, 500);
+}
+
+// Resume after a refresh: a TV in a bar reloading its tab must not quietly
+// take the room off air. Only this device, only if it was broadcasting today,
+// and only if the room still says it is live.
+async function sjjResumeBroadcast() {
+  if (_sjjLive || !googleUser) return;
+  let at = 0;
+  try { at = Number(localStorage.getItem(SJJ_HOST_KEY)) || 0; } catch (_) { return; }
+  if (!at || Date.now() - at > SJJ_RESUME_WINDOW_MS) { sjjSetHostFlag(false); return; }
+  try {
+    const state = await sjjApi(null);
+    _sjjState = state;
+    _sjjRoom  = state.jukebox;
+    if (state.jukebox?.isLive) sjjStartBroadcast();
+    else sjjSetHostFlag(false);
+  } catch (_) {
+    // Not signed in yet, or offline. The next sign-in tries again.
+  }
+}
+
+// What this device's player is doing, in the shape the room stores.
+function sjjPlaybackSnapshot() {
+  const item = ytQueue[ytQueueIdx] || null;
+  const trackId = item?.trackId || nowPlayingTrackId || null;
+  const meta = trackId ? (SJ_TRACK_META[trackId] || null) : null;
+
+  let positionMs = 0, durationMs = 0, isPlaying = false;
+  if (_taBgActive && _taAudioEl) {
+    // Background audio mode: the sound is the <audio> element, so it is the
+    // clock the guests should be following, not the cued video.
+    positionMs = Math.round((_taAudioEl.currentTime || 0) * 1000);
+    durationMs = Math.round((_taAudioEl.duration || 0) * 1000) || 0;
+    isPlaying  = !_taAudioEl.paused;
+  } else if (ytAPIPlayer && typeof ytAPIPlayer.getCurrentTime === 'function') {
+    try {
+      positionMs = Math.round((ytAPIPlayer.getCurrentTime() || 0) * 1000);
+      durationMs = Math.round((ytAPIPlayer.getDuration() || 0) * 1000) || 0;
+      isPlaying  = ytAPIPlayer.getPlayerState() === 1;
+    } catch (_) {}
+  }
+  if (!Number.isFinite(positionMs) || positionMs < 0) positionMs = 0;
+  if (!Number.isFinite(durationMs) || durationMs < 0) durationMs = 0;
+
+  return {
+    videoId:    item?.videoId || ytVideoId || null,
+    trackId:    trackId,
+    itemId:     item?.jbItemId || null,
+    title:      meta?.title || item?.title || null,
+    artistName: meta?.artist || item?.artist || null,
+    positionMs, durationMs, isPlaying,
+    // Carried across so a guest phone can line the karaoke up on a music video
+    // with a long instrumental intro without reading track_videos itself.
+    lyricOffsetMs: Math.round((_ytpLyrOffset || 0) * 1000)
+  };
+}
+
+async function sjjSyncTick() {
+  if (!_sjjLive || _sjjSyncBusy || !googleUser) return;
+  _sjjSyncBusy = true;
+  // Held by reference so the ids the server assigns land on the right objects
+  // even if the queue has moved on by the time the answer comes back.
+  const snapshot = ytQueue.slice(0, 600);
+  try {
+    const d = await sjjApi({
+      action: 'sync',
+      since: _sjjSince,
+      currentIndex: ytQueueIdx,
+      items: snapshot.map((it, i) => ({
+        index: i,
+        trackId: it.trackId || null,
+        videoId: it.videoId || null,
+        itemId: it.jbItemId || null
+      })),
+      playback: sjjPlaybackSnapshot()
+    });
+    _sjjSince = d.serverTime || null;
+
+    (d.assigned || []).forEach(a => {
+      const target = snapshot[a.index];
+      if (target) target.jbItemId = a.itemId;
+    });
+
+    if (d.dropped?.length) sjjDropItems(d.dropped);
+    if (d.adopted?.length) await sjjAdopt(d.adopted);
+
+    // The room can be taken off air from another device.
+    if (d.isLive === false) sjjStopBroadcast();
+  } catch (e) {
+    // A dropped sync just means the next one, five seconds away, catches up.
+    // Losing the session is the one thing worth stopping for.
+    if (/Sign in/i.test(e.message || '')) sjjStopBroadcast();
+  } finally {
+    _sjjSyncBusy = false;
+  }
+}
+
+// Guest adds. Resolve each to a playable version, append to the queue that is
+// already playing, and say so on screen.
+async function sjjAdopt(items) {
+  const info = await resolvePlaylistTracks(items.map(i => i.trackId)).catch(() => ({}));
+  const add = [];
+  const announce = [];
+  items.forEach(i => {
+    // After a refresh the host re-sends its whole queue with no ids, so the
+    // room hands the same songs back as if they were new. Claim the local row
+    // instead of appending a second copy of a song already waiting.
+    const mine = ytQueue.find(q => !q.jbItemId && q.trackId === i.trackId);
+    if (mine) { mine.jbItemId = i.id; return; }
+    announce.push(i);
+    const videoId = info[i.trackId]?.videoId || i.videoId;
+    if (!videoId) return;
+    add.push({
+      videoId,
+      title:   info[i.trackId]?.name || i.trackName,
+      trackId: i.trackId,
+      artist:  i.artistName || null,
+      jbItemId: i.id
+    });
+  });
+  if (add.length) {
+    _queueHasAdditions = true;
+    ytQueue = ytQueue.concat(ytNormalizeQueue(add).map((it, n) =>
+      Object.assign(it, { jbItemId: add[n].jbItemId })));
+    updateYTQueueUI();
+  }
+  // Only songs that are genuinely new to this device are announced; a
+  // reclaimed row is not somebody walking up to the jukebox.
+  announce.forEach(sjjAddToast);
+  if (document.getElementById('sjjOverlay')?.classList.contains('open')) {
+    sjjRefresh().catch(() => {});
+  }
+}
+
+// Songs the room no longer has: removed from the console, or pulled back by
+// the guest who added them. The one on screen keeps playing - stopping the
+// music mid-song is never what removing a row from a list meant.
+function sjjDropItems(ids) {
+  const gone = new Set(ids);
+  const keep = [];
+  let newIdx = ytQueueIdx;
+  ytQueue.forEach((item, i) => {
+    if (item.jbItemId && gone.has(item.jbItemId) && i !== ytQueueIdx) {
+      if (i < ytQueueIdx) newIdx--;
+      return;
+    }
+    if (item.jbItemId && gone.has(item.jbItemId)) item.jbItemId = null;
+    keep.push(item);
+  });
+  if (keep.length !== ytQueue.length) {
+    ytQueue = keep;
+    ytQueueIdx = Math.max(-1, newIdx);
+    updateYTQueueUI();
+  }
+}
+
+// "Artist - Song, added by NAME" over whatever is on screen. Deliberately its
+// own thing rather than showToast: the album cover and the guest's name are
+// the whole point, and the host is usually looking at the room, not the app.
+function sjjAddToast(item) {
+  let wrap = document.getElementById('sjj-add-toasts');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'sjj-add-toasts';
+    wrap.className = 'sjj-add-toasts';
+    document.body.appendChild(wrap);
+  }
+  const el = document.createElement('div');
+  el.className = 'sjj-add-toast';
+  el.innerHTML =
+    (item.albumArt ? '<img alt="" src="' + escHtml(item.albumArt) + '">' : '') +
+    '<div class="sjj-add-body">' +
+      '<div class="sjj-add-t">' + escHtml([item.artistName, item.trackName].filter(Boolean).join(' - ')) + '</div>' +
+      '<div class="sjj-add-by">added by ' + escHtml(item.addedByName || 'a guest') + '</div>' +
+    '</div>';
+  wrap.appendChild(el);
+  // Six seconds: long enough to read across a room, short enough that a busy
+  // hour does not become a wall of cards.
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, 6000);
+  while (wrap.children.length > 4) wrap.removeChild(wrap.firstChild);
+}
 
 async function _sjjResolve(items) {
   const info = await resolvePlaylistTracks(items.map(i => i.trackId));
@@ -22756,10 +23139,14 @@ async function _sjjResolve(items) {
     ? { videoId: info[i.trackId].videoId,
         title:   info[i.trackId].name || i.trackName,
         trackId: i.trackId,
+        artist:  i.artistName || null,
         jbItemId: i.id }
     : null).filter(Boolean);
 }
 
+// Start the room's waiting queue playing here. Mostly for the case where
+// guests queued songs while the jukebox was off air and there is nothing
+// playing yet to mirror.
 async function sjjPlayHere() {
   const q = _sjjState?.queue || [];
   if (!q.length) { alert('Nothing in the jukebox queue yet.'); return; }
@@ -22777,28 +23164,7 @@ async function sjjPlayHere() {
   }
   ytQueue = items; ytQueueIdx = 0;
   updateYTQueueUI();
-  _sjjHostOn = true;
-  sjjAct({ action: 'playing', itemId: items[0].jbItemId });
-}
-
-// Keep the live player and the room's queue in step. New guest adds are
-// appended rather than reloaded, so nothing interrupts what is playing.
-async function sjjSyncPlayback() {
-  if (!_sjjHostOn || !_sjjState) return;
-  try {
-    const known = new Set(ytQueue.map(i => i.jbItemId).filter(Boolean));
-    const fresh = (_sjjState.queue || []).filter(i => !known.has(i.id));
-    if (fresh.length) {
-      const add = await _sjjResolve(fresh);
-      if (add.length) { ytQueue = ytQueue.concat(add); updateYTQueueUI(); }
-    }
-    const cur = ytQueue[ytQueueIdx];
-    if (cur?.jbItemId && _sjjState.nowPlaying?.id !== cur.jbItemId) {
-      await sjjApi({ action: 'playing', itemId: cur.jbItemId });
-    }
-  } catch (_) {
-    // A failed sync just means the next poll tries again five seconds later.
-  }
+  if (!_sjjLive) sjjStartBroadcast(); else sjjNudgeSync();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -22861,13 +23227,9 @@ function mjRender() {
         '<button class="sjj-mini" title="Play" onclick="mjPlayItem(\'' + i.id + '\')">▶</button>' +
         '<button class="sjj-mini" title="Remove from My Jukebox" onclick="mjRemove(\'' + i.id + '\')">✕</button></div>').join('')
     : '<div class="sjj-empty">Your personal jukebox is empty. Add a song from YouTube, or use Send to My Jukebox on any song, album, or artist.</div>';
-  const search = _mjSearchResults.length
-    ? '<div class="sjj-h">Choose songs to add</div><div style="display:flex;justify-content:flex-end;margin:-.2rem 0 .3rem"><button class="pl-btn" onclick="mjAddSelected()">Add selected</button></div>' +
-      _mjSearchResults.map((r, n) => '<label class="mj-result"><input type="checkbox" class="mj-pick" data-mj-result="' + n + '">' +
-        '<img alt="" src="' + escHtml(r.thumbnail || ('https://i.ytimg.com/vi/' + r.videoId + '/mqdefault.jpg')) + '"><span class="mj-body"><span class="mj-title">' + escHtml(r.title) + '</span><span class="mj-sub">' + escHtml(r.channelTitle || '') + (r.views != null ? ' · ' + fmtV(r.views) + ' views' : '') + '</span></span></label>').join('')
-    : '';
+  const search = _mjSearchResults.length ? mjResultsHTML() : '';
   el.innerHTML =
-    '<div class="sjj-h">Add song to My Jukebox</div><div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube for a song" onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Search</button></div>' +
+    '<div class="sjj-h">Add a song</div><div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube for a song" onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Search</button></div>' +
     search +
     '<div class="sjj-h">My library</div>' + lib +
     '<div class="sjj-h">Quick removal</div>' +
@@ -22890,24 +23252,126 @@ async function mjSearchYouTube() {
   } catch (e) { showToast(e.message || 'Could not search YouTube.'); }
 }
 
+// ── Add a song ────────────────────────────────────────────────────────────
+// A single used to be a lonely row in a personal list: the song existed, the
+// artist did not, and two songs by the same band sat side by side as
+// strangers. Now the artist is read off the upload (and shown, so a bad guess
+// can be corrected before it lands), songs group under that artist, and the
+// artist turns up on Explore Artists as a card with the video's own artwork.
+//
+// Private by default. A loose song somebody found is their business until they
+// say otherwise, and the card's own control is how it goes public.
+let _mjVisibility = 'private';
+
+// The client's copy of readArtistAndTitle() in src/lib/single-import.ts, so the
+// name on screen is the name that gets stored. The server re-derives when the
+// client sends nothing, and the two have to agree.
+function mjReadArtist(title, channel) {
+  const noise = [
+    /\(official\s*(music\s*)?(video|audio|lyric\s*video)\)/gi,
+    /\[official\s*(music\s*)?(video|audio|lyric\s*video)\]/gi,
+    /\((official|hq|hd|4k|remaster(ed)?(\s*\d{4})?|audio|lyrics?|visualizer)\)/gi,
+    /\[(official|hq|hd|4k|remaster(ed)?(\s*\d{4})?|audio|lyrics?|visualizer)\]/gi,
+    /\bofficial\s+(music\s+)?video\b/gi,
+    /\bofficial\s+audio\b/gi,
+    /\blyric\s*video\b/gi
+  ];
+  const tidy = (x) => {
+    let out = x || '';
+    noise.forEach(rx => { out = out.replace(rx, ' '); });
+    return out.replace(/\s{2,}/g, ' ').replace(/^[\s\-\u2013\u2014|]+|[\s\-\u2013\u2014|]+$/g, '').trim();
+  };
+  const t = tidy(title);
+  const topicMatch = (channel || '').match(/^(.*?)\s*-\s*topic\s*$/i);
+  const topic = topicMatch ? topicMatch[1].trim() : '';
+  // A "- Topic" channel is YouTube's own statement of who the artist is.
+  if (topic) {
+    const lead = new RegExp('^' + topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[-\u2013\u2014:]\\s*', 'i');
+    return { artistName: topic, trackName: tidy(t.replace(lead, '')) || t };
+  }
+  const parts = t.split(/\s+[-\u2013\u2014]\s+/);
+  if (parts.length >= 2) {
+    const artist = tidy(parts[0]);
+    const track  = tidy(parts.slice(1).join(' - '));
+    if (artist && track && artist.length <= 80) return { artistName: artist, trackName: track };
+  }
+  const ch = tidy((channel || '').replace(/\s*-\s*topic\s*$/i, ''));
+  return { artistName: ch || 'Unknown artist', trackName: t || 'Untitled' };
+}
+
+function mjResultsHTML() {
+  const rows = _mjSearchResults.map((r, n) => {
+    const read = mjReadArtist(r.title, r.channelTitle);
+    if (r._artist == null) r._artist = read.artistName;
+    if (r._track  == null) r._track  = read.trackName;
+    const thumb = r.thumbnail || ('https://i.ytimg.com/vi/' + r.videoId + '/mqdefault.jpg');
+    return '<label class="mj-result">' +
+      '<input type="checkbox" class="mj-pick" data-mj-result="' + n + '">' +
+      '<img alt="" src="' + escHtml(thumb) + '">' +
+      '<span class="mj-body"><span class="mj-title">' + escHtml(r._track) + '</span>' +
+      '<span class="mj-sub">' + escHtml(r.title) + '</span>' +
+      '<span class="mj-sub">' + escHtml(r.channelTitle || '') +
+        (r.views != null ? ' \u00b7 ' + fmtV(r.views) + ' views' : '') + '</span></span>' +
+      '<span class="mj-artist"><label>Artist</label>' +
+      '<input type="text" data-mj-artist="' + n + '" value="' + escHtml(r._artist) + '"' +
+      ' onclick="event.preventDefault();event.stopPropagation()"' +
+      ' oninput="mjSetArtist(' + n + ',this.value)" placeholder="Artist name"></span>' +
+      '</label>';
+  }).join('');
+  return '<div class="sjj-h">Choose songs to add</div>' +
+    '<div class="mj-addbar">' +
+      '<span class="mj-vis">Who can see these?' +
+        '<button class="pl-btn ' + (_mjVisibility === 'public' ? '' : 'ghost') + '" onclick="mjSetVisibility(\'public\')">Visible to All</button>' +
+        '<button class="pl-btn ' + (_mjVisibility === 'private' ? '' : 'ghost') + '" onclick="mjSetVisibility(\'private\')">In My Private Jukebox</button>' +
+      '</span>' +
+      '<button class="pl-btn" onclick="mjAddSelected()">Add selected</button>' +
+    '</div>' + rows;
+}
+
+// Typed straight onto the result so a repaint cannot lose it. This is the name
+// the songs group under, so it is worth letting somebody fix a bad guess
+// before it becomes an artist card.
+function mjSetArtist(n, value) {
+  if (_mjSearchResults[n]) _mjSearchResults[n]._artist = value;
+}
+
+function mjSetVisibility(v) {
+  _mjVisibility = v === 'public' ? 'public' : 'private';
+  mjRender();
+}
+
 async function mjAddSelected() {
   const checked = Array.from(document.querySelectorAll('.mj-pick:checked'));
   if (!checked.length) { showToast('Choose at least one song.'); return; }
   let added = 0;
+  let artist = null;
   for (const input of checked) {
     const row = _mjSearchResults[Number(input.dataset.mjResult)];
     if (!row) continue;
     try {
-      const data = await mjRequest('/api/my-jukebox', 'POST', { action: 'add_youtube', videoId: row.videoId, artistName: row.channelTitle });
+      const data = await mjRequest('/api/my-jukebox', 'POST', {
+        action: 'add_youtube',
+        videoId: row.videoId,
+        artistName: (row._artist || '').trim() || null,
+        trackName: (row._track || '').trim() || null,
+        visibility: _mjVisibility,
+        userName: googleUser?.name || null
+      });
       if (!data.duplicate) added++;
+      if (data.artist) artist = data.artist;
       _mjState.items = data.items || _mjState.items;
     } catch (e) { showToast(e.message || 'One song could not be added.'); }
   }
   _mjSearchResults = [];
   mjRender();
-  showToast(added ? added + ' song' + (added === 1 ? '' : 's') + ' added to My Jukebox.' : 'Those songs are already in My Jukebox.');
+  showToast(added
+    ? added + ' song' + (added === 1 ? '' : 's') + ' added'
+      + (artist ? ' \u2014 ' + artist.name + ' is in Explore Artists' : '')
+      + (_mjVisibility === 'private' ? ', visible only to you.' : '.')
+    : 'Those songs are already in your jukebox.');
+  // The artist card is the point of all this, so go and fetch it.
+  if (added) refreshLandingStats();
 }
-
 async function mjPost(body) {
   const data = await mjRequest('/api/my-jukebox', 'POST', body);
   if (data.items) _mjState.items = data.items;
@@ -22961,14 +23425,14 @@ function sjjToggleFloatingQr() {
   const old = document.getElementById('sjj-floating-qr');
   if (old) { old.remove(); return; }
   const j = _sjjState?.jukebox;
-  if (!j) { showToast('Open your My Jukebox Live Share first.'); return; }
+  if (!j) { showToast('Open the Online Jukebox first.'); return; }
   const key = 'sj_qr_float_' + j.code;
   let saved = {}; try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch (_) {}
   const box = document.createElement('div');
   box.id = 'sjj-floating-qr'; box.className = 'sjj-float-qr';
   box.style.left = saved.left || '24px'; box.style.top = saved.top || '24px'; if (saved.width) box.style.width = saved.width;
   box.innerHTML = '<div class="sjj-float-hd"><span>Scan to join</span><button class="sjj-mini" style="width:1.35rem;height:1.35rem" onclick="document.getElementById(\'sjj-floating-qr\')?.remove()">✕</button></div>' +
-    '<img alt="Scan to join ' + escHtml(j.name) + '" src="/api/jukebox/qr?code=' + encodeURIComponent(j.code) + '"><div class="sjj-float-url">' + escHtml(location.origin + '/j/' + j.code) + '</div>';
+    '<img alt="Scan to join ' + escHtml(j.name) + '" src="/api/jukebox/qr?code=' + encodeURIComponent(j.code) + '&v=' + encodeURIComponent(j.slug || j.code) + '"><div class="sjj-float-url">' + escHtml(sjjJoinUrl(j)) + '</div>';
   document.body.appendChild(box);
   const save = () => { try { localStorage.setItem(key, JSON.stringify({ left:box.style.left, top:box.style.top, width:box.style.width })); } catch (_) {} };
   box.addEventListener('mouseup', save); box.addEventListener('touchend', save, { passive:true });

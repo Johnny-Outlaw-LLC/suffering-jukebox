@@ -3,11 +3,11 @@
 // "which room is this, and who is asking" resolution every route starts with.
 
 import { NextRequest, NextResponse } from "next/server";
-import { normalizeCode } from "@/lib/jukebox";
+import { normalizeRoomKey } from "@/lib/jukebox";
 import { getAuthUser } from "@/lib/sj-admin-auth";
 import {
   getGuestByToken,
-  getJukeboxByCode,
+  getJukeboxByKey,
   guestCookieName,
   sjb,
   type GuestRow,
@@ -79,12 +79,14 @@ export async function resolveRoom(
   rawCode: unknown,
 ): Promise<RoomContext | { error: NextResponse }> {
   if (typeof rawCode !== "string") return { error: bad("Missing jukebox code.") };
-  const code = normalizeCode(rawCode);
-  if (!code) return { error: bad("That jukebox code does not look right.") };
+  // A code or a vanity slug: whatever was in the address bar. Which one it is
+  // gets settled against the database, not against the shape of the string.
+  const key = normalizeRoomKey(rawCode);
+  if (!key) return { error: bad("That jukebox address does not look right.") };
 
   const sb = sjb();
-  const jukebox = await getJukeboxByCode(sb, code);
-  if (!jukebox) return { error: bad("No jukebox with that code.", 404) };
+  const jukebox = await getJukeboxByKey(sb, key);
+  if (!jukebox) return { error: bad("No jukebox at that address.", 404) };
 
   const token = readGuestCookie(req, jukebox.code);
   const guest = await getGuestByToken(sb, token, jukebox.id);
@@ -106,9 +108,11 @@ export async function isOwnerRequest(req: NextRequest, jukebox: JukeboxRow): Pro
 export function publicJukebox(jukebox: JukeboxRow) {
   return {
     code: jukebox.code,
+    slug: jukebox.public_slug,
     name: jukebox.name,
     isLive: jukebox.is_live,
     settings: jukebox.settings,
+    playback: jukebox.playback,
   };
 }
 

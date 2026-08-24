@@ -79,6 +79,151 @@ export function generateCode(random: () => number = Math.random): string {
   return out;
 }
 
+// ── Vanity addresses ──────────────────────────────────────────────────────
+// A room code is six characters shouted across a bar. A vanity slug is what
+// goes on the poster: sufferingjukebox.stream/outlaw. Both resolve to the same
+// room, and the slug is tried FIRST — a generated code could in principle read
+// like somebody else's chosen word, and the chosen word should win.
+
+/**
+ * Single-segment paths the app already owns. A jukebox slug that matched one
+ * of these would shadow a real page, so they are refused at the point the
+ * owner picks a name rather than left to fight it out in the router.
+ */
+export const RESERVED_SLUGS = new Set([
+  "about", "account", "admin", "api", "artist", "artists", "artist-agreement",
+  "artist-rights-admin", "artist-upload", "assets", "auth", "album", "albums",
+  "blog", "community", "contact", "cookies", "dmca", "embed", "explore",
+  "faq", "favicon", "feed", "help", "home", "images", "img", "index", "j",
+  "join", "jukebox", "jukeboxes", "legal", "live", "login", "logout", "me",
+  "new", "news", "oembed", "playlist", "playlists", "pricing", "privacy",
+  "qr", "queue", "robots", "rss", "s", "search", "settings", "share",
+  "share-image", "signin", "signout", "signup", "sitemap", "song", "songs",
+  "static", "support", "terms", "track", "tracks", "well-known",
+]);
+
+export const MIN_SLUG = 3;
+export const MAX_SLUG = 32;
+
+export type SlugResult = { ok: true; slug: string } | { ok: false; message: string };
+
+/**
+ * Fold whatever the owner typed into a URL-safe slug, or explain why it cannot
+ * be one. Deliberately strict: this string is read aloud and typed by hand.
+ */
+export function normalizeVanitySlug(input: unknown): SlugResult {
+  if (typeof input !== "string") return { ok: false, message: "Type a web address." };
+  const slug = input
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (slug.length < MIN_SLUG) {
+    return { ok: false, message: `Use at least ${MIN_SLUG} letters or numbers.` };
+  }
+  if (slug.length > MAX_SLUG) {
+    return { ok: false, message: `Keep it to ${MAX_SLUG} characters or fewer.` };
+  }
+  if (RESERVED_SLUGS.has(slug)) {
+    return { ok: false, message: `"${slug}" is a page on this site already. Pick another.` };
+  }
+  return { ok: true, slug };
+}
+
+/**
+ * What /j/<x> and the vanity rewrite both accept: a room code, or a slug.
+ * Kept looser than normalizeCode on purpose — deciding which one it is happens
+ * against the database, not against the shape of the string.
+ */
+export function normalizeRoomKey(input: string): string | null {
+  const key = (input ?? "").trim().replace(/^\/+|\/+$/g, "");
+  if (!/^[A-Za-z0-9-]{3,40}$/.test(key)) return null;
+  return key;
+}
+
+// ── Playback mirror ───────────────────────────────────────────────────────
+// What the host player is doing, as the guests need to hear it. One blob for
+// the same reason settings is one blob: adding a field should not need a
+// migration.
+
+export type Playback = {
+  /** The YouTube upload actually on screen, which may be an alternate version. */
+  videoId: string | null;
+  trackId: string | null;
+  /** The room's queue row this is playing, so the guest list can highlight it. */
+  itemId: string | null;
+  title: string | null;
+  artistName: string | null;
+  /** Where the host was, at updatedAt. Guests extrapolate from there. */
+  positionMs: number;
+  durationMs: number;
+  isPlaying: boolean;
+  /**
+   * Per-video lyric offset, carried here so a guest does not need the
+   * track_videos table to line the karaoke up.
+   */
+  lyricOffsetMs: number;
+  /** Server clock when this was written. The only time base guests trust. */
+  updatedAt: string | null;
+};
+
+export const EMPTY_PLAYBACK: Playback = {
+  videoId: null,
+  trackId: null,
+  itemId: null,
+  title: null,
+  artistName: null,
+  positionMs: 0,
+  durationMs: 0,
+  isPlaying: false,
+  lyricOffsetMs: 0,
+  updatedAt: null,
+};
+
+export function normalizePlayback(raw: unknown): Playback {
+  const p = (raw ?? {}) as Record<string, unknown>;
+  const str = (v: unknown, max: number): string | null =>
+    typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+  const ms = (v: unknown, max: number): number => {
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(Math.round(n), max);
+  };
+  return {
+    videoId: str(p.videoId, 40),
+    trackId: str(p.trackId, 40),
+    itemId: str(p.itemId, 40),
+    title: str(p.title, 200),
+    artistName: str(p.artistName, 120),
+    // Six hours caps a stuck client writing nonsense; nothing here is that long.
+    positionMs: ms(p.positionMs, 6 * 60 * 60 * 1000),
+    durationMs: ms(p.durationMs, 6 * 60 * 60 * 1000),
+    isPlaying: p.isPlaying === true,
+    lyricOffsetMs: ms(p.lyricOffsetMs, 30 * 60 * 1000),
+    updatedAt: str(p.updatedAt, 40),
+  };
+}
+
+/**
+ * Where the host is *now*, given what they last reported and how long ago that
+ * was. This is the whole trick behind a guest phone staying in step with the
+ * TV between five-second polls: the position is extrapolated locally and only
+ * corrected when it drifts.
+ */
+export function projectedPositionMs(
+  playback: Playback,
+  /** Milliseconds elapsed since playback.updatedAt, by the caller's clock. */
+  elapsedMs: number,
+): number {
+  if (!playback.isPlaying) return playback.positionMs;
+  const at = playback.positionMs + Math.max(0, elapsedMs);
+  if (playback.durationMs > 0) return Math.min(at, playback.durationMs);
+  return at;
+}
+
 export function normalizeCode(input: string): string | null {
   const c = input.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   return c.length === CODE_LENGTH ? c : null;
@@ -183,6 +328,113 @@ export function roundRobinSort(pending: PendingItem[], guestId: string | null): 
   const before = insertAfter >= 0 ? ordered[insertAfter].sort : null;
   const after = ordered[insertAfter + 1].sort;
   return midpointSort(before, after);
+}
+
+
+// ── Host queue mirror ─────────────────────────────────────────────────────
+// The room's queue is a mirror of what the host's own player is holding, not
+// a second list beside it. The host pushes its whole ytQueue every few
+// seconds and this works out the difference. Doing it as one pure function
+// means the awkward part — telling a song the host deleted apart from a song
+// a guest added a second ago — is testable and lives in one place.
+
+export type HostQueueItem = {
+  /** Position in the host's own player queue. */
+  index: number;
+  /** Null for anything not in the catalogue (a My Jukebox import, say). */
+  trackId: string | null;
+  videoId: string | null;
+  /** The room row this is already mirrored to, once the server has made one. */
+  itemId: string | null;
+};
+
+export type MirrorRow = {
+  id: string;
+  trackId: string;
+  status: string;
+  sort: number;
+  /** Epoch ms. */
+  createdAt: number;
+};
+
+export type QueueStatus = "pending" | "playing" | "played";
+
+export type MirrorPlan = {
+  insert: { index: number; trackId: string; videoId: string | null; sort: number; status: QueueStatus }[];
+  update: { id: string; sort: number; status: QueueStatus }[];
+  /** Rows the host knew about and has since dropped from its own queue. */
+  remove: string[];
+  /** Rows the host has never seen: guest adds. It appends these and toasts them. */
+  adopt: string[];
+  /** Rows the host still lists that the room has removed. It drops these. */
+  drop: string[];
+};
+
+export function statusForIndex(index: number, currentIndex: number): QueueStatus {
+  if (currentIndex < 0) return "pending";
+  if (index < currentIndex) return "played";
+  if (index === currentIndex) return "playing";
+  return "pending";
+}
+
+export function reconcileHostQueue(opts: {
+  items: HostQueueItem[];
+  /** Index of the song on screen, or -1 when nothing is playing. */
+  currentIndex: number;
+  /** Every pending/playing row in the room, plus any row the snapshot claims. */
+  existing: MirrorRow[];
+  /**
+   * When the host last heard from the server, by the server's clock. A row
+   * created after this is something the host cannot have known about, so it is
+   * a guest add to adopt rather than a deletion to honour.
+   */
+  snapshotAtMs: number;
+}): MirrorPlan {
+  const byId = new Map(opts.existing.map((r) => [r.id, r]));
+  const claimed = new Set<string>();
+  const plan: MirrorPlan = { insert: [], update: [], remove: [], adopt: [], drop: [] };
+
+  for (const item of opts.items) {
+    const status = statusForIndex(item.index, opts.currentIndex);
+    const sort = (item.index + 1) * SORT_STEP;
+    const row = item.itemId ? byId.get(item.itemId) : undefined;
+
+    if (row) {
+      claimed.add(row.id);
+      // The owner (or the guest who added it) took it out of the room while
+      // the host still had it queued. The room wins; the host drops it.
+      if (row.status === "removed") {
+        plan.drop.push(row.id);
+        continue;
+      }
+      // Only what actually moved. In the steady state a host pushing the same
+      // queue every three seconds writes nothing at all; a track change writes
+      // two rows.
+      if (row.sort !== sort || row.status !== status) {
+        plan.update.push({ id: row.id, sort, status });
+      }
+      continue;
+    }
+
+    // No row yet. Anything outside the catalogue simply is not mirrorable —
+    // jukebox_queue.track_id is a real foreign key — so it stays a private
+    // part of the host's queue and guests never see it.
+    if (!item.trackId) continue;
+    // Nor is a song the host played before the room ever heard of it. Writing
+    // those in would invent a history the room did not have, which is exactly
+    // what a host reloading its tab would produce.
+    if (status === "played") continue;
+    plan.insert.push({ index: item.index, trackId: item.trackId, videoId: item.videoId, sort, status });
+  }
+
+  for (const row of opts.existing) {
+    if (claimed.has(row.id)) continue;
+    if (row.status !== "pending" && row.status !== "playing") continue;
+    if (row.createdAt > opts.snapshotAtMs) plan.adopt.push(row.id);
+    else plan.remove.push(row.id);
+  }
+
+  return plan;
 }
 
 // ── The add rule ──────────────────────────────────────────────────────────

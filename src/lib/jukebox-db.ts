@@ -12,9 +12,14 @@ import {
   MAX_JUKEBOXES_PER_ACCOUNT,
   generateCode,
   nicknameFromLyric,
+  normalizePlayback,
   normalizeSettings,
+  reconcileHostQueue,
+  type HostQueueItem,
   type JukeboxSettings,
+  type MirrorRow,
   type PendingItem,
+  type Playback,
 } from "@/lib/jukebox";
 
 export type ServiceClient = ReturnType<typeof createSjServiceClient>;
@@ -53,6 +58,7 @@ export type JukeboxRow = {
   name: string;
   is_live: boolean;
   settings: JukeboxSettings;
+  playback: Playback;
   is_public: boolean;
   public_slug: string | null;
   description: string | null;
@@ -62,10 +68,15 @@ export type JukeboxRow = {
 };
 
 const JUKEBOX_SELECT =
-  "id,owner_email,code,name,is_live,settings,is_public,public_slug,description,created_at,updated_at,last_live_at";
+  "id,owner_email,code,name,is_live,settings,playback,is_public,public_slug,description," +
+  "created_at,updated_at,last_live_at";
 
 function hydrate(row: any): JukeboxRow {
-  return { ...row, settings: normalizeSettings(row.settings) };
+  return {
+    ...row,
+    settings: normalizeSettings(row.settings),
+    playback: normalizePlayback(row.playback),
+  };
 }
 
 export async function getJukeboxByCode(sb: ServiceClient, code: string): Promise<JukeboxRow | null> {
@@ -75,6 +86,48 @@ export async function getJukeboxByCode(sb: ServiceClient, code: string): Promise
     .maybeSingle();
   if (error) throw error;
   return data ? hydrate(data) : null;
+}
+
+/**
+ * Resolve a room from whatever was in the address bar: a vanity slug, or a
+ * six character code. The slug is tried FIRST on purpose — a generated code
+ * could read like somebody else's chosen word, and the chosen word should win.
+ */
+export async function getJukeboxByKey(sb: ServiceClient, key: string): Promise<JukeboxRow | null> {
+  const { data, error } = await T(sb, "jukeboxes")
+    .select(JUKEBOX_SELECT)
+    .ilike("public_slug", key)
+    .maybeSingle();
+  if (error) throw error;
+  if (data) return hydrate(data);
+  return getJukeboxByCode(sb, key);
+}
+
+/**
+ * Every vanity address in use, for the rewrite in src/proxy.ts. Small by
+ * definition: one row per host who has picked one.
+ */
+export async function listVanitySlugs(sb: ServiceClient): Promise<string[]> {
+  const { data, error } = await T(sb, "jukeboxes")
+    .select("public_slug")
+    .not("public_slug", "is", null)
+    .limit(2000);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => String(r.public_slug).toLowerCase());
+}
+
+/** True when this code is already somebody's room code. */
+export async function codeExists(sb: ServiceClient, code: string): Promise<boolean> {
+  const { data, error } = await T(sb, "jukeboxes").select("id").ilike("code", code).maybeSingle();
+  if (error) throw error;
+  return !!data;
+}
+
+/** True when this slug is already an artist page, so a room may not take it. */
+export async function artistSlugExists(sb: ServiceClient, slug: string): Promise<boolean> {
+  const { data, error } = await T(sb, "artists").select("id").ilike("slug", slug).maybeSingle();
+  if (error) throw error;
+  return !!data;
 }
 
 export async function listJukeboxesForOwner(sb: ServiceClient, email: string): Promise<JukeboxRow[]> {
@@ -464,4 +517,157 @@ export async function markPlayed(sb: ServiceClient, jukeboxId: string, itemId: s
     .eq("id", itemId)
     .eq("jukebox_id", jukeboxId);
   if (error) throw error;
+}
+
+// ── The host mirror ───────────────────────────────────────────────────────
+// The room's queue is the host's own player queue, seen from the outside.
+// syncHostQueue() takes a snapshot of what the host is holding and makes the
+// room agree with it, then reports back the guest adds the host has not seen
+// so it can append them and toast them.
+
+export type HostSyncResult = {
+  /** Room rows created for songs the host had queued locally. */
+  assigned: { index: number; itemId: string }[];
+  /** Guest adds. Full queue rows so the host can play and announce them. */
+  adopted: QueueItem[];
+  /** Room rows the host still lists that have since been removed. */
+  dropped: string[];
+  removed: number;
+};
+
+export async function syncHostQueue(
+  sb: ServiceClient,
+  jukeboxId: string,
+  opts: { items: HostQueueItem[]; currentIndex: number; snapshotAtMs: number; ownerName: string },
+): Promise<HostSyncResult> {
+  const cols = "id,track_id,status,sort,created_at";
+
+  const { data: active, error: activeErr } = await T(sb, "jukebox_queue")
+    .select(cols)
+    .eq("jukebox_id", jukeboxId)
+    .in("status", ["pending", "playing"])
+    .limit(600);
+  if (activeErr) throw activeErr;
+
+  // Rows the snapshot claims but which are no longer waiting: already played,
+  // or removed out from under the host. Without these the reconcile would see
+  // an unclaimed item and insert a duplicate of a song already in the room.
+  const claimIds = opts.items.map((i) => i.itemId).filter(Boolean) as string[];
+  const known = new Set((active ?? []).map((r: any) => r.id));
+  const missing = claimIds.filter((id) => !known.has(id));
+  let extra: any[] = [];
+  if (missing.length) {
+    const { data, error } = await T(sb, "jukebox_queue")
+      .select(cols)
+      .eq("jukebox_id", jukeboxId)
+      .in("id", missing.slice(0, 600));
+    if (error) throw error;
+    extra = data ?? [];
+  }
+
+  const toMirror = (r: any): MirrorRow => ({
+    id: r.id,
+    trackId: r.track_id,
+    status: r.status,
+    sort: Number(r.sort),
+    createdAt: Date.parse(r.created_at),
+  });
+
+  const plan = reconcileHostQueue({
+    items: opts.items,
+    currentIndex: opts.currentIndex,
+    existing: [...(active ?? []), ...extra].map(toMirror),
+    snapshotAtMs: opts.snapshotAtMs,
+  });
+
+  const assigned: { index: number; itemId: string }[] = [];
+  if (plan.insert.length) {
+    const { data, error } = await T(sb, "jukebox_queue")
+      .insert(
+        plan.insert.map((row) => ({
+          jukebox_id: jukeboxId,
+          track_id: row.trackId,
+          video_id: row.videoId,
+          guest_id: null,
+          added_by_name: opts.ownerName,
+          added_by_owner: true,
+          sort: row.sort,
+          status: row.status,
+          ...(row.status === "played" ? { played_at: new Date().toISOString() } : {}),
+        })),
+      )
+      .select("id,sort");
+    if (error) throw error;
+    // Matched by sort, not by the order the insert came back in: sort is
+    // (index + 1) * step, so it is unique across the snapshot by construction.
+    const bySort = new Map((data ?? []).map((r: any) => [Number(r.sort), r.id as string]));
+    for (const row of plan.insert) {
+      const id = bySort.get(row.sort);
+      if (id) assigned.push({ index: row.index, itemId: id });
+    }
+  }
+
+  // Grouped by the value being written, so a track change is two statements
+  // rather than one per row in the queue.
+  const groups = new Map<string, string[]>();
+  for (const u of plan.update) {
+    const key = `${u.sort}|${u.status}`;
+    groups.set(key, [...(groups.get(key) ?? []), u.id]);
+  }
+  for (const [key, ids] of groups) {
+    const [sortRaw, status] = key.split("|");
+    await T(sb, "jukebox_queue")
+      .update({
+        sort: Number(sortRaw),
+        status,
+        ...(status === "played" ? { played_at: new Date().toISOString() } : {}),
+      })
+      .in("id", ids);
+  }
+
+  if (plan.remove.length) {
+    await T(sb, "jukebox_queue")
+      .update({ status: "removed", removed_at: new Date().toISOString(), removed_by: "host:sync" })
+      .in("id", plan.remove);
+  }
+
+  let adopted: QueueItem[] = [];
+  if (plan.adopt.length) {
+    const { data, error } = await T(sb, "jukebox_queue")
+      .select(QUEUE_SELECT)
+      .in("id", plan.adopt)
+      .order("sort", { ascending: true });
+    if (error) throw error;
+    adopted = (data ?? []).map(shapeQueueRow);
+  }
+
+  return { assigned, adopted, dropped: plan.drop, removed: plan.remove.length };
+}
+
+/**
+ * Where the host's player is, written straight onto the room. Guests read this
+ * and extrapolate from updatedAt, which is why the timestamp is stamped here
+ * on the server rather than taken from whatever clock the host's laptop has.
+ */
+export async function setPlayback(
+  sb: ServiceClient,
+  jukeboxId: string,
+  playback: Playback,
+): Promise<Playback> {
+  const stamped = normalizePlayback({ ...playback, updatedAt: new Date().toISOString() });
+  const { error } = await T(sb, "jukeboxes").update({ playback: stamped }).eq("id", jukeboxId);
+  if (error) throw error;
+  return stamped;
+}
+
+/** Plain and LRC lyrics for one track, plus the version's own intro offset. */
+export async function loadTrackLyrics(sb: ServiceClient, trackId: string) {
+  const [plainRes, syncRes] = await Promise.all([
+    T(sb, "lyrics").select("lyrics").eq("track_id", trackId).maybeSingle(),
+    T(sb, "tracks").select("lyrics_synced").eq("id", trackId).maybeSingle(),
+  ]);
+  return {
+    plain: ((plainRes.data as any)?.lyrics ?? null) as string | null,
+    synced: ((syncRes.data as any)?.lyrics_synced ?? null) as string | null,
+  };
 }

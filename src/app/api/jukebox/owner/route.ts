@@ -8,13 +8,19 @@
 // escalated into the host's chair.
 import { NextRequest, NextResponse } from "next/server";
 import {
+  EMPTY_PLAYBACK,
   MAX_JUKEBOX_NAME,
   midpointSort,
+  normalizePlayback,
   normalizeSettings,
+  normalizeVanitySlug,
   sanitizeDisplayName,
+  type HostQueueItem,
 } from "@/lib/jukebox";
 import {
+  artistSlugExists,
   clearQueue,
+  codeExists,
   getOrCreateOwnerJukebox,
   getQueueItem,
   insertQueueItem,
@@ -27,8 +33,10 @@ import {
   removeAllForGuest,
   removeQueueItem,
   setGuestBanned,
+  setPlayback,
   setQueueItemSort,
   sjb,
+  syncHostQueue,
   updateJukebox,
   type JukeboxRow,
   type ServiceClient,
@@ -96,7 +104,12 @@ export async function POST(req: NextRequest) {
         const isLive = body.is_live !== false;
         jukebox = await updateJukebox(sb, jukebox.id, {
           is_live: isLive,
-          ...(isLive ? { last_live_at: new Date().toISOString() } : {}),
+          ...(isLive
+            ? { last_live_at: new Date().toISOString() }
+            : // Off air clears the mirror too. A guest who leaves the page open
+              // should see the room go quiet, not keep watching a video nobody
+              // is playing any more.
+              { playback: EMPTY_PLAYBACK }),
         });
         break;
       }
@@ -186,6 +199,77 @@ export async function POST(req: NextRequest) {
         const added = await seedFromPlaylist(sb, jukebox, playlistId, email);
         if (typeof added !== "number") return added;
         return NextResponse.json({ ok: true, added, ...(await fullState(sb, jukebox)) });
+      }
+
+      // The whole point of act two: the room is a mirror of the host's own
+      // player queue, not a second list beside it. The host pushes what it is
+      // holding every few seconds; this makes the room agree, and hands back
+      // the guest adds the host has not seen so it can play and announce them.
+      case "sync": {
+        const rawItems = Array.isArray(body.items) ? body.items.slice(0, 600) : [];
+        const items: HostQueueItem[] = rawItems.map((raw: any, i: number) => ({
+          index: Number.isFinite(Number(raw?.index)) ? Number(raw.index) : i,
+          trackId: uuid(raw?.trackId ?? raw?.track_id),
+          videoId: typeof raw?.videoId === "string" ? raw.videoId.slice(0, 40) : null,
+          itemId: uuid(raw?.itemId ?? raw?.item_id),
+        }));
+        const currentIndex = Number.isFinite(Number(body.currentIndex))
+          ? Number(body.currentIndex)
+          : -1;
+        // Rows created after the host last heard from us cannot be songs it
+        // deleted, so they are adopted rather than swept. No `since` at all is
+        // a host that has just reloaded and knows about nothing yet: zero makes
+        // every row newer than the snapshot, so the room's queue is adopted
+        // back into the player instead of being wiped.
+        const snapshotAtMs = Date.parse(String(body.since ?? "")) || 0;
+
+        const result = await syncHostQueue(sb, jukebox.id, {
+          items,
+          currentIndex,
+          snapshotAtMs,
+          ownerName: jukebox.name,
+        });
+
+        const playback = await setPlayback(sb, jukebox.id, normalizePlayback(body.playback));
+
+        return NextResponse.json({
+          ok: true,
+          ...result,
+          playback,
+          isLive: jukebox.is_live,
+          settings: jukebox.settings,
+          serverTime: new Date().toISOString(),
+        });
+      }
+
+      // The vanity address people actually type: sufferingjukebox.stream/outlaw.
+      // Refused rather than silently renamed when it would shadow an artist
+      // page, another room, or a page this site already owns.
+      case "slug": {
+        const raw = typeof body.slug === "string" ? body.slug.trim() : "";
+        if (!raw) {
+          jukebox = await updateJukebox(sb, jukebox.id, { public_slug: null });
+          break;
+        }
+        const parsed = normalizeVanitySlug(raw);
+        if (!parsed.ok) return bad(parsed.message);
+        const slug = parsed.slug;
+        if (slug !== (jukebox.public_slug ?? "").toLowerCase()) {
+          if (await artistSlugExists(sb, slug)) {
+            return bad(`sufferingjukebox.stream/${slug} is an artist page. Pick another.`);
+          }
+          if (await codeExists(sb, slug)) {
+            return bad("That address is taken. Pick another.");
+          }
+        }
+        try {
+          jukebox = await updateJukebox(sb, jukebox.id, { public_slug: slug });
+        } catch (err: any) {
+          // 23505: somebody claimed it between the check and the write.
+          if (err?.code === "23505") return bad("That address is taken. Pick another.");
+          throw err;
+        }
+        break;
       }
 
       default:

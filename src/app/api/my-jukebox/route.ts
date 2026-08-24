@@ -8,6 +8,7 @@ import {
   ownerMyJukebox,
   removeLibraryItems,
 } from "@/lib/my-jukebox";
+import { SINGLES_ALBUM, importSingleTrack, readArtistAndTitle } from "@/lib/single-import";
 import { bad, clientIp, rateLimited, tooMany } from "@/lib/jukebox-request";
 
 export const dynamic = "force-dynamic";
@@ -67,11 +68,22 @@ export async function POST(req: NextRequest) {
         if (!id) return bad("That YouTube video does not look right.");
         const info = (await fetchYouTubeVideoInfo([id]))[id];
         if (!info?.playable) return bad("That YouTube video cannot play in the Jukebox.", 409);
+
+        // A single lands in the catalogue as well as the personal library, so
+        // it groups with everything else by that artist and turns up on
+        // Explore Artists as a card. Private by default: a loose song somebody
+        // found is their business until they say otherwise, and the card's own
+        // control is how it goes public.
+        const visibility = body.visibility === "public" ? "public" : "private";
+        const read = readArtistAndTitle(info.title, info.channelTitle);
+        const artistName = text(body.artistName, 160) ?? read.artistName;
+        const trackName = text(body.trackName, 180) ?? read.trackName;
+
         const result = await addYouTubeItem(ctx.sb, ctx.jukebox.id, {
           videoId: id,
-          title: info.title,
-          artistName: text(body.artistName),
-          albumName: text(body.albumName),
+          title: trackName,
+          artistName,
+          albumName: text(body.albumName) ?? SINGLES_ALBUM,
           thumbnail: info.thumbnail,
           views: info.views,
           source: body.source === "spotify" ? "spotify" : "youtube",
@@ -81,7 +93,36 @@ export async function POST(req: NextRequest) {
           lyrics: null,
           lyricsSource: null,
         });
-        return NextResponse.json({ ok: true, ...result, items: await loadLibrary(ctx.sb, ctx.jukebox.id) });
+
+        let artist: { id: string; name: string; slug: string } | null = null;
+        try {
+          const imported = await importSingleTrack(ctx.sb, {
+            videoId: id,
+            title: info.title,
+            channelTitle: info.channelTitle,
+            thumbnail: info.thumbnail,
+            views: info.views,
+            durationMs: null,
+            artistName,
+            trackName,
+            visibility,
+            userEmail: ctx.user.email,
+            userName: text(body.userName, 120),
+          });
+          artist = { id: imported.artistId, name: imported.artistName, slug: imported.artistSlug };
+        } catch (err) {
+          // The library row is the promise we made; the catalogue card is the
+          // bonus. Failing the whole request over the card would lose the song.
+          console.error("[my-jukebox:single-import]", err);
+        }
+
+        return NextResponse.json({
+          ok: true,
+          ...result,
+          artist,
+          visibility,
+          items: await loadLibrary(ctx.sb, ctx.jukebox.id),
+        });
       }
 
       case "remove": {

@@ -5,25 +5,34 @@
 // the browser.
 import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
-import { normalizeCode } from "@/lib/jukebox";
+import { normalizeRoomKey } from "@/lib/jukebox";
+import { getJukeboxByKey, sjb } from "@/lib/jukebox-db";
 import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
-/** The address printed on the card. Short on purpose: people retype it. */
-export function jukeboxJoinUrl(code: string): string {
-  return `${SITE_URL}/j/${code.toUpperCase()}`;
+/**
+ * The address printed on the card. A room that has picked a vanity address
+ * gets that one, because /outlaw is what somebody can retype from across the
+ * room and /j/ZPGZ4H is not.
+ */
+export function jukeboxJoinUrl(room: { code: string; public_slug?: string | null }): string {
+  return room.public_slug ? `${SITE_URL}/${room.public_slug}` : `${SITE_URL}/j/${room.code.toUpperCase()}`;
 }
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const code = normalizeCode(url.searchParams.get("code") ?? "");
-  if (!code) {
+  const key = normalizeRoomKey(url.searchParams.get("code") ?? "");
+  if (!key) {
     return NextResponse.json({ ok: false, error: "Bad code." }, { status: 400 });
+  }
+  const room = await getJukeboxByKey(sjb(), key).catch(() => null);
+  if (!room) {
+    return NextResponse.json({ ok: false, error: "No jukebox at that address." }, { status: 404 });
   }
 
   const dark = url.searchParams.get("dark") === "1";
-  const svg = await QRCode.toString(jukeboxJoinUrl(code), {
+  const svg = await QRCode.toString(jukeboxJoinUrl(room), {
     type: "svg",
     errorCorrectionLevel: "M",
     // A quiet zone of 2 rather than the default 4: the card art supplies the
@@ -37,8 +46,9 @@ export async function GET(req: NextRequest) {
   return new NextResponse(svg, {
     headers: {
       "Content-Type": "image/svg+xml; charset=utf-8",
-      // The code never changes for a room, so let it cache hard.
-      "Cache-Control": "public, max-age=86400, immutable",
+      // The address can change the moment an owner picks a vanity slug, so
+      // this is cached for minutes rather than the day it used to be.
+      "Cache-Control": "public, max-age=300",
     },
   });
 }
