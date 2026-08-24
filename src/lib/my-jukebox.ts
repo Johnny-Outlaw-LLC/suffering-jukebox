@@ -49,17 +49,6 @@ const shapeItem = (row: any): LibraryItem => ({
   createdAt: row.created_at,
 });
 
-export function normalizePublicSlug(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (!/^[a-z0-9][a-z0-9-]{1,59}$/.test(slug)) return null;
-  const reserved = new Set(["api", "admin", "j", "about", "privacy", "terms", "share", "share-image", "artist-upload"]);
-  return reserved.has(slug) ? null : slug;
-}
 
 export async function ownerMyJukebox(req: NextRequest): Promise<
   | { user: { id: string; email: string }; sb: ServiceClient; jukebox: JukeboxRow }
@@ -222,73 +211,6 @@ export async function removeLibraryItems(
   return (data ?? []).length;
 }
 
-export async function publishMyJukebox(
-  sb: ServiceClient,
-  jukebox: JukeboxRow,
-  input: { isPublic: boolean; slug?: unknown; description?: unknown },
-) {
-  if (!input.isPublic) {
-    return updateJukebox(sb, jukebox.id, { is_public: false });
-  }
-  const slug = normalizePublicSlug(input.slug ?? jukebox.public_slug);
-  if (!slug) throw new Error("Choose an available public name with 2–60 letters, numbers, or dashes.");
-  const description = cleanText(input.description, 280);
-  return updateJukebox(sb, jukebox.id, {
-    is_public: true,
-    public_slug: slug,
-    description,
-  });
-}
-
-export async function getPublicMyJukebox(slug: string) {
-  const normalized = normalizePublicSlug(slug);
-  if (!normalized) return null;
-  const sb = sjb();
-  const { data, error } = await T(sb, "jukeboxes")
-    .select("id,name,public_slug,description,updated_at")
-    .eq("is_public", true)
-    .ilike("public_slug", normalized)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  const items = await loadLibrary(sb, data.id);
-  return {
-    name: data.name,
-    slug: data.public_slug,
-    description: data.description ?? null,
-    updatedAt: data.updated_at,
-    items,
-  };
-}
-
-export async function explorePublicMyJukeboxes() {
-  const sb = sjb();
-  const { data, error } = await T(sb, "jukeboxes")
-    .select("id,name,public_slug,description,updated_at")
-    .eq("is_public", true)
-    .not("public_slug", "is", null)
-    .order("updated_at", { ascending: false })
-    .limit(120);
-  if (error) throw error;
-  const rows = data ?? [];
-  const ids = rows.map((r: any) => r.id);
-  const counts = new Map<string, number>();
-  if (ids.length) {
-    const { data: items, error: countError } = await T(sb, "my_jukebox_items")
-      .select("jukebox_id")
-      .in("jukebox_id", ids)
-      .limit(10_000);
-    if (countError) throw countError;
-    for (const item of items ?? []) counts.set(item.jukebox_id, (counts.get(item.jukebox_id) ?? 0) + 1);
-  }
-  return rows.map((row: any) => ({
-    name: row.name,
-    slug: row.public_slug,
-    description: row.description ?? null,
-    updatedAt: row.updated_at,
-    trackCount: counts.get(row.id) ?? 0,
-  }));
-}
 
 export async function logMyJukeboxPlay(
   sb: ServiceClient,

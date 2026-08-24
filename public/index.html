@@ -2924,7 +2924,6 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
         </div>
       </div>
       <div class="hdr-icon-btns">
-        <button type="button" class="hdr-search-btn hdr-icon-btn-labeled" onclick="openPublicJukeboxExplorer()" title="Explore public jukeboxes" aria-label="Explore public jukeboxes">♬ Explore</button>
         <button type="button" class="hdr-search-btn hdr-icon-btn-labeled" onclick="openSearchModal('')" title="Search songs or lyrics" aria-label="Search songs or lyrics">🔍 Search</button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark"><span id="themeIcon">☀</span></button>
         <button type="button" class="hdr-search-btn" onclick="openFaq()" title="FAQ &amp; how-to guide" aria-label="FAQ and how-to guide">?</button>
@@ -3784,20 +3783,16 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
   .mj-search { display:flex; gap:.45rem; margin:.5rem 0 .75rem; }
   .mj-search input, .mj-publish input, .mj-publish textarea { flex:1; min-width:0; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text); border-radius:6px; padding:.5rem .6rem; font:inherit; font-size:.75rem; }
   .mj-publish textarea { min-height:3.6rem; resize:vertical; }
-  .mj-result, .mj-library-row, .mj-public-card { display:flex; gap:.65rem; align-items:center; padding:.55rem 0; border-bottom:1px solid var(--border); }
+  .mj-result, .mj-library-row { display:flex; gap:.65rem; align-items:center; padding:.55rem 0; border-bottom:1px solid var(--border); }
   .mj-result img { width:64px; height:40px; object-fit:cover; border-radius:4px; background:#222; }
   .mj-body { flex:1; min-width:0; } .mj-title { font-size:.78rem; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .mj-sub { font-size:.61rem; color:var(--text-muted); margin-top:.14rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .mj-library-row .mj-source { color:var(--accent); font-size:.55rem; text-transform:uppercase; letter-spacing:.08em; }
-  .mj-public-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:.65rem; }
-  .mj-public-card { display:block; border:1px solid var(--border); border-radius:8px; padding:.75rem; cursor:pointer; }
-  .mj-public-card:hover { border-color:var(--accent); }
-  .mj-public-card .mj-title { white-space:normal; }
   .sjj-float-qr { position:fixed; z-index:10020; width:220px; min-width:140px; min-height:170px; resize:both; overflow:auto; background:#101010; color:#fff; border:2px solid var(--accent); border-radius:10px; box-shadow:0 14px 42px #000b; }
   .sjj-float-hd { display:flex; justify-content:space-between; align-items:center; cursor:move; user-select:none; padding:.42rem .55rem; font-size:.62rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
   .sjj-float-qr img { display:block; width:calc(100% - 1rem); aspect-ratio:1; object-fit:contain; margin:0 .5rem .2rem; background:#fff; border-radius:5px; }
   .sjj-float-url { font-size:.48rem; color:#bbb; text-align:center; padding:0 .45rem .5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  @media (max-width:640px) { .mj-public-grid { grid-template-columns:1fr; } .sjj-float-qr { width:170px; } }
+  @media (max-width:640px) { .sjj-float-qr { width:170px; } }
 </style>
 <div class="pl-modal-overlay" id="sjjOverlay" onclick="if(event.target===this)closeJukeboxHost()">
   <div class="pl-modal">
@@ -3822,14 +3817,6 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
     <div class="pl-modal-footer"><button class="pl-btn ghost" onclick="closeMyJukebox()">Close</button></div>
   </div>
 </div>
-<div class="pl-modal-overlay" id="publicJukeboxOverlay" onclick="if(event.target===this)closePublicJukebox()">
-  <div class="pl-modal" style="max-width:50rem">
-    <div class="pl-modal-header"><span class="pl-modal-title" id="public-jukebox-title">♫ Public Jukeboxes</span><button class="modal-close" onclick="closePublicJukebox()">&#10005;</button></div>
-    <div class="pl-modal-body" id="public-jukebox-body"><div class="sjj-empty">Loading public jukeboxes&hellip;</div></div>
-    <div class="pl-modal-footer"><button class="pl-btn ghost" onclick="closePublicJukebox()">Close</button></div>
-  </div>
-</div>
-
 <!-- MANAGE PLAYLISTS MODAL -->
 <div class="pl-modal-overlay" id="plModalOverlay" onclick="if(event.target===this)closeManagePlaylists()">
   <div class="pl-modal">
@@ -16430,6 +16417,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-24';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-24', items: [
+    'Public Jukeboxes have been retired. Browsing other people’s jukeboxes, publishing yours to its own web address, and the Explore button in the header are all gone. Sharing music happens through the catalogue now: import an artist publicly and everybody finds them on Explore Artists.',
     'When you import music you now choose who can see it. Add to the public catalogue puts the artist on Explore Artists for everyone, or Import into My Jukebox only keeps it listed for you and nobody else.',
     'Add Artist is now Import Music, and it asks first whether you want a whole artist, one album, or a single song.',
     'If an artist only came in as one album or one song, their button now reads Import Discography into Jukebox instead of Explore artist jukebox, and it takes you straight to the full album list so you can finish the collection.',
@@ -22820,7 +22808,6 @@ async function sjjSyncPlayback() {
 // ═══════════════════════════════════════════════════════════════════════
 let _mjState = null;
 let _mjSearchResults = [];
-let _publicJukebox = null;
 
 async function mjHeaders() {
   const tok = await _sjjToken();
@@ -22880,20 +22867,13 @@ function mjRender() {
         '<img alt="" src="' + escHtml(r.thumbnail || ('https://i.ytimg.com/vi/' + r.videoId + '/mqdefault.jpg')) + '"><span class="mj-body"><span class="mj-title">' + escHtml(r.title) + '</span><span class="mj-sub">' + escHtml(r.channelTitle || '') + (r.views != null ? ' · ' + fmtV(r.views) + ' views' : '') + '</span></span></label>').join('')
     : '';
   el.innerHTML =
-    '<div class="mj-tabs"><button class="on" type="button">My Music (' + items.length + ')</button><button type="button" onclick="openPublicJukeboxExplorer()">Explore Public Jukeboxes</button></div>' +
     '<div class="sjj-h">Add song to My Jukebox</div><div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube for a song" onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Search</button></div>' +
     search +
     '<div class="sjj-h">My library</div>' + lib +
     '<div class="sjj-h">Quick removal</div>' +
     (groups.size ? Array.from(groups.entries()).map(([artist, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveArtist(\'' + escHtml(artist).replace(/'/g, "\\'") + '\')">Remove all ' + escHtml(artist) + ' (' + count + ')</button>').join('') : '') +
     (albums.size ? '<div class="mj-sub" style="margin:.35rem 0">Albums</div>' + Array.from(albums.entries()).map(([album, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveAlbum(\'' + escHtml(album).replace(/'/g, "\\'") + '\')">Remove ' + escHtml(album) + ' (' + count + ')</button>').join('') : '') +
-    '<div class="sjj-h">Public Jukebox</div><div class="mj-publish">' +
-    '<div class="mj-sub" style="margin-bottom:.5rem">Your library is private until you publish it. Live QR sharing remains a separate, revocable room.</div>' +
-    '<div class="mj-search"><span style="padding:.45rem 0;color:var(--text-muted);font-size:.72rem">sufferingjukebox.stream/</span><input id="mj-public-slug" maxlength="60" value="' + escHtml(j.publicSlug || '') + '" placeholder="your-name"></div>' +
-    '<textarea id="mj-public-description" maxlength="280" placeholder="Describe your jukebox (optional)">' + escHtml(j.description || '') + '</textarea>' +
-    '<div style="display:flex;gap:.45rem;margin-top:.55rem;flex-wrap:wrap"><button class="pl-btn" onclick="mjPublish(true)">' + (j.isPublic ? 'Update public page' : 'Make My Jukebox public') + '</button>' +
-    (j.isPublic ? '<button class="pl-btn ghost" onclick="mjPublish(false)">Unpublish</button><a class="pl-btn ghost" href="/' + encodeURIComponent(j.publicSlug) + '" target="_blank" rel="noopener">Open public page</a>' : '') +
-    '<button class="pl-btn ghost" onclick="mjSpotifyInfo()">Connect Spotify</button></div></div>';
+    '<div style="display:flex;gap:.45rem;margin-top:.8rem;flex-wrap:wrap"><button class="pl-btn ghost" onclick="mjSpotifyInfo()">Connect Spotify</button></div>';
 }
 
 async function mjSearchYouTube() {
@@ -22949,12 +22929,6 @@ async function mjRemoveAlbum(albumName) {
   if (!confirm('Remove all ' + n + ' songs from ' + albumName + ' in My Jukebox?')) return;
   try { const data = await mjPost({ action: 'remove_album', albumName }); mjRender(); showToast((data.removed || 0) + ' songs removed.'); } catch (e) { showToast(e.message); }
 }
-async function mjPublish(isPublic) {
-  const slug = document.getElementById('mj-public-slug')?.value || '';
-  const description = document.getElementById('mj-public-description')?.value || '';
-  if (isPublic && !slug.trim()) { showToast('Choose a public name first.'); return; }
-  try { await mjPost({ action: 'publish', isPublic, slug, description }); mjRender(); showToast(isPublic ? 'Your public jukebox is live.' : 'Your jukebox is private again.'); } catch (e) { showToast(e.message); }
-}
 function mjSpotifyInfo() { showToast('Spotify linking needs the app’s Spotify Client ID and secret before it can be activated. Your My Jukebox is ready for it.'); }
 
 async function sjmSendToMyJukebox(scope, id, label) {
@@ -22966,9 +22940,8 @@ async function sjmSendToMyJukebox(scope, id, label) {
   } catch (e) { showToast(e.message || 'Could not add to My Jukebox.'); }
 }
 
-async function mjPlayItem(itemId, publicSlug) {
-  const source = publicSlug ? (_publicJukebox?.items || []) : (_mjState?.items || []);
-  const item = source.find(i => i.id === itemId);
+async function mjPlayItem(itemId) {
+  const item = (_mjState?.items || []).find(i => i.id === itemId);
   if (!item) return;
   try {
     let videoId = item.youtubeVideoId;
@@ -22979,43 +22952,10 @@ async function mjPlayItem(itemId, publicSlug) {
     if (!videoId) throw new Error('No playable YouTube video is available for this song.');
     if (!ytPlayerEl) openYTPlayer(videoId, item.title, item.catalogTrackId || null);
     else ytPlayNow(videoId, item.title, item.catalogTrackId || null);
-    if (publicSlug) fetch('/api/my-jukebox/public/' + encodeURIComponent(publicSlug), { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ itemId }) }).catch(() => {});
-    else mjRequest('/api/my-jukebox', 'POST', { action:'play', itemId }).catch(() => {});
+    mjRequest('/api/my-jukebox', 'POST', { action:'play', itemId }).catch(() => {});
   } catch (e) { showToast(e.message || 'Could not play that song.'); }
 }
 
-async function openPublicJukeboxExplorer() {
-  closeMyJukebox();
-  const overlay = document.getElementById('publicJukeboxOverlay');
-  const title = document.getElementById('public-jukebox-title');
-  const body = document.getElementById('public-jukebox-body');
-  if (!overlay || !body) return;
-  overlay.classList.add('open'); title.textContent = '♫ Explore Public Jukeboxes'; body.innerHTML = '<div class="sjj-empty">Loading public jukeboxes…</div>';
-  try {
-    const data = await fetch('/api/my-jukebox/explore').then(r => r.json());
-    if (!data.ok) throw new Error(data.error || 'Could not load public jukeboxes.');
-    body.innerHTML = data.jukeboxes?.length
-      ? '<div class="mj-public-grid">' + data.jukeboxes.map(j => '<button type="button" class="mj-public-card" onclick="openPublicJukebox(\'' + escHtml(j.slug).replace(/'/g, "\\'") + '\')"><div class="mj-title">' + escHtml(j.name) + '</div><div class="mj-sub">/' + escHtml(j.slug) + ' · ' + j.trackCount + ' songs</div>' + (j.description ? '<div class="mj-sub" style="white-space:normal;margin-top:.4rem">' + escHtml(j.description) + '</div>' : '') + '</button>').join('') + '</div>'
-      : '<div class="sjj-empty">No public jukeboxes yet. Be the first to publish one.</div>';
-  } catch (e) { body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>'; }
-}
-
-async function openPublicJukebox(slug) {
-  const overlay = document.getElementById('publicJukeboxOverlay');
-  const title = document.getElementById('public-jukebox-title');
-  const body = document.getElementById('public-jukebox-body');
-  if (!overlay || !body) return;
-  overlay.classList.add('open'); body.innerHTML = '<div class="sjj-empty">Loading jukebox…</div>';
-  try {
-    const data = await fetch('/api/my-jukebox/public/' + encodeURIComponent(slug)).then(r => r.json());
-    if (!data.ok) throw new Error(data.error || 'Could not load this jukebox.');
-    _publicJukebox = data.jukebox;
-    title.textContent = '♫ ' + _publicJukebox.name;
-    body.innerHTML = '<div class="mj-sub" style="font-size:.72rem;margin-bottom:.8rem">' + escHtml(_publicJukebox.description || ('Public jukebox · /' + _publicJukebox.slug)) + '</div>' +
-      (_publicJukebox.items.length ? _publicJukebox.items.map(i => '<div class="mj-library-row"><div class="mj-body"><div class="mj-title">' + escHtml(i.title) + '</div><div class="mj-sub">' + escHtml([i.artistName, i.albumName].filter(Boolean).join(' · ')) + '</div></div><button class="sjj-mini" title="Play" onclick="mjPlayItem(\'' + i.id + '\',\'' + escHtml(_publicJukebox.slug).replace(/'/g, "\\'") + '\')">▶</button></div>').join('') : '<div class="sjj-empty">This jukebox has not added any music yet.</div>');
-  } catch (e) { body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>'; }
-}
-function closePublicJukebox() { document.getElementById('publicJukeboxOverlay')?.classList.remove('open'); }
 
 function sjjToggleFloatingQr() {
   const old = document.getElementById('sjj-floating-qr');
@@ -23038,7 +22978,6 @@ function sjjToggleFloatingQr() {
   head.addEventListener('pointerup', () => { if (start) save(); start = null; });
 }
 
-if (window.__PUBLIC_JUKEBOX__?.slug) setTimeout(() => openPublicJukebox(window.__PUBLIC_JUKEBOX__.slug), 250);
 
 </script>
 </body>

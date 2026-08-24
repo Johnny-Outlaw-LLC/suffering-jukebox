@@ -6,7 +6,6 @@ import {
   loadLibrary,
   logMyJukeboxPlay,
   ownerMyJukebox,
-  publishMyJukebox,
   removeLibraryItems,
 } from "@/lib/my-jukebox";
 import { bad, clientIp, rateLimited, tooMany } from "@/lib/jukebox-request";
@@ -35,9 +34,6 @@ export async function GET(req: NextRequest) {
       jukebox: {
         name: ctx.jukebox.name,
         code: ctx.jukebox.code,
-        isPublic: ctx.jukebox.is_public,
-        publicSlug: ctx.jukebox.public_slug,
-        description: ctx.jukebox.description,
         isLive: ctx.jukebox.is_live,
       },
       items,
@@ -107,31 +103,6 @@ export async function POST(req: NextRequest) {
         if (!albumName) return bad("Missing album.");
         const removed = await removeLibraryItems(ctx.sb, ctx.jukebox.id, { albumName });
         return NextResponse.json({ ok: true, removed, items: await loadLibrary(ctx.sb, ctx.jukebox.id) });
-      }
-
-      case "publish": {
-        let jukebox;
-        try {
-          jukebox = await publishMyJukebox(ctx.sb, ctx.jukebox, {
-            isPublic: body.isPublic === true,
-            slug: body.slug,
-            description: body.description,
-          });
-        } catch (error: any) {
-          if (error?.code === "23505") return bad("That public name is already taken.", 409);
-          return bad(error?.message || "Could not update public sharing.");
-        }
-        return NextResponse.json({
-          ok: true,
-          jukebox: {
-            name: jukebox.name,
-            code: jukebox.code,
-            isPublic: jukebox.is_public,
-            publicSlug: jukebox.public_slug,
-            description: jukebox.description,
-            isLive: jukebox.is_live,
-          },
-        });
       }
 
       case "play": {
