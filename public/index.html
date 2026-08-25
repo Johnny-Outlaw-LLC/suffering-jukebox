@@ -1609,39 +1609,6 @@ textarea.report-input { resize:vertical; }
 .ytp-scrub-rxn-item.heart { color: var(--accent); }
 .ytp-scrub-rxn-item.sad { color: #8ea0b8; }
 
-/* Frame overlay scrub — replaces YouTube native controls */
-.ytp-frame-scrub {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 20;
-  padding: 20px 10px 8px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, .78));
-  pointer-events: auto;
-}
-.ytp-frame-scrub-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 0 2px; min-height: 28px;
-}
-.ytp-frame-scrub-time {
-  font-size: .48rem; font-family: var(--mono); color: rgba(255, 255, 255, .88);
-  min-width: 2.4em; flex-shrink: 0; font-variant-numeric: tabular-nums;
-}
-.ytp-frame-scrub-time.dur { text-align: right; }
-.ytp-dk-seek {
-  -webkit-appearance: none; appearance: none; flex: 1 1 auto; min-width: 0;
-  height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .28); outline: none; cursor: pointer;
-  touch-action: none;
-}
-.ytp-dk-seek::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 16px; height: 16px; border-radius: 50%;
-  background: var(--accent); border: none; cursor: grab;
-}
-.ytp-dk-seek::-moz-range-thumb {
-  width: 16px; height: 16px; border-radius: 50%;
-  background: var(--accent); border: none; cursor: grab;
-}
-.ytp-dk-seek::-moz-range-track { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .28); }
-#yt-player-container.ytp-mob-fs .ytp-frame-scrub { display: none; }
-
 /* Synced lyric line reaction badges */
 .lyr-line-inner { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .lyr-line-text { flex: 1; min-width: 0; }
@@ -5326,7 +5293,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
     </div>
     <div id="ytp-up-next-slot"></div>
     <div class="yt-player-frame" style="height:${cH}px">
-      ${ytpIframeHTML(videoId, cH, !restorePaused)}${ytpFrameScrubHTML()}
+      ${ytpIframeHTML(videoId, cH, !restorePaused)}
     </div>
     ${ytpMobDeckHTML(trackId)}
     <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
@@ -5375,49 +5342,23 @@ function ytpIframeHTML(videoId, h, autoplay) {
     allowfullscreen></iframe>`;
 }
 
-function ytpFrameScrubHTML() {
-  return `<div class="ytp-frame-scrub ytp-scrub-zone" id="ytp-frame-scrub" data-scrub-prefix="dk"
-    onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="event.stopPropagation()">
-    <div class="ytp-scrub-rxn-wrap" aria-hidden="true"><div class="ytp-scrub-rxn-track"></div></div>
-    <div class="ytp-frame-scrub-row">
-      <span class="ytp-frame-scrub-time" id="ytp-dk-cur">0:00</span>
-      <input class="ytp-dk-seek" id="ytp-dk-seek" type="range" min="0" max="0" value="0" step="0.25"
-        aria-label="Seek"
-        oninput="ytpMfSeekInput(this)"
-        onchange="ytpMfSeekCommit(this)"
-        onpointerdown="ytpMfSeekStart();event.stopPropagation()"
-        onpointerup="ytpMfSeekEnd()"
-        onmousedown="event.stopPropagation()"
-        ontouchstart="event.stopPropagation()">
-      <span class="ytp-frame-scrub-time dur" id="ytp-dk-dur">0:00</span>
-    </div>
-  </div>`;
-}
-
 function ytpWireFrameInteraction(frame) {
   if (!frame || frame.dataset.frameWired === '1') return;
   frame.dataset.frameWired = '1';
-  frame.addEventListener('click', e => {
-    if (e.target.closest('.ytp-frame-scrub')) return;
-    ytTogglePlayPause();
-  });
+  frame.addEventListener('click', () => ytTogglePlayPause());
 }
 
 function ytpMountFrameContent(frame, videoId, h, autoplay) {
   if (!frame) return;
   frame.dataset.frameWired = '0';
-  frame.innerHTML = ytpIframeHTML(videoId, h, autoplay) + ytpFrameScrubHTML();
+  frame.innerHTML = ytpIframeHTML(videoId, h, autoplay);
   ytpWireFrameInteraction(frame);
-}
-
-function ytpEmbedTheme() {
-  return document.body.classList.contains('light') ? 'light' : 'dark';
 }
 
 function ytpEmbedSrc(videoId, autoplay) {
   const origin = encodeURIComponent(location.origin);
   const ap = autoplay === false ? 0 : 1;
-  return `https://www.youtube.com/embed/${videoId}?autoplay=${ap}&rel=0&enablejsapi=1&playsinline=1&controls=0&modestbranding=1&origin=${origin}&theme=${ytpEmbedTheme()}`;
+  return `https://www.youtube.com/embed/${videoId}?autoplay=${ap}&rel=0&enablejsapi=1&playsinline=1&controls=1&origin=${origin}`;
 }
 
 function updateYTEmbedTheme() {
@@ -6978,26 +6919,17 @@ function ytpMfPlaybackPos() {
   return { pos, dur };
 }
 
-// The mini bar, the phone deck, and the desktop frame overlay each carry a scrub
-// bar; only one is on screen at a time, and the same clock drives whichever it is.
+// The minimized bar and phone lyric deck each carry their own scrub bar; only
+// one is on screen at a time, and the same clock drives whichever it is.
 function ytpScrubPrefixes() {
   const out = [];
   if (document.getElementById('ytp-mini-footer')?.classList.contains('open')) out.push('mf');
   if (ytpMobFsOn()) out.push('md');
-  if (ytpFrameScrubVisible()) out.push('dk');
   return out;
 }
 
-function ytpFrameScrubVisible() {
-  if (_ytpMinimized || ytpMobFsOn()) return false;
-  const scrub = document.getElementById('ytp-frame-scrub');
-  if (!scrub) return false;
-  const frame = scrub.closest('.yt-player-frame');
-  return !!(frame && ytPlayerEl && frame.offsetParent !== null);
-}
-
 function ytpSetScrubCur(sec) {
-  ['ytp-mf-cur', 'ytp-md-cur', 'ytp-dk-cur'].forEach(id => {
+  ['ytp-mf-cur', 'ytp-md-cur'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = ytpFmtClock(sec);
   });
@@ -10905,6 +10837,12 @@ function sjmOpen(trackId, anchorEl, ev) {
   menu.onclick     = (e) => e.stopPropagation();
   document.body.appendChild(menu);
   sjmRenderRoot();
+  // A saved playlist can contain tracks whose artist is not loaded on the
+  // current page. Resolve that relationship after the menu opens, then add the
+  // artist-jukebox action when there is a real destination for it.
+  sjmEnsureArtistFor(trackId).then(() => {
+    if (_sjmTrackId === trackId && document.getElementById('sjm-menu')) sjmRenderRoot();
+  });
   sjmPosition();
   if (anchorEl) anchorEl.setAttribute('aria-expanded', 'true');
   setTimeout(() => {
@@ -11108,10 +11046,10 @@ function sjmRenderRoot() {
       let html = '';
       if (meta.artist) html +=
         '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'artist\')">' +
-          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove artist from playlist</span></button>';
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove ' + escHtml(meta.artist) + ' from playlist</span></button>';
       if (meta.album) html +=
         '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'album\')">' +
-          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Album from Playlist</span></button>';
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove ' + escHtml(meta.album) + ' from playlist</span></button>';
       if (html) html += '<div class="sjm-sep"></div>';
       return html;
     })() +
@@ -11135,7 +11073,7 @@ function sjmRenderRoot() {
       : '') +
     (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
-          '<span class="sjm-ic">🎵</span><span class="sjm-label">Go to Artist Jukebox</span></button>'
+          '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore ' + escHtml(navArtist.name || 'Artist') + ' Jukebox</span></button>'
       : '') +
     '<button class="sjm-item" onclick="sjmShareSong()">' +
       '<span class="sjm-ic">⤴</span><span class="sjm-label">Share</span>' +
@@ -11175,10 +11113,39 @@ function _sjmArtistFor(tid) {
     if ((tracks[aid] || []).some(t => t.id === tid)) {
       return allArtists.find(a => a.id === aid)
         || ((typeof communityArtists !== 'undefined' && communityArtists) ? communityArtists.find(a => a.id === aid) : null)
+        || ((typeof mainCatalogArtists !== 'undefined' && mainCatalogArtists) ? mainCatalogArtists.find(a => a.id === aid) : null)
         || null;
     }
   }
+  const cached = SJ_TRACK_META[tid];
+  if (cached?.artistId && cached?.artistSlug) {
+    return { id: cached.artistId, name: cached.artist || 'Artist', slug: cached.artistSlug };
+  }
   return null;
+}
+
+let _sjmArtistFetch = {};
+async function sjmEnsureArtistFor(tid) {
+  if (!tid || _sjmArtistFor(tid)) return Promise.resolve();
+  if (_sjmArtistFetch[tid]) return _sjmArtistFetch[tid];
+  _sjmArtistFetch[tid] = (async () => {
+    try {
+      const rows = await dbGet('/tracks?id=eq.' + tid +
+        '&select=id,albums(artists(id,name,slug))&limit=1');
+      const artist = rows?.[0]?.albums?.artists;
+      if (!artist?.id || !artist?.slug) return;
+      SJ_TRACK_META[tid] = Object.assign({}, SJ_TRACK_META[tid] || {}, {
+        artist: artist.name || SJ_TRACK_META[tid]?.artist || '',
+        artistId: artist.id,
+        artistSlug: artist.slug,
+      });
+    } catch (_) {
+      /* The regular track actions remain available when this optional lookup fails. */
+    } finally {
+      delete _sjmArtistFetch[tid];
+    }
+  })();
+  return _sjmArtistFetch[tid];
 }
 
 function sjmViewArtist() {

@@ -130,7 +130,9 @@ async function searchAction(
   }
 
   const pasted = parseYouTubeVideoId(query);
-  const ids = pasted ? [pasted] : await searchYouTubeVideoIds(query, 12);
+  // Keep the manual picker focused: YouTube returns its five most-viewed
+  // embeddable matches rather than a long relevance-sorted result list.
+  const ids = pasted ? [pasted] : await searchYouTubeVideoIds(query, 5, "viewCount");
   const info = ids.length ? await fetchYouTubeVideoInfo(ids) : {};
 
   const sb = createSjServiceClient();

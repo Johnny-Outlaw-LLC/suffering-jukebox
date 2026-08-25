@@ -180,8 +180,14 @@ export async function fetchYouTubeVideoInfo(
   return out;
 }
 
-// Search YouTube for embeddable candidate video ids for a track.
-export async function searchYouTubeVideoIds(query: string, maxResults = 10): Promise<string[]> {
+// Search YouTube for embeddable candidate video ids for a track. Most callers
+// want relevance, but the alternative-version picker deliberately asks for the
+// most-viewed uploads so a user can quickly compare the meaningful choices.
+export async function searchYouTubeVideoIds(
+  query: string,
+  maxResults = 10,
+  order: "relevance" | "viewCount" = "relevance",
+): Promise<string[]> {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) throw new Error("YouTube API key not configured.");
   const url = new URL("https://www.googleapis.com/youtube/v3/search");
@@ -189,6 +195,7 @@ export async function searchYouTubeVideoIds(query: string, maxResults = 10): Pro
   url.searchParams.set("q", query);
   url.searchParams.set("type", "video");
   url.searchParams.set("videoEmbeddable", "true");
+  url.searchParams.set("order", order);
   url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 15)));
   url.searchParams.set("key", key);
   const res = await fetch(url.toString());
