@@ -3119,7 +3119,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
       <button type="button" class="im-opt" onclick="importMusicPick('song')">
         <b>A song</b><em>Search YouTube and drop a single track into My Jukebox.</em></button>
       <button type="button" class="im-opt" onclick="importMusicPick('spotify')">
-        <b>Import from My Spotify</b><em>Connect Spotify to bring your saved music into My Jukebox.</em></button>
+        <b>Import from My Spotify</b><em>Your Liked Songs or any of your playlists, brought into My Jukebox.</em></button>
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closeImportMusic()">Cancel</button>
@@ -3814,6 +3814,30 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
     .mj-addbar { justify-content:flex-start; }
   }
   .mj-library-row .mj-source { color:var(--accent); font-size:.55rem; text-transform:uppercase; letter-spacing:.08em; }
+  /* Spotify import.  A saved library is hundreds of songs long, so on a desktop
+     the picker fills the width in as many columns as fit and scrolls inside its
+     own box, instead of stretching the panel to the height of the library. */
+  .mj-sp-bar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+               justify-content:space-between; margin:.1rem 0 .55rem; }
+  .mj-sp-bar > * { min-width:0; max-width:100%; }
+  .mj-sp-grp { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; min-width:0; }
+  /* A select is as wide as its longest option unless told otherwise, and a
+     playlist name is arbitrarily long - which is how one drop-down dragged a
+     horizontal scrollbar across the whole panel on a phone. */
+  .mj-sp-grp select { font:inherit; font-size:.72rem; padding:.32rem .45rem;
+                      flex:1 1 9rem; min-width:0; max-width:24rem;
+                      color:var(--text); background:var(--bg-elevated);
+                      border:1px solid var(--border); border-radius:5px; }
+  /* flex:none because the modal body is a flex column - an overflowing child
+     gets min-height:0 there and collapses to a sliver instead of standing at
+     its own height. */
+  .mj-sp-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(21rem,1fr));
+                gap:0 1.2rem; max-height:24rem; overflow-y:auto; overflow-x:hidden; flex:none; }
+  .mj-sp-list .mj-result { grid-template-columns:auto 40px minmax(0,1fr); }
+  .mj-sp-list .mj-result img { width:40px; height:40px; }
+  @media (max-width:720px) {
+    .mj-sp-list { grid-template-columns:1fr; max-height:19rem; }
+  }
   /* Step one of running a room: on air, or not. The rest of the console is
      detail, so this block gets the size. */
   .sjj-stage { display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap;
@@ -3864,7 +3888,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
 
 <!-- MY JUKEBOX LIBRARY + PUBLIC EXPLORER -->
 <div class="pl-modal-overlay" id="myJukeboxOverlay" onclick="if(event.target===this)closeMyJukebox()">
-  <div class="pl-modal" style="max-width:50rem">
+  <div class="pl-modal" style="width:min(74rem,100%);max-width:74rem">
     <div class="pl-modal-header"><span class="pl-modal-title">♫ My Jukebox</span><button class="modal-close" onclick="closeMyJukebox()">&#10005;</button></div>
     <div class="pl-modal-body" id="my-jukebox-body"><div class="sjj-empty">Loading your music&hellip;</div></div>
     <div class="pl-modal-footer"><button class="pl-btn ghost" onclick="closeMyJukebox()">Close</button></div>
@@ -15311,7 +15335,7 @@ function closeImportMusic() { document.getElementById('importMusicOverlay')?.cla
 function importMusicPick(kind) {
   closeImportMusic();
   if (kind === 'song') { openMyJukebox(); setTimeout(() => document.getElementById('mj-search-input')?.focus(), 250); return; }
-  if (kind === 'spotify') { mjSpotifyInfo(); return; }
+  if (kind === 'spotify') { mjOpenSpotify(); return; }
   openAddMusic();
 }
 
@@ -16510,11 +16534,17 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-24';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-25', items: [
+    'Importing from Spotify can now bring in any of your playlists, not just your Liked Songs. Connect Spotify, pick a list from the drop-down, and tick the songs you want.',
+    'You can disconnect Spotify whenever you like. It sits right beside the connection in My Jukebox, and it tells you which Spotify account you are connected as. Songs you already imported stay in your jukebox.',
+    'The Spotify picker fits the screen on a computer now. The panel is wider, songs sit in as many columns as your window has room for, and titles are no longer cut off after a few letters.',
+    'If you connected Spotify before playlists were a thing, the panel offers you a Reconnect for playlists button rather than pretending you have none.',
+  ] },
   { date: '2026-08-24', items: [
     'The Online Jukebox is one queue now. What you are playing IS the jukebox: anything you queue in the player shows up for the room, anything a guest adds drops into what you are already playing, and nobody has to start anything over.',
     'Guests see what you see. Open the join link on a phone and the same music video is playing, at the same second, with the words lighting up line by line. Tap the picture for sound, or leave it silent and just read along.',
@@ -23187,6 +23217,16 @@ let _mjSearchResults = [];
 let _mjSpotifyTracks = [];
 let _mjSpotifyLoading = false;
 let _mjSpotifyCallbackChecked = false;
+let _mjSpotifyStatus = { connected: false, spotifyUserId: null, canReadPlaylists: false, checked: false };
+let _mjSpotifyPlaylists = [];
+let _mjSpotifySource = 'saved';   // 'saved' = Liked Songs, otherwise a playlist id
+let _mjSpotifyTotal = 0;
+let _mjSpotifyTruncated = false;
+let _mjSpotifyLoaded = false;
+// Every match is one YouTube search, and a YouTube search costs 100 quota
+// units.  Fifteen at a time is the cap, and the panel says so rather than
+// silently dropping the rest of a selection.
+const MJ_SPOTIFY_MAX = 15;
 
 async function mjHeaders() {
   const tok = await _sjjToken();
@@ -23201,7 +23241,7 @@ async function mjRequest(path, method, body) {
     body: body ? JSON.stringify(body) : undefined
   });
   const data = await res.json().catch(() => ({}));
-  if (!data.ok) throw new Error(data.error || 'Request failed.');
+  if (!data.ok) { const err = new Error(data.error || 'Request failed.'); err.data = data; throw err; }
   return data;
 }
 
@@ -23211,7 +23251,8 @@ async function openMyJukebox() {
   const body = document.getElementById('my-jukebox-body');
   if (body) body.innerHTML = '<div class="sjj-empty">Loading your music…</div>';
   try {
-    _mjState = await mjRequest('/api/my-jukebox', 'GET');
+    const [state] = await Promise.all([mjRequest('/api/my-jukebox', 'GET'), mjSpotifyCheck()]);
+    _mjState = state;
     mjRender();
   } catch (e) {
     if (body) body.innerHTML = '<div class="sjj-empty">' + escHtml(e.message) + '</div>';
@@ -23241,12 +23282,7 @@ function mjRender() {
         '<button class="sjj-mini" title="Remove from My Jukebox" onclick="mjRemove(\'' + i.id + '\')">✕</button></div>').join('')
     : '<div class="sjj-empty">Your personal jukebox is empty. Add a song from YouTube, or use Send to My Jukebox on any song, album, or artist.</div>';
   const search = _mjSearchResults.length ? mjResultsHTML() : '';
-  const spotify = _mjSpotifyLoading
-    ? '<div class="sjj-h">Spotify saved songs</div><div class="sjj-empty">Loading your saved Spotify songs…</div>'
-    : _mjSpotifyTracks.length
-      ? '<div class="sjj-h">Spotify saved songs</div><div class="mj-addbar"><span class="mj-vis">Pick songs, then we’ll find a playable YouTube match for each.</span><button class="pl-btn" onclick="mjSpotifyFindMatches()">Find playable matches</button></div>' +
-        _mjSpotifyTracks.map((track, n) => '<label class="mj-result"><input type="checkbox" class="mj-spotify-pick" data-mj-spotify="' + n + '"><img alt="" src="' + escHtml(track.albumArtUrl || '') + '"><span class="mj-body"><span class="mj-title">' + escHtml(track.title) + '</span><span class="mj-sub">' + escHtml(track.artistName) + (track.albumName ? ' · ' + escHtml(track.albumName) : '') + '</span></span></label>').join('')
-      : '';
+  const spotify = mjSpotifyHTML();
   el.innerHTML =
     '<div class="sjj-h">Add a song</div><div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube for a song" onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Search</button></div>' +
     search +
@@ -23254,8 +23290,7 @@ function mjRender() {
     '<div class="sjj-h">My library</div>' + lib +
     '<div class="sjj-h">Quick removal</div>' +
     (groups.size ? Array.from(groups.entries()).map(([artist, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveArtist(\'' + escHtml(artist).replace(/'/g, "\\'") + '\')">Remove all ' + escHtml(artist) + ' (' + count + ')</button>').join('') : '') +
-    (albums.size ? '<div class="mj-sub" style="margin:.35rem 0">Albums</div>' + Array.from(albums.entries()).map(([album, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveAlbum(\'' + escHtml(album).replace(/'/g, "\\'") + '\')">Remove ' + escHtml(album) + ' (' + count + ')</button>').join('') : '') +
-    '<div style="display:flex;gap:.45rem;margin-top:.8rem;flex-wrap:wrap"><button class="pl-btn ghost" onclick="mjSpotifyInfo()">Connect Spotify</button></div>';
+    (albums.size ? '<div class="mj-sub" style="margin:.35rem 0">Albums</div>' + Array.from(albums.entries()).map(([album, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveAlbum(\'' + escHtml(album).replace(/'/g, "\\'") + '\')">Remove ' + escHtml(album) + ' (' + count + ')</button>').join('') : '');
 }
 
 async function mjSearchYouTube() {
@@ -23416,7 +23451,62 @@ async function mjRemoveAlbum(albumName) {
   if (!confirm('Remove all ' + n + ' songs from ' + albumName + ' in My Jukebox?')) return;
   try { const data = await mjPost({ action: 'remove_album', albumName }); mjRender(); showToast((data.removed || 0) + ' songs removed.'); } catch (e) { showToast(e.message); }
 }
-async function mjSpotifyInfo() {
+// ── Spotify ───────────────────────────────────────────────────────────────
+// One block holds the whole connection: connect it, choose which of your
+// Spotify lists to look at, pick songs, disconnect. It is drawn whether or not
+// you are connected, because "am I connected, and to what" is a question the
+// panel should answer without anybody clicking to find out.
+function mjSpotifyHTML() {
+  const head = '<div class="sjj-h" id="mj-spotify-block">Spotify</div>';
+  if (!_mjSpotifyStatus.connected) {
+    return head + '<div class="mj-sp-bar">' +
+      '<span class="mj-vis">Bring your Liked Songs and your playlists across. We find a playable YouTube match for each song you pick.</span>' +
+      '<button class="pl-btn" onclick="mjSpotifyConnect()">Connect Spotify</button></div>';
+  }
+  const options = ['<option value="saved"' + (_mjSpotifySource === 'saved' ? ' selected' : '') + '>Liked Songs</option>']
+    .concat(_mjSpotifyPlaylists.map(pl => '<option value="' + escHtml(pl.id) + '"' + (_mjSpotifySource === pl.id ? ' selected' : '') + '>' +
+      escHtml(pl.name) + (pl.trackCount ? ' (' + pl.trackCount + ')' : '') + '</option>'));
+  const bar = '<div class="mj-sp-bar">' +
+    '<span class="mj-sp-grp"><span class="mj-vis">Import from</span>' +
+    '<select id="mj-spotify-source" onchange="mjSpotifyLoad(this.value)">' + options.join('') + '</select>' +
+    // A connection made before playlists shipped is still a good connection; it
+    // just never asked permission to read them. Say what to do about it.
+    (_mjSpotifyStatus.canReadPlaylists ? '' : '<button class="pl-btn ghost" onclick="mjSpotifyConnect()">Reconnect for playlists</button>') +
+    '</span>' +
+    '<span class="mj-sp-grp"><span class="mj-vis">Connected' + (_mjSpotifyStatus.spotifyUserId ? ' as ' + escHtml(_mjSpotifyStatus.spotifyUserId) : '') + '</span>' +
+    '<button class="pl-btn ghost" onclick="mjSpotifyDisconnect()">Disconnect</button></span></div>';
+  if (_mjSpotifyLoading) return head + bar + '<div class="sjj-empty">Loading your Spotify songs…</div>';
+  if (!_mjSpotifyTracks.length) return head + bar + '<div class="sjj-empty">' +
+    (_mjSpotifyLoaded ? 'Nothing to import from this list.' : 'Choose a list above to see what is in it.') + '</div>';
+  const count = _mjSpotifyTracks.length + ' song' + (_mjSpotifyTracks.length === 1 ? '' : 's') +
+    (_mjSpotifyTruncated ? ' of ' + _mjSpotifyTotal : '');
+  return head + bar +
+    '<div class="mj-addbar"><span class="mj-vis">' + count + ' · pick up to ' + MJ_SPOTIFY_MAX + ' at a time.</span>' +
+    '<span class="mj-sp-grp">' +
+    '<button class="pl-btn ghost" onclick="mjSpotifyPickAll(true)">Select first ' + MJ_SPOTIFY_MAX + '</button>' +
+    '<button class="pl-btn ghost" onclick="mjSpotifyPickAll(false)">Clear</button>' +
+    '<button class="pl-btn" onclick="mjSpotifyFindMatches()">Find playable matches</button></span></div>' +
+    '<div class="mj-sp-list">' + _mjSpotifyTracks.map((track, n) =>
+      '<label class="mj-result"><input type="checkbox" class="mj-spotify-pick" data-mj-spotify="' + n + '">' +
+      '<img alt="" src="' + escHtml(track.albumArtUrl || '') + '">' +
+      '<span class="mj-body"><span class="mj-title">' + escHtml(track.title) + '</span>' +
+      '<span class="mj-sub">' + escHtml(track.artistName) + (track.albumName ? ' · ' + escHtml(track.albumName) : '') + '</span></span></label>').join('') +
+    '</div>';
+}
+
+// Cookie-only on our side, so this is cheap enough to run every time the panel
+// opens. It is what makes the button say Disconnect when you already are.
+async function mjSpotifyCheck() {
+  if (!googleUser) return;
+  try {
+    const data = await mjRequest('/api/spotify/status', 'GET');
+    _mjSpotifyStatus = { connected: !!data.connected, spotifyUserId: data.spotifyUserId || null, canReadPlaylists: !!data.canReadPlaylists };
+  } catch (e) {
+    _mjSpotifyStatus = { connected: false, spotifyUserId: null, canReadPlaylists: false };
+  }
+}
+
+async function mjSpotifyConnect() {
   if (!googleUser) { showToast('Sign in to connect your Spotify.'); return; }
   try {
     const data = await mjRequest('/api/spotify/connect', 'POST');
@@ -23424,26 +23514,79 @@ async function mjSpotifyInfo() {
   } catch (e) { showToast(e.message || 'Could not start Spotify sign-in.'); }
 }
 
-async function mjLoadSpotify() {
-  if (!googleUser) return;
-  _mjSpotifyLoading = true; mjRender();
+// Disconnecting deletes the sealed cookie, which is the entire connection.
+// Songs already imported stay: they are your library now, not Spotify's, and
+// that is worth saying out loud before somebody clicks it.
+async function mjSpotifyDisconnect() {
+  if (!confirm('Disconnect Spotify?\n\nSongs you already imported stay in My Jukebox. You can connect again any time.')) return;
   try {
-    const data = await mjRequest('/api/spotify/library', 'GET');
+    await mjRequest('/api/spotify/disconnect', 'POST');
+    _mjSpotifyStatus = { connected: false, spotifyUserId: null, canReadPlaylists: false };
+    _mjSpotifyPlaylists = []; _mjSpotifyTracks = []; _mjSpotifySource = 'saved';
+    _mjSpotifyLoaded = false; _mjSpotifyTotal = 0; _mjSpotifyTruncated = false;
+    mjRender();
+    showToast('Spotify disconnected.');
+  } catch (e) { showToast(e.message || 'Could not disconnect Spotify.'); }
+}
+
+async function mjSpotifyLoadPlaylists() {
+  try {
+    const data = await mjRequest('/api/spotify/playlists', 'GET');
+    _mjSpotifyPlaylists = data.playlists || [];
+  } catch (e) {
+    _mjSpotifyPlaylists = [];
+    // A 403 here means the connection predates playlists, not that anything
+    // broke. The bar switches to Reconnect for playlists on the next render.
+    if (e.data && e.data.reconnect) _mjSpotifyStatus.canReadPlaylists = false;
+    else showToast(e.message || 'Could not load your Spotify playlists.');
+  }
+}
+
+// Loads whichever list is chosen. The playlists come along on the first load,
+// because the picker is useless without the list to pick from.
+async function mjSpotifyLoad(source) {
+  if (!googleUser) return;
+  if (source !== undefined) _mjSpotifySource = source || 'saved';
+  _mjSpotifyLoading = true; _mjSpotifyTracks = []; mjRender();
+  try {
+    if (_mjSpotifyStatus.canReadPlaylists && !_mjSpotifyPlaylists.length) await mjSpotifyLoadPlaylists();
+    const q = _mjSpotifySource === 'saved' ? '' : '?playlist=' + encodeURIComponent(_mjSpotifySource);
+    const data = await mjRequest('/api/spotify/library' + q, 'GET');
     _mjSpotifyTracks = data.tracks || [];
-    showToast(_mjSpotifyTracks.length ? 'Spotify connected. Pick saved songs to import.' : 'Spotify connected. No saved songs found.');
+    _mjSpotifyTotal = data.total || _mjSpotifyTracks.length;
+    _mjSpotifyTruncated = !!data.truncated;
+    _mjSpotifyLoaded = true;
   } catch (e) {
     _mjSpotifyTracks = [];
+    _mjSpotifyLoaded = true;
+    if (e.data && e.data.reconnect) _mjSpotifyStatus.canReadPlaylists = false;
     showToast(e.message || 'Could not load your Spotify songs.');
   } finally { _mjSpotifyLoading = false; mjRender(); }
 }
 
+function mjSpotifyPickAll(on) {
+  let n = 0;
+  document.querySelectorAll('.mj-spotify-pick').forEach(box => { box.checked = on && n++ < MJ_SPOTIFY_MAX; });
+}
+
+// Import Music -> Import from My Spotify. Open the panel and show whatever is
+// true: the connect button if there is no connection, the songs if there is.
+// Sending an already-connected listener straight back to Spotify's consent
+// screen was the wrong first move.
+async function mjOpenSpotify() {
+  await openMyJukebox();
+  if (_mjSpotifyStatus.connected) mjSpotifyLoad('saved');
+  setTimeout(() => document.getElementById('mj-spotify-block')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 250);
+}
+
 async function mjSpotifyFindMatches() {
-  const selected = Array.from(document.querySelectorAll('.mj-spotify-pick:checked')).map(input => _mjSpotifyTracks[Number(input.dataset.mjSpotify)]).filter(Boolean).slice(0, 15);
-  if (!selected.length) { showToast('Choose at least one saved Spotify song.'); return; }
-  const body = document.getElementById('my-jukebox-body');
-  if (body) body.querySelector('.mj-addbar')?.insertAdjacentHTML('afterend', '<div id="mj-spotify-matching" class="sjj-empty">Finding playable YouTube matches…</div>');
+  const selected = Array.from(document.querySelectorAll('.mj-spotify-pick:checked')).map(input => _mjSpotifyTracks[Number(input.dataset.mjSpotify)]).filter(Boolean);
+  if (!selected.length) { showToast('Choose at least one Spotify song.'); return; }
+  if (selected.length > MJ_SPOTIFY_MAX) showToast('Taking the first ' + MJ_SPOTIFY_MAX + ' of the ' + selected.length + ' songs you picked.');
+  const batch = selected.slice(0, MJ_SPOTIFY_MAX);
+  document.getElementById('mj-spotify-block')?.insertAdjacentHTML('afterend', '<div id="mj-spotify-matching" class="sjj-empty">Finding playable YouTube matches…</div>');
   const matches = [];
-  for (const track of selected) {
+  for (const track of batch) {
     try {
       const found = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(track.artistName + ' ' + track.title), 'GET');
       const video = (found.results || [])[0];
@@ -23462,7 +23605,7 @@ function mjConsumeSpotifyReturn() {
   if (!outcome) return;
   _mjSpotifyCallbackChecked = true;
   const clean = new URL(window.location.href); clean.searchParams.delete('spotify'); window.history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
-  if (outcome === 'connected') openMyJukebox().then(mjLoadSpotify);
+  if (outcome === 'connected') openMyJukebox().then(() => mjSpotifyLoad('saved'));
   else showToast('Spotify connection was not completed.');
 }
 
