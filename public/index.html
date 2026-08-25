@@ -2523,6 +2523,45 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 }
 .landing-tab.active { border-color: var(--accent); color: var(--accent); }
 .landing-tab:hover { border-color: var(--text-muted); color: var(--text); }
+/* Playlist discovery keeps the artist explorer's card language, but turns a
+   playlist into a little jukebox sleeve: 81 tiny album covers behind the mark. */
+.playlist-explore-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:20px; }
+.playlist-explore-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; transition:border-color .15s,transform .15s; text-align:left; color:var(--text); font-family:var(--mono); padding:0; }
+.playlist-explore-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+.playlist-mosaic { display:grid; grid-template-columns:repeat(3,1fr); aspect-ratio:1; background:#100d0a; position:relative; overflow:hidden; }
+.playlist-mosaic-cell { min-width:0; min-height:0; background:#24130c center/cover no-repeat; border:1px solid #0008; }
+.playlist-mosaic-mark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; font-size:3.4rem; font-weight:800; color:#fff; text-shadow:0 2px 18px #000; background:radial-gradient(circle,#ff6b35bb 0 18%,transparent 48%); }
+.playlist-explore-body { padding:14px 16px 15px; display:flex; flex-direction:column; gap:7px; }
+.playlist-explore-name { font-size:.82rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.playlist-explore-meta { color:var(--text-muted); font-size:.5rem; }
+.playlist-explore-action { color:var(--accent); font-size:.5rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; margin-top:3px; }
+/* Artist-chart geometry, applied to tracks in the selected playlist. The
+   strip itself owns horizontal scrolling, so listeners can inspect old plays. */
+.playlist-chart-scroll { overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding:8px 0 14px; }
+.playlist-chart-strip { display:flex; align-items:flex-start; gap:10px; min-width:max-content; padding:0 12px; }
+.playlist-chart-card { width:176px; flex:0 0 176px; position:relative; padding-top:116px; cursor:pointer; }
+.playlist-chart-barzone { position:absolute; top:0; left:0; right:0; height:108px; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; background:none; border:0; border-bottom:1px solid var(--border); cursor:pointer; }
+.playlist-chart-bar { width:74%; min-height:4px; background:var(--accent); border-radius:5px 5px 0 0; opacity:.9; transition:height .25s; }
+.playlist-chart-score { font-size:.46rem; color:var(--accent); font-weight:700; margin-bottom:4px; }
+.playlist-chart-art { width:104px; height:104px; margin:0 auto -12px; position:relative; border-radius:9px; overflow:hidden; background:var(--bg-elevated); border:2px solid var(--bg); box-shadow:0 4px 18px #0008; }
+.playlist-chart-art img { width:100%; height:100%; display:block; object-fit:cover; }
+.playlist-chart-card.played { opacity:.53; filter:saturate(.55); }
+.playlist-chart-card.current { opacity:1; filter:none; }
+.playlist-chart-card.current .playlist-chart-art { outline:2px solid var(--accent); box-shadow:0 0 0 5px #ff6b3526,0 5px 22px #000; }
+.playlist-chart-info { background:var(--bg-card); border:1px solid var(--border); border-radius:9px; padding:18px 10px 10px; min-height:148px; }
+.playlist-chart-pos { color:var(--text-muted); font-size:.42rem; letter-spacing:.09em; text-transform:uppercase; }
+.playlist-chart-title { font-size:.66rem; font-weight:700; line-height:1.3; margin-top:4px; max-height:2.6em; overflow:hidden; }
+.playlist-chart-artist { font-size:.48rem; color:var(--text-muted); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.playlist-chart-lyric { font-size:.48rem; color:#d8c6bc; font-style:italic; line-height:1.45; margin-top:8px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.playlist-chart-actions { display:flex; gap:5px; margin-top:9px; }
+.playlist-chart-actions button,.playlist-chart-toolbar button { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:6px; padding:4px 6px; cursor:pointer; font:600 .43rem var(--mono); letter-spacing:.04em; text-transform:uppercase; }
+.playlist-chart-actions button:hover,.playlist-chart-toolbar button:hover { color:var(--text); border-color:var(--text-muted); }
+.playlist-chart-actions .pc-remove { color:#e7776b; }
+.playlist-chart-actions .pc-remove:disabled { opacity:.3; cursor:not-allowed; }
+.playlist-chart-toolbar { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin:0 0 8px; }
+.playlist-chart-toolbar h2 { font-size:.92rem; margin-right:auto; }
+.playlist-chart-toolbar .pc-primary { color:#fff; border-color:var(--accent); background:var(--accent); }
+@media (max-width:640px) { .playlist-explore-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .playlist-chart-card { width:148px; flex-basis:148px; } .playlist-chart-info { min-height:156px; } }
 .home-wrap { display: flex; flex-direction: column; gap: 22px; max-width: 920px; }
 .home-hero-title-row { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
 .home-hero-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -.01em; margin: 0; }
@@ -6256,6 +6295,7 @@ function updateYTQueueUI(opts) {
   // away rather than waiting out the five second interval.
   try { if (_sjjLive) sjjNudgeSync(); } catch (_) {}
   refreshQuickPlaylistNowPlaying();
+  playlistChartSyncToCurrent();
   if (!ytPlayerEl) return;
 
   // Keep the mini-player thumbs up/down in sync with the current track
@@ -12379,7 +12419,7 @@ async function confirmDeletePlaylist(id, name) {
 let landingStats       = [];
 const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
-let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // home | explore
+let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // home | explore | playlists
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
@@ -12398,6 +12438,20 @@ let _homeBgArtistIds = new Set(); // artists with at least one of my uploaded bg
 let _homeBgTrackIds = new Set();  // track ids with my uploaded bg-audio
 let _homeLibLoaded = false;
 let _homeLibLoading = false;
+// Explore Playlist is deliberately a view over public playlists, never a
+// second copy of them. Artwork is cached by track so the 9×9 sleeves remain
+// cheap to repaint while a listener filters or returns from a chart.
+const playlistArtworkByTrack = {};
+let _playlistArtworkLoading = null;
+let playlistChartId = null;
+let playlistChartName = '';
+let playlistChartRows = [];
+let playlistChartBaseQueue = [];
+let playlistChartExpanded = new Set();
+// Keep the chart focused on the moment. These are intentionally named knobs:
+// changing the visible playback window later should be a one-line decision.
+const PLAYLIST_CHART_PAST_COUNT = 10;
+const PLAYLIST_CHART_FUTURE_COUNT = 20;
 
 function fmtScore(n) {
   n = Number(n) || 0;
@@ -12415,6 +12469,216 @@ function landingColor(row, idx) {
 
 function landingThumb(row) {
   return ALBUM_ART[row.top_album_name] || row.top_album_art_url || row.top_album_thumb || null;
+}
+
+function playlistExploreRows() {
+  return (_savedPlaylists || []).filter(p => p.is_public)
+    .slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+}
+
+function playlistMosaicHTML(p) {
+  const arts = [...new Set((p._tracks || []).slice().sort((a, b) => a.position - b.position)
+    .map(r => playlistArtworkByTrack[r.track_id]).filter(Boolean))].slice(0, 9);
+  const cells = Array.from({ length: 9 }, (_, i) => {
+    const art = arts[i] || '';
+    return `<span class="playlist-mosaic-cell"${art ? ` style="background-image:url('${art.replace(/'/g, '%27')}')"` : ''}></span>`;
+  }).join('');
+  return `<div class="playlist-mosaic" aria-hidden="true">${cells}<span class="playlist-mosaic-mark">♫</span></div>`;
+}
+
+async function ensurePlaylistArtwork() {
+  if (_playlistArtworkLoading) return _playlistArtworkLoading;
+  const ids = [...new Set(playlistExploreRows().flatMap(p => (p._tracks || []).map(r => r.track_id)).filter(Boolean))]
+    .filter(id => playlistArtworkByTrack[id] === undefined);
+  if (!ids.length) return false;
+  _playlistArtworkLoading = (async () => {
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 70) chunks.push(ids.slice(i, i + 70));
+    const tRows = (await Promise.all(chunks.map(c =>
+      dbGet(`/tracks?id=in.(${c.join(',')})&select=id,album_id`)))).flat();
+    const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
+    const albChunks = [];
+    for (let i = 0; i < albumIds.length; i += 70) albChunks.push(albumIds.slice(i, i + 70));
+    const albRows = albumIds.length ? (await Promise.all(albChunks.map(c =>
+      dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,art_url`)))).flat() : [];
+    const artByAlbum = Object.fromEntries(albRows.map(a => [a.id, ALBUM_ART[a.name] || a.art_url || null]));
+    tRows.forEach(t => { playlistArtworkByTrack[t.id] = artByAlbum[t.album_id] || null; });
+    ids.forEach(id => { if (playlistArtworkByTrack[id] === undefined) playlistArtworkByTrack[id] = null; });
+    return true;
+  })().catch(() => false).finally(() => { _playlistArtworkLoading = null; });
+  return _playlistArtworkLoading;
+}
+
+function playlistChartMetric(row) {
+  return Number(ytData[row.trackId]?.views || row.views || 0);
+}
+
+function playlistChartQueue() {
+  // Once playing, the chart follows the live queue. Past indices are never
+  // moved, so its left side is a stable history while the future can change.
+  return ytQueue === playlistChartBaseQueue ? ytQueue : playlistChartBaseQueue;
+}
+
+function playlistChartRowFor(item, fallbackIndex) {
+  return playlistChartRows.find(r => r.trackId === item.trackId) || {
+    trackId: item.trackId, title: item.title || 'Track', artist: item.artist || '',
+    artwork: item.artwork || '', index: fallbackIndex
+  };
+}
+
+function playlistChartSyncToCurrent() {
+  if (viewMode !== 'playlistchart' || ytQueue !== playlistChartBaseQueue || ytQueueIdx < 0) return;
+  requestAnimationFrame(() => {
+    const strip = document.getElementById('playlist-chart-scroll');
+    const card = strip?.querySelector(`[data-pc-index="${ytQueueIdx}"]`);
+    if (strip && card) card.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+  });
+}
+
+function playlistChartToggleInfo(i) {
+  if (playlistChartExpanded.has(i)) playlistChartExpanded.delete(i); else playlistChartExpanded.add(i);
+  renderPlaylistChart();
+}
+
+function playlistChartPlayAt(i) {
+  if (ytQueue !== playlistChartBaseQueue) return playlistChartPlay(i);
+  if (!ytPlayerEl) return playlistChartPlay(i);
+  ytPlayQueueIdx(i);
+}
+
+function playlistChartReshuffleFuture() {
+  if (ytQueue !== playlistChartBaseQueue || ytQueueIdx >= ytQueue.length - 1) return;
+  const future = ytQueue.slice(ytQueueIdx + 1);
+  shuffleInPlace(future);
+  ytQueue.splice(ytQueueIdx + 1, future.length, ...future);
+  ytResetShufflePool();
+  updateYTQueueUI({ preserveScroll:true });
+  renderPlaylistChart();
+  showToast('Reshuffled the future plays.');
+}
+
+function playlistChartRemoveFuture(i) {
+  if (ytQueue !== playlistChartBaseQueue || i <= ytQueueIdx || i >= ytQueue.length) return;
+  const removed = ytQueue.splice(i, 1)[0];
+  playlistChartExpanded.delete(i);
+  ytResetShufflePool();
+  updateYTQueueUI({ preserveScroll:true });
+  renderPlaylistChart();
+  showToast(`Removed ${removed?.title || 'song'} from the future playlist.`);
+}
+
+async function playlistChartPlay(startIndex = 0) {
+  if (!playlistChartBaseQueue.length) return;
+  const q = playlistChartBaseQueue;
+  const start = Math.max(0, Math.min(startIndex, q.length - 1));
+  _queueHasAdditions = true;
+  setYtShuffleEnabled(false);
+  if (!ytPlayerEl) {
+    openYTPlayer(q[start].videoId, q[start].title, q[start].trackId);
+    ytQueue = q; ytQueueIdx = start;
+    updateYTQueueUI();
+  } else {
+    ytPlayNow(q[start].videoId, q[start].title, q[start].trackId);
+    ytQueue = q; ytQueueIdx = start;
+    updateYTQueueUI();
+  }
+  renderPlaylistChart();
+}
+
+async function openPlaylistChart(playlistId) {
+  const p = (_savedPlaylists || []).find(x => x.id === playlistId);
+  if (!p) return;
+  playlistChartId = playlistId;
+  playlistChartName = p.name || 'Untitled Playlist';
+  playlistChartRows = [];
+  playlistChartBaseQueue = [];
+  playlistChartExpanded.clear();
+  isLandingMode = false;
+  viewMode = 'playlistchart';
+  ['filter-header', 'filter-header-mobile', 'view-controls-header', 'lwytb-header'].forEach(id => {
+    const el = document.getElementById(id); if (el) { el.innerHTML = ''; el.dataset.armed = '0'; }
+  });
+  updateToolbarToggle();
+  renderPlaylistChart();
+  try {
+    const ordered = (p._tracks || []).slice().sort((a, b) => a.position - b.position);
+    const ids = [...new Set(ordered.map(r => r.track_id).filter(Boolean))];
+    if (!ids.length) throw new Error('This playlist has no tracks.');
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 70) chunks.push(ids.slice(i, i + 70));
+    const tRows = (await Promise.all(chunks.map(c => dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,track_number,duration_ms`)))).flat();
+    const tById = Object.fromEntries(tRows.map(t => [t.id, t]));
+    const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
+    const aChunks = []; for (let i = 0; i < albumIds.length; i += 70) aChunks.push(albumIds.slice(i, i + 70));
+    const albRows = albumIds.length ? (await Promise.all(aChunks.map(c => dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,artist_id,release_date,art_url`)))).flat() : [];
+    const albById = Object.fromEntries(albRows.map(a => [a.id, a]));
+    const artistIds = [...new Set(albRows.map(a => a.artist_id).filter(Boolean))];
+    const arChunks = []; for (let i = 0; i < artistIds.length; i += 70) arChunks.push(artistIds.slice(i, i + 70));
+    const artistsRows = artistIds.length ? (await Promise.all(arChunks.map(c => dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat() : [];
+    const artistById = Object.fromEntries(artistsRows.map(a => [a.id, a]));
+    const chartYT = await loadYT(ids);
+    Object.assign(ytData, chartYT);
+    const rows = ordered.map((pt, index) => {
+      const t = tById[pt.track_id], alb = t && albById[t.album_id], artist = alb && artistById[alb.artist_id];
+      if (!t) return null;
+      const artwork = chartYT[t.id]?.thumbnail || ALBUM_ART[alb?.name] || alb?.art_url || '';
+      SJ_TRACK_META[t.id] = { title:t.name || '', artist:artist?.name || '', album:alb?.name || '', year:(alb?.release_date || '').slice(0,4), artwork };
+      return { trackId:t.id, title:t.name || 'Track', artist:artist?.name || '', album:alb?.name || '', artwork, index, duration:t.duration_ms || 0, views:chartYT[t.id]?.views || 0 };
+    }).filter(Boolean);
+    if (playlistChartId !== playlistId) return;
+    playlistChartRows = rows;
+    playlistChartBaseQueue = rows.filter(r => chartYT[r.trackId]?.video_id).map(r =>
+      ytQueueItem(chartYT[r.trackId].video_id, r.title, r.trackId, r.artist));
+    _fetchLyricsForTracks(rows.map(r => r.trackId)).then(() => {
+      if (viewMode === 'playlistchart' && playlistChartId === playlistId) renderPlaylistChart();
+    });
+    renderPlaylistChart();
+  } catch (e) {
+    playlistChartRows = [];
+    playlistChartBaseQueue = [];
+    renderPlaylistChart(e.message || 'Could not load this playlist.');
+  }
+}
+
+function returnToPlaylistExplorer() {
+  playlistChartId = null; playlistChartRows = []; playlistChartBaseQueue = []; playlistChartExpanded.clear();
+  isLandingMode = true;
+  landingTab = 'playlists';
+  try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
+  renderLanding();
+}
+
+function renderPlaylistChart(error) {
+  const main = document.getElementById('main');
+  if (!main) return;
+  main.classList.remove('main-landing');
+  const q = playlistChartQueue();
+  const active = ytQueue === playlistChartBaseQueue;
+  const firstVisible = active ? Math.max(0, ytQueueIdx - PLAYLIST_CHART_PAST_COUNT) : 0;
+  const lastVisible = active
+    ? Math.min(q.length, ytQueueIdx + PLAYLIST_CHART_FUTURE_COUNT + 1)
+    : Math.min(q.length, PLAYLIST_CHART_FUTURE_COUNT);
+  const visibleQueue = q.slice(firstVisible, lastVisible);
+  const max = Math.max(...visibleQueue.map((item, i) => playlistChartMetric(playlistChartRowFor(item, firstVisible + i))), 1);
+  const esc = s => escHtml(s || '');
+  const cards = visibleQueue.map((item, visibleIndex) => {
+    const i = firstVisible + visibleIndex;
+    const row = playlistChartRowFor(item, i);
+    const isCurrent = active && i === ytQueueIdx;
+    const played = active && i < ytQueueIdx;
+    const lyric = lyricsCache[row.trackId];
+    const excerpt = lyric ? _pickLyricLineFromText(lyric) || lyric.slice(0, 170) : 'Lyrics are loading…';
+    const pct = Math.max(5, Math.round(playlistChartMetric(row) / max * 100));
+    const frozen = active && i <= ytQueueIdx;
+    const expanded = playlistChartExpanded.has(i);
+    return `<article class="playlist-chart-card${played ? ' played' : ''}${isCurrent ? ' current' : ''}" data-pc-index="${i}">
+      <button type="button" class="playlist-chart-barzone" onclick="playlistChartPlayAt(${i})" title="Play ${esc(row.title)}"><span class="playlist-chart-score">${fmtV(playlistChartMetric(row))}</span><span class="playlist-chart-bar" style="height:${pct}%"></span></button>
+      <button type="button" class="playlist-chart-art" onclick="playlistChartPlayAt(${i})" title="Play ${esc(row.title)}">${row.artwork ? `<img src="${row.artwork}" loading="lazy" alt="">` : '<span class="playlist-mosaic-mark">♫</span>'}</button>
+      <div class="playlist-chart-info" onclick="playlistChartToggleInfo(${i})"><div class="playlist-chart-pos">${isCurrent ? 'Playing now' : played ? 'Played' : 'Up next'} · ${i + 1}</div><div class="playlist-chart-title">${esc(row.title)}</div><div class="playlist-chart-artist">${esc(row.artist)}${row.album ? ' · ' + esc(row.album) : ''}</div><div class="playlist-chart-lyric"${expanded ? ' style="display:block;-webkit-line-clamp:unset"' : ''}>${esc(excerpt)}</div><div class="playlist-chart-actions"><button type="button" onclick="event.stopPropagation();playlistChartPlayAt(${i})">${isCurrent ? 'Playing' : 'Play'}</button><button type="button" class="pc-remove" ${frozen ? 'disabled title="Played songs stay fixed"' : ''} onclick="event.stopPropagation();playlistChartRemoveFuture(${i})">✕ Remove from Playlist</button></div></div>
+    </article>`;
+  }).join('');
+  main.innerHTML = `<section class="playlist-chart-page"><div class="playlist-chart-toolbar"><button type="button" onclick="returnToPlaylistExplorer()">← Explore Playlists</button><h2>${esc(playlistChartName)}</h2><button type="button" class="pc-primary" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()">▶ Play Playlist</button><button type="button" ${active && ytQueueIdx < ytQueue.length - 1 ? '' : 'disabled'} onclick="playlistChartReshuffleFuture()">⤨ Reshuffle Future</button></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist chart…</div>' : `<div class="playlist-chart-scroll" id="playlist-chart-scroll"><div class="playlist-chart-strip">${cards}</div></div>`)}</section>`;
+  playlistChartSyncToCurrent();
 }
 
 
@@ -12741,10 +13005,15 @@ function clearArtistsFilter(e) {
 }
 
 function setLandingTab(tab) {
-  landingTab = tab === 'explore' ? 'explore' : 'home';
+  landingTab = ['explore', 'playlists', 'home'].includes(tab) ? tab : 'explore';
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
   if (tab === 'home') ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
+  if (tab === 'playlists') {
+    loadPlaylists().then(() => ensurePlaylistArtwork()).then(changed => {
+      if (changed && isLandingMode && landingTab === 'playlists') renderLanding();
+    });
+  }
   renderLanding();
 }
 
@@ -13065,9 +13334,14 @@ function renderLanding() {
     <div class="landing-wrap">
       <div class="landing-tabs">
         <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
+        <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
         <button type="button" class="landing-tab${landingTab === 'home' ? ' active' : ''}" onclick="setLandingTab('home')">My Jukebox</button>
       </div>
-      ${landingTab === 'home' ? renderLandingHomeHTML(esc) : `
+      ${landingTab === 'home' ? renderLandingHomeHTML(esc) : landingTab === 'playlists' ? (() => {
+        const rows = playlistExploreRows();
+        return `<p class="landing-intro">Explore Playlists — open a living chart, then steer what plays next.</p>
+          ${rows.length ? `<div class="playlist-explore-grid">${rows.map(p => `<button type="button" class="playlist-explore-card" onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : ''}</span><span class="playlist-explore-action">Explore playlist chart →</span></span></button>`).join('')}</div>` : '<div class="landing-no-results">Loading public playlists…</div>'}`;
+      })() : `
       <p class="landing-intro">Explore Artists — pick a discography</p>
       <div class="landing-controls">
         <div class="landing-control-group">
@@ -13158,6 +13432,9 @@ function renderLanding() {
     if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
   }
   if (landingTab === 'explore') landingExpandedIds.forEach(id => laPopulateAlbums(id));
+  if (landingTab === 'playlists') ensurePlaylistArtwork().then(changed => {
+    if (changed && isLandingMode && landingTab === 'playlists') renderLanding();
+  });
 }
 
 function landingPlayQueue(q) {
@@ -14190,6 +14467,7 @@ function renderTrackLines(alb, mode = 'inline') {
 // RENDER
 // ══════════════════════════════════════════════════════════════
 function render() {
+  if (viewMode === 'playlistchart') { renderPlaylistChart(); return; }
   if (isLandingMode) { renderLanding(); return; }
   if (!selectedIds.size) { renderEmpty('No artist data loaded.'); return; }
 
