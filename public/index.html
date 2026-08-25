@@ -15608,6 +15608,22 @@ async function amFetch(path, opts = {}) {
   return data;
 }
 
+// A full-discography import is too destructive a place for a fuzzy identity
+// match. "The Blink 182 Show" is not blink-182; let the listener refine the
+// search or deliberately use the channel fallback instead of importing a
+// similarly named act's catalogue.
+function amArtistIdentityKey(value) {
+  return String(value || '')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s*\((band|musician|singer|group)\)\s*$/i, '')
+    .replace(/^\s*the\s+/i, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+function amIsExactArtistIdentity(query, found) {
+  const wanted = amArtistIdentityKey(query), got = amArtistIdentityKey(found);
+  return !!wanted && wanted === got;
+}
+
 async function amSearch() {
   const q = document.getElementById('amSearchInput').value.trim();
   if (!q) return;
@@ -15626,6 +15642,13 @@ async function amSearch() {
   card.innerHTML = '<div style="color:var(--text-muted);font-size:.55rem"><span class="m-spin"></span> Identifying artist…</div>';
   try {
     const d = await amFetch(`?action=identify&q=${encodeURIComponent(q)}`);
+    if (!amIsExactArtistIdentity(q, d.artist_name)) {
+      amIdent = null; amChannel = null; amAlbums = []; amPicked = new Set();
+      card.innerHTML = `<div style="color:#ef4444;font-size:.55rem;line-height:1.55"><b>Artist match needs review.</b><br>Searching for “${escHtml(q)}” found “${escHtml(d.artist_name || 'an unknown artist')}”, so nothing was imported. Refine the name or use the channel option only when it is the artist’s actual channel.</div>`;
+      amStepGo(1, 'Artist name did not match exactly. Nothing was imported.');
+      amSetFooter(false, 'Next: Choose Albums ›', true);
+      return;
+    }
     amIdent = d; amChannel = d.channel || null;
     const nrm = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
     const already = (d.existing_albums || []).map(nrm);
@@ -16567,6 +16590,7 @@ async function amImport() {
   statusEl.textContent = '';
   const logEl = document.getElementById('amLog');
   logEl.innerHTML = ''; logEl.classList.add('open');
+  const importStartedAt = new Date().toISOString();
   const picked = amAlbums.filter((a, i) => amPicked.has(i));
   // Everything on offer means the discography is complete; a subset does not.
   const amScope = picked.length >= amAlbums.length ? 'artist' : 'album';
@@ -16578,13 +16602,20 @@ async function amImport() {
       const a = picked[i];
       amStepGo(3, `Album ${i + 1} of ${picked.length}: “${a.title}”: finding the best YouTube playlist…`);
       try {
-        if (a.playlist_id) {
+        // A channel/manual import is intentionally driven by the listener's
+        // exact playlist. Automatic discography imports must still run through
+        // match_album so an old cached playlist cannot become the album source.
+        if (a.playlist_id && amIdent.manual) {
           if (usedPl.has(a.playlist_id)) {
             amLogLine('err', `  ⚠ “${a.title}”, playlist already used for another album, skipped`);
             continue;
           }
           usedPl.add(a.playlist_id);
-          matches.push({ id: a.playlist_id, title: a.title, wiki_page: a.wiki_page || undefined });
+          matches.push({
+            id: a.playlist_id, title: a.title,
+            release_date: a.date || undefined, rg: a.rg || undefined,
+            wiki_page: a.wiki_page || undefined,
+          });
           amLogLine('ok', `  ✓ “${a.title}”, using your playlist (${a.track_count} tracks)`);
           continue;
         }
@@ -16651,6 +16682,28 @@ async function amImport() {
     }
     if (!data.success) throw lastErr || new Error('Import failed');
     amArtistId = data.artist_id || null;
+    // A one-song import may already have given this artist a Singles card. When
+    // the full discography arrives later, retain that original track row (and
+    // its play history) by moving it into the matching album, then discard the
+    // duplicate just created by this import. This is intentionally best-effort:
+    // the import itself is already complete if consolidation is unavailable.
+    if (amScope === 'artist' && data.artist_id) {
+      try {
+        const consolidate = await fetch(sjApiUrl('/api/sj-consolidate-singles'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+          body: JSON.stringify({ artist_id: data.artist_id, album_names: matches.map(m => m.title), imported_after: importStartedAt }),
+        });
+        const consolidated = await consolidate.json();
+        if (consolidated.ok && consolidated.moved?.length) {
+          amLogLine('ok', `  ✓ Moved ${consolidated.moved.length} existing single${consolidated.moved.length === 1 ? '' : 's'} into ${consolidated.moved.length === 1 ? 'its album' : 'their albums'} without losing play history`);
+        } else if (!consolidated.ok) {
+          amLogLine('', `  · Existing Singles were left as-is: ${consolidated.error || 'could not consolidate them'}`);
+        }
+      } catch (_) {
+        amLogLine('', '  · Existing Singles were left as-is; consolidation can be retried on the next full import.');
+      }
+    }
     const _amDone = new Set(data.albums_detail.map(x => String(x.name || '').toLowerCase()));
     picked.forEach(a => { if (_amDone.has(String(a.title).toLowerCase())) a.already = true; });
     amPicked.clear();
