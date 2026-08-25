@@ -3019,6 +3019,10 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="favorites" style="margin-top:2px;accent-color:var(--accent)"><span><b>Favorites First</b><span class="bgs-row-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="less_repeats" style="margin-top:2px;accent-color:var(--accent)"><span><b>Less Repeats</b><span class="bgs-row-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="none" style="margin-top:2px;accent-color:var(--accent)"><span><b>No Preferences</b><span class="bgs-row-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
+      <div style="border-top:1px solid var(--border);padding-top:.65rem;margin-top:.1rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem">
+        <span style="font-size:.62rem;color:var(--text)"><b>Crossfade tracks</b><span class="bgs-row-sub" style="display:block">Fade one song down and the next one in when the queue advances.</span></span>
+        <select id="sj-crossfade-seconds" class="ctrl-select" aria-label="Crossfade duration" style="flex:0 0 auto"><option value="0">Off</option><option value="3">3 sec</option><option value="6">6 sec</option></select>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closePlaybackPreferences()">Cancel</button>
@@ -4293,9 +4297,12 @@ let _ytShuffleRecent     = [];   // short history prevents weighted modes cluste
 let _ytQueueMetaPromise  = null; // one bulk artist-name lookup for the current queue at a time
 let _ytQueueMetaQueue    = null;
 let sjShufflePreference  = 'none'; // 'discovery' | 'favorites' | 'less_repeats' | 'none'
+let sjCrossfadeSeconds   = 0;      // 0 | 3 | 6, saved with playback preferences
 try {
   const savedShufflePreference = localStorage.getItem('sj_shuffle_preference');
   if (['discovery', 'favorites', 'less_repeats', 'none'].includes(savedShufflePreference)) sjShufflePreference = savedShufflePreference;
+  const savedCrossfadeSeconds = Number(localStorage.getItem('sj_crossfade_seconds'));
+  if ([0, 3, 6].includes(savedCrossfadeSeconds)) sjCrossfadeSeconds = savedCrossfadeSeconds;
 } catch (_) {}
 let _ytUserWantsPlay    = false; // user intent - not paused by user
 let _ytBgAudio          = null;  // silent keepalive for mobile background playback
@@ -5449,6 +5456,7 @@ function ytpPlayInline() {
 // available from the X on the minimized bar (closeYTPlayer).
 function ytpCloseToMini() {
   if (!ytPlayerEl) return;
+  ytpCancelCrossfade(true);
   _ytUserWantsPlay = false;
   try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
   try { _taAudioEl?.pause(); } catch (_) {}
@@ -5460,6 +5468,7 @@ function ytpCloseToMini() {
 
 function closeYTPlayer() {
   if (!ytPlayerEl) return;
+  ytpCancelCrossfade(false);
   ytpClearPlaybackWatchdog();
   markPlayerClosed();
   hideYtpMiniFooter();
@@ -5599,6 +5608,7 @@ function ytNormalizeQueue(items) {
 }
 
 function ytPlayNow(videoId, title, trackId) {
+  ytpCancelCrossfade(true);
   ytMarkMobPlayIntent();
   ytQueue = [ytQueueItem(videoId, title, trackId)];
   ytQueueIdx = 0;
@@ -5655,8 +5665,9 @@ function _ytCaptureLastPlayed() {
   };
 }
 
-function ytPlayQueueIdx(idx) {
+function ytPlayQueueIdx(idx, opts) {
   if (idx < 0 || idx >= ytQueue.length || !ytPlayerEl) return;
+  if (!opts?.crossfade) ytpCancelCrossfade(true);
   if (idx !== ytQueueIdx) _ytCaptureLastPlayed();
   ytMarkMobPlayIntent();
   // Cancel pending play timer for previous track
@@ -5843,13 +5854,17 @@ function ytpPaintTogs() {
 }
 
 function ytNextTrack() {
+  let next = -1;
   if (ytShuffle && ytQueue.length > 1) {
-    ytPlayQueueIdx(_ytShuffleNextIdx());
+    next = _ytShuffleNextIdx();
   } else if (ytQueueIdx < ytQueue.length - 1) {
-    ytPlayQueueIdx(ytQueueIdx + 1);
+    next = ytQueueIdx + 1;
   } else if (ytRepeat && ytQueue.length > 0) {
-    ytPlayQueueIdx(0);
+    next = 0;
   }
+  if (next < 0) return;
+  if (next !== ytQueueIdx && ytpCrossfadeAvailable()) ytpCrossfadeToQueueIdx(next);
+  else ytPlayQueueIdx(next);
 }
 
 function ytPrevTrack() {
@@ -5874,6 +5889,7 @@ function ytBackTrack() {
 
 // ── Mini-player play/pause toggle ──────────────────────────────
 function ytTogglePlayPause() {
+  ytpCancelCrossfade(true);
   if (_taBgActive && _taAudioEl) {
     // Audio-only mode: toggle the audio element, not the embed
     if (_taAudioEl.paused) { _ytUserWantsPlay = true; _taAudioEl.play().catch(() => {}); ytpSetPlayPauseIcon(true); ytpSetMediaPlaybackState('playing'); }
@@ -5931,6 +5947,67 @@ function ytpFadeTo(toVol, ms) {
     };
     _ytpFadeRaf = requestAnimationFrame(tick);
   });
+}
+
+// One YouTube embed can only carry one song at a time. The handoff therefore
+// fades the outgoing song down, swaps the queued video at its quiet point, and
+// fades the incoming song up. It is used both near a song's end and for Next.
+let _ytCrossfade = null; // { token, idx, volume, inMs, phase }
+let _ytCrossfadeToken = 0;
+
+function ytpCrossfadeAvailable() {
+  return sjCrossfadeSeconds > 0 && !!ytPlayerEl && !!ytAPIPlayer &&
+    !_taBgActive && !_taManualAudio && _ytUserWantsPlay && ytQueue.length > 1;
+}
+
+function ytpCancelCrossfade(restoreVolume) {
+  const active = _ytCrossfade;
+  _ytCrossfade = null;
+  ytpCancelFade();
+  if (restoreVolume && active && Number.isFinite(active.volume)) ytpSetVolume(active.volume);
+}
+
+function ytpCrossfadeToQueueIdx(idx) {
+  if (!ytpCrossfadeAvailable() || idx < 0 || idx >= ytQueue.length || idx === ytQueueIdx || _ytCrossfade) {
+    ytPlayQueueIdx(idx);
+    return;
+  }
+  const totalMs = Math.max(1000, sjCrossfadeSeconds * 1000);
+  const outMs = Math.round(totalMs / 2);
+  const active = _ytCrossfade = {
+    token: ++_ytCrossfadeToken,
+    idx,
+    volume: ytpSliderVolume(),
+    inMs: totalMs - outMs,
+    phase: 'out',
+  };
+  ytpFadeTo(0, outMs).then(() => {
+    if (_ytCrossfade !== active || active.token !== _ytCrossfadeToken) return;
+    active.phase = 'in';
+    // Loading keeps this player's volume at zero. onStateChange(PLAYING)
+    // starts the incoming fade once YouTube has actually begun the new song.
+    ytPlayQueueIdx(idx, { crossfade: true });
+  });
+}
+
+function ytpStartCrossfadeIn() {
+  const active = _ytCrossfade;
+  if (!active || active.phase !== 'in' || active.idx !== ytQueueIdx) return;
+  _ytCrossfade = null;
+  ytpSetVolume(0);
+  ytpFadeTo(active.volume, active.inMs);
+}
+
+function ytpMaybeCrossfade(pos, dur) {
+  if (!ytpCrossfadeAvailable() || _ytCrossfade || !Number.isFinite(dur) || dur <= 0) return;
+  // Leave at least one quarter-second for the progress clock before asking
+  // YouTube to swap, so an imprecise duration never triggers immediately.
+  if (pos < Math.max(.25, dur - sjCrossfadeSeconds)) return;
+  let next = -1;
+  if (ytShuffle && ytQueue.length > 1) next = _ytShuffleNextIdx();
+  else if (ytQueueIdx < ytQueue.length - 1) next = ytQueueIdx + 1;
+  else if (ytRepeat && ytQueue.length > 1) next = 0;
+  if (next >= 0 && next !== ytQueueIdx) ytpCrossfadeToQueueIdx(next);
 }
 
 function ytpPauseNow() {
@@ -6059,6 +6136,7 @@ function attachYTAPIPlayer() {
             taSyncAudioBtn();
           }
           _ytUserWantsPlay = true;
+          ytpStartCrossfadeIn();
           ytpSetPlayPauseIcon(true);
           ytpStartBgKeepalive();
           ytpUpdateMediaSession();
@@ -6096,6 +6174,10 @@ function attachYTAPIPlayer() {
           _ytUserWantsPlay = false;
           ytpStopBgKeepalive();
         } else if (ev.data === 0) { // ENDED
+          // A progress-timed crossfade has already chosen and is fading into
+          // the next queue item. Do not let the old video's ended event skip
+          // an extra song while that handoff is in flight.
+          if (_ytCrossfade?.phase === 'out') return;
           lyrSyncStop();
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
           patchYTPlayDuration();
@@ -6926,6 +7008,7 @@ function ytpMfPaintProgress() {
   const prefixes = ytpScrubPrefixes();
   if (!prefixes.length) return;
   const { pos, dur } = ytpMfPlaybackPos();
+  ytpMaybeCrossfade(pos, dur);
   const max = dur > 0 ? dur : 0;
   prefixes.forEach(p => {
     const seek  = document.getElementById('ytp-' + p + '-seek');
@@ -11052,7 +11135,7 @@ function sjmRenderRoot() {
       : '') +
     (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
-          '<span class="sjm-ic">🎵</span><span class="sjm-label">View Artist Jukebox</span></button>'
+          '<span class="sjm-ic">🎵</span><span class="sjm-label">Go to Artist Jukebox</span></button>'
       : '') +
     '<button class="sjm-item" onclick="sjmShareSong()">' +
       '<span class="sjm-ic">⤴</span><span class="sjm-label">Share</span>' +
@@ -16678,6 +16761,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
+    'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
+    'Playback preferences now includes Crossfade tracks. Choose Off, 3 seconds, or 6 seconds to fade between songs as a playlist moves along.',
     'One Hide Toolbar button now tucks the whole top toolbar away, instead of a separate arrow on Jukebox Controls and another on Playlist Controls. It sits at the right-hand end of the row and turns into Show Toolbar once everything is hidden.',
     'Playlist Controls and Now Playing sit side by side on one line when the screen is wide enough to hold both, and go back to stacking when it is not.',
     'The Purple Mountains jukebox now opens on Purple Mountains, with Silver Jews tucked away. The two buttons in the filter bar still bring either one back with one click.',
@@ -17218,6 +17303,8 @@ function openPlaybackPreferences() {
   if (!overlay) return;
   const selected = overlay.querySelector('input[name="sj-shuffle-preference"][value="' + sjShufflePreference + '"]');
   if (selected) selected.checked = true;
+  const crossfade = overlay.querySelector('#sj-crossfade-seconds');
+  if (crossfade) crossfade.value = String(sjCrossfadeSeconds);
   overlay.classList.add('open');
 }
 
@@ -17229,13 +17316,20 @@ function savePlaybackPreferences() {
   const selected = document.querySelector('input[name="sj-shuffle-preference"]:checked');
   const preference = selected?.value;
   if (!['discovery', 'favorites', 'less_repeats', 'none'].includes(preference)) return;
+  const crossfadeValue = Number(document.getElementById('sj-crossfade-seconds')?.value);
+  const crossfade = [0, 3, 6].includes(crossfadeValue) ? crossfadeValue : 0;
   sjShufflePreference = preference;
-  try { localStorage.setItem('sj_shuffle_preference', sjShufflePreference); } catch (_) {}
+  sjCrossfadeSeconds = crossfade;
+  if (!sjCrossfadeSeconds) ytpCancelCrossfade(true);
+  try {
+    localStorage.setItem('sj_shuffle_preference', sjShufflePreference);
+    localStorage.setItem('sj_crossfade_seconds', String(sjCrossfadeSeconds));
+  } catch (_) {}
   _ytShufflePreviewIdx = null;
   closePlaybackPreferences();
   if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
   const labels = { discovery: 'Discovery', favorites: 'Favorites First', less_repeats: 'Less Repeats', none: 'No Preferences' };
-  showToast('Playback preference: ' + labels[sjShufflePreference]);
+  showToast('Playback settings: ' + labels[sjShufflePreference] + ' · Crossfade ' + (sjCrossfadeSeconds ? (sjCrossfadeSeconds + ' sec') : 'off'));
 }
 
 async function handleLogout() {
