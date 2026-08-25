@@ -2568,25 +2568,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-cell.blocked img { opacity:.22; filter:grayscale(1); }
 .pl-wall-cell.blocked::before { content:'⊘'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:#fff9; background:#0007; pointer-events:none; }
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
-.pl-wall-pop { position:fixed; inset:0; z-index:2147483000; display:flex; align-items:center; justify-content:center; padding:20px; }
-.pl-wall-pop-back { position:absolute; inset:0; background:#000a; backdrop-filter:blur(4px); }
-.pl-wall-pop-card { position:relative; z-index:1; width:min(340px,calc(100vw - 32px)); background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:18px 18px 16px; box-shadow:0 24px 60px #000c; font-family:var(--mono); animation:plWallPopIn .18s ease-out; }
-@keyframes plWallPopIn { from { opacity:0; transform:scale(.94) translateY(8px); } to { opacity:1; transform:none; } }
-.pl-wall-pop-x { position:absolute; top:10px; right:10px; background:none; border:none; color:var(--text-muted); font-size:.9rem; cursor:pointer; padding:4px 8px; line-height:1; border-radius:6px; }
-.pl-wall-pop-x:hover { color:var(--text); background:rgba(255,255,255,.06); }
-.pl-wall-pop-art { width:120px; height:120px; margin:0 auto 14px; border-radius:10px; overflow:hidden; background:var(--bg-elevated); box-shadow:0 8px 24px #0008; }
-.pl-wall-pop-art img { width:100%; height:100%; object-fit:cover; display:block; }
-.pl-wall-pop-body { text-align:center; margin-bottom:16px; }
-.pl-wall-pop-title { font-size:.82rem; font-weight:700; margin:0 0 5px; line-height:1.35; }
-.pl-wall-pop-sub { font-size:.52rem; color:var(--text-muted); margin:0 0 6px; line-height:1.45; }
-.pl-wall-pop-meta { font-size:.48rem; color:var(--accent); margin:0; letter-spacing:.04em; }
-.pl-wall-pop-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:stretch; }
-.pl-wall-pop-primary { flex:1 1 100%; background:var(--accent); border:1px solid var(--accent); color:#0a0a0a; font-family:var(--mono); font-size:.58rem; font-weight:700; padding:.65rem 1rem; border-radius:8px; cursor:pointer; min-height:44px; }
-.pl-wall-pop-primary:disabled { opacity:.35; cursor:not-allowed; }
-.pl-wall-pop-btn { flex:1; background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.54rem; font-weight:600; padding:.6rem .75rem; border-radius:8px; cursor:pointer; min-height:44px; }
-.pl-wall-pop-btn:hover { border-color:var(--text-muted); }
-.pl-wall-pop-more { flex:0 0 44px; width:44px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-muted); font-size:1.1rem; line-height:1; border-radius:8px; cursor:pointer; padding:0; }
-.pl-wall-pop-more:hover { border-color:var(--accent); color:var(--accent); }
+#pl-wall-card .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
 @media (max-width:900px) {
   .pl-wall-toolbar-right { width:100%; margin-left:0; flex-wrap:wrap; }
   .pl-wall-transport { flex-wrap:wrap; width:100%; }
@@ -2921,7 +2903,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 
 <!-- Song-card dashed-line SVG overlay -->
 <svg id="sc-lines-svg" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:1998;overflow:visible" xmlns="http://www.w3.org/2000/svg"></svg>
-<div id="mob-overlay" onclick="Object.keys(songCards).forEach(t=>closeSongCard(t))"></div>
+<div id="mob-overlay" onclick="Object.keys(songCards).forEach(t=>closeSongCard(t));plWallClosePop()"></div>
 <div id="mob-alb-panel"></div>
 
 <div id="ytp-mini-footer" class="ytp-mini-footer" onclick="ytpMiniFooterBarClick(event)">
@@ -12010,7 +11992,10 @@ function drawSCLine(trackId) {
   svg.appendChild(path);
 }
 
-function redrawAllSCLines() { Object.keys(songCards).forEach(drawSCLine); }
+function redrawAllSCLines() {
+  Object.keys(songCards).forEach(drawSCLine);
+  plWallDrawLine();
+}
 
 // Update lines on scroll and resize
 document.addEventListener('scroll', redrawAllSCLines, { capture: true, passive: true });
@@ -12697,20 +12682,106 @@ function playlistChartPlayAt(i) {
 }
 
 let _plWallPopIdx = null;
+let _plWallCard = null;
+
+function plWallPositionCard(el, anchorEl) {
+  const ar = anchorEl ? anchorEl.getBoundingClientRect() : null;
+  const cW = 280;
+  let cx = ar ? Math.min(ar.right + 20, window.innerWidth - cW - 12) : (window.innerWidth / 2 - cW / 2);
+  let cy = ar ? Math.max(12, ar.top + ar.height / 2 - 80) : (window.innerHeight / 2 - 120);
+  if (ar && cx < ar.right + 8) cx = Math.max(12, ar.left - cW - 12);
+  cy = Math.min(cy, window.innerHeight - 180);
+  el.style.left = cx + 'px';
+  el.style.top = cy + 'px';
+  el.style.width = cW + 'px';
+}
+
+function plWallDrawLine() {
+  const sc = _plWallCard;
+  const svg = scLinesSVG();
+  if (!sc || !svg) return;
+  const old = document.getElementById('pl-wall-line');
+  if (old) old.remove();
+  const anchorEl = sc.anchorEl && document.contains(sc.anchorEl) ? sc.anchorEl : null;
+  if (!anchorEl) return;
+  const ar = anchorEl.getBoundingClientRect();
+  const cr = sc.el.getBoundingClientRect();
+  if (ar.bottom < 0 || ar.top > window.innerHeight || ar.right < 0 || ar.left > window.innerWidth) return;
+  const ax = ar.left + ar.width / 2;
+  const ay = ar.top + ar.height / 2;
+  const cx = cr.left + Math.min(28, cr.width / 2);
+  const cy = cr.top + Math.min(28, cr.height / 2);
+  const mx = (ax + cx) / 2;
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.id = 'pl-wall-line';
+  path.setAttribute('d', `M${ax},${ay} C${mx},${ay} ${mx},${cy} ${cx},${cy}`);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', sc.color || 'var(--accent)');
+  path.setAttribute('stroke-width', '1.5');
+  path.setAttribute('stroke-opacity', '0.45');
+  path.setAttribute('stroke-dasharray', '5 3');
+  svg.appendChild(path);
+}
+
+function _plWallOutside(e) {
+  const card = document.getElementById('pl-wall-card');
+  if (card && !card.contains(e.target) && !e.target.closest('.pl-wall-cell') && !e.target.closest('#sjm-menu')) {
+    plWallClosePop();
+  }
+}
 
 function _plWallPopEsc(e) {
   if (e.key === 'Escape') plWallClosePop();
 }
 
 function plWallClosePop() {
-  const el = document.getElementById('pl-wall-pop');
-  if (el) el.remove();
+  const el = document.getElementById('pl-wall-card');
+  if (el) {
+    if (window.innerWidth <= 640) {
+      const ov = document.getElementById('mob-overlay');
+      if (ov) ov.classList.remove('active');
+      document.body.classList.remove('mob-sheet-open');
+      document.body.style.top = '';
+      if (_mobScrollY) window.scrollTo(0, _mobScrollY);
+    }
+    el.style.transition = 'opacity .12s ease, transform .12s ease';
+    el.style.opacity = '0';
+    el.style.transform = window.innerWidth <= 640 ? 'translateY(100%)' : 'scale(0.94) translateY(6px)';
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 140);
+  }
+  const ln = document.getElementById('pl-wall-line');
+  if (ln) ln.remove();
   _plWallPopIdx = null;
+  _plWallCard = null;
   document.removeEventListener('keydown', _plWallPopEsc);
+  document.removeEventListener('mousedown', _plWallOutside, true);
+}
+
+function plWallDragStart(e) {
+  if (e.button !== 0 || window.innerWidth <= 640 || !_plWallCard) return;
+  e.preventDefault();
+  _plWallCard.el.style.zIndex = ++scZCounter;
+  const r = _plWallCard.el.getBoundingClientRect();
+  const ox = e.clientX - r.left, oy = e.clientY - r.top;
+  function onMove(ev) {
+    if (!_plWallCard) return;
+    const x = Math.max(0, Math.min(ev.clientX - ox, window.innerWidth - 80));
+    const y = Math.max(0, Math.min(ev.clientY - oy, window.innerHeight - 40));
+    _plWallCard.el.style.left = x + 'px';
+    _plWallCard.el.style.top = y + 'px';
+    plWallDrawLine();
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 function plWallOpenPop(i, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  if (_plWallCard && _plWallPopIdx === i) { plWallClosePop(); return; }
   plWallClosePop();
   const q = playlistChartQueue();
   const item = q[i];
@@ -12724,29 +12795,54 @@ function plWallOpenPop(i, ev) {
   _plWallPopIdx = i;
   const esc = s => escHtml(s || '');
   const meta = esc(playlistChartTipMeta(row, i, isCurrent, played, skipped));
-  const art = row.artwork
-    ? `<img src="${row.artwork}" alt="">`
-    : '<span class="pl-wall-fallback">♫</span>';
-  const pop = document.createElement('div');
-  pop.id = 'pl-wall-pop';
-  pop.className = 'pl-wall-pop';
-  pop.innerHTML =
-    '<div class="pl-wall-pop-back" onclick="plWallClosePop()"></div>' +
-    '<div class="pl-wall-pop-card" role="dialog" aria-modal="true">' +
-    '<button type="button" class="pl-wall-pop-x" onclick="plWallClosePop()" aria-label="Close">✕</button>' +
-    '<div class="pl-wall-pop-art">' + art + '</div>' +
-    '<div class="pl-wall-pop-body">' +
-    '<h3 class="pl-wall-pop-title">' + esc(row.title) + '</h3>' +
-    '<p class="pl-wall-pop-sub">' + esc(row.artist) + (row.album ? ' · ' + esc(row.album) : '') + '</p>' +
-    '<p class="pl-wall-pop-meta">' + meta + '</p></div>' +
-    '<div class="pl-wall-pop-actions">' +
-    '<button type="button" class="pl-wall-pop-primary" onclick="plWallPopPlayNow()"' + (skipped ? ' disabled' : '') + '>▶ Play Now</button>' +
-    '<button type="button" class="pl-wall-pop-btn" onclick="plWallPopQueueNext()"' + (skipped ? ' disabled' : '') + '>+ Queue for Next</button>' +
-    (blocked ? '<button type="button" class="pl-wall-pop-btn" onclick="plWallPopUnblock()">↺ Unblock</button>' : '') +
-    '<button type="button" class="pl-wall-pop-more" onclick="plWallPopMore(this,event)" title="Add to playlist, never play again, report a problem">⋯</button>' +
-    '</div></div>';
-  document.body.appendChild(pop);
+  const sub = esc(row.artist) + (row.album ? ' · ' + esc(row.album) : '');
+  const color = row.color || DEFAULT_BAR_COLOR;
+  const anchorEl = (ev && ev.currentTarget) || document.querySelector(`.pl-wall-cell[data-pc-index="${i}"]`);
+  const artHtml = row.artwork
+    ? `<img class="sc-art" src="${row.artwork}" loading="lazy" alt="">`
+    : `<div class="sc-art-ph" style="background:${color}22;color:${color}">♫</div>`;
+  const el = document.createElement('div');
+  el.className = 'song-card';
+  el.id = 'pl-wall-card';
+  el.style.zIndex = String(++scZCounter);
+  el.innerHTML =
+    '<div class="sc-mob-pill"></div>' +
+    '<div class="sc-header" onmousedown="plWallDragStart(event)">' +
+    artHtml +
+    '<div class="sc-title-block"><div class="sc-track-name">' + esc(row.title) + '</div>' +
+    '<div class="sc-sub">' + sub + '</div></div>' +
+    '<button class="sc-close" onclick="plWallClosePop()" title="Close">✕</button></div>' +
+    '<div class="sc-body">' +
+    '<div class="sc-section-lbl">Playlist</div>' +
+    '<div class="sc-links">' +
+    '<button type="button" class="sc-link yt" onclick="plWallPopPlayNow()"' + (skipped ? ' disabled' : '') + '>▶ Play Now</button>' +
+    '<button type="button" class="sc-link" onclick="plWallPopQueueNext()"' + (skipped ? ' disabled' : '') + '>+ Queue for Next</button>' +
+    (blocked ? '<button type="button" class="sc-link sj-block blocked" onclick="plWallPopUnblock()">↺ Unblock</button>' : '') +
+    '<button type="button" class="sc-link" onclick="plWallPopMore(this,event)">+ Playlist &amp; more ⋯</button>' +
+    '</div>' +
+    '<div style="font-size:.48rem;color:var(--accent);margin-top:6px;letter-spacing:.04em">' + meta + '</div>' +
+    '</div>';
+  document.body.appendChild(el);
+  plWallPositionCard(el, anchorEl);
+  _plWallCard = { el, anchorEl, idx: i, color };
+  if (window.innerWidth <= 640) {
+    el.style.zIndex = '1998';
+    const ov = document.getElementById('mob-overlay');
+    if (ov) ov.classList.add('active');
+    _mobScrollY = window.scrollY;
+    document.body.style.top = `-${_mobScrollY}px`;
+    document.body.classList.add('mob-sheet-open');
+  }
+  el.style.opacity = '0';
+  el.style.transform = 'scale(0.93) translateY(6px)';
+  requestAnimationFrame(() => {
+    el.style.transition = 'opacity .18s ease, transform .18s ease';
+    el.style.opacity = '1';
+    el.style.transform = 'scale(1) translateY(0)';
+    setTimeout(() => { el.style.transition = ''; plWallDrawLine(); }, 200);
+  });
   document.addEventListener('keydown', _plWallPopEsc);
+  setTimeout(() => document.addEventListener('mousedown', _plWallOutside, true), 0);
 }
 
 function plWallPopPlayNow() {
@@ -12924,6 +13020,7 @@ function returnToPlaylistExplorer() {
 }
 
 function renderPlaylistChart(error) {
+  plWallClosePop();
   const main = document.getElementById('main');
   if (!main) return;
   main.classList.remove('main-landing');
@@ -17327,7 +17424,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
-    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Drag the size slider to zoom in or out; tap a cover for a menu with Play Now, Queue for Next, and the full ⋯ track menu. A song grays out only after it has actually played, not when you skip ahead. Play, Pause, and Next sit on the top bar beside Shuffle and Repeat.',
+    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, and the full ⋯ menu. A song grays out only after it has actually played. Play, Pause, and Next sit on the top bar beside Shuffle and Repeat.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'Playback preferences now includes Crossfade tracks. Choose Off, 3 seconds, or 6 seconds to fade between songs as a playlist moves along.',
     'One Hide Toolbar button now tucks the whole top toolbar away, instead of a separate arrow on Jukebox Controls and another on Playlist Controls. It sits at the right-hand end of the row and turns into Show Toolbar once everything is hidden.',
