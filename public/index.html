@@ -2562,9 +2562,13 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-cell:hover img { filter:brightness(1.1); }
 .pl-wall-cell.played img { filter:grayscale(1) brightness(0.42); opacity:.8; }
 .pl-wall-cell.played:hover img { filter:grayscale(.65) brightness(0.62); opacity:.95; }
-.pl-wall-cell.current { z-index:4; box-shadow:inset 0 0 0 6px var(--accent),0 0 32px #ff6b3577; transform:none; }
-.pl-wall-cell.current:hover { box-shadow:inset 0 0 0 6px var(--accent),0 0 32px #ff6b3577; transform:none; }
+.pl-wall-cell.current { z-index:10; transform:scale(1.12); box-shadow:0 0 0 4px var(--accent),0 0 0 6px #0a0a0a,0 14px 40px #ff6b3599; }
+.pl-wall-cell.current:hover { transform:scale(1.12); box-shadow:0 0 0 4px var(--accent),0 0 0 6px #0a0a0a,0 14px 40px #ff6b3599; }
+.pl-wall-cell.current-launch { animation:plWallNowPlaying .55s cubic-bezier(.34,1.56,.64,1) forwards; }
+@keyframes plWallNowPlaying { 0% { transform:scale(1); box-shadow:0 0 0 0 transparent,0 0 0 0 transparent,0 4px 12px #0006; } 45% { transform:scale(1.22); box-shadow:0 0 0 5px var(--accent),0 0 0 7px #0a0a0a,0 18px 48px #ff6b35cc; } 100% { transform:scale(1.12); box-shadow:0 0 0 4px var(--accent),0 0 0 6px #0a0a0a,0 14px 40px #ff6b3599; } }
 .pl-wall-cell.current img { filter:none !important; opacity:1 !important; }
+.pl-wall-play.on { background:var(--bg-card); border-color:var(--border); color:var(--text); box-shadow:none; }
+.pl-wall-play.on:hover { box-shadow:0 4px 16px #0008; }
 .pl-wall-cell.blocked img { opacity:.22; filter:grayscale(1); }
 .pl-wall-cell.blocked::before { content:'⊘'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:#fff9; background:#0007; pointer-events:none; }
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
@@ -5857,7 +5861,7 @@ function ytpPaintTogs() {
 }
 
 function ytNextTrack() {
-  if (viewMode === 'playlistchart' && ytQueue === playlistChartBaseQueue && ytQueueIdx >= 0) {
+  if (viewMode === 'playlistchart' && playlistChartIsLive() && ytQueueIdx >= 0) {
     playlistChartMarkPlayed(ytQueueIdx);
   }
   let next = -1;
@@ -10613,6 +10617,7 @@ function ytpOnTrackChange(videoId, trackId, title) {
       ytpSyncVersionBtn(trackId, ytVideoId);
     });
   }
+  if (viewMode === 'playlistchart') playlistChartAutoLyrics();
 }
 
 // ── Version switcher ──────────────────────────────────────────────────────
@@ -12563,7 +12568,7 @@ async function ensurePlaylistArtwork() {
 let playlistChartPlayedIds = new Set();
 
 function playlistChartMarkPlayed(idx) {
-  if (viewMode !== 'playlistchart' || ytQueue !== playlistChartBaseQueue) return;
+  if (viewMode !== 'playlistchart' || !playlistChartIsLive()) return;
   const tid = ytQueue[idx]?.trackId;
   if (tid) playlistChartPlayedIds.add(tid);
 }
@@ -12572,38 +12577,64 @@ function playlistChartIsTrackPlayed(trackId) {
   return !!(trackId && playlistChartPlayedIds.has(trackId));
 }
 
+function playlistChartIsLive() {
+  if (viewMode !== 'playlistchart' || !ytPlayerEl || ytQueueIdx < 0) return false;
+  const tid = ytQueue[ytQueueIdx]?.trackId;
+  return !!(tid && playlistChartBaseQueue.some(it => it.trackId === tid));
+}
+
+function playlistChartLiveTrackId() {
+  if (!playlistChartIsLive()) return null;
+  return ytQueue[ytQueueIdx]?.trackId || null;
+}
+
+let _plWallLastCurrentIdx = -1;
+
+function playlistChartCurrentCellIndex() {
+  const tid = playlistChartLiveTrackId();
+  if (!tid) return -1;
+  return playlistChartQueue().findIndex(it => it.trackId === tid);
+}
+
+async function playlistChartAutoLyrics() {
+  if (viewMode !== 'playlistchart' || !ytPlayerEl) return;
+  const trackId = playlistChartLiveTrackId();
+  if (!trackId) return;
+  if (!(await ytpTrackHasLyrics(trackId))) return;
+  if (playlistChartLiveTrackId() !== trackId) return;
+  if (!_ytpLyricsOpen) ytpToggleLyrics(true);
+  else ytpUpdateLyrics(trackId);
+}
+
 function playlistChartPaintTransport() {
   if (viewMode !== 'playlistchart') return;
-  const active = ytQueue === playlistChartBaseQueue && !!ytPlayerEl;
+  const active = playlistChartIsLive();
   const playing = active && ytpIsPlaying();
-  const playBtn = document.getElementById('pl-wall-play-btn');
-  const pauseBtn = document.getElementById('pl-wall-pause-btn');
+  const ppBtn = document.getElementById('pl-wall-playpause-btn');
   const nextBtn = document.getElementById('pl-wall-next-btn');
-  if (playBtn) playBtn.disabled = !playlistChartBaseQueue.length;
-  if (pauseBtn) pauseBtn.disabled = !playing;
+  if (ppBtn) {
+    ppBtn.disabled = !playlistChartBaseQueue.length;
+    ppBtn.textContent = playing ? '⏸ Pause' : '▶ Play';
+    ppBtn.classList.toggle('on', !!playing);
+  }
   if (nextBtn) {
     const hasNext = active && (ytQueue.length > 1 || ytRepeat);
     nextBtn.disabled = !hasNext;
   }
 }
 
-function playlistChartTransportPlay() {
+function playlistChartTransportToggle() {
   if (!playlistChartBaseQueue.length) return;
-  if (!ytPlayerEl || ytQueue !== playlistChartBaseQueue) {
+  if (!playlistChartIsLive()) {
     playlistChartPlay();
     return;
   }
-  if (!ytpIsPlaying()) ytTogglePlayPause();
-}
-
-function playlistChartTransportPause() {
-  if (!ytPlayerEl || ytQueue !== playlistChartBaseQueue) return;
-  if (ytpIsPlaying()) ytTogglePlayPause();
+  ytTogglePlayPause();
 }
 
 function playlistChartTransportNext() {
   if (!playlistChartBaseQueue.length) return;
-  if (!ytPlayerEl || ytQueue !== playlistChartBaseQueue) {
+  if (!playlistChartIsLive()) {
     playlistChartPlay();
     return;
   }
@@ -12624,10 +12655,11 @@ function playlistChartRowFor(item, fallbackIndex) {
 }
 
 function playlistChartSyncToCurrent() {
-  if (viewMode !== 'playlistchart' || ytQueue !== playlistChartBaseQueue || ytQueueIdx < 0) return;
+  const idx = playlistChartCurrentCellIndex();
+  if (viewMode !== 'playlistchart' || idx < 0) return;
   requestAnimationFrame(() => {
     const scroll = document.getElementById('playlist-chart-scroll');
-    const cell = scroll?.querySelector(`[data-pc-index="${ytQueueIdx}"]`);
+    const cell = scroll?.querySelector(`[data-pc-index="${idx}"]`);
     if (scroll && cell) cell.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'nearest' });
   });
 }
@@ -12642,24 +12674,28 @@ function playlistChartTipMeta(row, i, isCurrent, played, skipped) {
 function playlistChartRefreshPlayback() {
   if (viewMode !== 'playlistchart') return;
   const q = playlistChartQueue();
-  const active = ytQueue === playlistChartBaseQueue;
+  const curIdx = playlistChartCurrentCellIndex();
   const grid = document.getElementById('pl-wall-grid');
   if (!grid) { renderPlaylistChart(); return; }
 
   grid.querySelectorAll('.pl-wall-cell[data-pc-index]').forEach(el => {
     const i = parseInt(el.getAttribute('data-pc-index'), 10);
     const trackId = el.getAttribute('data-pc-track');
-    const row = playlistChartRowFor(q[i], i);
-    const isCurrent = active && i === ytQueueIdx;
+    const isCurrent = i === curIdx;
     const played = playlistChartIsTrackPlayed(trackId);
     const blocked = trackId && isTrackBlocked(trackId);
-    const skipped = trackId && isTrackSkipped(trackId);
 
     el.classList.toggle('played', played);
     el.classList.toggle('current', isCurrent);
     el.classList.toggle('blocked', !!blocked);
     el.disabled = false;
+    if (isCurrent && i !== _plWallLastCurrentIdx) {
+      el.classList.remove('current-launch');
+      void el.offsetWidth;
+      el.classList.add('current-launch');
+    }
   });
+  if (curIdx !== _plWallLastCurrentIdx) _plWallLastCurrentIdx = curIdx;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
 }
@@ -12672,7 +12708,7 @@ function playlistChartPlayAt(i) {
     showToast('This song is blocked — tap ↺ Unblock to play it again.');
     return;
   }
-  if (ytQueue !== playlistChartBaseQueue || !ytPlayerEl) return playlistChartPlay(i);
+  if (!playlistChartIsLive() || !ytPlayerEl) return playlistChartPlay(i);
   ytPlayQueueIdx(i);
   playlistChartRefreshPlayback();
 }
@@ -12783,8 +12819,7 @@ function plWallOpenPop(i, ev) {
   const item = q[i];
   if (!item) return;
   const row = playlistChartRowFor(item, i);
-  const active = ytQueue === playlistChartBaseQueue;
-  const isCurrent = active && i === ytQueueIdx;
+  const isCurrent = i === playlistChartCurrentCellIndex();
   const played = playlistChartIsTrackPlayed(row.trackId);
   const blocked = isTrackBlocked(row.trackId);
   const skipped = isTrackSkipped(row.trackId);
@@ -12952,6 +12987,7 @@ async function openPlaylistChart(playlistId) {
   playlistChartRows = [];
   playlistChartBaseQueue = [];
   playlistChartPlayedIds = new Set();
+  _plWallLastCurrentIdx = -1;
   isLandingMode = false;
   viewMode = 'playlistchart';
   ['filter-header', 'filter-header-mobile', 'view-controls-header', 'lwytb-header'].forEach(id => {
@@ -13021,13 +13057,13 @@ function renderPlaylistChart(error) {
   if (!main) return;
   main.classList.remove('main-landing');
   const q = playlistChartQueue();
-  const active = ytQueue === playlistChartBaseQueue;
+  const curIdx = playlistChartCurrentCellIndex();
   const esc = s => escHtml(s || '');
   const gridStyle = `--pl-cell:${playlistWallSize}px`;
 
   const cells = q.map((item, i) => {
     const row = playlistChartRowFor(item, i);
-    const isCurrent = active && i === ytQueueIdx;
+    const isCurrent = i === curIdx;
     const played = playlistChartIsTrackPlayed(row.trackId);
     const blocked = isTrackBlocked(row.trackId);
     const art = row.artwork
@@ -13036,7 +13072,7 @@ function renderPlaylistChart(error) {
     return `<button type="button" class="pl-wall-cell${played ? ' played' : ''}${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="plWallOpenPop(${i},event)">${art}</button>`;
   }).join('');
 
-  main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button><h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-play-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportPlay()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-pause-btn" disabled onclick="playlistChartTransportPause()">⏸ Pause</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
+  main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button><h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
 }
@@ -17420,7 +17456,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
-    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, and the full ⋯ menu. A song grays out only after it has actually played. Play, Pause, and Next sit on the top bar beside Shuffle and Repeat.',
+    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, and the full ⋯ menu. A song grays out only after it has actually played. The cover that is playing pops forward with a bold orange frame. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'Playback preferences now includes Crossfade tracks. Choose Off, 3 seconds, or 6 seconds to fade between songs as a playlist moves along.',
     'One Hide Toolbar button now tucks the whole top toolbar away, instead of a separate arrow on Jukebox Controls and another on Playlist Controls. It sits at the right-hand end of the row and turns into Show Toolbar once everything is hidden.',
