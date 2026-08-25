@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
         });
 
         let artist: { id: string; name: string; slug: string } | null = null;
+        let catalogTrackId: string | null = null;
         try {
           const imported = await importSingleTrack(ctx.sb, {
             videoId: id,
@@ -110,6 +111,9 @@ export async function POST(req: NextRequest) {
             userName: text(body.userName, 120),
           });
           artist = { id: imported.artistId, name: imported.artistName, slug: imported.artistSlug };
+          // The wizard's last step goes and finds the words for these, so it
+          // needs the catalogue track id, not just the library row.
+          catalogTrackId = imported.trackId;
         } catch (err) {
           // The library row is the promise we made; the catalogue card is the
           // bonus. Failing the whole request over the card would lose the song.
@@ -120,6 +124,7 @@ export async function POST(req: NextRequest) {
           ok: true,
           ...result,
           artist,
+          catalogTrackId,
           visibility,
           items: await loadLibrary(ctx.sb, ctx.jukebox.id),
         });
