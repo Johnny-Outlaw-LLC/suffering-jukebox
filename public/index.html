@@ -5875,6 +5875,9 @@ function ytpPaintTogs() {
 }
 
 function ytNextTrack() {
+  if (viewMode === 'playlistchart' && ytQueue === playlistChartBaseQueue && ytQueueIdx >= 0) {
+    playlistChartMarkPlayed(ytQueueIdx);
+  }
   let next = -1;
   if (ytShuffle && ytQueue.length > 1) {
     next = _ytShuffleNextIdx();
@@ -6067,6 +6070,7 @@ function ytpSetPlayPauseIcon(playing) {
   }
   const mfTitle = document.getElementById('ytp-mf-song');
   if (mfTitle) mfTitle.classList.toggle('now-playing', playing);
+  playlistChartPaintTransport();
 }
 
 // Whether sound is coming out right now, whichever source is carrying it.
@@ -12571,6 +12575,56 @@ async function ensurePlaylistArtwork() {
   return _playlistArtworkLoading;
 }
 
+let playlistChartPlayedIds = new Set();
+
+function playlistChartMarkPlayed(idx) {
+  if (viewMode !== 'playlistchart' || ytQueue !== playlistChartBaseQueue) return;
+  const tid = ytQueue[idx]?.trackId;
+  if (tid) playlistChartPlayedIds.add(tid);
+}
+
+function playlistChartIsTrackPlayed(trackId) {
+  return !!(trackId && playlistChartPlayedIds.has(trackId));
+}
+
+function playlistChartPaintTransport() {
+  if (viewMode !== 'playlistchart') return;
+  const active = ytQueue === playlistChartBaseQueue && !!ytPlayerEl;
+  const playing = active && ytpIsPlaying();
+  const playBtn = document.getElementById('pl-wall-play-btn');
+  const pauseBtn = document.getElementById('pl-wall-pause-btn');
+  const nextBtn = document.getElementById('pl-wall-next-btn');
+  if (playBtn) playBtn.disabled = !playlistChartBaseQueue.length;
+  if (pauseBtn) pauseBtn.disabled = !playing;
+  if (nextBtn) {
+    const hasNext = active && (ytQueue.length > 1 || ytRepeat);
+    nextBtn.disabled = !hasNext;
+  }
+}
+
+function playlistChartTransportPlay() {
+  if (!playlistChartBaseQueue.length) return;
+  if (!ytPlayerEl || ytQueue !== playlistChartBaseQueue) {
+    playlistChartPlay();
+    return;
+  }
+  if (!ytpIsPlaying()) ytTogglePlayPause();
+}
+
+function playlistChartTransportPause() {
+  if (!ytPlayerEl || ytQueue !== playlistChartBaseQueue) return;
+  if (ytpIsPlaying()) ytTogglePlayPause();
+}
+
+function playlistChartTransportNext() {
+  if (!playlistChartBaseQueue.length) return;
+  if (!ytPlayerEl || ytQueue !== playlistChartBaseQueue) {
+    playlistChartPlay();
+    return;
+  }
+  ytNextTrack();
+}
+
 function playlistChartQueue() {
   // Once playing, the chart follows the live queue. Past indices are never
   // moved, so its left side is a stable history while the future can change.
@@ -12612,7 +12666,7 @@ function playlistChartRefreshPlayback() {
     const trackId = el.getAttribute('data-pc-track');
     const row = playlistChartRowFor(q[i], i);
     const isCurrent = active && i === ytQueueIdx;
-    const played = active && i < ytQueueIdx;
+    const played = playlistChartIsTrackPlayed(trackId);
     const blocked = trackId && isTrackBlocked(trackId);
     const skipped = trackId && isTrackSkipped(trackId);
 
@@ -12622,9 +12676,8 @@ function playlistChartRefreshPlayback() {
     el.disabled = false;
   });
   playlistChartSyncToCurrent();
+  playlistChartPaintTransport();
 }
-
-function playlistChartOpenLyrics(trackId, ev) {
   if (ev) ev.stopPropagation();
   if (!trackId) return;
   openSongCard(trackId);
@@ -12665,7 +12718,7 @@ function plWallOpenPop(i, ev) {
   const row = playlistChartRowFor(item, i);
   const active = ytQueue === playlistChartBaseQueue;
   const isCurrent = active && i === ytQueueIdx;
-  const played = active && i < ytQueueIdx;
+  const played = playlistChartIsTrackPlayed(row.trackId);
   const blocked = isTrackBlocked(row.trackId);
   const skipped = isTrackSkipped(row.trackId);
   _plWallPopIdx = i;
@@ -12806,6 +12859,7 @@ async function openPlaylistChart(playlistId) {
   playlistChartName = p.name || 'Untitled Playlist';
   playlistChartRows = [];
   playlistChartBaseQueue = [];
+  playlistChartPlayedIds = new Set();
   isLandingMode = false;
   viewMode = 'playlistchart';
   ['filter-header', 'filter-header-mobile', 'view-controls-header', 'lwytb-header'].forEach(id => {
@@ -12862,6 +12916,7 @@ async function openPlaylistChart(playlistId) {
 function returnToPlaylistExplorer() {
   plWallClosePop();
   playlistChartId = null; playlistChartRows = []; playlistChartBaseQueue = [];
+  playlistChartPlayedIds = new Set();
   isLandingMode = true;
   landingTab = 'playlists';
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
@@ -12880,7 +12935,7 @@ function renderPlaylistChart(error) {
   const cells = q.map((item, i) => {
     const row = playlistChartRowFor(item, i);
     const isCurrent = active && i === ytQueueIdx;
-    const played = active && i < ytQueueIdx;
+    const played = playlistChartIsTrackPlayed(row.trackId);
     const blocked = isTrackBlocked(row.trackId);
     const art = row.artwork
       ? `<img src="${row.artwork}" loading="lazy" alt="">`
@@ -12888,8 +12943,9 @@ function renderPlaylistChart(error) {
     return `<button type="button" class="pl-wall-cell${played ? ' played' : ''}${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="plWallOpenPop(${i},event)">${art}</button>`;
   }).join('');
 
-  main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button><h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()">▶ Play</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
+  main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button><h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-play-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportPlay()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-pause-btn" disabled onclick="playlistChartTransportPause()">⏸ Pause</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
   playlistChartSyncToCurrent();
+  playlistChartPaintTransport();
 }
 
 
@@ -17271,7 +17327,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
-    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Drag the size slider to zoom in or out; tap a cover for a menu with Play Now, Queue for Next, and the full ⋯ track menu. Played songs fade to gray and the one playing gets a thick orange border. Shuffle, Repeat, and the size slider sit on one row at the top.',
+    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Drag the size slider to zoom in or out; tap a cover for a menu with Play Now, Queue for Next, and the full ⋯ track menu. A song grays out only after it has actually played, not when you skip ahead. Play, Pause, and Next sit on the top bar beside Shuffle and Repeat.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'Playback preferences now includes Crossfade tracks. Choose Off, 3 seconds, or 6 seconds to fade between songs as a playlist moves along.',
     'One Hide Toolbar button now tucks the whole top toolbar away, instead of a separate arrow on Jukebox Controls and another on Playlist Controls. It sits at the right-hand end of the row and turns into Show Toolbar once everything is hidden.',
