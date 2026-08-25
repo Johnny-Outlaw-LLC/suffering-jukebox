@@ -3105,7 +3105,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
   </div>
 </div>
 
-<!-- Import Music: one door, three sizes of import -->
+<!-- Import Music: one door for artist, song, or a connected Spotify library. -->
 <div class="modal-overlay" id="importMusicOverlay" onclick="if(event.target===this)closeImportMusic()">
   <div class="modal" style="max-width:460px">
     <div class="modal-header">
@@ -3118,6 +3118,8 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
         <b>An artist</b><em>Their whole studio discography, album by album.</em></button>
       <button type="button" class="im-opt" onclick="importMusicPick('song')">
         <b>A song</b><em>Search YouTube and drop a single track into My Jukebox.</em></button>
+      <button type="button" class="im-opt" onclick="importMusicPick('spotify')">
+        <b>Import from My Spotify</b><em>Connect Spotify to bring your saved music into My Jukebox.</em></button>
     </div>
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closeImportMusic()">Cancel</button>
@@ -15309,6 +15311,7 @@ function closeImportMusic() { document.getElementById('importMusicOverlay')?.cla
 function importMusicPick(kind) {
   closeImportMusic();
   if (kind === 'song') { openMyJukebox(); setTimeout(() => document.getElementById('mj-search-input')?.focus(), 250); return; }
+  if (kind === 'spotify') { mjSpotifyInfo(); return; }
   openAddMusic();
 }
 
@@ -17207,6 +17210,7 @@ function initGoogleAuth() {
         refreshBgUnlock().then(() => { if (isLandingMode) renderLanding(); });
         restorePlaybackState();
         sjjResumeBroadcast();
+        mjConsumeSpotifyReturn();
         if (isLandingMode) initLanding();
         try {
           const rp = localStorage.getItem('auth_return_path');
@@ -17246,6 +17250,7 @@ function initGoogleAuth() {
       });
       restorePlaybackState();
       sjjResumeBroadcast();
+      mjConsumeSpotifyReturn();
       if (isLandingMode) initLanding();
     }
   });
@@ -23179,6 +23184,9 @@ async function sjjPlayHere() {
 // ═══════════════════════════════════════════════════════════════════════
 let _mjState = null;
 let _mjSearchResults = [];
+let _mjSpotifyTracks = [];
+let _mjSpotifyLoading = false;
+let _mjSpotifyCallbackChecked = false;
 
 async function mjHeaders() {
   const tok = await _sjjToken();
@@ -23233,9 +23241,16 @@ function mjRender() {
         '<button class="sjj-mini" title="Remove from My Jukebox" onclick="mjRemove(\'' + i.id + '\')">✕</button></div>').join('')
     : '<div class="sjj-empty">Your personal jukebox is empty. Add a song from YouTube, or use Send to My Jukebox on any song, album, or artist.</div>';
   const search = _mjSearchResults.length ? mjResultsHTML() : '';
+  const spotify = _mjSpotifyLoading
+    ? '<div class="sjj-h">Spotify saved songs</div><div class="sjj-empty">Loading your saved Spotify songs…</div>'
+    : _mjSpotifyTracks.length
+      ? '<div class="sjj-h">Spotify saved songs</div><div class="mj-addbar"><span class="mj-vis">Pick songs, then we’ll find a playable YouTube match for each.</span><button class="pl-btn" onclick="mjSpotifyFindMatches()">Find playable matches</button></div>' +
+        _mjSpotifyTracks.map((track, n) => '<label class="mj-result"><input type="checkbox" class="mj-spotify-pick" data-mj-spotify="' + n + '"><img alt="" src="' + escHtml(track.albumArtUrl || '') + '"><span class="mj-body"><span class="mj-title">' + escHtml(track.title) + '</span><span class="mj-sub">' + escHtml(track.artistName) + (track.albumName ? ' · ' + escHtml(track.albumName) : '') + '</span></span></label>').join('')
+      : '';
   el.innerHTML =
     '<div class="sjj-h">Add a song</div><div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube for a song" onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Search</button></div>' +
     search +
+    spotify +
     '<div class="sjj-h">My library</div>' + lib +
     '<div class="sjj-h">Quick removal</div>' +
     (groups.size ? Array.from(groups.entries()).map(([artist, count]) => '<button class="pl-btn ghost" style="margin:0 .35rem .35rem 0" onclick="mjRemoveArtist(\'' + escHtml(artist).replace(/'/g, "\\'") + '\')">Remove all ' + escHtml(artist) + ' (' + count + ')</button>').join('') : '') +
@@ -23359,6 +23374,9 @@ async function mjAddSelected() {
         videoId: row.videoId,
         artistName: (row._artist || '').trim() || null,
         trackName: (row._track || '').trim() || null,
+        albumName: row._albumName || null,
+        source: row._source || null,
+        sourceUri: row._sourceUri || null,
         visibility: _mjVisibility,
         userName: googleUser?.name || null
       });
@@ -23398,7 +23416,55 @@ async function mjRemoveAlbum(albumName) {
   if (!confirm('Remove all ' + n + ' songs from ' + albumName + ' in My Jukebox?')) return;
   try { const data = await mjPost({ action: 'remove_album', albumName }); mjRender(); showToast((data.removed || 0) + ' songs removed.'); } catch (e) { showToast(e.message); }
 }
-function mjSpotifyInfo() { showToast('Spotify linking needs the app’s Spotify Client ID and secret before it can be activated. Your My Jukebox is ready for it.'); }
+async function mjSpotifyInfo() {
+  if (!googleUser) { showToast('Sign in to connect your Spotify.'); return; }
+  try {
+    const data = await mjRequest('/api/spotify/connect', 'POST');
+    window.location.assign(data.authorizationUrl);
+  } catch (e) { showToast(e.message || 'Could not start Spotify sign-in.'); }
+}
+
+async function mjLoadSpotify() {
+  if (!googleUser) return;
+  _mjSpotifyLoading = true; mjRender();
+  try {
+    const data = await mjRequest('/api/spotify/library', 'GET');
+    _mjSpotifyTracks = data.tracks || [];
+    showToast(_mjSpotifyTracks.length ? 'Spotify connected. Pick saved songs to import.' : 'Spotify connected. No saved songs found.');
+  } catch (e) {
+    _mjSpotifyTracks = [];
+    showToast(e.message || 'Could not load your Spotify songs.');
+  } finally { _mjSpotifyLoading = false; mjRender(); }
+}
+
+async function mjSpotifyFindMatches() {
+  const selected = Array.from(document.querySelectorAll('.mj-spotify-pick:checked')).map(input => _mjSpotifyTracks[Number(input.dataset.mjSpotify)]).filter(Boolean).slice(0, 15);
+  if (!selected.length) { showToast('Choose at least one saved Spotify song.'); return; }
+  const body = document.getElementById('my-jukebox-body');
+  if (body) body.querySelector('.mj-addbar')?.insertAdjacentHTML('afterend', '<div id="mj-spotify-matching" class="sjj-empty">Finding playable YouTube matches…</div>');
+  const matches = [];
+  for (const track of selected) {
+    try {
+      const found = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(track.artistName + ' ' + track.title), 'GET');
+      const video = (found.results || [])[0];
+      if (video) matches.push({ ...video, _artist: track.artistName, _track: track.title, _albumName: track.albumName, _source: 'spotify', _sourceUri: track.uri });
+    } catch (_) {}
+  }
+  _mjSearchResults = matches;
+  document.getElementById('mj-spotify-matching')?.remove();
+  mjRender();
+  showToast(matches.length ? 'Review the YouTube matches, then add the ones you want.' : 'No playable YouTube matches were found.');
+}
+
+function mjConsumeSpotifyReturn() {
+  if (_mjSpotifyCallbackChecked || !googleUser) return;
+  const outcome = new URLSearchParams(window.location.search).get('spotify');
+  if (!outcome) return;
+  _mjSpotifyCallbackChecked = true;
+  const clean = new URL(window.location.href); clean.searchParams.delete('spotify'); window.history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
+  if (outcome === 'connected') openMyJukebox().then(mjLoadSpotify);
+  else showToast('Spotify connection was not completed.');
+}
 
 async function sjmSendToMyJukebox(scope, id, label) {
   if (!googleUser) { showToast('Sign in to add to My Jukebox.'); return; }
