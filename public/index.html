@@ -71,14 +71,24 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
    now a named box: what the jukebox shows on the left, what plays on the right. */
 .ctrl-group { display: flex; flex-direction: column; gap: .25rem; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: .28rem .5rem .4rem; }
 .ctrl-group-hd { display: flex; align-items: center; justify-content: space-between; gap: .45rem; width: 100%; background: none; border: none; padding: 0; margin: 0; cursor: pointer; font-family: var(--mono); font-size: .4rem; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; line-height: 1; text-align: left; }
-.ctrl-group-hd:hover { color: var(--text); }
+.ctrl-group-hd--static { cursor: default; }
 .ctrl-group-caret { font-size: .58rem; line-height: 1; opacity: .75; flex-shrink: 0; }
-.ctrl-group--collapsed { padding-bottom: .28rem; }
-.ctrl-group--collapsed .ctrl-group-hd { color: var(--accent); letter-spacing: .1em; }
-.ctrl-group--collapsed .ctrl-group-hd:hover { color: var(--text); }
+/* One Hide / Show for the whole toolbar row, Excel-ribbon style, instead of a
+   caret on every group. Sits at the far right of the row and is the only thing
+   left standing when the toolbar is tucked away. */
+.hdr-r2-toggle { display: inline-flex; align-items: center; gap: .32rem; align-self: flex-start; flex-shrink: 0; background: none; border: 1px solid transparent; border-radius: 8px; padding: .32rem .5rem; cursor: pointer; font-family: var(--mono); font-size: .44rem; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; line-height: 1; }
+.hdr-r2-toggle:hover { color: var(--text); border-color: var(--border); }
+.hdr-r2-toggle[aria-expanded="false"] { color: var(--accent); }
 #view-controls-header .ctrl-group { align-items: stretch; }
 #lwytb-header .ctrl-group { align-items: stretch; }
-#lwytb-header .ctrl-group:not(.ctrl-group--collapsed) .lwytb-row { align-self: flex-end; }
+/* The playlist buttons and Now Playing share one line when the row is wide
+   enough to hold both, and stack when it is not. sjFitLwytbRow() measures. */
+.lwytb-body { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; min-width: 0; }
+.lwytb-body > .lwytb-row { align-self: flex-end; }
+.lwytb-body--row { flex-direction: row; align-items: center; justify-content: flex-end; }
+.lwytb-body--row > .lwytb-row { align-self: center; flex: 0 0 auto; }
+.lwytb-body--row > #quick-now-playing-slot { flex: 1 1 auto; min-width: 0; }
+#quick-now-playing-slot:empty { display: none; }
 .hdr-r1-left { display: flex; align-items: center; gap: 1rem; min-width: 0; flex: 1 1 auto; max-width: 100%; }
 #filter-header { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 #filter-header-mobile { display: none; }
@@ -93,7 +103,7 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 .brand-title em { font-style: normal; color: var(--accent); }
 .header-btns { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; min-width: 0; margin-left: auto; }
 .header-btns > * { flex-shrink: 0; }
-#lwytb-header { display: none; flex-shrink: 0; }
+#lwytb-header { display: none; flex-shrink: 0; margin-left: auto; }
 .btn { background: none; border: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.08em; padding: 0.4rem 0.85rem; cursor: pointer; border-radius: 8px; transition: all .15s; text-transform: uppercase; }
 .btn:hover { border-color: var(--text); color: var(--text); }
 .theme-toggle { background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; transition: all .15s; }
@@ -757,7 +767,12 @@ body:not(.light) .tt-num { color: var(--text); }
   /* Collapsing a control group is a one-line header, so give the whole row a
      real tap target and a caret big enough to aim at. */
   .ctrl-group-hd { min-height: 42px; font-size: .46rem; padding: 0 .15rem; }
+  .ctrl-group-hd--static { min-height: 0; padding: .1rem .15rem; }
   .ctrl-group-caret { font-size: .95rem; padding: 0 .3rem; opacity: .9; }
+  /* Toolbar toggle rides at the top of the stack, right-aligned. */
+  .hdr-r2-toggle { order: -2; align-self: flex-end; min-height: 34px; font-size: .48rem; }
+  /* Never side by side on a phone, whatever the measurement said. */
+  .lwytb-body--row { flex-direction: column; align-items: stretch; }
   /* On mobile: wrap expand/collapse/views buttons to a second row. overflow
      has to go back to visible or the view dropdowns get clipped. */
   .view-toggle-row { flex-wrap: wrap; overflow: visible; }
@@ -1961,7 +1976,7 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
   #view-controls-header .vseg-btn { display:inline-flex; align-items:center; padding:.5rem .9rem; }
   #view-controls-header .sj-export-btn { padding:.5rem .7rem; }
 }
-.quick-now-playing { width:100%; margin-top:.5rem; padding:.55rem .65rem; box-sizing:border-box; border:1px solid #2a2a2a; border-radius:8px; background:#0a0a0a; display:flex; align-items:center; gap:.65rem; }
+.quick-now-playing { width:100%; padding:.55rem .65rem; box-sizing:border-box; border:1px solid #2a2a2a; border-radius:8px; background:#0a0a0a; display:flex; align-items:center; gap:.65rem; }
 .quick-now-playing-copy { min-width:0; flex:1; }
 .quick-now-playing-label { color:var(--text-muted); font-family:var(--mono); font-size:.43rem; letter-spacing:.1em; text-transform:uppercase; }
 .quick-now-playing-song { color:var(--text); font-size:.57rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
@@ -2338,7 +2353,8 @@ html.sj-capture .footer-note,
 html.sj-capture #shareModalOverlay,
 html.sj-capture .sj-export-btn,
 html.sj-capture header .hdr-icon-btns,
-html.sj-capture #view-controls-header { display:none !important; visibility:hidden !important; }
+html.sj-capture #view-controls-header,
+html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden !important; }
 /* ── PLAYLIST MODAL ── */
 .pl-modal-overlay { position:fixed; inset:0; z-index:5100; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:2rem; }
 .pl-modal-overlay.open { display:flex; }
@@ -2982,6 +2998,7 @@ html.sj-capture #view-controls-header { display:none !important; visibility:hidd
   <div class="hdr-r2">
     <div id="view-controls-header"></div>
     <div id="lwytb-header"></div>
+    <button type="button" id="hdr-toolbar-toggle" class="hdr-r2-toggle" onclick="toggleToolbar()" aria-expanded="true" style="display:none"><span class="ctrl-group-caret" aria-hidden="true">&#9652;</span><span>Hide Toolbar</span></button>
   </div>
 </header>
 
@@ -13735,8 +13752,9 @@ async function goHome(opts) {
     // artist's filter bar/shuffle controls so nothing lingers behind the grid.
     ['filter-header', 'filter-header-mobile', 'view-controls-header', 'lwytb-header'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.innerHTML = '';
+      if (el) { el.innerHTML = ''; el.dataset.armed = '0'; }
     });
+    updateToolbarToggle();
     if (opts.pushHistory !== false) {
       try { history.pushState(null, '', '/'); } catch (e) {}
     }
@@ -13814,11 +13832,16 @@ async function loadData() {
     // Default initial state
     if (!_initialExpansionSet) {
       _initialExpansionSet = true;
-      // Exclude Purple Mountains by default, except when an export explicitly
-      // asks for all artists currently in the source jukebox.
-      const pmArtistDefault = allArtists.find(a => a.name.toLowerCase().includes('purple mountains'));
-      if (pmArtistDefault && !SJ_EXPORT_ALL_ARTISTS) {
-        (albums[pmArtistDefault.id] || []).forEach(a => excludedAlbumIds.add(a.id));
+      // Silver Jews and Purple Mountains share one jukebox, so one of them
+      // starts tucked away: whichever one the page is NOT about. The main page
+      // and /silver-jews open on Silver Jews; /purple-mountains opens on
+      // Purple Mountains. Either way the two pills in the filter bar bring the
+      // other one straight back. An export asking for all artists gets both.
+      const _pmSlugPage = !!(_SLUG_ARTIST && /purple.?mountains/i.test(_SLUG_ARTIST.slug || _SLUG_ARTIST.name || ''));
+      const _dimArtistName = _pmSlugPage ? 'silver jews' : 'purple mountains';
+      const dimArtistDefault = allArtists.find(a => a.name.toLowerCase().includes(_dimArtistName));
+      if (dimArtistDefault && !SJ_EXPORT_ALL_ARTISTS) {
+        (albums[dimArtistDefault.id] || []).forEach(a => excludedAlbumIds.add(a.id));
       }
       // Open every album's tracks only when they all fit. Too many and the
       // cards crush each other — same idea as phones, which start collapsed.
@@ -14189,27 +14212,72 @@ function updateFilterHeader() {
 }
 // LISTEN WHILE YOU BROWSE - renders into header #lwytb-header
 // ══════════════════════════════════════════════════════════════
-function isCtrlGroupHidden(key) {
-  try { return localStorage.getItem('sj_hide_' + key) === '1'; } catch (e) { return false; }
+// Jukebox Controls and Playlist Controls used to carry a caret each, so tucking
+// the toolbar away took two clicks and left the row half collapsed. There is
+// now one Hide / Show for the whole row, the way Excel collapses its ribbon.
+// The group names stay on as plain labels.
+// Keep the current value in memory as well as localStorage. That makes the
+// very same Hide / Show button dependable even in privacy-restricted browser
+// contexts where a storage read can fail after a successful write.
+let _toolbarHidden = null;
+function isToolbarHidden() {
+  if (_toolbarHidden !== null) return _toolbarHidden;
+  try { return (_toolbarHidden = localStorage.getItem('sj_hide_toolbar') === '1'); }
+  catch (e) { return (_toolbarHidden = false); }
 }
-function toggleCtrlGroup(key) {
-  const next = !isCtrlGroupHidden(key);
-  try { localStorage.setItem('sj_hide_' + key, next ? '1' : '0'); } catch (e) {}
-  if (key === 'jukebox') updateViewControlsHeader();
-  else {
-    if (typeof isLandingMode !== 'undefined' && isLandingMode) updateLandingActionsHeader();
-    else updateLWYTBHeader();
-  }
+function toggleToolbar() {
+  const next = !isToolbarHidden();
+  _toolbarHidden = next;
+  try { localStorage.setItem('sj_hide_toolbar', next ? '1' : '0'); } catch (e) {}
+  updateViewControlsHeader();
+  if (typeof isLandingMode !== 'undefined' && isLandingMode) updateLandingActionsHeader();
+  else updateLWYTBHeader();
+  updateToolbarToggle();
 }
-function ctrlGroupHdHTML(key, openLabel, showLabel) {
-  const hide = isCtrlGroupHidden(key);
-  const label = hide ? showLabel : openLabel;
-  const tip = hide ? ('Show ' + openLabel) : ('Hide ' + openLabel + ' - click again to bring them back');
-  return `<button type="button" class="ctrl-group-hd" onclick="toggleCtrlGroup('${key}')" title="${tip}" aria-expanded="${hide ? 'false' : 'true'}">
-    <span>${label}</span>
-    <span class="ctrl-group-caret" aria-hidden="true">${hide ? '▸' : '▾'}</span>
-  </button>`;
+// The button takes itself off pages that have no toolbar at all. Each header
+// slot says whether it is in play via data-armed, because a hidden toolbar
+// renders nothing and would otherwise look identical to "no toolbar here".
+function updateToolbarToggle() {
+  const btn = document.getElementById('hdr-toolbar-toggle');
+  if (!btn) return;
+  const vc = document.getElementById('view-controls-header');
+  const lw = document.getElementById('lwytb-header');
+  const armed = (vc && vc.dataset.armed === '1') || (lw && lw.dataset.armed === '1');
+  btn.style.display = armed ? '' : 'none';
+  const hide = isToolbarHidden();
+  btn.setAttribute('aria-expanded', hide ? 'false' : 'true');
+  btn.title = hide ? 'Show the toolbar' : 'Hide the toolbar - click again to bring it back';
+  btn.innerHTML = `<span class="ctrl-group-caret" aria-hidden="true">${hide ? '▾' : '▴'}</span><span>${hide ? 'Show Toolbar' : 'Hide Toolbar'}</span>`;
 }
+function ctrlGroupHdHTML(openLabel) {
+  return `<div class="ctrl-group-hd ctrl-group-hd--static"><span>${openLabel}</span></div>`;
+}
+// Playlist buttons beside Now Playing when both fit on one line, stacked when
+// they do not. Measured rather than guessed at a breakpoint, because how wide
+// the buttons are depends on how many playlists the listener has.
+function sjFitLwytbRow() {
+  const body = document.querySelector('#lwytb-header .lwytb-body');
+  if (!body) return;
+  const row  = body.querySelector('.lwytb-row');
+  const slot = body.querySelector('#quick-now-playing-slot');
+  const r2   = document.querySelector('.hdr-r2');
+  body.classList.remove('lwytb-body--row');
+  if (!row || !r2 || !slot || !slot.firstElementChild || window.innerWidth <= 640) return;
+  const vc  = document.getElementById('view-controls-header');
+  const tog = document.getElementById('hdr-toolbar-toggle');
+  // Reading offsetWidth here also flushes the class removal above, so these are
+  // the widths of the stacked layout rather than of whatever was on screen.
+  const used = (vc ? vc.offsetWidth : 0) + (tog && tog.style.display !== 'none' ? tog.offsetWidth : 0);
+  const avail = r2.clientWidth - used - 52;   // row gaps plus the group's own border and padding
+  const kids = Array.prototype.slice.call(row.children);
+  const rowNeed = kids.reduce((t, el) => t + el.offsetWidth, 0) + 4 * Math.max(0, kids.length - 1);
+  if (rowNeed + 300 + 8 <= avail) body.classList.add('lwytb-body--row');
+}
+let _lwytbFitTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_lwytbFitTimer);
+  _lwytbFitTimer = setTimeout(sjFitLwytbRow, 120);
+});
 
 function renderLWYTBHTML(landing) {
   const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
@@ -14220,15 +14288,15 @@ function renderLWYTBHTML(landing) {
   const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
   const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
-  const hide = isCtrlGroupHidden('playlists');
+  if (isToolbarHidden()) return '';
   const nowPlaying = landing ? '' : quickPlaylistNowPlayingHTML();
-  return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('playlists', 'Playlist Controls', 'Show Playlist Controls')}
-    ${hide ? '' : `<div class="lwytb-row">
+  return `<div class="ctrl-group">${ctrlGroupHdHTML('Playlist Controls')}
+    <div class="lwytb-body"><div class="lwytb-row">
       <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
       ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'my',event)">▶ My Playlists ▾</button></div>` : ''}
       ${_pubPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'pub',event)">▶ Public Playlists ▾</button></div>` : ''}
-    </div><div id="quick-now-playing-slot">${nowPlaying}</div>`}
+    </div><div id="quick-now-playing-slot">${nowPlaying}</div></div>
   </div>`;
 }
 
@@ -14258,18 +14326,22 @@ function quickPlaylistNowPlayingHTML() {
 function refreshQuickPlaylistNowPlaying() {
   const slot = document.getElementById('quick-now-playing-slot');
   if (slot) slot.innerHTML = quickPlaylistNowPlayingHTML();
+  sjFitLwytbRow();
 }
 
 function updateLWYTBHeader() {
   const el = document.getElementById('lwytb-header');
   if (!el) return;
-  if (viewMode === 'playlists') { el.style.display = 'none'; return; }
+  if (viewMode === 'playlists') { el.style.display = 'none'; el.dataset.armed = '0'; updateToolbarToggle(); return; }
   if (!_playlistsLoaded && !_playlistsLoading) {
     _playlistsLoading = true;
     loadPlaylists().then(() => { _playlistsLoading = false; _playlistsLoaded = true; updateLWYTBHeader(); });
   }
   el.style.display = 'block';
   el.innerHTML = renderLWYTBHTML();
+  el.dataset.armed = '1';
+  updateToolbarToggle();
+  sjFitLwytbRow();
 }
 
 // Landing page equivalent of updateLWYTBHeader() - same header slot, same
@@ -14283,12 +14355,18 @@ function updateLandingActionsHeader() {
   }
   el.style.display = 'block';
   el.innerHTML = renderLWYTBHTML(true);
+  el.dataset.armed = '1';
+  updateToolbarToggle();
+  sjFitLwytbRow();
 }
 
 function updateViewControlsHeader() {
   const el = document.getElementById('view-controls-header');
   if (!el) return;
   el.innerHTML = renderViewToggle();
+  el.dataset.armed = '1';
+  updateToolbarToggle();
+  sjFitLwytbRow();
 }
 
 // ── View dropdowns ──────────────────────────────────────────────────
@@ -14383,9 +14461,9 @@ function renderViewToggle() {
         <button class="vseg-btn ${on ? 'active' : ''}" onclick="setViewMode('${v.id}')" title="${v.tip}">${v.lbl}</button>${caret}${menu}
       </div>`;
   };
-  const hide = isCtrlGroupHidden('jukebox');
-  return `<div class="ctrl-group${hide ? ' ctrl-group--collapsed' : ''}">${ctrlGroupHdHTML('jukebox', 'Jukebox Controls', 'Show Jukebox Controls')}
-  ${hide ? '' : `<div class="view-toggle-row" id="view-toggle-row" style="display:flex;flex-direction:column;gap:.65rem;align-items:stretch;flex:0 1 auto;min-width:0;position:relative">
+  if (isToolbarHidden()) return '';
+  return `<div class="ctrl-group">${ctrlGroupHdHTML('Jukebox Controls')}
+  <div class="view-toggle-row" id="view-toggle-row" style="display:flex;flex-direction:column;gap:.65rem;align-items:stretch;flex:0 1 auto;min-width:0;position:relative">
     <div class="view-toggle-row1" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
       <div class="view-seg">
         ${_views.map(segBtn).join('')}
@@ -14393,7 +14471,7 @@ function renderViewToggle() {
       ${_shareR2 ? '' : _shareBtn}
     </div>
     ${ctrlRow}${ttSortRow}
-  </div>`}
+  </div>
   </div>`;
 }
 
@@ -16600,6 +16678,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
+    'One Hide Toolbar button now tucks the whole top toolbar away, instead of a separate arrow on Jukebox Controls and another on Playlist Controls. It sits at the right-hand end of the row and turns into Show Toolbar once everything is hidden.',
+    'Playlist Controls and Now Playing sit side by side on one line when the screen is wide enough to hold both, and go back to stacking when it is not.',
+    'The Purple Mountains jukebox now opens on Purple Mountains, with Silver Jews tucked away. The two buttons in the filter bar still bring either one back with one click.',
     'Import from Spotify is a proper step-by-step now instead of one long panel. Connect, choose a list and tick the songs you want, check the YouTube version we found for each one, and then it finishes on its own. It looks and works like adding an artist.',
     'You can check every match before anything is added, and correct the artist or song name on any of them. Nothing goes into your jukebox until you say so.',
     'The last step goes and looks for the words. Anything we find gets saved with the song, timed line by line where the timings exist, so it is ready to sing along to.',
