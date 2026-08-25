@@ -2525,13 +2525,23 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .landing-tab.active { border-color: var(--accent); color: var(--accent); }
 .landing-tab:hover { border-color: var(--text-muted); color: var(--text); }
 /* Playlist discovery keeps the artist explorer's card language, but turns a
-   playlist into a little jukebox sleeve: 81 tiny album covers behind the mark. */
+   playlist into a little jukebox sleeve of album covers that grow with the set. */
 .playlist-explore-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:20px; }
 .playlist-explore-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; transition:border-color .15s,transform .15s; text-align:left; color:var(--text); font-family:var(--mono); padding:0; }
 .playlist-explore-card:hover { border-color:var(--accent); transform:translateY(-2px); }
-.playlist-mosaic { display:grid; grid-template-columns:repeat(3,1fr); aspect-ratio:1; background:#100d0a; position:relative; overflow:hidden; }
+.playlist-explore-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 16px; }
+.playlist-explore-filter { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; letter-spacing:.04em; padding:.4rem .85rem; border-radius:999px; cursor:pointer; transition:all .15s; }
+.playlist-explore-filter:hover { border-color:var(--text-muted); color:var(--text); }
+.playlist-explore-filter.active { border-color:var(--accent); color:var(--accent); background:rgba(255,107,53,.1); }
+.playlist-mosaic { display:grid; aspect-ratio:1; background:#100d0a; position:relative; overflow:hidden; }
+.playlist-mosaic[data-n="1"] { grid-template-columns:1fr; }
+.playlist-mosaic[data-n="2"] { grid-template-columns:repeat(2,1fr); }
+.playlist-mosaic[data-n="4"] { grid-template-columns:repeat(2,1fr); }
+.playlist-mosaic[data-n="6"] { grid-template-columns:repeat(3,1fr); }
+.playlist-mosaic[data-n="8"] { grid-template-columns:repeat(4,1fr); }
+.playlist-mosaic[data-n="9"] { grid-template-columns:repeat(3,1fr); }
 .playlist-mosaic-cell { min-width:0; min-height:0; background:#24130c center/cover no-repeat; border:1px solid #0008; }
-.playlist-mosaic-mark { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; font-size:3.4rem; font-weight:800; color:#fff; text-shadow:0 2px 18px #000; background:radial-gradient(circle,#ff6b35bb 0 18%,transparent 48%); }
+.playlist-mosaic-empty { display:flex; align-items:center; justify-content:center; aspect-ratio:1; background:#100d0a; color:var(--text-muted); font-size:1.6rem; opacity:.35; }
 .playlist-explore-body { padding:14px 16px 15px; display:flex; flex-direction:column; gap:7px; }
 .playlist-explore-name { font-size:.82rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .playlist-explore-meta { color:var(--text-muted); font-size:.5rem; }
@@ -12460,6 +12470,7 @@ let landingStats       = [];
 const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
 let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // home | explore | playlists
+let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all'; // all | mine | public
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
@@ -12529,18 +12540,48 @@ function landingThumb(row) {
 }
 
 function playlistExploreRows() {
-  return (_savedPlaylists || []).filter(p => p.is_public)
-    .slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const all = _savedPlaylists || [];
+  const email = googleUser?.email || '';
+  let rows;
+  if (playlistExploreFilter === 'mine') {
+    rows = email ? all.filter(p => p.user_email === email) : [];
+  } else if (playlistExploreFilter === 'public') {
+    rows = all.filter(p => p.is_public);
+  } else {
+    rows = all.filter(p => p.is_public || (email && p.user_email === email));
+  }
+  return rows.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+}
+
+function setPlaylistExploreFilter(mode) {
+  if (mode === 'mine' && !googleUser) {
+    showToast('Sign in to see your playlists.');
+    return;
+  }
+  playlistExploreFilter = ['mine', 'public', 'all'].includes(mode) ? mode : 'all';
+  try { localStorage.setItem('sj_pl_explore_filter', playlistExploreFilter); } catch (_) {}
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+function playlistMosaicTier(n) {
+  if (n >= 9) return 9;
+  if (n >= 8) return 8;
+  if (n >= 6) return 6;
+  if (n >= 4) return 4;
+  if (n >= 2) return 2;
+  if (n >= 1) return 1;
+  return 0;
 }
 
 function playlistMosaicHTML(p) {
   const arts = [...new Set((p._tracks || []).slice().sort((a, b) => a.position - b.position)
-    .map(r => playlistArtworkByTrack[r.track_id]).filter(Boolean))].slice(0, 9);
-  const cells = Array.from({ length: 9 }, (_, i) => {
-    const art = arts[i] || '';
-    return `<span class="playlist-mosaic-cell"${art ? ` style="background-image:url('${art.replace(/'/g, '%27')}')"` : ''}></span>`;
-  }).join('');
-  return `<div class="playlist-mosaic" aria-hidden="true">${cells}<span class="playlist-mosaic-mark">♫</span></div>`;
+    .map(r => playlistArtworkByTrack[r.track_id]).filter(Boolean))];
+  const n = playlistMosaicTier(arts.length);
+  if (!n) return '<div class="playlist-mosaic-empty" aria-hidden="true">♫</div>';
+  const cells = arts.slice(0, n).map(art =>
+    `<span class="playlist-mosaic-cell" style="background-image:url('${art.replace(/'/g, '%27')}')"></span>`
+  ).join('');
+  return `<div class="playlist-mosaic" data-n="${n}" aria-hidden="true">${cells}</div>`;
 }
 
 async function ensurePlaylistArtwork() {
@@ -13751,8 +13792,24 @@ function renderLanding() {
       </div>
       ${landingTab === 'home' ? renderLandingHomeHTML(esc) : landingTab === 'playlists' ? (() => {
         const rows = playlistExploreRows();
+        const mineCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
+        const emptyMsg = !_playlistsLoaded
+          ? 'Loading playlists…'
+          : (playlistExploreFilter === 'mine'
+            ? (googleUser ? 'You have not saved a playlist yet.' : 'Sign in to see your playlists.')
+            : (playlistExploreFilter === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.'));
         return `<p class="landing-intro">Explore Playlists — open a cover wall and tap what plays next.</p>
-          ${rows.length ? `<div class="playlist-explore-grid">${rows.map(p => `<button type="button" class="playlist-explore-card" onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : ''}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`).join('')}</div>` : '<div class="landing-no-results">Loading public playlists…</div>'}`;
+          <div class="playlist-explore-filters">
+            <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
+            <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${mineCount ? ' (' + mineCount + ')' : ''}</button>
+            <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
+          </div>
+          ${rows.length ? `<div class="playlist-explore-grid">${rows.map(p => {
+            const mine = googleUser && p.user_email === googleUser.email;
+            const by = p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : '';
+            const vis = mine && !p.is_public ? ' · private' : '';
+            return `<button type="button" class="playlist-explore-card" onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`;
+          }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
       })() : `
       <p class="landing-intro">Explore Artists — pick a discography</p>
       <div class="landing-controls">
@@ -17472,7 +17529,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
-    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. A song grays out only after it has actually played. The cover that is playing pops forward with a bold orange frame. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them.',
+    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. A song grays out only after it has actually played. The cover that is playing pops forward with a bold orange frame. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them. The buttons on that card keep readable contrast on hover in dark mode.',
+    'Explore Playlists now lists your own playlists alongside the public ones, with All / My Playlists / Public filters. The little cover mosaics drop the centre music icon and grow from 1, 2, 4, 6, or 8 album tiles up to a full 9, instead of always forcing empty squares.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'Playback preferences now includes Crossfade tracks. Choose Off, 3 seconds, or 6 seconds to fade between songs as a playlist moves along.',
     'One Hide Toolbar button now tucks the whole top toolbar away, instead of a separate arrow on Jukebox Controls and another on Playlist Controls. It sits at the right-hand end of the row and turns into Show Toolbar once everything is hidden.',
