@@ -12718,14 +12718,15 @@ let _plWallCard = null;
 
 function plWallPositionCard(el, anchorEl) {
   const ar = anchorEl ? anchorEl.getBoundingClientRect() : null;
-  const cW = 280;
+  const cW = Math.max(300, 200 + globalLyricSize * 12);
   let cx = ar ? Math.min(ar.right + 20, window.innerWidth - cW - 12) : (window.innerWidth / 2 - cW / 2);
-  let cy = ar ? Math.max(12, ar.top + ar.height / 2 - 80) : (window.innerHeight / 2 - 120);
+  let cy = ar ? Math.max(12, ar.top + ar.height / 2 - 120) : (window.innerHeight / 2 - 220);
   if (ar && cx < ar.right + 8) cx = Math.max(12, ar.left - cW - 12);
-  cy = Math.min(cy, window.innerHeight - 180);
+  cy = Math.min(cy, window.innerHeight - 280);
   el.style.left = cx + 'px';
   el.style.top = cy + 'px';
   el.style.width = cW + 'px';
+  el.style.maxHeight = 'min(80vh, 640px)';
 }
 
 function plWallDrawLine() {
@@ -12851,11 +12852,24 @@ function plWallOpenPop(i, ev) {
     (blocked ? '<button type="button" class="sc-link sj-block blocked" onclick="plWallPopUnblock()">↺ Unblock</button>' : '') +
     '<button type="button" class="sc-link" onclick="plWallPopMore(this,event)">+ Playlist &amp; more ⋯</button>' +
     '</div>' +
-    '<div style="font-size:.48rem;color:var(--accent);margin-top:6px;letter-spacing:.04em">' + meta + '</div>' +
+    '<div style="font-size:.48rem;color:var(--accent);margin-top:2px;letter-spacing:.04em">' + meta + '</div>' +
+    '<div style="flex:1;display:flex;flex-direction:column;min-height:100px">' +
+    '<div class="sc-section-lbl" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">' +
+    '<span>Lyrics</span>' +
+    '<span class="sc-lyric-font-ctrl" style="display:flex;align-items:center;gap:3px;margin-left:auto">' +
+    '<span style="font-size:.3rem;color:var(--text-muted)">A</span>' +
+    '<input type="range" class="sc-font-slider" min="9" max="28" value="' + globalLyricSize + '" oninput="applyGlobalLyricSize(this.value)" style="width:44px">' +
+    '<span style="font-size:.44rem;color:var(--text-muted)">A</span></span>' +
+    (googleUser ? '<button class="lyr-edit-btn" onclick="startLyricsEdit(\'' + row.trackId + '\',\'card\');event.stopPropagation()">✏ Edit</button><button class="lyr-hist-btn" onclick="openLyricsHistory(\'' + row.trackId + '\');event.stopPropagation()" title="Edit history">🕐</button>' : '') +
+    '</div>' +
+    '<div id="sc-lyrics-' + row.trackId + '" class="sc-lyrics-ph">Loading lyrics…</div>' +
+    '<div id="sc-lyrics-src-' + row.trackId + '" style="font-size:.36rem;opacity:.35;margin-top:6px;font-family:var(--mono);letter-spacing:.04em;text-align:right"></div>' +
+    '</div>' +
     '</div>';
   document.body.appendChild(el);
   plWallPositionCard(el, anchorEl);
   _plWallCard = { el, anchorEl, idx: i, color };
+  if (row.trackId) fetchLyrics(row.trackId);
   if (window.innerWidth <= 640) {
     el.style.zIndex = '1998';
     const ov = document.getElementById('mob-overlay');
@@ -13045,6 +13059,7 @@ function returnToPlaylistExplorer() {
   plWallClosePop();
   playlistChartId = null; playlistChartRows = []; playlistChartBaseQueue = [];
   playlistChartPlayedIds = new Set();
+  _plWallLastCurrentIdx = -1;
   isLandingMode = true;
   landingTab = 'playlists';
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
@@ -17456,7 +17471,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
-    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, and the full ⋯ menu. A song grays out only after it has actually played. The cover that is playing pops forward with a bold orange frame. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them.',
+    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. A song grays out only after it has actually played. The cover that is playing pops forward with a bold orange frame. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'Playback preferences now includes Crossfade tracks. Choose Off, 3 seconds, or 6 seconds to fade between songs as a playlist moves along.',
     'One Hide Toolbar button now tucks the whole top toolbar away, instead of a separate arrow on Jukebox Controls and another on Playlist Controls. It sits at the right-hand end of the row and turns into Show Toolbar once everything is hidden.',
