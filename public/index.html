@@ -20114,10 +20114,28 @@ function sphBrowseHTML() {
     const top50 = _sph.tracks.slice(0, 50);
     const heavy = _sph.tracks.filter(t => t.plays >= 10).slice(0, 50);
     const forgotten = _sph.tracks.slice().sort((a, b) => a.lastPlayed.localeCompare(b.lastPlayed)).slice(0, 50);
+    const byYear = new Map();
+    _sph.plays.forEach(p => {
+      const y = String(p.ts || '').slice(0, 4);
+      if (!/^\d{4}$/.test(y)) return;
+      const cur = byYear.get(y) || { year: y, plays: 0, uris: new Set() };
+      cur.plays += 1;
+      cur.uris.add(p.uri);
+      byYear.set(y, cur);
+    });
+    const yearRows = Array.from(byYear.values()).sort((a, b) => b.year.localeCompare(a.year));
+    const yearHTML = yearRows.length
+      ? '<div class="sph-list">' + yearRows.map(r =>
+          '<button type="button" class="sph-row" onclick="sphDrill(\'year\',' + JSON.stringify(r.year) + ')">' +
+          '<span class="sph-t">' + escAdmin(r.year) + '</span>' +
+          '<span class="sph-s">' + r.plays.toLocaleString() + ' plays · ' + r.uris.size.toLocaleString() + ' songs</span></button>'
+        ).join('') + '</div>'
+      : '<div class="sjd-nodata">No years found.</div>';
     return '<div class="sph-smart">' +
       '<div class="sph-smart-h">Top 50</div>' + sphTrackListHTML(top50) +
       '<div class="sph-smart-h">Heavy rotation (10+ plays)</div>' + sphTrackListHTML(heavy) +
       '<div class="sph-smart-h">Forgotten favorites (oldest last play)</div>' + sphTrackListHTML(forgotten) +
+      '<div class="sph-smart-h">By Year</div>' + yearHTML +
       '</div>';
   }
   return sphTrackListHTML(_sph.tracks.slice(0, 100));
@@ -20131,6 +20149,10 @@ function sphDrillHTML() {
   if (type === 'artist') {
     title = key;
     rows = _sph.tracks.filter(t => t.artist === key);
+  } else if (type === 'year') {
+    title = key;
+    const uris = new Set(_sph.plays.filter(p => String(p.ts || '').slice(0, 4) === key).map(p => p.uri));
+    rows = _sph.tracks.filter(t => uris.has(t.uri));
   } else {
     const parts = key.split('\0');
     const artist = parts[0];
@@ -25552,7 +25574,7 @@ function mjImportHTML() {
     '<span class="mj-vis">' + (_spiStatus.connected
       ? 'Connected' + (_spiStatus.spotifyUserId ? ' as ' + escHtml(_spiStatus.spotifyUserId) : '') + '. Pick from your Liked Songs or any playlist.'
       : 'Bring your Liked Songs and your playlists across, a few at a time.') +
-    ' Listening history lives in My Data & Analytics.</span>' +
+    ' Listening history? Open <button type="button" class="sph-link" onclick="closeMyJukebox();openMyStats()">My Data &amp; Analytics</button>.</span>' +
     '<button class="pl-btn" onclick="openSpotifyImport()">' + (_spiStatus.connected ? 'Choose songs' : 'Connect Spotify') + '</button></div>';
   return '<div class="sjj-h">Add a song</div>' +
     mjSearchRowHTML() +
