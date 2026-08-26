@@ -67,6 +67,15 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 .hdr-r1 { display: flex; align-items: center; justify-content: space-between; gap: 0.45rem 0.75rem; min-height: 48px; flex-wrap: wrap; }
 .hdr-r1-filters { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 100%; min-width: 0; }
 .hdr-r2 { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); min-height: 28px; flex-wrap: wrap; }
+/* The bars caption / Expand-Collapse / All Tracks sort row used to be the
+   second row inside the Jukebox Controls box, forcing it and Playlist
+   Controls out of alignment. It lives here now, under the header divider,
+   at 70% of its old size, so both control boxes stay one row tall. */
+#view-extras-header { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; padding-bottom: .3rem; }
+#view-extras-header:empty { display: none; padding-bottom: 0; }
+#view-extras-header .ctrl-row-sub { padding-top: 0 !important; display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+#view-extras-header .ctrl-row-meta { font-size: .32rem; }
+#view-extras-header .sort-btn { font-size: .35rem; padding: .14rem .35rem; }
 /* Two toolbars sat side by side with nothing saying which was which. Each is
    now a named box: what the jukebox shows on the left, what plays on the right. */
 .ctrl-group { display: flex; flex-direction: column; gap: .25rem; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: .28rem .5rem .4rem; }
@@ -81,14 +90,8 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 .hdr-r2-toggle[aria-expanded="false"] { color: var(--accent); }
 #view-controls-header .ctrl-group { align-items: stretch; }
 #lwytb-header .ctrl-group { align-items: stretch; }
-/* The playlist buttons and Now Playing share one line when the row is wide
-   enough to hold both, and stack when it is not. sjFitLwytbRow() measures. */
 .lwytb-body { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; min-width: 0; }
 .lwytb-body > .lwytb-row { align-self: flex-end; }
-.lwytb-body--row { flex-direction: row; align-items: center; justify-content: flex-end; }
-.lwytb-body--row > .lwytb-row { align-self: center; flex: 0 0 auto; }
-.lwytb-body--row > #quick-now-playing-slot { flex: 1 1 auto; min-width: 0; }
-#quick-now-playing-slot:empty { display: none; }
 .hdr-r1-left { display: flex; align-items: center; gap: 1rem; min-width: 0; flex: 1 1 auto; max-width: 100%; }
 #filter-header { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 #filter-header-mobile { display: none; }
@@ -773,8 +776,6 @@ body:not(.light) .tt-num { color: var(--text); }
   .ctrl-group-caret { font-size: .95rem; padding: 0 .3rem; opacity: .9; }
   /* Toolbar toggle rides at the top of the stack, right-aligned. */
   .hdr-r2-toggle { order: -2; align-self: flex-end; min-height: 34px; font-size: .48rem; }
-  /* Never side by side on a phone, whatever the measurement said. */
-  .lwytb-body--row { flex-direction: column; align-items: stretch; }
   /* On mobile: wrap expand/collapse/views buttons to a second row. overflow
      has to go back to visible or the view dropdowns get clipped. */
   .view-toggle-row { flex-wrap: wrap; overflow: visible; }
@@ -1946,12 +1947,6 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
   #view-controls-header .vseg-btn { display:inline-flex; align-items:center; padding:.5rem .9rem; }
   #view-controls-header .sj-export-btn { padding:.5rem .7rem; }
 }
-.quick-now-playing { width:100%; padding:.55rem .65rem; box-sizing:border-box; border:1px solid #2a2a2a; border-radius:8px; background:#0a0a0a; display:flex; align-items:center; gap:.65rem; }
-.quick-now-playing-copy { min-width:0; flex:1; }
-.quick-now-playing-label { color:var(--text-muted); font-family:var(--mono); font-size:.43rem; letter-spacing:.1em; text-transform:uppercase; }
-.quick-now-playing-song { color:var(--text); font-size:.57rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
-.quick-now-playing-meta { color:var(--text-muted); font-family:var(--mono); font-size:.46rem; margin-top:2px; }
-.quick-now-playing .ctrl-btn { flex-shrink:0; }
 
 /* ── FILTER DROPDOWN ── */
 .filter-dd-wrap { position: relative; }
@@ -3150,6 +3145,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
     <div id="view-controls-header"></div>
     <div id="lwytb-header"></div>
   </div>
+  <div id="view-extras-header"></div>
 </header>
 
 <main id="main">
@@ -15862,13 +15858,10 @@ function updateToolbarToggle() {}
 function ctrlGroupHdHTML(openLabel) {
   return `<div class="ctrl-group-hd ctrl-group-hd--static"><span>${openLabel}</span></div>`;
 }
-// Now Playing always sits under the Playlist Controls buttons, not beside
-// them - two rows, matching the height of the Jukebox Controls box next to
-// it. Retired the width-fit side-by-side layout that used to cause this.
-function sjFitLwytbRow() {
-  const body = document.querySelector('#lwytb-header .lwytb-body');
-  if (body) body.classList.remove('lwytb-body--row');
-}
+// Now Playing is gone - retired along with the width-fit side-by-side
+// layout it needed. Both left as no-ops rather than chasing every call site.
+function sjFitLwytbRow() {}
+function refreshQuickPlaylistNowPlaying() {}
 
 function renderLWYTBHTML(landing) {
   const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
@@ -15879,42 +15872,14 @@ function renderLWYTBHTML(landing) {
   const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
   const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
-  const nowPlaying = landing ? '' : quickPlaylistNowPlayingHTML();
   return `<div class="ctrl-group">${ctrlGroupHdHTML('Playlist Controls')}
     <div class="lwytb-body"><div class="lwytb-row">
       <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
       ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'my',event)">▶ My Playlists ▾</button></div>` : ''}
       ${_pubPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'pub',event)">▶ Public Playlists ▾</button></div>` : ''}
-    </div><div id="quick-now-playing-slot">${nowPlaying}</div></div>
+    </div></div>
   </div>`;
-}
-
-function quickPlaylistNowPlayingHTML() {
-  if (!ytPlayerEl || ytQueueIdx < 0 || !ytQueue.length) return '';
-  const item = ytQueue[ytQueueIdx] || ytQueue[0];
-  if (!item) return '';
-  const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
-  const artist = (meta && meta.artist) || item.artist || '';
-  const song = item.title || (meta && meta.title) || 'Track';
-  const label = (artist ? artist + ' — ' : '') + song;
-  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const count = ytQueue.length;
-  return `<div class="quick-now-playing">
-    <div class="quick-now-playing-copy">
-      <div class="quick-now-playing-label">Now Playing</div>
-      <div class="quick-now-playing-song" title="${esc(label)}">${esc(label)}</div>
-      <div class="quick-now-playing-meta">Track ${ytQueueIdx + 1} of ${count} · ${count} song${count === 1 ? '' : 's'}</div>
-    </div>
-  </div>`;
-}
-
-function refreshQuickPlaylistNowPlaying() {
-  const slot = document.getElementById('quick-now-playing-slot');
-  // The main window (landing) already omits the Now Playing box on render -
-  // this call fires on every track change and used to overwrite that with it.
-  if (slot) slot.innerHTML = isLandingMode ? '' : quickPlaylistNowPlayingHTML();
-  sjFitLwytbRow();
 }
 
 function updateLWYTBHeader() {
@@ -15941,6 +15906,8 @@ function updateLandingActionsHeader() {
   const playlists = document.getElementById('lwytb-header');
   if (!nav) return;
   if (views) { views.innerHTML = ''; views.style.display = 'none'; views.dataset.armed = '0'; }
+  const extras = document.getElementById('view-extras-header');
+  if (extras) extras.innerHTML = '';
   if (!_playlistsLoaded && !_playlistsLoading) {
     _playlistsLoading = true;
     loadPlaylists().then(() => { _playlistsLoading = false; _playlistsLoaded = true; if (isLandingMode) updateLandingActionsHeader(); });
@@ -16055,8 +16022,8 @@ function renderViewToggle() {
   const ctrlRow = _chartView ? `
     <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
       <span class="ctrl-row-meta" title="Change this from the view button above">${_barsLbl}</span>
-      <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
-      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.5rem;padding:.26rem .58rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}${_shareR2 ? _shareBtn : ''}
+      <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.35rem;padding:.18rem .41rem;border-radius:4px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
+      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.35rem;padding:.18rem .41rem;border-radius:4px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}${_shareR2 ? _shareBtn : ''}
     </div>` : '';
   // All Tracks has no chart, so it is the one plain button with no menu.
   const _views = [
@@ -16077,6 +16044,11 @@ function renderViewToggle() {
         <button class="vseg-btn ${on ? 'active' : ''}" onclick="setViewMode('${v.id}')" title="${v.tip}">${v.lbl}</button>${caret}${menu}
       </div>`;
   };
+  // The bars caption / Expand-Collapse / All Tracks sort row used to live
+  // here as a second row - moved to #view-extras-header (below the header
+  // divider) so this box and Playlist Controls both stay one row tall.
+  const extrasEl = document.getElementById('view-extras-header');
+  if (extrasEl) extrasEl.innerHTML = `${ctrlRow}${ttSortRow}`;
   return `<div class="ctrl-group">${ctrlGroupHdHTML('Jukebox Controls')}
   <div class="view-toggle-row" id="view-toggle-row" style="display:flex;flex-direction:column;gap:.65rem;align-items:stretch;flex:0 1 auto;min-width:0;position:relative">
     <div class="view-toggle-row1" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
@@ -16085,7 +16057,6 @@ function renderViewToggle() {
       </div>
       ${_shareR2 ? '' : _shareBtn}
     </div>
-    ${ctrlRow}${ttSortRow}
   </div>
   </div>`;
 }
@@ -18370,6 +18341,8 @@ const SJ_CHANGELOG = [
     'Search results carry the same ⋯ menu as everywhere else - add to a playlist, explore the artist jukebox, take a break from the song, send it to your online jukebox, and more.',
     '"Remove All Songs by Artist from Playlist" and "Remove All Songs from Album from Playlist" are now just "Remove Artist from Playlist" and "Remove Album from Playlist".',
     'Share links are gone. Share Playlist and Share Song are removed from Now Playing and the song menu, and an old shared link no longer loads its saved queue - it just opens the site.',
+    'The Now Playing box is gone from the toolbar entirely. Jukebox Controls and Playlist Controls each stay one row on desktop.',
+    'The bars caption and Expand All Tracks / Collapse All Tracks moved out of Jukebox Controls to their own slim strip under the header, at a smaller size.',
   ]},
   { date: '2026-08-25', items: [
     'Spotify Extended Streaming History now imports through a private four-step review: upload multiple files, watch processing, review years/types/top artists, then confirm. Music, podcasts, audiobooks, and other activity are analyzed even when they are not in the Jukebox; adding songs remains a separate process.',
