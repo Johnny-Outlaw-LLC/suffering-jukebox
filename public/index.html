@@ -2277,6 +2277,12 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .ms-time-bar.spotify { background:#1DB954; opacity:.55; }
 .ms-time-bar.spotify.on { opacity:1; }
 .ms-kpi-sub { font-family:var(--sjd-mono); font-size:.38rem; color:var(--text-muted); margin-top:.2rem; }
+.sph-header-btn { background:rgba(29,185,84,.1); border:1px solid rgba(29,185,84,.6); border-radius:7px; color:#57d68a; font-family:var(--sjd-mono); font-size:.43rem; letter-spacing:.05em; padding:.38rem .6rem; cursor:pointer; white-space:nowrap; transition:all .15s; }
+.sph-header-btn:hover { background:rgba(29,185,84,.2); border-color:#1DB954; color:#8cf0b2; }
+.sph-import-modal { width:min(800px,97vw) !important; }
+.sph-done { padding:.75rem .85rem; border:1px solid rgba(74,222,128,.3); border-radius:9px; background:rgba(74,222,128,.06); color:var(--text-muted); font-size:.72rem; line-height:1.45; }
+.sph-done strong { color:#4ade80; }
+@media (max-width:700px) { .sph-header-btn { order:-1; width:100%; } .sjd-header-actions { flex-wrap:wrap; justify-content:flex-end; } }
 
 /* ── SHARE ── */
 .share-btn { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; letter-spacing:.06em; padding:.38rem .75rem; cursor:pointer; border-radius:8px; transition:all .15s; display:flex; align-items:center; gap:5px; white-space:nowrap; flex-shrink:0; }
@@ -4007,6 +4013,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
       </div>
       <div class="sjd-header-actions">
         <span id="ms-filter-slot"></span>
+        <button type="button" class="sph-header-btn" onclick="openSpotifyHistoryImportTab()">Import History From Spotify</button>
         <div class="sjd-seg" id="ms-range">
           <button type="button" data-days="30" onclick="msSetRange(30)">30D</button>
           <button type="button" data-days="90" class="on" onclick="msSetRange(90)">90D</button>
@@ -4028,6 +4035,22 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
     <div class="sjd-body" id="my-stats-body">
       <div class="admin-metrics-loading">Loading your stats…</div>
     </div>
+  </div>
+</div>
+
+<!-- SPOTIFY HISTORY IMPORT (opened in its own browser tab from My Data) -->
+<div class="pl-modal-overlay" id="spotifyHistoryOverlay" onclick="if(event.target===this)closeSpotifyHistoryImport()">
+  <div class="pl-modal sjd-modal sph-import-modal">
+    <div class="sjd-header">
+      <div>
+        <div class="sjd-eyebrow">Suffering Jukebox</div>
+        <div class="sjd-title">Import History From <span>Spotify</span></div>
+      </div>
+      <div class="sjd-header-actions">
+        <button type="button" class="sjd-icon-btn" onclick="closeSpotifyHistoryImport()" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="sjd-body" id="spotify-history-body"></div>
   </div>
 </div>
 
@@ -18345,11 +18368,14 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-26', items: [
+    'My Data & Analytics is cleaner now: Import History From Spotify sits on the top row and opens a focused tab where you can choose or drop multiple Spotify Audio History JSON files at once.',
+  ]},
   { date: '2026-08-25', items: [
     'My Data & Analytics can import your Spotify Extended Streaming History. Upload the Audio JSON files, browse Top Tracks, Artists, Albums, and smart lists, see what is already in the Jukebox, and add matched listens to your own charts with a Spotify source — shown in a green shade on the trend line, never mixed into everyone else\'s Jukebox Plays.',
     'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. The cover that is playing pops forward with a bold orange frame — only that one, not every song that has already played. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them. The buttons on that card keep readable contrast on hover in dark mode. Each cover shows the song title large across the art, your thumbs and heart reactions side by side up top, and your play count plus last-play date in the corner with no box behind them, updating live while you stay on the wall. Hover a cover for a tooltip with those play stats. Leaving the wall to browse elsewhere no longer drags you back when the next song starts. With Shuffle on, Play starts on a random song instead of the first one.',
@@ -19080,6 +19106,7 @@ function initGoogleAuth() {
         restorePlaybackState();
         sjjResumeBroadcast();
         spiConsumeReturn();
+        sphConsumeImportTab();
         if (isLandingMode) initLanding();
         try {
           const rp = localStorage.getItem('auth_return_path');
@@ -19121,6 +19148,7 @@ function initGoogleAuth() {
       restorePlaybackState();
       sjjResumeBroadcast();
       spiConsumeReturn();
+      sphConsumeImportTab();
       if (isLandingMode) initLanding();
     }
   });
@@ -19706,6 +19734,57 @@ let _msFilter = { artist_id: null, track_id: null, dow: null, hour: null, day: n
 let _msFetchSeq = 0;
 
 const MS_DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SPH_IMPORT_TAB = new URLSearchParams(window.location.search).get('spotify_history_import') === '1';
+let _sphImportTabOpened = false;
+
+function openSpotifyHistoryImportTab() {
+  const url = new URL('/', window.location.origin);
+  url.searchParams.set('spotify_history_import', '1');
+  window.open(url.toString(), '_blank', 'noopener');
+}
+
+function openSpotifyHistoryImport() {
+  if (!googleUser) { handleAuthClick(); return; }
+  document.getElementById('spotifyHistoryOverlay')?.classList.add('open');
+  renderSpotifyHistoryImport();
+}
+
+function hideSpotifyHistoryImport() {
+  document.getElementById('spotifyHistoryOverlay')?.classList.remove('open');
+}
+
+function closeSpotifyHistoryImport() {
+  hideSpotifyHistoryImport();
+  if (SPH_IMPORT_TAB) window.close();
+}
+
+function sphConsumeImportTab() {
+  if (!SPH_IMPORT_TAB || _sphImportTabOpened || !googleUser) return;
+  _sphImportTabOpened = true;
+  openSpotifyHistoryImport();
+}
+
+async function sphOpenStandaloneTab() {
+  if (!SPH_IMPORT_TAB) return;
+  const session = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+  if (!session?.user) { handleAuthClick(); return; }
+  const user = session.user;
+  googleUser = {
+    name: user.user_metadata?.full_name || user.email,
+    email: user.email,
+    picture: user.user_metadata?.avatar_url || null,
+  };
+  updateAuthBtn();
+  sphConsumeImportTab();
+}
+
+void sphOpenStandaloneTab();
+
+window.addEventListener('storage', (event) => {
+  if (event.key === 'sj_spotify_history_imported' && document.getElementById('myStatsOverlay')?.classList.contains('open')) {
+    loadMyStats();
+  }
+});
 
 function openMyStats() {
   if (!googleUser) return;
@@ -20043,11 +20122,10 @@ function sphStatsLine() {
 function sphHTML() {
   if (_sph.status === 'done' && _sph.collapsed) {
     const r = _sph.lastResult || {};
-    return '<div class="sjd-card sph-card"><div class="sjd-card-title">Import &amp; analyze my listening history</div>' +
-      '<div class="sph-status">Spotify history on file' +
-      (r.inserted != null ? ' · ' + Number(r.inserted).toLocaleString() + ' plays added' : '') +
+    return '<div class="sph-done"><strong>Spotify history imported.</strong> ' +
+      (r.inserted != null ? Number(r.inserted).toLocaleString() + ' plays added' : 'Your plays were added') +
       (r.skipped != null ? ' · ' + Number(r.skipped).toLocaleString() + ' already saved' : '') +
-      '. <button type="button" class="sph-link" onclick="_sph.collapsed=false;renderMyStats()">Re-analyze</button></div></div>';
+      '. <button type="button" class="sph-link" onclick="sphReset()">Import more files</button></div>';
   }
 
   let body = '';
@@ -20072,13 +20150,18 @@ function sphHTML() {
       (_sph.progress ? '<div class="sph-progress">' + escAdmin(_sph.progress) + '</div>' : '');
   }
 
-  return '<div class="sjd-card sph-card"><div class="sjd-card-title">Import &amp; analyze my listening history</div>' + body + '</div>';
+  return body;
 }
 
-function sphSetTab(tab) { _sph.tab = tab; _sph.drill = null; renderMyStats(); }
+function renderSpotifyHistoryImport() {
+  const body = document.getElementById('spotify-history-body');
+  if (body) body.innerHTML = sphHTML();
+}
+
+function sphSetTab(tab) { _sph.tab = tab; _sph.drill = null; renderSpotifyHistoryImport(); }
 function sphReset() {
   _sph = { status: 'idle', plays: [], tracks: [], matchByUri: {}, tab: 'top', drill: null, sel: new Set(), progress: '', lastResult: null, collapsed: false };
-  renderMyStats();
+  renderSpotifyHistoryImport();
 }
 
 function sphBrowseHTML() {
@@ -20141,7 +20224,7 @@ function sphBrowseHTML() {
   return sphTrackListHTML(_sph.tracks.slice(0, 100));
 }
 
-function sphDrill(type, key) { _sph.drill = { type, key }; renderMyStats(); }
+function sphDrill(type, key) { _sph.drill = { type, key }; renderSpotifyHistoryImport(); }
 function sphDrillHTML() {
   const { type, key } = _sph.drill;
   let rows = [];
@@ -20160,7 +20243,7 @@ function sphDrillHTML() {
     title = album + ' — ' + artist;
     rows = _sph.tracks.filter(t => t.artist === artist && t.album === album);
   }
-  return '<button type="button" class="sph-link" onclick="_sph.drill=null;renderMyStats()">← Back</button>' +
+  return '<button type="button" class="sph-link" onclick="_sph.drill=null;renderSpotifyHistoryImport()">← Back</button>' +
     '<div class="sph-smart-h">' + escAdmin(title) + '</div>' + sphTrackListHTML(rows);
 }
 
@@ -20188,7 +20271,7 @@ async function sphOnFiles(fileList) {
   }
   _sph.status = 'parsing';
   _sph.progress = 'Reading ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…';
-  renderMyStats();
+  renderSpotifyHistoryImport();
   try {
     const plays = [];
     for (const file of files) {
@@ -20205,11 +20288,11 @@ async function sphOnFiles(fileList) {
     _sph.tracks = sphAggregate(plays);
     _sph.status = 'matching';
     _sph.progress = 'Matching against the Jukebox catalogue…';
-    renderMyStats();
+    renderSpotifyHistoryImport();
     await sphMatchAll();
     _sph.status = 'ready';
     _sph.progress = '';
-    renderMyStats();
+    renderSpotifyHistoryImport();
   } catch (e) {
     showToast(e.message || 'Could not read that history.');
     sphReset();
@@ -20222,7 +20305,7 @@ async function sphMatchAll() {
     const chunk = _sph.tracks.slice(i, i + SPH_MATCH_BATCH);
     _sph.progress = 'Matching ' + Math.min(i + SPH_MATCH_BATCH, _sph.tracks.length).toLocaleString() +
       ' / ' + _sph.tracks.length.toLocaleString() + '…';
-    renderMyStats();
+    renderSpotifyHistoryImport();
     const data = await mjRequest('/api/spotify/history', 'POST', {
       action: 'match',
       tracks: chunk.map(t => ({ title: t.title, artist: t.artist, uri: t.uri })),
@@ -20257,7 +20340,7 @@ async function sphCommitMatched() {
       const chunk = queue.slice(i, i + SPH_IMPORT_BATCH);
       _sph.progress = 'Saving plays ' + Math.min(i + chunk.length, queue.length).toLocaleString() +
         ' / ' + queue.length.toLocaleString() + '…';
-      renderMyStats();
+      renderSpotifyHistoryImport();
       const data = await mjRequest('/api/spotify/history', 'POST', { action: 'import', plays: chunk });
       inserted += Number(data.inserted) || 0;
       skipped += Number(data.skipped) || 0;
@@ -20267,14 +20350,15 @@ async function sphCommitMatched() {
     _sph.collapsed = true;
     _sph.progress = '';
     showToast('Added ' + inserted.toLocaleString() + ' Spotify plays to your charts.');
-    await loadMyStats();
+    try { localStorage.setItem('sj_spotify_history_imported', String(Date.now())); } catch (_) {}
+    renderSpotifyHistoryImport();
     loadMyPlayCounts();
     loadMyDailyPlays();
   } catch (e) {
     _sph.status = 'ready';
     _sph.progress = '';
     showToast(e.message || 'Could not save those plays.');
-    renderMyStats();
+    renderSpotifyHistoryImport();
   }
 }
 
@@ -20297,13 +20381,13 @@ function sphImportSelectedMissing() {
   _spiSource = 'history';
   _spiLoaded = true;
   _spiKnown = new Set();
-  closeMyStats();
+  hideSpotifyHistoryImport();
   openSpotifyImport(2);
   setTimeout(() => { try { spiFindMatches(); } catch (e) {} }, 50);
 }
 
 function sphImportArtist(artist) {
-  closeMyStats();
+  hideSpotifyHistoryImport();
   try { openImportMusic(); } catch (e) {}
   showToast('Search for ' + artist + ' in Import Music to bring the discography in, then re-run Match.');
 }
@@ -20339,8 +20423,7 @@ function renderMyStats() {
   const slot = document.getElementById('ms-filter-slot');
   if (slot) slot.innerHTML = chips;
   body.innerHTML =
-    sphHTML()
-    + msKpisHTML(rows)
+    msKpisHTML(rows)
     + '<div class="sjd-grid2">'
     + '<div class="sjd-card"><div class="sjd-card-title">Plays by Artist <em>click to filter</em></div>' + msArtistsHTML(rows) + '</div>'
     + '<div class="sjd-card"><div class="sjd-card-title">Favorite Artists <em>by your rating, all time</em></div>' + msFavoritesHTML() + '</div>'
