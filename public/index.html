@@ -2687,13 +2687,14 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
 #pl-wall-card .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
 .pl-wall-page.pl-wall-detail-mode .pl-wall-size { display:none; }
-.pl-detail-tbl { width:100%; border-collapse:collapse; min-width:720px; }
+.pl-detail-tbl { width:100%; border-collapse:collapse; min-width:860px; table-layout:auto; }
 .pl-detail-tbl th { font-size:.48rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); padding:.45rem .65rem; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:500; position:sticky; top:0; background:var(--bg); z-index:2; }
 .pl-detail-tbl th.num { text-align:right; }
 .pl-detail-tbl th.rxn { text-align:center; width:44px; }
 .pl-detail-row { border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; }
 .pl-detail-row:hover { background:var(--bg-elevated); }
 .pl-detail-row.current { background:color-mix(in srgb, var(--accent) 14%, transparent); box-shadow:inset 3px 0 0 var(--accent); }
+.pl-detail-row.tt-row-open { background:var(--bg-elevated); }
 .pl-detail-row.blocked { opacity:.45; }
 .pl-detail-row td { padding:.5rem .65rem; font-size:.62rem; vertical-align:middle; }
 .pl-detail-row td.num { text-align:right; font-family:var(--mono); font-size:.55rem; color:var(--text-muted); white-space:nowrap; }
@@ -2702,7 +2703,8 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-detail-art { width:36px; height:36px; border-radius:4px; object-fit:cover; flex-shrink:0; background:var(--bg-elevated); }
 .pl-detail-art-ph { width:36px; height:36px; border-radius:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:.9rem; color:var(--text-muted); background:var(--bg-elevated); }
 .pl-detail-title { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pl-detail-muted { color:var(--text-muted); font-size:.58rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
+.pl-detail-muted { color:var(--text-muted); font-size:.58rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; }
+.pl-detail-tbl .tt-acc-row .tt-acc-td { padding:0 !important; border-bottom:2px solid var(--border) !important; }
 .pl-detail-rxn { display:inline-flex; align-items:center; justify-content:center; gap:3px; background:none; border:1px solid transparent; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:6px; min-width:28px; min-height:28px; }
 .pl-detail-rxn:hover { border-color:var(--border); color:var(--text); }
 .pl-detail-rxn.tvb-up { color:#22c55e; }
@@ -13802,6 +13804,42 @@ function returnToPlaylistExplorer() {
   renderLanding();
 }
 
+function plWallUploadedBy(trackId) {
+  const raw = (tvPrimary(trackId) || tvTop(trackId) || {}).channel
+    || ytData[trackId]?.channel
+    || '';
+  return String(raw).replace(/\s*-\s*topic\s*$/i, '').trim();
+}
+
+function togglePlDetailAccordion(i, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const row = document.querySelector(`.pl-detail-row[data-pc-index="${i}"]`);
+  if (!row) return;
+  const trackId = row.getAttribute('data-pc-track');
+  if (!trackId) return;
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('tt-acc-row')) {
+    next.querySelectorAll('[data-acc-lyric][data-lyr-synced="1"]').forEach(_revertLyricCardSync);
+    next.remove();
+    row.classList.remove('tt-row-open');
+    return;
+  }
+  // One open row at a time keeps the playlist list readable.
+  document.querySelectorAll('#pl-detail-tbl .tt-acc-row').forEach(acc => {
+    acc.querySelectorAll('[data-acc-lyric][data-lyr-synced="1"]').forEach(_revertLyricCardSync);
+    const prev = acc.previousElementSibling;
+    if (prev) prev.classList.remove('tt-row-open');
+    acc.remove();
+  });
+  row.classList.add('tt-row-open');
+  const accRow = document.createElement('tr');
+  accRow.className = 'tt-acc-row';
+  const body = _buildAccordionContent(trackId);
+  accRow.innerHTML = `<td colspan="9" class="tt-acc-td">${body || '<div class="trk-acc-body"><div class="sc-lyrics-ph">Could not load this track.</div></div>'}</td>`;
+  row.parentNode.insertBefore(accRow, row.nextSibling);
+  if (body) fetchLyricsForAcc(trackId);
+}
+
 function renderPlaylistChart(error) {
   plWallClosePop();
   const main = document.getElementById('main');
@@ -13836,13 +13874,15 @@ function renderPlaylistChart(error) {
     const last = plWallFmtLastPlay(myLastPlayed[row.trackId]) || '—';
     const tot = Number(inAppPlays[row.trackId]) || 0;
     const yt = Number(ytData[row.trackId]?.views || row.views) || 0;
+    const uploaded = plWallUploadedBy(row.trackId);
     const art = row.artwork
       ? `<img class="pl-detail-art" src="${row.artwork}" loading="lazy" alt="">`
       : '<span class="pl-detail-art-ph">♫</span>';
-    return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="plWallOpenPop(${i},event)">` +
+    return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="togglePlDetailAccordion(${i},event)">` +
       `<td><div class="pl-detail-track">${art}<span class="pl-detail-title">${esc(row.title)}</span></div></td>` +
       `<td><div class="pl-detail-muted" title="${esc(row.album)}">${esc(row.album) || '—'}</div></td>` +
       `<td><div class="pl-detail-muted" title="${esc(row.artist)}">${esc(row.artist) || '—'}</div></td>` +
+      `<td><div class="pl-detail-muted" title="${esc(uploaded)}">${esc(uploaded) || '—'}</div></td>` +
       `<td class="num" data-pl-last>${esc(last)}</td>` +
       `<td class="num" data-pl-total>${tot ? fmtV(tot) : '—'}</td>` +
       `<td class="num" data-pl-yt>${yt ? fmtV(yt) : '—'}</td>` +
@@ -13856,14 +13896,13 @@ function renderPlaylistChart(error) {
     : (!q.length
       ? '<div class="landing-no-results">Loading playlist…</div>'
       : (isDetail
-        ? `<div class="pl-wall-scroll" id="playlist-chart-scroll"><table class="pl-detail-tbl" id="pl-detail-tbl"><thead><tr><th>Track</th><th>Album</th><th>Artist</th><th class="num">Last Played</th><th class="num">Total Plays</th><th class="num">YT Plays</th><th class="rxn" title="Your rating">👍</th><th class="rxn" title="Hearts">♥</th></tr></thead><tbody>${detailRows}</tbody></table></div>`
+        ? `<div class="pl-wall-scroll" id="playlist-chart-scroll"><table class="pl-detail-tbl" id="pl-detail-tbl"><thead><tr><th>Track</th><th>Album</th><th>Artist</th><th>Uploaded By</th><th class="num">Last Played</th><th class="num">Total Plays</th><th class="num">YT Plays</th><th class="rxn" title="Your rating">👍</th><th class="rxn" title="Hearts">♥</th></tr></thead><tbody>${detailRows}</tbody></table></div>`
         : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid${miniClass}" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`));
 
   const minePl = !!(googleUser && playlistChartId && (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId && p.user_email === googleUser.email)));
   const manageBtns = googleUser
     ? `<button type="button" class="pl-wall-back" onclick="openManagePlaylists()">Manage Playlists</button>` +
-      (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '') +
-      `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('build')">＋ Create</button>`
+      (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '')
     : '';
   const modeTog =
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
@@ -18281,8 +18320,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
     'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. The cover that is playing pops forward with a bold orange frame — only that one, not every song that has already played. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them. The buttons on that card keep readable contrast on hover in dark mode. Each cover shows the song title large across the art, your thumbs and heart reactions side by side up top, and your play count plus last-play date in the corner with no box behind them, updating live while you stay on the wall. Hover a cover for a tooltip with those play stats. Leaving the wall to browse elsewhere no longer drags you back when the next song starts. With Shuffle on, Play starts on a random song instead of the first one.',
-    'Explore Playlists now lists your own playlists alongside the public ones, with All / My Playlists / Public filters. The little cover mosaics drop the centre music icon and grow from 1, 2, 4, 6, or 8 album tiles up to a full 9, instead of always forcing empty squares. Manage Playlists sits on that page, and Manage / Add Songs / Create stay on the cover wall toolbar once a playlist is open.',
-    'On the cover wall, thumbs and hearts only show when a song already has them. Hover the top-right corner for two seconds to rate or react on a blank cover. At the smallest size settings the titles, icons and play stats tuck away so the art can breathe. Switch to Detail for a track list with album, artist, last played, total plays, YouTube plays, and your thumbs and heart on every row.',
+    'Explore Playlists now lists your own playlists alongside the public ones, with All / My Playlists / Public filters. The little cover mosaics drop the centre music icon and grow from 1, 2, 4, 6, or 8 album tiles up to a full 9, instead of always forcing empty squares. Manage Playlists sits on that page, and Manage / Add Songs stay on the cover wall toolbar once a playlist is open.',
+    'On the cover wall, thumbs and hearts only show when a song already has them. Hover the top-right corner for two seconds to rate or react on a blank cover. At the smallest size settings the titles, icons and play stats tuck away so the art can breathe. Switch to Detail for a track list with album, artist, who uploaded it, last played, total plays, YouTube plays, and your thumbs and heart on every row. Tap a Detail row to open the lyrics underneath it, the same way All Tracks does.',
+    'Explore Playlists no longer shows a Create button on the open-playlist toolbar. Build a Playlist still lives under Manage Playlists and the account menu.',
     'Build a Playlist and Add Songs let you search the catalogue the same way as the main Search bar — by song, artist, album, or lyrics — then add whole artists, albums, or single tracks into a new or existing playlist.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'The song ⋯ menu is shorter. Remove options say Remove Song / All Songs by Artist / All Songs from Album without repeating the names. Send to My Online Jukebox opens a small menu for Artist, Album, or Song. Never play this again sits at the bottom of Take a break.',
