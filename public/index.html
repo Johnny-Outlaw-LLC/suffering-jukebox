@@ -2568,6 +2568,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .playlist-explore-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; transition:border-color .15s,transform .15s; text-align:left; color:var(--text); font-family:var(--mono); padding:0; }
 .playlist-explore-card:hover { border-color:var(--accent); transform:translateY(-2px); }
 .playlist-explore-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 16px; }
+.playlist-explore-actions { display:flex; align-items:center; gap:8px; margin-left:auto; flex-wrap:wrap; }
+.playlist-explore-action-btn { background:var(--bg-elevated); border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.52rem; font-weight:700; letter-spacing:.03em; padding:.4rem .85rem; border-radius:999px; cursor:pointer; transition:all .15s; }
+.playlist-explore-action-btn:hover { border-color:var(--text-muted); }
+.playlist-explore-action-btn.primary { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
+.playlist-explore-action-btn.primary:hover { filter:brightness(1.06); }
 .playlist-explore-filter { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; letter-spacing:.04em; padding:.4rem .85rem; border-radius:999px; cursor:pointer; transition:all .15s; }
 .playlist-explore-filter:hover { border-color:var(--text-muted); color:var(--text); }
 .playlist-explore-filter.active { border-color:var(--accent); color:var(--accent); background:rgba(255,107,53,.1); }
@@ -13535,7 +13540,13 @@ function renderPlaylistChart(error) {
     return `<button type="button" class="pl-wall-cell${played ? ' played' : ''}${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="plWallOpenPop(${i},event)">${art}</button>`;
   }).join('');
 
-  main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button><h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
+  const minePl = !!(googleUser && playlistChartId && (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId && p.user_email === googleUser.email)));
+  const manageBtns = googleUser
+    ? `<button type="button" class="pl-wall-back" onclick="openManagePlaylists()">Manage Playlists</button>` +
+      (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '') +
+      `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('build')">＋ Create</button>`
+    : '';
+  main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
 }
@@ -14210,6 +14221,12 @@ function renderLanding() {
             <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
             <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${mineCount ? ' (' + mineCount + ')' : ''}</button>
             <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
+            <div class="playlist-explore-actions">
+              ${googleUser
+                ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>
+                   <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistBuilder('build')">＋ Create Playlist</button>`
+                : `<button type="button" class="playlist-explore-action-btn primary" onclick="handleAuthClick()">Sign in to create</button>`}
+            </div>
           </div>
           ${rows.length ? `<div class="playlist-explore-grid">${rows.map(p => {
             const mine = googleUser && p.user_email === googleUser.email;
