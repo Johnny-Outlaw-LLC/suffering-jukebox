@@ -199,7 +199,6 @@ main > * { min-width: 0; }
 .ctrl-row-sub .sort-btn { font-size: .5rem; padding: .26rem .58rem; border-radius: 5px; }
 .ctrl-row-sub .sj-sharehub-btn { margin-left: auto; }
 .sj-sharehub-btn { display: inline-flex; align-items: center; gap: 6px; }
-.sj-sharehub-btn .sjhub-word { display: inline; }
 
 /* ── SECTION HEADER ── */
 .section-header { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.55rem; flex-wrap: wrap; }
@@ -2000,8 +1999,11 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .sj-reaction-btn svg { width: 15px; height: 15px; display: block; pointer-events: none; }
 .sj-reaction-btn:hover { border-color: var(--text-muted); color: var(--text); }
 .sj-reaction-btn:active, .sj-reaction-btn.sent { transform: scale(.86); }
-.sj-reaction-count { position: absolute; right: 2px; bottom: 1px; min-width: 10px; color: var(--text-muted);
-  font-family: var(--mono); font-size: .34rem; font-variant-numeric: tabular-nums; text-align: right; }
+.sj-reaction-count { position: absolute; right: 1px; bottom: 1px; min-width: 11px; height: 11px; padding: 0 2px;
+  display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+  background: var(--accent); color: #fff; border-radius: 5px;
+  font-family: var(--mono); font-size: .4rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.sj-reaction-count:empty { display: none; }
 .sj-reaction-vote { width:28px; height:27px; padding:0; background:none; border:1px solid var(--border); border-radius:8px; display:inline-flex; align-items:center; justify-content:center; }
 .sj-reaction-vote:hover { border-color:var(--text); }
 .sj-reaction-undo-menu { position:fixed; z-index:13000; min-width:220px; padding:5px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px; box-shadow:0 12px 34px rgba(0,0,0,.5); }
@@ -2406,15 +2408,13 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-b-num { font-size:.42rem; color:var(--text-muted); width:1.4rem; flex-shrink:0; font-variant-numeric:tabular-nums; }
 .plb-b-rm { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.7rem; padding:2px 6px; border-radius:5px; flex-shrink:0; }
 .plb-b-rm:hover { color:#ef4444; background:rgba(239,68,68,.1); }
-.plb-crumbs { display:flex; align-items:center; flex-wrap:wrap; gap:.3rem; padding:.15rem .35rem .5rem; font-size:.5rem; color:var(--text-muted); }
-.plb-crumb { cursor:pointer; }
-.plb-crumb:hover { color:var(--accent); text-decoration:underline; }
-.plb-crumb.current { color:var(--text); cursor:default; font-weight:650; }
-.plb-crumb.current:hover { text-decoration:none; color:var(--text); }
-.plb-crumb-sep { opacity:.5; }
 .plb-row-drill { cursor:pointer; }
-.plb-chevron { flex-shrink:0; color:var(--text-muted); font-size:.6rem; padding-left:.15rem; }
+.plb-caret { flex-shrink:0; display:inline-block; width:.9em; color:var(--text-muted); font-size:.6rem; transition:transform .15s ease; }
+.plb-acc-item.open > .plb-row-drill .plb-caret { transform:rotate(90deg); color:var(--text); }
+.plb-nest { display:none; padding-left:1.35rem; border-left:1px solid var(--border); margin:.15rem 0 .3rem .95rem; }
+.plb-acc-item.open > .plb-nest { display:block; }
 .plb-art-num { font-size:.5rem; color:var(--text-muted); background:var(--bg-elevated); }
+.plb-empty.small { padding:.5rem .4rem; font-size:.5rem; text-align:left; }
 @media (max-width:720px) {
   .plb-split { grid-template-columns:1fr; max-height:none; }
   .plb-results, .plb-basket { max-height:36vh; }
@@ -12572,8 +12572,9 @@ function openPlaylistBuilder(mode, playlistId) {
   overlay.classList.add('open');
   plbPaintChrome();
   plbPaintBasket();
-  _plbBrowseStack = [];
   _plbBrowseArtists = null;
+  _plbArtistAlbums = {};
+  _plbAlbumTracks = {};
   plbRenderBrowse();
   const inp = document.getElementById('plb-search');
   if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 40); }
@@ -12746,132 +12747,123 @@ async function plbAddArtist(artistId, btn) {
 }
 
 // ── Browse mode for Add Songs / Build a Playlist: Artists -> Albums -> Songs,
-// a smaller version of the Albums List drill-down, so you don't have to know
-// what you're looking for to add it. Shares _plbToken with search - whichever
-// kicked off last wins, so a stray fetch from the other mode can't land after.
-let _plbBrowseStack = []; // [] = artist root; [artistNode]; [artistNode, albumNode]
-let _plbBrowseArtists = null; // cached artist list for this modal session
-
-function plbBrowseBack(depth) {
-  _plbBrowseStack = _plbBrowseStack.slice(0, depth);
-  plbRenderBrowse();
-}
-
-function plbBrowseCrumbHtml() {
-  const parts = [`<span class="plb-crumb" onclick="plbBrowseBack(0)">Artists</span>`];
-  _plbBrowseStack.forEach((node, i) => {
-    parts.push('<span class="plb-crumb-sep">\u203a</span>');
-    const label = escHtml(node.name || '');
-    parts.push(i === _plbBrowseStack.length - 1
-      ? `<span class="plb-crumb current">${label}</span>`
-      : `<span class="plb-crumb" onclick="plbBrowseBack(${i + 1})">${label}</span>`);
-  });
-  return `<div class="plb-crumbs">${parts.join('')}</div>`;
-}
+// expanding in place like the Albums List dashboard - click a row to open its
+// children right underneath it, click again to close. No new screen, no back
+// button, and the rest of the list never moves or re-renders under you.
+let _plbBrowseArtists = null;   // cached artist list for this modal session
+let _plbArtistAlbums = {};      // artistId -> albums[], filled in on first expand
+let _plbAlbumTracks = {};       // albumId -> tracks[], filled in on first expand
 
 function plbJsStr(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 
-function plbOpenBrowseArtist(id, name, color) {
-  _plbBrowseStack = [{ type: 'artist', id, name, color }];
-  plbRenderBrowse();
-}
-
-function plbOpenBrowseAlbum(id, name) {
-  const artistNode = _plbBrowseStack[0];
-  _plbBrowseStack = [artistNode, { type: 'album', id, name }];
-  plbRenderBrowse();
+async function plbRenderBrowse() {
+  const body = document.getElementById('plb-results');
+  if (!body) return;
+  const token = ++_plbToken;
+  if (!_plbBrowseArtists) {
+    body.innerHTML = '<div class="plb-empty">Loading artists\u2026</div>';
+    try {
+      _plbBrowseArtists = await dbGet('/artists?select=id,name,slug,color,is_community,added_by_name&order=name.asc');
+    } catch (e) {
+      if (token !== _plbToken) return;
+      body.innerHTML = '<div class="plb-empty">Could not load artists.</div>';
+      return;
+    }
+  }
+  if (token !== _plbToken) return;
+  body.innerHTML = plbBrowseArtistRows(_plbBrowseArtists);
+  plbRefreshAddButtons();
 }
 
 function plbBrowseArtistRows(artists) {
   if (!artists.length) return '<div class="plb-empty">No artists yet.</div>';
   return artists.map(a => {
     const color = a.color || 'var(--accent)';
-    return `<div class="plb-row plb-row-drill" onclick="plbOpenBrowseArtist('${a.id}','${plbJsStr(a.name)}','${plbJsStr(color)}')">` +
-      `<div class="plb-art-ph" style="background:${color}22;color:${color}">${escHtml((a.name || '?')[0].toUpperCase())}</div>` +
-      `<div class="plb-info"><div class="plb-name">${escHtml(a.name)}</div><div class="plb-meta">Artist</div></div>` +
-      `<button type="button" class="plb-add" data-plb-bulk="artist" data-plb-id="${a.id}" onclick="event.stopPropagation();plbAddArtist('${a.id}',this)">+ Add all songs</button>` +
-      `<span class="plb-chevron">\u203a</span>` +
+    return `<div class="plb-acc-item" data-artist-id="${a.id}">` +
+      `<div class="plb-row plb-row-drill" onclick="plbToggleArtist('${a.id}')">` +
+        `<span class="plb-caret">\u203a</span>` +
+        `<div class="plb-art-ph" style="background:${color}22;color:${color}">${escHtml((a.name || '?')[0].toUpperCase())}</div>` +
+        `<div class="plb-info"><div class="plb-name">${escHtml(a.name)}</div><div class="plb-meta">Artist</div></div>` +
+        `<button type="button" class="plb-add" data-plb-bulk="artist" data-plb-id="${a.id}" onclick="event.stopPropagation();plbAddArtist('${a.id}',this)">+ Add all songs</button>` +
+      `</div>` +
+      `<div class="plb-nest" id="plb-nest-artist-${a.id}"></div>` +
     `</div>`;
   }).join('');
 }
 
-function plbBrowseAlbumRows(albumsList) {
-  if (!albumsList.length) return '<div class="plb-empty">No albums for this artist yet.</div>';
+async function plbToggleArtist(artistId) {
+  const item = document.querySelector(`.plb-acc-item[data-artist-id="${CSS.escape(artistId)}"]`);
+  const nest = document.getElementById(`plb-nest-artist-${artistId}`);
+  if (!item || !nest) return;
+  if (item.classList.contains('open')) { item.classList.remove('open'); return; }
+  item.classList.add('open');
+  if (nest.dataset.loaded === '1') return;
+  nest.innerHTML = '<div class="plb-empty small">Loading albums\u2026</div>';
+  try {
+    if (!_plbArtistAlbums[artistId]) {
+      _plbArtistAlbums[artistId] = await dbGet(`/albums?artist_id=eq.${artistId}&select=id,name,release_date,art_url&order=release_date.asc&limit=200`);
+    }
+    if (!item.classList.contains('open')) return; // collapsed again while fetching
+    const artist = _plbBrowseArtists.find(a => a.id === artistId);
+    nest.innerHTML = plbBrowseAlbumRows(_plbArtistAlbums[artistId], artistId, artist?.name || '');
+    nest.dataset.loaded = '1';
+    plbRefreshAddButtons();
+  } catch (e) {
+    nest.innerHTML = '<div class="plb-empty small">Could not load albums.</div>';
+  }
+}
+
+function plbBrowseAlbumRows(albumsList, artistId, artistName) {
+  if (!albumsList.length) return '<div class="plb-empty small">No albums for this artist yet.</div>';
   return albumsList.map(album => {
     const year = (album.release_date || '').slice(0, 4);
     const art = album.art_url
       ? `<img class="plb-art" src="${escHtml(album.art_url)}" alt="">`
       : `<div class="plb-art-ph">${escHtml((album.name || '?')[0].toUpperCase())}</div>`;
-    return `<div class="plb-row plb-row-drill" onclick="plbOpenBrowseAlbum('${album.id}','${plbJsStr(album.name)}')">` +
-      art +
-      `<div class="plb-info"><div class="plb-name">${escHtml(album.name)}</div>${year ? `<div class="plb-meta">${escHtml(year)}</div>` : ''}</div>` +
-      `<button type="button" class="plb-add" data-plb-bulk="album" data-plb-id="${album.id}" onclick="event.stopPropagation();plbAddAlbum('${album.id}',this)">+ Add album</button>` +
-      `<span class="plb-chevron">\u203a</span>` +
+    return `<div class="plb-acc-item" data-album-id="${album.id}">` +
+      `<div class="plb-row plb-row-drill" onclick="plbToggleAlbum('${album.id}','${plbJsStr(album.name)}','${plbJsStr(artistName)}')">` +
+        `<span class="plb-caret">\u203a</span>` +
+        art +
+        `<div class="plb-info"><div class="plb-name">${escHtml(album.name)}</div>${year ? `<div class="plb-meta">${escHtml(year)}</div>` : ''}</div>` +
+        `<button type="button" class="plb-add" data-plb-bulk="album" data-plb-id="${album.id}" onclick="event.stopPropagation();plbAddAlbum('${album.id}',this)">+ Add album</button>` +
+      `</div>` +
+      `<div class="plb-nest" id="plb-nest-album-${album.id}"></div>` +
     `</div>`;
   }).join('');
 }
 
-function plbBrowseTrackRows(trackRows, albumNode, artistNode) {
-  if (!trackRows.length) return '<div class="plb-empty">No songs on this album yet.</div>';
-  const artistName = artistNode?.name || '';
+async function plbToggleAlbum(albumId, albumName, artistName) {
+  const item = document.querySelector(`.plb-acc-item[data-album-id="${CSS.escape(albumId)}"]`);
+  const nest = document.getElementById(`plb-nest-album-${albumId}`);
+  if (!item || !nest) return;
+  if (item.classList.contains('open')) { item.classList.remove('open'); return; }
+  item.classList.add('open');
+  if (nest.dataset.loaded === '1') return;
+  nest.innerHTML = '<div class="plb-empty small">Loading songs\u2026</div>';
+  try {
+    if (!_plbAlbumTracks[albumId]) {
+      _plbAlbumTracks[albumId] = await dbGet(`/tracks?album_id=eq.${albumId}&select=id,name,track_number&order=track_number.asc&limit=200`);
+    }
+    if (!item.classList.contains('open')) return; // collapsed again while fetching
+    nest.innerHTML = plbBrowseTrackRows(_plbAlbumTracks[albumId], albumName, artistName);
+    nest.dataset.loaded = '1';
+    plbRefreshAddButtons();
+  } catch (e) {
+    nest.innerHTML = '<div class="plb-empty small">Could not load songs.</div>';
+  }
+}
+
+function plbBrowseTrackRows(trackRows, albumName, artistName) {
+  if (!trackRows.length) return '<div class="plb-empty small">No songs on this album yet.</div>';
   return trackRows.map(t => {
     const on = plbDraftHas(t.id) || _plbExisting.has(t.id);
     const label = _plbExisting.has(t.id) ? 'On playlist' : (plbDraftHas(t.id) ? 'Added' : '+ Add');
     return `<div class="plb-row">` +
       `<div class="plb-art-ph plb-art-num">${t.track_number || '\u266a'}</div>` +
       `<div class="plb-info"><div class="plb-name">${escHtml(t.name)}</div></div>` +
-      `<button type="button" class="plb-add${on ? ' on' : ''}" data-plb-track="${t.id}" ${_plbExisting.has(t.id) ? 'disabled' : ''} onclick="plbAddTrack('${t.id}','${plbJsStr(t.name)}','${plbJsStr(artistName)}','${plbJsStr(albumNode.name)}')">${label}</button>` +
+      `<button type="button" class="plb-add${on ? ' on' : ''}" data-plb-track="${t.id}" ${_plbExisting.has(t.id) ? 'disabled' : ''} onclick="plbAddTrack('${t.id}','${plbJsStr(t.name)}','${plbJsStr(artistName)}','${plbJsStr(albumName)}')">${label}</button>` +
     `</div>`;
   }).join('');
-}
-
-async function plbRenderBrowse() {
-  const body = document.getElementById('plb-results');
-  if (!body) return;
-  const token = ++_plbToken;
-  const crumbs = plbBrowseCrumbHtml();
-  const top = _plbBrowseStack[_plbBrowseStack.length - 1];
-  if (!top) {
-    body.innerHTML = crumbs + '<div class="plb-empty">Loading artists\u2026</div>';
-    try {
-      if (!_plbBrowseArtists) {
-        _plbBrowseArtists = await dbGet('/artists?select=id,name,slug,color,is_community,added_by_name&order=name.asc');
-      }
-      if (token !== _plbToken) return;
-      body.innerHTML = crumbs + plbBrowseArtistRows(_plbBrowseArtists);
-      plbRefreshAddButtons();
-    } catch (e) {
-      if (token !== _plbToken) return;
-      body.innerHTML = crumbs + '<div class="plb-empty">Could not load artists.</div>';
-    }
-    return;
-  }
-  if (top.type === 'artist') {
-    body.innerHTML = crumbs + '<div class="plb-empty">Loading albums\u2026</div>';
-    try {
-      const albumsList = await dbGet(`/albums?artist_id=eq.${top.id}&select=id,name,release_date,art_url&order=release_date.asc&limit=200`);
-      if (token !== _plbToken) return;
-      body.innerHTML = crumbs + plbBrowseAlbumRows(albumsList);
-      plbRefreshAddButtons();
-    } catch (e) {
-      if (token !== _plbToken) return;
-      body.innerHTML = crumbs + '<div class="plb-empty">Could not load albums.</div>';
-    }
-    return;
-  }
-  if (top.type === 'album') {
-    body.innerHTML = crumbs + '<div class="plb-empty">Loading songs\u2026</div>';
-    try {
-      const artistNode = _plbBrowseStack[_plbBrowseStack.length - 2];
-      const trackRows = await dbGet(`/tracks?album_id=eq.${top.id}&select=id,name,track_number&order=track_number.asc&limit=200`);
-      if (token !== _plbToken) return;
-      body.innerHTML = crumbs + plbBrowseTrackRows(trackRows, top, artistNode);
-      plbRefreshAddButtons();
-    } catch (e) {
-      if (token !== _plbToken) return;
-      body.innerHTML = crumbs + '<div class="plb-empty">Could not load songs.</div>';
-    }
-  }
 }
 
 async function plbRunSearch(query) {
@@ -15954,9 +15946,9 @@ function render() {
   updatePageTitle(visAlbList);
   document.body.classList.toggle('view-alltracks', viewMode === 'alltracks' && window.innerWidth <= 640);
   requestAnimationFrame(redrawAllSCLines);
-  updateFilterHeader();
-  updateViewControlsHeader();
-  updateLWYTBHeader();
+  try { updateFilterHeader(); } catch (e) { console.warn('updateFilterHeader', e); }
+  try { updateViewControlsHeader(); } catch (e) { console.warn('updateViewControlsHeader', e); }
+  try { updateLWYTBHeader(); } catch (e) { console.warn('updateLWYTBHeader', e); }
   // Restore mobile album panel if one was open before re-render wiped main.innerHTML
   if (window.innerWidth <= 640 && _mobOpenAlbId) {
     const _savedAlbId = _mobOpenAlbId;
@@ -16131,7 +16123,7 @@ function renderViewToggle() {
   // On a phone the Share button joins the second row, pushed to the right of
   // the bars caption, rather than taking a whole line to itself. Playlists is
   // the one view with no second row, so there it stays put.
-  const _shareBtn = `<button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}<span class="sjhub-word">Share</span></button>`;
+  const _shareBtn = `<button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}</button>`;
   const _shareR2 = _mobNav && viewMode !== 'playlists';
   const listSort_ = viewMode === 'list' ? `
       <span class="ctrl-row-meta"${_shareR2 ? '' : ' style="margin-left:auto"'}>Sort</span>
@@ -18460,8 +18452,11 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
+    'Jukebox Controls (By Year, Timeline, By Views, Albums List, Share...) could stay blank on the first load of an artist jukebox until you refreshed. Fixed.',
+    'Heart and heartbreak reactions now show their count right on the icon, instead of text too small to read.',
+    'The Share button on an artist jukebox is icon-only now.',
     'The video player responds to your mouse again — hover to bring up pause, seek, and volume instead of them flashing and vanishing until a refresh.',
-    'Add Songs now lets you browse Artists into their Albums into their Songs, a small drill-down right in the Add Songs panel, instead of only searching.',
+    'Browsing Artists into Albums into Songs in Add Songs now expands and collapses in place, like Albums List, instead of opening a new screen with a back button.',
     'Add Songs to a public playlist even if you did not create it, as long as you are signed in.',
     'My Data & Analytics got a full makeover: filter by Source (Suffering Jukebox / Spotify), Date, and Artist; Insights is gone; the views are now Snapshot, Timeline, Calendar, When, and Artists.',
     'All / My Artists / Public sit beside Explore Artists in the header toolbar, above the divider — not down in the filter row.',
