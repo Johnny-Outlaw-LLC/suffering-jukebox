@@ -11313,10 +11313,10 @@ function sjmRenderRoot() {
           '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Song from Playlist</span></button>';
       if (ytQueue.length > 1 && meta.artist) html +=
         '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'artist\')">' +
-          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove All Songs by Artist from Playlist</span></button>';
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Artist from Playlist</span></button>';
       if (ytQueue.length > 1 && meta.album) html +=
         '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'album\')">' +
-          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove All Songs from Album from Playlist</span></button>';
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Album from Playlist</span></button>';
       html += '<div class="sjm-sep"></div>';
       return html;
     })() +
@@ -12423,10 +12423,6 @@ async function openSavePlaylistDialog() {
   document.getElementById('spl-pub-toggle')?.classList.remove('on');
   overlay.classList.add('open');
   nameInput.focus();
-  _fetchLyricsForTracks([...new Set(ytQueue.map(q => q.trackId).filter(Boolean))]).then(() => {
-    const ph = _getQueueLyricPlaceholder();
-    if (ph && nameInput && !nameInput.value) nameInput.placeholder = ph;
-  }).catch(() => {});
 }
 
 function closeSavePlaylistDialog() { document.getElementById('splOverlay')?.classList.remove('open'); }
@@ -12434,7 +12430,8 @@ function closeSavePlaylistDialog() { document.getElementById('splOverlay')?.clas
 async function doSavePlaylist() {
   if (!googleUser) return;
   const nameInput = document.getElementById('spl-name-input');
-  const name = nameInput?.value.trim() || nameInput?.placeholder || 'My Queue';
+  const name = (nameInput?.value || '').trim();
+  if (!name) { nameInput?.focus(); return; }
   const isPublic = document.getElementById('spl-pub-toggle')?.classList.contains('on') || false;
   const btn = document.getElementById('spl-save-btn');
   if (btn) { btn.disabled=true; btn.textContent='Saving…'; }
@@ -15982,33 +15979,13 @@ function updateToolbarToggle() {}
 function ctrlGroupHdHTML(openLabel) {
   return `<div class="ctrl-group-hd ctrl-group-hd--static"><span>${openLabel}</span></div>`;
 }
-// Playlist buttons beside Now Playing when both fit on one line, stacked when
-// they do not. Measured rather than guessed at a breakpoint, because how wide
-// the buttons are depends on how many playlists the listener has.
+// Now Playing always sits under the Playlist Controls buttons, not beside
+// them - two rows, matching the height of the Jukebox Controls box next to
+// it. Retired the width-fit side-by-side layout that used to cause this.
 function sjFitLwytbRow() {
   const body = document.querySelector('#lwytb-header .lwytb-body');
-  if (!body) return;
-  const row  = body.querySelector('.lwytb-row');
-  const slot = body.querySelector('#quick-now-playing-slot');
-  const r2   = document.querySelector('.hdr-r2');
-  body.classList.remove('lwytb-body--row');
-  if (!row || !r2 || !slot || !slot.firstElementChild || window.innerWidth <= 640) return;
-  const vc  = document.getElementById('view-controls-header');
-  const nav = document.getElementById('landing-nav-header');
-  // Reading offsetWidth here also flushes the class removal above, so these are
-  // the widths of the stacked layout rather than of whatever was on screen.
-  const used = (vc && vc.style.display !== 'none' ? vc.offsetWidth : 0)
-    + (nav && nav.style.display !== 'none' ? nav.offsetWidth : 0);
-  const avail = r2.clientWidth - used - 52;   // row gaps plus the group's own border and padding
-  const kids = Array.prototype.slice.call(row.children);
-  const rowNeed = kids.reduce((t, el) => t + el.offsetWidth, 0) + 4 * Math.max(0, kids.length - 1);
-  if (rowNeed + 300 + 8 <= avail) body.classList.add('lwytb-body--row');
+  if (body) body.classList.remove('lwytb-body--row');
 }
-let _lwytbFitTimer = null;
-window.addEventListener('resize', () => {
-  clearTimeout(_lwytbFitTimer);
-  _lwytbFitTimer = setTimeout(sjFitLwytbRow, 120);
-});
 
 function renderLWYTBHTML(landing) {
   const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
@@ -18508,6 +18485,11 @@ const SJ_CHANGELOG = [
     'Explore Playlists has a Contributor dropdown next to Search, so you can pick a specific contributor instead of typing their name in.',
     'All / My Playlists / Public moved up to the header toolbar on Explore Playlists, matching Explore Artists.',
     'The Size slider on an open playlist now sits to the left of the Covers / Detail buttons.',
+    'Now Playing moved under Playlist Controls instead of beside it, so the two boxes in the toolbar line up at the same height.',
+    'Saving or sharing a playlist no longer guesses a name from a lyric in the queue - you always type your own.',
+    'A new online jukebox room no longer names itself after your account. Give it a name from Rename in the host console.',
+    'Search results carry the same ⋯ menu as everywhere else - add to a playlist, explore the artist jukebox, take a break from the song, send it to your online jukebox, and more.',
+    '"Remove All Songs by Artist from Playlist" and "Remove All Songs from Album from Playlist" are now just "Remove Artist from Playlist" and "Remove Album from Playlist".',
   ]},
   { date: '2026-08-25', items: [
     'Spotify Extended Streaming History now imports through a private four-step review: upload multiple files, watch processing, review years/types/top artists, then confirm. Music, podcasts, audiobooks, and other activity are analyzed even when they are not in the Jukebox; adding songs remains a separate process.',
@@ -21106,7 +21088,6 @@ async function loadDailyMetrics() {
       Object.values(dailyRatingData).forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
     }
   } catch (e) { console.warn('loadDailyMetrics ratings error', e); }
-  loadMyDailyPlays();
 }
 
 function renderSparkSVG(points, color, secondary) {
@@ -21234,7 +21215,6 @@ async function loadMyPlayCounts() {
     });
     Object.keys(myInAppPlays).forEach(tid => refreshMyPlayUI(tid));
     if (viewMode === 'playlistchart') plWallRefreshStats();
-    loadMyDailyPlays();
   } catch(e) { console.warn('loadMyPlayCounts error', e); }
 }
 
@@ -22451,7 +22431,6 @@ async function shareVia(medium) {
 let _plShareUrl  = null;   // last created link (for the channel buttons)
 let _plShareName = '';
 let _plShareArtist = '';   // artist label used in the default share text
-let _plShareAutoName = '';  // last lyric suggestion we auto-filled, so we can safely replace it
 
 function _shareCreateErrorMsg(e) {
   if (String(e && e.message || '').includes('shared_links_payload_check')) {
@@ -22526,17 +22505,6 @@ function openPlShareModal() {
     const n = ytQueue.length;
     const cur = ytQueue[ytQueueIdx] || ytQueue[0];
     document.getElementById('pls-summary').textContent = `Sharing ${n} track${n === 1 ? '' : 's'}, currently on “${cur?.title || '-'}”.`;
-    // Suggest a random lyric line from the queued songs as the name (same
-    // trick as Save Playlist), filled into the field so it's used as-is.
-    if (!nameEl.value || nameEl.value === _plShareAutoName) {
-      _fetchLyricsForTracks([...new Set(ytQueue.map(q => q.trackId).filter(Boolean))]).then(() => {
-        const suggestion = _getQueueLyricPlaceholder();
-        if (suggestion && (!nameEl.value || nameEl.value === _plShareAutoName)) {
-          nameEl.value = suggestion;
-          _plShareAutoName = suggestion;
-        }
-      }).catch(() => {});
-    }
     document.getElementById('pls-layout-lbl').textContent = _ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed');
     document.getElementById('pls-lyrics-lbl').textContent = _ytpLyricsOpen ? ('open, sync ' + (_lyrSyncEnabled ? 'on' : 'off')) : 'closed';
     let pos = 0;
@@ -22569,6 +22537,11 @@ function closePlShareModal() {
 
 async function plShareCreate() {
   const btn = document.getElementById('pls-create-btn');
+  const hasQueue0 = ytQueue.length > 0;
+  if (hasQueue0 && !(document.getElementById('pls-name').value || '').trim()) {
+    document.getElementById('pls-name').focus();
+    return;
+  }
   btn.disabled = true; btn.textContent = 'Creating…';
   try {
     const hasQueue  = ytQueue.length > 0;
@@ -23634,13 +23607,6 @@ async function playFromPlaylist(playlistId) {
 // SAVE PLAYLIST MODAL
 // ══════════════════════════════════════════════════════════════
 
-function _pickLyricLineFromText(lyric) {
-  if (!lyric) return '';
-  const lines = lyric.split('\n').map(l => l.trim()).filter(l => l.length > 8 && l.length < 60 && !/^[\[\(]/.test(l));
-  if (!lines.length) return '';
-  return lines[Math.floor(Math.random() * lines.length)];
-}
-
 async function _fetchLyricsForTracks(trackIds) {
   const ids = [...new Set(trackIds.filter(Boolean))];
   const needFetch = ids.filter(id => lyricsCache[id] === undefined);
@@ -23658,40 +23624,10 @@ async function _fetchLyricsForTracks(trackIds) {
   }
 }
 
-function _getQueueLyricPlaceholder() {
-  // Prefer a line from whatever's actually playing right now.
-  const currentTrackId = ytQueue[ytQueueIdx]?.trackId;
-  if (currentTrackId) {
-    const line = _pickLyricLineFromText(lyricsCache[currentTrackId]);
-    if (line) return line;
-  }
-  // Fall back to any track in the queue (e.g. nothing playing yet).
-  const trackIds = [...new Set(ytQueue.map(q => q.trackId).filter(Boolean))];
-  const allLines = [];
-  trackIds.forEach(trackId => {
-    const line = _pickLyricLineFromText(lyricsCache[trackId]);
-    if (line) allLines.push(line);
-  });
-  if (!allLines.length) {
-    // No lyrics anywhere in the queue - fall back to the artist name.
-    const ids = currentTrackId ? [currentTrackId, ...trackIds] : trackIds;
-    for (const id of ids) {
-      const t = trackById(id);
-      const alb = t ? getAlbumForTrack(t) : null;
-      const artist = alb ? allArtists.find(a => a.id === alb.artist_id) : null;
-      if (artist?.name) return artist.name;
-    }
-    return '';
-  }
-  return allLines[Math.floor(Math.random() * allLines.length)];
-}
-
 function openSavePlaylistModal() {
   if (!googleUser) { alert('Sign in to save playlists.'); return; }
   const old = document.getElementById('pl-save-modal');
   if (old) old.remove();
-
-  const lyricPh = _getQueueLyricPlaceholder();
 
   const modal = document.createElement('div');
   modal.id = 'pl-save-modal';
@@ -23700,7 +23636,7 @@ function openSavePlaylistModal() {
     <div style="background:#111;border:1px solid #333;border-radius:14px;padding:22px 24px;min-width:300px;max-width:420px;width:90%;box-shadow:0 16px 48px rgba(0,0,0,.9)">
       <div style="font-size:.85rem;font-weight:700;color:var(--text);margin-bottom:14px;letter-spacing:.01em">💾 Save Playlist</div>
       <div style="font-size:.52rem;color:var(--text-muted);margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase">Playlist Name</div>
-      <input id="pl-name-input" placeholder="${'${lyricPh || \'Name this playlist\''}"
+      <input id="pl-name-input" placeholder="Name this playlist"
         style="width:100%;box-sizing:border-box;background:#1a1a1a;border:1px solid #333;border-radius:7px;color:#eee;font-family:var(--mono);font-size:.62rem;padding:8px 10px;outline:none;margin-bottom:14px"
         onfocus="this.style.borderColor='#888'" onblur="this.style.borderColor='#333'">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:18px">
@@ -23714,18 +23650,7 @@ function openSavePlaylistModal() {
     </div>`;
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if (e.target === modal) closeSavePlaylistModal(); });
-  setTimeout(() => {
-    const inp = document.getElementById('pl-name-input');
-    if (inp) inp.focus();
-    const trackIds = [...new Set(ytQueue.map(q => q.trackId).filter(Boolean))];
-    if (inp && !lyricPh && trackIds.length) {
-      _fetchLyricsForTracks(trackIds).then(() => {
-        const ph2 = _getQueueLyricPlaceholder();
-        const el = document.getElementById('pl-name-input');
-        if (el && !el.value && ph2) el.placeholder = ph2;
-      }).catch(() => {});
-    }
-  }, 50);
+  setTimeout(() => document.getElementById('pl-name-input')?.focus(), 50);
 }
 
 function closeSavePlaylistModal() {
@@ -24255,6 +24180,7 @@ async function _runSearch(query) {
       <div class="srch-actions">
         <button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${canPlay ? '' : 'disabled title=\"No video available\"'}>▶ Play</button>
         ${SJ_COMMENTS_ENABLED ? `<button class="srch-btn cmt-btn" data-cmt-badge="track:${t.id}" onclick="event.stopPropagation();openComments('track','${t.id}')" title="Comment on this track">Comment</button>` : ''}
+        <button class="srch-btn" onclick="event.stopPropagation();sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯ More</button>
       </div>
     </div>`;
   });

@@ -8,7 +8,6 @@ import { createHash, randomBytes } from "crypto";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import {
   DEFAULT_SETTINGS,
-  MAX_JUKEBOX_NAME,
   MAX_JUKEBOXES_PER_ACCOUNT,
   generateCode,
   nicknameFromLyric,
@@ -147,12 +146,14 @@ export async function listJukeboxesForOwner(sb: ServiceClient, email: string): P
 export async function getOrCreateOwnerJukebox(
   sb: ServiceClient,
   email: string,
-  displayName?: string | null,
 ): Promise<JukeboxRow> {
   const existing = await listJukeboxesForOwner(sb, email);
   if (existing.length >= MAX_JUKEBOXES_PER_ACCOUNT) return existing[0];
 
-  const name = (displayName ? `${displayName}'s Jukebox` : "Jukebox").slice(0, MAX_JUKEBOX_NAME);
+  // No name guess from the account - the owner names it themselves from the
+  // host console's Rename button. The DB's own 'Jukebox' default covers the
+  // NOT NULL column until they do.
+  const name = "Jukebox";
   // Retry on the unlikely code collision rather than trusting one draw.
   for (let attempt = 0; attempt < 8; attempt++) {
     const code = generateCode();

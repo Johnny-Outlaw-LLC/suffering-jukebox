@@ -57,11 +57,7 @@ export async function ownerMyJukebox(req: NextRequest): Promise<
   const user = await getAuthUser(req).catch(() => null);
   if (!user?.email) return null;
   const sb = sjb();
-  const displayName =
-    (user.user_metadata?.full_name as string | undefined) ??
-    (user.user_metadata?.name as string | undefined) ??
-    null;
-  const jukebox = await getOrCreateOwnerJukebox(sb, user.email, displayName);
+  const jukebox = await getOrCreateOwnerJukebox(sb, user.email);
   return { user: { id: user.id, email: user.email }, sb, jukebox };
 }
 

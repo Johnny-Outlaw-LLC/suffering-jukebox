@@ -56,11 +56,7 @@ async function requireOwnerJukebox(req: NextRequest) {
     return { error: bad("Sign in to manage your jukebox.", 401) };
   }
   const sb = sjb();
-  const name =
-    (user.user_metadata?.full_name as string | undefined) ??
-    (user.user_metadata?.name as string | undefined) ??
-    null;
-  const jukebox = await getOrCreateOwnerJukebox(sb, user.email, name);
+  const jukebox = await getOrCreateOwnerJukebox(sb, user.email);
   return { sb, jukebox, email: user.email };
 }
 
