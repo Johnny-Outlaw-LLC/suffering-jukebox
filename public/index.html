@@ -3149,7 +3149,6 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
     <div id="landing-nav-header"></div>
     <div id="view-controls-header"></div>
     <div id="lwytb-header"></div>
-    <button type="button" id="hdr-toolbar-toggle" class="hdr-r2-toggle" onclick="toggleToolbar()" aria-expanded="true" style="display:none"><span class="ctrl-group-caret" aria-hidden="true">&#9652;</span><span>Hide Toolbar</span></button>
   </div>
 </header>
 
@@ -12956,8 +12955,23 @@ async function plbSave() {
 let landingStats       = [];
 const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
-let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // home | explore | playlists
+let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // explore | playlists
+// My Jukebox as a third tab is retired - "My Artists" is a filter on Explore Artists.
+if (landingTab === 'home') {
+  landingTab = 'explore';
+  try {
+    localStorage.setItem('sj_landing_tab_v2', 'explore');
+    if (!localStorage.getItem('sj_artist_explore_filter')) localStorage.setItem('sj_artist_explore_filter', 'mine');
+  } catch (_) {}
+}
 let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all'; // all | mine | public
+let playlistExploreSearchQ = '';
+let playlistExploreSort = localStorage.getItem('sj_pl_explore_sort') || 'date_desc';
+let _playlistSearchFocus = false;
+let _playlistSearchTimer = null;
+let artistExploreFilter = localStorage.getItem('sj_artist_explore_filter') || 'all'; // all | mine | public
+const playlistSearchMetaByTrack = {}; // trackId -> { title, artist, lyrics }
+let _playlistSearchMetaLoading = null;
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
@@ -13049,7 +13063,32 @@ function playlistExploreRows() {
   } else {
     rows = all.filter(p => p.is_public || (email && p.user_email === email));
   }
-  return rows.slice().sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const q = playlistExploreSearchQ.trim().toLowerCase();
+  if (q) {
+    rows = rows.filter(p => playlistMatchesSearch(p, q));
+  }
+  const sorted = rows.slice();
+  if (playlistExploreSort === 'date_asc') sorted.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+  else if (playlistExploreSort === 'name_asc') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  else if (playlistExploreSort === 'name_desc') sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+  else if (playlistExploreSort === 'tracks_desc') sorted.sort((a, b) => (b._tracks?.length || 0) - (a._tracks?.length || 0));
+  else if (playlistExploreSort === 'tracks_asc') sorted.sort((a, b) => (a._tracks?.length || 0) - (b._tracks?.length || 0));
+  else sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  return sorted;
+}
+
+function playlistMatchesSearch(p, q) {
+  const name = (p.name || '').toLowerCase();
+  const email = (p.user_email || '').toLowerCase();
+  const by = email.split('@')[0] || '';
+  if (name.includes(q) || by.includes(q) || email.includes(q)) return true;
+  return (p._tracks || []).some(r => {
+    const m = playlistSearchMetaByTrack[r.track_id];
+    if (!m) return false;
+    return (m.title || '').includes(q)
+      || (m.artist || '').includes(q)
+      || (m.lyrics || '').includes(q);
+  });
 }
 
 function setPlaylistExploreFilter(mode) {
@@ -13060,6 +13099,78 @@ function setPlaylistExploreFilter(mode) {
   playlistExploreFilter = ['mine', 'public', 'all'].includes(mode) ? mode : 'all';
   try { localStorage.setItem('sj_pl_explore_filter', playlistExploreFilter); } catch (_) {}
   if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+function setPlaylistExploreSearch(v) {
+  playlistExploreSearchQ = v || '';
+  clearTimeout(_playlistSearchTimer);
+  _playlistSearchTimer = setTimeout(() => { _playlistSearchFocus = true; renderLanding(); }, 180);
+}
+
+function clearPlaylistExploreSearch() {
+  clearTimeout(_playlistSearchTimer);
+  playlistExploreSearchQ = '';
+  _playlistSearchFocus = true;
+  renderLanding();
+}
+
+function setPlaylistExploreSort(v) {
+  playlistExploreSort = v || 'date_desc';
+  try { localStorage.setItem('sj_pl_explore_sort', playlistExploreSort); } catch (_) {}
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+function setArtistExploreFilter(mode) {
+  if (mode === 'mine' && !googleUser) {
+    showToast('Sign in to see artists you have added.');
+    return;
+  }
+  artistExploreFilter = ['mine', 'public', 'all'].includes(mode) ? mode : 'all';
+  try { localStorage.setItem('sj_artist_explore_filter', artistExploreFilter); } catch (_) {}
+  if (isLandingMode && landingTab === 'explore') renderLanding();
+}
+
+async function ensurePlaylistSearchMeta() {
+  if (_playlistSearchMetaLoading) return _playlistSearchMetaLoading;
+  const ids = [...new Set((_savedPlaylists || []).flatMap(p => (p._tracks || []).map(r => r.track_id)).filter(Boolean))]
+    .filter(id => !playlistSearchMetaByTrack[id]);
+  if (!ids.length) return false;
+  _playlistSearchMetaLoading = (async () => {
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 70) chunks.push(ids.slice(i, i + 70));
+    const tRows = (await Promise.all(chunks.map(c =>
+      dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id`)))).flat();
+    const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
+    const albChunks = [];
+    for (let i = 0; i < albumIds.length; i += 70) albChunks.push(albumIds.slice(i, i + 70));
+    const albRows = albumIds.length ? (await Promise.all(albChunks.map(c =>
+      dbGet(`/albums?id=in.(${c.join(',')})&select=id,artist_id,name,art_url`)))).flat() : [];
+    const artByAlbum = Object.fromEntries(albRows.map(a => [a.id, a]));
+    const artistIds = [...new Set(albRows.map(a => a.artist_id).filter(Boolean))];
+    const artChunks = [];
+    for (let i = 0; i < artistIds.length; i += 70) artChunks.push(artistIds.slice(i, i + 70));
+    const artRows = artistIds.length ? (await Promise.all(artChunks.map(c =>
+      dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat() : [];
+    const artById = Object.fromEntries(artRows.map(a => [a.id, a]));
+    await _fetchLyricsForTracks(ids);
+    tRows.forEach(t => {
+      const alb = artByAlbum[t.album_id];
+      const art = alb && artById[alb.artist_id];
+      playlistSearchMetaByTrack[t.id] = {
+        title: (t.name || '').toLowerCase(),
+        artist: (art?.name || '').toLowerCase(),
+        lyrics: (lyricsCache[t.id] || '').toLowerCase(),
+      };
+      if (playlistArtworkByTrack[t.id] === undefined) {
+        playlistArtworkByTrack[t.id] = alb ? (ALBUM_ART[alb.name] || alb.art_url || null) : null;
+      }
+    });
+    ids.forEach(id => {
+      if (!playlistSearchMetaByTrack[id]) playlistSearchMetaByTrack[id] = { title: '', artist: '', lyrics: '' };
+    });
+    return true;
+  })().catch(() => false).finally(() => { _playlistSearchMetaLoading = null; });
+  return _playlistSearchMetaLoading;
 }
 
 function playlistMosaicTier(n) {
@@ -13980,6 +14091,11 @@ function defaultLandingCompare(a, b) {
 
 function getVisibleLandingStats() {
   let visible = landingStats.filter(r => !r.hidden);
+  if (artistExploreFilter === 'mine') {
+    visible = visible.filter(r => oaIsMine(r));
+  } else if (artistExploreFilter === 'public') {
+    visible = visible.filter(r => r.visibility !== 'private');
+  }
   if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
   else if (landingSubmitterFilter.size) {
     visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -14196,13 +14312,17 @@ function clearArtistsFilter(e) {
 }
 
 function setLandingTab(tab) {
-  landingTab = ['explore', 'playlists', 'home'].includes(tab) ? tab : 'explore';
+  if (tab === 'home') {
+    // Retired tab - open the personal library panel instead.
+    openMyJukebox('library');
+    return;
+  }
+  landingTab = ['explore', 'playlists'].includes(tab) ? tab : 'explore';
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
-  if (tab === 'home') ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
   if (tab === 'playlists') {
-    loadPlaylists().then(() => ensurePlaylistArtwork()).then(changed => {
-      if (changed && isLandingMode && landingTab === 'playlists') renderLanding();
+    loadPlaylists().then(() => Promise.all([ensurePlaylistArtwork(), ensurePlaylistSearchMeta()])).then(changed => {
+      if (changed.some(Boolean) && isLandingMode && landingTab === 'playlists') renderLanding();
     });
   }
   renderLanding();
@@ -14236,7 +14356,7 @@ function filterQueueForHomeBg(q) {
 }
 
 function homePlayArtistRows() {
-  return landingTab === 'home' ? getHomeArtistRows() : getVisibleLandingStats();
+  return getVisibleLandingStats();
 }
 
 // Artists I added, plus artists where I have uploaded background-play audio.
@@ -14522,20 +14642,44 @@ function renderLanding() {
   _landingArtistKeys = _artistOpts.map(o => o.artist_id);
   const _artistAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_artistOpts.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists()"><span class="lsm-name">All</span></label>`;
   const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
+  const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
+  const plSortOpt = (v, lbl) => `<option value="${v}"${playlistExploreSort === v ? ' selected' : ''}>${lbl}</option>`;
   main.innerHTML = `
     <div class="landing-wrap">
-      ${landingTab === 'home' ? renderLandingHomeHTML(esc) : landingTab === 'playlists' ? (() => {
+      ${landingTab === 'playlists' ? (() => {
         const rows = playlistExploreRows();
         const mineCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
         const emptyMsg = !_playlistsLoaded
           ? 'Loading playlists…'
-          : (playlistExploreFilter === 'mine'
-            ? (googleUser ? 'You have not saved a playlist yet.' : 'Sign in to see your playlists.')
-            : (playlistExploreFilter === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.'));
+          : (playlistExploreSearchQ.trim()
+            ? 'No playlists match “' + esc(playlistExploreSearchQ.trim()) + '”.'
+            : (playlistExploreFilter === 'mine'
+              ? (googleUser ? 'You have not saved a playlist yet.' : 'Sign in to see your playlists.')
+              : (playlistExploreFilter === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.')));
         return `<div class="playlist-explore-filters">
             <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
             <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${mineCount ? ' (' + mineCount + ')' : ''}</button>
             <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
+            <div class="landing-control-group" style="margin:0">
+              <span class="landing-control-lbl">Search</span>
+              <div class="landing-search-wrap">
+                <input type="text" class="landing-search-input" id="playlist-explore-search" placeholder="Contributor, artist, track, or lyric…"
+                  autocomplete="off" value="${esc(playlistExploreSearchQ).replace(/"/g, '&quot;')}" oninput="setPlaylistExploreSearch(this.value)"
+                  onkeydown="if(event.key==='Escape')clearPlaylistExploreSearch()">
+                ${playlistExploreSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="clearPlaylistExploreSearch()">✕</button>` : ''}
+              </div>
+            </div>
+            <div class="landing-control-group" style="margin:0">
+              <span class="landing-control-lbl">Sort</span>
+              <select class="landing-sort-select" id="playlist-explore-sort" onchange="setPlaylistExploreSort(this.value)">
+                ${plSortOpt('date_desc', 'Newest First')}
+                ${plSortOpt('date_asc', 'Oldest First')}
+                ${plSortOpt('name_asc', 'Name A–Z')}
+                ${plSortOpt('name_desc', 'Name Z–A')}
+                ${plSortOpt('tracks_desc', 'Most Tracks')}
+                ${plSortOpt('tracks_asc', 'Fewest Tracks')}
+              </select>
+            </div>
             <div class="playlist-explore-actions">
               ${googleUser
                 ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>`
@@ -14549,6 +14693,11 @@ function renderLanding() {
             return `<button type="button" class="playlist-explore-card" onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`;
           }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
       })() : `
+      <div class="playlist-explore-filters" style="margin:0 0 14px">
+        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
+        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
+        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
+      </div>
       <div class="landing-controls">
         <div class="landing-control-group">
           <span class="landing-control-lbl">Artists</span>
@@ -14637,10 +14786,17 @@ function renderLanding() {
     const si = document.getElementById('landing-search-input');
     if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
   }
+  if (_playlistSearchFocus && landingTab === 'playlists') {
+    _playlistSearchFocus = false;
+    const si = document.getElementById('playlist-explore-search');
+    if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
+  }
   if (landingTab === 'explore') landingExpandedIds.forEach(id => laPopulateAlbums(id));
-  if (landingTab === 'playlists') ensurePlaylistArtwork().then(changed => {
-    if (changed && isLandingMode && landingTab === 'playlists') renderLanding();
-  });
+  if (landingTab === 'playlists') {
+    Promise.all([ensurePlaylistArtwork(), ensurePlaylistSearchMeta()]).then(changed => {
+      if (changed.some(Boolean) && isLandingMode && landingTab === 'playlists') renderLanding();
+    });
+  }
 }
 
 function landingPlayQueue(q) {
@@ -15117,7 +15273,7 @@ function openFaq() {
 function closeFaq() { document.getElementById('faqOverlay')?.classList.remove('open'); }
 
 async function landingPlayArtist(artistId, ev) {
-  const row = (landingTab === 'home' ? getHomeArtistRows() : landingStats).find(r => r.artist_id === artistId);
+  const row = landingStats.find(r => r.artist_id === artistId);
   if (!row) return;
   const cardBtn = document.querySelector(`.landing-card[data-artist-id="${artistId}"] .landing-play-btn`);
   const origLabel = cardBtn ? cardBtn.textContent : null;
@@ -15751,46 +15907,11 @@ function updateFilterHeader() {
 }
 // LISTEN WHILE YOU BROWSE - renders into header #lwytb-header
 // ══════════════════════════════════════════════════════════════
-// Jukebox Controls and Playlist Controls used to carry a caret each, so tucking
-// the toolbar away took two clicks and left the row half collapsed. There is
-// now one Hide / Show for the whole row, the way Excel collapses its ribbon.
-// The group names stay on as plain labels.
-// Keep the current value in memory as well as localStorage. That makes the
-// very same Hide / Show button dependable even in privacy-restricted browser
-// contexts where a storage read can fail after a successful write.
-let _toolbarHidden = null;
-function isToolbarHidden() {
-  if (_toolbarHidden !== null) return _toolbarHidden;
-  try { return (_toolbarHidden = localStorage.getItem('sj_hide_toolbar') === '1'); }
-  catch (e) { return (_toolbarHidden = false); }
-}
-function toggleToolbar() {
-  const next = !isToolbarHidden();
-  _toolbarHidden = next;
-  try { localStorage.setItem('sj_hide_toolbar', next ? '1' : '0'); } catch (e) {}
-  if (typeof isLandingMode !== 'undefined' && isLandingMode) updateLandingActionsHeader();
-  else {
-    updateViewControlsHeader();
-    updateLWYTBHeader();
-  }
-  updateToolbarToggle();
-}
-// The button takes itself off pages that have no toolbar at all. Each header
-// slot says whether it is in play via data-armed, because a hidden toolbar
-// renders nothing and would otherwise look identical to "no toolbar here".
-function updateToolbarToggle() {
-  const btn = document.getElementById('hdr-toolbar-toggle');
-  if (!btn) return;
-  const vc = document.getElementById('view-controls-header');
-  const lw = document.getElementById('lwytb-header');
-  const nav = document.getElementById('landing-nav-header');
-  const armed = (vc && vc.dataset.armed === '1') || (lw && lw.dataset.armed === '1') || (nav && nav.dataset.armed === '1');
-  btn.style.display = armed ? '' : 'none';
-  const hide = isToolbarHidden();
-  btn.setAttribute('aria-expanded', hide ? 'false' : 'true');
-  btn.title = hide ? 'Show the toolbar' : 'Hide the toolbar - click again to bring it back';
-  btn.innerHTML = `<span class="ctrl-group-caret" aria-hidden="true">${hide ? '▾' : '▴'}</span><span>${hide ? 'Show Toolbar' : 'Hide Toolbar'}</span>`;
-}
+// Hide / Show Toolbar was retired — it was wiping Now Playing on reveal.
+// The control groups stay visible; localStorage sj_hide_toolbar is ignored.
+function isToolbarHidden() { return false; }
+function toggleToolbar() {}
+function updateToolbarToggle() {}
 function ctrlGroupHdHTML(openLabel) {
   return `<div class="ctrl-group-hd ctrl-group-hd--static"><span>${openLabel}</span></div>`;
 }
@@ -15807,12 +15928,10 @@ function sjFitLwytbRow() {
   if (!row || !r2 || !slot || !slot.firstElementChild || window.innerWidth <= 640) return;
   const vc  = document.getElementById('view-controls-header');
   const nav = document.getElementById('landing-nav-header');
-  const tog = document.getElementById('hdr-toolbar-toggle');
   // Reading offsetWidth here also flushes the class removal above, so these are
   // the widths of the stacked layout rather than of whatever was on screen.
   const used = (vc && vc.style.display !== 'none' ? vc.offsetWidth : 0)
-    + (nav && nav.style.display !== 'none' ? nav.offsetWidth : 0)
-    + (tog && tog.style.display !== 'none' ? tog.offsetWidth : 0);
+    + (nav && nav.style.display !== 'none' ? nav.offsetWidth : 0);
   const avail = r2.clientWidth - used - 52;   // row gaps plus the group's own border and padding
   const kids = Array.prototype.slice.call(row.children);
   const rowNeed = kids.reduce((t, el) => t + el.offsetWidth, 0) + 4 * Math.max(0, kids.length - 1);
@@ -15833,7 +15952,6 @@ function renderLWYTBHTML(landing) {
   const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
   const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
-  if (isToolbarHidden()) return '';
   const nowPlaying = landing ? '' : quickPlaylistNowPlayingHTML();
   return `<div class="ctrl-group">${ctrlGroupHdHTML('Playlist Controls')}
     <div class="lwytb-body"><div class="lwytb-row">
@@ -15907,11 +16025,10 @@ function updateLandingActionsHeader() {
     playlists.innerHTML = renderLWYTBHTML(true);
     playlists.dataset.armed = '1';
   }
-  nav.style.display = isToolbarHidden() ? 'none' : 'block';
-  nav.innerHTML = isToolbarHidden() ? '' : `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
+  nav.style.display = 'block';
+  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
     <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
     <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
-    <button type="button" class="landing-tab${landingTab === 'home' ? ' active' : ''}" onclick="setLandingTab('home')">My Jukebox</button>
   </nav>`;
   nav.dataset.armed = '1';
   updateToolbarToggle();
@@ -16019,7 +16136,6 @@ function renderViewToggle() {
         <button class="vseg-btn ${on ? 'active' : ''}" onclick="setViewMode('${v.id}')" title="${v.tip}">${v.lbl}</button>${caret}${menu}
       </div>`;
   };
-  if (isToolbarHidden()) return '';
   return `<div class="ctrl-group">${ctrlGroupHdHTML('Jukebox Controls')}
   <div class="view-toggle-row" id="view-toggle-row" style="display:flex;flex-direction:column;gap:.65rem;align-items:stretch;flex:0 1 auto;min-width:0;position:relative">
     <div class="view-toggle-row1" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
@@ -18292,10 +18408,10 @@ const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
     'My Data & Analytics now has its own dedicated page and opens in a separate tab, so your music keeps playing while you explore deeper listening insights — and it carries your signed-in session with you.',
     'Before importing Spotify history, you can now keep or leave out any listening type, year, or artist. Type cards and every year/artist row have selection checkboxes, with artist search plus Select all and Clear all controls; only the events still selected are saved.',
-    'Explore Artists, Explore Playlists, and My Jukebox now live in the home-page header. The header description is gone, and Hide / Show Toolbar restores those browse buttons instead of the artist-page Jukebox controls.',
-    'Shuffle All, Shuffle Favorites, and the My / Public Playlists menus are back on the home-page toolbar beside the browse buttons.',
-    'The Explore Artists page no longer shows the Pick a discography line under the toolbar.',
-    'The Explore Playlists page no longer shows the cover-wall intro line under the toolbar.',
+    'Explore Artists and Explore Playlists live in the home-page header. The My Jukebox tab is gone — use All / My Artists / Public on Explore Artists instead, and Manage My Music from the account menu when you need the personal library panel.',
+    'Shuffle All, Shuffle Favorites, and the My / Public Playlists menus stay on the home-page toolbar beside the browse buttons. The Hide / Show Toolbar button is gone, so Now Playing no longer vanishes when you tuck the bar away and bring it back.',
+    'Explore Playlists has a search box for contributor, artist, track, or lyric, plus sort options for newest, oldest, name, and track count.',
+    'The Explore Artists and Explore Playlists pages no longer show the old intro lines under the toolbar.',
   ]},
   { date: '2026-08-25', items: [
     'Spotify Extended Streaming History now imports through a private four-step review: upload multiple files, watch processing, review years/types/top artists, then confirm. Music, podcasts, audiobooks, and other activity are analyzed even when they are not in the Jukebox; adding songs remains a separate process.',
