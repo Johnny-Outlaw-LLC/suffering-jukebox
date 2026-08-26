@@ -6,10 +6,14 @@ import { assertNoIpLeak } from "@/lib/spotify-history";
 import { resolveSpotifyTracks } from "@/lib/spotify-history-match";
 
 export const dynamic = "force-dynamic";
+// Full GDPR exports are tens of thousands of rows; give the upsert room.
+export const maxDuration = 60;
 
 const MATCH_MAX = 500;
 const IMPORT_MAX = 2000;
-const HISTORY_BATCH_MAX = 500;
+// 1,000 per call keeps payload size sane on Hobby while cutting round-trips
+// for a ~25k-event export from ~50 down to ~25.
+const HISTORY_BATCH_MAX = 1000;
 const HISTORY_TYPES = new Set(["music", "podcast", "audiobook", "other"]);
 
 type CleanHistoryEvent = {
@@ -75,7 +79,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    if (rateLimited(`spotify-history:${clientIp(req)}`, 30)) return tooMany();
     const user = await getAuthUser(req);
     if (!user?.email) return bad("Sign in to import your Spotify listening history.", 401);
 
@@ -84,8 +87,13 @@ export async function POST(req: NextRequest) {
     const action = String(body?.action || "import").trim();
     const sb = createSjServiceClient();
     const email = user.email.toLowerCase();
+    const uid = user.id;
 
     if (action === "import-history") {
+      // Signed-in GDPR imports are large and deliberate. Cap by user, not IP, and
+      // allow enough batches for a multi-year Extended Streaming History dump
+      // (~250k events at HISTORY_BATCH_MAX) inside a 15-minute window.
+      if (rateLimited(`spotify-history-import:${uid}`, 300, 15 * 60_000)) return tooMany();
       const events: unknown[] = Array.isArray(body.events) ? body.events.slice(0, HISTORY_BATCH_MAX) : [];
       if (!events.length) return bad("No history events to import.");
       const cleaned = events.map((event: unknown) => cleanHistoryEvent(event, user.id)).filter((event): event is CleanHistoryEvent => event !== null);
@@ -94,13 +102,21 @@ export async function POST(req: NextRequest) {
         .schema(JUKEBOX_SCHEMA)
         .from("spotify_history_events")
         .upsert(cleaned, { onConflict: "user_id,event_fingerprint", ignoreDuplicates: true })
-        .select("id");
+        .select("event_fingerprint");
       if (error) throw error;
       const inserted = data?.length ?? 0;
-      return NextResponse.json({ ok: true, inserted, skipped: cleaned.length - inserted });
+      return NextResponse.json({
+        ok: true,
+        inserted,
+        skipped: Math.max(0, cleaned.length - inserted),
+        batchMax: HISTORY_BATCH_MAX,
+      });
     }
 
     if (action === "match") {
+      if (rateLimited(`spotify-history-match:${uid}`, 60) || rateLimited(`spotify-history-ip:${clientIp(req)}`, 90)) {
+        return tooMany();
+      }
       const tracks = Array.isArray(body.tracks) ? body.tracks.slice(0, MATCH_MAX) : [];
       if (!tracks.length) return NextResponse.json({ ok: true, matches: [] });
       const matches = await resolveSpotifyTracks(sb, email, tracks);
@@ -108,6 +124,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "import") {
+      if (rateLimited(`spotify-history-plays:${uid}`, 60) || rateLimited(`spotify-history-ip:${clientIp(req)}`, 90)) {
+        return tooMany();
+      }
       const plays = Array.isArray(body.plays) ? body.plays.slice(0, IMPORT_MAX) : [];
       if (!plays.length) return bad("No plays to import.");
       const cleaned = plays.map((p: any) => ({

@@ -99,8 +99,10 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
   const [files, setFiles] = useState<FileProgress[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState({ done: 0, total: 0 });
   const [saved, setSaved] = useState<{ inserted: number; skipped: number } | null>(null);
   const [artistSearch, setArtistSearch] = useState("");
+  const IMPORT_BATCH = 1000;
 
   const summary = useMemo(() => {
     const byType: Record<ContentType, number> = { music: 0, podcast: 0, audiobook: 0, other: 0 };
@@ -187,22 +189,36 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     setStep(3);
   }
 
+  async function postHistoryBatch(accessToken: string, batch: HistoryEvent[], attempt = 0): Promise<{ inserted: number; skipped: number }> {
+    const response = await fetch("/api/spotify/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ action: "import-history", events: batch }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 429 && attempt < 6) {
+      const waitMs = Math.min(30_000, 1500 * (2 ** attempt));
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+      return postHistoryBatch(accessToken, batch, attempt + 1);
+    }
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not save this batch.");
+    return { inserted: Number(data.inserted || 0), skipped: Number(data.skipped || 0) };
+  }
+
   async function confirmImport() {
     if (!selectedEvents.length || saving) return;
     setSaving(true); setError("");
+    setSaveProgress({ done: 0, total: selectedEvents.length });
     let inserted = 0; let skipped = 0;
     try {
       const { data: { session } } = await sjBrowserAuth.auth.getSession();
       if (!session?.access_token) throw new Error("Sign in to save your Spotify history.");
-      for (let index = 0; index < selectedEvents.length; index += 500) {
-        const response = await fetch("/api/spotify/history", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify({ action: "import-history", events: selectedEvents.slice(index, index + 500) }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) throw new Error(data.error || "Could not save this batch.");
-        inserted += Number(data.inserted || 0); skipped += Number(data.skipped || 0);
+      for (let index = 0; index < selectedEvents.length; index += IMPORT_BATCH) {
+        const batch = selectedEvents.slice(index, index + IMPORT_BATCH);
+        const result = await postHistoryBatch(session.access_token, batch);
+        inserted += result.inserted;
+        skipped += result.skipped;
+        setSaveProgress({ done: Math.min(selectedEvents.length, index + batch.length), total: selectedEvents.length });
       }
       setSaved({ inserted, skipped });
       onComplete();
@@ -263,7 +279,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     </div>}
 
     {step === 4 && <div className={styles.stepBody}>
-      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} duplicate events skipped` : ""}.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div><div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? "Saving your history…" : `Import ${number(selectedEvents.length)} events`}</button></div></>}
+      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} duplicate events skipped` : ""}.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
     </div>}
   </section>;
 }
