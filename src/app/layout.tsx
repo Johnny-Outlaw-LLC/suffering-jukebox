@@ -1,3 +1,11 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
+};
+
 // Root layout. Note that almost every entry under src/app is a route.ts that
 // serves the static dashboard and never passes through here — this layout only
 // wraps the real React pages, which today means the Interactive Jukebox guest

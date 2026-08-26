@@ -95,10 +95,12 @@ function normalizeRow(row: Record<string, unknown>, fileName: string): HistoryEv
 function Wizard({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(1);
   const [events, setEvents] = useState<HistoryEvent[]>([]);
+  const [includedEventIndexes, setIncludedEventIndexes] = useState<Set<number>>(new Set());
   const [files, setFiles] = useState<FileProgress[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<{ inserted: number; skipped: number } | null>(null);
+  const [artistSearch, setArtistSearch] = useState("");
 
   const summary = useMemo(() => {
     const byType: Record<ContentType, number> = { music: 0, podcast: 0, audiobook: 0, other: 0 };
@@ -110,20 +112,57 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
       durationMs += event.durationMs;
       const year = String(new Date(event.playedAt).getFullYear());
       byYear.set(year, (byYear.get(year) || 0) + 1);
-      if (event.contentType === "music") byArtist.set(event.artist, (byArtist.get(event.artist) || 0) + 1);
+      byArtist.set(event.artist, (byArtist.get(event.artist) || 0) + 1);
     }
     return {
       byType,
       byYear: [...byYear.entries()].sort(([a], [b]) => b.localeCompare(a)),
-      topArtists: [...byArtist.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12),
+      artists: [...byArtist.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
       durationMs,
     };
   }, [events]);
 
+  const selectedEvents = useMemo(() => events.filter((_, index) => includedEventIndexes.has(index)), [events, includedEventIndexes]);
+  const selectedDurationMs = useMemo(() => selectedEvents.reduce((total, event) => total + event.durationMs, 0), [selectedEvents]);
+  const indexesForType = useMemo(() => {
+    const indexes: Record<ContentType, number[]> = { music: [], podcast: [], audiobook: [], other: [] };
+    events.forEach((event, index) => indexes[event.contentType].push(index));
+    return indexes;
+  }, [events]);
+  const indexesForYear = useMemo(() => {
+    const indexes = new Map<string, number[]>();
+    events.forEach((event, index) => {
+      const year = String(new Date(event.playedAt).getFullYear());
+      indexes.set(year, [...(indexes.get(year) || []), index]);
+    });
+    return indexes;
+  }, [events]);
+  const indexesForArtist = useMemo(() => {
+    const indexes = new Map<string, number[]>();
+    events.forEach((event, index) => indexes.set(event.artist, [...(indexes.get(event.artist) || []), index]));
+    return indexes;
+  }, [events]);
+  const visibleArtists = useMemo(() => {
+    const query = artistSearch.trim().toLocaleLowerCase();
+    return query ? summary.artists.filter(([artist]) => artist.toLocaleLowerCase().includes(query)) : summary.artists;
+  }, [artistSearch, summary.artists]);
+
+  function selectedIn(indexes: number[]) { return indexes.reduce((total, index) => total + (includedEventIndexes.has(index) ? 1 : 0), 0); }
+  function isAllSelected(indexes: number[]) { return indexes.length > 0 && indexes.every(index => includedEventIndexes.has(index)); }
+  function isPartlySelected(indexes: number[]) { const selected = selectedIn(indexes); return selected > 0 && selected < indexes.length; }
+  function toggleIndexes(indexes: number[]) {
+    setIncludedEventIndexes(current => {
+      const next = new Set(current);
+      if (indexes.length > 0 && indexes.every(index => current.has(index))) indexes.forEach(index => next.delete(index));
+      else indexes.forEach(index => next.add(index));
+      return next;
+    });
+  }
+
   async function onFilesChosen(event: ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(event.target.files || []).filter(file => /\.json$/i.test(file.name));
     if (!chosen.length) { setError("Choose one or more JSON files from your Spotify export."); return; }
-    setError(""); setSaved(null); setEvents([]); setStep(2);
+    setError(""); setSaved(null); setEvents([]); setIncludedEventIndexes(new Set()); setArtistSearch(""); setStep(2);
     let progress: FileProgress[] = chosen.map(file => ({ name: file.name, rows: 0, accepted: 0, state: "waiting" }));
     setFiles(progress);
     const nextEvents: HistoryEvent[] = [];
@@ -143,22 +182,23 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
       setFiles(progress);
     }
     setEvents(nextEvents);
+    setIncludedEventIndexes(new Set(nextEvents.map((_, index) => index)));
     if (!nextEvents.length) { setError("None of those files contained usable Spotify history rows."); return; }
     setStep(3);
   }
 
   async function confirmImport() {
-    if (!events.length || saving) return;
+    if (!selectedEvents.length || saving) return;
     setSaving(true); setError("");
     let inserted = 0; let skipped = 0;
     try {
       const { data: { session } } = await sjBrowserAuth.auth.getSession();
       if (!session?.access_token) throw new Error("Sign in to save your Spotify history.");
-      for (let index = 0; index < events.length; index += 500) {
+      for (let index = 0; index < selectedEvents.length; index += 500) {
         const response = await fetch("/api/spotify/history", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-          body: JSON.stringify({ action: "import-history", events: events.slice(index, index + 500) }),
+          body: JSON.stringify({ action: "import-history", events: selectedEvents.slice(index, index + 500) }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.ok) throw new Error(data.error || "Could not save this batch.");
@@ -171,7 +211,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     } finally { setSaving(false); }
   }
 
-  function reset() { setStep(1); setEvents([]); setFiles([]); setError(""); setSaved(null); }
+  function reset() { setStep(1); setEvents([]); setIncludedEventIndexes(new Set()); setFiles([]); setError(""); setSaved(null); setArtistSearch(""); }
   const completedFiles = files.filter(file => file.state === "done").length;
   const topYearCount = Math.max(...summary.byYear.map(([, count]) => count), 1);
 
@@ -190,14 +230,40 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     </div>}
 
     {step === 3 && <div className={styles.stepBody}>
-      <div className={styles.reviewHeader}><div><p className={styles.eyebrow}>Review results</p><h2>Your Spotify listening history</h2><p className={styles.muted}>{number(events.length)} listening events across {files.length} file{files.length === 1 ? "" : "s"} · {minutes(summary.durationMs)} listened</p></div><button className={styles.secondaryButton} onClick={reset}>Start over</button></div>
-      <div className={styles.typeGrid}>{(Object.keys(TYPE_LABEL) as ContentType[]).map(type => <div className={styles.statCard} key={type}><span>{TYPE_LABEL[type]}</span><strong>{number(summary.byType[type])}</strong></div>)}</div>
-      <div className={styles.reviewGrid}><div className={styles.panel}><h3>Listening by year</h3>{summary.byYear.map(([year, count]) => <div className={styles.barRow} key={year}><span>{year}</span><i><b style={{ width: `${Math.max(3, Math.round((count / topYearCount) * 100))}%` }} /></i><em>{number(count)}</em></div>)}</div><div className={styles.panel}><h3>Top music artists</h3>{summary.topArtists.map(([artist, count]) => <div className={styles.rankRow} key={artist}><span>{artist}</span><strong>{number(count)}</strong></div>)}</div></div>
-      <div className={styles.actions}><button className={styles.secondaryButton} onClick={() => setStep(1)}>Back</button><button className={styles.primaryButton} onClick={() => setStep(4)}>Continue to confirm</button></div>
+      <div className={styles.reviewHeader}><div><p className={styles.eyebrow}>Review and choose</p><h2>Your Spotify listening history</h2><p className={styles.muted}>{number(selectedEvents.length)} of {number(events.length)} listening events selected · {minutes(selectedDurationMs)} to import</p></div><button className={styles.secondaryButton} onClick={reset}>Start over</button></div>
+      <div className={styles.filterToolbar}><p>Uncheck anything you do not want in your private Analytics. Selections combine, so removing a year and an artist leaves both out.</p><div><button className={styles.secondaryButton} onClick={() => setIncludedEventIndexes(new Set(events.map((_, index) => index)))}>Select all</button><button className={styles.secondaryButton} onClick={() => setIncludedEventIndexes(new Set())}>Clear all</button></div></div>
+      <div className={styles.typeGrid}>{(Object.keys(TYPE_LABEL) as ContentType[]).map(type => {
+        const indexes = indexesForType[type];
+        const selected = selectedIn(indexes);
+        return <label className={styles.statCard} key={type}>
+          <input className={styles.selectionCheckbox} type="checkbox" checked={isAllSelected(indexes)} ref={node => { if (node) node.indeterminate = isPartlySelected(indexes); }} onChange={() => toggleIndexes(indexes)} />
+          <span>{TYPE_LABEL[type]}</span><strong>{number(selected)} <small>/ {number(indexes.length)}</small></strong><em>{selected === indexes.length ? "Included" : `${number(selected)} selected`}</em>
+        </label>;
+      })}</div>
+      <div className={styles.reviewGrid}>
+        <div className={styles.panel}>
+          <div className={styles.panelHeader}><h3>Listening by year</h3><span>{number(summary.byYear.length)} years</span></div>
+          <div className={styles.selectionList}>{summary.byYear.map(([year, count]) => {
+            const indexes = indexesForYear.get(year) || [];
+            const selected = selectedIn(indexes);
+            return <label className={styles.barRow} key={year}><input className={styles.selectionCheckbox} type="checkbox" checked={isAllSelected(indexes)} ref={node => { if (node) node.indeterminate = isPartlySelected(indexes); }} onChange={() => toggleIndexes(indexes)} /><span>{year}</span><i><b style={{ width: `${Math.max(3, Math.round((count / topYearCount) * 100))}%` }} /></i><em>{number(selected)} / {number(count)}</em></label>;
+          })}</div>
+        </div>
+        <div className={styles.panel}>
+          <div className={styles.panelHeader}><h3>Artists</h3><span>{number(summary.artists.length)} artists</span></div>
+          <input className={styles.artistSearch} type="search" value={artistSearch} onChange={event => setArtistSearch(event.target.value)} placeholder="Search artists" aria-label="Search artists" />
+          <div className={styles.selectionList}>{visibleArtists.map(([artist, count]) => {
+            const indexes = indexesForArtist.get(artist) || [];
+            const selected = selectedIn(indexes);
+            return <label className={styles.artistRow} key={artist}><input className={styles.selectionCheckbox} type="checkbox" checked={isAllSelected(indexes)} ref={node => { if (node) node.indeterminate = isPartlySelected(indexes); }} onChange={() => toggleIndexes(indexes)} /><span>{artist}</span><strong>{number(selected)} / {number(count)}</strong></label>;
+          })}{!visibleArtists.length && <p className={styles.emptyState}>No artists match that search.</p>}</div>
+        </div>
+      </div>
+      <div className={styles.actions}><button className={styles.secondaryButton} onClick={() => setStep(1)}>Back</button><button className={styles.primaryButton} disabled={!selectedEvents.length} onClick={() => setStep(4)}>{selectedEvents.length ? `Continue with ${number(selectedEvents.length)} events` : "Select events to continue"}</button></div>
     </div>}
 
     {step === 4 && <div className={styles.stepBody}>
-      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} duplicate events skipped` : ""}.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(events.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div><div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? "Saving your history…" : `Import ${number(events.length)} events`}</button></div></>}
+      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} duplicate events skipped` : ""}.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div><div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? "Saving your history…" : `Import ${number(selectedEvents.length)} events`}</button></div></>}
     </div>}
   </section>;
 }
