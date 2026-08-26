@@ -2406,6 +2406,15 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-b-num { font-size:.42rem; color:var(--text-muted); width:1.4rem; flex-shrink:0; font-variant-numeric:tabular-nums; }
 .plb-b-rm { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:.7rem; padding:2px 6px; border-radius:5px; flex-shrink:0; }
 .plb-b-rm:hover { color:#ef4444; background:rgba(239,68,68,.1); }
+.plb-crumbs { display:flex; align-items:center; flex-wrap:wrap; gap:.3rem; padding:.15rem .35rem .5rem; font-size:.5rem; color:var(--text-muted); }
+.plb-crumb { cursor:pointer; }
+.plb-crumb:hover { color:var(--accent); text-decoration:underline; }
+.plb-crumb.current { color:var(--text); cursor:default; font-weight:650; }
+.plb-crumb.current:hover { text-decoration:none; color:var(--text); }
+.plb-crumb-sep { opacity:.5; }
+.plb-row-drill { cursor:pointer; }
+.plb-chevron { flex-shrink:0; color:var(--text-muted); font-size:.6rem; padding-left:.15rem; }
+.plb-art-num { font-size:.5rem; color:var(--text-muted); background:var(--bg-elevated); }
 @media (max-width:720px) {
   .plb-split { grid-template-columns:1fr; max-height:none; }
   .plb-results, .plb-basket { max-height:36vh; }
@@ -12563,8 +12572,9 @@ function openPlaylistBuilder(mode, playlistId) {
   overlay.classList.add('open');
   plbPaintChrome();
   plbPaintBasket();
-  const results = document.getElementById('plb-results');
-  if (results) results.innerHTML = '<div class="plb-empty">Search the catalogue to add artists, albums, or tracks.</div>';
+  _plbBrowseStack = [];
+  _plbBrowseArtists = null;
+  plbRenderBrowse();
   const inp = document.getElementById('plb-search');
   if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 40); }
 }
@@ -12582,7 +12592,8 @@ function plbPaintChrome() {
   if (_plbMode === 'add') {
     const p = playlists.find(x => x.id === _plbPlaylistId) || (_savedPlaylists || []).find(x => x.id === _plbPlaylistId);
     if (title) title.textContent = 'Add Songs to Playlist';
-    if (top) top.innerHTML = `<div class="plb-hint">Adding to <b>${escHtml(p?.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}. Search by song, artist, album, or a lyric line — same search as the main bar.</div>`;
+    const isMine = p && googleUser && p.user_email === googleUser.email;
+    if (top) top.innerHTML = `<div class="plb-hint">Adding to <b>${escHtml(p?.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}${!isMine && p?.is_public ? ' · a public playlist, open to add to' : ''}. Browse artists and albums below, or search by song, artist, album, or a lyric line — same search as the main bar.</div>`;
     if (save) save.textContent = 'Add to Playlist';
   } else {
     if (title) title.textContent = 'Build a Playlist';
@@ -12734,12 +12745,141 @@ async function plbAddArtist(artistId, btn) {
   }
 }
 
+// ── Browse mode for Add Songs / Build a Playlist: Artists -> Albums -> Songs,
+// a smaller version of the Albums List drill-down, so you don't have to know
+// what you're looking for to add it. Shares _plbToken with search - whichever
+// kicked off last wins, so a stray fetch from the other mode can't land after.
+let _plbBrowseStack = []; // [] = artist root; [artistNode]; [artistNode, albumNode]
+let _plbBrowseArtists = null; // cached artist list for this modal session
+
+function plbBrowseBack(depth) {
+  _plbBrowseStack = _plbBrowseStack.slice(0, depth);
+  plbRenderBrowse();
+}
+
+function plbBrowseCrumbHtml() {
+  const parts = [`<span class="plb-crumb" onclick="plbBrowseBack(0)">Artists</span>`];
+  _plbBrowseStack.forEach((node, i) => {
+    parts.push('<span class="plb-crumb-sep">\u203a</span>');
+    const label = escHtml(node.name || '');
+    parts.push(i === _plbBrowseStack.length - 1
+      ? `<span class="plb-crumb current">${label}</span>`
+      : `<span class="plb-crumb" onclick="plbBrowseBack(${i + 1})">${label}</span>`);
+  });
+  return `<div class="plb-crumbs">${parts.join('')}</div>`;
+}
+
+function plbJsStr(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+function plbOpenBrowseArtist(id, name, color) {
+  _plbBrowseStack = [{ type: 'artist', id, name, color }];
+  plbRenderBrowse();
+}
+
+function plbOpenBrowseAlbum(id, name) {
+  const artistNode = _plbBrowseStack[0];
+  _plbBrowseStack = [artistNode, { type: 'album', id, name }];
+  plbRenderBrowse();
+}
+
+function plbBrowseArtistRows(artists) {
+  if (!artists.length) return '<div class="plb-empty">No artists yet.</div>';
+  return artists.map(a => {
+    const color = a.color || 'var(--accent)';
+    return `<div class="plb-row plb-row-drill" onclick="plbOpenBrowseArtist('${a.id}','${plbJsStr(a.name)}','${plbJsStr(color)}')">` +
+      `<div class="plb-art-ph" style="background:${color}22;color:${color}">${escHtml((a.name || '?')[0].toUpperCase())}</div>` +
+      `<div class="plb-info"><div class="plb-name">${escHtml(a.name)}</div><div class="plb-meta">Artist</div></div>` +
+      `<button type="button" class="plb-add" data-plb-bulk="artist" data-plb-id="${a.id}" onclick="event.stopPropagation();plbAddArtist('${a.id}',this)">+ Add all songs</button>` +
+      `<span class="plb-chevron">\u203a</span>` +
+    `</div>`;
+  }).join('');
+}
+
+function plbBrowseAlbumRows(albumsList) {
+  if (!albumsList.length) return '<div class="plb-empty">No albums for this artist yet.</div>';
+  return albumsList.map(album => {
+    const year = (album.release_date || '').slice(0, 4);
+    const art = album.art_url
+      ? `<img class="plb-art" src="${escHtml(album.art_url)}" alt="">`
+      : `<div class="plb-art-ph">${escHtml((album.name || '?')[0].toUpperCase())}</div>`;
+    return `<div class="plb-row plb-row-drill" onclick="plbOpenBrowseAlbum('${album.id}','${plbJsStr(album.name)}')">` +
+      art +
+      `<div class="plb-info"><div class="plb-name">${escHtml(album.name)}</div>${year ? `<div class="plb-meta">${escHtml(year)}</div>` : ''}</div>` +
+      `<button type="button" class="plb-add" data-plb-bulk="album" data-plb-id="${album.id}" onclick="event.stopPropagation();plbAddAlbum('${album.id}',this)">+ Add album</button>` +
+      `<span class="plb-chevron">\u203a</span>` +
+    `</div>`;
+  }).join('');
+}
+
+function plbBrowseTrackRows(trackRows, albumNode, artistNode) {
+  if (!trackRows.length) return '<div class="plb-empty">No songs on this album yet.</div>';
+  const artistName = artistNode?.name || '';
+  return trackRows.map(t => {
+    const on = plbDraftHas(t.id) || _plbExisting.has(t.id);
+    const label = _plbExisting.has(t.id) ? 'On playlist' : (plbDraftHas(t.id) ? 'Added' : '+ Add');
+    return `<div class="plb-row">` +
+      `<div class="plb-art-ph plb-art-num">${t.track_number || '\u266a'}</div>` +
+      `<div class="plb-info"><div class="plb-name">${escHtml(t.name)}</div></div>` +
+      `<button type="button" class="plb-add${on ? ' on' : ''}" data-plb-track="${t.id}" ${_plbExisting.has(t.id) ? 'disabled' : ''} onclick="plbAddTrack('${t.id}','${plbJsStr(t.name)}','${plbJsStr(artistName)}','${plbJsStr(albumNode.name)}')">${label}</button>` +
+    `</div>`;
+  }).join('');
+}
+
+async function plbRenderBrowse() {
+  const body = document.getElementById('plb-results');
+  if (!body) return;
+  const token = ++_plbToken;
+  const crumbs = plbBrowseCrumbHtml();
+  const top = _plbBrowseStack[_plbBrowseStack.length - 1];
+  if (!top) {
+    body.innerHTML = crumbs + '<div class="plb-empty">Loading artists\u2026</div>';
+    try {
+      if (!_plbBrowseArtists) {
+        _plbBrowseArtists = await dbGet('/artists?select=id,name,slug,color,is_community,added_by_name&order=name.asc');
+      }
+      if (token !== _plbToken) return;
+      body.innerHTML = crumbs + plbBrowseArtistRows(_plbBrowseArtists);
+      plbRefreshAddButtons();
+    } catch (e) {
+      if (token !== _plbToken) return;
+      body.innerHTML = crumbs + '<div class="plb-empty">Could not load artists.</div>';
+    }
+    return;
+  }
+  if (top.type === 'artist') {
+    body.innerHTML = crumbs + '<div class="plb-empty">Loading albums\u2026</div>';
+    try {
+      const albumsList = await dbGet(`/albums?artist_id=eq.${top.id}&select=id,name,release_date,art_url&order=release_date.asc&limit=200`);
+      if (token !== _plbToken) return;
+      body.innerHTML = crumbs + plbBrowseAlbumRows(albumsList);
+      plbRefreshAddButtons();
+    } catch (e) {
+      if (token !== _plbToken) return;
+      body.innerHTML = crumbs + '<div class="plb-empty">Could not load albums.</div>';
+    }
+    return;
+  }
+  if (top.type === 'album') {
+    body.innerHTML = crumbs + '<div class="plb-empty">Loading songs\u2026</div>';
+    try {
+      const artistNode = _plbBrowseStack[_plbBrowseStack.length - 2];
+      const trackRows = await dbGet(`/tracks?album_id=eq.${top.id}&select=id,name,track_number&order=track_number.asc&limit=200`);
+      if (token !== _plbToken) return;
+      body.innerHTML = crumbs + plbBrowseTrackRows(trackRows, top, artistNode);
+      plbRefreshAddButtons();
+    } catch (e) {
+      if (token !== _plbToken) return;
+      body.innerHTML = crumbs + '<div class="plb-empty">Could not load songs.</div>';
+    }
+  }
+}
+
 async function plbRunSearch(query) {
   const token = ++_plbToken;
   const body = document.getElementById('plb-results');
   if (!body) return;
   if (!query || query.trim().length < 2) {
-    body.innerHTML = '<div class="plb-empty">Type at least 2 characters to search.</div>';
+    plbRenderBrowse();
     return;
   }
   body.innerHTML = '<div class="plb-empty">Searching…</div>';
@@ -13911,10 +14051,12 @@ function renderPlaylistChart(error) {
         ? `<div class="pl-wall-scroll" id="playlist-chart-scroll"><table class="pl-detail-tbl" id="pl-detail-tbl"><thead><tr><th>Track</th><th>Album</th><th>Artist</th><th>Uploaded By</th><th class="num">Last Played</th><th class="num">Total Plays</th><th class="num">YT Plays</th><th class="rxn" title="Your rating">👍</th><th class="rxn" title="Hearts">♥</th></tr></thead><tbody>${detailRows}</tbody></table></div>`
         : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid${miniClass}" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`));
 
-  const minePl = !!(googleUser && playlistChartId && (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId && p.user_email === googleUser.email)));
+  const _plObj = playlistChartId ? (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId)) : null;
+  const minePl = !!(googleUser && _plObj && _plObj.user_email === googleUser.email);
+  const canAddSongs = !!(googleUser && _plObj && (minePl || _plObj.is_public));
   const manageBtns = googleUser
     ? `<button type="button" class="pl-wall-back" onclick="openManagePlaylists()">Manage Playlists</button>` +
-      (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '')
+      (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '')
     : '';
   const modeTog =
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
@@ -18318,6 +18460,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
+    'Add Songs now lets you browse Artists into their Albums into their Songs, a small drill-down right in the Add Songs panel, instead of only searching.',
+    'Add Songs to a public playlist even if you did not create it, as long as you are signed in.',
     'My Data & Analytics got a full makeover: filter by Source (Suffering Jukebox / Spotify), Date, and Artist; Insights is gone; the views are now Snapshot, Timeline, Calendar, When, and Artists.',
     'All / My Artists / Public sit beside Explore Artists in the header toolbar, above the divider — not down in the filter row.',
     'Lyrics stay on by default when a song has them. Playing a song without lyrics no longer turns lyrics off for the next one that does.',
