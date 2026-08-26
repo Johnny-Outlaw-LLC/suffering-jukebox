@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchYouTubeVideoInfo } from "@/lib/sj-admin-auth";
+import { fetchYouTubeVideoInfo, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import {
   addCatalogItems,
   addYouTubeItem,
@@ -78,6 +78,13 @@ export async function POST(req: NextRequest) {
         const read = readArtistAndTitle(info.title, info.channelTitle);
         const artistName = text(body.artistName, 160) ?? read.artistName;
         const trackName = text(body.trackName, 180) ?? read.trackName;
+        // Spotify knows the length; YouTube contentDetails is the fallback.
+        // Either one lets LRCLIB do an exact-duration match the way album
+        // imports do.
+        const durationMs =
+          (typeof body.durationMs === "number" && body.durationMs > 0 ? Math.round(body.durationMs) : null)
+          ?? info.durationMs
+          ?? null;
 
         const result = await addYouTubeItem(ctx.sb, ctx.jukebox.id, {
           videoId: id,
@@ -86,6 +93,7 @@ export async function POST(req: NextRequest) {
           albumName: text(body.albumName) ?? SINGLES_ALBUM,
           thumbnail: info.thumbnail,
           views: info.views,
+          durationMs,
           source: body.source === "spotify" ? "spotify" : "youtube",
           sourceUri: text(body.sourceUri, 2000),
           // No unlicensed lyrics scraper: the import records that it checked,
@@ -96,6 +104,8 @@ export async function POST(req: NextRequest) {
 
         let artist: { id: string; name: string; slug: string } | null = null;
         let catalogTrackId: string | null = null;
+        let lyricsFound = false;
+        let lyricsSynced = false;
         try {
           const imported = await importSingleTrack(ctx.sb, {
             videoId: id,
@@ -103,7 +113,7 @@ export async function POST(req: NextRequest) {
             channelTitle: info.channelTitle,
             thumbnail: info.thumbnail,
             views: info.views,
-            durationMs: null,
+            durationMs,
             artistName,
             trackName,
             visibility,
@@ -114,6 +124,32 @@ export async function POST(req: NextRequest) {
           // The wizard's last step goes and finds the words for these, so it
           // needs the catalogue track id, not just the library row.
           catalogTrackId = imported.trackId;
+          lyricsFound = imported.lyricsFound;
+          lyricsSynced = imported.lyricsSynced;
+
+          // Link the library row to the catalogue song and stamp any lyrics we
+          // just found, so My Jukebox and Explore stay in step.
+          if (catalogTrackId) {
+            const patch: Record<string, unknown> = {
+              catalog_track_id: catalogTrackId,
+              duration_ms: durationMs,
+            };
+            if (lyricsFound) {
+              const { data: lyr } = await ctx.sb.schema(JUKEBOX_SCHEMA).from("lyrics")
+                .select("lyrics,lyrics_source").eq("track_id", catalogTrackId).maybeSingle();
+              if (lyr?.lyrics) {
+                patch.lyrics = lyr.lyrics;
+                patch.lyrics_source = lyr.lyrics_source ?? "lrclib";
+                patch.lyrics_checked_at = new Date().toISOString();
+              }
+            } else {
+              patch.lyrics_checked_at = new Date().toISOString();
+            }
+            let q = ctx.sb.schema(JUKEBOX_SCHEMA).from("my_jukebox_items").update(patch);
+            if (result.item?.id) q = q.eq("id", result.item.id);
+            else q = q.eq("jukebox_id", ctx.jukebox.id).eq("youtube_video_id", id);
+            await q;
+          }
         } catch (err) {
           // The library row is the promise we made; the catalogue card is the
           // bonus. Failing the whole request over the card would lose the song.
@@ -125,6 +161,8 @@ export async function POST(req: NextRequest) {
           ...result,
           artist,
           catalogTrackId,
+          lyricsFound,
+          lyricsSynced,
           visibility,
           items: await loadLibrary(ctx.sb, ctx.jukebox.id),
         });

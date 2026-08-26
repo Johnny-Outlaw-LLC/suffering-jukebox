@@ -6,7 +6,7 @@
 // There is no scraper here and never should be: LRCLIB or nothing.
 
 const UA = "SufferingJukebox/1.0 (+https://sufferingjukebox.stream)";
-const TIMEOUT_MS = 6000;
+const TIMEOUT_MS = 8000;
 
 async function tfetch(url: string) {
   const controller = new AbortController();
@@ -31,10 +31,29 @@ export function plainFrom(hit: LyricHit) {
   return lines.length ? lines.join("\n") : null;
 }
 
-// Exact-duration lookup first because it is the one that cannot be wrong, then
-// a name search filtered back down by artist, title and a ten second duration
-// window. A synced result beats a plain one.
-export async function lrclibLookup(artist: string, track: string, durationSec: number | null): Promise<LyricHit | null> {
+/**
+ * Spotify and YouTube titles often carry a remaster year or a featuring credit
+ * that LRCLIB does not. Strip those for the query; keep the stored name alone.
+ */
+export function lyricQueryName(track: string): string {
+  const cleaned = (track || "")
+    .replace(/\s*[-–—]\s*\d{2,4}\s*remaster(ed)?\b.*$/i, "")
+    .replace(/\s*\(\s*\d{2,4}\s*remaster(ed)?\s*\)/gi, "")
+    .replace(/\s*\[?\s*remaster(ed)?\s*\]?/gi, " ")
+    .replace(/\s*[\(\[]\s*(feat\.?|ft\.?|with)\s+[^\)\]]+[\)\]]/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || track;
+}
+
+/** First credited name when Spotify joins artists with a comma. */
+export function lyricQueryArtist(artist: string): string {
+  const primary = (artist || "").split(/\s*,\s*/)[0]?.trim() || "";
+  return primary || artist;
+}
+
+async function lookupOnce(artist: string, track: string, durationSec: number | null): Promise<LyricHit | null> {
+  if (!artist?.trim() || !track?.trim()) return null;
   if (durationSec) {
     try {
       const res = await tfetch(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(artist)}&track_name=${encodeURIComponent(track)}&duration=${Math.round(durationSec)}`);
@@ -56,4 +75,20 @@ export async function lrclibLookup(artist: string, track: string, durationSec: n
     if (!best) return null;
     return { plain: best.plainLyrics || null, synced: best.syncedLyrics || null };
   } catch { return null; }
+}
+
+// Exact-duration lookup first because it is the one that cannot be wrong, then
+// a name search filtered back down by artist, title and a ten second duration
+// window. Tries a cleaned title and the primary artist when the raw Spotify
+// credit misses. A synced result beats a plain one.
+export async function lrclibLookup(artist: string, track: string, durationSec: number | null): Promise<LyricHit | null> {
+  const artists = [...new Set([artist, lyricQueryArtist(artist)].filter(Boolean))];
+  const titles = [...new Set([lyricQueryName(track), track].filter(Boolean))];
+  for (const a of artists) {
+    for (const t of titles) {
+      const hit = await lookupOnce(a, t, durationSec);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }

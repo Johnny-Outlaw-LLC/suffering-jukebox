@@ -16,6 +16,7 @@
 // the catalogue half; it does not replace the library.
 
 import { JUKEBOX_SCHEMA, type createSjServiceClient } from "@/lib/sj-admin-auth";
+import { lrclibLookup, plainFrom } from "@/lib/lrclib";
 import { recordTrackVideo, thumbFor } from "@/lib/track-videos";
 
 type Sb = ReturnType<typeof createSjServiceClient>;
@@ -49,7 +50,63 @@ export type SingleImportResult = {
   trackId: string;
   trackName: string;
   duplicate: boolean;
+  /** Whether LRCLIB handed back plain lyrics for this song. */
+  lyricsFound: boolean;
+  /** Whether a timed .lrc was stored on the track. */
+  lyricsSynced: boolean;
+  durationMs: number | null;
 };
+
+/**
+ * Same path the community-import edge function takes for one album track:
+ * LRCLIB, plain text into jukebox.lyrics, timed .lrc onto tracks.lyrics_synced.
+ * Best-effort — a miss never fails the import.
+ */
+export async function attachLyricsForTrack(
+  sb: Sb,
+  trackId: string,
+  artistName: string,
+  trackName: string,
+  durationMs: number | null | undefined,
+): Promise<{ found: boolean; synced: boolean }> {
+  let found = false;
+  let synced = false;
+  try {
+    const hit = await lrclibLookup(
+      artistName,
+      trackName,
+      durationMs && durationMs > 0 ? durationMs / 1000 : null,
+    );
+    if (!hit) return { found, synced };
+    const plain = plainFrom(hit);
+    if (plain) {
+      const { data: have } = await T(sb, "lyrics").select("track_id").eq("track_id", trackId).maybeSingle();
+      if (!have) {
+        await T(sb, "lyrics").insert({
+          track_id: trackId,
+          lyrics: plain,
+          lyrics_source: "lrclib",
+          lyrics_saved_at: new Date().toISOString(),
+        });
+        found = true;
+      } else {
+        found = true;
+      }
+    }
+    if (hit.synced) {
+      const { data: row } = await T(sb, "tracks").select("lyrics_synced").eq("id", trackId).maybeSingle();
+      if (!(row as any)?.lyrics_synced) {
+        await T(sb, "tracks").update({ lyrics_synced: hit.synced }).eq("id", trackId);
+        synced = true;
+      } else {
+        synced = true;
+      }
+    }
+  } catch {
+    /* a song without words is still a song */
+  }
+  return { found, synced };
+}
 
 // ── Reading a YouTube upload as a record ──────────────────────────────────
 
@@ -216,14 +273,27 @@ export async function importSingleTrack(
     .maybeSingle();
   if (seenErr) throw seenErr;
   if (seen) {
+    const trackId = (seen as any).track_id as string;
+    const existingName = (seen as any).tracks?.name ?? trackName;
+    // A repeat video still gets another lyrics pass — yesterday's miss should
+    // not stick forever just because the catalogue row already exists.
+    const { data: durRow } = await T(sb, "tracks").select("duration_ms").eq("id", trackId).maybeSingle();
+    const durationMs = input.durationMs ?? (durRow as any)?.duration_ms ?? null;
+    if (input.durationMs && !(durRow as any)?.duration_ms) {
+      await T(sb, "tracks").update({ duration_ms: input.durationMs }).eq("id", trackId);
+    }
+    const lyrics = await attachLyricsForTrack(sb, trackId, artistName, existingName, durationMs);
     return {
       artistId: artist.id,
       artistName: artist.name,
       artistSlug: artist.slug,
       albumId,
-      trackId: (seen as any).track_id,
-      trackName: (seen as any).tracks?.name ?? trackName,
+      trackId,
+      trackName: existingName,
       duplicate: true,
+      lyricsFound: lyrics.found,
+      lyricsSynced: lyrics.synced,
+      durationMs,
     };
   }
 
@@ -288,6 +358,10 @@ export async function importSingleTrack(
     },
   );
 
+  // Lyrics inline, the way an artist import does it — not a second request
+  // that can time out after fifteen songs have already landed.
+  const lyrics = await attachLyricsForTrack(sb, track.id, artistName, trackName, input.durationMs ?? null);
+
   return {
     artistId: artist.id,
     artistName: artist.name,
@@ -296,5 +370,8 @@ export async function importSingleTrack(
     trackId: track.id,
     trackName,
     duplicate: false,
+    lyricsFound: lyrics.found,
+    lyricsSynced: lyrics.synced,
+    durationMs: input.durationMs ?? null,
   };
 }

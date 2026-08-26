@@ -2,15 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { ownerMyJukebox } from "@/lib/my-jukebox";
 import { bad, clientIp, rateLimited, tooMany } from "@/lib/jukebox-request";
 import { JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
-import { lrclibLookup, plainFrom } from "@/lib/lrclib";
+import { attachLyricsForTrack } from "@/lib/single-import";
 
 export const dynamic = "force-dynamic";
+// A Spotify pass can be fifteen songs; each one may need two LRCLIB calls.
+// Without this the Hobby default (~10s) cuts the batch off mid-way, which is
+// exactly how a full import landed with almost no lyrics on 2026-08-25.
+export const maxDuration = 60;
 
-const MAX = 20;
-const CONCURRENCY = 4;
+const MAX = 40;
+const CONCURRENCY = 3;
 
-// The last step of the Spotify wizard: the songs are in, now go and find the
-// words. Same source and same rules as an artist import - LRCLIB, plain text
+// Backfill / retry for songs that somehow missed the inline lookup during
+// import. Same source and same rules as an artist import - LRCLIB, plain text
 // into jukebox.lyrics, the timed .lrc onto tracks.lyrics_synced when there is
 // one. Nothing here fails the import: a song with no lyrics is still a song.
 export async function POST(req: NextRequest) {
@@ -32,10 +36,16 @@ export async function POST(req: NextRequest) {
       .in("id", ids);
     if (error) throw error;
 
-    const tracks = (rows ?? []) as Array<{ id: string; name: string; duration_ms: number | null; lyrics_synced: string | null; albums?: { artists?: { name?: string } } }>;
+    const tracks = (rows ?? []) as Array<{
+      id: string;
+      name: string;
+      duration_ms: number | null;
+      lyrics_synced: string | null;
+      albums?: { artists?: { name?: string } };
+    }>;
     const { data: have } = await sb.from("lyrics").select("track_id").in("track_id", tracks.map((t) => t.id));
     const already = new Set((have ?? []).map((r: any) => r.track_id as string));
-    const todo = tracks.filter((t) => !already.has(t.id));
+    const todo = tracks.filter((t) => !already.has(t.id) || !t.lyrics_synced);
 
     let found = 0;
     let synced = 0;
@@ -43,17 +53,15 @@ export async function POST(req: NextRequest) {
       await Promise.all(todo.slice(i, i + CONCURRENCY).map(async (track) => {
         try {
           const artist = track.albums?.artists?.name || "";
-          const hit = await lrclibLookup(artist, track.name, track.duration_ms ? track.duration_ms / 1000 : null);
-          if (!hit) return;
-          const plain = plainFrom(hit);
-          if (plain) {
-            await sb.from("lyrics").insert({ track_id: track.id, lyrics: plain, lyrics_source: "lrclib", lyrics_saved_at: new Date().toISOString() });
-            found += 1;
-          }
-          if (hit.synced && !track.lyrics_synced) {
-            await sb.from("tracks").update({ lyrics_synced: hit.synced }).eq("id", track.id);
-            synced += 1;
-          }
+          const result = await attachLyricsForTrack(
+            ctx.sb,
+            track.id,
+            artist,
+            track.name,
+            track.duration_ms,
+          );
+          if (result.found && !already.has(track.id)) found += 1;
+          if (result.synced && !track.lyrics_synced) synced += 1;
         } catch { /* a song without words is still a song */ }
       }));
     }

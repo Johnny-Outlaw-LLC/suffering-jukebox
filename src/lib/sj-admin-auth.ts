@@ -115,7 +115,18 @@ export type YtVideoInfo = {
   thumbnail: string | null;
   title: string;
   channelTitle: string;
+  /** From contentDetails.duration (ISO-8601). Used for LRCLIB exact match. */
+  durationMs: number | null;
 };
+
+/** PT3M26S → milliseconds. YouTube's contentDetails.duration shape. */
+export function parseYouTubeDuration(iso: string | null | undefined): number | null {
+  if (!iso || typeof iso !== "string") return null;
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  if (!m) return null;
+  const ms = ((Number(m[1] || 0) * 3600) + (Number(m[2] || 0) * 60) + Number(m[3] || 0)) * 1000;
+  return ms > 0 ? ms : null;
+}
 
 // Batch-fetch full playability + stats for up to any number of video ids.
 // A video id that is absent from the result was deleted/removed by YouTube.
@@ -174,6 +185,7 @@ export async function fetchYouTubeVideoInfo(
         thumbnail: thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
         title: item.snippet?.title ?? "",
         channelTitle: item.snippet?.channelTitle ?? "",
+        durationMs: parseYouTubeDuration(item.contentDetails?.duration),
       };
     }
   }
@@ -247,7 +259,7 @@ export async function searchYouTubeVideos(query: string, maxResults = 12): Promi
         description: item.snippet?.description || "",
         channelTitle: detail?.channelTitle || item.snippet?.channelTitle || "",
         thumbnail: detail?.thumbnail ?? thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
-        durationMs: null,
+        durationMs: detail?.durationMs ?? null,
         views: detail?.views ?? null,
       };
     });
