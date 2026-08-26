@@ -2635,12 +2635,19 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3;
   overflow:hidden; word-break:break-word; hyphens:auto;
 }
-.pl-wall-badges { position:absolute; top:5px; right:5px; z-index:3; display:flex; flex-direction:row; align-items:center; gap:4px; pointer-events:auto; }
+.pl-wall-badge-hot {
+  position:absolute; top:0; right:0; width:42%; height:42%; z-index:3;
+  pointer-events:auto; background:transparent;
+}
+.pl-wall-badges { position:absolute; top:5px; right:5px; z-index:4; display:flex; flex-direction:row; align-items:center; gap:4px; pointer-events:auto; }
 .pl-wall-badges .tvb-cycle, .pl-wall-rxn {
   width:26px; min-height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; gap:2px;
   background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.14); border-radius:7px; backdrop-filter:blur(4px);
   color:#fff; opacity:1; font-size:.42rem; line-height:1;
 }
+.pl-wall-badges .pl-wall-badge-latent { display:none; }
+.pl-wall-cell.pl-wall-badges-open .pl-wall-badges .pl-wall-badge-latent { display:inline-flex; }
+.pl-wall-cell.pl-wall-badges-open .pl-wall-badge-hot { pointer-events:none; }
 .pl-wall-badges .tvb-cycle { color:var(--text-muted); }
 .pl-wall-badges .tvb-cycle.tvb-up { color:#22c55e; }
 .pl-wall-badges .tvb-cycle.tvb-down { color:#ef4444; }
@@ -2658,6 +2665,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   text-shadow:0 1px 4px #000e, 0 0 10px #000a;
 }
 .pl-wall-stats b { color:#fff; font-weight:800; }
+/* Smallest size-slider settings: covers only, no chrome. */
+.pl-wall-mini .pl-wall-name,
+.pl-wall-mini .pl-wall-stats,
+.pl-wall-mini .pl-wall-badges,
+.pl-wall-mini .pl-wall-badge-hot { display:none !important; }
 @container (max-width: 96px) {
   .pl-wall-stats { font-size:.42rem; }
   .pl-wall-name { font-size:clamp(.45rem, 12cqw, .7rem); left:6%; right:6%; }
@@ -2674,6 +2686,30 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-cell.blocked::before { content:'⊘'; position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:#fff9; background:#0007; pointer-events:none; }
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
 #pl-wall-card .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
+.pl-wall-page.pl-wall-detail-mode .pl-wall-size { display:none; }
+.pl-detail-tbl { width:100%; border-collapse:collapse; min-width:720px; }
+.pl-detail-tbl th { font-size:.48rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); padding:.45rem .65rem; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:500; position:sticky; top:0; background:var(--bg); z-index:2; }
+.pl-detail-tbl th.num { text-align:right; }
+.pl-detail-tbl th.rxn { text-align:center; width:44px; }
+.pl-detail-row { border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; }
+.pl-detail-row:hover { background:var(--bg-elevated); }
+.pl-detail-row.current { background:color-mix(in srgb, var(--accent) 14%, transparent); box-shadow:inset 3px 0 0 var(--accent); }
+.pl-detail-row.blocked { opacity:.45; }
+.pl-detail-row td { padding:.5rem .65rem; font-size:.62rem; vertical-align:middle; }
+.pl-detail-row td.num { text-align:right; font-family:var(--mono); font-size:.55rem; color:var(--text-muted); white-space:nowrap; }
+.pl-detail-row td.rxn { text-align:center; }
+.pl-detail-track { display:flex; align-items:center; gap:10px; min-width:0; }
+.pl-detail-art { width:36px; height:36px; border-radius:4px; object-fit:cover; flex-shrink:0; background:var(--bg-elevated); }
+.pl-detail-art-ph { width:36px; height:36px; border-radius:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:.9rem; color:var(--text-muted); background:var(--bg-elevated); }
+.pl-detail-title { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pl-detail-muted { color:var(--text-muted); font-size:.58rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
+.pl-detail-rxn { display:inline-flex; align-items:center; justify-content:center; gap:3px; background:none; border:1px solid transparent; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:6px; min-width:28px; min-height:28px; }
+.pl-detail-rxn:hover { border-color:var(--border); color:var(--text); }
+.pl-detail-rxn.tvb-up { color:#22c55e; }
+.pl-detail-rxn.tvb-down { color:#ef4444; }
+.pl-detail-rxn.on, .pl-detail-rxn[data-track-reaction="heart"].on { color:var(--accent); }
+.pl-detail-rxn svg { width:14px; height:14px; display:block; }
+.pl-detail-rxn .pl-wall-rxn-n { font-size:.4rem; font-weight:700; font-family:var(--mono); min-width:.7em; }
 @media (max-width:900px) {
   .pl-wall-toolbar-right { width:100%; margin-left:0; flex-wrap:wrap; }
   .pl-wall-transport { flex-wrap:wrap; width:100%; }
@@ -12991,16 +13027,28 @@ let playlistChartName = '';
 let playlistChartRows = [];
 let playlistChartBaseQueue = [];
 let playlistWallSize = 120;
+let playlistWallMode = 'thumbs'; // 'thumbs' | 'detail'
 try {
   const _pws = parseInt(localStorage.getItem('sj_pl_wall_size'), 10);
   if (Number.isFinite(_pws) && _pws >= 72 && _pws <= 260) playlistWallSize = _pws;
+  const _pwm = localStorage.getItem('sj_pl_wall_mode');
+  if (_pwm === 'detail' || _pwm === 'thumbs') playlistWallMode = _pwm;
 } catch (_) {}
 
 function setPlaylistWallSize(px) {
   playlistWallSize = Math.max(72, Math.min(260, parseInt(px, 10) || 120));
   try { localStorage.setItem('sj_pl_wall_size', String(playlistWallSize)); } catch (_) {}
-  const grid = document.getElementById('pl-wall-grid');
-  if (grid) grid.style.setProperty('--pl-cell', playlistWallSize + 'px');
+  const mini = playlistWallSize <= 96;
+  document.querySelectorAll('.pl-wall-page, .pl-wall-grid').forEach(el => {
+    el.style.setProperty('--pl-cell', playlistWallSize + 'px');
+    el.classList.toggle('pl-wall-mini', mini);
+  });
+}
+
+function setPlaylistWallMode(mode) {
+  playlistWallMode = mode === 'detail' ? 'detail' : 'thumbs';
+  try { localStorage.setItem('sj_pl_wall_mode', playlistWallMode); } catch (_) {}
+  if (viewMode === 'playlistchart') renderPlaylistChart();
 }
 
 function playlistChartNextPlayable(fromIdx, dir) {
@@ -13227,11 +13275,14 @@ function plWallCellOverlays(trackId, title) {
   const name = title
     ? `<span class="pl-wall-name">${escHtml(title)}</span>`
     : '';
+  // Only show thumbs / heart / heartbreak when set. Empty ones stay latent and
+  // appear after a 2s hover on the top-right corner so the cover stays clean.
   const badges =
-    `<span class="pl-wall-badges">` +
-      `<button type="button" class="tvb-cycle${voteClass(vote)}" data-vote-track="${trackId}" onclick="cycleVote('${trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || ''}</button>` +
-      `<button type="button" class="pl-wall-rxn${heartN ? ' on' : ''}" data-reaction-track="${trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button>` +
-      `<button type="button" class="pl-wall-rxn${sadN ? ' on' : ''}" data-reaction-track="${trackId}" data-track-reaction="sad" onclick="event.stopPropagation();ytpReact('sad',this,event)" title="Heartbreak">${SJ_REACTION_ICONS.sad}<span class="pl-wall-rxn-n">${sadN ? ytpReactionCountLabel(sadN) : ''}</span></button>` +
+    `<span class="pl-wall-badge-hot" data-pl-badge-hot="${trackId}" title="Hover to rate or react"></span>` +
+    `<span class="pl-wall-badges" data-pl-badges="${trackId}">` +
+      `<button type="button" class="tvb-cycle${voteClass(vote)}${vote ? '' : ' pl-wall-badge-latent'}" data-vote-track="${trackId}" onclick="cycleVote('${trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button>` +
+      `<button type="button" class="pl-wall-rxn${heartN ? ' on' : ''}${heartN ? '' : ' pl-wall-badge-latent'}" data-reaction-track="${trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button>` +
+      `<button type="button" class="pl-wall-rxn${sadN ? ' on' : ''}${sadN ? '' : ' pl-wall-badge-latent'}" data-reaction-track="${trackId}" data-track-reaction="sad" onclick="event.stopPropagation();ytpReact('sad',this,event)" title="Heartbreak">${SJ_REACTION_ICONS.sad}<span class="pl-wall-rxn-n">${sadN ? ytpReactionCountLabel(sadN) : ''}</span></button>` +
     `</span>`;
   let stats = '';
   if (googleUser) {
@@ -13245,6 +13296,38 @@ function plWallCellOverlays(trackId, title) {
     }
   }
   return name + badges + stats;
+}
+
+function plWallBindBadgeHovers() {
+  document.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
+    if (cell._plBadgeBound) return;
+    cell._plBadgeBound = true;
+    const hot = cell.querySelector('.pl-wall-badge-hot');
+    const badges = cell.querySelector('.pl-wall-badges');
+    if (!hot || !badges) return;
+    let openTimer = null;
+    let closeTimer = null;
+    const open = () => {
+      clearTimeout(closeTimer);
+      cell.classList.add('pl-wall-badges-open');
+    };
+    const scheduleOpen = () => {
+      clearTimeout(closeTimer);
+      clearTimeout(openTimer);
+      openTimer = setTimeout(open, 2000);
+    };
+    const scheduleClose = () => {
+      clearTimeout(openTimer);
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => cell.classList.remove('pl-wall-badges-open'), 280);
+    };
+    hot.addEventListener('pointerenter', scheduleOpen);
+    hot.addEventListener('pointerleave', scheduleClose);
+    badges.addEventListener('pointerenter', () => { clearTimeout(openTimer); clearTimeout(closeTimer); open(); });
+    badges.addEventListener('pointerleave', scheduleClose);
+    // Keep a click on the empty corner from opening the track card after a long hover.
+    hot.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+  });
 }
 
 function plWallRefreshStats() {
@@ -13268,6 +13351,22 @@ function plWallRefreshStats() {
     span.setAttribute('data-pl-wall-stats', tid);
     span.innerHTML = lines.join('<br>');
     el.appendChild(span);
+  });
+  document.querySelectorAll('.pl-detail-row[data-pc-track]').forEach(el => {
+    const tid = el.getAttribute('data-pc-track');
+    if (!tid) return;
+    const lastEl = el.querySelector('[data-pl-last]');
+    const totEl = el.querySelector('[data-pl-total]');
+    const ytEl = el.querySelector('[data-pl-yt]');
+    if (lastEl) lastEl.textContent = plWallFmtLastPlay(myLastPlayed[tid]) || '—';
+    if (totEl) {
+      const n = Number(inAppPlays[tid]) || 0;
+      totEl.textContent = n ? fmtV(n) : '—';
+    }
+    if (ytEl) {
+      const n = Number(ytData[tid]?.views) || 0;
+      ytEl.textContent = n ? fmtV(n) : '—';
+    }
   });
 }
 
@@ -13295,10 +13394,11 @@ function playlistChartTipMeta(row, i, isCurrent, played, skipped) {
 function playlistChartRefreshPlayback() {
   if (viewMode !== 'playlistchart') return;
   const grid = document.getElementById('pl-wall-grid');
-  if (!grid) return;
+  const detail = document.getElementById('pl-detail-tbl');
+  if (!grid && !detail) return;
 
   const curIdx = playlistChartCurrentCellIndex();
-  grid.querySelectorAll('.pl-wall-cell[data-pc-index]').forEach(el => {
+  const paint = (el) => {
     const i = parseInt(el.getAttribute('data-pc-index'), 10);
     const trackId = el.getAttribute('data-pc-track');
     const isCurrent = i === curIdx;
@@ -13306,15 +13406,19 @@ function playlistChartRefreshPlayback() {
 
     el.classList.toggle('current', isCurrent);
     el.classList.toggle('blocked', !!blocked);
-    // forwards on the launch animation used to leave every past "now playing"
-    // cell glowing; clear it from everyone that is not current.
-    if (!isCurrent) el.classList.remove('current-launch');
-    else if (i !== _plWallLastCurrentIdx) {
-      el.classList.remove('current-launch');
-      void el.offsetWidth;
-      el.classList.add('current-launch');
+    if (el.classList.contains('pl-wall-cell')) {
+      // forwards on the launch animation used to leave every past "now playing"
+      // cell glowing; clear it from everyone that is not current.
+      if (!isCurrent) el.classList.remove('current-launch');
+      else if (i !== _plWallLastCurrentIdx) {
+        el.classList.remove('current-launch');
+        void el.offsetWidth;
+        el.classList.add('current-launch');
+      }
     }
-  });
+  };
+  if (grid) grid.querySelectorAll('.pl-wall-cell[data-pc-index]').forEach(paint);
+  if (detail) detail.querySelectorAll('.pl-detail-row[data-pc-index]').forEach(paint);
   if (curIdx !== _plWallLastCurrentIdx) _plWallLastCurrentIdx = curIdx;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
@@ -13378,7 +13482,7 @@ function plWallDrawLine() {
 
 function _plWallOutside(e) {
   const card = document.getElementById('pl-wall-card');
-  if (card && !card.contains(e.target) && !e.target.closest('.pl-wall-cell') && !e.target.closest('#sjm-menu')) {
+  if (card && !card.contains(e.target) && !e.target.closest('.pl-wall-cell') && !e.target.closest('.pl-detail-row') && !e.target.closest('#sjm-menu')) {
     plWallClosePop();
   }
 }
@@ -13449,7 +13553,7 @@ function plWallOpenPop(i, ev) {
   const meta = esc(playlistChartTipMeta(row, i, isCurrent, played, skipped));
   const sub = esc(row.artist) + (row.album ? ' · ' + esc(row.album) : '');
   const color = row.color || DEFAULT_BAR_COLOR;
-  const anchorEl = (ev && ev.currentTarget) || document.querySelector(`.pl-wall-cell[data-pc-index="${i}"]`);
+  const anchorEl = (ev && ev.currentTarget) || document.querySelector(`.pl-wall-cell[data-pc-index="${i}"]`) || document.querySelector(`.pl-detail-row[data-pc-index="${i}"]`);
   const artHtml = row.artwork
     ? `<img class="sc-art" src="${row.artwork}" loading="lazy" alt="">`
     : `<div class="sc-art-ph" style="background:${color}22;color:${color}">♫</div>`;
@@ -13706,9 +13810,12 @@ function renderPlaylistChart(error) {
   const q = playlistChartQueue();
   const curIdx = playlistChartCurrentCellIndex();
   const esc = s => escHtml(s || '');
+  const isDetail = playlistWallMode === 'detail';
   const gridStyle = `--pl-cell:${playlistWallSize}px`;
+  const miniClass = !isDetail && playlistWallSize <= 96 ? ' pl-wall-mini' : '';
+  const modeClass = isDetail ? ' pl-wall-detail-mode' : '';
 
-  const cells = q.map((item, i) => {
+  const cells = !isDetail ? q.map((item, i) => {
     const row = playlistChartRowFor(item, i);
     const isCurrent = i === curIdx;
     const blocked = isTrackBlocked(row.trackId);
@@ -13718,7 +13825,39 @@ function renderPlaylistChart(error) {
     const tip = plWallPlayTip(row.trackId);
     const tipAttr = tip ? ` title="${esc(tip)}"` : '';
     return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" role="button" tabindex="0"${tipAttr} onclick="plWallOpenPop(${i},event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();plWallOpenPop(${i},event)}">${art}${plWallCellOverlays(row.trackId, row.title)}</div>`;
-  }).join('');
+  }).join('') : '';
+
+  const detailRows = isDetail ? q.map((item, i) => {
+    const row = playlistChartRowFor(item, i);
+    const isCurrent = i === curIdx;
+    const blocked = isTrackBlocked(row.trackId);
+    const vote = getMyVote(row.trackId);
+    const heartN = Number((trackReactionCounts[row.trackId] || {}).heart) || 0;
+    const last = plWallFmtLastPlay(myLastPlayed[row.trackId]) || '—';
+    const tot = Number(inAppPlays[row.trackId]) || 0;
+    const yt = Number(ytData[row.trackId]?.views || row.views) || 0;
+    const art = row.artwork
+      ? `<img class="pl-detail-art" src="${row.artwork}" loading="lazy" alt="">`
+      : '<span class="pl-detail-art-ph">♫</span>';
+    return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="plWallOpenPop(${i},event)">` +
+      `<td><div class="pl-detail-track">${art}<span class="pl-detail-title">${esc(row.title)}</span></div></td>` +
+      `<td><div class="pl-detail-muted" title="${esc(row.album)}">${esc(row.album) || '—'}</div></td>` +
+      `<td><div class="pl-detail-muted" title="${esc(row.artist)}">${esc(row.artist) || '—'}</div></td>` +
+      `<td class="num" data-pl-last>${esc(last)}</td>` +
+      `<td class="num" data-pl-total>${tot ? fmtV(tot) : '—'}</td>` +
+      `<td class="num" data-pl-yt>${yt ? fmtV(yt) : '—'}</td>` +
+      `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="tvb-cycle pl-detail-rxn${voteClass(vote)}" data-vote-track="${row.trackId}" onclick="cycleVote('${row.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button></td>` +
+      `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button></td>` +
+    `</tr>`;
+  }).join('') : '';
+
+  const body = error
+    ? `<div class="landing-no-results">${esc(error)}</div>`
+    : (!q.length
+      ? '<div class="landing-no-results">Loading playlist…</div>'
+      : (isDetail
+        ? `<div class="pl-wall-scroll" id="playlist-chart-scroll"><table class="pl-detail-tbl" id="pl-detail-tbl"><thead><tr><th>Track</th><th>Album</th><th>Artist</th><th class="num">Last Played</th><th class="num">Total Plays</th><th class="num">YT Plays</th><th class="rxn" title="Your rating">👍</th><th class="rxn" title="Hearts">♥</th></tr></thead><tbody>${detailRows}</tbody></table></div>`
+        : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid${miniClass}" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`));
 
   const minePl = !!(googleUser && playlistChartId && (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId && p.user_email === googleUser.email)));
   const manageBtns = googleUser
@@ -13726,10 +13865,15 @@ function renderPlaylistChart(error) {
       (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '') +
       `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('build')">＋ Create</button>`
     : '';
-  main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
+  const modeTog =
+    `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
+    `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
+  const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${modeTog}${sizeCtrl}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
   plWallLoadReactionCounts(q.map(it => it.trackId));
+  if (!isDetail) plWallBindBadgeHovers();
 }
 
 
@@ -14404,9 +14548,8 @@ function renderLanding() {
             <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
             <div class="playlist-explore-actions">
               ${googleUser
-                ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>
-                   <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistBuilder('build')">＋ Create Playlist</button>`
-                : `<button type="button" class="playlist-explore-action-btn primary" onclick="handleAuthClick()">Sign in to create</button>`}
+                ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>`
+                : ''}
             </div>
           </div>
           ${rows.length ? `<div class="playlist-explore-grid">${rows.map(p => {
@@ -18138,7 +18281,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
     'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. The cover that is playing pops forward with a bold orange frame — only that one, not every song that has already played. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them. The buttons on that card keep readable contrast on hover in dark mode. Each cover shows the song title large across the art, your thumbs and heart reactions side by side up top, and your play count plus last-play date in the corner with no box behind them, updating live while you stay on the wall. Hover a cover for a tooltip with those play stats. Leaving the wall to browse elsewhere no longer drags you back when the next song starts. With Shuffle on, Play starts on a random song instead of the first one.',
-    'Explore Playlists now lists your own playlists alongside the public ones, with All / My Playlists / Public filters. The little cover mosaics drop the centre music icon and grow from 1, 2, 4, 6, or 8 album tiles up to a full 9, instead of always forcing empty squares. Create Playlist and Manage Playlists sit on that page, and Manage / Add Songs / Create stay on the cover wall toolbar once a playlist is open.',
+    'Explore Playlists now lists your own playlists alongside the public ones, with All / My Playlists / Public filters. The little cover mosaics drop the centre music icon and grow from 1, 2, 4, 6, or 8 album tiles up to a full 9, instead of always forcing empty squares. Manage Playlists sits on that page, and Manage / Add Songs / Create stay on the cover wall toolbar once a playlist is open.',
+    'On the cover wall, thumbs and hearts only show when a song already has them. Hover the top-right corner for two seconds to rate or react on a blank cover. At the smallest size settings the titles, icons and play stats tuck away so the art can breathe. Switch to Detail for a track list with album, artist, last played, total plays, YouTube plays, and your thumbs and heart on every row.',
     'Build a Playlist and Add Songs let you search the catalogue the same way as the main Search bar — by song, artist, album, or lyrics — then add whole artists, albums, or single tracks into a new or existing playlist.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'The song ⋯ menu is shorter. Remove options say Remove Song / All Songs by Artist / All Songs from Album without repeating the names. Send to My Online Jukebox opens a small menu for Artist, Album, or Song. Never play this again sits at the bottom of Take a break.',
@@ -20218,6 +20362,7 @@ function refreshVoteUI(trackId) {
     btn.innerHTML = lbl;
     btn.classList.toggle('tvb-up', v > 0);
     btn.classList.toggle('tvb-down', v < 0);
+    if (btn.closest('.pl-wall-badges')) btn.classList.toggle('pl-wall-badge-latent', !v);
   });
 }
 
@@ -20536,6 +20681,7 @@ function refreshTrackReactionUI(trackId) {
     const key = btn.getAttribute('data-track-reaction');
     const n = Number(counts[key]) || 0;
     btn.classList.toggle('on', n > 0);
+    btn.classList.toggle('pl-wall-badge-latent', n <= 0);
     const label = btn.querySelector('.pl-wall-rxn-n');
     if (label) label.textContent = n > 0 ? ytpReactionCountLabel(n) : '';
   });
