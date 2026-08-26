@@ -181,14 +181,14 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     </div>}
 
     {step === 3 && <div className={styles.stepBody}>
-      <div className={styles.reviewHeader}><div><p className={styles.eyebrow}>Review results</p><h2>Your complete Spotify history</h2><p className={styles.muted}>{number(events.length)} listening events across {files.length} file{files.length === 1 ? "" : "s"} · {minutes(summary.durationMs)} listened</p></div><button className={styles.secondaryButton} onClick={reset}>Start over</button></div>
+      <div className={styles.reviewHeader}><div><p className={styles.eyebrow}>Review results</p><h2>Your Spotify listening history</h2><p className={styles.muted}>{number(events.length)} listening events across {files.length} file{files.length === 1 ? "" : "s"} · {minutes(summary.durationMs)} listened</p></div><button className={styles.secondaryButton} onClick={reset}>Start over</button></div>
       <div className={styles.typeGrid}>{(Object.keys(TYPE_LABEL) as ContentType[]).map(type => <div className={styles.statCard} key={type}><span>{TYPE_LABEL[type]}</span><strong>{number(summary.byType[type])}</strong></div>)}</div>
       <div className={styles.reviewGrid}><div className={styles.panel}><h3>Listening by year</h3>{summary.byYear.map(([year, count]) => <div className={styles.barRow} key={year}><span>{year}</span><i><b style={{ width: `${Math.max(3, Math.round((count / topYearCount) * 100))}%` }} /></i><em>{number(count)}</em></div>)}</div><div className={styles.panel}><h3>Top music artists</h3>{summary.topArtists.map(([artist, count]) => <div className={styles.rankRow} key={artist}><span>{artist}</span><strong>{number(count)}</strong></div>)}</div></div>
       <div className={styles.actions}><button className={styles.secondaryButton} onClick={() => setStep(1)}>Back</button><button className={styles.primaryButton} onClick={() => setStep(4)}>Continue to confirm</button></div>
     </div>}
 
     {step === 4 && <div className={styles.stepBody}>
-      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} duplicate events skipped` : ""}.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save your complete history?</h2><p className={styles.lead}>This saves {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(events.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div><div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? "Saving your history…" : `Import ${number(events.length)} events`}</button></div></>}
+      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} duplicate events skipped` : ""}.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(events.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div><div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? "Saving your history…" : `Import ${number(events.length)} events`}</button></div></>}
     </div>}
   </section>;
 }
@@ -298,7 +298,7 @@ export default function AnalyticsClient() {
               <section className={styles.historySummary}>
                 <div>
                   <p className={styles.eyebrow}>Private Spotify history</p>
-                  <h2>{spotifySummary?.events ? `${number(spotifySummary.events)} listening events` : "Bring your complete listening history in"}</h2>
+                  <h2>{spotifySummary?.events ? `${number(spotifySummary.events)} listening events` : "Import your listening history from other platforms"}</h2>
                   {spotifySummary?.events ? <p className={styles.muted}>{minutes(Number(spotifySummary.durationMs || 0))} across {displayDate(spotifySummary.firstPlayedAt || "")} – {displayDate(spotifySummary.lastPlayedAt || "")}. Music, podcasts, audiobooks, and other activity stay separate from your Jukebox library.</p> : <p className={styles.muted}>Your Spotify export is analyzed privately and independently of what Suffering Jukebox carries.</p>}
                 </div>
                 {spotifySummary?.events ? <div className={styles.historyTypes}>{(Object.keys(TYPE_LABEL) as ContentType[]).map(type => <span key={type}>{TYPE_LABEL[type]} <strong>{number(Number(spotifySummary.byType?.[type] || 0))}</strong></span>)}</div> : null}
@@ -315,7 +315,7 @@ export default function AnalyticsClient() {
               </div> : null}
               <button className={styles.callout} onClick={() => setTab("spotify")}>
                 <span>Spotify history</span>
-                <strong>Import your complete history for deeper analysis →</strong>
+                <strong>Import listening history for deeper analysis →</strong>
               </button>
             </section>
           )}
