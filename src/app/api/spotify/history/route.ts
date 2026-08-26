@@ -66,6 +66,21 @@ export async function GET(req: NextRequest) {
     const user = await getAuthUser(req);
     if (!user?.email) return bad("Sign in to view your Spotify listening history.", 401);
     const sb = createSjServiceClient();
+    const wantAnalytics = req.nextUrl.searchParams.get("analytics") === "1"
+      || req.nextUrl.searchParams.get("view") === "analytics";
+    if (wantAnalytics) {
+      const tz = req.nextUrl.searchParams.get("tz") || "America/Chicago";
+      const artist = req.nextUrl.searchParams.get("artist") || null;
+      const { data, error } = await sb
+        .schema(JUKEBOX_SCHEMA)
+        .rpc("spotify_history_analytics", {
+          p_user_id: user.id,
+          p_tz: tz,
+          p_artist: artist,
+        });
+      if (error) throw error;
+      return NextResponse.json({ ok: true, analytics: data ?? null });
+    }
     const { data, error } = await sb
       .schema(JUKEBOX_SCHEMA)
       .rpc("spotify_history_summary", { p_user_id: user.id });

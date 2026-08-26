@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
+import AnalyticsDashboard from "./analytics-dashboard";
 import styles from "./analytics.module.css";
 
 type ContentType = "music" | "podcast" | "audiobook" | "other";
@@ -18,17 +19,6 @@ type HistoryEvent = {
   fileName: string;
 };
 type FileProgress = { name: string; rows: number; accepted: number; state: "waiting" | "reading" | "done" | "error"; error?: string };
-type DashboardPlay = { artist?: string; track?: string; played_at?: string; duration_played_ms?: number; source?: string };
-type Dashboard = { plays?: DashboardPlay[] };
-type SpotifySummary = {
-  events?: number;
-  durationMs?: number;
-  firstPlayedAt?: string | null;
-  lastPlayedAt?: string | null;
-  byType?: Partial<Record<ContentType, number>>;
-  byYear?: Array<{ year: number; events: number }>;
-  topArtists?: Array<{ artist: string; events: number }>;
-};
 
 const TYPE_LABEL: Record<ContentType, string> = {
   music: "Music",
@@ -300,53 +290,26 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
 export default function AnalyticsClient() {
   const [sessionReady, setSessionReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
-  const [tab, setTab] = useState<"overview" | "spotify">("overview");
-  const [days, setDays] = useState(90);
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
-  const [spotifySummary, setSpotifySummary] = useState<SpotifySummary | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [accessToken, setAccessToken] = useState("");
+  const [tab, setTab] = useState<"explore" | "spotify">("explore");
+  const [dashKey, setDashKey] = useState(0);
   const [error, setError] = useState("");
-
-  async function loadDashboard(nextDays = days) {
-    const { data: { session } } = await sjBrowserAuth.auth.getSession();
-    if (!session?.access_token) return;
-    setLoading(true); setError("");
-    try {
-      const response = await fetch(`/api/sj-my-stats?days=${nextDays}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "Could not load your analytics.");
-      setDashboard(data.dashboard || {});
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not load your analytics."); }
-    finally { setLoading(false); }
-  }
-
-  async function loadSpotifySummary() {
-    const { data: { session } } = await sjBrowserAuth.auth.getSession();
-    if (!session?.access_token) return;
-    try {
-      const response = await fetch("/api/spotify/history", { headers: { Authorization: `Bearer ${session.access_token}` } });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || "Could not load your Spotify history.");
-      setSpotifySummary(data.summary || null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load your Spotify history.");
-    }
-  }
 
   useEffect(() => {
     let active = true;
     async function applySession(session: Session | null) {
       if (!active) return;
-      setSignedIn(!!session?.user); setSessionReady(true);
-      if (session?.user) { void loadDashboard(); void loadSpotifySummary(); }
+      setSignedIn(!!session?.user);
+      setAccessToken(session?.access_token || "");
+      setSessionReady(true);
     }
     const receiveSession = async (event: MessageEvent) => {
       if (event.source !== window.opener || !isTrustedPlayerOrigin(event.origin)) return;
       if (event.data?.type !== ANALYTICS_SESSION_DELIVERY) return;
-      const accessToken = String(event.data.accessToken || "");
+      const nextAccess = String(event.data.accessToken || "");
       const refreshToken = String(event.data.refreshToken || "");
-      if (!accessToken || !refreshToken) return;
-      const { data, error } = await sjBrowserAuth.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+      if (!nextAccess || !refreshToken) return;
+      const { data, error } = await sjBrowserAuth.auth.setSession({ access_token: nextAccess, refresh_token: refreshToken });
       if (!error) {
         await applySession(data.session);
         window.opener = null;
@@ -362,22 +325,9 @@ export default function AnalyticsClient() {
       }
     } catch { /* No trusted opener session is available. */ }
     return () => { active = false; window.removeEventListener("message", receiveSession); subscription.unsubscribe(); };
-  // loadDashboard deliberately reads the initial default range on route entry.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const plays = dashboard?.plays || [];
-  const overview = useMemo(() => {
-    const artists = new Map<string, number>(); const tracks = new Map<string, number>();
-    let duration = 0;
-    for (const play of plays) { artists.set(play.artist || "Unknown Artist", (artists.get(play.artist || "Unknown Artist") || 0) + 1); tracks.set(play.track || "Unknown Track", (tracks.get(play.track || "Unknown Track") || 0) + 1); duration += Number(play.duration_played_ms || 0); }
-    return { duration, artists: [...artists.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10), tracks: [...tracks.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10) };
-  }, [plays]);
-
   async function signIn() { await sjBrowserAuth.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/analytics` } }); }
-  function setRange(value: number) { setDays(value); void loadDashboard(value); }
-
-  const ranges: Array<[number, string]> = [[30, "30D"], [90, "90D"], [365, "1Y"], [3650, "All"]];
 
   return (
     <main className={styles.page}>
@@ -387,7 +337,6 @@ export default function AnalyticsClient() {
           <p className={styles.eyebrow}>Suffering Jukebox</p>
           <h1>My Data <span>&amp; Analytics</span></h1>
         </div>
-        {signedIn && <button className={styles.refresh} onClick={() => void loadDashboard()} disabled={loading}>{loading ? "Loading…" : "Refresh"}</button>}
       </header>
 
       {!sessionReady ? <div className={styles.loading}>Opening your Analytics…</div> : !signedIn ? (
@@ -400,48 +349,20 @@ export default function AnalyticsClient() {
       ) : (
         <>
           <nav className={styles.tabs} aria-label="Analytics sections">
-            <button className={tab === "overview" ? styles.tabActive : ""} onClick={() => setTab("overview")}>Overview</button>
+            <button className={tab === "explore" ? styles.tabActive : ""} onClick={() => setTab("explore")}>Explore</button>
             <button className={tab === "spotify" ? styles.tabActive : ""} onClick={() => setTab("spotify")}>Import Spotify history</button>
           </nav>
           {error && <div className={styles.error}>{error}</div>}
-          {tab === "spotify" ? <Wizard onComplete={() => { void loadDashboard(); void loadSpotifySummary(); }} /> : (
-            <section className={styles.dashboard}>
-              <div className={styles.range} aria-label="Analytics date range">
-                {ranges.map(([value, label]) => <button className={days === value ? styles.rangeActive : ""} onClick={() => setRange(value)} key={value}>{label}</button>)}
-              </div>
-              <div className={styles.kpis}>
-                <div><span>Plays</span><strong>{number(plays.length)}</strong></div>
-                <div><span>Artists</span><strong>{number(overview.artists.length)}</strong></div>
-                <div><span>Tracks</span><strong>{number(overview.tracks.length)}</strong></div>
-                <div><span>Listening time</span><strong>{minutes(overview.duration)}</strong></div>
-              </div>
-              <div className={styles.dashboardGrid}>
-                <div className={styles.panel}><h2>Top artists</h2>{overview.artists.map(([artist, count]) => <div className={styles.rankRow} key={artist}><span>{artist}</span><strong>{number(count)}</strong></div>)}</div>
-                <div className={styles.panel}><h2>Top tracks</h2>{overview.tracks.map(([track, count]) => <div className={styles.rankRow} key={track}><span>{track}</span><strong>{number(count)}</strong></div>)}</div>
-              </div>
-              <section className={styles.historySummary}>
-                <div>
-                  <p className={styles.eyebrow}>Private Spotify history</p>
-                  <h2>{spotifySummary?.events ? `${number(spotifySummary.events)} listening events` : "Import your listening history from other platforms"}</h2>
-                  {spotifySummary?.events ? <p className={styles.muted}>{minutes(Number(spotifySummary.durationMs || 0))} across {displayDate(spotifySummary.firstPlayedAt || "")} – {displayDate(spotifySummary.lastPlayedAt || "")}. Music, podcasts, audiobooks, and other activity stay separate from your Jukebox library.</p> : <p className={styles.muted}>Your Spotify export is analyzed privately and independently of what Suffering Jukebox carries.</p>}
-                </div>
-                {spotifySummary?.events ? <div className={styles.historyTypes}>{(Object.keys(TYPE_LABEL) as ContentType[]).map(type => <span key={type}>{TYPE_LABEL[type]} <strong>{number(Number(spotifySummary.byType?.[type] || 0))}</strong></span>)}</div> : null}
-              </section>
-              {spotifySummary?.events ? <div className={styles.dashboardGrid}>
-                <div className={styles.panel}>
-                  <h2>Spotify history by year</h2>
-                  {(spotifySummary.byYear || []).map(({ year, events }) => <div className={styles.rankRow} key={year}><span>{year}</span><strong>{number(events)}</strong></div>)}
-                </div>
-                <div className={styles.panel}>
-                  <h2>Top Spotify artists</h2>
-                  {(spotifySummary.topArtists || []).map(({ artist, events }) => <div className={styles.rankRow} key={artist}><span>{artist}</span><strong>{number(events)}</strong></div>)}
-                </div>
-              </div> : null}
-              <button className={styles.callout} onClick={() => setTab("spotify")}>
-                <span>Spotify history</span>
-                <strong>Import listening history for deeper analysis →</strong>
-              </button>
-            </section>
+          {tab === "spotify" ? (
+            <Wizard onComplete={() => { setDashKey((k) => k + 1); setTab("explore"); setError(""); }} />
+          ) : accessToken ? (
+            <AnalyticsDashboard
+              key={dashKey}
+              accessToken={accessToken}
+              onNeedImport={() => setTab("spotify")}
+            />
+          ) : (
+            <div className={styles.loading}>Preparing your session…</div>
           )}
         </>
       )}
