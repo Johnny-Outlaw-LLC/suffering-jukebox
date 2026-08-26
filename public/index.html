@@ -2610,7 +2610,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-size-slider::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--accent); border:none; box-shadow:0 0 10px #ff6b3566; }
 .pl-wall-scroll { overflow:auto; max-height:calc(100vh - 180px); scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding-top:4px; }
 .pl-wall-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--pl-cell,120px),1fr)); gap:2px; }
-.pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; }
+.pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:size; }
 .pl-wall-cell img { width:100%; height:100%; object-fit:cover; display:block; transition:filter .3s, opacity .3s; }
 .pl-wall-cell:hover { transform:scale(1.05); z-index:5; box-shadow:0 10px 32px #000c; }
 .pl-wall-cell:hover img { filter:brightness(1.1); }
@@ -2621,6 +2621,36 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-cell.current-launch { animation:plWallNowPlaying .55s cubic-bezier(.34,1.56,.64,1) forwards; }
 @keyframes plWallNowPlaying { 0% { transform:scale(1); box-shadow:0 0 0 0 transparent,0 0 0 0 transparent,0 4px 12px #0006; } 45% { transform:scale(1.22); box-shadow:0 0 0 5px var(--accent),0 0 0 7px #0a0a0a,0 18px 48px #ff6b35cc; } 100% { transform:scale(1.12); box-shadow:0 0 0 4px var(--accent),0 0 0 6px #0a0a0a,0 14px 40px #ff6b3599; } }
 .pl-wall-cell.current img { filter:none !important; opacity:1 !important; }
+.pl-wall-badges { position:absolute; top:4px; right:4px; z-index:3; display:flex; flex-direction:column; align-items:flex-end; gap:3px; pointer-events:auto; }
+.pl-wall-badges .tvb-cycle, .pl-wall-rxn {
+  width:26px; min-height:26px; padding:0; display:inline-flex; align-items:center; justify-content:center; gap:2px;
+  background:rgba(0,0,0,.62); border:1px solid rgba(255,255,255,.12); border-radius:7px; backdrop-filter:blur(4px);
+  color:#fff; opacity:1; font-size:.42rem; line-height:1;
+}
+.pl-wall-badges .tvb-cycle { color:var(--text-muted); }
+.pl-wall-badges .tvb-cycle.tvb-up { color:#22c55e; }
+.pl-wall-badges .tvb-cycle.tvb-down { color:#ef4444; }
+.pl-wall-badges .tvb-cycle svg { width:13px; height:13px; }
+.pl-wall-rxn { color:rgba(255,255,255,.72); cursor:pointer; }
+.pl-wall-rxn svg { width:12px; height:12px; display:block; }
+.pl-wall-rxn.on, .pl-wall-rxn[data-track-reaction="heart"].on { color:var(--accent); }
+.pl-wall-rxn[data-track-reaction="sad"].on { color:#a78bfa; }
+.pl-wall-rxn .pl-wall-rxn-n { font-size:.36rem; font-weight:700; font-family:var(--mono); min-width:.7em; text-align:center; }
+.pl-wall-stats {
+  position:absolute; left:5px; bottom:5px; z-index:3; max-width:calc(100% - 36px);
+  padding:3px 6px; border-radius:6px; background:rgba(0,0,0,.68); color:#f5f5f5;
+  font-family:var(--mono); font-size:.38rem; line-height:1.35; text-align:left; pointer-events:none;
+  letter-spacing:.02em; text-shadow:0 1px 2px #000a;
+}
+.pl-wall-stats b { color:var(--accent); font-weight:700; }
+@container (max-width: 96px) {
+  .pl-wall-stats { display:none; }
+  .pl-wall-badges .pl-wall-rxn-n { display:none; }
+  .pl-wall-badges .tvb-cycle, .pl-wall-rxn { width:22px; min-height:22px; }
+}
+@container (max-width: 72px) {
+  .pl-wall-rxn[data-track-reaction="sad"] { display:none; }
+}
 .pl-wall-play.on { background:var(--bg-card); border-color:var(--border); color:var(--text); box-shadow:none; }
 .pl-wall-play.on:hover { box-shadow:0 4px 16px #0008; }
 .pl-wall-cell.blocked img { opacity:.22; filter:grayscale(1); }
@@ -5227,6 +5257,7 @@ function openSongCard(trackId) {
     logPlayStart(trackId, getMyVote(trackId));
     inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
     if (googleUser) myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
+    if (googleUser) myLastPlayed[trackId] = new Date().toISOString();
     refreshTrackAggregates(trackId);
   }, 10000);
 }
@@ -13117,10 +13148,80 @@ function playlistChartSyncToCurrent() {
   });
 }
 
+function plWallFmtLastPlay(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(+d)) return '';
+  const now = new Date();
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
+}
+
+function plWallCellOverlays(trackId) {
+  if (!trackId) return '';
+  const vote = getMyVote(trackId);
+  const counts = trackReactionCounts[trackId] || {};
+  const heartN = Number(counts.heart) || 0;
+  const sadN = Number(counts.sad) || 0;
+  const badges =
+    `<span class="pl-wall-badges">` +
+      `<button type="button" class="tvb-cycle${voteClass(vote)}" data-vote-track="${trackId}" onclick="cycleVote('${trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || ''}</button>` +
+      `<button type="button" class="pl-wall-rxn${heartN ? ' on' : ''}" data-reaction-track="${trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button>` +
+      `<button type="button" class="pl-wall-rxn${sadN ? ' on' : ''}" data-reaction-track="${trackId}" data-track-reaction="sad" onclick="event.stopPropagation();ytpReact('sad',this,event)" title="Heartbreak">${SJ_REACTION_ICONS.sad}<span class="pl-wall-rxn-n">${sadN ? ytpReactionCountLabel(sadN) : ''}</span></button>` +
+    `</span>`;
+  let stats = '';
+  if (googleUser) {
+    const plays = Number(myInAppPlays[trackId]) || 0;
+    const last = plWallFmtLastPlay(myLastPlayed[trackId]);
+    if (plays || last) {
+      const lines = [];
+      if (plays) lines.push(`<b>${fmtV(plays)}</b> play${plays === 1 ? '' : 's'}`);
+      if (last) lines.push(`Last ${escHtml(last)}`);
+      stats = `<span class="pl-wall-stats" data-pl-wall-stats="${trackId}">${lines.join('<br>')}</span>`;
+    }
+  }
+  return badges + stats;
+}
+
+function plWallRefreshStats() {
+  if (viewMode !== 'playlistchart') return;
+  document.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(el => {
+    const tid = el.getAttribute('data-pc-track');
+    const old = el.querySelector('.pl-wall-stats');
+    if (old) old.remove();
+    if (!googleUser || !tid) return;
+    const plays = Number(myInAppPlays[tid]) || 0;
+    const last = plWallFmtLastPlay(myLastPlayed[tid]);
+    if (!plays && !last) return;
+    const lines = [];
+    if (plays) lines.push(`<b>${fmtV(plays)}</b> play${plays === 1 ? '' : 's'}`);
+    if (last) lines.push(`Last ${escHtml(last)}`);
+    const span = document.createElement('span');
+    span.className = 'pl-wall-stats';
+    span.setAttribute('data-pl-wall-stats', tid);
+    span.innerHTML = lines.join('<br>');
+    el.appendChild(span);
+  });
+}
+
+function plWallLoadReactionCounts(ids) {
+  const uniq = [...new Set((ids || []).filter(Boolean))];
+  uniq.slice(0, 120).forEach(id => { try { loadTrackReactionCounts(id); } catch (_) {} });
+}
+
 function playlistChartTipMeta(row, i, isCurrent, played, skipped) {
   const status = isCurrent ? 'Playing now' : played ? 'Played' : skipped ? 'Blocked' : `#${i + 1} · Up next`;
   const views = Number(ytData[row.trackId]?.views || row.views || 0);
-  return views ? `${status} · ${fmtV(views)} views` : status;
+  const bits = [status];
+  if (views) bits.push(fmtV(views) + ' views');
+  if (googleUser) {
+    const plays = Number(myInAppPlays[row.trackId]) || 0;
+    const last = plWallFmtLastPlay(myLastPlayed[row.trackId]);
+    if (plays) bits.push(plays + ' of my plays');
+    if (last) bits.push('last ' + last);
+  }
+  return bits.join(' · ');
 }
 
 // Repaint played / current / blocked on the cells already on screen.
@@ -13141,7 +13242,6 @@ function playlistChartRefreshPlayback() {
     el.classList.toggle('played', played);
     el.classList.toggle('current', isCurrent);
     el.classList.toggle('blocked', !!blocked);
-    el.disabled = false;
     if (isCurrent && i !== _plWallLastCurrentIdx) {
       el.classList.remove('current-launch');
       void el.offsetWidth;
@@ -13425,10 +13525,19 @@ function playlistChartRemoveFuture(i) {
   showToast(`Removed ${removed?.title || 'song'} from the future playlist.`);
 }
 
-async function playlistChartPlay(startIndex = 0) {
+async function playlistChartPlay(startIndex) {
   if (!playlistChartBaseQueue.length) return;
   const q = playlistChartBaseQueue;
-  let start = Math.max(0, Math.min(startIndex, q.length - 1));
+  const explicit = arguments.length > 0 && startIndex != null;
+  let start;
+  if (explicit) {
+    start = Math.max(0, Math.min(startIndex, q.length - 1));
+  } else if (ytShuffle && q.length > 1) {
+    const playable = q.map((_, i) => i).filter(i => !isTrackSkipped(q[i]?.trackId));
+    start = playable.length ? playable[Math.floor(Math.random() * playable.length)] : 0;
+  } else {
+    start = 0;
+  }
   if (isTrackSkipped(q[start]?.trackId)) {
     start = playlistChartNextPlayable(start, 1);
     if (start < 0) { showToast('Every song in this playlist is blocked.'); return; }
@@ -13537,7 +13646,7 @@ function renderPlaylistChart(error) {
     const art = row.artwork
       ? `<img src="${row.artwork}" loading="lazy" alt="">`
       : '<span class="pl-wall-fallback">♫</span>';
-    return `<button type="button" class="pl-wall-cell${played ? ' played' : ''}${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="plWallOpenPop(${i},event)">${art}</button>`;
+    return `<div class="pl-wall-cell${played ? ' played' : ''}${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" role="button" tabindex="0" onclick="plWallOpenPop(${i},event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();plWallOpenPop(${i},event)}">${art}${plWallCellOverlays(row.trackId)}</div>`;
   }).join('');
 
   const minePl = !!(googleUser && playlistChartId && (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId && p.user_email === googleUser.email)));
@@ -13549,6 +13658,7 @@ function renderPlaylistChart(error) {
   main.innerHTML = `<section class="pl-wall-page" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport"><div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div><button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${error ? `<div class="landing-no-results">${esc(error)}</div>` : (!q.length ? '<div class="landing-no-results">Loading playlist…</div>' : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`)}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
+  plWallLoadReactionCounts(q.map(it => it.trackId));
 }
 
 
@@ -17953,8 +18063,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-25';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-25', items: [
-    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. A song grays out only after it has actually played. The cover that is playing pops forward with a bold orange frame. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them. The buttons on that card keep readable contrast on hover in dark mode.',
-    'Explore Playlists now lists your own playlists alongside the public ones, with All / My Playlists / Public filters. The little cover mosaics drop the centre music icon and grow from 1, 2, 4, 6, or 8 album tiles up to a full 9, instead of always forcing empty squares.',
+    'Explore Playlists opens into a cover wall now — every song is a thumbnail in a tight grid. Tap a cover for a floating track card beside it with Play Now, Queue for Next, the full ⋯ menu, and the lyrics when we have them. A song grays out only after it has actually played. The cover that is playing pops forward with a bold orange frame. Play and Pause are one button on the top bar beside Shuffle, Repeat, and Next, and lyrics turn on by themselves when we have them. The buttons on that card keep readable contrast on hover in dark mode. Each cover shows your thumbs rating and heart / heartbreak reactions up top, and your play count plus last-play date in the corner when there is room. With Shuffle on, Play starts on a random song instead of the first one.',
+    'Explore Playlists now lists your own playlists alongside the public ones, with All / My Playlists / Public filters. The little cover mosaics drop the centre music icon and grow from 1, 2, 4, 6, or 8 album tiles up to a full 9, instead of always forcing empty squares. Create Playlist and Manage Playlists sit on that page, and Manage / Add Songs / Create stay on the cover wall toolbar once a playlist is open.',
     'Build a Playlist and Add Songs let you search the catalogue the same way as the main Search bar — by song, artist, album, or lyrics — then add whole artists, albums, or single tracks into a new or existing playlist.',
     'Every song’s ⋯ menu now has Go to Artist Jukebox whenever that artist is not the jukebox already on screen.',
     'Playback preferences now includes Crossfade tracks. Choose Off, 3 seconds, or 6 seconds to fade between songs as a playlist moves along.',
@@ -18695,6 +18805,7 @@ function initGoogleAuth() {
       _homeBgArtistIds = new Set();
       _homeBgTrackIds = new Set();
       myInAppPlays = {};
+      myLastPlayed = {};
       blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
     }
     updateAuthBtn();
@@ -20345,6 +20456,13 @@ function refreshTrackReactionUI(trackId) {
       if (count) count.textContent = ytpReactionCountLabel(counts[key]);
     });
   });
+  document.querySelectorAll(`.pl-wall-rxn[data-reaction-track="${trackId}"]`).forEach(btn => {
+    const key = btn.getAttribute('data-track-reaction');
+    const n = Number(counts[key]) || 0;
+    btn.classList.toggle('on', n > 0);
+    const label = btn.querySelector('.pl-wall-rxn-n');
+    if (label) label.textContent = n > 0 ? ytpReactionCountLabel(n) : '';
+  });
 }
 
 async function loadTrackReactionCounts(trackId, force) {
@@ -20606,6 +20724,7 @@ function applyGlobalLyricSize(size) {
 const _activeCards = {};  // trackId → { playEventId, openedAt, ratingAtOpen, currentRating }
 let inAppPlays    = {};  // trackId → play count (loaded from DB)
 let myInAppPlays  = {};  // trackId → current user's personal play count
+let myLastPlayed  = {};  // trackId → ISO last-play timestamp for current user
 let barChartMode  = 'yt'; // 'yt' | 'mine' | 'total' | 'hidden' | 'score'
 let trackVoteScores = {};  // trackId → net vote score (all users, from DB)
 let _ytpCurrentTrackId = null; // track currently shown in lyrics side panel
@@ -20684,6 +20803,7 @@ async function logYTPlay(videoId, trackId, eventType, source) {
       _ytCurrentPlay = { eventId, trackId, playbackStarted: null };
       inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
       if (googleUser) myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
+      if (googleUser) myLastPlayed[trackId] = new Date().toISOString();
       refreshTrackAggregates(trackId);
     }
   } catch(e) {}
@@ -20916,12 +21036,18 @@ async function loadMyVotes() {
 
 // ── Refresh in-app play UI without full re-render ──────────────────────────
 async function loadMyPlayCounts() {
-  if (!googleUser?.email) { myInAppPlays = {}; return; }
+  if (!googleUser?.email) { myInAppPlays = {}; myLastPlayed = {}; return; }
   try {
     const rows = await dbRpcAuth('/rpc/my_play_counts', {});
     myInAppPlays = {};
-    rows.forEach(r => { if (r.track_id) myInAppPlays[r.track_id] = Number(r.plays) || 0; });
+    myLastPlayed = {};
+    rows.forEach(r => {
+      if (!r.track_id) return;
+      myInAppPlays[r.track_id] = Number(r.plays) || 0;
+      if (r.last_played) myLastPlayed[r.track_id] = r.last_played;
+    });
     Object.keys(myInAppPlays).forEach(tid => refreshMyPlayUI(tid));
+    if (viewMode === 'playlistchart') plWallRefreshStats();
   } catch(e) { console.warn('loadMyPlayCounts error', e); }
 }
 
@@ -21079,6 +21205,7 @@ function refreshMyPlayUI(trackId) {
   });
   const cardEl = document.getElementById(`sc-myplays-${trackId}`);
   if (cardEl) cardEl.textContent = fmtV(count) || '0';
+  if (viewMode === 'playlistchart') plWallRefreshStats();
 }
 
 function refreshInAppPlayUI(trackId) {
