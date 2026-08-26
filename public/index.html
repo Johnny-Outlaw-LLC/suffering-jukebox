@@ -2543,6 +2543,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .landing-intro { font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 18px; }
 .landing-tabs { display: flex; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; align-items: center; }
 .landing-nav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.landing-nav-scope { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-left: 2px; padding-left: 10px; border-left: 1px solid var(--border); }
 .landing-tab {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
   font-family: var(--mono); font-size: .54rem; letter-spacing: .04em; padding: .45rem .85rem;
@@ -5463,7 +5464,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <button class="ytp-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">⏮</button>
         <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭</button>
         <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">⏸</button>
-        <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen);event.stopPropagation()">Lyrics</button>
+        <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen, {user:true});event.stopPropagation()">Lyrics</button>
         <button type="button" class="ytp-tog" id="ytp-shuffle-tog" title="Shuffle queue" onmousedown="event.stopPropagation()" onclick="setYtShuffleEnabled(!ytShuffle);event.stopPropagation()">Shuffle</button>
         <button type="button" class="ytp-tog" id="ytp-repeat-tog" title="Repeat queue" onmousedown="event.stopPropagation()" onclick="ytpSetRepeat(!ytRepeat);event.stopPropagation()">Repeat</button>
         <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">⇄ Versions ▾</button>
@@ -6689,7 +6690,7 @@ function ytpMobSetTab(tab, userSet) {
   // The pane only loads (and the karaoke sync only runs) while it is the
   // panel on screen, so the tab drives the same switch the checkbox does.
   ytpPaintTogs();
-  if (lyrics !== _ytpLyricsOpen) ytpToggleLyrics(lyrics);
+  if (lyrics !== _ytpLyricsOpen) ytpToggleLyrics(lyrics, userSet ? { user: true } : undefined);
   if (!lyrics) {
     updateYTQueueUI();
     requestAnimationFrame(ytScrollQueueToCurrent);
@@ -6763,6 +6764,12 @@ async function ytpTrackHasLyrics(trackId) {
 async function ytpAutoOpenFullscreenLyrics() {
   const trackId = ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId || null;
   if (!trackId) return;
+  // Prefer-on path: open when we have lyrics. Never flip the preference off
+  // for a song that lacks them — just park on the playlist tab on phones.
+  if (!_mfLyricStripOn) {
+    if (ytpIsMob() && !_ytpMobTabUserSet && _ytpMobTab === 'lyrics') ytpMobSetTab('playlist', false);
+    return;
+  }
   const hasLyrics = await ytpTrackHasLyrics(trackId);
   if (!_ytpFs || !ytPlayerEl || (ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId) !== trackId) return;
   if (hasLyrics) {
@@ -6852,11 +6859,9 @@ function ytpToggleMinimize() {
   if (_ytpFs) ytpToggleFullscreen();
   _ytpMinimized = !_ytpMinimized;
   if (_ytpMinimized) {
-    // Carry the lyrics setting into the mini bar: the strip mirrors the pane.
-    if (_mfLyricStripOn !== _ytpLyricsOpen) {
-      _mfLyricStripOn = _ytpLyricsOpen;
-      try { localStorage.setItem('sj_mf_lyric_strip', _mfLyricStripOn ? '1' : '0'); } catch(e) {}
-    }
+    // Preference stays with the user: never write "off" just because the pane
+    // is closed (a song with no lyrics used to flip the strip preference off).
+    if (_ytpLyricsOpen && !_mfLyricStripOn) ytpSetLyricsPrefer(true);
     // Animate the tiled window dropping down toward the footer before hiding it.
     target.style.transition = 'opacity .32s ease, transform .32s ease';
     target.style.transform = 'translateY(70px) scale(.85)';
@@ -6938,13 +6943,28 @@ function hideYtpMiniFooter() {
 // lines are on screen follows the lyric font size: one at the largest, four at
 // the smallest.
 // The ♫ button appears only for tracks that have LRC data in the database.
-let _mfLyricStripOn = false;
-try { _mfLyricStripOn = localStorage.getItem('sj_mf_lyric_strip') === '1'; } catch(e) {}
+// Preference defaults ON — only an explicit user toggle turns it off. A track
+// without lyrics must never clear that preference (that used to happen when
+// minimizing with the pane closed). Key is v2 so a preference the bug wrote
+// as off does not stick after this fix.
+let _mfLyricStripOn = true;
+try {
+  const _mfPref = localStorage.getItem('sj_lyrics_prefer_v2');
+  if (_mfPref === '0') _mfLyricStripOn = false;
+  else if (_mfPref === '1') _mfLyricStripOn = true;
+} catch(e) {}
 let _mfLyrBuiltFor = null;   // trackId the line stack was built from
 
+function ytpSetLyricsPrefer(on) {
+  _mfLyricStripOn = !!on;
+  try {
+    localStorage.setItem('sj_lyrics_prefer_v2', _mfLyricStripOn ? '1' : '0');
+    localStorage.setItem('sj_mf_lyric_strip', _mfLyricStripOn ? '1' : '0');
+  } catch(e) {}
+}
+
 function ytpMfToggleLyricStrip() {
-  _mfLyricStripOn = !_mfLyricStripOn;
-  try { localStorage.setItem('sj_mf_lyric_strip', _mfLyricStripOn ? '1' : '0'); } catch(e) {}
+  ytpSetLyricsPrefer(!_mfLyricStripOn);
   ytpMfApplyLyricStrip();
 }
 
@@ -10580,8 +10600,11 @@ let _ytpLyricsOpen = false;
 let _ytpLyricsPaneEl = null;
 let _ytpFsAutoLyrics = false;  // true when fullscreen auto-opened the lyrics pane
 
-function ytpToggleLyrics(open) {
+function ytpToggleLyrics(open, opts) {
   _ytpLyricsOpen = open;
+  // Only an explicit user click stores the preference. Auto-open / auto-hide
+  // for songs with or without lyrics must not flip it.
+  if (opts && opts.user) ytpSetLyricsPrefer(open);
   ytpPaintTogs();
   if (!_ytpLyricsPaneEl || !_ytpContainerEl) return;
   const isMob = ytpIsMob();
@@ -10745,6 +10768,30 @@ function ytpOnTrackChange(videoId, trackId, title) {
     });
   }
   if (viewMode === 'playlistchart') playlistChartAutoLyrics();
+  ytpApplyLyricsPreference(trackId);
+}
+
+// Prefer lyrics ON by default. If this track has them, open the pane / strip;
+// if it does not, leave the preference alone so the next song can still show.
+async function ytpApplyLyricsPreference(trackId) {
+  if (!_mfLyricStripOn || !trackId) return;
+  const has = await ytpTrackHasLyrics(trackId);
+  if ((ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId) !== trackId) return;
+  if (!has) {
+    // Mini strip already hides itself without lyrics; keep the full pane open
+    // with its "not in database" placeholder if the user already had it up.
+    ytpMfApplyLyricStrip();
+    return;
+  }
+  if (_ytpMinimized) {
+    ytpMfApplyLyricStrip();
+    return;
+  }
+  if (!_ytpLyricsOpen) ytpToggleLyrics(true);
+  else ytpUpdateLyrics(trackId);
+  if (_ytpFs && ytpIsMob() && !_ytpMobTabUserSet && _ytpMobTab !== 'lyrics') {
+    ytpMobSetTab('lyrics', false);
+  }
 }
 
 // ── Version switcher ──────────────────────────────────────────────────────
@@ -14693,11 +14740,6 @@ function renderLanding() {
             return `<button type="button" class="playlist-explore-card" onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`;
           }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
       })() : `
-      <div class="playlist-explore-filters" style="margin:0 0 14px">
-        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
-        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
-        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
-      </div>
       <div class="landing-controls">
         <div class="landing-control-group">
           <span class="landing-control-lbl">Artists</span>
@@ -16026,9 +16068,18 @@ function updateLandingActionsHeader() {
     playlists.dataset.armed = '1';
   }
   nav.style.display = 'block';
+  const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
+  const scopeChips = landingTab === 'explore'
+    ? `<span class="landing-nav-scope" role="group" aria-label="Artist scope">
+        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
+        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
+        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
+      </span>`
+    : '';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
     <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
     <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
+    ${scopeChips}
   </nav>`;
   nav.dataset.armed = '1';
   updateToolbarToggle();
@@ -18406,6 +18457,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
+    'All / My Artists / Public sit beside Explore Artists in the header toolbar, above the divider — not down in the filter row.',
+    'Lyrics stay on by default when a song has them. Playing a song without lyrics no longer turns lyrics off for the next one that does.',
     'My Data & Analytics now has its own dedicated page and opens in a separate tab, so your music keeps playing while you explore deeper listening insights — and it carries your signed-in session with you.',
     'Before importing Spotify history, you can now keep or leave out any listening type, year, or artist. Type cards and every year/artist row have selection checkboxes, with artist search plus Select all and Clear all controls; only the events still selected are saved.',
     'Explore Artists and Explore Playlists live in the home-page header. The My Jukebox tab is gone — use All / My Artists / Public on Explore Artists instead, and Manage My Music from the account menu when you need the personal library panel.',
