@@ -13014,6 +13014,7 @@ if (landingTab === 'home') {
 let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all'; // all | mine | public
 let playlistExploreSearchQ = '';
 let playlistExploreSort = localStorage.getItem('sj_pl_explore_sort') || 'date_desc';
+let playlistExploreContributor = localStorage.getItem('sj_pl_explore_contributor') || '';
 let _playlistSearchFocus = false;
 let _playlistSearchTimer = null;
 let artistExploreFilter = localStorage.getItem('sj_artist_explore_filter') || 'all'; // all | mine | public
@@ -13110,6 +13111,9 @@ function playlistExploreRows() {
   } else {
     rows = all.filter(p => p.is_public || (email && p.user_email === email));
   }
+  if (playlistExploreContributor && playlistExploreFilter !== 'mine') {
+    rows = rows.filter(p => (p.user_email || '') === playlistExploreContributor);
+  }
   const q = playlistExploreSearchQ.trim().toLowerCase();
   if (q) {
     rows = rows.filter(p => playlistMatchesSearch(p, q));
@@ -13164,6 +13168,23 @@ function clearPlaylistExploreSearch() {
 function setPlaylistExploreSort(v) {
   playlistExploreSort = v || 'date_desc';
   try { localStorage.setItem('sj_pl_explore_sort', playlistExploreSort); } catch (_) {}
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+function playlistContributorOptions() {
+  const counts = new Map(); // email -> { label, n }
+  (_savedPlaylists || []).forEach(p => {
+    const email = p.user_email || '';
+    if (!email) return;
+    if (!counts.has(email)) counts.set(email, { label: email.split('@')[0], n: 0 });
+    counts.get(email).n++;
+  });
+  return [...counts.entries()].map(([email, v]) => [email, v.label, v.n]).sort((a, b) => a[1].localeCompare(b[1]));
+}
+
+function setPlaylistExploreContributor(v) {
+  playlistExploreContributor = v || '';
+  try { localStorage.setItem('sj_pl_explore_contributor', playlistExploreContributor); } catch (_) {}
   if (isLandingMode && landingTab === 'playlists') renderLanding();
 }
 
@@ -14023,7 +14044,7 @@ function renderPlaylistChart(error) {
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
   const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${modeTog}${sizeCtrl}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
   plWallLoadReactionCounts(q.map(it => it.trackId));
@@ -14695,7 +14716,6 @@ function renderLanding() {
     <div class="landing-wrap">
       ${landingTab === 'playlists' ? (() => {
         const rows = playlistExploreRows();
-        const mineCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
         const emptyMsg = !_playlistsLoaded
           ? 'Loading playlists…'
           : (playlistExploreSearchQ.trim()
@@ -14703,19 +14723,24 @@ function renderLanding() {
             : (playlistExploreFilter === 'mine'
               ? (googleUser ? 'You have not saved a playlist yet.' : 'Sign in to see your playlists.')
               : (playlistExploreFilter === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.')));
+        const _contribOpts = playlistContributorOptions();
         return `<div class="playlist-explore-filters">
-            <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
-            <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${mineCount ? ' (' + mineCount + ')' : ''}</button>
-            <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
             <div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Search</span>
               <div class="landing-search-wrap">
-                <input type="text" class="landing-search-input" id="playlist-explore-search" placeholder="Contributor, artist, track, or lyric…"
+                <input type="text" class="landing-search-input" id="playlist-explore-search" placeholder="Playlist, artist, track, or lyric…"
                   autocomplete="off" value="${esc(playlistExploreSearchQ).replace(/"/g, '&quot;')}" oninput="setPlaylistExploreSearch(this.value)"
                   onkeydown="if(event.key==='Escape')clearPlaylistExploreSearch()">
                 ${playlistExploreSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="clearPlaylistExploreSearch()">✕</button>` : ''}
               </div>
             </div>
+            ${playlistExploreFilter === 'mine' ? '' : `<div class="landing-control-group" style="margin:0">
+              <span class="landing-control-lbl">Contributor</span>
+              <select class="landing-sort-select" id="playlist-explore-contributor" onchange="setPlaylistExploreContributor(this.value)">
+                <option value="">All Contributors</option>
+                ${_contribOpts.map(([email, label, n]) => `<option value="${esc(email)}"${playlistExploreContributor === email ? ' selected' : ''}>${esc(label)} (${n})</option>`).join('')}
+              </select>
+            </div>`}
             <div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Sort</span>
               <select class="landing-sort-select" id="playlist-explore-sort" onchange="setPlaylistExploreSort(this.value)">
@@ -14751,7 +14776,7 @@ function renderLanding() {
             </div>
           </div>
         </div>
-        <div class="landing-control-group">
+        ${artistExploreFilter === 'mine' ? '' : `<div class="landing-control-group">
           <span class="landing-control-lbl">Submitted By</span>
           <div class="landing-submitter-dd">
             <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -14760,7 +14785,7 @@ function renderLanding() {
               ${_subMenuItems || '<div class="lsm-empty">No submitters yet</div>'}
             </div>
           </div>
-        </div>
+        </div>`}
         <div class="landing-control-group">
           <span class="landing-control-lbl">Search</span>
           <div class="landing-search-wrap">
@@ -16030,7 +16055,9 @@ function quickPlaylistNowPlayingHTML() {
 
 function refreshQuickPlaylistNowPlaying() {
   const slot = document.getElementById('quick-now-playing-slot');
-  if (slot) slot.innerHTML = quickPlaylistNowPlayingHTML();
+  // The main window (landing) already omits the Now Playing box on render -
+  // this call fires on every track change and used to overwrite that with it.
+  if (slot) slot.innerHTML = isLandingMode ? '' : quickPlaylistNowPlayingHTML();
   sjFitLwytbRow();
 }
 
@@ -16069,11 +16096,18 @@ function updateLandingActionsHeader() {
   }
   nav.style.display = 'block';
   const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
+  const minePlCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
   const scopeChips = landingTab === 'explore'
     ? `<span class="landing-nav-scope" role="group" aria-label="Artist scope">
         <button type="button" class="playlist-explore-filter${artistExploreFilter === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
         <button type="button" class="playlist-explore-filter${artistExploreFilter === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
         <button type="button" class="playlist-explore-filter${artistExploreFilter === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
+      </span>`
+    : landingTab === 'playlists'
+    ? `<span class="landing-nav-scope" role="group" aria-label="Playlist scope">
+        <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
+        <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
+        <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
       </span>`
     : '';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
@@ -18469,6 +18503,11 @@ const SJ_CHANGELOG = [
     'Spotify history imports handle large exports without choking — bigger batches, a much higher signed-in limit, progress while saving, and automatic retries if the server asks you to wait.',
     'Re-importing the same Spotify history files is safe: listens already on file are skipped, and only missing ones are added.',
     'My Data & Analytics now has real listening charts: year-over-year by month and day of year, a calendar heatmap, a time-of-day × weekday grid, clickable artists that filter every view, plus Insights for forgotten favorites, comebacks, rising artists, and binge weeks.',
+    'The Now Playing box no longer pops up over the home page while you browse - it still shows once you open a playlist or artist.',
+    'The Submitted By filter on Explore Artists, and the new Contributor filter on Explore Playlists, hide themselves while you are looking at My Artists or My Playlists, since they would only ever show you.',
+    'Explore Playlists has a Contributor dropdown next to Search, so you can pick a specific contributor instead of typing their name in.',
+    'All / My Playlists / Public moved up to the header toolbar on Explore Playlists, matching Explore Artists.',
+    'The Size slider on an open playlist now sits to the left of the Covers / Detail buttons.',
   ]},
   { date: '2026-08-25', items: [
     'Spotify Extended Streaming History now imports through a private four-step review: upload multiple files, watch processing, review years/types/top artists, then confirm. Music, podcasts, audiobooks, and other activity are analyzed even when they are not in the Jukebox; adding songs remains a separate process.',
