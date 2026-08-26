@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { clientIp, rateLimited, tooMany, bad } from "@/lib/jukebox-request";
 import { assertNoIpLeak } from "@/lib/spotify-history";
@@ -8,6 +9,69 @@ export const dynamic = "force-dynamic";
 
 const MATCH_MAX = 500;
 const IMPORT_MAX = 2000;
+const HISTORY_BATCH_MAX = 500;
+const HISTORY_TYPES = new Set(["music", "podcast", "audiobook", "other"]);
+
+type CleanHistoryEvent = {
+  user_id: string;
+  event_fingerprint: string;
+  content_type: string;
+  spotify_uri: string | null;
+  title: string;
+  artist: string;
+  album: string | null;
+  played_at: string;
+  duration_played_ms: number;
+  skipped: boolean;
+  source_file_name: string;
+};
+
+function cleanHistoryEvent(value: unknown, userId: string): CleanHistoryEvent | null {
+  const item = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const contentType = String(item.contentType || "").trim().toLowerCase();
+  const playedAt = String(item.playedAt || "").trim();
+  const playedAtMs = Date.parse(playedAt);
+  const title = String(item.title || "").trim().slice(0, 500);
+  const artist = String(item.artist || "").trim().slice(0, 500);
+  if (!HISTORY_TYPES.has(contentType) || !Number.isFinite(playedAtMs) || !title || !artist) return null;
+  const spotifyUri = String(item.uri || "").trim().slice(0, 256) || null;
+  const album = String(item.album || "").trim().slice(0, 500) || null;
+  const sourceFileName = String(item.fileName || "Spotify export").trim().slice(0, 500) || "Spotify export";
+  const durationPlayedMs = Math.max(0, Math.min(Number(item.durationMs) || 0, 86_400_000));
+  const skipped = item.skipped === true;
+  const eventFingerprint = createHash("sha256")
+    .update([contentType, spotifyUri || "", playedAt, durationPlayedMs, title, artist, album || ""].join("\0"))
+    .digest("hex");
+  return {
+    user_id: userId,
+    event_fingerprint: eventFingerprint,
+    content_type: contentType,
+    spotify_uri: spotifyUri,
+    title,
+    artist,
+    album,
+    played_at: new Date(playedAtMs).toISOString(),
+    duration_played_ms: durationPlayedMs,
+    skipped,
+    source_file_name: sourceFileName,
+  };
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getAuthUser(req);
+    if (!user?.email) return bad("Sign in to view your Spotify listening history.", 401);
+    const sb = createSjServiceClient();
+    const { data, error } = await sb
+      .schema(JUKEBOX_SCHEMA)
+      .rpc("spotify_history_summary", { p_user_id: user.id });
+    if (error) throw error;
+    return NextResponse.json({ ok: true, summary: data ?? { events: 0, durationMs: 0, byType: {}, byYear: [], topArtists: [] } });
+  } catch (error) {
+    console.error("[spotify:history:summary]", error);
+    return bad("Could not load your Spotify listening-history summary.", 502);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,6 +84,21 @@ export async function POST(req: NextRequest) {
     const action = String(body?.action || "import").trim();
     const sb = createSjServiceClient();
     const email = user.email.toLowerCase();
+
+    if (action === "import-history") {
+      const events: unknown[] = Array.isArray(body.events) ? body.events.slice(0, HISTORY_BATCH_MAX) : [];
+      if (!events.length) return bad("No history events to import.");
+      const cleaned = events.map((event: unknown) => cleanHistoryEvent(event, user.id)).filter((event): event is CleanHistoryEvent => event !== null);
+      if (!cleaned.length) return bad("No valid history events to import.");
+      const { data, error } = await sb
+        .schema(JUKEBOX_SCHEMA)
+        .from("spotify_history_events")
+        .upsert(cleaned, { onConflict: "user_id,event_fingerprint", ignoreDuplicates: true })
+        .select("id");
+      if (error) throw error;
+      const inserted = data?.length ?? 0;
+      return NextResponse.json({ ok: true, inserted, skipped: cleaned.length - inserted });
+    }
 
     if (action === "match") {
       const tracks = Array.isArray(body.tracks) ? body.tracks.slice(0, MATCH_MAX) : [];
