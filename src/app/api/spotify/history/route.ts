@@ -96,19 +96,41 @@ export async function POST(req: NextRequest) {
       if (rateLimited(`spotify-history-import:${uid}`, 300, 15 * 60_000)) return tooMany();
       const events: unknown[] = Array.isArray(body.events) ? body.events.slice(0, HISTORY_BATCH_MAX) : [];
       if (!events.length) return bad("No history events to import.");
-      const cleaned = events.map((event: unknown) => cleanHistoryEvent(event, user.id)).filter((event): event is CleanHistoryEvent => event !== null);
-      if (!cleaned.length) return bad("No valid history events to import.");
-      const { data, error } = await sb
-        .schema(JUKEBOX_SCHEMA)
-        .from("spotify_history_events")
-        .upsert(cleaned, { onConflict: "user_id,event_fingerprint", ignoreDuplicates: true })
-        .select("event_fingerprint");
+      const cleaned = events
+        .map((event: unknown) => cleanHistoryEvent(event, user.id))
+        .filter((event): event is CleanHistoryEvent => event !== null);
+      // Same listen twice in one batch (overlapping export files) must not trip
+      // the unique index mid-statement — keep the first, drop the rest.
+      const byFingerprint = new Map<string, CleanHistoryEvent>();
+      for (const event of cleaned) {
+        if (!byFingerprint.has(event.event_fingerprint)) byFingerprint.set(event.event_fingerprint, event);
+      }
+      const unique = [...byFingerprint.values()];
+      if (!unique.length) return bad("No valid history events to import.");
+      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("import_spotify_history_events", {
+        p_user_id: user.id,
+        p_events: unique.map((event) => ({
+          event_fingerprint: event.event_fingerprint,
+          content_type: event.content_type,
+          spotify_uri: event.spotify_uri,
+          title: event.title,
+          artist: event.artist,
+          album: event.album,
+          played_at: event.played_at,
+          duration_played_ms: event.duration_played_ms,
+          skipped: event.skipped,
+          source_file_name: event.source_file_name,
+        })),
+      });
       if (error) throw error;
-      const inserted = data?.length ?? 0;
+      const inserted = Number(data?.inserted || 0);
+      const skipped = Number(data?.skipped || Math.max(0, unique.length - inserted));
       return NextResponse.json({
         ok: true,
         inserted,
-        skipped: Math.max(0, cleaned.length - inserted),
+        skipped,
+        // Rows collapsed inside this batch before the DB saw them.
+        batchDuplicates: Math.max(0, cleaned.length - unique.length),
         batchMax: HISTORY_BATCH_MAX,
       });
     }

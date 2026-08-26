@@ -92,6 +92,10 @@ function normalizeRow(row: Record<string, unknown>, fileName: string): HistoryEv
   };
 }
 
+function eventIdentity(event: HistoryEvent) {
+  return [event.contentType, event.uri || "", event.playedAt, event.durationMs, event.title, event.artist, event.album].join("\0");
+}
+
 function Wizard({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(1);
   const [events, setEvents] = useState<HistoryEvent[]>([]);
@@ -168,6 +172,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     let progress: FileProgress[] = chosen.map(file => ({ name: file.name, rows: 0, accepted: 0, state: "waiting" }));
     setFiles(progress);
     const nextEvents: HistoryEvent[] = [];
+    const seen = new Set<string>();
     for (let index = 0; index < chosen.length; index += 1) {
       const file = chosen[index];
       progress = progress.map((item, itemIndex) => itemIndex === index ? { ...item, state: "reading" } : item);
@@ -175,9 +180,17 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
       try {
         const raw = JSON.parse(await file.text());
         if (!Array.isArray(raw)) throw new Error("not a Spotify history array");
-        const accepted = raw.map(row => normalizeRow(row as Record<string, unknown>, file.name)).filter((row): row is HistoryEvent => !!row);
-        nextEvents.push(...accepted);
-        progress = progress.map((item, itemIndex) => itemIndex === index ? { ...item, rows: raw.length, accepted: accepted.length, state: "done" } : item);
+        let accepted = 0;
+        for (const row of raw) {
+          const event = normalizeRow(row as Record<string, unknown>, file.name);
+          if (!event) continue;
+          const key = eventIdentity(event);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          nextEvents.push(event);
+          accepted += 1;
+        }
+        progress = progress.map((item, itemIndex) => itemIndex === index ? { ...item, rows: raw.length, accepted, state: "done" } : item);
       } catch (caught) {
         progress = progress.map((item, itemIndex) => itemIndex === index ? { ...item, state: "error", error: caught instanceof Error ? caught.message : "could not read file" } : item);
       }
@@ -279,7 +292,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     </div>}
 
     {step === 4 && <div className={styles.stepBody}>
-      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} duplicate events skipped` : ""}.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
+      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} already on file and skipped` : ""}.</p><p className={styles.muted}>Re-importing the same export is safe — only missing listens are added.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><p className={styles.muted}>Safe to re-run the same files: listens you already imported are skipped, and only what is still missing gets saved.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
     </div>}
   </section>;
 }
