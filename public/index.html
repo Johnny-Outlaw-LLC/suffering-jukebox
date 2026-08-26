@@ -18272,7 +18272,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
-    'My Data & Analytics now has its own dedicated page and opens in a separate tab, so your music keeps playing while you explore deeper listening insights.',
+    'My Data & Analytics now has its own dedicated page and opens in a separate tab, so your music keeps playing while you explore deeper listening insights — and it carries your signed-in session with you.',
   ]},
   { date: '2026-08-25', items: [
     'Spotify Extended Streaming History now imports through a private four-step review: upload multiple files, watch processing, review years/types/top artists, then confirm. Music, podcasts, audiobooks, and other activity are analyzed even when they are not in the Jukebox; adding songs remains a separate process.',
@@ -18747,6 +18747,48 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('.home-hero-info-wrap')) document.querySelectorAll('.home-hero-info-wrap.open').forEach(w => w.classList.remove('open'));
 });
 
+const SJ_ANALYTICS_SESSION_REQUEST = 'sj:analytics-session-request';
+const SJ_ANALYTICS_SESSION_DELIVERY = 'sj:analytics-session-delivery';
+
+function sjIsTrustedAnalyticsOrigin(origin) {
+  return origin === window.location.origin
+    || origin === 'https://sufferingjukebox.stream'
+    || origin === 'https://www.sufferingjukebox.stream';
+}
+
+function openAnalyticsInNewTab() {
+  // Vercel may redirect between the apex and www hosts. Local storage does not
+  // cross that boundary, so transfer the already-authenticated session only to
+  // the trusted Analytics tab that explicitly requests it.
+  const analyticsTab = window.open('/analytics', '_blank');
+  if (!analyticsTab) return;
+
+  let settled = false;
+  const stopListening = () => {
+    if (settled) return;
+    settled = true;
+    window.removeEventListener('message', receiveSessionRequest);
+  };
+  const receiveSessionRequest = async (event) => {
+    if (event.source !== analyticsTab || !sjIsTrustedAnalyticsOrigin(event.origin)) return;
+    if (event.data?.type !== SJ_ANALYTICS_SESSION_REQUEST) return;
+    try {
+      const session = (await sbAuth.auth.getSession()).data?.session;
+      if (session?.access_token && session.refresh_token) {
+        analyticsTab.postMessage({
+          type: SJ_ANALYTICS_SESSION_DELIVERY,
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+        }, event.origin);
+      }
+    } finally {
+      stopListening();
+    }
+  };
+  window.addEventListener('message', receiveSessionRequest);
+  setTimeout(stopListening, 10000);
+}
+
 async function userMenuAction(action) {
   closeUserMenu();
   if (action === 'bgunlock') {
@@ -18783,7 +18825,7 @@ async function userMenuAction(action) {
     return;
   }
   if (action === 'mystats') {
-    window.open('/analytics', '_blank', 'noopener');
+    openAnalyticsInNewTab();
     return;
   }
   if (action === 'playback') {
@@ -24779,7 +24821,7 @@ function mjImportHTML() {
     '<span class="mj-vis">' + (_spiStatus.connected
       ? 'Connected' + (_spiStatus.spotifyUserId ? ' as ' + escHtml(_spiStatus.spotifyUserId) : '') + '. Pick from your Liked Songs or any playlist.'
       : 'Bring your Liked Songs and your playlists across, a few at a time.') +
-    ' Listening history? Open <button type="button" class="mj-analytics-link" onclick="window.open(\'/analytics\', \'_blank\', \'noopener\')">My Data &amp; Analytics</button>.</span>' +
+    ' Listening history? Open <button type="button" class="mj-analytics-link" onclick="openAnalyticsInNewTab()">My Data &amp; Analytics</button>.</span>' +
     '<button class="pl-btn" onclick="openSpotifyImport()">' + (_spiStatus.connected ? 'Choose songs' : 'Connect Spotify') + '</button></div>';
   return '<div class="sjj-h">Add a song</div>' +
     mjSearchRowHTML() +

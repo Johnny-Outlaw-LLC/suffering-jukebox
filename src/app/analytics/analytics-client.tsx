@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
 import styles from "./analytics.module.css";
 
@@ -35,6 +36,14 @@ const TYPE_LABEL: Record<ContentType, string> = {
   audiobook: "Audiobook",
   other: "Other",
 };
+const ANALYTICS_SESSION_REQUEST = "sj:analytics-session-request";
+const ANALYTICS_SESSION_DELIVERY = "sj:analytics-session-delivery";
+
+function isTrustedPlayerOrigin(origin: string) {
+  return origin === window.location.origin
+    || origin === "https://sufferingjukebox.stream"
+    || origin === "https://www.sufferingjukebox.stream";
+}
 
 function number(value: number) { return new Intl.NumberFormat().format(value); }
 function minutes(value: number) {
@@ -231,13 +240,33 @@ export default function AnalyticsClient() {
 
   useEffect(() => {
     let active = true;
-    sjBrowserAuth.auth.getSession().then(({ data: { session } }) => {
+    async function applySession(session: Session | null) {
       if (!active) return;
       setSignedIn(!!session?.user); setSessionReady(true);
       if (session?.user) { void loadDashboard(); void loadSpotifySummary(); }
-    });
-    const { data: { subscription } } = sjBrowserAuth.auth.onAuthStateChange((_event, session) => { setSignedIn(!!session?.user); if (session?.user) { void loadDashboard(); void loadSpotifySummary(); } });
-    return () => { active = false; subscription.unsubscribe(); };
+    }
+    const receiveSession = async (event: MessageEvent) => {
+      if (event.source !== window.opener || !isTrustedPlayerOrigin(event.origin)) return;
+      if (event.data?.type !== ANALYTICS_SESSION_DELIVERY) return;
+      const accessToken = String(event.data.accessToken || "");
+      const refreshToken = String(event.data.refreshToken || "");
+      if (!accessToken || !refreshToken) return;
+      const { data, error } = await sjBrowserAuth.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+      if (!error) {
+        await applySession(data.session);
+        window.opener = null;
+      }
+    };
+    window.addEventListener("message", receiveSession);
+    sjBrowserAuth.auth.getSession().then(({ data: { session } }) => { void applySession(session); });
+    const { data: { subscription } } = sjBrowserAuth.auth.onAuthStateChange((_event, session) => { void applySession(session); });
+    try {
+      const openerOrigin = document.referrer ? new URL(document.referrer).origin : "";
+      if (window.opener && isTrustedPlayerOrigin(openerOrigin)) {
+        window.opener.postMessage({ type: ANALYTICS_SESSION_REQUEST }, openerOrigin);
+      }
+    } catch { /* No trusted opener session is available. */ }
+    return () => { active = false; window.removeEventListener("message", receiveSession); subscription.unsubscribe(); };
   // loadDashboard deliberately reads the initial default range on route entry.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
