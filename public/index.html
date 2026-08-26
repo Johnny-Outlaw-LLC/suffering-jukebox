@@ -74,8 +74,8 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 #view-extras-header { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; padding-bottom: .3rem; }
 #view-extras-header:empty { display: none; padding-bottom: 0; }
 #view-extras-header .ctrl-row-sub { padding-top: 0 !important; display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
-#view-extras-header .ctrl-row-meta { font-size: .32rem; }
-#view-extras-header .sort-btn { font-size: .35rem; padding: .14rem .35rem; }
+#view-extras-header .ctrl-row-meta { font-size: .42rem; }
+#view-extras-header .sort-btn { font-size: .46rem; padding: .18rem .46rem; }
 /* Two toolbars sat side by side with nothing saying which was which. Each is
    now a named box: what the jukebox shows on the left, what plays on the right. */
 .ctrl-group { display: flex; flex-direction: column; gap: .25rem; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: .28rem .5rem .4rem; }
@@ -16022,8 +16022,8 @@ function renderViewToggle() {
   const ctrlRow = _chartView ? `
     <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
       <span class="ctrl-row-meta" title="Change this from the view button above">${_barsLbl}</span>
-      <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.35rem;padding:.18rem .41rem;border-radius:4px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
-      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.35rem;padding:.18rem .41rem;border-radius:4px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}${_shareR2 ? _shareBtn : ''}
+      <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
+      <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}${_shareR2 ? _shareBtn : ''}
     </div>` : '';
   // All Tracks has no chart, so it is the one plain button with no menu.
   const _views = [
@@ -18342,7 +18342,8 @@ const SJ_CHANGELOG = [
     '"Remove All Songs by Artist from Playlist" and "Remove All Songs from Album from Playlist" are now just "Remove Artist from Playlist" and "Remove Album from Playlist".',
     'Share links are gone. Share Playlist and Share Song are removed from Now Playing and the song menu, and an old shared link no longer loads its saved queue - it just opens the site.',
     'The Now Playing box is gone from the toolbar entirely. Jukebox Controls and Playlist Controls each stay one row on desktop.',
-    'The bars caption and Expand All Tracks / Collapse All Tracks moved out of Jukebox Controls to their own slim strip under the header, at a smaller size.',
+    'The bars caption and Expand All Tracks / Collapse All Tracks moved out of Jukebox Controls to their own slim strip under the header, sized up a bit from the first pass.',
+    'Signed in and coming back to the site, the player now reopens minimized or fullscreen if that is how you left it, instead of always windowed.',
   ]},
   { date: '2026-08-25', items: [
     'Spotify Extended Streaming History now imports through a private four-step review: upload multiple files, watch processing, review years/types/top artists, then confirm. Music, podcasts, audiobooks, and other activity are analyzed even when they are not in the Jukebox; adding songs remains a separate process.',
@@ -19031,6 +19032,7 @@ async function savePlaybackState() {
       position_seconds: posSec,
       ended: _pbIsFinishedEnd(),
       player_open: true,
+      layout: _ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed'),
       updated_at: new Date().toISOString()
     });
   } catch (e) { /* best-effort - never interrupt playback over a failed save */ }
@@ -19045,7 +19047,7 @@ async function restorePlaybackState() {
   if (_pbRestoreDone || !googleUser || ytPlayerEl) return;
   _pbRestoreDone = true;
   try {
-    const rows = await dbGetAuth('/playback_state?select=queue,queue_idx,shuffle,position_seconds,ended,player_open&limit=1');
+    const rows = await dbGetAuth('/playback_state?select=queue,queue_idx,shuffle,position_seconds,ended,player_open,layout&limit=1');
     const row = rows[0];
     if (!row || !Array.isArray(row.queue) || !row.queue.length) return;
     if (row.ended) return; // finished listening last time - don't reopen by default
@@ -19080,6 +19082,10 @@ async function restorePlaybackState() {
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
     ytpSetPlayPauseIcon(false);
+    // The player opens windowed by default - only flip it if they'd left it
+    // minimized or fullscreen, so a refresh lands back where they were.
+    if (row.layout === 'minimized') ytpToggleMinimize();
+    else if (row.layout === 'fullscreen') ytpEnterFullscreen();
   } catch (e) {
     _pbRestoreOpts = null;
     /* no saved state yet, or fetch failed - just start fresh */
