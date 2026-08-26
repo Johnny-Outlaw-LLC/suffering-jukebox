@@ -2413,7 +2413,6 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-acc-item.open > .plb-row-drill .plb-caret { transform:rotate(90deg); color:var(--text); }
 .plb-nest { display:none; padding-left:1.35rem; border-left:1px solid var(--border); margin:.15rem 0 .3rem .95rem; }
 .plb-acc-item.open > .plb-nest { display:block; }
-.plb-art-num { font-size:.5rem; color:var(--text-muted); background:var(--bg-elevated); }
 .plb-empty.small { padding:.5rem .4rem; font-size:.5rem; text-align:left; }
 @media (max-width:720px) {
   .plb-split { grid-template-columns:1fr; max-height:none; }
@@ -4042,6 +4041,22 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closePlaylistBuilder()">Cancel</button>
       <button class="pl-btn" id="plb-save-btn" onclick="plbSave()" disabled>Create Playlist</button>
+    </div>
+  </div>
+</div>
+
+<!-- PLAYLIST SETTINGS (owner only, from a playlist's own page) -->
+<div class="pl-modal-overlay" id="plSettingsOverlay" onclick="if(event.target===this)closePlaylistSettings()">
+  <div class="pl-modal" style="width:380px;max-width:94vw">
+    <div class="pl-modal-header"><span class="pl-modal-title">Playlist Settings</span><button class="modal-close" onclick="closePlaylistSettings()">✕</button></div>
+    <div class="pl-modal-body" style="gap:.75rem">
+      <input class="pl-input" id="pls-name-input" maxlength="80" placeholder="Playlist name" autocomplete="off"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();savePlaylistSettings()}">
+      <div class="pl-toggle-row"><button type="button" class="pl-toggle" id="pls-pub-toggle" onclick="this.classList.toggle('on')"></button><span class="pl-toggle-lbl">Make public</span></div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="closePlaylistSettings()">Cancel</button>
+      <button class="pl-btn" id="pls-save-btn" onclick="savePlaylistSettings()">Save</button>
     </div>
   </div>
 </div>
@@ -5870,6 +5885,10 @@ function ytpPaintUpNext() {
   const slot = ytPlayerEl.querySelector('#ytp-up-next-slot');
   if (!slot) return;
   slot.innerHTML = (ytQueue.length > 1) ? ytpUpNextQueueHTML() : '';
+  // The banner just showed up, changed, or disappeared - resize the frame so
+  // a fullscreen player's video (and YouTube's own bottom control bar) isn't
+  // left clipped by the space this now takes.
+  ytpUpdateFsLayout();
 }
 
 function ytpPaintTogs() {
@@ -10324,10 +10343,16 @@ async function taBatchUpload() {
 }
 
 function ytpPlayerChromeH() {
-  const hdrH   = ytPlayerEl?.querySelector('.yt-player-header')?.offsetHeight || 62;
-  const queueH = ytPlayerEl?.querySelector('.yt-queue-section')?.offsetHeight || 0;
-  const plBarH = ytPlayerEl?.querySelector('.yt-playlist-bar')?.offsetHeight || 0;
-  return hdrH + queueH + plBarH;
+  const hdrH    = ytPlayerEl?.querySelector('.yt-player-header')?.offsetHeight || 62;
+  // #ytp-up-next-slot sits between the header and the frame and only takes
+  // real height once a queue exists - miss it here and the frame gets sized
+  // taller than the space actually left for it, so the fixed-height iframe
+  // inside doesn't shrink to match and the frame's overflow:hidden clips
+  // YouTube's own bottom control bar.
+  const upNextH = ytPlayerEl?.querySelector('#ytp-up-next-slot')?.offsetHeight || 0;
+  const queueH  = ytPlayerEl?.querySelector('.yt-queue-section')?.offsetHeight || 0;
+  const plBarH  = ytPlayerEl?.querySelector('.yt-playlist-bar')?.offsetHeight || 0;
+  return hdrH + upNextH + queueH + plBarH;
 }
 
 function ytpMobLayoutLyrics() {
@@ -12487,6 +12512,49 @@ async function changePlaylistVisibility(id, isPublic) {
   } catch(e) { alert('Error updating visibility: ' + e.message); rerenderPlaylistCard(id); }
 }
 
+// A playlist's own page shows Playlist Settings to its owner instead of the
+// full Manage Playlists list - just this one playlist's name and visibility,
+// reusing the same dbPatch the Manage Playlists card uses.
+let _plsPlaylistId = null;
+
+function openPlaylistSettings(playlistId) {
+  const p = playlists.find(x => x.id === playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
+  if (!p) { showToast('Playlist not found.'); return; }
+  _plsPlaylistId = playlistId;
+  const nameInp = document.getElementById('pls-name-input');
+  const pubTog = document.getElementById('pls-pub-toggle');
+  if (nameInp) nameInp.value = p.name || '';
+  if (pubTog) pubTog.classList.toggle('on', !!p.is_public);
+  document.getElementById('plSettingsOverlay')?.classList.add('open');
+  setTimeout(() => nameInp?.focus(), 40);
+}
+
+function closePlaylistSettings() {
+  document.getElementById('plSettingsOverlay')?.classList.remove('open');
+  _plsPlaylistId = null;
+}
+
+async function savePlaylistSettings() {
+  if (!_plsPlaylistId) return;
+  const id = _plsPlaylistId;
+  const name = (document.getElementById('pls-name-input')?.value || '').trim();
+  const isPublic = document.getElementById('pls-pub-toggle')?.classList.contains('on') || false;
+  if (!name) { document.getElementById('pls-name-input')?.focus(); showToast('Give the playlist a name.'); return; }
+  const btn = document.getElementById('pls-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
+  try {
+    await dbPatch(`/playlists?id=eq.${id}`, { name, is_public: isPublic });
+    [playlists, _savedPlaylists].forEach(arr => { const p = arr.find(p => p.id === id); if (p) { p.name = name; p.is_public = isPublic; } });
+    if (playlistChartId === id) { playlistChartName = name; renderPlaylistChart(); }
+    closePlaylistSettings();
+    showToast('Playlist updated.');
+  } catch (e) {
+    showToast('Could not save settings.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  }
+}
+
 async function changePlaylistPlayMode(id, mode) {
   try {
     await dbPatch(`/playlists?id=eq.${id}`, { default_play_mode: mode });
@@ -12801,7 +12869,18 @@ async function plbToggleArtist(artistId) {
   nest.innerHTML = '<div class="plb-empty small">Loading albums\u2026</div>';
   try {
     if (!_plbArtistAlbums[artistId]) {
-      _plbArtistAlbums[artistId] = await dbGet(`/albums?artist_id=eq.${artistId}&select=id,name,release_date,art_url&order=release_date.asc&limit=200`);
+      const albumsList = await dbGet(`/albums?artist_id=eq.${artistId}&select=id,name,release_date,art_url&order=release_date.asc&limit=200`);
+      _plbArtistAlbums[artistId] = albumsList;
+      const albIds = albumsList.map(a => a.id);
+      let allTracks = [];
+      if (albIds.length) {
+        const chunks = [];
+        for (let i = 0; i < albIds.length; i += 50) chunks.push(albIds.slice(i, i + 50));
+        allTracks = (await Promise.all(chunks.map(c =>
+          dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id,track_number&order=album_id,track_number`)))).flat();
+      }
+      allTracks.forEach(t => { (_plbAlbumTracks[t.album_id] = _plbAlbumTracks[t.album_id] || []).push(t); });
+      if (allTracks.length) Object.assign(ytData, await loadYT(allTracks.map(t => t.id)));
     }
     if (!item.classList.contains('open')) return; // collapsed again while fetching
     const artist = _plbBrowseArtists.find(a => a.id === artistId);
@@ -12816,16 +12895,20 @@ async function plbToggleArtist(artistId) {
 function plbBrowseAlbumRows(albumsList, artistId, artistName) {
   if (!albumsList.length) return '<div class="plb-empty small">No albums for this artist yet.</div>';
   return albumsList.map(album => {
+    const albTracks = _plbAlbumTracks[album.id] || [];
+    const totalViews = albTracks.reduce((s, t) => s + (ytData[t.id]?.views || 0), 0);
+    const color = albumColor(album);
     const year = (album.release_date || '').slice(0, 4);
     const art = album.art_url
-      ? `<img class="plb-art" src="${escHtml(album.art_url)}" alt="">`
-      : `<div class="plb-art-ph">${escHtml((album.name || '?')[0].toUpperCase())}</div>`;
+      ? `<img class="list-art" src="${escHtml(album.art_url)}" alt="" loading="lazy">`
+      : `<div class="list-art-ph" style="background:${color}22;color:${color}">${escHtml((album.name || '?')[0].toUpperCase())}</div>`;
     return `<div class="plb-acc-item" data-album-id="${album.id}">` +
-      `<div class="plb-row plb-row-drill" onclick="plbToggleAlbum('${album.id}','${plbJsStr(album.name)}','${plbJsStr(artistName)}')">` +
-        `<span class="plb-caret">\u203a</span>` +
+      `<div class="list-album-row plb-row-drill" style="border-left:3px solid ${color}" onclick="plbToggleAlbum('${album.id}','${plbJsStr(album.name)}','${plbJsStr(artistName)}')">` +
         art +
-        `<div class="plb-info"><div class="plb-name">${escHtml(album.name)}</div>${year ? `<div class="plb-meta">${escHtml(year)}</div>` : ''}</div>` +
+        `<div class="list-info"><div class="list-name">${escHtml(album.name)}</div><div class="list-meta">${year ? year + ' \u00b7 ' : ''}${albTracks.length} track${albTracks.length === 1 ? '' : 's'}</div></div>` +
+        (totalViews ? `<div class="list-views-block"><div class="list-views" style="color:var(--accent)">${fmtV(totalViews)}</div><div class="list-views-lbl">yt views</div></div>` : '') +
         `<button type="button" class="plb-add" data-plb-bulk="album" data-plb-id="${album.id}" onclick="event.stopPropagation();plbAddAlbum('${album.id}',this)">+ Add album</button>` +
+        `<span class="plb-caret">\u203a</span>` +
       `</div>` +
       `<div class="plb-nest" id="plb-nest-album-${album.id}"></div>` +
     `</div>`;
@@ -12839,10 +12922,13 @@ async function plbToggleAlbum(albumId, albumName, artistName) {
   if (item.classList.contains('open')) { item.classList.remove('open'); return; }
   item.classList.add('open');
   if (nest.dataset.loaded === '1') return;
-  nest.innerHTML = '<div class="plb-empty small">Loading songs\u2026</div>';
   try {
+    // Normally already fetched (with views) alongside the rest of the artist's
+    // albums when it opened - this is only a fallback for a stale/missing entry.
     if (!_plbAlbumTracks[albumId]) {
+      nest.innerHTML = '<div class="plb-empty small">Loading songs\u2026</div>';
       _plbAlbumTracks[albumId] = await dbGet(`/tracks?album_id=eq.${albumId}&select=id,name,track_number&order=track_number.asc&limit=200`);
+      Object.assign(ytData, await loadYT(_plbAlbumTracks[albumId].map(t => t.id)));
     }
     if (!item.classList.contains('open')) return; // collapsed again while fetching
     nest.innerHTML = plbBrowseTrackRows(_plbAlbumTracks[albumId], albumName, artistName);
@@ -12855,12 +12941,17 @@ async function plbToggleAlbum(albumId, albumName, artistName) {
 
 function plbBrowseTrackRows(trackRows, albumName, artistName) {
   if (!trackRows.length) return '<div class="plb-empty small">No songs on this album yet.</div>';
+  const maxViews = Math.max(...trackRows.map(t => ytData[t.id]?.views || 0), 1);
   return trackRows.map(t => {
+    const views = ytData[t.id]?.views || 0;
+    const barPct = (views / maxViews * 100).toFixed(1);
+    const barHTML = `<div class="trk-bar-group"><div class="trk-bar-wrap"><div class="trk-bar-bg"><div class="trk-bar-fill" style="width:${barPct}%;background:var(--accent)"></div></div></div><span class="trk-v">${views ? fmtV(views) : ''}</span></div>`;
     const on = plbDraftHas(t.id) || _plbExisting.has(t.id);
     const label = _plbExisting.has(t.id) ? 'On playlist' : (plbDraftHas(t.id) ? 'Added' : '+ Add');
-    return `<div class="plb-row">` +
-      `<div class="plb-art-ph plb-art-num">${t.track_number || '\u266a'}</div>` +
-      `<div class="plb-info"><div class="plb-name">${escHtml(t.name)}</div></div>` +
+    return `<div class="trk-line">` +
+      `<span class="trk-n">${t.track_number || '\u00b7'}</span>` +
+      `<span class="trk-name">${escHtml(t.name)}</span>` +
+      `<div class="trk-metrics">${barHTML}</div>` +
       `<button type="button" class="plb-add${on ? ' on' : ''}" data-plb-track="${t.id}" ${_plbExisting.has(t.id) ? 'disabled' : ''} onclick="plbAddTrack('${t.id}','${plbJsStr(t.name)}','${plbJsStr(artistName)}','${plbJsStr(albumName)}')">${label}</button>` +
     `</div>`;
   }).join('');
@@ -14046,10 +14137,9 @@ function renderPlaylistChart(error) {
   const _plObj = playlistChartId ? (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId)) : null;
   const minePl = !!(googleUser && _plObj && _plObj.user_email === googleUser.email);
   const canAddSongs = !!(googleUser && _plObj && (minePl || _plObj.is_public));
-  const manageBtns = googleUser
-    ? `<button type="button" class="pl-wall-back" onclick="openManagePlaylists()">Manage Playlists</button>` +
-      (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '')
-    : '';
+  const manageBtns =
+    (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>` : '') +
+    (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
   const modeTog =
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
@@ -18452,6 +18542,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
+    'The fullscreen player no longer clips the bottom of the YouTube controls when an Up Next banner is showing - the video area is sized to actually leave room for it now.',
+    'A playlist you own now has its own Playlist Settings button (name, public or private) on its page. Manage Playlists is gone from there for everyone else - it never did anything for a playlist you did not own.',
+    'Add Songs browsing now shows the same stats and view-count bars as Albums List when you open an album, with Add in place of Play.',
     'Jukebox Controls (By Year, Timeline, By Views, Albums List, Share...) could stay blank on the first load of an artist jukebox until you refreshed. Fixed.',
     'Heart and heartbreak reactions now show their count right on the icon, instead of text too small to read.',
     'The Share button on an artist jukebox is icon-only now.',
