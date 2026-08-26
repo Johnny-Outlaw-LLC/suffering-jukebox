@@ -71,12 +71,21 @@ export async function GET(req: NextRequest) {
     if (wantAnalytics) {
       const tz = req.nextUrl.searchParams.get("tz") || "America/Chicago";
       const artist = req.nextUrl.searchParams.get("artist") || null;
+      const sourceRaw = String(req.nextUrl.searchParams.get("source") || "all").trim().toLowerCase();
+      const source = sourceRaw === "jukebox" || sourceRaw === "spotify" ? sourceRaw : "all";
+      const fromRaw = req.nextUrl.searchParams.get("from");
+      const toRaw = req.nextUrl.searchParams.get("to");
+      const fromMs = fromRaw ? Date.parse(fromRaw) : NaN;
+      const toMs = toRaw ? Date.parse(toRaw) : NaN;
       const { data, error } = await sb
         .schema(JUKEBOX_SCHEMA)
-        .rpc("spotify_history_analytics", {
+        .rpc("listening_analytics", {
           p_user_id: user.id,
           p_tz: tz,
           p_artist: artist,
+          p_source: source,
+          p_from: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
+          p_to: Number.isFinite(toMs) ? new Date(toMs).toISOString() : null,
         });
       if (error) throw error;
       return NextResponse.json({ ok: true, analytics: data ?? null });

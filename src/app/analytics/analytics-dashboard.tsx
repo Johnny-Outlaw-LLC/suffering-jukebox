@@ -5,7 +5,10 @@ import styles from "./analytics.module.css";
 
 export type AnalyticsPayload = {
   tz?: string;
+  source?: string;
   artistFilter?: string | null;
+  from?: string | null;
+  to?: string | null;
   totals?: {
     events?: number;
     duration_ms?: number;
@@ -14,6 +17,8 @@ export type AnalyticsPayload = {
     first_played_at?: string | null;
     last_played_at?: string | null;
     skipped?: number;
+    spotify_events?: number;
+    jukebox_events?: number;
   };
   byMonth?: Array<{ year: number; month: number; events: number; duration_ms: number }>;
   byDayOfYear?: Array<{ year: number; doy: number; events: number }>;
@@ -27,37 +32,34 @@ export type AnalyticsPayload = {
     last_played_at?: string;
     tracks?: number;
   }>;
-  insights?: {
-    forgottenFavorites?: Array<{
-      artist: string;
-      title: string;
-      events: number;
-      duration_ms: number;
-      last_played_at?: string;
-      first_played_at?: string;
-    }>;
-    risingArtists?: Array<{ artist: string; recent: number; prior: number; delta: number }>;
-    comebacks?: Array<{ artist: string; events: number; first_played_at?: string; last_played_at?: string }>;
-    binges?: Array<{ artist: string; week_start: string; events: number }>;
-    habits?: {
-      peakHour?: number;
-      peakDow?: number;
-      nightOwlShare?: number;
-      weekendShare?: number;
-      avgPerActiveDay?: number;
-      activeDays?: number;
-      skipRate?: number;
-      uniqueArtists?: number;
-      uniqueTracks?: number;
-    };
+  artistOptions?: Array<{ artist: string; events: number }>;
+  habits?: {
+    peakHour?: number;
+    peakDow?: number;
+    nightOwlShare?: number;
+    weekendShare?: number;
+    avgPerActiveDay?: number;
+    activeDays?: number;
+    skipRate?: number;
+    uniqueArtists?: number;
+    uniqueTracks?: number;
   };
 };
 
-type DashTab = "overview" | "overtime" | "calendar" | "clock" | "artists" | "insights";
+type DashTab = "snapshot" | "timeline" | "calendar" | "when" | "artists";
+type SourceFilter = "all" | "jukebox" | "spotify";
+type DatePreset = "all" | "30d" | "90d" | "365d" | "custom";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const YEAR_COLORS = ["#ff6b35", "#4ecdc4", "#ffe66d", "#a78bfa", "#34d399", "#fb7185", "#60a5fa", "#f472b6"];
+const TABS: Array<[DashTab, string, string]> = [
+  ["snapshot", "Snapshot", "The shape of your listening"],
+  ["timeline", "Timeline", "Year over year"],
+  ["calendar", "Calendar", "Every active day"],
+  ["when", "When", "Hour × weekday"],
+  ["artists", "Artists", "Who you play most"],
+];
 
 function number(value: number) {
   return new Intl.NumberFormat().format(value || 0);
@@ -76,8 +78,7 @@ function displayDate(value?: string | null) {
 }
 function heatColor(t: number) {
   const x = Math.max(0, Math.min(1, t));
-  if (x <= 0) return "#1a1a1a";
-  // dark → ember → orange
+  if (x <= 0) return "rgba(255,255,255,.04)";
   const r = Math.round(40 + x * 215);
   const g = Math.round(20 + x * 87);
   const b = Math.round(18 + x * 35);
@@ -88,6 +89,17 @@ function hourLabel(h: number) {
   if (h === 12) return "12p";
   return h < 12 ? `${h}a` : `${h - 12}p`;
 }
+function toDateInput(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
+function startOfDayIso(ymd: string) {
+  return new Date(`${ymd}T00:00:00`).toISOString();
+}
+function endExclusiveIso(ymd: string) {
+  const d = new Date(`${ymd}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
 
 type Props = {
   accessToken: string;
@@ -95,23 +107,53 @@ type Props = {
 };
 
 export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props) {
-  const [tab, setTab] = useState<DashTab>("overview");
+  const [tab, setTab] = useState<DashTab>("snapshot");
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [source, setSource] = useState<SourceFilter>("all");
   const [artistFilter, setArtistFilter] = useState<string | null>(null);
+  const [artistQuery, setArtistQuery] = useState("");
   const [artistSearch, setArtistSearch] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [calendarYear, setCalendarYear] = useState<number | "all">("all");
   const [yoyMode, setYoyMode] = useState<"month" | "doy">("month");
   const [selectedYears, setSelectedYears] = useState<number[]>([]);
 
-  async function load(artist: string | null = artistFilter) {
+  const range = useMemo(() => {
+    const now = new Date();
+    if (datePreset === "all") return { from: null as string | null, to: null as string | null };
+    if (datePreset === "custom") {
+      return {
+        from: customFrom ? startOfDayIso(customFrom) : null,
+        to: customTo ? endExclusiveIso(customTo) : null,
+      };
+    }
+    const days = datePreset === "30d" ? 30 : datePreset === "90d" ? 90 : 365;
+    const from = new Date(now);
+    from.setDate(from.getDate() - days);
+    return { from: from.toISOString(), to: null as string | null };
+  }, [customFrom, customTo, datePreset]);
+
+  async function load(opts?: {
+    source?: SourceFilter;
+    artist?: string | null;
+    from?: string | null;
+    to?: string | null;
+  }) {
     setLoading(true);
     setError("");
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago";
-      const params = new URLSearchParams({ analytics: "1", tz });
+      const params = new URLSearchParams({ analytics: "1", tz, source: opts?.source ?? source });
+      const artist = opts?.artist === undefined ? artistFilter : opts.artist;
+      const from = opts?.from === undefined ? range.from : opts.from;
+      const to = opts?.to === undefined ? range.to : opts.to;
       if (artist) params.set("artist", artist);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
       const response = await fetch(`/api/spotify/history?${params}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -126,9 +168,9 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   }
 
   useEffect(() => {
-    void load(null);
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken]);
+  }, [accessToken, source, artistFilter, range.from, range.to]);
 
   const years = useMemo(() => {
     const set = new Set<number>();
@@ -148,18 +190,34 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   function pickArtist(artist: string) {
     const next = artistFilter === artist ? null : artist;
     setArtistFilter(next);
-    void load(next);
-    if (next) setTab("overtime");
+    setArtistQuery(next || "");
+    if (next) setTab("timeline");
+  }
+
+  function clearFilters() {
+    setSource("all");
+    setArtistFilter(null);
+    setArtistQuery("");
+    setDatePreset("all");
+    setCustomFrom("");
+    setCustomTo("");
   }
 
   const totals = data?.totals;
-  const habits = data?.insights?.habits;
+  const habits = data?.habits;
   const maxHour = Math.max(1, ...(data?.hourDow || []).map((c) => Number(c.events) || 0));
   const artists = useMemo(() => {
     const rows = data?.artists || [];
     const q = artistSearch.trim().toLowerCase();
     return q ? rows.filter((row) => row.artist.toLowerCase().includes(q)) : rows;
   }, [artistSearch, data]);
+
+  const artistOptions = useMemo(() => {
+    const rows = data?.artistOptions || data?.artists || [];
+    const q = artistQuery.trim().toLowerCase();
+    if (!q || artistFilter === artistQuery) return rows.slice(0, 12);
+    return rows.filter((row) => row.artist.toLowerCase().includes(q)).slice(0, 12);
+  }, [artistFilter, artistQuery, data]);
 
   const monthMatrix = useMemo(() => {
     const map = new Map<string, number>();
@@ -209,14 +267,20 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     return weeks;
   }, [calendarCells]);
 
-  if (loading && !data) return <div className={styles.loading}>Crunching your listening history…</div>;
+  const hasAny = Number(totals?.events || 0) > 0;
+  const filtersActive = source !== "all" || !!artistFilter || datePreset !== "all";
+
+  if (loading && !data) return <div className={styles.loading}>Crunching your listening…</div>;
   if (error && !data) return <div className={styles.error}>{error}</div>;
-  if (!totals?.events) {
+
+  if (!hasAny && !filtersActive) {
     return (
       <section className={styles.emptyAnalytics}>
         <p className={styles.eyebrow}>Nothing to chart yet</p>
-        <h2>Import your Spotify history to unlock these views</h2>
-        <p className={styles.muted}>Year-over-year trends, calendars, time-of-day heatmaps, forgotten favorites, and more all run off your private export.</p>
+        <h2>Import Spotify history — or play something here</h2>
+        <p className={styles.muted}>
+          Snapshot, Timeline, Calendar, and When all run off your private listens: Suffering Jukebox plays plus any Spotify export you import.
+        </p>
         <button className={styles.primaryButton} onClick={onNeedImport}>Import Spotify history</button>
       </section>
     );
@@ -226,363 +290,436 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     <section className={styles.richDash}>
       {error && <div className={styles.error}>{error}</div>}
 
-      <div className={styles.filterBar}>
-        <div className={styles.kpis}>
-          <div><span>Listens</span><strong>{number(Number(totals.events || 0))}</strong></div>
-          <div><span>Time</span><strong>{minutes(Number(totals.duration_ms || 0))}</strong></div>
-          <div><span>Artists</span><strong>{number(Number(totals.artists || 0))}</strong></div>
-          <div><span>Tracks</span><strong>{number(Number(totals.tracks || 0))}</strong></div>
+      <div className={styles.controlRail}>
+        <div className={styles.controlBlock}>
+          <span className={styles.controlLabel}>Source</span>
+          <div className={styles.seg} role="group" aria-label="Listening source">
+            {([
+              ["all", "All"],
+              ["jukebox", "Suffering Jukebox"],
+              ["spotify", "Spotify"],
+            ] as Array<[SourceFilter, string]>).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={source === id ? styles.rangeActive : ""}
+                onClick={() => setSource(id)}
+              >{label}</button>
+            ))}
+          </div>
         </div>
-        <div className={styles.filterMeta}>
-          <span>{displayDate(totals.first_played_at)} → {displayDate(totals.last_played_at)}</span>
-          {artistFilter ? (
-            <button className={styles.filterChip} onClick={() => pickArtist(artistFilter)} title="Clear artist filter">
-              {artistFilter} ✕
-            </button>
-          ) : <span className={styles.muted}>Click any artist to filter every chart</span>}
-          <button className={styles.secondaryButton} onClick={() => void load()} disabled={loading}>
-            {loading ? "Refreshing…" : "Refresh"}
+
+        <div className={styles.controlBlock}>
+          <span className={styles.controlLabel}>Date</span>
+          <div className={styles.seg} role="group" aria-label="Date range">
+            {([
+              ["all", "All time"],
+              ["30d", "30 days"],
+              ["90d", "90 days"],
+              ["365d", "1 year"],
+              ["custom", "Custom"],
+            ] as Array<[DatePreset, string]>).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={datePreset === id ? styles.rangeActive : ""}
+                onClick={() => {
+                  setDatePreset(id);
+                  if (id === "custom" && !customFrom && !customTo) {
+                    const end = new Date();
+                    const start = new Date();
+                    start.setFullYear(start.getFullYear() - 1);
+                    setCustomFrom(toDateInput(start));
+                    setCustomTo(toDateInput(end));
+                  }
+                }}
+              >{label}</button>
+            ))}
+          </div>
+          {datePreset === "custom" && (
+            <div className={styles.customDates}>
+              <label>
+                From
+                <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+              </label>
+              <label>
+                To
+                <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.controlBlock}>
+          <span className={styles.controlLabel}>Artist</span>
+          <div className={styles.artistPicker}>
+            <input
+              className={styles.artistSearch}
+              type="search"
+              value={artistQuery}
+              onChange={(e) => {
+                const value = e.target.value;
+                setArtistQuery(value);
+                if (!value) {
+                  setArtistFilter(null);
+                  return;
+                }
+                const exact = (data?.artistOptions || data?.artists || []).find(
+                  (row) => row.artist.toLowerCase() === value.trim().toLowerCase(),
+                );
+                if (exact) {
+                  setArtistFilter(exact.artist);
+                  setArtistQuery(exact.artist);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && artistQuery.trim()) {
+                  setArtistFilter(artistQuery.trim());
+                  setTab("timeline");
+                }
+                if (e.key === "Escape") {
+                  setArtistQuery("");
+                  setArtistFilter(null);
+                }
+              }}
+              placeholder="Filter by artist…"
+              aria-label="Filter by artist"
+              list="sj-analytics-artists"
+            />
+            <datalist id="sj-analytics-artists">
+              {(data?.artistOptions || []).slice(0, 80).map((row) => (
+                <option key={row.artist} value={row.artist} />
+              ))}
+            </datalist>
+            {artistQuery && artistOptions.length > 0 && !artistFilter && (
+              <div className={styles.artistSuggest}>
+                {artistOptions.map((row) => (
+                  <button key={row.artist} type="button" onClick={() => pickArtist(row.artist)}>
+                    <span>{row.artist}</span>
+                    <em>{number(row.events)}</em>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className={styles.controlActions}>
+          {filtersActive && (
+            <button type="button" className={styles.ghostBtn} onClick={clearFilters}>Clear filters</button>
+          )}
+          <button type="button" className={styles.secondaryButton} onClick={() => void load()} disabled={loading}>
+            {loading ? "Updating…" : "Refresh"}
           </button>
         </div>
       </div>
 
-      <nav className={styles.subTabs} aria-label="Analytics views">
-        {([
-          ["overview", "Overview"],
-          ["overtime", "Over Time"],
-          ["calendar", "Calendar"],
-          ["clock", "Clock"],
-          ["artists", "Artists"],
-          ["insights", "Insights"],
-        ] as Array<[DashTab, string]>).map(([id, label]) => (
-          <button key={id} className={tab === id ? styles.tabActive : ""} onClick={() => setTab(id)}>{label}</button>
-        ))}
-      </nav>
+      <div className={styles.heroStats}>
+        <div className={styles.heroStat}>
+          <span>Listens</span>
+          <strong>{number(Number(totals?.events || 0))}</strong>
+          <em>{displayDate(totals?.first_played_at)} → {displayDate(totals?.last_played_at)}</em>
+        </div>
+        <div className={styles.heroStat}>
+          <span>Time</span>
+          <strong>{minutes(Number(totals?.duration_ms || 0))}</strong>
+          <em>{number(Number(totals?.tracks || 0))} tracks</em>
+        </div>
+        <div className={styles.heroStat}>
+          <span>Artists</span>
+          <strong>{number(Number(totals?.artists || 0))}</strong>
+          <em>
+            {number(Number(totals?.jukebox_events || 0))} jukebox · {number(Number(totals?.spotify_events || 0))} Spotify
+          </em>
+        </div>
+        {artistFilter && (
+          <button type="button" className={styles.filterChip} onClick={() => pickArtist(artistFilter)}>
+            {artistFilter} ✕
+          </button>
+        )}
+      </div>
 
-      {tab === "overview" && (
-        <div className={styles.tabPane}>
-          <div className={styles.habitCards}>
-            <div className={styles.habitCard}>
-              <span>Peak hour</span>
-              <strong>{hourLabel(Number(habits?.peakHour || 0))}</strong>
-              <em>When you listen most</em>
+      {!hasAny && filtersActive ? (
+        <div className={styles.emptyFiltered}>
+          <h2>No listens match these filters</h2>
+          <p className={styles.muted}>Widen the date range, switch source, or clear the artist filter.</p>
+          <button type="button" className={styles.secondaryButton} onClick={clearFilters}>Clear filters</button>
+        </div>
+      ) : (
+        <>
+          <nav className={styles.subTabs} aria-label="Analytics views">
+            {TABS.map(([id, label]) => (
+              <button key={id} type="button" className={tab === id ? styles.tabActive : ""} onClick={() => setTab(id)}>
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          {tab === "snapshot" && (
+            <div className={styles.tabPane}>
+              <div className={styles.habitCards}>
+                <div className={styles.habitCard}>
+                  <span>Peak hour</span>
+                  <strong>{hourLabel(Number(habits?.peakHour || 0))}</strong>
+                  <em>When you listen most</em>
+                </div>
+                <div className={styles.habitCard}>
+                  <span>Peak day</span>
+                  <strong>{DOW[Number(habits?.peakDow || 0)]}</strong>
+                  <em>Your heaviest weekday</em>
+                </div>
+                <div className={styles.habitCard}>
+                  <span>Night owl</span>
+                  <strong>{Number(habits?.nightOwlShare || 0)}%</strong>
+                  <em>After 10pm / before 5am</em>
+                </div>
+                <div className={styles.habitCard}>
+                  <span>Weekend</span>
+                  <strong>{Number(habits?.weekendShare || 0)}%</strong>
+                  <em>Share of weekend listening</em>
+                </div>
+                <div className={styles.habitCard}>
+                  <span>Active days</span>
+                  <strong>{number(Number(habits?.activeDays || 0))}</strong>
+                  <em>~{Number(habits?.avgPerActiveDay || 0)} listens / day</em>
+                </div>
+                <div className={styles.habitCard}>
+                  <span>Skip rate</span>
+                  <strong>{Number(habits?.skipRate || 0)}%</strong>
+                  <em>Marked skipped in Spotify export</em>
+                </div>
+              </div>
+              <div className={styles.dashboardGrid}>
+                <div className={styles.panel}>
+                  <div className={styles.panelHead}>
+                    <h2>Top artists</h2>
+                    <button type="button" className={styles.linkBtn} onClick={() => setTab("artists")}>See all</button>
+                  </div>
+                  {(data?.artists || []).slice(0, 10).map((row, i) => (
+                    <button type="button" className={styles.rankBtn} key={row.artist} onClick={() => pickArtist(row.artist)}>
+                      <em>{i + 1}</em>
+                      <span>{row.artist}</span>
+                      <strong>{number(row.events)}</strong>
+                    </button>
+                  ))}
+                </div>
+                <div className={styles.panel}>
+                  <div className={styles.panelHead}>
+                    <h2>Listening clock</h2>
+                    <button type="button" className={styles.linkBtn} onClick={() => setTab("when")}>Expand</button>
+                  </div>
+                  <div className={styles.miniClock}>
+                    {DOW.map((label, dow) => (
+                      <div key={label} className={styles.miniClockRow}>
+                        <span>{label}</span>
+                        <div>
+                          {Array.from({ length: 24 }, (_, hour) => {
+                            const cell = (data?.hourDow || []).find((c) => c.dow === dow && c.hour === hour);
+                            const t = (Number(cell?.events || 0) / maxHour);
+                            return <i key={hour} style={{ background: heatColor(t) }} title={`${label} ${hourLabel(hour)}: ${number(Number(cell?.events || 0))}`} />;
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className={styles.habitCard}>
-              <span>Peak day</span>
-              <strong>{DOW[Number(habits?.peakDow || 0)]}</strong>
-              <em>Your heaviest weekday</em>
+          )}
+
+          {tab === "timeline" && (
+            <div className={styles.tabPane}>
+              <div className={styles.toolbarRow}>
+                <div className={styles.seg}>
+                  <button type="button" className={yoyMode === "month" ? styles.rangeActive : ""} onClick={() => setYoyMode("month")}>By month</button>
+                  <button type="button" className={yoyMode === "doy" ? styles.rangeActive : ""} onClick={() => setYoyMode("doy")}>Day of year</button>
+                </div>
+                <div className={styles.yearPills}>
+                  {years.map((year, idx) => {
+                    const on = selectedYears.includes(year);
+                    return (
+                      <button
+                        key={year}
+                        type="button"
+                        className={on ? styles.yearOn : styles.yearOff}
+                        style={on ? { borderColor: YEAR_COLORS[idx % YEAR_COLORS.length], color: YEAR_COLORS[idx % YEAR_COLORS.length] } : undefined}
+                        onClick={() => setSelectedYears((cur) => on ? cur.filter((y) => y !== year) : [...cur, year].sort((a, b) => b - a))}
+                      >{year}</button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {yoyMode === "month" ? (
+                <div className={styles.panel}>
+                  <h2>Year over year by month</h2>
+                  <div className={styles.monthGrid}>
+                    {MONTHS.map((label, mi) => {
+                      const month = mi + 1;
+                      return (
+                        <div key={label} className={styles.monthCol}>
+                          <span>{label}</span>
+                          <div className={styles.monthBars}>
+                            {selectedYears.map((year) => {
+                              const events = monthMatrix.map.get(`${year}-${month}`) || 0;
+                              const h = Math.max(events ? 4 : 0, Math.round((events / monthMatrix.max) * 120));
+                              return (
+                                <div
+                                  key={year}
+                                  className={styles.monthBar}
+                                  style={{ height: h, background: YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length] }}
+                                  title={`${MONTHS[mi]} ${year}: ${number(events)} listens`}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className={styles.legend}>
+                    {selectedYears.map((year) => (
+                      <span key={year}><i style={{ background: YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length] }} />{year}</span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.panel}>
+                  <h2>Day of year</h2>
+                  <p className={styles.muted}>Each line is a year. Spikes are seasons that come back.</p>
+                  <svg className={styles.doyChart} viewBox="0 0 740 220" role="img" aria-label="Day of year listening by year">
+                    {[0, 0.25, 0.5, 0.75, 1].map((t) => (
+                      <line key={t} x1="40" x2="720" y1={20 + t * 160} y2={20 + t * 160} stroke="rgba(255,255,255,.06)" />
+                    ))}
+                    {selectedYears.map((year) => {
+                      const series = doyByYear.get(year) || Array(366).fill(0);
+                      const max = Math.max(1, ...series);
+                      const color = YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length];
+                      const points = series.map((v, i) => {
+                        const x = 40 + (i / 365) * 680;
+                        const y = 180 - (v / max) * 160;
+                        return `${x},${y}`;
+                      }).join(" ");
+                      return <polyline key={year} fill="none" stroke={color} strokeWidth="1.8" points={points} opacity="0.92" />;
+                    })}
+                    {[0, 90, 181, 273, 365].map((d, i) => (
+                      <text key={d} x={40 + (d / 365) * 680} y="205" fill="#777" fontSize="10" textAnchor="middle">{MONTHS[i * 3] || "Dec"}</text>
+                    ))}
+                  </svg>
+                  <div className={styles.legend}>
+                    {selectedYears.map((year) => (
+                      <span key={year}><i style={{ background: YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length] }} />{year}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className={styles.habitCard}>
-              <span>Night owl</span>
-              <strong>{Number(habits?.nightOwlShare || 0)}%</strong>
-              <em>Listens after 10pm / before 5am</em>
+          )}
+
+          {tab === "calendar" && (
+            <div className={styles.tabPane}>
+              <div className={styles.toolbarRow}>
+                <div className={styles.yearPills}>
+                  {years.map((year) => (
+                    <button key={year} type="button" className={calendarYear === year ? styles.yearOn : styles.yearOff} onClick={() => setCalendarYear(year)}>{year}</button>
+                  ))}
+                </div>
+                <span className={styles.muted}>{number(calendarCells.filter((c) => c.events > 0).length)} active days · max {number(calendarMax)} in a day</span>
+              </div>
+              <div className={styles.panel}>
+                <h2>Listening calendar</h2>
+                <div className={styles.calWrap}>
+                  <div className={styles.calDow}>
+                    {DOW.map((d) => <span key={d}>{d[0]}</span>)}
+                  </div>
+                  <div className={styles.calGrid}>
+                    {githubWeeks.map((week, wi) => (
+                      <div key={wi} className={styles.calWeek}>
+                        {week.map((cell, di) => cell ? (
+                          <i
+                            key={cell.day}
+                            style={{ background: heatColor(cell.events / calendarMax) }}
+                            title={`${cell.day}: ${number(cell.events)} listens`}
+                          />
+                        ) : <i key={`e-${wi}-${di}`} className={styles.calEmpty} />)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className={styles.heatLegend}>
+                  <span>Less</span>
+                  {[0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => <i key={t} style={{ background: heatColor(t) }} />)}
+                  <span>More</span>
+                </div>
+              </div>
             </div>
-            <div className={styles.habitCard}>
-              <span>Weekend</span>
-              <strong>{Number(habits?.weekendShare || 0)}%</strong>
-              <em>Share of weekend listening</em>
-            </div>
-            <div className={styles.habitCard}>
-              <span>Active days</span>
-              <strong>{number(Number(habits?.activeDays || 0))}</strong>
-              <em>~{Number(habits?.avgPerActiveDay || 0)} listens / day</em>
-            </div>
-            <div className={styles.habitCard}>
-              <span>Skip rate</span>
-              <strong>{Number(habits?.skipRate || 0)}%</strong>
-              <em>Marked skipped in the export</em>
-            </div>
-          </div>
-          <div className={styles.dashboardGrid}>
-            <div className={styles.panel}>
-              <h2>Top artists</h2>
-              {(data?.artists || []).slice(0, 12).map((row) => (
-                <button type="button" className={styles.rankBtn} key={row.artist} onClick={() => pickArtist(row.artist)}>
-                  <span>{row.artist}</span>
-                  <strong>{number(row.events)}</strong>
-                </button>
-              ))}
-            </div>
-            <div className={styles.panel}>
-              <h2>Listening clock preview</h2>
-              <div className={styles.miniClock}>
-                {DOW.map((label, dow) => (
-                  <div key={label} className={styles.miniClockRow}>
-                    <span>{label}</span>
-                    <div>
+          )}
+
+          {tab === "when" && (
+            <div className={styles.tabPane}>
+              <div className={styles.panel}>
+                <h2>Time of day × weekday</h2>
+                <p className={styles.muted}>Where your ears actually live. Quiet cells stay dark; orange is heavy.</p>
+                <div className={styles.clockHeat}>
+                  <div className={styles.clockHead}>
+                    <span />
+                    {Array.from({ length: 24 }, (_, h) => <span key={h}>{h % 3 === 0 ? hourLabel(h) : ""}</span>)}
+                  </div>
+                  {DOW.map((label, dow) => (
+                    <div key={label} className={styles.clockRow}>
+                      <span>{label}</span>
                       {Array.from({ length: 24 }, (_, hour) => {
                         const cell = (data?.hourDow || []).find((c) => c.dow === dow && c.hour === hour);
-                        const t = (Number(cell?.events || 0) / maxHour);
-                        return <i key={hour} style={{ background: heatColor(t) }} title={`${label} ${hourLabel(hour)}: ${number(Number(cell?.events || 0))}`} />;
+                        const events = Number(cell?.events || 0);
+                        return (
+                          <i
+                            key={hour}
+                            style={{ background: heatColor(events / maxHour) }}
+                            title={`${label} ${hourLabel(hour)}: ${number(events)} listens`}
+                          />
+                        );
                       })}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {tab === "overtime" && (
-        <div className={styles.tabPane}>
-          <div className={styles.toolbarRow}>
-            <div className={styles.seg}>
-              <button className={yoyMode === "month" ? styles.rangeActive : ""} onClick={() => setYoyMode("month")}>By month</button>
-              <button className={yoyMode === "doy" ? styles.rangeActive : ""} onClick={() => setYoyMode("doy")}>Day of year</button>
-            </div>
-            <div className={styles.yearPills}>
-              {years.map((year, idx) => {
-                const on = selectedYears.includes(year);
-                return (
+          {tab === "artists" && (
+            <div className={styles.tabPane}>
+              <div className={styles.toolbarRow}>
+                <input
+                  className={styles.artistSearch}
+                  type="search"
+                  value={artistSearch}
+                  onChange={(event) => setArtistSearch(event.target.value)}
+                  placeholder="Search artists in this view"
+                  aria-label="Search artists"
+                />
+                <span className={styles.muted}>{number(artists.length)} artists · click to filter everything</span>
+              </div>
+              <div className={styles.artistTable}>
+                <div className={styles.artistHead}><span>Artist</span><span>Listens</span><span>Tracks</span><span>Time</span><span>First</span><span>Last</span></div>
+                {artists.map((row) => (
                   <button
-                    key={year}
-                    className={on ? styles.yearOn : styles.yearOff}
-                    style={on ? { borderColor: YEAR_COLORS[idx % YEAR_COLORS.length], color: YEAR_COLORS[idx % YEAR_COLORS.length] } : undefined}
-                    onClick={() => setSelectedYears((cur) => on ? cur.filter((y) => y !== year) : [...cur, year].sort((a, b) => b - a))}
-                  >{year}</button>
-                );
-              })}
-            </div>
-          </div>
-
-          {yoyMode === "month" ? (
-            <div className={styles.panel}>
-              <h2>Year-over-year by month</h2>
-              <div className={styles.monthGrid}>
-                {MONTHS.map((label, mi) => {
-                  const month = mi + 1;
-                  return (
-                    <div key={label} className={styles.monthCol}>
-                      <span>{label}</span>
-                      <div className={styles.monthBars}>
-                        {selectedYears.map((year, yi) => {
-                          const events = monthMatrix.map.get(`${year}-${month}`) || 0;
-                          const h = Math.max(events ? 4 : 0, Math.round((events / monthMatrix.max) * 120));
-                          return (
-                            <div
-                              key={year}
-                              className={styles.monthBar}
-                              style={{ height: h, background: YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length] }}
-                              title={`${MONTHS[mi]} ${year}: ${number(events)} listens`}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className={styles.legend}>
-                {selectedYears.map((year) => (
-                  <span key={year}><i style={{ background: YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length] }} />{year}</span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className={styles.panel}>
-              <h2>Day-of-year comparison</h2>
-              <p className={styles.muted}>Each line is a year. Spikes show seasons and rituals that come back every calendar.</p>
-              <svg className={styles.doyChart} viewBox="0 0 740 220" role="img" aria-label="Day of year listening by year">
-                {[0, 0.25, 0.5, 0.75, 1].map((t) => (
-                  <line key={t} x1="40" x2="720" y1={20 + t * 160} y2={20 + t * 160} stroke="#2a2a2a" />
-                ))}
-                {selectedYears.map((year) => {
-                  const series = doyByYear.get(year) || Array(366).fill(0);
-                  const max = Math.max(1, ...series);
-                  const color = YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length];
-                  const points = series.map((v, i) => {
-                    const x = 40 + (i / 365) * 680;
-                    const y = 180 - (v / max) * 160;
-                    return `${x},${y}`;
-                  }).join(" ");
-                  return <polyline key={year} fill="none" stroke={color} strokeWidth="1.6" points={points} opacity="0.9" />;
-                })}
-                {[0, 90, 181, 273, 365].map((d, i) => (
-                  <text key={d} x={40 + (d / 365) * 680} y="205" fill="#777" fontSize="10" textAnchor="middle">{MONTHS[i * 3] || "Dec"}</text>
-                ))}
-              </svg>
-              <div className={styles.legend}>
-                {selectedYears.map((year) => (
-                  <span key={year}><i style={{ background: YEAR_COLORS[years.indexOf(year) % YEAR_COLORS.length] }} />{year}</span>
+                    type="button"
+                    key={row.artist}
+                    className={`${styles.artistLine} ${artistFilter === row.artist ? styles.artistLineOn : ""}`}
+                    onClick={() => pickArtist(row.artist)}
+                  >
+                    <span>{row.artist}</span>
+                    <strong>{number(row.events)}</strong>
+                    <em>{number(Number(row.tracks || 0))}</em>
+                    <em>{minutes(Number(row.duration_ms || 0))}</em>
+                    <em>{displayDate(row.first_played_at)}</em>
+                    <em>{displayDate(row.last_played_at)}</em>
+                  </button>
                 ))}
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {tab === "calendar" && (
-        <div className={styles.tabPane}>
-          <div className={styles.toolbarRow}>
-            <div className={styles.yearPills}>
-              {years.map((year) => (
-                <button key={year} className={calendarYear === year ? styles.yearOn : styles.yearOff} onClick={() => setCalendarYear(year)}>{year}</button>
-              ))}
-            </div>
-            <span className={styles.muted}>{number(calendarCells.filter((c) => c.events > 0).length)} active days · max {number(calendarMax)} in a day</span>
-          </div>
-          <div className={styles.panel}>
-            <h2>Listening calendar</h2>
-            <div className={styles.calWrap}>
-              <div className={styles.calDow}>
-                {DOW.map((d) => <span key={d}>{d[0]}</span>)}
-              </div>
-              <div className={styles.calGrid}>
-                {githubWeeks.map((week, wi) => (
-                  <div key={wi} className={styles.calWeek}>
-                    {week.map((cell, di) => cell ? (
-                      <i
-                        key={cell.day}
-                        style={{ background: heatColor(cell.events / calendarMax) }}
-                        title={`${cell.day}: ${number(cell.events)} listens`}
-                      />
-                    ) : <i key={`e-${wi}-${di}`} className={styles.calEmpty} />)}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className={styles.heatLegend}>
-              <span>Less</span>
-              {[0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => <i key={t} style={{ background: heatColor(t) }} />)}
-              <span>More</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === "clock" && (
-        <div className={styles.tabPane}>
-          <div className={styles.panel}>
-            <h2>Time of day × day of week</h2>
-            <p className={styles.muted}>Where your ears actually live. Darker cells are quiet; orange is heavy listening.</p>
-            <div className={styles.clockHeat}>
-              <div className={styles.clockHead}>
-                <span />
-                {Array.from({ length: 24 }, (_, h) => <span key={h}>{h % 3 === 0 ? hourLabel(h) : ""}</span>)}
-              </div>
-              {DOW.map((label, dow) => (
-                <div key={label} className={styles.clockRow}>
-                  <span>{label}</span>
-                  {Array.from({ length: 24 }, (_, hour) => {
-                    const cell = (data?.hourDow || []).find((c) => c.dow === dow && c.hour === hour);
-                    const events = Number(cell?.events || 0);
-                    return (
-                      <i
-                        key={hour}
-                        style={{ background: heatColor(events / maxHour) }}
-                        title={`${label} ${hourLabel(hour)}: ${number(events)} listens`}
-                      />
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {tab === "artists" && (
-        <div className={styles.tabPane}>
-          <div className={styles.toolbarRow}>
-            <input
-              className={styles.artistSearch}
-              type="search"
-              value={artistSearch}
-              onChange={(event) => setArtistSearch(event.target.value)}
-              placeholder="Search artists"
-              aria-label="Search artists"
-            />
-            <span className={styles.muted}>Top {number(artists.length)} · click to filter all views</span>
-          </div>
-          <div className={styles.artistTable}>
-            <div className={styles.artistHead}><span>Artist</span><span>Listens</span><span>Tracks</span><span>Time</span><span>First</span><span>Last</span></div>
-            {artists.map((row) => (
-              <button
-                type="button"
-                key={row.artist}
-                className={`${styles.artistLine} ${artistFilter === row.artist ? styles.artistLineOn : ""}`}
-                onClick={() => pickArtist(row.artist)}
-              >
-                <span>{row.artist}</span>
-                <strong>{number(row.events)}</strong>
-                <em>{number(Number(row.tracks || 0))}</em>
-                <em>{minutes(Number(row.duration_ms || 0))}</em>
-                <em>{displayDate(row.first_played_at)}</em>
-                <em>{displayDate(row.last_played_at)}</em>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "insights" && (
-        <div className={styles.tabPane}>
-          <div className={styles.insightGrid}>
-            <div className={styles.panel}>
-              <p className={styles.eyebrow}>Forgotten favorites</p>
-              <h2>Loved hard, left behind</h2>
-              <p className={styles.muted}>8+ plays historically, quiet for 180+ days.</p>
-              {(data?.insights?.forgottenFavorites || []).map((row) => (
-                <button type="button" className={styles.insightRow} key={`${row.artist}-${row.title}`} onClick={() => pickArtist(row.artist)}>
-                  <div>
-                    <strong>{row.title}</strong>
-                    <span>{row.artist}</span>
-                  </div>
-                  <em>{number(row.events)} plays · last {displayDate(row.last_played_at)}</em>
-                </button>
-              ))}
-              {!data?.insights?.forgottenFavorites?.length && <p className={styles.emptyState}>Nothing dusty enough yet.</p>}
-            </div>
-
-            <div className={styles.panel}>
-              <p className={styles.eyebrow}>Comebacks</p>
-              <h2>Old friends, new chapters</h2>
-              <p className={styles.muted}>Artists from years ago who returned in the last 90 days after a long gap.</p>
-              {(data?.insights?.comebacks || []).map((row) => (
-                <button type="button" className={styles.insightRow} key={row.artist} onClick={() => pickArtist(row.artist)}>
-                  <div>
-                    <strong>{row.artist}</strong>
-                    <span>First {displayDate(row.first_played_at)}</span>
-                  </div>
-                  <em>Back since {displayDate(row.last_played_at)}</em>
-                </button>
-              ))}
-              {!data?.insights?.comebacks?.length && <p className={styles.emptyState}>No comeback arcs in this window.</p>}
-            </div>
-
-            <div className={styles.panel}>
-              <p className={styles.eyebrow}>Rising now</p>
-              <h2>Heating up</h2>
-              <p className={styles.muted}>Last 90 days at least 2× the 90 days before that.</p>
-              {(data?.insights?.risingArtists || []).slice(0, 15).map((row) => (
-                <button type="button" className={styles.insightRow} key={row.artist} onClick={() => pickArtist(row.artist)}>
-                  <div>
-                    <strong>{row.artist}</strong>
-                    <span>{number(row.prior)} → {number(row.recent)}</span>
-                  </div>
-                  <em>+{number(row.delta)}</em>
-                </button>
-              ))}
-              {!data?.insights?.risingArtists?.length && <p className={styles.emptyState}>No surge artists right now.</p>}
-            </div>
-
-            <div className={styles.panel}>
-              <p className={styles.eyebrow}>Biggest weeks</p>
-              <h2>Binge seasons</h2>
-              <p className={styles.muted}>Single-week artist obsessions across your history.</p>
-              {(data?.insights?.binges || []).map((row) => (
-                <button type="button" className={styles.insightRow} key={`${row.artist}-${row.week_start}`} onClick={() => pickArtist(row.artist)}>
-                  <div>
-                    <strong>{row.artist}</strong>
-                    <span>Week of {displayDate(row.week_start)}</span>
-                  </div>
-                  <em>{number(row.events)} listens</em>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        </>
       )}
     </section>
   );

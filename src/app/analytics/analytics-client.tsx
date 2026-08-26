@@ -349,8 +349,8 @@ export default function AnalyticsClient() {
       ) : (
         <>
           <nav className={styles.tabs} aria-label="Analytics sections">
-            <button className={tab === "explore" ? styles.tabActive : ""} onClick={() => setTab("explore")}>Explore</button>
-            <button className={tab === "spotify" ? styles.tabActive : ""} onClick={() => setTab("spotify")}>Import Spotify history</button>
+            <button className={tab === "explore" ? styles.tabActive : ""} onClick={() => setTab("explore")}>Listening</button>
+            <button className={tab === "spotify" ? styles.tabActive : ""} onClick={() => setTab("spotify")}>Import Spotify</button>
           </nav>
           {error && <div className={styles.error}>{error}</div>}
           {tab === "spotify" ? (
