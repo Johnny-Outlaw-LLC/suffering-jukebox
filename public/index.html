@@ -93,12 +93,14 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 #filter-header { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 #filter-header-mobile { display: none; }
 #view-controls-header { flex: 0 1 auto; min-width: 0; }
+#landing-nav-header { display: none; flex: 0 1 auto; min-width: 0; }
 .hdr-brand-mobile { display: none; }
 .hdr-r1-filters { display: none; }
 .brand-block { flex-shrink: 0; }
 .brand-block img { height: clamp(37px, 5.5vw, 56px); width: auto; flex-shrink: 0; object-fit: contain; display: block; }
 .brand-sub { font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; }
 .brand-tagline { font-size: 0.42rem; color: var(--text-muted); font-weight: 400; letter-spacing: 0.01em; margin-top: 2px; white-space: nowrap; }
+.brand-tagline:empty { display: none; }
 .brand-title { font-size: clamp(1rem, 2.2vw, 1.3rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
 .brand-title em { font-style: normal; color: var(--accent); }
 .header-btns { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; min-width: 0; margin-left: auto; }
@@ -2540,6 +2542,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .landing-wrap { padding: 20px clamp(16px,4vw,48px) 60px; max-width: 1600px; margin: 0 auto; }
 .landing-intro { font-size: .58rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 18px; }
 .landing-tabs { display: flex; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; align-items: center; }
+.landing-nav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .landing-tab {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
   font-family: var(--mono); font-size: .54rem; letter-spacing: .04em; padding: .45rem .85rem;
@@ -3091,7 +3094,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
     <div class="hdr-r1-left">
       <div class="brand-block">
         <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="goHome()" title="Back to the Suffering Jukebox home page">
-        <p class="brand-tagline" id="brand-tagline">An interactive <strong>Silver Jews</strong> &amp; <strong>Purple Mountains</strong> jukebox</p>
+        <p class="brand-tagline" id="brand-tagline"></p>
       </div>
       <div id="filter-header"></div>
     </div>
@@ -3143,6 +3146,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
     <div id="filter-header-mobile"></div>
   </div>
   <div class="hdr-r2">
+    <div id="landing-nav-header"></div>
     <div id="view-controls-header"></div>
     <div id="lwytb-header"></div>
     <button type="button" id="hdr-toolbar-toggle" class="hdr-r2-toggle" onclick="toggleToolbar()" aria-expanded="true" style="display:none"><span class="ctrl-group-caret" aria-hidden="true">&#9652;</span><span>Hide Toolbar</span></button>
@@ -13914,7 +13918,7 @@ async function initLanding() {
   isLandingMode = true;
   try {
     const tagline = document.getElementById('brand-tagline');
-    if (tagline) tagline.innerHTML = 'Your personal jukebox — explore artists for free';
+    if (tagline) tagline.textContent = '';
     document.title = _sjBaseTitle = 'Suffering Jukebox';
     const _lsSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
@@ -14520,11 +14524,6 @@ function renderLanding() {
   const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   main.innerHTML = `
     <div class="landing-wrap">
-      <div class="landing-tabs">
-        <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
-        <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
-        <button type="button" class="landing-tab${landingTab === 'home' ? ' active' : ''}" onclick="setLandingTab('home')">My Jukebox</button>
-      </div>
       ${landingTab === 'home' ? renderLandingHomeHTML(esc) : landingTab === 'playlists' ? (() => {
         const rows = playlistExploreRows();
         const mineCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
@@ -15769,9 +15768,11 @@ function toggleToolbar() {
   const next = !isToolbarHidden();
   _toolbarHidden = next;
   try { localStorage.setItem('sj_hide_toolbar', next ? '1' : '0'); } catch (e) {}
-  updateViewControlsHeader();
   if (typeof isLandingMode !== 'undefined' && isLandingMode) updateLandingActionsHeader();
-  else updateLWYTBHeader();
+  else {
+    updateViewControlsHeader();
+    updateLWYTBHeader();
+  }
   updateToolbarToggle();
 }
 // The button takes itself off pages that have no toolbar at all. Each header
@@ -15782,7 +15783,8 @@ function updateToolbarToggle() {
   if (!btn) return;
   const vc = document.getElementById('view-controls-header');
   const lw = document.getElementById('lwytb-header');
-  const armed = (vc && vc.dataset.armed === '1') || (lw && lw.dataset.armed === '1');
+  const nav = document.getElementById('landing-nav-header');
+  const armed = (vc && vc.dataset.armed === '1') || (lw && lw.dataset.armed === '1') || (nav && nav.dataset.armed === '1');
   btn.style.display = armed ? '' : 'none';
   const hide = isToolbarHidden();
   btn.setAttribute('aria-expanded', hide ? 'false' : 'true');
@@ -15884,20 +15886,24 @@ function updateLWYTBHeader() {
   sjFitLwytbRow();
 }
 
-// Landing page equivalent of updateLWYTBHeader() - same header slot, same
-// markup, but wired to the catalogue-wide shuffles.
+// Landing navigation belongs in the header row, not in the page body. It is
+// deliberately separate from artist-page controls, so Show Toolbar restores
+// these destinations rather than a stale Jukebox Controls group.
 function updateLandingActionsHeader() {
-  const el = document.getElementById('lwytb-header');
-  if (!el) return;
-  if (!_playlistsLoaded && !_playlistsLoading) {
-    _playlistsLoading = true;
-    loadPlaylists().then(() => { _playlistsLoading = false; _playlistsLoaded = true; if (isLandingMode) updateLandingActionsHeader(); });
-  }
-  el.style.display = 'block';
-  el.innerHTML = renderLWYTBHTML(true);
-  el.dataset.armed = '1';
+  const nav = document.getElementById('landing-nav-header');
+  const views = document.getElementById('view-controls-header');
+  const playlists = document.getElementById('lwytb-header');
+  if (!nav) return;
+  if (views) { views.innerHTML = ''; views.style.display = 'none'; views.dataset.armed = '0'; }
+  if (playlists) { playlists.innerHTML = ''; playlists.style.display = 'none'; playlists.dataset.armed = '0'; }
+  nav.style.display = isToolbarHidden() ? 'none' : 'block';
+  nav.innerHTML = isToolbarHidden() ? '' : `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
+    <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
+    <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
+    <button type="button" class="landing-tab${landingTab === 'home' ? ' active' : ''}" onclick="setLandingTab('home')">My Jukebox</button>
+  </nav>`;
+  nav.dataset.armed = '1';
   updateToolbarToggle();
-  sjFitLwytbRow();
 }
 
 function updateViewControlsHeader() {
@@ -18274,6 +18280,7 @@ const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
     'My Data & Analytics now has its own dedicated page and opens in a separate tab, so your music keeps playing while you explore deeper listening insights — and it carries your signed-in session with you.',
     'Before importing Spotify history, you can now keep or leave out any listening type, year, or artist. Type cards and every year/artist row have selection checkboxes, with artist search plus Select all and Clear all controls; only the events still selected are saved.',
+    'Explore Artists, Explore Playlists, and My Jukebox now live in the home-page header. The header description is gone, and Hide / Show Toolbar restores those browse buttons instead of the artist-page Jukebox controls.',
   ]},
   { date: '2026-08-25', items: [
     'Spotify Extended Streaming History now imports through a private four-step review: upload multiple files, watch processing, review years/types/top artists, then confirm. Music, podcasts, audiobooks, and other activity are analyzed even when they are not in the Jukebox; adding songs remains a separate process.',
