@@ -11346,6 +11346,35 @@ function sjmQueueRemove() {
   if (q >= 0) ytRemoveFromQueue(q);
 }
 
+// Works whether the track is already in the running queue (moved) or not
+// (resolved and spliced in) - either way it lands right after what is
+// playing now and is pinned by identity so shuffle cannot pick around it.
+function sjmPlayNext() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (!tid) return;
+  const vid = ytData[tid]?.video_id;
+  if (!vid) { showToast('That song has no playable video.'); return; }
+  const meta  = ytpTrackMeta(tid, null);
+  const title = (meta.title && meta.title !== 'Unknown') ? meta.title : 'Track';
+
+  if (!ytPlayerEl || !ytQueue.length) { ytPlayNow(vid, title, tid); return; }
+  if (ytQueue[ytQueueIdx]?.trackId === tid) { showToast('That one is playing now.'); return; }
+
+  let idx = ytQueue.findIndex(q => q.trackId === tid);
+  if (idx < 0) {
+    const insertAt = Math.min(ytQueueIdx + 1, ytQueue.length);
+    ytQueue.splice(insertAt, 0, ytQueueItem(vid, title, tid, meta.artist || ''));
+    idx = insertAt;
+    _queueHasAdditions = true;
+    ytResetShufflePool();
+  }
+  const landed = ytMoveAfterCurrent(idx);
+  ytSetPlayNext(ytQueue[landed >= 0 ? landed : idx]);
+  ytpPaintUpNext();
+  showToast('♫ Up next: ' + title);
+}
+
 // Remove just this song from the playing playlist (works from the player ⋯ too).
 function sjmQueueRemoveSong() {
   const tid = _sjmTrackId;
@@ -11526,11 +11555,8 @@ function sjmRenderRoot() {
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
       (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
     '</button>' +
-    (googleUser && track
-      ? '<button class="sjm-item" onclick="sjmOpenMyJukebox()">' +
-          '<span class="sjm-ic">＋</span><span class="sjm-label">Send to My Online Jukebox</span>' +
-          '<span class="sjm-sub">›</span></button>'
-      : '') +
+    '<button class="sjm-item" onclick="sjmPlayNext()">' +
+      '<span class="sjm-ic">⏭</span><span class="sjm-label">Play this song next</span></button>' +
     (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore ' + escHtml(navArtist.name || 'Artist') + ' Jukebox</span></button>'
@@ -19297,6 +19323,7 @@ const SJ_CHANGELOG = [
     'Import from Spotify can open your playlists again. Picking one used to come back with nothing in it, or with an error asking you to reconnect, which never helped.',
     'The list of Spotify lists is now split into your own playlists and the ones you only follow. Spotify will not hand over the songs in a playlist somebody else made, so those are grouped apart and the panel says why instead of looking broken.',
     'Songs you added to a Spotify playlist from your own computer years ago now show up in the list too, instead of being quietly skipped.',
+    'Send to My Online Jukebox is gone from the song menu - it opened a second small menu that most people never needed. Play this song next is in its place: one tap and it plays right after whatever is on now, even with shuffle running.',
   ] },
   { date: '2026-08-26', items: [
     'The "Add from YouTube directly" option in Add Songs to Playlist can now import a whole YouTube playlist link at once, not just one song at a time - paste it, review the list (songs already on the playlist are skipped), and import the rest with one click.',
