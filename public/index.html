@@ -1554,6 +1554,10 @@ textarea.report-input { resize:vertical; }
   width: 100%;
   min-width: 0;
 }
+.ytp-mini-footer.dock-grown .ytp-mf-main {
+  grid-template-columns: minmax(360px, calc(var(--mf-body) + 190px)) minmax(160px, 1fr) minmax(112px, 176px);
+  align-items: end;
+}
 
 /* ── Left: art + header ── */
 .ytp-mf-now { grid-area: now; display: flex; align-items: center; gap: 11px; min-width: 0; }
@@ -1561,13 +1565,16 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-art {
   width: 100%; height: 100%; display: block; border-radius: 6px;
   object-fit: cover; background: var(--bg-elevated); border: 1px solid var(--border);
+  position: relative; z-index: 2;
 }
-/* Past the resize threshold the static thumbnail is swapped for the real
-   video - the SAME iframe the fullscreen player uses, moved here rather than
-   duplicated, so there is only ever one thing making sound. */
+/* The real fullscreen iframe stays mounted behind the thumbnail throughout a
+   docked session. Past the resize threshold only the thumbnail is hidden, so
+   changing modes cannot interrupt playback. */
 .ytp-mf-video-slot { position: absolute; inset: 0; display: none; border-radius: 6px; overflow: hidden; background: #000; }
 .ytp-mf-video-slot .yt-player-frame { flex: none !important; min-height: 0 !important; width: 100% !important; height: 100% !important; }
 .ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; }
+.ytp-mini-footer.dock-grown .ytp-mf-now { align-items: flex-end; }
+.ytp-mini-footer.dock-grown .ytp-mf-meta { justify-content: flex-end; align-self: stretch; padding-bottom: 2px; }
 .ytp-mf-artist {
   font-size: .46rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1658,6 +1665,7 @@ textarea.report-input { resize:vertical; }
   height: var(--mf-body); cursor: default;
 }
 .ytp-mf-lyr.show { display: flex; }
+.ytp-mini-footer.dock-grown .ytp-mf-lyr { align-self: end; width: min(100%, var(--mf-lyr-w, 100%)); justify-self: end; }
 .ytp-mf-lyr-view {
   flex: 1; min-width: 0; height: var(--mf-body); overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
@@ -1674,6 +1682,7 @@ textarea.report-input { resize:vertical; }
 
 /* ── Right: transport + window buttons ── */
 .ytp-mf-right { grid-area: right; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ytp-mini-footer.dock-grown .ytp-mf-right { align-self: end; align-items: flex-end; }
 .ytp-mf-win { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 @keyframes ytpMfAttention {
   0%, 100% { transform: scale(1); }
@@ -1683,6 +1692,8 @@ textarea.report-input { resize:vertical; }
 }
 .ytp-mf-song.attention { animation: ytpMfAttention .6s ease; }
 .ytp-mf-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ytp-mini-footer.dock-grown .ytp-mf-controls { flex: 1 1 auto; flex-wrap: wrap-reverse; justify-content: flex-end; align-content: flex-end; }
+.ytp-mini-footer.dock-grown .ytp-mf-win { flex-direction: column-reverse; }
 .ytp-mf-btn {
   background: none; border: 1px solid var(--border); color: var(--text);
   width: var(--mf-btn); height: var(--mf-btn); border-radius: 8px; cursor: pointer; font-size: .8rem;
@@ -1732,6 +1743,11 @@ textarea.report-input { resize:vertical; }
     column-gap: 8px;
     row-gap: 10px;
   }
+  .ytp-mini-footer.dock-grown .ytp-mf-main { grid-template-columns: 1fr auto; align-items: center; }
+  .ytp-mini-footer.dock-grown .ytp-mf-now { align-items: center; }
+  .ytp-mini-footer.dock-grown .ytp-mf-meta { justify-content: center; padding-bottom: 0; }
+  .ytp-mini-footer.dock-grown .ytp-mf-controls { flex-wrap: wrap; justify-content: center; }
+  .ytp-mini-footer.dock-grown .ytp-mf-win { flex-direction: row; }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
@@ -7024,6 +7040,10 @@ function ytpEnterDocked() {
   _ytpMinimized = true;
   target.style.display = 'none';
   target.style.transition = ''; target.style.transform = ''; target.style.opacity = '';
+  // Mount the live frame once for the whole docked session. The thumbnail sits
+  // over it at resting height, so crossing the video threshold never reparents
+  // (and therefore never reloads or pauses) the YouTube iframe.
+  ytpDockClaimFrame();
   showYtpMiniFooter();
   ytpShowQueueChrome();
 }
@@ -7045,11 +7065,9 @@ window.addEventListener('resize', () => {
 // ── Docked bar: resizable, the thumbnail growing into the real video ────────
 // Dragging the handle across the top sets the bar's height anywhere between
 // its own resting size (the floor - never smaller than what it opens at) and
-// half the screen. Past a threshold the static thumbnail is swapped for the
-// SAME iframe the fullscreen player uses (moved here with appendChild, not
-// duplicated - a second live iframe would mean two audio streams). The swap
-// only happens at that threshold and at fullscreen enter/exit, never on every
-// pixel of a drag, so there is nothing for the moved iframe to reload.
+// half the screen. The fullscreen iframe is moved into the dock once, then kept
+// mounted behind the thumbnail. Past a threshold only the thumbnail visibility
+// changes, so resizing cannot reload the iframe or interrupt playback.
 let _ytpDockH = null;
 try {
   const _dh = parseInt(localStorage.getItem('sj_dock_h') || '', 10);
@@ -7081,7 +7099,7 @@ function ytpDockClaimFrame() {
   if (!frame || !slot || slot.contains(frame)) return;
   slot.appendChild(frame);
   slot.style.display = 'block';
-  if (art) art.style.display = 'none';
+  if (art) art.style.display = _ytpDockVideoOn ? 'none' : '';
 }
 
 function ytpDockReleaseFrame() {
@@ -7117,10 +7135,15 @@ function ytpApplyDockHeight() {
   const bodyBase = ytpIsMob() ? 56 : 76;
   const mfBody = Math.min(YTP_DOCK_BODY_MAX, bodyBase + extra);
   el.style.setProperty('--mf-body', mfBody + 'px');
+  el.style.setProperty('--mf-lyr-w', Math.max(42, 100 - Math.min(45, extra * 0.16)) + '%');
+  el.classList.toggle('dock-grown', extra > 16);
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
   if (wantVideo !== _ytpDockVideoOn) {
     _ytpDockVideoOn = wantVideo;
-    if (wantVideo) ytpDockClaimFrame(); else ytpDockReleaseFrame();
+    // Keep the iframe mounted and only reveal/conceal it, preserving playback.
+    ytpDockClaimFrame();
+    const art = document.getElementById('ytp-mf-art');
+    if (art) art.style.display = wantVideo ? 'none' : '';
   }
   if (wantVideo) {
     const frame = document.getElementById('ytp-mf-video-slot')?.querySelector('.yt-player-frame');
