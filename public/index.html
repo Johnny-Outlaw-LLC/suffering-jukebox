@@ -1523,15 +1523,25 @@ textarea.report-input { resize:vertical; }
    reflows underneath it when the lyric font size changes. */
 .ytp-mini-footer {
   display: flex; flex-direction: column; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4990;
-  gap: 0; padding: 10px 16px 8px;
-  --mf-body: 76px;                     /* height of the art / lyric window */
+  gap: 0; padding: 14px 16px 8px;
+  --mf-body: 76px;                     /* height of the art / video window */
   --mf-btn: 30px;                      /* every button in the bar is this square */
   min-height: calc(var(--mf-body) + 36px);
   background: var(--bg-card); border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 20px rgba(0,0,0,.35); cursor: pointer;
+  box-shadow: 0 -4px 20px rgba(0,0,0,.35); overflow: hidden;
   transform: translateY(110%); transition: transform .32s ease; pointer-events: none;
 }
 .ytp-mini-footer.open { transform: translateY(0); pointer-events: auto; }
+/* Drag handle across the top edge - the only way to resize the dock now that
+   there is no floating window to drag by its title bar. */
+.ytp-mf-resize {
+  position: absolute; top: 0; left: 0; right: 0; height: 12px; cursor: ns-resize; z-index: 5;
+  display: flex; align-items: center; justify-content: center; touch-action: none;
+}
+.ytp-mf-resize::after {
+  content: ''; width: 36px; height: 3px; border-radius: 2px; background: var(--border); transition: background .15s;
+}
+.ytp-mf-resize:hover::after, .ytp-mf-resize.active::after { background: var(--accent); }
 .ytp-mf-main {
   display: grid;
   grid-template-columns: minmax(0, 320px) minmax(0, 1fr) auto;
@@ -1547,10 +1557,16 @@ textarea.report-input { resize:vertical; }
 
 /* ── Left: art + header ── */
 .ytp-mf-now { grid-area: now; display: flex; align-items: center; gap: 11px; min-width: 0; }
+.ytp-mf-art-wrap { position: relative; width: var(--mf-body); height: var(--mf-body); flex-shrink: 0; transition: width .12s, height .12s; }
 .ytp-mf-art {
-  width: var(--mf-body); height: var(--mf-body); flex-shrink: 0; border-radius: 6px;
+  width: 100%; height: 100%; display: block; border-radius: 6px;
   object-fit: cover; background: var(--bg-elevated); border: 1px solid var(--border);
 }
+/* Past the resize threshold the static thumbnail is swapped for the real
+   video - the SAME iframe the fullscreen player uses, moved here rather than
+   duplicated, so there is only ever one thing making sound. */
+.ytp-mf-video-slot { position: absolute; inset: 0; display: none; border-radius: 6px; overflow: hidden; background: #000; }
+.ytp-mf-video-slot .yt-player-frame { flex: none !important; min-height: 0 !important; width: 100% !important; height: 100% !important; }
 .ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; }
 .ytp-mf-artist {
   font-size: .46rem; letter-spacing: .1em; text-transform: uppercase;
@@ -1701,7 +1717,7 @@ textarea.report-input { resize:vertical; }
     --mf-btn: clamp(42px, 12vw, 46px);
     min-height: 0;
     gap: 8px;
-    padding: 12px calc(16px + env(safe-area-inset-right, 0px))
+    padding: 16px calc(16px + env(safe-area-inset-right, 0px))
              calc(14px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
   }
   .ytp-mf-main {
@@ -1732,7 +1748,7 @@ textarea.report-input { resize:vertical; }
      Play/pause stands out by colour, not by being a different size. */
   .ytp-mf-btn { font-size: 1.2rem; border-radius: 14px; }
   #ytp-mf-playpause { font-size: 1.35rem; border-color: var(--accent); color: var(--accent); }
-  .ytp-mf-sep, #ytp-mf-maximize { display: none !important; }
+  .ytp-mf-sep { display: none !important; }
   /* The window glyphs are drawn at 10px for the desktop title bar - scale them
      up so they carry a button this size. */
   #ytp-mf-restore svg { width: 16px; height: 16px; }
@@ -3087,10 +3103,14 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 <div id="mob-overlay" onclick="Object.keys(songCards).forEach(t=>closeSongCard(t));plWallClosePop()"></div>
 <div id="mob-alb-panel"></div>
 
-<div id="ytp-mini-footer" class="ytp-mini-footer" onclick="ytpMiniFooterBarClick(event)">
+<div id="ytp-mini-footer" class="ytp-mini-footer">
+  <div class="ytp-mf-resize" id="ytp-mf-resize" onmousedown="ytpDockResizeStart(event)" ontouchstart="ytpDockResizeStart(event)" title="Drag to resize"></div>
   <div class="ytp-mf-main">
     <div class="ytp-mf-now">
-      <img class="ytp-mf-art" id="ytp-mf-art" alt="" src="/favicon.png" data-yt="" onerror="ytpMfArtFallback(this)">
+      <div class="ytp-mf-art-wrap">
+        <img class="ytp-mf-art" id="ytp-mf-art" alt="" src="/favicon.png" data-yt="" onerror="ytpMfArtFallback(this)">
+        <div class="ytp-mf-video-slot" id="ytp-mf-video-slot"></div>
+      </div>
       <div class="ytp-mf-meta">
         <div class="ytp-mf-artist" id="ytp-mf-artist"></div>
         <div class="ytp-mf-song-row">
@@ -3120,8 +3140,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
       </div>
       <span class="ytp-mf-sep" aria-hidden="true"></span>
       <div class="ytp-mf-win">
-        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Expand" id="ytp-mf-restore"></button>
-        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleFullscreen()" title="Maximize" id="ytp-mf-maximize"></button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Full screen" id="ytp-mf-restore"></button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close" id="ytp-mf-close">✕</button>
       </div>
     </div>
@@ -5471,7 +5490,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
   _ytpLyricsPaneEl.id = 'ytp-lyrics-pane';
   _ytpLyricsPaneEl.style.display = 'none';
   _ytpLyricsPaneEl.innerHTML =
-    '<div id="ytp-lyr-hdr" style="display:flex;align-items:center;gap:5px;padding:6px 10px;background:var(--bg-elevated);border-bottom:1px solid var(--border);cursor:grab;flex-shrink:0;user-select:none" onmousedown="ytpLyrDragStart(event)">' +
+    '<div id="ytp-lyr-hdr" style="display:flex;align-items:center;gap:5px;padding:6px 10px;background:var(--bg-elevated);border-bottom:1px solid var(--border);flex-shrink:0;user-select:none">' +
       '<span style="font-size:.55rem;font-weight:700;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="ytp-lyr-title">Lyrics</span>' +
       '<label id="ytp-lyr-sync-wrap" style="display:none;align-items:center;gap:3px;cursor:pointer;user-select:none;flex-shrink:0" title="Highlight the line being sung" onmousedown="event.stopPropagation()"><input type="checkbox" id="ytp-lyr-sync-chk" onchange="lyrSyncToggle(this.checked)" style="width:10px;height:10px;cursor:pointer;accent-color:var(--accent)"><span style="font-size:.45rem;color:var(--text-muted)">Sync</span></label>' +
       '<span class="ytp-lyr-font-ctrl" style="font-size:.38rem;color:var(--text-muted)">A</span>' +
@@ -5512,12 +5531,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
   ytPlayerEl.id = 'yt-player';
   ytPlayerEl.style.width = cW + 'px';
   ytPlayerEl.innerHTML = `
-    <div class="sc-edge sc-edge-n"  onmousedown="ytpEdgeResize(event,'n')"></div>
-    <div class="sc-edge sc-edge-s"  onmousedown="ytpEdgeResize(event,'s')"></div>
-    <div class="sc-edge sc-edge-e"  onmousedown="ytpEdgeResize(event,'e')"></div>
-    <div class="sc-edge sc-edge-se" onmousedown="ytpEdgeResize(event,'se')"></div>
-    <div class="sc-edge sc-edge-sw" onmousedown="ytpEdgeResize(event,'sw')"></div>
-    <div class="yt-player-header" onmousedown="ytpDragStart(event)" style="flex-direction:column;gap:0;padding:0;align-items:stretch">
+    <div class="yt-player-header" style="flex-direction:column;gap:0;padding:0;align-items:stretch">
       <div style="display:flex;align-items:center;gap:6px;padding:6px 8px 3px 10px">
         <span class="ytp-title" style="flex:1;min-width:0">${trackId && ytpTrackMeta(trackId, title).artist ? (ytpTrackMeta(trackId, title).artist.replace(/</g, '&lt;') + ' - ') : ''}${safeTitle}${ytpAlbumYearHTML(trackId, 'ytp-title-sub')}</span>
         <div class="ytp-titlebar-btns">
@@ -5552,8 +5566,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
     <div class="yt-player-frame" style="height:${cH}px">
       ${ytpIframeHTML(videoId, cH, !restorePaused)}
     </div>
-    ${ytpMobDeckHTML(trackId)}
-    <div class="sc-resize" onmousedown="ytpEdgeResize(event,'se')" title="Drag to resize">⋮⋮</div>`;
+    ${ytpMobDeckHTML(trackId)}`;
   _ytpContainerEl.appendChild(ytPlayerEl);
   // Sync the newly-created Shuffle/Repeat toggles to whatever state
   // was set before the player existed (e.g. shuffleAllVisible() calling
@@ -5571,18 +5584,15 @@ function openYTPlayer(videoId, title, trackId, ev) {
 
   document.body.appendChild(_ytpContainerEl);
   ytpWireFrameInteraction(ytPlayerEl.querySelector('.yt-player-frame'));
-  _ytpContainerEl.style.opacity = '0';
-  _ytpContainerEl.style.transform = 'scale(0.93) translateY(6px)';
-  requestAnimationFrame(() => {
-    _ytpContainerEl.style.transition = 'opacity .18s ease, transform .18s ease';
-    _ytpContainerEl.style.opacity = '1';
-    _ytpContainerEl.style.transform = 'scale(1) translateY(0)';
-    setTimeout(() => { if (_ytpContainerEl) _ytpContainerEl.style.transition = ''; }, 200);
-  });
+  // Docked (the resizable bottom bar) is the only resting state now - the
+  // container that holds the real player only ever shows for Full Screen.
+  _ytpContainerEl.style.display = 'none';
+  _ytpMinimized = true;
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
   ytpOnTrackChange(videoId, trackId, title);
-  ytpMfStartProgress();
-  // Mobile never uses the floating windowed sheet — open fullscreen.
+  showYtpMiniFooter();
+  // Mobile still opens straight to Full Screen; Docked is what it falls back
+  // to when minimized from there.
   if (_isMobPlayer) requestAnimationFrame(() => ytpEnterFullscreen());
   // Sticky background-play preference: start audio mode when this track has a file.
   if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused) {
@@ -5686,7 +5696,7 @@ function closeYTPlayer() {
   const _closeTarget = _ytpContainerEl || ytPlayerEl;
   _closeTarget.style.transition = 'opacity .12s ease, transform .12s ease';
   _closeTarget.style.opacity = '0'; _closeTarget.style.transform = 'scale(0.9)';
-  _ytpLyricsOpen = false; _ytpMinimized = false; _ytpFs = false; _ytpFsRestore = null;
+  _ytpLyricsOpen = false; _ytpMinimized = false; _ytpFs = false;
   setTimeout(() => {
     if (_ytpContainerEl?.parentNode) _ytpContainerEl.remove();
     else if (ytPlayerEl?.parentNode) ytPlayerEl.remove();
@@ -6580,7 +6590,6 @@ function updateYTQueueUI(opts) {
   const prevBtn = ytPlayerEl.querySelector('.ytp-prev-btn');
   if (prevBtn) prevBtn.style.display = (_ytLastPlayed || ytQueueIdx > 0) ? '' : 'none';
 
-  const resizeHandle  = ytPlayerEl.querySelector('.sc-resize');
   const existingWrap  = ytPlayerEl.querySelector('.yt-queue-wrap');
   const existingSection = ytPlayerEl.querySelector('.yt-queue-section');
   const savedScroll = existingSection ? existingSection.scrollTop : 0;
@@ -6646,8 +6655,8 @@ function updateYTQueueUI(opts) {
 
   if (existingWrap) {
     existingWrap.outerHTML = queueHTML;
-  } else if (resizeHandle) {
-    resizeHandle.insertAdjacentHTML('beforebegin', queueHTML);
+  } else {
+    ytPlayerEl.insertAdjacentHTML('beforeend', queueHTML);
   }
   ytApplyQueueFilter();
   if (findFocused) {
@@ -6794,19 +6803,6 @@ function ytQueueResizeStart(e) {
     document.removeEventListener('mouseup', onUp);
     overlay.remove();
   };
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-}
-
-function ytpDragStart(e) {
-  if (window.innerWidth <= 640 || _ytpFs) return;
-  if (e.button !== 0) return;
-  const target = _ytpContainerEl || ytPlayerEl;
-  if (!target) return;
-  e.preventDefault();
-  const r = target.getBoundingClientRect(), ox = e.clientX - r.left, oy = e.clientY - r.top;
-  const onMove = ev => { target.style.left = (ev.clientX - ox) + 'px'; target.style.top = Math.max(0, ev.clientY - oy) + 'px'; };
-  const onUp   = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 }
@@ -6978,24 +6974,24 @@ async function ytpAutoOpenFullscreenLyrics() {
   }
 }
 
-// Enter fullscreen without toggling. Used by mobile open and restore-from-mini.
+// Enter fullscreen without toggling. Used by mobile open and restore-from-dock.
 function ytpEnterFullscreen() {
   if (!_ytpContainerEl || !ytPlayerEl || _ytpFs) {
     if (_ytpFs) ytpUpdateFsLayout();
     return;
   }
-  const frame = ytPlayerEl.querySelector('.yt-player-frame');
-  _ytpFsRestore = {
-    left: _ytpContainerEl.style.left || '',
-    top: _ytpContainerEl.style.top || '',
-    width: ytPlayerEl.style.width || (ytPlayerEl.offsetWidth + 'px'),
-    frameH: frame?.style.height || (frame ? frame.offsetHeight + 'px' : ''),
-    lyrWidth: _ytpLyricsPaneEl?.style.width || '',
-    lyrHeight: _ytpLyricsPaneEl?.style.height || '',
-  };
+  // The video may currently be living inside the dock's art slot - claim it
+  // back before the fullscreen layout goes looking for it inside ytPlayerEl.
+  ytpDockReleaseFrame();
+  _ytpMinimized = false;
+  hideYtpMiniFooter();
+  const target = _ytpContainerEl;
+  target.style.display = '';
+  target.style.opacity = '';
+  target.style.transform = '';
   _ytpFs = true;
-  _ytpContainerEl.classList.add('ytp-fs');
-  const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
+  target.classList.add('ytp-fs');
+  const fsBtn = target.querySelector('.ytp-fs-btn');
   ytpSetWinIcon(fsBtn, 'restore');
   if (fsBtn) fsBtn.title = ytpIsMob() ? 'Minimize' : 'Restore down';
   // Phones get the deck + tab layout; the panel is whichever tab was last used.
@@ -7010,83 +7006,34 @@ function ytpEnterFullscreen() {
   ytpAutoOpenFullscreenLyrics();
 }
 
-// Drop out of fullscreen into the mini bar on mobile (never the windowed sheet).
-// Leaves lyrics open-state alone so restoring fullscreen feels continuous.
-function ytpMobExitFsToMini() {
-  if (!_ytpContainerEl || !ytPlayerEl) return;
-  _ytpFsAutoLyrics = false;
-  _ytpFs = false;
-  ytpMobApplyFs(false);
-  _ytpContainerEl.classList.remove('ytp-fs');
-  const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
-  ytpSetWinIcon(fsBtn, 'maximize');
-  if (fsBtn) fsBtn.title = 'Maximize';
-  _ytpFsRestore = null;
+// The only two states left are Docked (the resizable bottom bar) and Full
+// Screen - this is the one place that leaves Full Screen, on either platform.
+function ytpEnterDocked() {
+  const target = _ytpContainerEl || ytPlayerEl;
+  if (!target) return;
+  if (_ytpFs) {
+    if (_ytpLyricsOpen && _ytpFsAutoLyrics) ytpToggleLyrics(false);
+    _ytpFsAutoLyrics = false;
+    _ytpFs = false;
+    ytpMobApplyFs(false);
+    target.classList.remove('ytp-fs');
+    const fsBtn = target.querySelector('.ytp-fs-btn');
+    ytpSetWinIcon(fsBtn, 'maximize');
+    if (fsBtn) fsBtn.title = 'Maximize';
+  }
+  _ytpMinimized = true;
+  target.style.display = 'none';
+  target.style.transition = ''; target.style.transform = ''; target.style.opacity = '';
+  showYtpMiniFooter();
+  ytpShowQueueChrome();
 }
 
-// Minimizing hides the player and shows a compact fixed footer.
-// Desktop: floating windowed ↔ mini. Mobile: fullscreen ↔ mini only.
+// Kept under its old name because a lot of call sites already ask "is the
+// player minimized right now" - it just flips between the two states now.
 function ytpToggleMinimize() {
   if (!ytPlayerEl) return;
-  const target = _ytpContainerEl || ytPlayerEl;
-
-  // Mobile: toggle between fullscreen and the mini bar — never windowed.
-  if (ytpIsMob()) {
-    if (_ytpMinimized) {
-      _ytpMinimized = false;
-      target.style.display = '';
-      target.style.opacity = '1';
-      target.style.transform = '';
-      hideYtpMiniFooter();
-      ytpShowQueueChrome();
-      // The maximized phone player picks its own panel from the tab pair, so
-      // the mini bar's lyric strip setting stays the mini bar's business.
-      ytpEnterFullscreen();
-      return;
-    }
-    if (_ytpFs) ytpMobExitFsToMini();
-    _ytpMinimized = true;
-    target.style.display = 'none';
-    showYtpMiniFooter();
-    return;
-  }
-
-  if (_ytpFs) ytpToggleFullscreen();
-  _ytpMinimized = !_ytpMinimized;
-  if (_ytpMinimized) {
-    // Preference stays with the user: never write "off" just because the pane
-    // is closed (a song with no lyrics used to flip the strip preference off).
-    if (_ytpLyricsOpen && !_mfLyricStripOn) ytpSetLyricsPrefer(true);
-    // Animate the tiled window dropping down toward the footer before hiding it.
-    target.style.transition = 'opacity .32s ease, transform .32s ease';
-    target.style.transform = 'translateY(70px) scale(.85)';
-    target.style.opacity = '0';
-    setTimeout(() => {
-      target.style.display = 'none';
-      target.style.transition = '';
-      target.style.transform = '';
-    }, 320);
-    showYtpMiniFooter();
-  } else {
-    target.style.display = '';
-    target.style.transition = 'none';
-    target.style.transform = 'translateY(70px) scale(.85)';
-    target.style.opacity = '0';
-    void target.offsetWidth; // force reflow so the entrance transition actually plays
-    target.style.transition = 'opacity .32s ease, transform .32s ease';
-    target.style.transform = 'translateY(0) scale(1)';
-    target.style.opacity = '1';
-    setTimeout(() => { target.style.transition = ''; target.style.transform = ''; }, 320);
-    hideYtpMiniFooter();
-    ytpShowQueueChrome();
-    // Carry the mini bar's lyrics setting back onto the restored window.
-    if (_mfLyricStripOn !== _ytpLyricsOpen) ytpToggleLyrics(_mfLyricStripOn);
-    if (_ytpFs) ytpUpdateFsLayout();
-  }
-}
-
-function ytpMiniFooterBarClick(e) {
-  ytpToggleMinimize(); // tapping the bar itself (not a button) restores the window
+  if (_ytpMinimized) ytpEnterFullscreen();
+  else ytpEnterDocked();
 }
 
 // The window height is fixed in CSS but the breakpoint changes it, so the line
@@ -7095,19 +7042,144 @@ window.addEventListener('resize', () => {
   if (document.getElementById('ytp-mf-lyrics-pane')?.classList.contains('show')) ytpMfLayoutLyrics();
 });
 
+// ── Docked bar: resizable, the thumbnail growing into the real video ────────
+// Dragging the handle across the top sets the bar's height anywhere between
+// its own resting size (the floor - never smaller than what it opens at) and
+// half the screen. Past a threshold the static thumbnail is swapped for the
+// SAME iframe the fullscreen player uses (moved here with appendChild, not
+// duplicated - a second live iframe would mean two audio streams). The swap
+// only happens at that threshold and at fullscreen enter/exit, never on every
+// pixel of a drag, so there is nothing for the moved iframe to reload.
+let _ytpDockH = null;
+try {
+  const _dh = parseInt(localStorage.getItem('sj_dock_h') || '', 10);
+  if (!isNaN(_dh)) _ytpDockH = _dh;
+} catch (_) {}
+let _ytpDockVideoOn = false;
+let _ytpDockMinHCache = null;
+const YTP_DOCK_VIDEO_EXTRA = 80;  // px past the resting height before video kicks in
+const YTP_DOCK_BODY_MAX = 320;    // never grow past the art column's own width cap
+
+function ytpDockMinH() {
+  if (_ytpDockMinHCache != null) return _ytpDockMinHCache;
+  const el = document.getElementById('ytp-mini-footer');
+  const fallback = ytpIsMob() ? 150 : 112;
+  if (!el) return fallback;
+  const had = el.style.height;
+  el.style.height = '';
+  const h = Math.round(el.getBoundingClientRect().height) || fallback;
+  el.style.height = had;
+  _ytpDockMinHCache = h;
+  return h;
+}
+
+function ytpDockClaimFrame() {
+  if (!ytPlayerEl) return;
+  const frame = ytPlayerEl.querySelector('.yt-player-frame');
+  const slot  = document.getElementById('ytp-mf-video-slot');
+  const art   = document.getElementById('ytp-mf-art');
+  if (!frame || !slot || slot.contains(frame)) return;
+  slot.appendChild(frame);
+  slot.style.display = 'block';
+  if (art) art.style.display = 'none';
+}
+
+function ytpDockReleaseFrame() {
+  if (!ytPlayerEl) return;
+  const slot  = document.getElementById('ytp-mf-video-slot');
+  const frame = slot?.querySelector('.yt-player-frame');
+  const art   = document.getElementById('ytp-mf-art');
+  if (frame) {
+    const anchor = ytPlayerEl.querySelector('#ytp-up-next-slot');
+    if (anchor) anchor.after(frame); else ytPlayerEl.appendChild(frame);
+    frame.style.width = '';
+    frame.style.height = '';
+    const iframe = frame.querySelector('iframe');
+    if (iframe) iframe.style.height = '';
+  }
+  if (slot) slot.style.display = 'none';
+  if (art) art.style.display = '';
+  _ytpDockVideoOn = false;
+}
+
+// Applies the current (clamped) dock height and swaps thumbnail ⟷ video as
+// needed. Called whenever the dock is shown, on window resize, and on every
+// tick of a drag.
+function ytpApplyDockHeight() {
+  const el = document.getElementById('ytp-mini-footer');
+  if (!el || !ytPlayerEl || !_ytpMinimized) return;
+  const min = ytpDockMinH();
+  const max = Math.max(min, Math.round(window.innerHeight * 0.5));
+  const h = _ytpDockH == null ? min : Math.min(Math.max(_ytpDockH, min), max);
+  _ytpDockH = h;
+  el.style.height = h + 'px';
+  const extra = Math.max(0, h - min);
+  const bodyBase = ytpIsMob() ? 56 : 76;
+  const mfBody = Math.min(YTP_DOCK_BODY_MAX, bodyBase + extra);
+  el.style.setProperty('--mf-body', mfBody + 'px');
+  const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
+  if (wantVideo !== _ytpDockVideoOn) {
+    _ytpDockVideoOn = wantVideo;
+    if (wantVideo) ytpDockClaimFrame(); else ytpDockReleaseFrame();
+  }
+  if (wantVideo) {
+    const frame = document.getElementById('ytp-mf-video-slot')?.querySelector('.yt-player-frame');
+    if (frame) {
+      frame.style.width = '100%';
+      frame.style.height = mfBody + 'px';
+      const iframe = frame.querySelector('iframe');
+      if (iframe) iframe.style.height = mfBody + 'px';
+    }
+  }
+}
+
+function ytpDockResizeStart(e) {
+  if (e.type === 'mousedown' && e.button !== 0) return;
+  const el = document.getElementById('ytp-mini-footer');
+  const handle = document.getElementById('ytp-mf-resize');
+  if (!el) return;
+  e.preventDefault();
+  const startY = e.touches ? e.touches[0].clientY : e.clientY;
+  const startH = el.getBoundingClientRect().height;
+  if (handle) handle.classList.add('active');
+  // An overlay over the video so a drag that starts on the handle but crosses
+  // the iframe underneath doesn't have its mousemove events swallowed by it.
+  let overlay = null;
+  if (_ytpDockVideoOn) {
+    overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:5000;cursor:ns-resize;background:transparent';
+    document.body.appendChild(overlay);
+  }
+  const onMove = (ev) => {
+    const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
+    _ytpDockH = startH + (startY - y);
+    ytpApplyDockHeight();
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onUp);
+    if (handle) handle.classList.remove('active');
+    if (overlay) overlay.remove();
+    try { localStorage.setItem('sj_dock_h', String(Math.round(_ytpDockH))); } catch (_) {}
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onUp);
+}
+
 function showYtpMiniFooter() {
   const el = document.getElementById('ytp-mini-footer');
   if (!el) return;
   el.classList.add('open');
   const restoreBtn = document.getElementById('ytp-mf-restore');
-  // Mobile is already minimized — show a fullscreen glyph (not the tiled
-  // restore-down icon, and not a second minimize dash).
   if (restoreBtn) {
-    ytpSetWinIcon(restoreBtn, ytpIsMob() ? 'maximize' : 'restore');
-    restoreBtn.title = ytpIsMob() ? 'Full screen' : 'Expand';
+    ytpSetWinIcon(restoreBtn, 'maximize');
+    restoreBtn.title = 'Full screen';
   }
-  const maxBtn = document.getElementById('ytp-mf-maximize');
-  if (maxBtn) ytpSetWinIcon(maxBtn, 'maximize');
+  ytpApplyDockHeight();
   ytpUpdateMiniFooter();
   ytpMfApplyLyricStrip();
   const titleEl = document.getElementById('ytp-mf-song');
@@ -7417,7 +7489,6 @@ function ytpMfSeekCommit(el) {
 }
 
 let _ytpFs = false;
-let _ytpFsRestore = null;
 function ytpIsMob() { return window.innerWidth <= 640; }
 // Capability check for playback behavior (autoplay blocking, background
 // keepalive) - a landscape phone or tablet fails the width check above but
@@ -10683,68 +10754,12 @@ function ytpUpdateFsLayout() {
   if (iframe) iframe.style.height = frameH + 'px';
 }
 
-function ytpRestoreFromFs() {
-  if (!_ytpFsRestore || !_ytpContainerEl || !ytPlayerEl) return;
-  const r = _ytpFsRestore;
-  _ytpContainerEl.style.left = r.left;
-  _ytpContainerEl.style.top = r.top;
-  ytPlayerEl.style.width = r.width;
-  ytPlayerEl.style.height = '';
-  const frame  = ytPlayerEl.querySelector('.yt-player-frame');
-  const iframe = frame?.querySelector('iframe');
-  if (frame) { frame.style.height = r.frameH; frame.style.flex = ''; }
-  if (iframe) iframe.style.height = r.frameH;
-  if (_ytpLyricsPaneEl) {
-    _ytpLyricsPaneEl.style.height = r.lyrHeight || '';
-    _ytpLyricsPaneEl.style.maxHeight = '';
-    if (r.lyrWidth) _ytpLyricsPaneEl.style.width = r.lyrWidth;
-  }
-}
-
 function ytpToggleFullscreen() {
   if (!_ytpContainerEl || !ytPlayerEl) return;
-  // Mobile: Maximize from the mini bar = expand to fullscreen; from fullscreen
-  // the Maximize control is hidden and Restore-down would mean windowed, so
-  // any leftover call tucks to the mini bar instead.
-  if (ytpIsMob()) {
-    if (_ytpMinimized) { ytpToggleMinimize(); return; }
-    if (_ytpFs) { ytpToggleMinimize(); return; }
-    ytpEnterFullscreen();
-    return;
-  }
-  if (_ytpMinimized) ytpToggleMinimize();
-  const fsBtn = _ytpContainerEl.querySelector('.ytp-fs-btn');
-
-  if (!_ytpFs) {
-    ytpEnterFullscreen();
-    return;
-  }
-
-  // Close the pane while _ytpFs is still true so ytpToggleLyrics() takes the
-  // fullscreen path instead of trying to shift the floating container back.
-  if (_ytpLyricsOpen && _ytpFsAutoLyrics) {
-    ytpToggleLyrics(false);
-  }
-  _ytpFsAutoLyrics = false;
-  _ytpFs = false;
-  ytpMobApplyFs(false);
-  _ytpContainerEl.classList.remove('ytp-fs');
-  ytpSetWinIcon(fsBtn, 'maximize');
-  if (fsBtn) fsBtn.title = 'Maximize';
-  ytpRestoreFromFs();
-  _ytpFsRestore = null;
+  if (_ytpFs) { ytpEnterDocked(); return; }
+  ytpEnterFullscreen();
 }
 
-function ytpClampToViewport() {
-  if (!_ytpContainerEl || _ytpFs || window.innerWidth <= 640) return;
-  const r = _ytpContainerEl.getBoundingClientRect();
-  const maxLeft = Math.max(0, window.innerWidth - r.width);
-  const maxTop = Math.max(0, window.innerHeight - r.height);
-  const left = Math.min(Math.max(r.left, 0), maxLeft);
-  const top = Math.min(Math.max(r.top, 0), maxTop);
-  if (left !== r.left) _ytpContainerEl.style.left = left + 'px';
-  if (top !== r.top) _ytpContainerEl.style.top = top + 'px';
-}
 // Rotating a phone, or resizing a desktop window, can cross the mobile
 // breakpoint while the player is maximized - swap layouts rather than
 // stranding the one that no longer fits.
@@ -10755,45 +10770,8 @@ function ytpSyncFsMode() {
 }
 window.addEventListener('resize', () => {
   if (_ytpFs) { ytpSyncFsMode(); ytpUpdateFsLayout(); }
-  else ytpClampToViewport();
+  else if (_ytpMinimized) { _ytpDockMinHCache = null; ytpApplyDockHeight(); }
 }, { passive: true });
-
-function ytpEdgeResize(e, dir) {
-  if (e.button !== 0 || !ytPlayerEl || _ytpFs) return;
-  e.preventDefault(); e.stopPropagation();
-  const container = _ytpContainerEl || ytPlayerEl;
-  const cr  = container.getBoundingClientRect();
-  const frameEl = ytPlayerEl.querySelector('.yt-player-frame');
-  const sx  = e.clientX, sy = e.clientY;
-  const cl  = cr.left, ct = cr.top;
-  const sw  = ytPlayerEl.offsetWidth;
-  const sfh = frameEl ? frameEl.offsetHeight : Math.round(sw * 9/16);
-  const minW = 240, minH = 80;
-  const onMove = ev => {
-    const dx = ev.clientX - sx, dy = ev.clientY - sy;
-    let newCL = cl, newCT = ct, newW = sw, newFH = sfh;
-    if (dir.includes('e')) { newW = Math.max(minW, sw + dx); }
-    if (dir.includes('w')) { const cw = Math.max(minW, sw - dx); if (cw > minW) newCL = cl + dx; newW = cw; }
-    if (dir.includes('s')) newFH = Math.max(minH, sfh + dy);
-    if (dir.includes('n')) { const ch = Math.max(minH, sfh - dy); if (ch > minH) newCT = ct + dy; newFH = ch; }
-    ytPlayerEl.style.width = newW + 'px';
-    container.style.left   = newCL + 'px';
-    container.style.top    = Math.max(0, newCT) + 'px';
-    if (frameEl) {
-      frameEl.style.height = newFH + 'px';
-      const iframe = frameEl.querySelector('iframe');
-      if (iframe) iframe.style.height = newFH + 'px';
-    }
-    // Keep lyrics pane height locked to player height during resize
-    if (_ytpLyricsPaneEl && _ytpLyricsPaneEl.style.display !== 'none') {
-      const hdrH = ytPlayerEl.querySelector('.yt-player-header')?.offsetHeight || 62;
-      _ytpLyricsPaneEl.style.height = (hdrH + newFH) + 'px';
-    }
-  };
-  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-}
 
 
 let _ytpContainerEl = null;
@@ -10864,17 +10842,6 @@ function ytpToggleLyrics(open, opts) {
       _ytpContainerEl.style.left = (curLeft + lyrW) + 'px';
     }
   }
-}
-
-function ytpLyrDragStart(e) {
-  if (e.button !== 0) return;
-  // Lyrics header drag moves the whole player container (lyrics + video together)
-  if (_ytpLyricsPaneEl) {
-    _ytpLyricsPaneEl.style.left = '';
-    _ytpLyricsPaneEl.style.top = '';
-    _ytpLyricsPaneEl.style.position = '';
-  }
-  ytpDragStart(e);
 }
 
 async function ytpUpdateLyrics(trackId) {
@@ -19292,6 +19259,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-27';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-27', items: [
+    'The player is Full Screen or Docked now - the floating window is gone. Docked has a drag handle across the top: pull it up to grow the bar, all the way to half the screen, and the thumbnail grows into the actual video as there is room for it. Drop it back down and it returns to a thumbnail.',
     'Play next on a song someone requested now actually plays it next. With shuffle on it did nothing at all - the next song was picked at random and never read off the running order - and if the song sat behind the one playing, moving it also left the player pointing at the wrong track.',
     'Songs added by others now has three buttons on every row: Next to hear it straight away, End to push it to the back of the queue, and a cross to take it out altogether. Removing one tells the person who asked, instead of leaving it sitting in their list forever.',
     'The playlist has a search box at the top. Type any part of an artist or song and the queue narrows to it, with a count of how many matched. Clearing the box brings the rest back, and it survives the track changing while you are still typing.',
@@ -20058,7 +20026,7 @@ async function savePlaybackState() {
       position_seconds: posSec,
       ended: _pbIsFinishedEnd(),
       player_open: true,
-      layout: _ytpFs ? 'fullscreen' : (_ytpMinimized ? 'minimized' : 'windowed'),
+      layout: _ytpFs ? 'fullscreen' : 'minimized',
       updated_at: new Date().toISOString()
     });
   } catch (e) { /* best-effort - never interrupt playback over a failed save */ }
@@ -20108,10 +20076,11 @@ async function restorePlaybackState() {
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
     ytpSetPlayPauseIcon(false);
-    // The player opens windowed by default - only flip it if they'd left it
-    // minimized or fullscreen, so a refresh lands back where they were.
-    if (row.layout === 'minimized') ytpToggleMinimize();
-    else if (row.layout === 'fullscreen') ytpEnterFullscreen();
+    // The player opens Docked by default now - only flip to Full Screen if
+    // that's where they left it. An older saved 'windowed' value (from
+    // before Docked replaced the floating window) lands here too, which is
+    // exactly where it should land.
+    if (row.layout === 'fullscreen') ytpEnterFullscreen();
   } catch (e) {
     _pbRestoreOpts = null;
     /* no saved state yet, or fetch failed - just start fresh */
