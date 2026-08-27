@@ -19093,7 +19093,7 @@ const SJ_CHANGELOG = [
     'While you are broadcasting, the player carries a Broadcasting Live badge. Click it to open the listeners panel.',
     'Songs a listener adds now show Added by their name in your player queue, so you can see at a glance which songs came from the room.',
     'Loading a playlist while you are on air now stops and asks first, if listeners have songs waiting. You can keep the songs they added, clear only what has already played, or clear everything - instead of quietly wiping their picks.',
-    'A jukebox that has gone quiet is no longer a dead page. Visitors get "This station is offline right now" and can load the last playlist you broadcast and listen to it on their own device, picking songs as they go. When you come back on air they are told, and choose whether to rejoin the room.',
+    'A jukebox that has gone quiet is no longer a dead page. Visitors get "This station is offline right now" and can send the last playlist you broadcast straight to their own Suffering Jukebox player, where it behaves like any other queue - reorder it, save it, rate the songs, read the words.',
     'The visitor page now uses the width of a laptop screen: what is playing stays put on the left while the collection scrolls beside it.',
     'Import from Spotify can open your playlists again. Picking one used to come back with nothing in it, or with an error asking you to reconnect, which never helped.',
     'The list of Spotify lists is now split into your own playlists and the ones you only follow. Spotify will not hand over the songs in a playlist somebody else made, so those are grouped apart and the panel says why instead of looking broken.',
@@ -23075,6 +23075,49 @@ async function shareVia(medium) {
 // ── Opening a playlist hop (?pl=PLAYLIST_ID) ──────────────────
 const _plIncomingId = new URLSearchParams(location.search).get('pl');
 if (_plIncomingId) _pbRestoreDone = true;  // arriving to play a playlist - don't resume the old queue
+
+// ── A quiet station's last playlist (?station=CODE) ────────────────────
+//
+// Somebody landed on /j/<code> after the host went off air. Rather than give
+// them a cut-down player on that page, the offline card sends them here and
+// the last running order loads into the ordinary player - where they can
+// reorder it, save it, rate it, read the words, and keep it when they wander
+// off to another artist. The credit each song carries comes with it, so a
+// song somebody queued in the room still says who queued it.
+const _stationIncoming = new URLSearchParams(location.search).get('station');
+if (_stationIncoming) _pbRestoreDone = true;  // same reason as ?pl - do not resume the old queue
+
+async function hydrateStationLink() {
+  const key = _stationIncoming;
+  // A room code or a vanity slug; which one it is gets settled by the server.
+  if (!key || !/^[A-Za-z0-9-]{3,40}$/.test(key)) return;
+  try { await _initPromise; } catch (e) {}
+  try {
+    const res = await fetch('/api/jukebox/offline?code=' + encodeURIComponent(key));
+    const d = await res.json().catch(() => ({}));
+    if (!d.ok) { showToast(d.error || 'No jukebox at that address.'); return; }
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+
+    const rows = (d.tracks || []).filter(t => t.videoId && !isTrackSkipped(t.trackId));
+    if (!rows.length) { showToast('That station has not broadcast a playlist yet.'); return; }
+
+    setYtShuffleEnabled(false);
+    _queueHasAdditions = true;
+    // openYTPlayer() resets ytQueue to a single track internally, so ytQueue is
+    // assigned AFTER playback starts, never before. Same trap as playPlaylist().
+    openYTPlayer(rows[0].videoId, rows[0].trackName, rows[0].trackId);
+    // ytNormalizeQueue() rebuilds each row from the track metadata, so the
+    // added-by credit has to be put back on afterwards or it is lost.
+    ytQueue = ytNormalizeQueue(rows.map(t => ({
+      videoId: t.videoId, title: t.trackName, trackId: t.trackId, artist: t.artistName || null
+    }))).map((it, n) => Object.assign(it, { addedBy: rows[n].addedByName || null }));
+    ytQueueIdx = 0;
+    updateYTQueueUI();
+    showToast('\u266b ' + rows.length + ' song' + (rows.length === 1 ? '' : 's') +
+              ' from ' + (d.jukebox?.name || 'the jukebox'));
+  } catch (e) {}
+}
+hydrateStationLink();
 
 async function hydratePlaylistLink() {
   const id = _plIncomingId;

@@ -113,6 +113,10 @@ export function publicJukebox(jukebox: JukeboxRow) {
     isLive: jukebox.is_live,
     settings: jukebox.settings,
     playback: jukebox.playback,
+    // How many songs the last broadcast running order holds. Free to send -
+    // the row is already loaded - and it is what lets a quiet station offer
+    // its playlist without the page having to go and ask for it first.
+    lastPlaylistCount: jukebox.last_queue.length,
   };
 }
 

@@ -9,7 +9,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Stage, { type Playback } from "./Stage";
-import OfflinePlayer, { type OfflineTrack } from "./OfflinePlayer";
 import css from "./guest.module.css";
 
 type Settings = {
@@ -28,6 +27,8 @@ type Room = {
   isLive: boolean;
   settings: Settings;
   playback: Playback;
+  /** Songs in the last running order the host broadcast. */
+  lastPlaylistCount: number;
 };
 type Guest = { id: string; displayName: string; isBanned: boolean };
 
@@ -102,15 +103,6 @@ export default function GuestApp({ code }: { code: string }) {
   const [artists, setArtists] = useState<Artist[] | null>(null);
   const [openArtist, setOpenArtist] = useState<Artist | null>(null);
   const [albums, setAlbums] = useState<Album[] | null>(null);
-
-  // ── Closing time ──────────────────────────────────────────────────
-  // A station that has gone quiet still has its last running order. The
-  // visitor can load that and listen on their own machine, which is the
-  // difference between "come back later" and a room that keeps working.
-  const [offlineTracks, setOfflineTracks] = useState<OfflineTrack[] | null>(null);
-  const [offlineOn, setOfflineOn] = useState(false);
-  const [offlineBusy, setOfflineBusy] = useState(false);
-  const [offlineErr, setOfflineErr] = useState<string | null>(null);
 
   const [nameDraft, setNameDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -336,25 +328,6 @@ export default function GuestApp({ code }: { code: string }) {
     }
   }, [code, guest, pushToast]);
 
-  const loadOffline = useCallback(async () => {
-    setOfflineBusy(true);
-    setOfflineErr(null);
-    try {
-      const res = await fetch(`/api/jukebox/offline?code=${encodeURIComponent(code)}`);
-      const d = await res.json();
-      if (!d.ok || !(d.tracks ?? []).length) {
-        setOfflineErr("This jukebox has not been on air yet, so there is nothing to load.");
-        return;
-      }
-      setOfflineTracks(d.tracks);
-      setOfflineOn(true);
-    } catch {
-      setOfflineErr("Could not reach the jukebox. Check your connection.");
-    } finally {
-      setOfflineBusy(false);
-    }
-  }, [code]);
-
   const shuffleName = useCallback(async () => {
     const res = await fetch("/api/jukebox/name");
     const d = await res.json();
@@ -451,11 +424,13 @@ export default function GuestApp({ code }: { code: string }) {
     Number.isFinite(stampedAt) && Date.now() - serverOffsetMs - stampedAt < STALE_MS;
   const showStage = !!playback.videoId && fresh;
 
-  // The mirror runs only while the host is actually driving something, and
-  // only while it is still saying so. Past STALE_MS the stage comes down.
-  // Nothing here forces the visitor out of their own listening: somebody who
-  // loaded the last playlist gets told the station is back, and chooses.
-  const backOnAir = offlineOn && !!room?.isLive && showStage;
+  // Closing time. A station that has gone quiet still has its last running
+  // order, and the visitor is handed it in the ordinary Suffering Jukebox
+  // player rather than in a second one built into this page: there they can
+  // reorder it, save it, rate it, read the words, and keep the queue when they
+  // wander off to something else. A cut-down player here would have been a
+  // worse copy of a thing they already have.
+  const lastCount = room?.lastPlaylistCount ?? 0;
 
   return (
     <div className={css.app}>
@@ -497,20 +472,7 @@ export default function GuestApp({ code }: { code: string }) {
           phone, in the order a thumb wants them. */}
       <div className={css.shell}>
         <div className={css.colStage}>
-          {offlineOn && offlineTracks ? (
-            <OfflinePlayer tracks={offlineTracks} onClose={() => setOfflineOn(false)} />
-          ) : (
-            showStage && <Stage code={code} playback={playback} serverOffsetMs={serverOffsetMs} />
-          )}
-
-          {backOnAir && (
-            <div className={`${css.notice} ${css.noticeLive}`}>
-              <div className={css.noticeTitle}>This station is back on air</div>
-              <button className={css.noticeBtn} onClick={() => setOfflineOn(false)}>
-                Listen with the room
-              </button>
-            </div>
-          )}
+          {showStage && <Stage code={code} playback={playback} serverOffsetMs={serverOffsetMs} />}
 
           {banned && (
             <div className={css.notice}>
@@ -520,21 +482,26 @@ export default function GuestApp({ code }: { code: string }) {
           )}
 
           {/* Off air. An offer, not an apology. */}
-          {!room?.isLive && !offlineOn && (
+          {!room?.isLive && (
             <div className={css.notice}>
               <div className={css.noticeTitle}>This station is offline right now</div>
-              <p className={css.noticeText}>
-                You can still listen to the last synced playlist. It plays on this device, and you
-                pick the songs.
-              </p>
-              <button
-                className={css.noticeBtn}
-                disabled={offlineBusy}
-                onClick={() => void loadOffline()}
-              >
-                {offlineBusy ? "Loading..." : "Load the last playlist"}
-              </button>
-              {offlineErr && <p className={css.noticeText}>{offlineErr}</p>}
+              {lastCount > 0 ? (
+                <>
+                  <p className={css.noticeText}>
+                    You can still listen to the last synced playlist. It opens in the Suffering
+                    Jukebox player, where it works like any other queue.
+                  </p>
+                  {/* A real link, not a button that calls navigate: this is a
+                      place you can go, and it should behave like one. */}
+                  <a className={css.noticeBtn} href={`/?station=${encodeURIComponent(code)}`}>
+                    Send {lastCount} song{lastCount === 1 ? "" : "s"} to my player
+                  </a>
+                </>
+              ) : (
+                <p className={css.noticeText}>
+                  This jukebox has not broadcast a playlist yet, so there is nothing to load.
+                </p>
+              )}
               <p className={css.noticeText}>
                 {room?.settings.allowOfflineAdds
                   ? "Songs you add now will be waiting when the host starts up again."
@@ -543,7 +510,7 @@ export default function GuestApp({ code }: { code: string }) {
             </div>
           )}
 
-          {nowPlaying && !showStage && !offlineOn && (
+          {nowPlaying && !showStage && (
             <div className={css.nowPlaying}>
               {nowPlaying.albumArt && (
                 <img className={css.npArt} src={nowPlaying.albumArt} alt="" loading="lazy" />
