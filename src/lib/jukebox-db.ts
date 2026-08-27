@@ -249,9 +249,10 @@ export type GuestRow = {
   guest_no: number;
   is_banned: boolean;
   user_email: string | null;
+  ip_address: string | null;
 };
 
-const GUEST_COLS = "id,jukebox_id,display_name,guest_no,is_banned,user_email";
+const GUEST_COLS = "id,jukebox_id,display_name,guest_no,is_banned,user_email,ip_address";
 
 export async function getGuestByToken(
   sb: ServiceClient,
@@ -339,9 +340,37 @@ export async function setGuestBanned(
   if (error) throw error;
 }
 
+export async function setIpBanned(
+  sb: ServiceClient,
+  jukeboxId: string,
+  ipAddress: string,
+  banned: boolean,
+): Promise<void> {
+  const { error } = await T(sb, "jukebox_guests")
+    .update({ is_banned: banned, banned_at: banned ? new Date().toISOString() : null })
+    .eq("jukebox_id", jukeboxId)
+    .eq("ip_address", ipAddress);
+  if (error) throw error;
+}
+
+export async function isIpBanned(
+  sb: ServiceClient,
+  jukeboxId: string,
+  ipAddress: string,
+): Promise<boolean> {
+  const { data, error } = await T(sb, "jukebox_guests")
+    .select("id")
+    .eq("jukebox_id", jukeboxId)
+    .eq("ip_address", ipAddress)
+    .eq("is_banned", true)
+    .limit(1);
+  if (error) throw error;
+  return !!data?.length;
+}
+
 export async function listGuests(sb: ServiceClient, jukeboxId: string) {
   const { data, error } = await T(sb, "jukebox_guests")
-    .select("id,display_name,guest_no,is_banned,created_at,last_seen_at,session_started_at")
+    .select("id,display_name,guest_no,is_banned,ip_address,created_at,last_seen_at,session_started_at")
     .eq("jukebox_id", jukeboxId)
     .order("last_seen_at", { ascending: false })
     .limit(200);
@@ -356,6 +385,19 @@ export async function listGuests(sb: ServiceClient, jukeboxId: string) {
  */
 export async function listListeners(sb: ServiceClient, jukeboxId: string): Promise<Listener[]> {
   return shapeListeners((await listGuests(sb, jukeboxId)) as any, Date.now());
+}
+
+export async function listBannedGuests(sb: ServiceClient, jukeboxId: string): Promise<Listener[]> {
+  const rows = (await listGuests(sb, jukeboxId)) as any[];
+  return rows.filter((r) => r.is_banned).map((r) => ({
+    id: r.id,
+    displayName: displayNameFor(r),
+    isBanned: true,
+    ipAddress: r.ip_address ?? null,
+    since: null,
+    lastSeenAt: r.last_seen_at,
+    listeningMs: 0,
+  }));
 }
 
 /**

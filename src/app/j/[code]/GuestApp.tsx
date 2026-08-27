@@ -13,7 +13,7 @@ import css from "./guest.module.css";
 
 type Settings = {
   maxPendingPerGuest: number;
-  requireName: boolean;
+  allowGuestImports: boolean;
   guestsFirst: boolean;
 };
 
@@ -463,6 +463,11 @@ export default function GuestApp({ code }: { code: string }) {
           >
             Browse
           </button>
+          {room?.settings.allowGuestImports && (
+            <a className={css.tab} href={`/?guestImport=${encodeURIComponent(code)}`}>
+              Add a new song
+            </a>
+          )}
         </div>
       </header>
 

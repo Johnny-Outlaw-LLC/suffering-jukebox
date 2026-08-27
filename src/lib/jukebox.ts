@@ -22,8 +22,8 @@
 export type JukeboxSettings = {
   /** Songs a single guest may have waiting at once. 0 = unlimited. */
   maxPendingPerGuest: number;
-  /** Guests must type a name before they can request anything. */
-  requireName: boolean;
+  /** Signed-in guests may import a missing YouTube song into the catalogue. */
+  allowGuestImports: boolean;
   /**
    * A song somebody in the room asked for goes in front of the host's own
    * list rather than behind all of it. On a night with a long playlist loaded
@@ -35,7 +35,7 @@ export type JukeboxSettings = {
 
 export const DEFAULT_SETTINGS: JukeboxSettings = {
   maxPendingPerGuest: 3,
-  requireName: false,
+  allowGuestImports: false,
   guestsFirst: false,
 };
 
@@ -64,7 +64,7 @@ export function normalizeSettings(raw: unknown): JukeboxSettings {
   // carry them; ignoring them is the whole migration.
   return {
     maxPendingPerGuest: int(s.maxPendingPerGuest, DEFAULT_SETTINGS.maxPendingPerGuest, 0, 50),
-    requireName: bool(s.requireName, DEFAULT_SETTINGS.requireName),
+    allowGuestImports: bool(s.allowGuestImports, DEFAULT_SETTINGS.allowGuestImports),
     guestsFirst: bool(s.guestsFirst, DEFAULT_SETTINGS.guestsFirst),
   };
 }
@@ -304,6 +304,7 @@ export type ListenerRow = {
   display_name: string | null;
   guest_no: number;
   is_banned: boolean;
+  ip_address?: string | null;
   created_at: string;
   last_seen_at: string;
   session_started_at?: string | null;
@@ -313,6 +314,7 @@ export type Listener = {
   id: string;
   displayName: string;
   isBanned: boolean;
+  ipAddress: string | null;
   /** ISO, top of the current stretch. */
   since: string | null;
   lastSeenAt: string;
@@ -339,6 +341,7 @@ export function shapeListeners(rows: ListenerRow[], nowMs: number): Listener[] {
       id: r.id,
       displayName: displayNameFor(r),
       isBanned: r.is_banned,
+      ipAddress: r.ip_address ?? null,
       since: Number.isFinite(startedAt) ? new Date(startedAt).toISOString() : null,
       lastSeenAt: r.last_seen_at,
       listeningMs: Number.isFinite(startedAt) ? Math.max(0, nowMs - startedAt) : 0,

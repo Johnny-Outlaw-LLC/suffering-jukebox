@@ -1543,8 +1543,7 @@ textarea.report-input { resize:vertical; }
 /* Drag handle across the top edge - the only way to resize the dock now that
    there is no floating window to drag by its title bar. */
 .ytp-mf-resize {
-  position: absolute; top: 0; left: 0; right: 0; height: 12px; cursor: ns-resize; z-index: 5;
-  display: flex; align-items: center; justify-content: center; touch-action: none;
+  display: none !important;
 }
 .ytp-mf-resize::after {
   content: ''; width: 36px; height: 3px; border-radius: 2px; background: var(--border); transition: background .15s;
@@ -2689,8 +2688,8 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-back { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; padding:.45rem .75rem; border-radius:8px; cursor:pointer; transition:all .15s; }
 .pl-wall-back:hover { border-color:var(--text-muted); color:var(--text); }
 .pl-wall-back.on { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
-.pl-wall-header { margin-bottom:12px; }
-.pl-wall-title { font-size:1.3rem; font-weight:700; margin:0 0 4px; letter-spacing:-.01em; }
+.pl-wall-header { margin-bottom:12px; display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+.pl-wall-title { font-size:1.3rem; font-weight:700; margin:0; letter-spacing:-.01em; }
 .pl-wall-stats { display:flex; align-items:center; gap:7px; font-size:.56rem; color:var(--text-muted); }
 .pl-wall-stat b { color:var(--text); font-weight:700; }
 .pl-wall-stat-sep { opacity:.5; }
@@ -2707,7 +2706,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-size-slider { flex:1; min-width:60px; -webkit-appearance:none; appearance:none; height:3px; border-radius:2px; background:var(--border); outline:none; cursor:pointer; }
 .pl-wall-size-slider::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer; box-shadow:0 0 10px #ff6b3566; }
 .pl-wall-size-slider::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--accent); border:none; box-shadow:0 0 10px #ff6b3566; }
-.pl-wall-scroll { overflow:auto; max-height:calc(100vh - 180px); scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding-top:4px; }
+.pl-wall-scroll { overflow:auto; max-height:calc(100vh - 180px); scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding:16px; }
 .pl-wall-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--pl-cell,120px),1fr)); gap:2px; }
 .pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:size; }
 .pl-wall-cell img { width:100%; height:100%; object-fit:cover; display:block; transition:filter .3s, opacity .3s; }
@@ -3172,7 +3171,6 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 <div id="mob-alb-panel"></div>
 
 <div id="ytp-mini-footer" class="ytp-mini-footer">
-  <div class="ytp-mf-resize" id="ytp-mf-resize" onmousedown="ytpDockResizeStart(event)" ontouchstart="ytpDockResizeStart(event)" title="Drag to resize"></div>
   <div class="ytp-mf-main">
     <div class="ytp-mf-now">
       <div class="ytp-mf-art-wrap">
@@ -7132,10 +7130,7 @@ window.addEventListener('resize', () => {
 // mounted behind the thumbnail. Past a threshold only the thumbnail visibility
 // changes, so resizing cannot reload the iframe or interrupt playback.
 let _ytpDockH = null;
-try {
-  const _dh = parseInt(localStorage.getItem('sj_dock_h') || '', 10);
-  if (!isNaN(_dh)) _ytpDockH = _dh;
-} catch (_) {}
+try { localStorage.removeItem('sj_dock_h'); } catch (_) {}
 let _ytpDockVideoOn = false;
 let _ytpDockMinHCache = null;
 let _ytpLayoutRestore = null;     // playhead/state carried across dock/fullscreen iframe moves
@@ -14317,6 +14312,14 @@ function plWallFmtDuration(ms) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+function plWallFmtClock(ms) {
+  const total = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+}
+
 function plWallFmtLastPlay(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -15110,15 +15113,8 @@ function renderPlaylistChart(error) {
   const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
   const totalSongs = playlistChartRows.length;
   const totalDurMs = playlistChartRows.reduce((s, r) => s + (Number(r.duration) || 0), 0);
-  const uniqueArtists = new Set(playlistChartRows.map(r => (r.artist || '').trim()).filter(Boolean)).size;
   const statsHTML = totalSongs
-    ? `<div class="pl-wall-stats">` +
-        `<span class="pl-wall-stat"><b>${totalSongs}</b> song${totalSongs === 1 ? '' : 's'}</span>` +
-        `<span class="pl-wall-stat-sep">·</span>` +
-        `<span class="pl-wall-stat"><b>${plWallFmtDuration(totalDurMs)}</b> total</span>` +
-        `<span class="pl-wall-stat-sep">·</span>` +
-        `<span class="pl-wall-stat"><b>${uniqueArtists}</b> artist${uniqueArtists === 1 ? '' : 's'}</span>` +
-      `</div>`
+    ? `<div class="pl-wall-stats"><span class="pl-wall-stat"><b>${totalSongs}</b> song${totalSongs === 1 ? '' : 's'}, <b>${plWallFmtClock(totalDurMs)}</b> total play time</span></div>`
     : '';
   main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
   playlistChartSyncToCurrent();
@@ -20391,6 +20387,7 @@ function initGoogleAuth() {
         restorePlaybackState();
         sjjResumeBroadcast();
         spiConsumeReturn();
+        consumeGuestImport();
         if (isLandingMode) initLanding();
         try {
           const rp = localStorage.getItem('auth_return_path');
@@ -20432,7 +20429,12 @@ function initGoogleAuth() {
       restorePlaybackState();
       sjjResumeBroadcast();
       spiConsumeReturn();
+      consumeGuestImport();
       if (isLandingMode) initLanding();
+    } else if (_guestImportKey) {
+      // Importing owns catalogue data, so this is the one guest action that
+      // sends the visitor through Google before opening Add a song.
+      handleAuthClick();
     }
   });
 
@@ -23561,6 +23563,16 @@ if (_plIncomingId) _pbRestoreDone = true;  // arriving to play a playlist - don'
 // song somebody queued in the room still says who queued it.
 const _stationIncoming = new URLSearchParams(location.search).get('station');
 if (_stationIncoming) _pbRestoreDone = true;  // same reason as ?pl - do not resume the old queue
+const _guestImportKey = new URLSearchParams(location.search).get('guestImport');
+
+async function consumeGuestImport() {
+  if (!_guestImportKey || !/^[A-Za-z0-9-]{3,40}$/.test(_guestImportKey) || !googleUser) return;
+  try { localStorage.removeItem('auth_return_path'); } catch (_) {}
+  try { history.replaceState(null, '', location.pathname); } catch (_) {}
+  _mjVisibility = 'public';
+  await openMyJukebox('import');
+  setTimeout(() => document.getElementById('mj-search-input')?.focus(), 150);
+}
 
 async function hydrateStationLink() {
   const key = _stationIncoming;
@@ -24923,6 +24935,7 @@ let _sjjSyncTimer = null;
 let _sjjSyncBusy  = false;
 let _sjjNudge     = null;  // debounce for "something changed, push it now"
 let _sjjSince     = null;  // serverTime of the last sync; the deletion cutoff
+let _sjjAnnounceReady = false; // first sync establishes a silent baseline
 let _sjjRoom      = null;  // last known { code, slug, name, isLive, settings }
 // Who is in the room, kept OUTSIDE _sjjState because the listeners panel has
 // to keep working with the console closed - which is the normal case for a
@@ -25108,7 +25121,9 @@ function sjjRender() {
          '<select onchange="sjjSet({guestsFirst:this.value===\'first\'})">'
          + '<option value="end"' + (st.guestsFirst ? '' : ' selected') + '>Add guest songs at end of playlist</option>'
          + '<option value="first"' + (st.guestsFirst ? ' selected' : '') + '>Play guest songs first</option></select>')
-    +  sjjToggle('Always require a name to request a song', 'requireName', st.requireName)
+    +  sjjToggle('Allow Guests to Import New Songs', 'allowGuestImports', st.allowGuestImports)
+    +  '<div class="sjj-h" style="margin-top:1rem">Banned users</div>'
+    +  sjjBannedHTML()
     +  '</div>';
   h += '</div>';   // end left column
 
@@ -25340,7 +25355,8 @@ function sjjListenersHTML(floating) {
       + '<button class="sjj-ln-hd" onclick="sjjToggleListener(\'' + l.id + '\')" '
       + 'title="' + (open ? 'Hide' : 'Show') + ' the songs ' + escHtml(l.displayName) + ' has queued">'
       + '<span class="sjj-ln-dot"></span>'
-      + '<span class="sjj-ln-name">' + escHtml(l.displayName) + '</span>'
+      + '<span class="sjj-ln-name">' + escHtml(l.displayName)
+      + (l.ipAddress ? '<small style="display:block;color:var(--text-muted);font-weight:400">' + escHtml(l.ipAddress) + '</small>' : '') + '</span>'
       + '<span class="sjj-ln-for">' + (songs.length ? songs.length + ' song' + (songs.length === 1 ? '' : 's') + ' &middot; ' : '')
       + sjjListeningFor(l) + '</span>'
       + '<span class="sjj-ln-caret">' + (open ? '&#9650;' : '&#9660;') + '</span>'
@@ -25356,8 +25372,10 @@ function sjjListenersHTML(floating) {
           }).join('') + '</div>'
         : '<div class="sjj-ln-empty">Here, but has not queued anything yet.</div>';
       row += '<div class="sjj-ln-acts"><button class="pl-btn ghost" style="font-size:.62rem;padding:.2rem .45rem" '
+        + 'onclick="sjjRemoveGuestSongs(\'' + l.id + '\')">Remove all songs</button>'
+        + '<button class="pl-btn ghost" style="font-size:.62rem;padding:.2rem .45rem" '
         + 'onclick="sjjBan(\'' + l.id + '\',' + (l.isBanned ? 'false' : 'true') + ')">'
-        + (l.isBanned ? 'Let them back in' : 'Ban and clear their songs') + '</button></div>';
+        + (l.isBanned ? 'Allow adding songs' : 'Prevent from adding songs') + '</button></div>';
     }
     return row + '</div>';
   }).join('');
@@ -25435,6 +25453,16 @@ function sjjToggle(label, key, on) {
 
 const sjjSet = (patch) => sjjAct({ action: 'settings', settings: patch });
 const sjjBan = (id, on) => sjjAct({ action: on ? 'ban' : 'unban', guestId: id });
+const sjjRemoveGuestSongs = (id) => sjjAct({ action: 'remove_guest_songs', guestId: id });
+
+function sjjBannedHTML() {
+  const rows = _sjjState?.bannedGuests || [];
+  if (!rows.length) return '<div class="sjj-s">Nobody is blocked.</div>';
+  return rows.map(l => '<div class="sjj-set"><span><b>' + escHtml(l.displayName) + '</b>'
+    + (l.ipAddress ? '<small style="display:block;color:var(--text-muted)">' + escHtml(l.ipAddress) + '</small>' : '')
+    + '</span><span><button class="pl-btn ghost" onclick="sjjRemoveGuestSongs(\'' + l.id + '\')">Remove all songs</button> '
+    + '<button class="pl-btn ghost" onclick="sjjBan(\'' + l.id + '\',false)">Allow adding songs</button></span></div>').join('');
+}
 
 // Both fields, one button. Each is only sent when it actually changed, so
 // saving a rename cannot fail on a slug somebody else took in the meantime,
@@ -25482,7 +25510,11 @@ function sjjSetHostFlag(on) {
 function sjjStartBroadcast() {
   if (_sjjLive) return;
   _sjjLive = true;
-  _sjjSince = null;
+  // The host's currently playing queue is the startup source of truth. Using
+  // the state snapshot time makes older room rows eligible for removal while
+  // preserving guest requests that arrive after the host pressed Start.
+  _sjjSince = _sjjState?.serverTime || new Date().toISOString();
+  _sjjAnnounceReady = true;
   sjjSetHostFlag(true);
   if (_sjjSyncTimer) clearInterval(_sjjSyncTimer);
   _sjjSyncTimer = setInterval(() => { sjjSyncTick().catch(() => {}); }, SJJ_SYNC_MS);
@@ -25492,6 +25524,7 @@ function sjjStartBroadcast() {
 
 function sjjStopBroadcast() {
   _sjjLive = false;
+  _sjjAnnounceReady = false;
   sjjSetHostFlag(false);
   if (_sjjSyncTimer) { clearInterval(_sjjSyncTimer); _sjjSyncTimer = null; }
   if (_sjjNudge) { clearTimeout(_sjjNudge); _sjjNudge = null; }
@@ -25596,7 +25629,8 @@ async function sjjSyncTick() {
     });
 
     if (d.dropped?.length) sjjDropItems(d.dropped);
-    if (d.adopted?.length) await sjjAdopt(d.adopted);
+    if (d.adopted?.length) await sjjAdopt(d.adopted, _sjjAnnounceReady);
+    _sjjAnnounceReady = true;
 
     // The room can be taken off air from another device.
     if (d.isLive === false) sjjStopBroadcast();
@@ -25611,7 +25645,7 @@ async function sjjSyncTick() {
 
 // Guest adds. Resolve each to a playable version, append to the queue that is
 // already playing, and say so on screen.
-async function sjjAdopt(items) {
+async function sjjAdopt(items, announceNew = true) {
   const info = await resolvePlaylistTracks(items.map(i => i.trackId)).catch(() => ({}));
   const add = [];
   const announce = [];
@@ -25659,7 +25693,7 @@ async function sjjAdopt(items) {
   }
   // Only songs that are genuinely new to this device are announced; a
   // reclaimed row is not somebody walking up to the jukebox.
-  announce.forEach(sjjAddToast);
+  if (announceNew) announce.forEach(sjjAddToast);
   if (document.getElementById('sjjOverlay')?.classList.contains('open')) {
     sjjRefresh().catch(() => {});
   }
@@ -26075,11 +26109,21 @@ async function mjAddSelected() {
         albumName: row._albumName || null,
         source: row._source || null,
         sourceUri: row._sourceUri || null,
-        visibility: _mjVisibility,
+        visibility: _guestImportKey ? 'public' : _mjVisibility,
         userName: googleUser?.name || null
       });
       if (!data.duplicate) added++;
       if (data.artist) artist = data.artist;
+      if (_guestImportKey && data.catalogTrackId) {
+        const queued = await fetch('/api/jukebox/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: _guestImportKey, trackId: data.catalogTrackId, videoId: row.videoId })
+        }).then(r => r.json());
+        if (!queued.ok && queued.code !== 'duplicate') {
+          throw new Error(queued.error || 'The song was imported but could not be added to the jukebox.');
+        }
+      }
       _mjState.items = data.items || _mjState.items;
     } catch (e) { showToast(e.message || 'One song could not be added.'); }
   }

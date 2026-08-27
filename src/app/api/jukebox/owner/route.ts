@@ -25,6 +25,7 @@ import {
   getOrCreateOwnerJukebox,
   getQueueItem,
   listGuestAdds,
+  listBannedGuests,
   listListeners,
   loadPending,
   loadQueue,
@@ -34,6 +35,7 @@ import {
   removeAllForGuest,
   removeQueueItem,
   setGuestBanned,
+  setIpBanned,
   setPlayback,
   setQueueItemSort,
   sjb,
@@ -68,9 +70,10 @@ async function requireOwnerJukebox(req: NextRequest) {
 }
 
 async function fullState(sb: ServiceClient, jukebox: JukeboxRow) {
-  const [queue, listeners, guestAdds, recentlyPlayed] = await Promise.all([
+  const [queue, listeners, bannedGuests, guestAdds, recentlyPlayed] = await Promise.all([
     loadQueue(sb, jukebox.id),
     listListeners(sb, jukebox.id),
+    listBannedGuests(sb, jukebox.id),
     listGuestAdds(sb, jukebox.id),
     loadRecentlyPlayed(sb, jukebox.id),
   ]);
@@ -81,6 +84,7 @@ async function fullState(sb: ServiceClient, jukebox: JukeboxRow) {
     // Who is in the room right now, and what each of them put in the jukebox.
     // The panel expands a name into their songs without another request.
     listeners,
+    bannedGuests,
     guestAdds,
     recentlyPlayed,
     serverTime: new Date().toISOString(),
@@ -177,13 +181,18 @@ export async function POST(req: NextRequest) {
         const guestId = uuid(body.guest_id ?? body.guestId);
         if (!guestId) return bad("Missing guest.");
         const banned = body.action === "ban";
-        await setGuestBanned(sb, guestId, banned);
-        // Banning takes their waiting songs with them by default; the point of
-        // a ban is usually the songs. Pass sweep:false to leave them in place.
-        let swept = 0;
-        if (banned && body.sweep !== false) {
-          swept = await removeAllForGuest(sb, jukebox.id, guestId, by);
-        }
+        const guests = [...(await listListeners(sb, jukebox.id)), ...(await listBannedGuests(sb, jukebox.id))];
+        const target = guests.find((g) => g.id === guestId);
+        if (!target) return bad("That listener is no longer available.", 404);
+        if (target.ipAddress) await setIpBanned(sb, jukebox.id, target.ipAddress, banned);
+        else await setGuestBanned(sb, guestId, banned);
+        return NextResponse.json({ ok: true, ...(await fullState(sb, jukebox)) });
+      }
+
+      case "remove_guest_songs": {
+        const guestId = uuid(body.guest_id ?? body.guestId);
+        if (!guestId) return bad("Missing guest.");
+        const swept = await removeAllForGuest(sb, jukebox.id, guestId, by);
         return NextResponse.json({ ok: true, swept, ...(await fullState(sb, jukebox)) });
       }
 

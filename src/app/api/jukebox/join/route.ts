@@ -5,7 +5,7 @@
 // out of devtools, and a ban actually sticks.
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeDisplayName } from "@/lib/jukebox";
-import { createGuest, issueGuestToken, loadQueue } from "@/lib/jukebox-db";
+import { createGuest, isIpBanned, issueGuestToken, loadQueue, renameGuest, setGuestBanned } from "@/lib/jukebox-db";
 import { getAuthUser } from "@/lib/sj-admin-auth";
 import {
   bad,
@@ -27,8 +27,15 @@ export async function POST(req: NextRequest) {
     if ("error" in ctx) return ctx.error;
     const { sb, jukebox } = ctx;
 
-    // Already seated: hand back the same guest rather than minting a second.
+    const asked = sanitizeDisplayName(body.name);
+    // Names are always required. Existing anonymous seats from the older
+    // optional-name behavior are upgraded in place once the visitor answers.
     if (ctx.guest) {
+      if (!(ctx.guest.display_name ?? "").trim()) {
+        if (!asked) return NextResponse.json({ ok: false, needsName: true, jukebox: publicJukebox(jukebox) });
+        await renameGuest(sb, ctx.guest.id, asked);
+        ctx.guest.display_name = asked;
+      }
       const queue = await loadQueue(sb, jukebox.id);
       return NextResponse.json({
         ok: true,
@@ -41,10 +48,7 @@ export async function POST(req: NextRequest) {
     const ip = clientIp(req);
     if (rateLimited(`join:${ip}`, 20)) return tooMany();
 
-    const asked = sanitizeDisplayName(body.name);
-    if (!asked && jukebox.settings.requireName) {
-      // The owner wants real names. Ask for one; do not seat them, and do not
-      // put words in their mouth.
+    if (!asked) {
       return NextResponse.json({
         ok: false,
         needsName: true,
@@ -69,6 +73,10 @@ export async function POST(req: NextRequest) {
       userId: user?.id ?? null,
       userEmail: user?.email ?? null,
     });
+    if (await isIpBanned(sb, jukebox.id, ip)) {
+      await setGuestBanned(sb, guest.id, true);
+      guest.is_banned = true;
+    }
 
     const queue = await loadQueue(sb, jukebox.id);
     const res = NextResponse.json({

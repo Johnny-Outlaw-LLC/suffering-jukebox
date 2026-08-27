@@ -6,7 +6,7 @@
 // guest app and the host console.
 import { NextRequest, NextResponse } from "next/server";
 import { decideAdd, displayNameFor } from "@/lib/jukebox";
-import { getTrackForQueue, insertQueueItem, loadPending } from "@/lib/jukebox-db";
+import { getTrackForQueue, insertQueueItem, isIpBanned, loadPending } from "@/lib/jukebox-db";
 import {
   bad,
   clientIp,
@@ -41,6 +41,12 @@ export async function POST(req: NextRequest) {
         { status: 401 },
       );
     }
+    if (!isOwner && !(guest?.display_name ?? "").trim()) {
+      return NextResponse.json(
+        { ok: false, code: "name_required", error: "Choose a name before adding songs." },
+        { status: 409 },
+      );
+    }
 
     const track = await getTrackForQueue(sb, trackId);
     if (!track) return bad("That song is not in the collection.", 404);
@@ -49,7 +55,7 @@ export async function POST(req: NextRequest) {
     const decision = decideAdd({
       isLive: jukebox.is_live,
       settings: jukebox.settings,
-      guestBanned: !!guest?.is_banned,
+      guestBanned: !!guest?.is_banned || (!isOwner && await isIpBanned(sb, jukebox.id, ip)),
       pending,
       guestId: isOwner ? null : (guest?.id ?? null),
       trackId,
