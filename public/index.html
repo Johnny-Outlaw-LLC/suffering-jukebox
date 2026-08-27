@@ -1515,6 +1515,14 @@ textarea.report-input { resize:vertical; }
 #yt-player-container.ytp-fs #ytp-lyr-resize-handle { display: none !important; }
 #yt-player-container.ytp-fs { overflow: hidden !important; }
 #yt-player-container.ytp-fs .yt-player-header { cursor: default; }
+#yt-player-container.ytp-fs .ytp-fs-btn { display: none !important; }
+.ytp-docked-source {
+  position: fixed !important; left: -200vw !important; top: 0 !important;
+  width: 1px !important; height: 1px !important; overflow: visible !important;
+  z-index: 4991 !important; pointer-events: none !important;
+}
+.ytp-docked-source .yt-player { overflow: visible !important; }
+.ytp-docked-source .yt-player > :not(.yt-player-frame) { display: none !important; }
 .yt-player-frame { flex: 1; background: var(--bg); min-height: 170px; position: relative; cursor: pointer; overflow: hidden; }
 .yt-player-frame iframe { position: relative; z-index: 1; }
 .yt-player-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -1687,8 +1695,9 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-lyr-empty { font-size: .55rem; color: var(--text-muted); opacity: .6; }
 
 /* ── Right: transport + window buttons ── */
-.ytp-mf-right { grid-area: right; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ytp-mf-right { grid-area: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .ytp-mini-footer.dock-grown .ytp-mf-right { align-self: end; align-items: flex-end; }
+.ytp-mf-top, .ytp-mf-middle, .ytp-mf-bottom { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
 .ytp-mf-win { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 @keyframes ytpMfAttention {
   0%, 100% { transform: scale(1); }
@@ -1697,9 +1706,7 @@ textarea.report-input { resize:vertical; }
   80% { transform: scale(1.06); }
 }
 .ytp-mf-song.attention { animation: ytpMfAttention .6s ease; }
-.ytp-mf-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.ytp-mini-footer.dock-grown .ytp-mf-controls { flex: 1 1 auto; flex-wrap: wrap-reverse; justify-content: flex-end; align-content: flex-end; }
-.ytp-mini-footer.dock-grown .ytp-mf-win { flex-direction: column-reverse; }
+.ytp-mf-controls { display: contents; }
 .ytp-mf-btn {
   background: none; border: 1px solid var(--border); color: var(--text);
   width: var(--mf-btn); height: var(--mf-btn); border-radius: 8px; cursor: pointer; font-size: .8rem;
@@ -1712,7 +1719,8 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-lyr .mf-lyr-font-ctrl {
   display: flex; align-items: center; gap: 4px; line-height: 1; flex-shrink: 0;
 }
-.ytp-mf-font-slot { display: none; }
+.ytp-mf-font-slot { display:flex; justify-content:flex-end; align-items:center; }
+.ytp-mf-font-slot .mf-lyr-font-ctrl { display:flex; align-items:center; gap:4px; line-height:1; padding:7px 9px; border:1px solid var(--border); border-radius:7px; background:color-mix(in srgb,var(--bg-card) 92%,transparent); }
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-right {
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: "font win" "controls win";
@@ -1767,10 +1775,11 @@ textarea.report-input { resize:vertical; }
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-areas:
-      "now win"
+      "now top"
       "lyr lyr"
       "scrub scrub"
-      "controls controls";
+      "middle middle"
+      "bottom bottom";
     align-items: center;
     column-gap: 8px;
     row-gap: 10px;
@@ -1785,6 +1794,9 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
+  .ytp-mf-top { grid-area: top; }
+  .ytp-mf-middle { grid-area: middle; justify-content: center; width: 100%; }
+  .ytp-mf-bottom { grid-area: bottom; justify-content: center; width: 100%; }
   .ytp-mf-lyr { grid-area: lyr; margin-left: 0; }
   .ytp-mf-scrub { grid-area: scrub; }
   .ytp-mf-song-row #ytp-mf-vote { font-size: .85rem; }
@@ -7040,12 +7052,13 @@ function ytpEnterFullscreen() {
     if (_ytpFs) ytpUpdateFsLayout();
     return;
   }
-  // The video may currently be living inside the dock's art slot - claim it
-  // back before the fullscreen layout goes looking for it inside ytPlayerEl.
+  // Restore normal frame geometry. The iframe never changes DOM parents, so
+  // this transition does not reload YouTube or interrupt audio.
   ytpDockReleaseFrame();
   _ytpMinimized = false;
   hideYtpMiniFooter();
   const target = _ytpContainerEl;
+  target.classList.remove('ytp-docked-source');
   target.style.display = '';
   target.style.opacity = '';
   target.style.transform = '';
@@ -7082,11 +7095,11 @@ function ytpEnterDocked() {
     if (fsBtn) fsBtn.title = 'Maximize';
   }
   _ytpMinimized = true;
-  target.style.display = 'none';
+  target.style.display = '';
+  target.classList.add('ytp-docked-source');
   target.style.transition = ''; target.style.transform = ''; target.style.opacity = '';
-  // Mount the live frame once for the whole docked session. The thumbnail sits
-  // over it at resting height, so crossing the video threshold never reparents
-  // (and therefore never reloads or pauses) the YouTube iframe.
+  // Keep the frame under its original parent and only change its fixed-screen
+  // geometry. Chromium therefore has no iframe reparent reload to recover from.
   ytpDockClaimFrame();
   showYtpMiniFooter();
   ytpShowQueueChrome();
@@ -7191,53 +7204,67 @@ function ytpDockClaimFrame() {
   const frame = ytPlayerEl.querySelector('.yt-player-frame');
   const slot  = document.getElementById('ytp-mf-video-slot');
   const art   = document.getElementById('ytp-mf-art');
-  if (!frame || !slot || slot.contains(frame)) return;
-  const playback = ytpCaptureLayoutPlayback();
-  if (playback) _ytpLayoutRestore = playback; // guard events before appendChild reloads it
-  slot.appendChild(frame);
+  if (!frame || !slot) return;
   slot.style.display = 'block';
   if (art) art.style.display = _ytpDockVideoOn ? 'none' : '';
-  ytpRestoreAfterLayoutMove(playback);
 }
 
 function ytpDockReleaseFrame() {
   if (!ytPlayerEl) return;
   const slot  = document.getElementById('ytp-mf-video-slot');
-  const frame = slot?.querySelector('.yt-player-frame');
+  const frame = ytPlayerEl.querySelector('.yt-player-frame');
   const art   = document.getElementById('ytp-mf-art');
   if (frame) {
-    const playback = ytpCaptureLayoutPlayback();
-    if (playback) _ytpLayoutRestore = playback; // guard events before appendChild reloads it
-    const anchor = ytPlayerEl.querySelector('#ytp-up-next-slot');
-    if (anchor) anchor.after(frame); else ytPlayerEl.appendChild(frame);
+    frame.style.position = '';
+    frame.style.left = '';
+    frame.style.top = '';
     frame.style.width = '';
     frame.style.height = '';
+    frame.style.minHeight = '';
+    frame.style.zIndex = '';
+    frame.style.pointerEvents = '';
     const iframe = frame.querySelector('iframe');
     if (iframe) iframe.style.height = '';
-    ytpRestoreAfterLayoutMove(playback);
   }
   if (slot) slot.style.display = 'none';
   if (art) art.style.display = '';
   _ytpDockVideoOn = false;
 }
 
+function ytpArrangeDockControls() {
+  const right = document.querySelector('#ytp-mini-footer .ytp-mf-right');
+  if (!right || right.classList.contains('arranged')) return;
+  const row = className => {
+    const el = document.createElement('div');
+    el.className = className;
+    right.appendChild(el);
+    return el;
+  };
+  const top = row('ytp-mf-top');
+  const middle = row('ytp-mf-middle');
+  const bottom = row('ytp-mf-bottom');
+  ['ytp-mf-more', 'ytp-mf-restore', 'ytp-mf-close'].forEach(id => {
+    const el = document.getElementById(id); if (el) top.appendChild(el);
+  });
+  ['ytp-mf-playpause', 'ytp-mf-next', 'ytp-mf-prev', 'ytp-mf-shuffle'].forEach(id => {
+    const el = document.getElementById(id); if (el) middle.appendChild(el);
+  });
+  const lyrics = document.getElementById('ytp-mf-lyrics');
+  const slot = document.getElementById('ytp-mf-font-slot');
+  const sizer = document.querySelector('#ytp-mini-footer .mf-lyr-font-ctrl');
+  if (lyrics) bottom.appendChild(lyrics);
+  if (slot) {
+    if (sizer) slot.appendChild(sizer);
+    bottom.appendChild(slot);
+  }
+  right.classList.add('arranged');
+}
+
 // The font control participates in layout instead of floating over it. As soon
 // as transport wraps onto a second row, move the control into the dedicated row
 // directly above those buttons; move it back to the lyric pane when they fit.
 function ytpDockSyncFontControl() {
-  const el = document.getElementById('ytp-mini-footer');
-  const controls = el?.querySelector('.ytp-mf-controls');
-  const slot = document.getElementById('ytp-mf-font-slot');
-  const pane = document.getElementById('ytp-mf-lyrics-pane');
-  const ctrl = el?.querySelector('.mf-lyr-font-ctrl');
-  if (!el || !controls || !slot || !pane || !ctrl) return;
-  const tops = [...controls.children]
-    .filter(node => node instanceof HTMLElement && node.offsetParent !== null)
-    .map(node => Math.round(node.getBoundingClientRect().top));
-  const wrapped = !ytpIsMob() && tops.length > 1 && Math.max(...tops) - Math.min(...tops) > 4;
-  el.classList.toggle('dock-controls-wrapped', wrapped);
-  if (wrapped && !slot.contains(ctrl)) slot.appendChild(ctrl);
-  else if (!wrapped && !pane.contains(ctrl)) pane.appendChild(ctrl);
+  ytpArrangeDockControls();
 }
 
 // Applies the current (clamped) dock height and swaps thumbnail ⟷ video as
@@ -7269,12 +7296,30 @@ function ytpApplyDockHeight() {
     if (art) art.style.display = wantVideo ? 'none' : '';
   }
   if (wantVideo) {
-    const frame = document.getElementById('ytp-mf-video-slot')?.querySelector('.yt-player-frame');
+    const frame = ytPlayerEl.querySelector('.yt-player-frame');
     if (frame) {
-      frame.style.width = '100%';
+      const box = document.getElementById('ytp-mf-video-slot')?.getBoundingClientRect();
+      frame.style.position = 'fixed';
+      frame.style.left = (box?.left || 0) + 'px';
+      frame.style.top = (box?.top || 0) + 'px';
+      frame.style.width = (box?.width || mfBody) + 'px';
       frame.style.height = mfBody + 'px';
+      frame.style.minHeight = '0';
+      frame.style.zIndex = '4991';
+      frame.style.pointerEvents = 'auto';
       const iframe = frame.querySelector('iframe');
       if (iframe) iframe.style.height = mfBody + 'px';
+    }
+  } else {
+    const frame = ytPlayerEl.querySelector('.yt-player-frame');
+    if (frame) {
+      frame.style.position = 'fixed';
+      frame.style.left = '-10000px';
+      frame.style.top = '0';
+      frame.style.width = '1px';
+      frame.style.height = '1px';
+      frame.style.minHeight = '0';
+      frame.style.pointerEvents = 'none';
     }
   }
 }
@@ -7319,6 +7364,8 @@ function ytpDockResizeStart(e) {
 function showYtpMiniFooter() {
   const el = document.getElementById('ytp-mini-footer');
   if (!el) return;
+  ytpArrangeDockControls();
+  _ytpDockMinHCache = null;
   el.classList.add('open');
   const restoreBtn = document.getElementById('ytp-mf-restore');
   if (restoreBtn) {
@@ -7983,6 +8030,11 @@ function ytpHandlePlaybackFailure(videoId, trackId, title, kind, code) {
   if (_ytpStallStreak >= YTP_STALL_ENV_STREAK || _ytpStallEnv) {
     _ytpStallEnv = true;
     _ytpStallPending = [];
+    _ytUserWantsPlay = false;
+    ytpSetPlayPauseIcon(false);
+    ytpStopBgKeepalive();
+    showToast('Playback is not starting in this browser. The queue has been paused.');
+    return;
   } else {
     _ytpStallPending.push({ videoId: videoId, trackId: trackId, title: title });
   }
