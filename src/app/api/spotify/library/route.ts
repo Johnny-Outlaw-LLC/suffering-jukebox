@@ -10,7 +10,6 @@ import {
   spotifySessionFor,
   SpotifyScopeError,
   SPOTIFY_SESSION_COOKIE,
-  sessionScopes,
 } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
@@ -50,16 +49,15 @@ export async function GET(req: NextRequest) {
     // the shape it gets back has to be identical either way.
     const playlistId = new URL(req.url).searchParams.get("playlist")?.trim() || "";
     if (playlistId && !/^[A-Za-z0-9]+$/.test(playlistId)) return NextResponse.json({ ok: false, error: "That playlist could not be read." }, { status: 400 });
-    if (playlistId && !canReadPlaylists(found.session)) {
-      console.error("[spotify:library] Missing playlist scopes. Session scopes:", found.session.scopes || "(empty)");
-      throw new SpotifyScopeError();
-    }
+    if (playlistId && !canReadPlaylists(found.session)) throw new SpotifyScopeError();
 
     const token = await freshSpotifySession(found.session, found.config);
     const tracks: ReturnType<typeof shape> = [];
     let total = 0;
+    // Spotify's Feb 2026 API update removed /playlists/{id}/tracks; /items is
+    // its replacement with the same response shape.
     let url = playlistId
-      ? `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/tracks?limit=${PAGE}&fields=total,next,items(track(id,name,uri,duration_ms,artists(name),album(name,images)))`
+      ? `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/items?limit=${PAGE}&fields=total,next,items(track(id,name,uri,duration_ms,artists(name),album(name,images)))`
       : `https://api.spotify.com/v1/me/tracks?limit=${PAGE}`;
     for (let page = 0; page < MAX_PAGES && url; page += 1) {
       const data = await spotifyApi<SavedPage>(url, token.session.accessToken);
@@ -72,12 +70,7 @@ export async function GET(req: NextRequest) {
     if (token.refreshed) response.cookies.set(SPOTIFY_SESSION_COOKIE, sealSpotifySession(token.session, found.config.clientSecret), spotifyCookieOptions(req, 180 * 24 * 60 * 60));
     return response;
   } catch (error) {
-    if (error instanceof SpotifyScopeError) {
-      const found = spotifySessionFor(req, (await getAuthUser(req))?.id || "");
-      const scopes = found ? sessionScopes(found.session) : [];
-      console.error("[spotify:library] Missing playlist scopes. Session has:", scopes);
-      return NextResponse.json({ ok: false, error: error.message, reconnect: true, debugScopes: scopes }, { status: 403 });
-    }
+    if (error instanceof SpotifyScopeError) return NextResponse.json({ ok: false, error: error.message, reconnect: true }, { status: 403 });
     console.error("[spotify:library]", error);
     return NextResponse.json({ ok: false, error: "Could not load those Spotify songs." }, { status: 502 });
   }
