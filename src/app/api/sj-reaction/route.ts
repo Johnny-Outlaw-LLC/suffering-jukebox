@@ -112,6 +112,24 @@ async function reactionTimeline(trackId: string) {
 
 export async function GET(req: NextRequest) {
   try {
+    if (req.nextUrl.searchParams.get("mine") === "1") {
+      const userId = await verifiedUserId(req);
+      const device = deviceId(req.nextUrl.searchParams.get("device_id"));
+      if (!userId && !device) {
+        return NextResponse.json({ ok: false, error: "Missing listener identity." }, { status: 400 });
+      }
+      let query = createSjClient()
+        .from("track_reactions")
+        .select("track_id")
+        .eq("reaction", "heart");
+      query = userId ? query.eq("user_id", userId) : query.eq("device_id", device!);
+      const { data, error } = await query.limit(5000);
+      if (error) throw error;
+      return NextResponse.json({
+        ok: true,
+        track_ids: [...new Set((data ?? []).map((row) => row.track_id).filter(Boolean))],
+      });
+    }
     const trackId = uuid(req.nextUrl.searchParams.get("track_id"));
     if (!trackId) return NextResponse.json({ ok: false, error: "Invalid track." }, { status: 400 });
     const withTimeline = req.nextUrl.searchParams.get("timeline") === "1";

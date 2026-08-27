@@ -13827,6 +13827,9 @@ let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all
 let playlistExploreSearchQ = '';
 let playlistExploreSort = localStorage.getItem('sj_pl_explore_sort') || 'date_desc';
 let playlistExploreContributor = localStorage.getItem('sj_pl_explore_contributor') || '';
+let myHeartTrackIds = [];
+let _myHeartTracksLoaded = false;
+let _myHeartTracksLoading = null;
 let _playlistSearchFocus = false;
 let _playlistSearchTimer = null;
 let artistExploreFilter = localStorage.getItem('sj_artist_explore_filter') || 'all'; // all | mine | public
@@ -13926,6 +13929,9 @@ function playlistExploreRows() {
   if (playlistExploreContributor && playlistExploreFilter !== 'mine') {
     rows = rows.filter(p => (p.user_email || '') === playlistExploreContributor);
   }
+  const dynamic = playlistExploreFilter === 'public' || playlistExploreContributor
+    ? []
+    : dynamicPlaylistRows();
   const q = playlistExploreSearchQ.trim().toLowerCase();
   if (q) {
     rows = rows.filter(p => playlistMatchesSearch(p, q));
@@ -13937,7 +13943,53 @@ function playlistExploreRows() {
   else if (playlistExploreSort === 'tracks_desc') sorted.sort((a, b) => (b._tracks?.length || 0) - (a._tracks?.length || 0));
   else if (playlistExploreSort === 'tracks_asc') sorted.sort((a, b) => (a._tracks?.length || 0) - (b._tracks?.length || 0));
   else sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-  return sorted;
+  return dynamic.filter(p => !q || playlistMatchesSearch(p, q)).concat(sorted);
+}
+
+function dynamicPlaylistTracks(trackIds) {
+  return [...new Set((trackIds || []).filter(Boolean))].map((track_id, position) => ({ track_id, position }));
+}
+
+function dynamicPlaylistRows() {
+  const favoriteIds = Object.keys(localVotes).filter(trackId => getMyVote(trackId) > 0);
+  const plusIds = [...new Set(favoriteIds.concat(myHeartTrackIds))];
+  const rows = [
+    { id:'__dynamic_favorites', name:'Favorites', _dynamic:true, _tracks:dynamicPlaylistTracks(favoriteIds) },
+    { id:'__dynamic_favorites_plus', name:'Favorites Plus', _dynamic:true, _tracks:dynamicPlaylistTracks(plusIds) },
+  ];
+  if (ytPlayerEl && ytQueueIdx >= 0 && ytQueue.length > 1) {
+    rows.push({
+      id:'__dynamic_now_playing', name:'Now Playing', _dynamic:true,
+      _tracks:ytQueue.map((item, position) => ({ track_id:item.trackId, position })).filter(row => row.track_id),
+    });
+  }
+  return rows;
+}
+
+function dynamicPlaylistById(playlistId) {
+  return dynamicPlaylistRows().find(p => p.id === playlistId) || null;
+}
+
+async function ensureMyHeartTracks(force) {
+  if (_myHeartTracksLoading) return _myHeartTracksLoading;
+  if (_myHeartTracksLoaded && !force) return false;
+  _myHeartTracksLoading = (async () => {
+    try {
+      const headers = await sjAuthHeaders();
+      const res = await fetch(sjApiUrl('/api/sj-reaction?mine=1&device_id=' + encodeURIComponent(getDeviceId())), { headers, cache:'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || 'Could not load hearts.');
+      const next = [...new Set((body.track_ids || []).filter(Boolean))];
+      const changed = next.join('|') !== myHeartTrackIds.join('|');
+      myHeartTrackIds = next;
+      _myHeartTracksLoaded = true;
+      return changed;
+    } catch (e) {
+      console.warn('ensureMyHeartTracks error', e);
+      return false;
+    }
+  })().finally(() => { _myHeartTracksLoading = null; });
+  return _myHeartTracksLoading;
 }
 
 function playlistMatchesSearch(p, q) {
@@ -14689,7 +14741,7 @@ async function playlistChartPlay(startIndex) {
 }
 
 async function openPlaylistChart(playlistId) {
-  const p = (_savedPlaylists || []).find(x => x.id === playlistId);
+  const p = dynamicPlaylistById(playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
   if (!p) return;
   playlistChartId = playlistId;
   playlistChartName = p.name || 'Untitled Playlist';
@@ -15723,7 +15775,7 @@ function renderLanding() {
           </div>
           ${rows.length ? `<div class="playlist-explore-grid">${rows.map(p => {
             const mine = googleUser && p.user_email === googleUser.email;
-            const by = p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : '';
+            const by = p._dynamic ? ' · dynamic' : (p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : '');
             const vis = mine && !p.is_public ? ' · private' : '';
             return `<button type="button" class="playlist-explore-card" onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`;
           }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
@@ -15823,7 +15875,7 @@ function renderLanding() {
   }
   if (landingTab === 'explore') landingExpandedIds.forEach(id => laPopulateAlbums(id));
   if (landingTab === 'playlists') {
-    Promise.all([ensurePlaylistArtwork(), ensurePlaylistSearchMeta()]).then(changed => {
+    Promise.all([ensureMyHeartTracks(), ensurePlaylistArtwork(), ensurePlaylistSearchMeta()]).then(changed => {
       if (changed.some(Boolean) && isLandingMode && landingTab === 'playlists') renderLanding();
     });
   }
@@ -21722,6 +21774,7 @@ async function ytpSendReaction(trackId, reaction, positionMs, anchor) {
       const ids = byTrack[reaction] || (byTrack[reaction] = []);
       ids.push(body.reaction_id);
     }
+    if (reaction === 'heart' && !myHeartTrackIds.includes(trackId)) myHeartTrackIds.push(trackId);
     trackReactionCounts[trackId] = body.counts || counts;
     refreshTrackReactionUI(trackId);
     if (Number.isFinite(positionMs)) ytpPushReactionTimeline(trackId, reaction, positionMs);
