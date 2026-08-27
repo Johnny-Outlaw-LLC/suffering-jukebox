@@ -1667,9 +1667,9 @@ textarea.report-input { resize:vertical; }
 }
 .ytp-mf-lyr.show { display: flex; }
 .ytp-mini-footer.dock-grown .ytp-mf-lyr {
-  align-self: end; width: min(100%, var(--mf-lyr-w, 100%)); justify-self: start;
-  /* Its left edge stays just beyond the heart buttons while its right edge
-     moves inward as the dock grows. */
+  align-self: end; width: 100%; justify-self: stretch;
+  /* Its left edge stays just beyond the heart buttons. The growing video
+     already narrows this grid column, so do not throw away usable lyric room. */
   padding-left: 4px;
 }
 .ytp-mf-lyr-view {
@@ -1712,8 +1712,19 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-lyr .mf-lyr-font-ctrl {
   display: flex; align-items: center; gap: 4px; line-height: 1; flex-shrink: 0;
 }
-.ytp-mini-footer.dock-tall .ytp-mf-lyr .mf-lyr-font-ctrl {
-  position: absolute; left: var(--mf-font-left); top: var(--mf-font-top); transform: translateX(-50%); z-index: 2;
+.ytp-mf-font-slot { display: none; }
+.ytp-mini-footer.dock-controls-wrapped .ytp-mf-right {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "font win" "controls win";
+  align-items: end; column-gap: 8px; row-gap: 8px;
+}
+.ytp-mini-footer.dock-controls-wrapped .ytp-mf-font-slot {
+  grid-area: font; display: flex; justify-content: center; align-items: center;
+}
+.ytp-mini-footer.dock-controls-wrapped .ytp-mf-controls { grid-area: controls; }
+.ytp-mini-footer.dock-controls-wrapped .ytp-mf-win { grid-area: win; }
+.ytp-mini-footer.dock-controls-wrapped .ytp-mf-font-slot .mf-lyr-font-ctrl {
+  display: flex; align-items: center; gap: 4px; line-height: 1;
   padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px;
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
 }
@@ -1759,7 +1770,8 @@ textarea.report-input { resize:vertical; }
   .ytp-mini-footer.dock-grown .ytp-mf-meta { justify-content: center; padding-bottom: 0; }
   .ytp-mini-footer.dock-grown .ytp-mf-controls { flex-wrap: wrap; justify-content: center; }
   .ytp-mini-footer.dock-grown .ytp-mf-win { flex-direction: row; }
-  .ytp-mini-footer.dock-tall .ytp-mf-lyr .mf-lyr-font-ctrl { position: static; transform: none; padding: 0; border: 0; background: none; }
+  .ytp-mini-footer.dock-controls-wrapped .ytp-mf-right { display: contents; }
+  .ytp-mini-footer.dock-controls-wrapped .ytp-mf-font-slot { display: none; }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
@@ -3157,6 +3169,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
       <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
     </div>
     <div class="ytp-mf-right">
+      <div class="ytp-mf-font-slot" id="ytp-mf-font-slot"></div>
       <div class="ytp-mf-controls">
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleLyricStrip()" title="Show lyrics" id="ytp-mf-lyrics" style="display:none">♫</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpOpenComments()" title="Comment on this track" id="ytp-mf-comment">🗩</button>
@@ -6381,6 +6394,18 @@ function attachYTAPIPlayer() {
   ytAPIPlayer = new YT.Player('yt-embed-iframe', {
     events: {
       onReady: function(ev) {
+        if (_ytpLayoutRestore) {
+          const restore = _ytpLayoutRestore;
+          _ytpLayoutRestore = null;
+          try {
+            if (restore.sec > 0) ytAPIPlayer.seekTo(restore.sec, true);
+            if (restore.playing) ytAPIPlayer.playVideo();
+            else ytAPIPlayer.pauseVideo();
+          } catch (_) {}
+          _ytUserWantsPlay = restore.playing;
+          ytpSetPlayPauseIcon(restore.playing);
+          return;
+        }
         if (_pbRestoreOpts) {
           const sec = Math.max(_pbRestoreOpts.resumeSec || 0, 0);
           try {
@@ -6404,6 +6429,9 @@ function attachYTAPIPlayer() {
         }
       },
       onStateChange: function(ev) {
+        // Reparenting the iframe may briefly report its fresh document's state.
+        // Ignore that transient signal until onReady restores the real state.
+        if (_ytpLayoutRestore) return;
         if (ev.data === 1) { // PLAYING
           // Session restore intentionally opens paused; ignore the brief
           // autoplay flash if YouTube still starts audio before we pause it.
@@ -7087,8 +7115,40 @@ try {
 } catch (_) {}
 let _ytpDockVideoOn = false;
 let _ytpDockMinHCache = null;
+let _ytpLayoutRestore = null;     // playhead/state carried across dock/fullscreen iframe moves
 const YTP_DOCK_VIDEO_EXTRA = 80;  // px past the resting height before video kicks in
 const YTP_DOCK_BODY_MAX_VW = 0.5; // video/art may grow to half the viewport width
+
+function ytpCaptureLayoutPlayback() {
+  if (_taBgActive || !ytAPIPlayer) return null;
+  let sec = 0, state = -1;
+  try { sec = Math.max(0, Number(ytAPIPlayer.getCurrentTime?.()) || 0); } catch (_) {}
+  try { state = ytAPIPlayer.getPlayerState?.(); } catch (_) {}
+  return { sec, playing: state === 1 || (state === 3 && _ytUserWantsPlay) };
+}
+
+function ytpRestoreAfterLayoutMove(snapshot) {
+  if (!snapshot) return;
+  _ytpLayoutRestore = snapshot;
+  // Keep the existing YT.Player wrapper: destroying it here would remove the
+  // very iframe we just moved. Chromium may take a moment to reconnect the
+  // iframe document, so retry the same idempotent restoration briefly. If the
+  // API emits onReady first, that handler consumes this snapshot instead.
+  const apply = (last) => {
+    if (_ytpLayoutRestore !== snapshot) return;
+    try {
+      if (snapshot.sec > 0) ytAPIPlayer?.seekTo?.(snapshot.sec, true);
+      if (snapshot.playing) ytAPIPlayer?.playVideo?.();
+      else ytAPIPlayer?.pauseVideo?.();
+      _ytUserWantsPlay = snapshot.playing;
+      ytpSetPlayPauseIcon(snapshot.playing);
+    } catch (_) {}
+    if (last && _ytpLayoutRestore === snapshot) _ytpLayoutRestore = null;
+  };
+  setTimeout(() => apply(false), 80);
+  setTimeout(() => apply(false), 260);
+  setTimeout(() => apply(true), 700);
+}
 
 function ytpDockMinH() {
   if (_ytpDockMinHCache != null) return _ytpDockMinHCache;
@@ -7109,9 +7169,11 @@ function ytpDockClaimFrame() {
   const slot  = document.getElementById('ytp-mf-video-slot');
   const art   = document.getElementById('ytp-mf-art');
   if (!frame || !slot || slot.contains(frame)) return;
+  const playback = ytpCaptureLayoutPlayback();
   slot.appendChild(frame);
   slot.style.display = 'block';
   if (art) art.style.display = _ytpDockVideoOn ? 'none' : '';
+  ytpRestoreAfterLayoutMove(playback);
 }
 
 function ytpDockReleaseFrame() {
@@ -7120,33 +7182,37 @@ function ytpDockReleaseFrame() {
   const frame = slot?.querySelector('.yt-player-frame');
   const art   = document.getElementById('ytp-mf-art');
   if (frame) {
+    const playback = ytpCaptureLayoutPlayback();
     const anchor = ytPlayerEl.querySelector('#ytp-up-next-slot');
     if (anchor) anchor.after(frame); else ytPlayerEl.appendChild(frame);
     frame.style.width = '';
     frame.style.height = '';
     const iframe = frame.querySelector('iframe');
     if (iframe) iframe.style.height = '';
+    ytpRestoreAfterLayoutMove(playback);
   }
   if (slot) slot.style.display = 'none';
   if (art) art.style.display = '';
   _ytpDockVideoOn = false;
 }
 
-// Keep the lyric-size control stacked over the actual play/pause button. Its
-// transport row can wrap differently at each viewport width, so fixed right /
-// bottom offsets cannot reliably describe that relationship.
-function ytpDockPositionFontControl() {
+// The font control participates in layout instead of floating over it. As soon
+// as transport wraps onto a second row, move the control into the dedicated row
+// directly above those buttons; move it back to the lyric pane when they fit.
+function ytpDockSyncFontControl() {
   const el = document.getElementById('ytp-mini-footer');
-  const main = el?.querySelector('.ytp-mf-main');
-  const play = document.getElementById('ytp-mf-playpause');
+  const controls = el?.querySelector('.ytp-mf-controls');
+  const slot = document.getElementById('ytp-mf-font-slot');
+  const pane = document.getElementById('ytp-mf-lyrics-pane');
   const ctrl = el?.querySelector('.mf-lyr-font-ctrl');
-  if (!el || !main || !play || !ctrl || !el.classList.contains('dock-tall')) return;
-  const mainRect = main.getBoundingClientRect();
-  const playRect = play.getBoundingClientRect();
-  const left = playRect.left - mainRect.left + playRect.width / 2;
-  const top = Math.max(0, playRect.top - mainRect.top - ctrl.offsetHeight - 10);
-  el.style.setProperty('--mf-font-left', left + 'px');
-  el.style.setProperty('--mf-font-top', top + 'px');
+  if (!el || !controls || !slot || !pane || !ctrl) return;
+  const tops = [...controls.children]
+    .filter(node => node instanceof HTMLElement && node.offsetParent !== null)
+    .map(node => Math.round(node.getBoundingClientRect().top));
+  const wrapped = !ytpIsMob() && tops.length > 1 && Math.max(...tops) - Math.min(...tops) > 4;
+  el.classList.toggle('dock-controls-wrapped', wrapped);
+  if (wrapped && !slot.contains(ctrl)) slot.appendChild(ctrl);
+  else if (!wrapped && !pane.contains(ctrl)) pane.appendChild(ctrl);
 }
 
 // Applies the current (clamped) dock height and swaps thumbnail ⟷ video as
@@ -7167,10 +7233,8 @@ function ytpApplyDockHeight() {
   const bodyBase = ytpIsMob() ? 56 : 76;
   const mfBody = Math.min(Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW), bodyBase + extra);
   el.style.setProperty('--mf-body', mfBody + 'px');
-  el.style.setProperty('--mf-lyr-w', Math.max(42, 100 - Math.min(45, extra * 0.16)) + '%');
   el.classList.toggle('dock-grown', extra > 16);
-  el.classList.toggle('dock-tall', !ytpIsMob() && extra >= 116);
-  requestAnimationFrame(ytpDockPositionFontControl);
+  requestAnimationFrame(ytpDockSyncFontControl);
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
   if (wantVideo !== _ytpDockVideoOn) {
     _ytpDockVideoOn = wantVideo;
@@ -7366,7 +7430,7 @@ function ytpMfApplyLyricStrip() {
   }
   if (pane) {
     pane.classList.toggle('show', visible);
-    const sl = pane.querySelector('.mf-lyr-font-slider');
+    const sl = document.querySelector('.mf-lyr-font-slider');
     if (sl) sl.value = globalLyricSize;
   }
   if (visible) {
