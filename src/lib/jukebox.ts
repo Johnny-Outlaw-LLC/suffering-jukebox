@@ -276,6 +276,84 @@ export function sanitizeDisplayName(input: unknown): string | null {
   return name.slice(0, MAX_DISPLAY_NAME);
 }
 
+// ── Listeners ───────────────────────────────────────────────────────
+// A guest row is permanent — a bar regular's is weeks old. A LISTENER is a
+// guest whose phone is still polling right now, and the thing the host wants
+// on screen is how long they have been standing there, which is measured from
+// the top of the current stretch and not from the night they first scanned.
+
+/** A guest polls every four seconds. Miss a handful and they have walked off. */
+export const LISTENER_ACTIVE_MS = 45_000;
+
+/**
+ * Away longer than this and the "listening for" clock starts again. Short
+ * enough that yesterday's session never bleeds into tonight's, long enough
+ * that a phone locking during a song does not reset it.
+ */
+export const LISTENER_SESSION_GAP_MS = 5 * 60_000;
+
+export type ListenerRow = {
+  id: string;
+  display_name: string;
+  is_banned: boolean;
+  created_at: string;
+  last_seen_at: string;
+  session_started_at?: string | null;
+};
+
+export type Listener = {
+  id: string;
+  displayName: string;
+  isBanned: boolean;
+  /** Still polling. Everyone else is history and shows greyed out. */
+  isListening: boolean;
+  /** ISO, top of the current stretch. */
+  since: string | null;
+  lastSeenAt: string;
+  /** How long this stretch has run, by the server's clock. */
+  listeningMs: number;
+};
+
+export function shapeListeners(rows: ListenerRow[], nowMs: number): Listener[] {
+  const out = rows.map((r) => {
+    const seenAt = Date.parse(r.last_seen_at);
+    const startedAt = Date.parse(r.session_started_at ?? r.created_at);
+    const isListening = Number.isFinite(seenAt) && nowMs - seenAt < LISTENER_ACTIVE_MS;
+    // For somebody still here the clock runs to now; for somebody who has gone
+    // it stops at the last time we heard from them, so the panel reports how
+    // long they stayed rather than how long ago they arrived.
+    const endAt = isListening ? nowMs : seenAt;
+    return {
+      id: r.id,
+      displayName: r.display_name,
+      isBanned: r.is_banned,
+      isListening,
+      since: Number.isFinite(startedAt) ? new Date(startedAt).toISOString() : null,
+      lastSeenAt: r.last_seen_at,
+      listeningMs: Number.isFinite(startedAt) && Number.isFinite(endAt)
+        ? Math.max(0, endAt - startedAt)
+        : 0,
+    };
+  });
+  // Everyone still here first, longest-standing at the top of that group.
+  out.sort((a, b) => {
+    if (a.isListening !== b.isListening) return a.isListening ? -1 : 1;
+    if (a.isListening) return b.listeningMs - a.listeningMs;
+    return Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt);
+  });
+  return out;
+}
+
+/** "1h 12m", "9m", "just arrived" — the only format the panel needs. */
+export function formatListeningFor(ms: number): string {
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return "just arrived";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const rest = mins % 60;
+  return rest ? `${hrs}h ${rest}m` : `${hrs}h`;
+}
+
 // ── Queue ordering ────────────────────────────────────────────────────────
 
 export type PendingItem = {
@@ -346,6 +424,12 @@ export type HostQueueItem = {
   videoId: string | null;
   /** The room row this is already mirrored to, once the server has made one. */
   itemId: string | null;
+  /**
+   * Who put it there, as the host is showing it. Carried only so the last
+   * broadcast running order can keep the credit when the station goes quiet;
+   * nothing in the reconcile reads it.
+   */
+  addedBy?: string | null;
 };
 
 export type MirrorRow = {

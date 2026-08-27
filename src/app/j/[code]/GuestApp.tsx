@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Stage, { type Playback } from "./Stage";
+import OfflinePlayer, { type OfflineTrack } from "./OfflinePlayer";
 import css from "./guest.module.css";
 
 type Settings = {
@@ -101,6 +102,15 @@ export default function GuestApp({ code }: { code: string }) {
   const [artists, setArtists] = useState<Artist[] | null>(null);
   const [openArtist, setOpenArtist] = useState<Artist | null>(null);
   const [albums, setAlbums] = useState<Album[] | null>(null);
+
+  // ── Closing time ──────────────────────────────────────────────────
+  // A station that has gone quiet still has its last running order. The
+  // visitor can load that and listen on their own machine, which is the
+  // difference between "come back later" and a room that keeps working.
+  const [offlineTracks, setOfflineTracks] = useState<OfflineTrack[] | null>(null);
+  const [offlineOn, setOfflineOn] = useState(false);
+  const [offlineBusy, setOfflineBusy] = useState(false);
+  const [offlineErr, setOfflineErr] = useState<string | null>(null);
 
   const [nameDraft, setNameDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -326,6 +336,25 @@ export default function GuestApp({ code }: { code: string }) {
     }
   }, [code, guest, pushToast]);
 
+  const loadOffline = useCallback(async () => {
+    setOfflineBusy(true);
+    setOfflineErr(null);
+    try {
+      const res = await fetch(`/api/jukebox/offline?code=${encodeURIComponent(code)}`);
+      const d = await res.json();
+      if (!d.ok || !(d.tracks ?? []).length) {
+        setOfflineErr("This jukebox has not been on air yet, so there is nothing to load.");
+        return;
+      }
+      setOfflineTracks(d.tracks);
+      setOfflineOn(true);
+    } catch {
+      setOfflineErr("Could not reach the jukebox. Check your connection.");
+    } finally {
+      setOfflineBusy(false);
+    }
+  }, [code]);
+
   const shuffleName = useCallback(async () => {
     const res = await fetch("/api/jukebox/name");
     const d = await res.json();
@@ -422,10 +451,14 @@ export default function GuestApp({ code }: { code: string }) {
     Number.isFinite(stampedAt) && Date.now() - serverOffsetMs - stampedAt < STALE_MS;
   const showStage = !!playback.videoId && fresh;
 
+  // The mirror runs only while the host is actually driving something, and
+  // only while it is still saying so. Past STALE_MS the stage comes down.
+  // Nothing here forces the visitor out of their own listening: somebody who
+  // loaded the last playlist gets told the station is back, and chooses.
+  const backOnAir = offlineOn && !!room?.isLive && showStage;
+
   return (
     <div className={css.app}>
-      {showStage && <Stage code={code} playback={playback} serverOffsetMs={serverOffsetMs} />}
-
       <header className={css.header}>
         <div className={css.headRow}>
           <div className={css.roomName}>{room?.name}</div>
@@ -459,135 +492,184 @@ export default function GuestApp({ code }: { code: string }) {
         </div>
       </header>
 
-      {banned && (
-        <div className={css.notice}>
-          The owner has stopped you adding songs to this jukebox. You can still see what is playing.
-        </div>
-      )}
-
-      {!room?.isLive && !banned && (
-        <div className={css.notice}>
-          {room?.settings.allowOfflineAdds
-            ? "Nobody is playing this jukebox right now. Songs you add will be waiting when it starts up again."
-            : "This jukebox is not playing right now, so it is not taking requests."}
-        </div>
-      )}
-
-      {nowPlaying && !showStage && (
-        <div className={css.nowPlaying}>
-          {nowPlaying.albumArt && (
-            <img className={css.npArt} src={nowPlaying.albumArt} alt="" loading="lazy" />
-          )}
-          <div className={css.rowBody}>
-            <div className={css.npLabel}>Now playing</div>
-            <div className={css.npTitle}>{nowPlaying.trackName}</div>
-            <div className={css.npSub}>
-              {nowPlaying.artistName}
-              {nowPlaying.addedByOwner ? "" : ` · added by ${nowPlaying.addedByName}`}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Search results take over the body whenever there is a query. */}
-      {results !== null ? (
-        <section className={css.section}>
-          <h2 className={css.sectionTitle}>
-            {results.length ? `${results.length} result${results.length === 1 ? "" : "s"}` : "No songs found"}
-          </h2>
-          {results.map(renderTrackRow)}
-        </section>
-      ) : tab === "queue" ? (
-        <section className={css.section}>
-          <h2 className={css.sectionTitle}>Up next</h2>
-          {queue.length === 0 ? (
-            <div className={css.empty}>
-              Nothing queued yet.
-              <br />
-              Search for a song, or browse the collection.
-            </div>
+      {/* Two columns from a laptop width up: what is playing stays put on the
+          left while the collection scrolls on the right. One column on a
+          phone, in the order a thumb wants them. */}
+      <div className={css.shell}>
+        <div className={css.colStage}>
+          {offlineOn && offlineTracks ? (
+            <OfflinePlayer tracks={offlineTracks} onClose={() => setOfflineOn(false)} />
           ) : (
-            queue.map((item, i) => {
-              const isMine = !!guest && item.guestId === guest.id;
-              return (
-                <div className={`${css.row} ${isMine ? css.rowMine : ""}`} key={item.id}>
-                  <div className={css.pos}>{i + 1}</div>
-                  <div className={css.rowBody}>
-                    <div className={css.rowTitle}>{item.trackName}</div>
-                    <div className={css.rowSub}>
-                      {item.artistName}
-                      {" · "}
-                      <span className={isMine ? css.by : undefined}>
-                        {isMine ? "you added this" : item.addedByName}
-                      </span>
-                    </div>
-                  </div>
-                  {isMine && (
-                    <button
-                      className={css.iconBtn}
-                      onClick={() => void removeItem(item)}
-                      aria-label={`Remove ${item.trackName}`}
-                      title="Remove your song"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              );
-            })
+            showStage && <Stage code={code} playback={playback} serverOffsetMs={serverOffsetMs} />
           )}
-        </section>
-      ) : (
-        <section className={css.section}>
-          {openArtist ? (
-            <>
-              <button
-                className={css.backBtn}
-                onClick={() => {
-                  setOpenArtist(null);
-                  setAlbums(null);
-                }}
-              >
-                ← All artists
+
+          {backOnAir && (
+            <div className={`${css.notice} ${css.noticeLive}`}>
+              <div className={css.noticeTitle}>This station is back on air</div>
+              <button className={css.noticeBtn} onClick={() => setOfflineOn(false)}>
+                Listen with the room
               </button>
-              <h2 className={css.sectionTitle}>{openArtist.name}</h2>
-              {albums === null ? (
-                <div className={css.empty}>Loading...</div>
-              ) : (
-                albums.map((album) => (
-                  <div key={album.id}>
-                    <div className={css.albumHead}>
-                      {album.art && <img className={css.albumArt} src={album.art} alt="" loading="lazy" />}
-                      <div>
-                        <div className={css.albumName}>{album.name}</div>
-                        <div className={css.albumYear}>{album.year}</div>
-                      </div>
-                    </div>
-                    {album.tracks.map((t) =>
-                      renderTrackRow({ ...t, artistName: openArtist.name, albumName: album.name }),
-                    )}
-                  </div>
-                ))
-              )}
-            </>
-          ) : artists === null ? (
-            <div className={css.empty}>Loading the collection...</div>
-          ) : (
-            <div className={css.artistGrid}>
-              {artists.map((a) => (
-                <button
-                  key={a.id}
-                  className={css.artistCard}
-                  style={{ ["--card-accent" as string]: a.color ?? "#ff6b35" }}
-                  onClick={() => void openArtistAlbums(a)}
-                >
-                  {a.name}
-                </button>
-              ))}
             </div>
           )}
-        </section>
-      )}
+
+          {banned && (
+            <div className={css.notice}>
+              The owner has stopped you adding songs to this jukebox. You can still see what is
+              playing.
+            </div>
+          )}
+
+          {/* Off air. An offer, not an apology. */}
+          {!room?.isLive && !offlineOn && (
+            <div className={css.notice}>
+              <div className={css.noticeTitle}>This station is offline right now</div>
+              <p className={css.noticeText}>
+                You can still listen to the last synced playlist. It plays on this device, and you
+                pick the songs.
+              </p>
+              <button
+                className={css.noticeBtn}
+                disabled={offlineBusy}
+                onClick={() => void loadOffline()}
+              >
+                {offlineBusy ? "Loading..." : "Load the last playlist"}
+              </button>
+              {offlineErr && <p className={css.noticeText}>{offlineErr}</p>}
+              <p className={css.noticeText}>
+                {room?.settings.allowOfflineAdds
+                  ? "Songs you add now will be waiting when the host starts up again."
+                  : "The host is not taking requests until they are back on air."}
+              </p>
+            </div>
+          )}
+
+          {nowPlaying && !showStage && !offlineOn && (
+            <div className={css.nowPlaying}>
+              {nowPlaying.albumArt && (
+                <img className={css.npArt} src={nowPlaying.albumArt} alt="" loading="lazy" />
+              )}
+              <div className={css.rowBody}>
+                <div className={css.npLabel}>{room?.isLive ? "Now playing" : "Last played"}</div>
+                <div className={css.npTitle}>{nowPlaying.trackName}</div>
+                <div className={css.npSub}>
+                  {nowPlaying.artistName}
+                  {nowPlaying.addedByOwner ? "" : ` · Added by ${nowPlaying.addedByName}`}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={css.colList}>
+          {/* Search results take over the body whenever there is a query. */}
+          {results !== null ? (
+            <section className={css.section}>
+              <h2 className={css.sectionTitle}>
+                {results.length
+                  ? `${results.length} result${results.length === 1 ? "" : "s"}`
+                  : "No songs found"}
+              </h2>
+              {results.map(renderTrackRow)}
+            </section>
+          ) : tab === "queue" ? (
+            <section className={css.section}>
+              <h2 className={css.sectionTitle}>Up next</h2>
+              {queue.length === 0 ? (
+                <div className={css.empty}>
+                  Nothing queued yet.
+                  <br />
+                  Search for a song, or browse the collection.
+                </div>
+              ) : (
+                queue.map((item, i) => {
+                  const isMine = !!guest && item.guestId === guest.id;
+                  return (
+                    <div className={`${css.row} ${isMine ? css.rowMine : ""}`} key={item.id}>
+                      <div className={css.pos}>{i + 1}</div>
+                      <div className={css.rowBody}>
+                        <div className={css.rowTitle}>{item.trackName}</div>
+                        <div className={css.rowSub}>
+                          {item.artistName}
+                          {" · "}
+                          <span className={isMine ? css.by : undefined}>
+                            {isMine ? "you added this" : `Added by ${item.addedByName}`}
+                          </span>
+                        </div>
+                      </div>
+                      {isMine && (
+                        <button
+                          className={css.iconBtn}
+                          onClick={() => void removeItem(item)}
+                          aria-label={`Remove ${item.trackName}`}
+                          title="Remove your song"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </section>
+          ) : (
+            <section className={css.section}>
+              {openArtist ? (
+                <>
+                  <button
+                    className={css.backBtn}
+                    onClick={() => {
+                      setOpenArtist(null);
+                      setAlbums(null);
+                    }}
+                  >
+                    ← All artists
+                  </button>
+                  <h2 className={css.sectionTitle}>{openArtist.name}</h2>
+                  {albums === null ? (
+                    <div className={css.empty}>Loading...</div>
+                  ) : (
+                    albums.map((album) => (
+                      <div key={album.id}>
+                        <div className={css.albumHead}>
+                          {album.art && (
+                            <img className={css.albumArt} src={album.art} alt="" loading="lazy" />
+                          )}
+                          <div>
+                            <div className={css.albumName}>{album.name}</div>
+                            <div className={css.albumYear}>{album.year}</div>
+                          </div>
+                        </div>
+                        {album.tracks.map((t) =>
+                          renderTrackRow({
+                            ...t,
+                            artistName: openArtist.name,
+                            albumName: album.name,
+                          }),
+                        )}
+                      </div>
+                    ))
+                  )}
+                </>
+              ) : artists === null ? (
+                <div className={css.empty}>Loading the collection...</div>
+              ) : (
+                <div className={css.artistGrid}>
+                  {artists.map((a) => (
+                    <button
+                      key={a.id}
+                      className={css.artistCard}
+                      style={{ ["--card-accent" as string]: a.color ?? "#ff6b35" }}
+                      onClick={() => void openArtistAlbums(a)}
+                    >
+                      {a.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      </div>
 
       <div className={css.toasts}>
         {toasts.map((t) => (

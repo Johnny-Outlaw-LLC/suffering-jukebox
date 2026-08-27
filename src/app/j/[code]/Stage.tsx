@@ -49,7 +49,7 @@ declare global {
 let apiPromise: Promise<any> | null = null;
 
 /** One script tag for the page, however many times this component mounts. */
-function loadYouTubeApi(): Promise<any> {
+export function loadYouTubeApi(): Promise<any> {
   if (typeof window === "undefined") return Promise.reject(new Error("no window"));
   if (window.YT?.Player) return Promise.resolve(window.YT);
   if (apiPromise) return apiPromise;

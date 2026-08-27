@@ -8,13 +8,17 @@ import { createHash, randomBytes } from "crypto";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import {
   DEFAULT_SETTINGS,
+  MAX_JUKEBOX_NAME,
   MAX_JUKEBOXES_PER_ACCOUNT,
   generateCode,
   nicknameFromLyric,
   normalizePlayback,
   normalizeSettings,
+  LISTENER_SESSION_GAP_MS,
   reconcileHostQueue,
+  shapeListeners,
   type HostQueueItem,
+  type Listener,
   type JukeboxSettings,
   type MirrorRow,
   type PendingItem,
@@ -60,6 +64,8 @@ export type JukeboxRow = {
   playback: Playback;
   is_public: boolean;
   public_slug: string | null;
+  /** Last broadcast running order. See LastQueueEntry. */
+  last_queue: LastQueueEntry[];
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -68,13 +74,36 @@ export type JukeboxRow = {
 
 const JUKEBOX_SELECT =
   "id,owner_email,code,name,is_live,settings,playback,is_public,public_slug,description," +
-  "created_at,updated_at,last_live_at";
+  "last_queue,created_at,updated_at,last_live_at";
+
+/**
+ * One song in the last broadcast running order. Kept to three short keys
+ * because the whole list is rewritten on the host's sync whenever the order
+ * changes, and a 300 song queue should not be a 300KB write.
+ */
+export type LastQueueEntry = { t: string; v: string | null; by: string | null };
+
+export function normalizeLastQueue(raw: unknown): LastQueueEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: LastQueueEntry[] = [];
+  for (const row of raw.slice(0, 600)) {
+    const t = (row as any)?.t;
+    if (typeof t !== "string" || !t) continue;
+    out.push({
+      t,
+      v: typeof (row as any).v === "string" ? (row as any).v.slice(0, 40) : null,
+      by: typeof (row as any).by === "string" ? (row as any).by.slice(0, 60) : null,
+    });
+  }
+  return out;
+}
 
 function hydrate(row: any): JukeboxRow {
   return {
     ...row,
     settings: normalizeSettings(row.settings),
     playback: normalizePlayback(row.playback),
+    last_queue: normalizeLastQueue(row.last_queue),
   };
 }
 
@@ -146,14 +175,12 @@ export async function listJukeboxesForOwner(sb: ServiceClient, email: string): P
 export async function getOrCreateOwnerJukebox(
   sb: ServiceClient,
   email: string,
+  displayName?: string | null,
 ): Promise<JukeboxRow> {
   const existing = await listJukeboxesForOwner(sb, email);
   if (existing.length >= MAX_JUKEBOXES_PER_ACCOUNT) return existing[0];
 
-  // No name guess from the account - the owner names it themselves from the
-  // host console's Rename button. The DB's own 'Jukebox' default covers the
-  // NOT NULL column until they do.
-  const name = "Jukebox";
+  const name = (displayName ? `${displayName}'s Jukebox` : "Jukebox").slice(0, MAX_JUKEBOX_NAME);
   // Retry on the unlikely code collision rather than trusting one draw.
   for (let attempt = 0; attempt < 8; attempt++) {
     const code = generateCode();
@@ -235,10 +262,17 @@ export async function createGuest(
   return data;
 }
 
+/**
+ * A guest polled, so they are still in the room. One RPC rather than a read
+ * followed by a write: whether they have been away long enough to restart the
+ * "listening for" clock has to be decided against the row's own last_seen_at,
+ * atomically, at four requests a second per phone.
+ */
 export async function touchGuest(sb: ServiceClient, guestId: string): Promise<void> {
-  await T(sb, "jukebox_guests")
-    .update({ last_seen_at: new Date().toISOString() })
-    .eq("id", guestId);
+  await sb.schema(JUKEBOX_SCHEMA).rpc("touch_guest", {
+    p_guest_id: guestId,
+    p_gap_seconds: Math.round(LISTENER_SESSION_GAP_MS / 1000),
+  });
 }
 
 export async function renameGuest(
@@ -271,12 +305,53 @@ export async function setGuestBanned(
 
 export async function listGuests(sb: ServiceClient, jukeboxId: string) {
   const { data, error } = await T(sb, "jukebox_guests")
-    .select("id,display_name,is_banned,created_at,last_seen_at")
+    .select("id,display_name,is_banned,created_at,last_seen_at,session_started_at")
     .eq("jukebox_id", jukeboxId)
     .order("last_seen_at", { ascending: false })
     .limit(200);
   if (error) throw error;
   return data ?? [];
+}
+
+/**
+ * Everybody the room has ever seated, shaped into who is listening right now
+ * and for how long. The cut between "here" and "gone" is a clock comparison,
+ * so it lives in shapeListeners() with the rest of the rules rather than in a
+ * WHERE clause nobody can find later.
+ */
+export async function listListeners(sb: ServiceClient, jukeboxId: string): Promise<Listener[]> {
+  return shapeListeners((await listGuests(sb, jukeboxId)) as any, Date.now());
+}
+
+/**
+ * What each guest has put in the jukebox tonight, so the host can click a name
+ * in the listeners panel and see it. Keyed by guest id; the owner's own adds
+ * are not in here, they are the queue.
+ */
+export async function listGuestSongs(
+  sb: ServiceClient,
+  jukeboxId: string,
+): Promise<Record<string, { id: string; trackName: string; artistName: string | null; status: string; createdAt: string }[]>> {
+  const { data, error } = await T(sb, "jukebox_queue")
+    .select("id,guest_id,status,created_at,tracks!inner(name,albums!inner(artists!inner(name)))")
+    .eq("jukebox_id", jukeboxId)
+    .not("guest_id", "is", null)
+    .in("status", ["pending", "playing", "played"])
+    .order("created_at", { ascending: true })
+    .limit(600);
+  if (error) throw error;
+  const out: Record<string, any[]> = {};
+  for (const r of (data ?? []) as any[]) {
+    const artist = r.tracks?.albums?.artists?.name ?? null;
+    (out[r.guest_id] ||= []).push({
+      id: r.id,
+      trackName: r.tracks?.name ?? "Unknown",
+      artistName: artist,
+      status: r.status,
+      createdAt: r.created_at,
+    });
+  }
+  return out;
 }
 
 /**
@@ -539,7 +614,14 @@ export type HostSyncResult = {
 export async function syncHostQueue(
   sb: ServiceClient,
   jukeboxId: string,
-  opts: { items: HostQueueItem[]; currentIndex: number; snapshotAtMs: number; ownerName: string },
+  opts: {
+    items: HostQueueItem[];
+    currentIndex: number;
+    snapshotAtMs: number;
+    ownerName: string;
+    /** What the room already has stored, so an unchanged order writes nothing. */
+    lastQueue: LastQueueEntry[];
+  },
 ): Promise<HostSyncResult> {
   const cols = "id,track_id,status,sort,created_at";
 
@@ -642,7 +724,93 @@ export async function syncHostQueue(
     adopted = (data ?? []).map(shapeQueueRow);
   }
 
+  // The running order, kept for the night the host closes the laptop. Written
+  // only when it actually changes, so a host pushing the same queue every five
+  // seconds writes nothing at all.
+  const lastQueue: LastQueueEntry[] = opts.items
+    .filter((i) => !!i.trackId)
+    .map((i) => ({ t: i.trackId as string, v: i.videoId ?? null, by: i.addedBy ?? null }));
+  if (lastQueue.length && !sameLastQueue(lastQueue, opts.lastQueue)) {
+    await T(sb, "jukeboxes").update({ last_queue: lastQueue }).eq("id", jukeboxId);
+  }
+
   return { assigned, adopted, dropped: plan.drop, removed: plan.remove.length };
+}
+
+function sameLastQueue(a: LastQueueEntry[], b: LastQueueEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].t !== b[i].t || a[i].v !== b[i].v || a[i].by !== b[i].by) return false;
+  }
+  return true;
+}
+
+/**
+ * The last playlist that was actually on air, hydrated into something a
+ * visitor can play on their own machine. Read from jukeboxes.last_queue rather
+ * than rebuilt from jukebox_queue: rows played on an earlier night keep their
+ * 'played' status and a stale sort, so the table cannot tell you tonight's
+ * order on its own.
+ *
+ * A stored video id is preferred, because it is the upload the host was
+ * actually playing, alternates and all. Where there is none we fall back to
+ * the track's primary version.
+ */
+export type OfflineTrack = {
+  trackId: string;
+  videoId: string | null;
+  trackName: string;
+  artistName: string | null;
+  albumName: string | null;
+  albumArt: string | null;
+  addedByName: string | null;
+};
+
+export async function loadLastSyncedPlaylist(
+  sb: ServiceClient,
+  jukebox: JukeboxRow,
+): Promise<OfflineTrack[]> {
+  const entries = jukebox.last_queue;
+  if (!entries.length) return [];
+  const ids = Array.from(new Set(entries.map((e) => e.t)));
+
+  const [metaRes, videoRes] = await Promise.all([
+    T(sb, "tracks")
+      .select("id,name,albums!inner(name,art_url,artists!inner(name))")
+      .in("id", ids),
+    T(sb, "track_videos")
+      .select("track_id,video_id,is_primary,is_playable,view_count")
+      .in("track_id", ids)
+      .eq("is_playable", true),
+  ]);
+  if (metaRes.error) throw metaRes.error;
+  if (videoRes.error) throw videoRes.error;
+
+  const meta = new Map<string, any>((metaRes.data ?? []).map((r: any) => [r.id, r]));
+  // Primary first, then most-viewed: the same order of preference the player
+  // itself uses, so the offline list plays the upload the room would have got.
+  const best = new Map<string, string>();
+  const ranked = ((videoRes.data ?? []) as any[]).slice().sort((a, b) => {
+    if (!!a.is_primary !== !!b.is_primary) return a.is_primary ? -1 : 1;
+    return Number(b.view_count ?? 0) - Number(a.view_count ?? 0);
+  });
+  for (const row of ranked) {
+    if (!best.has(row.track_id)) best.set(row.track_id, row.video_id);
+  }
+
+  return entries.map((e) => {
+    const m = meta.get(e.t);
+    const album = m?.albums ?? {};
+    return {
+      trackId: e.t,
+      videoId: e.v ?? best.get(e.t) ?? null,
+      trackName: m?.name ?? "Unknown",
+      artistName: album.artists?.name ?? null,
+      albumName: album.name ?? null,
+      albumArt: album.art_url ?? null,
+      addedByName: e.by,
+    };
+  });
 }
 
 /**

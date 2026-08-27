@@ -23,8 +23,8 @@ import {
   codeExists,
   getOrCreateOwnerJukebox,
   getQueueItem,
-  insertQueueItem,
-  listGuests,
+  listGuestSongs,
+  listListeners,
   loadPending,
   loadQueue,
   loadRecentlyPlayed,
@@ -41,9 +41,8 @@ import {
   type JukeboxRow,
   type ServiceClient,
 } from "@/lib/jukebox-db";
-import { JUKEBOX_SCHEMA, getAuthUser } from "@/lib/sj-admin-auth";
+import { getAuthUser } from "@/lib/sj-admin-auth";
 import { bad, publicJukebox } from "@/lib/jukebox-request";
-import { appendSort } from "@/lib/jukebox";
 
 export const dynamic = "force-dynamic";
 
@@ -56,22 +55,31 @@ async function requireOwnerJukebox(req: NextRequest) {
     return { error: bad("Sign in to manage your jukebox.", 401) };
   }
   const sb = sjb();
-  const jukebox = await getOrCreateOwnerJukebox(sb, user.email);
+  const name =
+    (user.user_metadata?.full_name as string | undefined) ??
+    (user.user_metadata?.name as string | undefined) ??
+    null;
+  const jukebox = await getOrCreateOwnerJukebox(sb, user.email, name);
   return { sb, jukebox, email: user.email };
 }
 
 async function fullState(sb: ServiceClient, jukebox: JukeboxRow) {
-  const [queue, guests, recentlyPlayed] = await Promise.all([
+  const [queue, listeners, guestSongs, recentlyPlayed] = await Promise.all([
     loadQueue(sb, jukebox.id),
-    listGuests(sb, jukebox.id),
+    listListeners(sb, jukebox.id),
+    listGuestSongs(sb, jukebox.id),
     loadRecentlyPlayed(sb, jukebox.id),
   ]);
   return {
     jukebox: { ...publicJukebox(jukebox), id: jukebox.id },
     nowPlaying: queue.find((q) => q.status === "playing") ?? null,
     queue: queue.filter((q) => q.status === "pending"),
-    guests,
+    // Who is in the room right now, and what each of them put in the jukebox.
+    // The panel expands a name into their songs without another request.
+    listeners,
+    guestSongs,
     recentlyPlayed,
+    serverTime: new Date().toISOString(),
   };
 }
 
@@ -189,14 +197,6 @@ export async function POST(req: NextRequest) {
         break;
       }
 
-      case "seed_playlist": {
-        const playlistId = uuid(body.playlist_id ?? body.playlistId);
-        if (!playlistId) return bad("Missing playlist.");
-        const added = await seedFromPlaylist(sb, jukebox, playlistId, email);
-        if (typeof added !== "number") return added;
-        return NextResponse.json({ ok: true, added, ...(await fullState(sb, jukebox)) });
-      }
-
       // The whole point of act two: the room is a mirror of the host's own
       // player queue, not a second list beside it. The host pushes what it is
       // holding every few seconds; this makes the room agree, and hands back
@@ -208,6 +208,7 @@ export async function POST(req: NextRequest) {
           trackId: uuid(raw?.trackId ?? raw?.track_id),
           videoId: typeof raw?.videoId === "string" ? raw.videoId.slice(0, 40) : null,
           itemId: uuid(raw?.itemId ?? raw?.item_id),
+          addedBy: typeof raw?.addedBy === "string" ? raw.addedBy.slice(0, 60) : null,
         }));
         const currentIndex = Number.isFinite(Number(body.currentIndex))
           ? Number(body.currentIndex)
@@ -224,13 +225,24 @@ export async function POST(req: NextRequest) {
           currentIndex,
           snapshotAtMs,
           ownerName: jukebox.name,
+          lastQueue: jukebox.last_queue,
         });
 
         const playback = await setPlayback(sb, jukebox.id, normalizePlayback(body.playback));
 
+        // The listeners panel runs off this, so it keeps working with the
+        // console closed - which is the normal case for a host watching the
+        // room rather than the app.
+        const [listeners, guestSongs] = await Promise.all([
+          listListeners(sb, jukebox.id),
+          listGuestSongs(sb, jukebox.id),
+        ]);
+
         return NextResponse.json({
           ok: true,
           ...result,
+          listeners,
+          guestSongs,
           playback,
           isLive: jukebox.is_live,
           settings: jukebox.settings,
@@ -277,68 +289,4 @@ export async function POST(req: NextRequest) {
     console.error("[jukebox:owner:post]", err);
     return bad("Could not update your jukebox.", 500);
   }
-}
-
-/**
- * Send a saved playlist to the jukebox. Owner adds bypass the guest fairness
- * rules, but duplicates already waiting are still skipped so sending the same
- * playlist twice does not double the queue.
- */
-async function seedFromPlaylist(
-  sb: ServiceClient,
-  jukebox: JukeboxRow,
-  playlistId: string,
-  email: string,
-): Promise<number | NextResponse> {
-  const { data: playlist, error: plErr } = await sb
-    .schema(JUKEBOX_SCHEMA)
-    .from("playlists")
-    .select("id,name,user_email,is_public")
-    .eq("id", playlistId)
-    .maybeSingle();
-  if (plErr) throw plErr;
-  if (!playlist) return bad("No such playlist.", 404);
-
-  const mine = (playlist.user_email ?? "").toLowerCase() === email.toLowerCase();
-  if (!mine && !playlist.is_public) return bad("That playlist is not yours.", 403);
-
-  const { data: rows, error } = await sb
-    .schema(JUKEBOX_SCHEMA)
-    .from("playlist_tracks")
-    .select("track_id,position")
-    .eq("playlist_id", playlistId)
-    .order("position", { ascending: true });
-  if (error) throw error;
-
-  // playlist_tracks.track_id is text rather than uuid, so anything that is not
-  // a real track id is dropped instead of blowing up the insert.
-  const trackIds = (rows ?? []).map((r: any) => uuid(r.track_id)).filter(Boolean) as string[];
-  if (!trackIds.length) return 0;
-
-  const pending = await loadPending(sb, jukebox.id);
-  const already = new Set(pending.map((p) => p.trackId));
-  let sort = appendSort(pending);
-  let added = 0;
-
-  for (const trackId of trackIds) {
-    if (already.has(trackId)) continue;
-    already.add(trackId);
-    try {
-      await insertQueueItem(sb, {
-        jukeboxId: jukebox.id,
-        trackId,
-        videoId: null,
-        guestId: null,
-        addedByName: jukebox.name,
-        addedByOwner: true,
-        sort,
-      });
-      sort += 1024;
-      added++;
-    } catch (err) {
-      // A track that has since been deleted should not abort the whole send.
-      console.error("[jukebox:seed] skipped", trackId, err);
-    }
-  }
-  return added;
 }
