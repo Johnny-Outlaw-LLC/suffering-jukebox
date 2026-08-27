@@ -19,10 +19,17 @@ export type JukeboxSettings = {
   allowOfflineAdds: boolean;
   /** FIFO appends. Round robin interleaves so one guest cannot stack the queue. */
   fairness: FairnessMode;
-  /** Guests must enter a name rather than accepting the generated one. */
+  /** Guests must enter a name rather than being numbered. */
   requireName: boolean;
   /** Allow tracks flagged explicit. */
   allowExplicit: boolean;
+  /**
+   * A song somebody in the room asked for goes in front of the host's own
+   * list rather than behind all of it. On a night with a long playlist loaded
+   * this is the difference between a request being heard and being heard
+   * tomorrow.
+   */
+  guestsFirst: boolean;
 };
 
 export const DEFAULT_SETTINGS: JukeboxSettings = {
@@ -32,6 +39,7 @@ export const DEFAULT_SETTINGS: JukeboxSettings = {
   fairness: "fifo",
   requireName: false,
   allowExplicit: true,
+  guestsFirst: false,
 };
 
 /**
@@ -62,6 +70,7 @@ export function normalizeSettings(raw: unknown): JukeboxSettings {
     fairness: s.fairness === "round_robin" ? "round_robin" : "fifo",
     requireName: bool(s.requireName, DEFAULT_SETTINGS.requireName),
     allowExplicit: bool(s.allowExplicit, DEFAULT_SETTINGS.allowExplicit),
+    guestsFirst: bool(s.guestsFirst, DEFAULT_SETTINGS.guestsFirst),
   };
 }
 
@@ -398,6 +407,43 @@ export function midpointSort(before: number | null, after: number | null): numbe
 }
 
 /**
+ * Where a guest add lands when the host has said requests come first.
+ *
+ * In front of the host's own list, behind the song on screen, and behind
+ * guests who were already waiting - this is guests-before-the-host, not
+ * last-in-first-out, and jumping in front of somebody who asked before you
+ * would be a worse jukebox than the one we started with.
+ */
+export function guestsFirstSort(
+  pending: PendingItem[],
+  /** Whose add this is, when round robin is also on. Null for plain order. */
+  guestId: string | null,
+): number {
+  const ordered = [...pending].sort((a, b) => a.sort - b.sort);
+  if (!ordered.length) return SORT_STEP;
+
+  // Index 0 is the song already on screen. Nothing goes in front of it.
+  let end = 0;
+  while (end + 1 < ordered.length && ordered[end + 1].guestId) end++;
+  const block = ordered.slice(1, end + 1);
+  const nextOwn = end + 1 < ordered.length ? ordered[end + 1].sort : null;
+
+  if (guestId && block.length) {
+    // Round robin still decides the order among guests. It just does it inside
+    // the block sitting in front of the host's list rather than across the
+    // whole queue.
+    const at = roundRobinSort(block, guestId);
+    // roundRobinSort appends past the block when this guest's round is last,
+    // which would land on top of the host's next song. Pull it back inside.
+    if (nextOwn != null && at >= nextOwn) {
+      return midpointSort(block[block.length - 1].sort, nextOwn);
+    }
+    return at;
+  }
+  return midpointSort(ordered[end].sort, nextOwn);
+}
+
+/**
  * Where a new add lands under round robin. Each guest's Nth waiting song sits
  * in round N, and rounds play in order, so a guest who queues five songs gets
  * one slot per lap instead of five in a row.
@@ -599,10 +645,20 @@ export function decideAdd(ctx: AddContext): AddDecision {
     }
   }
 
-  const sort =
-    !ctx.isOwner && settings.fairness === "round_robin"
-      ? roundRobinSort(ctx.pending, ctx.guestId)
-      : appendSort(ctx.pending);
+  // The host's own adds always go on the end; it is their list. Everything
+  // else is the two settings composing: requests first decides where the block
+  // of guest songs sits, round robin decides the order inside it.
+  const roundRobin = settings.fairness === "round_robin";
+  let sort: number;
+  if (ctx.isOwner) {
+    sort = appendSort(ctx.pending);
+  } else if (settings.guestsFirst) {
+    sort = guestsFirstSort(ctx.pending, roundRobin ? ctx.guestId : null);
+  } else if (roundRobin) {
+    sort = roundRobinSort(ctx.pending, ctx.guestId);
+  } else {
+    sort = appendSort(ctx.pending);
+  }
   return { ok: true, sort };
 }
 

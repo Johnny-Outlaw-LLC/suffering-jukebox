@@ -359,37 +359,59 @@ export async function listListeners(sb: ServiceClient, jukeboxId: string): Promi
 }
 
 /**
- * What each guest has put in the jukebox tonight, so the host can click a name
- * in the listeners panel and see it. Keyed by guest id; the owner's own adds
- * are not in here, they are the queue.
+ * Everything the room has asked for tonight, newest first.
+ *
+ * Keyed on added_by_owner rather than on guest_id: the question is "did
+ * somebody other than the host choose this", and a guest row that has since
+ * been deleted would still leave guest_id null on a song a person picked.
+ *
+ * One flat list rather than a map per guest. The console needs both shapes -
+ * a Songs added by others box, and the songs under one name in the listeners
+ * panel - and grouping a hundred rows in the browser is cheaper than running
+ * the query twice.
  */
-export async function listGuestSongs(
+export type GuestAdd = {
+  id: string;
+  guestId: string | null;
+  trackId: string;
+  videoId: string | null;
+  trackName: string;
+  artistName: string | null;
+  addedByName: string;
+  status: string;
+  createdAt: string;
+};
+
+export async function listGuestAdds(
   sb: ServiceClient,
   jukeboxId: string,
-  /** Only these guests. The panel lists nobody else, so nor should this. */
-  guestIds: string[],
-): Promise<Record<string, { id: string; trackName: string; artistName: string | null; status: string; createdAt: string }[]>> {
-  if (!guestIds.length) return {};
+  limit = 120,
+): Promise<GuestAdd[]> {
   const { data, error } = await T(sb, "jukebox_queue")
-    .select("id,guest_id,status,created_at,tracks!inner(name,albums!inner(artists!inner(name)))")
+    .select(
+      "id,guest_id,track_id,video_id,added_by_name,status,created_at," +
+        "tracks!inner(name,albums!inner(artists!inner(name)))",
+    )
     .eq("jukebox_id", jukeboxId)
-    .in("guest_id", guestIds.slice(0, 200))
+    .eq("added_by_owner", false)
+    // Removed rows are left out on purpose: the host can put one of these back
+    // in the queue by clicking it, and a row the room has dropped would be
+    // swept straight back out again by the next sync.
     .in("status", ["pending", "playing", "played"])
-    .order("created_at", { ascending: true })
-    .limit(600);
+    .order("created_at", { ascending: false })
+    .limit(limit);
   if (error) throw error;
-  const out: Record<string, any[]> = {};
-  for (const r of (data ?? []) as any[]) {
-    const artist = r.tracks?.albums?.artists?.name ?? null;
-    (out[r.guest_id] ||= []).push({
-      id: r.id,
-      trackName: r.tracks?.name ?? "Unknown",
-      artistName: artist,
-      status: r.status,
-      createdAt: r.created_at,
-    });
-  }
-  return out;
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    guestId: r.guest_id,
+    trackId: r.track_id,
+    videoId: r.video_id,
+    trackName: r.tracks?.name ?? "Unknown",
+    artistName: r.tracks?.albums?.artists?.name ?? null,
+    addedByName: r.added_by_name,
+    status: r.status,
+    createdAt: r.created_at,
+  }));
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────

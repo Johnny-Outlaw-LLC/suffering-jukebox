@@ -24,7 +24,7 @@ import {
   expireStaleBroadcast,
   getOrCreateOwnerJukebox,
   getQueueItem,
-  listGuestSongs,
+  listGuestAdds,
   listListeners,
   loadPending,
   loadQueue,
@@ -68,14 +68,12 @@ async function requireOwnerJukebox(req: NextRequest) {
 }
 
 async function fullState(sb: ServiceClient, jukebox: JukeboxRow) {
-  const [queue, listeners, recentlyPlayed] = await Promise.all([
+  const [queue, listeners, guestAdds, recentlyPlayed] = await Promise.all([
     loadQueue(sb, jukebox.id),
     listListeners(sb, jukebox.id),
+    listGuestAdds(sb, jukebox.id),
     loadRecentlyPlayed(sb, jukebox.id),
   ]);
-  // Only the people in the room. Nobody else is on the panel, so pulling
-  // their songs would be work nothing renders.
-  const guestSongs = await listGuestSongs(sb, jukebox.id, listeners.map((l) => l.id));
   return {
     jukebox: { ...publicJukebox(jukebox), id: jukebox.id },
     nowPlaying: queue.find((q) => q.status === "playing") ?? null,
@@ -83,7 +81,7 @@ async function fullState(sb: ServiceClient, jukebox: JukeboxRow) {
     // Who is in the room right now, and what each of them put in the jukebox.
     // The panel expands a name into their songs without another request.
     listeners,
-    guestSongs,
+    guestAdds,
     recentlyPlayed,
     serverTime: new Date().toISOString(),
   };
@@ -239,14 +237,16 @@ export async function POST(req: NextRequest) {
         // The listeners panel runs off this, so it keeps working with the
         // console closed - which is the normal case for a host watching the
         // room rather than the app.
-        const listeners = await listListeners(sb, jukebox.id);
-        const guestSongs = await listGuestSongs(sb, jukebox.id, listeners.map((l) => l.id));
+        const [listeners, guestAdds] = await Promise.all([
+          listListeners(sb, jukebox.id),
+          listGuestAdds(sb, jukebox.id),
+        ]);
 
         return NextResponse.json({
           ok: true,
           ...result,
           listeners,
-          guestSongs,
+          guestAdds,
           playback,
           isLive: jukebox.is_live,
           settings: jukebox.settings,
