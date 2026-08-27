@@ -1540,10 +1540,12 @@ textarea.report-input { resize:vertical; }
   transform: translateY(110%); transition: transform .32s ease; pointer-events: none;
 }
 .ytp-mini-footer.open { transform: translateY(0); pointer-events: auto; }
-/* Drag handle across the top edge - the only way to resize the dock now that
-   there is no floating window to drag by its title bar. */
+/* Drag handle across the top edge. Keep its hit area generous while leaving
+   the visible grip small, so it is easy to catch without covering content. */
 .ytp-mf-resize {
-  display: none !important;
+  position:absolute; left:0; right:0; top:0; height:14px; z-index:8;
+  display:flex; align-items:center; justify-content:center;
+  cursor:ns-resize; touch-action:none; user-select:none;
 }
 .ytp-mf-resize::after {
   content: ''; width: 36px; height: 3px; border-radius: 2px; background: var(--border); transition: background .15s;
@@ -3183,6 +3185,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 <div id="mob-alb-panel"></div>
 
 <div id="ytp-mini-footer" class="ytp-mini-footer">
+  <div class="ytp-mf-resize" id="ytp-mf-resize" onmousedown="ytpDockResizeStart(event)" ontouchstart="ytpDockResizeStart(event)"></div>
   <div class="ytp-mf-main">
     <div class="ytp-mf-now">
       <div class="ytp-mf-art-wrap">
@@ -7156,7 +7159,10 @@ window.addEventListener('resize', () => {
 // mounted behind the thumbnail. Past a threshold only the thumbnail visibility
 // changes, so resizing cannot reload the iframe or interrupt playback.
 let _ytpDockH = null;
-try { localStorage.removeItem('sj_dock_h'); } catch (_) {}
+try {
+  const savedDockH = Number(localStorage.getItem('sj_dock_h'));
+  if (Number.isFinite(savedDockH) && savedDockH > 0) _ytpDockH = savedDockH;
+} catch (_) {}
 let _ytpDockVideoOn = false;
 let _ytpDockMinHCache = null;
 let _ytpLayoutRestore = null;     // playhead/state carried across dock/fullscreen iframe moves
@@ -7315,7 +7321,7 @@ function ytpApplyDockHeight() {
   el.classList.toggle('dock-grown', extra > 16);
   // The queue earns the otherwise-empty space above the three control rows;
   // below that point it stays hidden so it never crowds the transport.
-  el.classList.toggle('dock-show-playlist', ytQueue.length > 1 && h > 158 && !ytpIsMob());
+  el.classList.toggle('dock-show-playlist', ytQueue.length > 1 && extra >= 140 && !ytpIsMob());
   ytpPaintDockPlaylist();
   requestAnimationFrame(ytpDockSyncFontControl);
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
