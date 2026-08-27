@@ -1555,8 +1555,8 @@ textarea.report-input { resize:vertical; }
   min-width: 0;
 }
 .ytp-mini-footer.dock-grown .ytp-mf-main {
-  /* The video grows, but the metadata beside it remains exactly 190px wide. */
-  grid-template-columns: calc(var(--mf-body) + 201px) minmax(160px, 1fr) minmax(112px, 176px);
+  /* The video grows, but the metadata beside it keeps its resting usable width. */
+  grid-template-columns: calc(var(--mf-body) + 251px) minmax(160px, 1fr) minmax(112px, 176px);
   align-items: end;
 }
 
@@ -1575,7 +1575,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-video-slot .yt-player-frame { flex: none !important; min-height: 0 !important; width: 100% !important; height: 100% !important; }
 .ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; }
 .ytp-mini-footer.dock-grown .ytp-mf-now { align-items: flex-end; }
-.ytp-mini-footer.dock-grown .ytp-mf-meta { flex: 0 0 190px; width: 190px; justify-content: flex-end; align-self: stretch; padding-bottom: 2px; }
+.ytp-mini-footer.dock-grown .ytp-mf-meta { flex: 0 0 240px; width: 240px; justify-content: flex-end; align-self: stretch; padding-bottom: 2px; }
 .ytp-mf-artist {
   font-size: .46rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1713,7 +1713,7 @@ textarea.report-input { resize:vertical; }
   display: flex; align-items: center; gap: 4px; line-height: 1; flex-shrink: 0;
 }
 .ytp-mini-footer.dock-tall .ytp-mf-lyr .mf-lyr-font-ctrl {
-  position: absolute; right: 70px; bottom: 74px; z-index: 2;
+  position: absolute; left: var(--mf-font-left); top: var(--mf-font-top); transform: translateX(-50%); z-index: 2;
   padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px;
   background: color-mix(in srgb, var(--bg-card) 92%, transparent);
 }
@@ -1759,7 +1759,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mini-footer.dock-grown .ytp-mf-meta { justify-content: center; padding-bottom: 0; }
   .ytp-mini-footer.dock-grown .ytp-mf-controls { flex-wrap: wrap; justify-content: center; }
   .ytp-mini-footer.dock-grown .ytp-mf-win { flex-direction: row; }
-  .ytp-mini-footer.dock-tall .ytp-mf-lyr .mf-lyr-font-ctrl { position: static; padding: 0; border: 0; background: none; }
+  .ytp-mini-footer.dock-tall .ytp-mf-lyr .mf-lyr-font-ctrl { position: static; transform: none; padding: 0; border: 0; background: none; }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
@@ -7132,6 +7132,23 @@ function ytpDockReleaseFrame() {
   _ytpDockVideoOn = false;
 }
 
+// Keep the lyric-size control stacked over the actual play/pause button. Its
+// transport row can wrap differently at each viewport width, so fixed right /
+// bottom offsets cannot reliably describe that relationship.
+function ytpDockPositionFontControl() {
+  const el = document.getElementById('ytp-mini-footer');
+  const main = el?.querySelector('.ytp-mf-main');
+  const play = document.getElementById('ytp-mf-playpause');
+  const ctrl = el?.querySelector('.mf-lyr-font-ctrl');
+  if (!el || !main || !play || !ctrl || !el.classList.contains('dock-tall')) return;
+  const mainRect = main.getBoundingClientRect();
+  const playRect = play.getBoundingClientRect();
+  const left = playRect.left - mainRect.left + playRect.width / 2;
+  const top = Math.max(0, playRect.top - mainRect.top - ctrl.offsetHeight - 10);
+  el.style.setProperty('--mf-font-left', left + 'px');
+  el.style.setProperty('--mf-font-top', top + 'px');
+}
+
 // Applies the current (clamped) dock height and swaps thumbnail ⟷ video as
 // needed. Called whenever the dock is shown, on window resize, and on every
 // tick of a drag.
@@ -7153,6 +7170,7 @@ function ytpApplyDockHeight() {
   el.style.setProperty('--mf-lyr-w', Math.max(42, 100 - Math.min(45, extra * 0.16)) + '%');
   el.classList.toggle('dock-grown', extra > 16);
   el.classList.toggle('dock-tall', !ytpIsMob() && extra >= 116);
+  requestAnimationFrame(ytpDockPositionFontControl);
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
   if (wantVideo !== _ytpDockVideoOn) {
     _ytpDockVideoOn = wantVideo;
@@ -16794,6 +16812,7 @@ function render() {
   requestAnimationFrame(redrawAllSCLines);
   try { updateFilterHeader(); } catch (e) { console.warn('updateFilterHeader', e); }
   try { updateViewControlsHeader(); } catch (e) { console.warn('updateViewControlsHeader', e); }
+  scheduleViewControlsGuard();
   try { updateLWYTBHeader(); } catch (e) { console.warn('updateLWYTBHeader', e); }
   // Restore mobile album panel if one was open before re-render wiped main.innerHTML
   if (window.innerWidth <= 640 && _mobOpenAlbId) {
@@ -16927,9 +16946,27 @@ function updateViewControlsHeader() {
   const el = document.getElementById('view-controls-header');
   if (!el) return;
   el.innerHTML = renderViewToggle();
+  el.style.display = '';
   el.dataset.armed = '1';
   updateToolbarToggle();
   sjFitLwytbRow();
+}
+
+// Direct artist-page loads have several independent startup jobs (catalogue,
+// auth, playlists and restored navigation). A late one used to be able to
+// leave the header shell empty until a refresh. Verify the buttons themselves,
+// not a bookkeeping flag, and safely repaint only the artist toolbar.
+function ensureViewControlsHeader() {
+  if (isLandingMode || viewMode === 'playlists' || viewMode === 'playlistchart' || !selectedIds.size) return;
+  const el = document.getElementById('view-controls-header');
+  if (!el || el.querySelector('.view-seg')) return;
+  try { updateViewControlsHeader(); }
+  catch (e) { console.warn('ensureViewControlsHeader', e); }
+}
+
+function scheduleViewControlsGuard() {
+  requestAnimationFrame(ensureViewControlsHeader);
+  [60, 250, 1000].forEach(ms => setTimeout(ensureViewControlsHeader, ms));
 }
 
 // ── View dropdowns ──────────────────────────────────────────────────
@@ -23396,6 +23433,7 @@ if (IS_COMMUNITY) {
   // the logo click goes home and Add Music lives in the Other Artists dropdown.
 }
 _initPromise = init();
+_initPromise.then(scheduleViewControlsGuard).catch(() => {});
 </script>
 <footer style="text-align:center;padding:1.5rem 2rem 2rem;font-family:var(--mono);font-size:.46rem;color:var(--text-muted);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:2rem">
   a <a href="https://outlawapps.online" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">Johnny Outlaw</a> Project
