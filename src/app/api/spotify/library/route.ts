@@ -10,6 +10,7 @@ import {
   spotifySessionFor,
   SpotifyScopeError,
   SPOTIFY_SESSION_COOKIE,
+  sessionScopes,
 } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,10 @@ export async function GET(req: NextRequest) {
     // the shape it gets back has to be identical either way.
     const playlistId = new URL(req.url).searchParams.get("playlist")?.trim() || "";
     if (playlistId && !/^[A-Za-z0-9]+$/.test(playlistId)) return NextResponse.json({ ok: false, error: "That playlist could not be read." }, { status: 400 });
-    if (playlistId && !canReadPlaylists(found.session)) throw new SpotifyScopeError();
+    if (playlistId && !canReadPlaylists(found.session)) {
+      console.error("[spotify:library] Missing playlist scopes. Session scopes:", found.session.scopes || "(empty)");
+      throw new SpotifyScopeError();
+    }
 
     const token = await freshSpotifySession(found.session, found.config);
     const tracks: ReturnType<typeof shape> = [];
@@ -68,7 +72,12 @@ export async function GET(req: NextRequest) {
     if (token.refreshed) response.cookies.set(SPOTIFY_SESSION_COOKIE, sealSpotifySession(token.session, found.config.clientSecret), spotifyCookieOptions(req, 180 * 24 * 60 * 60));
     return response;
   } catch (error) {
-    if (error instanceof SpotifyScopeError) return NextResponse.json({ ok: false, error: error.message, reconnect: true }, { status: 403 });
+    if (error instanceof SpotifyScopeError) {
+      const found = spotifySessionFor(req, (await getAuthUser(req))?.id || "");
+      const scopes = found ? sessionScopes(found.session) : [];
+      console.error("[spotify:library] Missing playlist scopes. Session has:", scopes);
+      return NextResponse.json({ ok: false, error: error.message, reconnect: true, debugScopes: scopes }, { status: 403 });
+    }
     console.error("[spotify:library]", error);
     return NextResponse.json({ ok: false, error: "Could not load those Spotify songs." }, { status: 502 });
   }
