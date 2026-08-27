@@ -5,7 +5,7 @@
 // out of devtools, and a ban actually sticks.
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeDisplayName } from "@/lib/jukebox";
-import { createGuest, issueGuestToken, loadQueue, suggestGuestName } from "@/lib/jukebox-db";
+import { createGuest, issueGuestToken, loadQueue } from "@/lib/jukebox-db";
 import { getAuthUser } from "@/lib/sj-admin-auth";
 import {
   bad,
@@ -43,17 +43,18 @@ export async function POST(req: NextRequest) {
 
     const asked = sanitizeDisplayName(body.name);
     if (!asked && jukebox.settings.requireName) {
-      // The owner wants real names, so send back a suggestion and let the
-      // guest confirm it rather than seating them silently.
+      // The owner wants real names. Ask for one; do not seat them, and do not
+      // put words in their mouth.
       return NextResponse.json({
         ok: false,
         needsName: true,
-        suggestion: await suggestGuestName(sb),
         jukebox: publicJukebox(jukebox),
       });
     }
 
-    const displayName = asked ?? (await suggestGuestName(sb));
+    // Null, not a generated name. The room calls them Listener <n> until they
+    // decide otherwise, which is honest about which of the two it is.
+    const displayName = asked;
     const { raw, hash } = issueGuestToken();
 
     // If they happen to be signed in, remember it so their name can follow

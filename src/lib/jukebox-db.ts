@@ -8,13 +8,15 @@ import { createHash, randomBytes } from "crypto";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import {
   DEFAULT_SETTINGS,
+  EMPTY_PLAYBACK,
   MAX_JUKEBOX_NAME,
   MAX_JUKEBOXES_PER_ACCOUNT,
+  displayNameFor,
   generateCode,
-  nicknameFromLyric,
   normalizePlayback,
   normalizeSettings,
   LISTENER_SESSION_GAP_MS,
+  broadcastExpired,
   reconcileHostQueue,
   shapeListeners,
   type HostQueueItem,
@@ -195,6 +197,34 @@ export async function getOrCreateOwnerJukebox(
   throw new Error("Could not allocate a jukebox code.");
 }
 
+/**
+ * Take a room off air when nothing has fed it in BROADCAST_EXPIRY_MS. Called
+ * on the room resolution every route already does, so a forgotten tab cannot
+ * leave a station claiming to be live for a week.
+ *
+ * It writes only when it actually expires, which is close to never, and it
+ * clears the playback mirror on the way out for the same reason Take off air
+ * does: a guest who left the page open should see the room go quiet.
+ */
+export async function expireStaleBroadcast(
+  sb: ServiceClient,
+  jukebox: JukeboxRow,
+): Promise<JukeboxRow> {
+  const expired = broadcastExpired({
+    isLive: jukebox.is_live,
+    playbackUpdatedAt: jukebox.playback.updatedAt,
+    lastLiveAt: jukebox.last_live_at,
+    nowMs: Date.now(),
+  });
+  if (!expired) return jukebox;
+  try {
+    return await updateJukebox(sb, jukebox.id, { is_live: false, playback: EMPTY_PLAYBACK });
+  } catch {
+    // Not worth failing somebody's page load over. The next request retries.
+    return { ...jukebox, is_live: false };
+  }
+}
+
 export async function updateJukebox(
   sb: ServiceClient,
   id: string,
@@ -214,12 +244,14 @@ export async function updateJukebox(
 export type GuestRow = {
   id: string;
   jukebox_id: string;
-  display_name: string;
+  /** Null until the guest types one. Render through displayNameFor(). */
+  display_name: string | null;
+  guest_no: number;
   is_banned: boolean;
   user_email: string | null;
 };
 
-const GUEST_COLS = "id,jukebox_id,display_name,is_banned,user_email";
+const GUEST_COLS = "id,jukebox_id,display_name,guest_no,is_banned,user_email";
 
 export async function getGuestByToken(
   sb: ServiceClient,
@@ -240,7 +272,8 @@ export async function createGuest(
   sb: ServiceClient,
   opts: {
     jukeboxId: string;
-    displayName: string;
+    /** Null when they have not named themselves; the room numbers them. */
+    displayName: string | null;
     tokenHash: string;
     ip?: string | null;
     userId?: string | null;
@@ -250,7 +283,7 @@ export async function createGuest(
   const { data, error } = await T(sb, "jukebox_guests")
     .insert({
       jukebox_id: opts.jukeboxId,
-      display_name: opts.displayName,
+      display_name: opts.displayName ?? null,
       token_hash: opts.tokenHash,
       ip_address: opts.ip ?? null,
       user_id: opts.userId ?? null,
@@ -280,6 +313,9 @@ export async function renameGuest(
   guestId: string,
   displayName: string,
 ): Promise<void> {
+  // added_by_name is stored text, so a guest who names themselves after
+  // queueing something has to have their waiting rows rewritten - otherwise
+  // the room keeps calling them Listener 4 next to a song they just chose.
   const { error } = await T(sb, "jukebox_guests")
     .update({ display_name: displayName })
     .eq("id", guestId);
@@ -305,7 +341,7 @@ export async function setGuestBanned(
 
 export async function listGuests(sb: ServiceClient, jukeboxId: string) {
   const { data, error } = await T(sb, "jukebox_guests")
-    .select("id,display_name,is_banned,created_at,last_seen_at,session_started_at")
+    .select("id,display_name,guest_no,is_banned,created_at,last_seen_at,session_started_at")
     .eq("jukebox_id", jukeboxId)
     .order("last_seen_at", { ascending: false })
     .limit(200);
@@ -314,10 +350,9 @@ export async function listGuests(sb: ServiceClient, jukeboxId: string) {
 }
 
 /**
- * Everybody the room has ever seated, shaped into who is listening right now
- * and for how long. The cut between "here" and "gone" is a clock comparison,
- * so it lives in shapeListeners() with the rest of the rules rather than in a
- * WHERE clause nobody can find later.
+ * The people in the room right now. Everyone who has stopped polling is
+ * dropped by shapeListeners(), which is where the clock comparison lives -
+ * a WHERE clause here would put the same rule somewhere nobody would find it.
  */
 export async function listListeners(sb: ServiceClient, jukeboxId: string): Promise<Listener[]> {
   return shapeListeners((await listGuests(sb, jukeboxId)) as any, Date.now());
@@ -331,11 +366,14 @@ export async function listListeners(sb: ServiceClient, jukeboxId: string): Promi
 export async function listGuestSongs(
   sb: ServiceClient,
   jukeboxId: string,
+  /** Only these guests. The panel lists nobody else, so nor should this. */
+  guestIds: string[],
 ): Promise<Record<string, { id: string; trackName: string; artistName: string | null; status: string; createdAt: string }[]>> {
+  if (!guestIds.length) return {};
   const { data, error } = await T(sb, "jukebox_queue")
     .select("id,guest_id,status,created_at,tracks!inner(name,albums!inner(artists!inner(name)))")
     .eq("jukebox_id", jukeboxId)
-    .not("guest_id", "is", null)
+    .in("guest_id", guestIds.slice(0, 200))
     .in("status", ["pending", "playing", "played"])
     .order("created_at", { ascending: true })
     .limit(600);
@@ -352,27 +390,6 @@ export async function listGuestSongs(
     });
   }
   return out;
-}
-
-/**
- * A starter name lifted out of the record collection, the same trick the Save
- * Playlist modal uses. Falls back to a canned list if no lyric comes back.
- */
-export async function suggestGuestName(sb: ServiceClient): Promise<string> {
-  try {
-    const { data } = await T(sb, "lyrics")
-      .select("lyrics")
-      .not("lyrics", "is", null)
-      .limit(60);
-    const rows = (data ?? []).filter((r: any) => (r.lyrics ?? "").length > 40);
-    if (rows.length) {
-      const pick = rows[Math.floor(Math.random() * rows.length)];
-      return nicknameFromLyric(pick.lyrics);
-    }
-  } catch {
-    // A nickname is not worth failing a join over.
-  }
-  return nicknameFromLyric(null);
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────

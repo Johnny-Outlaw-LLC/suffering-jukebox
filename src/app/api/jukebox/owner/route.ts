@@ -21,6 +21,7 @@ import {
   artistSlugExists,
   clearQueue,
   codeExists,
+  expireStaleBroadcast,
   getOrCreateOwnerJukebox,
   getQueueItem,
   listGuestSongs,
@@ -59,17 +60,22 @@ async function requireOwnerJukebox(req: NextRequest) {
     (user.user_metadata?.full_name as string | undefined) ??
     (user.user_metadata?.name as string | undefined) ??
     null;
-  const jukebox = await getOrCreateOwnerJukebox(sb, user.email, name);
+  const jukebox = await expireStaleBroadcast(
+    sb,
+    await getOrCreateOwnerJukebox(sb, user.email, name),
+  );
   return { sb, jukebox, email: user.email };
 }
 
 async function fullState(sb: ServiceClient, jukebox: JukeboxRow) {
-  const [queue, listeners, guestSongs, recentlyPlayed] = await Promise.all([
+  const [queue, listeners, recentlyPlayed] = await Promise.all([
     loadQueue(sb, jukebox.id),
     listListeners(sb, jukebox.id),
-    listGuestSongs(sb, jukebox.id),
     loadRecentlyPlayed(sb, jukebox.id),
   ]);
+  // Only the people in the room. Nobody else is on the panel, so pulling
+  // their songs would be work nothing renders.
+  const guestSongs = await listGuestSongs(sb, jukebox.id, listeners.map((l) => l.id));
   return {
     jukebox: { ...publicJukebox(jukebox), id: jukebox.id },
     nowPlaying: queue.find((q) => q.status === "playing") ?? null,
@@ -233,10 +239,8 @@ export async function POST(req: NextRequest) {
         // The listeners panel runs off this, so it keeps working with the
         // console closed - which is the normal case for a host watching the
         // room rather than the app.
-        const [listeners, guestSongs] = await Promise.all([
-          listListeners(sb, jukebox.id),
-          listGuestSongs(sb, jukebox.id),
-        ]);
+        const listeners = await listListeners(sb, jukebox.id);
+        const guestSongs = await listGuestSongs(sb, jukebox.id, listeners.map((l) => l.id));
 
         return NextResponse.json({
           ok: true,

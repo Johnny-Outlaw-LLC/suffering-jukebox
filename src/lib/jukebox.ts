@@ -224,44 +224,47 @@ export function projectedPositionMs(
   return at;
 }
 
+/**
+ * How long a room may go with nothing being played into it before it stops
+ * counting as on air.
+ *
+ * Six hours rather than the two minutes the guest stage uses, because these
+ * are different questions. The stage asks "is the mirror worth watching right
+ * now"; this asks "has somebody left a station advertising itself as live and
+ * walked away". A host who puts the jukebox on air at six and starts the music
+ * at ten has done nothing wrong, and must not be shut off in between.
+ */
+export const BROADCAST_EXPIRY_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * True when a room claims to be live but nothing has fed it in far too long.
+ * Measured from the LATER of the last playback write and the moment it went on
+ * air, so the gap between opening the room and starting the music is not
+ * mistaken for silence.
+ */
+export function broadcastExpired(opts: {
+  isLive: boolean;
+  playbackUpdatedAt: string | null;
+  lastLiveAt: string | null;
+  nowMs: number;
+}): boolean {
+  if (!opts.isLive) return false;
+  const played = opts.playbackUpdatedAt ? Date.parse(opts.playbackUpdatedAt) : NaN;
+  const opened = opts.lastLiveAt ? Date.parse(opts.lastLiveAt) : NaN;
+  const candidates = [played, opened].filter((n) => Number.isFinite(n)) as number[];
+  // No stamp at all is a room from before any of this existed. Leave it alone
+  // rather than switching off something we cannot date.
+  if (!candidates.length) return false;
+  return opts.nowMs - Math.max(...candidates) > BROADCAST_EXPIRY_MS;
+}
+
 export function normalizeCode(input: string): string | null {
   const c = input.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   return c.length === CODE_LENGTH ? c : null;
 }
 
-// ── Guest nicknames ───────────────────────────────────────────────────────
-// Same trick the Save Playlist modal uses: lift a fragment out of a lyric so
-// the name on the TV sounds like it belongs to the record collection.
-
-const NICKNAME_FALLBACKS = [
-  "Velvet Water", "Blue Arrangements", "Trains Across", "Slow Century",
-  "Punks Beerlight", "Honk Party", "Silver Pageant", "Night Society",
-  "Tennessee Room", "Cassette Weather", "Neon Dial", "Paper Hotel",
-];
-
-export function nicknameFromLyric(
-  lyric: string | null | undefined,
-  random: () => number = Math.random,
-): string {
-  const words = (lyric ?? "")
-    .replace(/\[[^\]]*\]/g, " ")
-    .split(/[^A-Za-z']+/)
-    .map((w) => w.replace(/^'+|'+$/g, ""))
-    .filter((w) => w.length >= 3 && w.length <= 10);
-
-  // Two consecutive words read like a name; one reads like a typo.
-  if (words.length >= 2) {
-    const start = Math.floor(random() * (words.length - 1));
-    const name = [words[start], words[start + 1]].map(titleCase).join(" ");
-    if (name.length >= 6 && name.length <= 24) return name;
-  }
-  if (words.length === 1 && words[0].length >= 4) return titleCase(words[0]);
-  return NICKNAME_FALLBACKS[Math.floor(random() * NICKNAME_FALLBACKS.length)];
-}
-
-function titleCase(w: string): string {
-  return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-}
+// ── Guest names ────────────────────────────────────────────────────
+// A guest types their own name or does without one. See displayNameFor().
 
 export function sanitizeDisplayName(input: unknown): string | null {
   if (typeof input !== "string") return null;
@@ -294,7 +297,8 @@ export const LISTENER_SESSION_GAP_MS = 5 * 60_000;
 
 export type ListenerRow = {
   id: string;
-  display_name: string;
+  display_name: string | null;
+  guest_no: number;
   is_banned: boolean;
   created_at: string;
   last_seen_at: string;
@@ -305,8 +309,6 @@ export type Listener = {
   id: string;
   displayName: string;
   isBanned: boolean;
-  /** Still polling. Everyone else is history and shows greyed out. */
-  isListening: boolean;
   /** ISO, top of the current stretch. */
   since: string | null;
   lastSeenAt: string;
@@ -314,34 +316,49 @@ export type Listener = {
   listeningMs: number;
 };
 
+/**
+ * The people in the room right now, longest-standing first.
+ *
+ * Anybody who has stopped polling is dropped outright rather than greyed out.
+ * A guest row is permanent, so a list that kept them turned into every phone
+ * that had ever scanned the code - a panel headed "0 listening" above eight
+ * names, which is worse than useless. Who queued what is still on the queue
+ * rows themselves; this answers a different question, and only that one.
+ */
 export function shapeListeners(rows: ListenerRow[], nowMs: number): Listener[] {
-  const out = rows.map((r) => {
+  const out: Listener[] = [];
+  for (const r of rows) {
     const seenAt = Date.parse(r.last_seen_at);
+    if (!Number.isFinite(seenAt) || nowMs - seenAt >= LISTENER_ACTIVE_MS) continue;
     const startedAt = Date.parse(r.session_started_at ?? r.created_at);
-    const isListening = Number.isFinite(seenAt) && nowMs - seenAt < LISTENER_ACTIVE_MS;
-    // For somebody still here the clock runs to now; for somebody who has gone
-    // it stops at the last time we heard from them, so the panel reports how
-    // long they stayed rather than how long ago they arrived.
-    const endAt = isListening ? nowMs : seenAt;
-    return {
+    out.push({
       id: r.id,
-      displayName: r.display_name,
+      displayName: displayNameFor(r),
       isBanned: r.is_banned,
-      isListening,
       since: Number.isFinite(startedAt) ? new Date(startedAt).toISOString() : null,
       lastSeenAt: r.last_seen_at,
-      listeningMs: Number.isFinite(startedAt) && Number.isFinite(endAt)
-        ? Math.max(0, endAt - startedAt)
-        : 0,
-    };
-  });
-  // Everyone still here first, longest-standing at the top of that group.
-  out.sort((a, b) => {
-    if (a.isListening !== b.isListening) return a.isListening ? -1 : 1;
-    if (a.isListening) return b.listeningMs - a.listeningMs;
-    return Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt);
-  });
+      listeningMs: Number.isFinite(startedAt) ? Math.max(0, nowMs - startedAt) : 0,
+    });
+  }
+  out.sort((a, b) => b.listeningMs - a.listeningMs);
   return out;
+}
+
+/**
+ * What the room calls somebody. Their own name if they typed one, and their
+ * join number if they have not.
+ *
+ * Names are never invented. Guests used to be given one lifted out of a lyric
+ * and it read as a bug, not a joke: nobody could tell whether the room was
+ * full of strangers with odd names or whether the app had made them up.
+ */
+export function displayNameFor(guest: {
+  display_name?: string | null;
+  guest_no?: number | null;
+}): string {
+  const chosen = (guest.display_name ?? "").trim();
+  if (chosen) return chosen;
+  return `Listener ${guest.guest_no ?? 1}`;
 }
 
 /** "1h 12m", "9m", "just arrived" — the only format the panel needs. */

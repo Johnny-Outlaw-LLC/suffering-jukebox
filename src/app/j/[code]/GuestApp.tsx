@@ -30,7 +30,14 @@ type Room = {
   /** Songs in the last running order the host broadcast. */
   lastPlaylistCount: number;
 };
-type Guest = { id: string; displayName: string; isBanned: boolean };
+type Guest = {
+  id: string;
+  /** Their own name, or "Listener 4" until they pick one. */
+  displayName: string;
+  /** False while the room is still just numbering them. */
+  hasName: boolean;
+  isBanned: boolean;
+};
 
 type QueueItem = {
   id: string;
@@ -148,7 +155,6 @@ export default function GuestApp({ code }: { code: string }) {
         const d = await res.json();
         if (d.needsName) {
           setRoom(d.jukebox ?? null);
-          setNameDraft(d.suggestion ?? "");
           setPhase("needsName");
           return;
         }
@@ -310,7 +316,12 @@ export default function GuestApp({ code }: { code: string }) {
   );
 
   const rename = useCallback(async () => {
-    const next = window.prompt("What should the room call you?", guest?.displayName ?? "");
+    // Their own name if they have one; an empty box if the room is still just
+    // numbering them, because "Listener 4" is not a suggestion to edit.
+    const next = window.prompt(
+      "What should the room call you?",
+      guest?.hasName ? guest.displayName : "",
+    );
     if (next == null) return;
     const res = await fetch("/api/jukebox/name", {
       method: "POST",
@@ -327,12 +338,6 @@ export default function GuestApp({ code }: { code: string }) {
       pushToast({ title: d.error ?? "Could not change your name.", by: "", art: null, error: true });
     }
   }, [code, guest, pushToast]);
-
-  const shuffleName = useCallback(async () => {
-    const res = await fetch("/api/jukebox/name");
-    const d = await res.json();
-    if (d.ok) setNameDraft(d.suggestion);
-  }, []);
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -379,9 +384,6 @@ export default function GuestApp({ code }: { code: string }) {
               onClick={() => void join(nameDraft.trim())}
             >
               {busy ? "Joining..." : "Join the jukebox"}
-            </button>
-            <button className={css.linkBtn} onClick={() => void shuffleName()}>
-              Suggest another name
             </button>
           </div>
         </div>
@@ -557,10 +559,20 @@ export default function GuestApp({ code }: { code: string }) {
                         <div className={css.rowTitle}>{item.trackName}</div>
                         <div className={css.rowSub}>
                           {item.artistName}
-                          {" · "}
-                          <span className={isMine ? css.by : undefined}>
-                            {isMine ? "you added this" : `Added by ${item.addedByName}`}
-                          </span>
+                          {/* The host's own songs are most of the list, so
+                              crediting every one of them to the jukebox is
+                              noise. Only a person's name is worth printing. */}
+                          {isMine ? (
+                            <>
+                              {" · "}
+                              <span className={css.by}>you added this</span>
+                            </>
+                          ) : item.addedByOwner ? null : (
+                            <>
+                              {" · "}
+                              <span>Added by {item.addedByName}</span>
+                            </>
+                          )}
                         </div>
                       </div>
                       {isMine && (
@@ -652,7 +664,7 @@ export default function GuestApp({ code }: { code: string }) {
 
       <div className={css.identity}>
         <div className={css.identityText}>
-          Adding as
+          {guest?.hasName ? "Adding as" : "The room calls you"}
           <span className={css.identityName}>{guest?.displayName ?? "Guest"}</span>
         </div>
         {cap > 0 && (
@@ -664,7 +676,7 @@ export default function GuestApp({ code }: { code: string }) {
           </div>
         )}
         <button className={css.smallBtn} onClick={() => void rename()}>
-          Rename
+          {guest?.hasName ? "Rename" : "Set your name"}
         </button>
       </div>
     </div>

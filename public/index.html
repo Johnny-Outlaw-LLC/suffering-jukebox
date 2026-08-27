@@ -716,7 +716,15 @@ body:not(.light) .tt-num { color: var(--text); }
   /* Shares row 2 with the search/theme/help icons, so a long display name has
      to clip rather than shove them off the edge. */
   #auth-btn, #user-menu-wrap .auth-btn { font-size: .58rem !important; padding: 8px 14px !important; min-height: 42px !important; max-width: 100%; overflow: hidden; }
-  .user-menu { min-width: 250px; }
+  .user-menu {
+    left: 0;
+    right: auto;
+    min-width: 250px;
+    max-width: calc(100vw - 1.25rem);
+    max-height: calc(100dvh - 9rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
   .user-menu-item { font-size: .62rem; padding: .85rem .95rem; min-height: 44px; display: flex; align-items: center; }
   .user-menu-meta { font-size: .48rem; padding: .6rem .95rem .25rem; }
   .user-menu-date { font-size: .56rem; padding: 0 .95rem .7rem; }
@@ -4036,11 +4044,9 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
                border:0; color:inherit; font:inherit; font-size:.74rem; text-align:left; cursor:pointer; }
   .sjj-ln-hd:hover { background:#181818; }
   .sjj-ln-dot { width:.42rem; height:.42rem; border-radius:50%; background:var(--accent); flex-shrink:0; }
-  .sjj-ln-dot.off { background:#444; }
   .sjj-ln-name { flex:1; min-width:0; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sjj-ln-for { font-size:.62rem; color:#999; flex-shrink:0; font-variant-numeric:tabular-nums; }
   .sjj-ln-caret { font-size:.55rem; color:#777; flex-shrink:0; }
-  .sjj-ln.gone .sjj-ln-name { color:#888; }
   .sjj-ln.banned .sjj-ln-name { color:#666; text-decoration:line-through; }
   .sjj-ln-songs { padding:.1rem .4rem .5rem 1.3rem; }
   .sjj-ln-song { font-size:.66rem; color:#bbb; padding:.12rem 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -19087,6 +19093,12 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-27';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-27', items: [
+    'The account menu was opening off the left edge of the screen on a phone, so most of it could not be seen or tapped. Fixed - it now opens under the button, fits the screen, and scrolls if the list is long.',
+    'People who have left the room no longer sit in the Who is listening panel. It lists who is actually there right now, and says so plainly when that is nobody.',
+    'Listeners are no longer given a made-up name. A guest is Listener 1, Listener 2 and so on until they type a name of their own, and the panel invites them to. Names like "Abbatoir Though" read as a bug rather than a joke.',
+    'The Online Jukebox window lost its "Playing here" panel. When you are the one broadcasting it only repeated your own player back at you; the room controls that were buried under it have moved up next to Start the jukebox.',
+    'The Online Jukebox now tells you plainly what is feeding the room: mirroring this device, playing from another device (and what is on), on air with nothing playing for the last however long, or waiting for you to start something.',
+    'A jukebox left on air with nothing playing into it now takes itself off air after six hours, instead of advertising itself as live for a week because somebody shut their laptop.',
     'The Online Jukebox now simply plays what you are playing. Whatever is in your player is what the room hears - there is no separate jukebox playlist to keep in step, and Send a playlist to the jukebox is gone because it was a second list that could disagree with the first.',
     'The Online Jukebox window is laid out for a big screen now: the join code and address across the top, what is playing and what is waiting on the left, who is listening and your settings on the right. On a phone it still reads as one column.',
     'A new Who is listening panel shows everyone in the room and how long they have been there. Click a name to see the songs they have queued, what is still waiting, and what has already played - and ban them from the same place if you have to.',
@@ -24455,6 +24467,14 @@ let _sjjRoom      = null;  // last known { code, slug, name, isLive, settings }
 let _sjjListeners  = [];
 let _sjjGuestSongs = {};
 let _sjjOpenListener = null;  // the name the host has expanded, if any
+// Local clock minus server clock. The host's laptop and the server disagree by
+// seconds at least, and every "how long since" on this screen is measured
+// against the server's stamps.
+let _sjjSkewMs = 0;
+// How long the room may go unfed before this screen stops saying music is
+// coming out of it. Matches the guest stage's own STALE_MS, deliberately: they
+// are answering the same question from two sides.
+const SJJ_FEED_STALE_MS = 120000;
 const SJJ_HOST_KEY = 'sj_jukebox_broadcasting';
 const SJJ_SYNC_MS  = 5000;
 // A stale flag on a phone left in a drawer should not silently seize the room
@@ -24539,30 +24559,45 @@ function sjjRender() {
   const el = document.getElementById('sjj-body');
   if (!el || !_sjjState) return;
   const j = _sjjState.jukebox, st = j.settings, q = _sjjState.queue || [];
-  const np = _sjjState.nowPlaying;
   const url = sjjJoinUrl(j);
 
   let h = '<div class="sjj-grid">';
 
   // ── Step one: on air, or not. Everything else on this screen is detail.
+  const feed = sjjRoomFeed();
+  let status;
+  if (!j.isLive) {
+    status = 'Put it on air and the room can start adding songs.';
+  } else if (_sjjLive) {
+    status = 'Mirroring this device. Anyone who scans the code sees what you see and can add to it.';
+  } else if (feed.fresh) {
+    // The room is live and something IS feeding it - just not this tab. Saying
+    // what is playing here is the one thing this screen can tell the host that
+    // their own player cannot.
+    const what = [feed.pb.artistName, feed.pb.title].filter(Boolean).join(' - ');
+    status = 'On air from another device' + (what ? ': ' + escHtml(what) : '')
+      + '. Press Play the queue on this device to mirror from here instead.';
+  } else if (feed.everPlayed) {
+    status = 'On air, but nothing has played into the room for ' + sjjAgeWords(feed.ageMs)
+      + '. Press Play the queue on this device to start it here.';
+  } else {
+    status = 'On air and waiting for music. Press Play the queue on this device, or just play something in your player.';
+  }
+
   h += '<div class="sjj-card sjj-wide">'
     +  '<div class="sjj-stage">'
     +  '<div class="sjj-stage-l">'
     +    '<span class="sjj-live ' + (j.isLive ? 'on' : 'off') + '">' + (j.isLive ? 'On air' : 'Off air') + '</span>'
-    +    '<div class="sjj-stage-t">' + (j.isLive
-           ? (_sjjLive
-              // Which device is doing the mirroring matters: only the one
-              // playing the music can be it, and a host looking at a second
-              // screen should be able to see that from here.
-              ? 'Mirroring this device. Anyone who scans the code sees what you see and can add to it.'
-              : 'On air, but the music is coming from somewhere else. Press Play the queue on this device to mirror from here instead.')
-           : 'Put it on air and the room can start adding songs.') + '</div>'
+    +    '<div class="sjj-stage-t">' + status + '</div>'
     +    '<div class="sjj-stage-btns">'
     +      '<button class="pl-btn sjj-go" onclick="sjjToggleLive()">'
     +        (j.isLive ? 'Take off air' : 'Start the jukebox') + '</button>'
+    +      '<button class="pl-btn" onclick="sjjPlayHere()">Play the queue on this device</button>'
     +      (j.isLive ? '<button class="pl-btn ghost" onclick="sjjToggleFloatingQr()">Show QR on screen</button>' : '')
     +      (j.isLive ? '<button class="pl-btn ghost" onclick="sjjToggleListeners()">Who is listening</button>' : '')
     +      '<button class="pl-btn ghost" onclick="sjjCopyLink()">Copy link</button>'
+    +      '<button class="pl-btn ghost" onclick="openMyJukebox(&#39;library&#39;)">Manage My Music</button>'
+    +      '<button class="pl-btn ghost" onclick="sjjRename()">Rename</button>'
     +    '</div>'
     +    '<div class="sjj-url">' + escHtml(url) + '</div>'
     +  '</div>'
@@ -24582,24 +24617,18 @@ function sjjRender() {
     +  '</div>'
     +  '</div>';   // end stage card
 
-  // ── Left column: what is playing and what is waiting.
+  // ── Left column: what is waiting.
+  //
+  // There is deliberately no "Playing here" panel. When this device is the one
+  // broadcasting it duplicated the player sitting a few pixels away, with less
+  // detail; when it was not, the interesting part is which device is feeding
+  // the room, and that is in the status line above.
   h += '<div class="sjj-col">';
   h += '<div class="sjj-card">';
-  h += '<div class="sjj-h">Playing here</div>';
-  if (np) {
-    h += '<div class="sjj-row"><div class="sjj-body"><div class="sjj-t">' + escHtml(np.trackName) + '</div>'
-      +  '<div class="sjj-s">' + escHtml(np.artistName || '') + (np.addedByOwner ? '' : ' &middot; <span class="sjj-by">Added by ' + escHtml(np.addedByName) + '</span>') + '</div></div></div>';
-  } else {
-    h += '<div class="sjj-s" style="padding:.3rem .5rem">Nothing playing yet.</div>';
-  }
-  h += '<div style="margin-top:.5rem;display:flex;gap:.4rem;flex-wrap:wrap">'
-    +  '<button class="pl-btn" onclick="sjjPlayHere()">Play the queue on this device</button>'
-    +  (q.length ? '<button class="pl-btn ghost" onclick="sjjClear()">Clear queue</button>' : '')
-    +  '<button class="pl-btn ghost" onclick="openMyJukebox(&#39;library&#39;)">Manage My Music</button>'
-    +  '<button class="pl-btn ghost" onclick="sjjRename()">Rename</button>'
+  h += '<div class="sjj-h" style="display:flex;align-items:center;gap:.5rem">'
+    +    '<span style="flex:1">Up next (' + q.length + ')</span>'
+    +    (q.length ? '<button class="pl-btn ghost" style="font-size:.6rem;padding:.2rem .45rem" onclick="sjjClear()">Clear queue</button>' : '')
     +  '</div>';
-
-  h += '<div class="sjj-h">Up next (' + q.length + ')</div>';
   if (!q.length) {
     h += '<div class="sjj-empty">Nothing waiting. The room plays whatever is in your player, so load a playlist there and it shows up here - along with anything a listener adds.</div>';
   } else {
@@ -24662,21 +24691,51 @@ function sjjRender() {
 // because they are the same thing and a host should not have to learn two.
 // ══════════════════════════════════════════════════════════════
 
+// Being on air is NOT the same as this computer playing music.
+//
+// jukeboxes.is_live is a column: the room is open, anybody who scans the code
+// gets in. _sjjLive is a variable in one browser tab: THIS device is pushing
+// its player into the room every five seconds. Pressing Start the jukebox sets
+// both, so they usually agree - but they live in different places, so a second
+// screen (phone opens the console while the laptop drives the TV) sees the
+// room as live while mirroring nothing, and a host who closes their laptop
+// leaves the room open with nothing feeding it.
+//
+// This works out which of those it is, so the screen can say so plainly.
+function sjjRoomFeed() {
+  const j = _sjjState?.jukebox;
+  const pb = j?.playback || null;
+  const at = pb?.updatedAt ? Date.parse(pb.updatedAt) : NaN;
+  if (!Number.isFinite(at)) return { pb: null, fresh: false, ageMs: Infinity, everPlayed: false };
+  const ageMs = (Date.now() - _sjjSkewMs) - at;
+  return { pb, fresh: ageMs < SJJ_FEED_STALE_MS, ageMs, everPlayed: true };
+}
+
+function sjjAgeWords(ms) {
+  const mins = Math.floor(ms / 60000);
+  if (mins < 2) return 'a moment';
+  if (mins < 60) return mins + ' minutes';
+  const hrs = Math.round(mins / 60);
+  return hrs === 1 ? 'an hour' : hrs + ' hours';
+}
+
 function sjjTakeListeners(payload) {
   if (!payload) return;
+  const at = payload.serverTime ? Date.parse(payload.serverTime) : NaN;
+  if (Number.isFinite(at)) _sjjSkewMs = Date.now() - at;
   if (Array.isArray(payload.listeners)) _sjjListeners = payload.listeners;
   if (payload.guestSongs && typeof payload.guestSongs === 'object') _sjjGuestSongs = payload.guestSongs;
   sjjPaintFloatingListeners();
 }
 
 // "1h 12m", "9m", "just arrived". The listeningMs the server sent is a
-// snapshot, so it is carried forward against the local clock between polls
+// snapshot, so it is carried forward against the server's clock between polls
 // rather than freezing on screen for five seconds at a time.
 function sjjListeningFor(l) {
   let ms = Number(l.listeningMs) || 0;
-  if (l.isListening && l.since) {
+  if (l.since) {
     const at = Date.parse(l.since);
-    if (Number.isFinite(at)) ms = Math.max(ms, Date.now() - at);
+    if (Number.isFinite(at)) ms = Math.max(ms, (Date.now() - _sjjSkewMs) - at);
   }
   const mins = Math.floor(ms / 60000);
   if (mins < 1) return 'just arrived';
@@ -24685,19 +24744,22 @@ function sjjListeningFor(l) {
   return rest ? hrs + 'h ' + rest + 'm' : hrs + 'h';
 }
 
+// Everybody on this list is in the room right now. Anyone who has stopped
+// polling is dropped by the server, not greyed out here - a guest row is
+// permanent, so keeping them turned this into every phone that ever scanned
+// the code sitting under a heading that said nobody was listening.
 function sjjListenersHTML(floating) {
-  const here = _sjjListeners.filter(l => l.isListening);
-  let h = floating ? '' : '<div class="sjj-h">Listening now (' + here.length + ')</div>';
+  let h = floating ? '' : '<div class="sjj-h">Listening now (' + _sjjListeners.length + ')</div>';
   if (!_sjjListeners.length) {
-    return h + '<div class="sjj-s" style="padding:.35rem .5rem">Nobody has scanned the code yet.</div>';
+    return h + '<div class="sjj-s" style="padding:.35rem .5rem">Nobody is in the room right now.</div>';
   }
   h += _sjjListeners.map(function (l) {
     const open  = _sjjOpenListener === l.id;
     const songs = _sjjGuestSongs[l.id] || [];
-    let row = '<div class="sjj-ln ' + (l.isListening ? '' : 'gone ') + (l.isBanned ? 'banned' : '') + '">'
+    let row = '<div class="sjj-ln ' + (l.isBanned ? 'banned' : '') + '">'
       + '<button class="sjj-ln-hd" onclick="sjjToggleListener(\'' + l.id + '\')" '
       + 'title="' + (open ? 'Hide' : 'Show') + ' the songs ' + escHtml(l.displayName) + ' has queued">'
-      + '<span class="sjj-ln-dot ' + (l.isListening ? '' : 'off') + '"></span>'
+      + '<span class="sjj-ln-dot"></span>'
       + '<span class="sjj-ln-name">' + escHtml(l.displayName) + '</span>'
       + '<span class="sjj-ln-for">' + (songs.length ? songs.length + ' song' + (songs.length === 1 ? '' : 's') + ' &middot; ' : '')
       + sjjListeningFor(l) + '</span>'
@@ -24712,7 +24774,7 @@ function sjjListenersHTML(floating) {
               + (sg.status === 'playing' ? ' &middot; playing now' : '')
               + '</div>';
           }).join('') + '</div>'
-        : '<div class="sjj-ln-empty">Listening, but has not queued anything yet.</div>';
+        : '<div class="sjj-ln-empty">Here, but has not queued anything yet.</div>';
       row += '<div class="sjj-ln-acts"><button class="pl-btn ghost" style="font-size:.62rem;padding:.2rem .45rem" '
         + 'onclick="sjjBan(\'' + l.id + '\',' + (l.isBanned ? 'false' : 'true') + ')">'
         + (l.isBanned ? 'Let them back in' : 'Ban and clear their songs') + '</button></div>';
@@ -24761,7 +24823,7 @@ function sjjToggleListeners() {
 function sjjPaintFloatingListeners() {
   const body = document.getElementById('sjj-listen-body');
   if (!body) return;
-  const here = _sjjListeners.filter(l => l.isListening).length;
+  const here = _sjjListeners.length;
   const title = document.getElementById('sjj-listen-title');
   if (title) title.textContent = here === 1 ? '1 listening' : here + ' listening';
   body.innerHTML = sjjListenersHTML(true);

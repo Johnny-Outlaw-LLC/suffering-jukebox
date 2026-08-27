@@ -3,9 +3,10 @@
 // "which room is this, and who is asking" resolution every route starts with.
 
 import { NextRequest, NextResponse } from "next/server";
-import { normalizeRoomKey } from "@/lib/jukebox";
+import { displayNameFor, normalizeRoomKey } from "@/lib/jukebox";
 import { getAuthUser } from "@/lib/sj-admin-auth";
 import {
+  expireStaleBroadcast,
   getGuestByToken,
   getJukeboxByKey,
   guestCookieName,
@@ -85,8 +86,11 @@ export async function resolveRoom(
   if (!key) return { error: bad("That jukebox address does not look right.") };
 
   const sb = sjb();
-  const jukebox = await getJukeboxByKey(sb, key);
-  if (!jukebox) return { error: bad("No jukebox at that address.", 404) };
+  const found = await getJukeboxByKey(sb, key);
+  if (!found) return { error: bad("No jukebox at that address.", 404) };
+  // A room nobody has played anything into for hours is not on air, whatever
+  // the column says. This writes only when it has actually expired.
+  const jukebox = await expireStaleBroadcast(sb, found);
 
   const token = readGuestCookie(req, jukebox.code);
   const guest = await getGuestByToken(sb, token, jukebox.id);
@@ -122,5 +126,11 @@ export function publicJukebox(jukebox: JukeboxRow) {
 
 export function publicGuest(guest: GuestRow | null) {
   if (!guest) return null;
-  return { id: guest.id, displayName: guest.display_name, isBanned: guest.is_banned };
+  return {
+    id: guest.id,
+    displayName: displayNameFor(guest),
+    // The page words its own button off this: Set your name, or Rename.
+    hasName: !!(guest.display_name ?? "").trim(),
+    isBanned: guest.is_banned,
+  };
 }

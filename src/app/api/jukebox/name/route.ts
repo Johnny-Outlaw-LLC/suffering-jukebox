@@ -1,18 +1,14 @@
-// POST /api/jukebox/name — a guest changes the name that shows on the TV.
+// POST /api/jukebox/name — a guest names themselves.
 //
-// Also serves GET, which hands back a fresh lyric-derived suggestion for the
-// "shuffle my name" button.
+// There is no GET any more. It used to hand back a nickname lifted out of a
+// lyric for a "shuffle my name" button; guests are numbered until they choose
+// something now, and a name is never invented for them.
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeDisplayName } from "@/lib/jukebox";
-import { renameGuest, sjb, suggestGuestName } from "@/lib/jukebox-db";
+import { renameGuest } from "@/lib/jukebox-db";
 import { bad, clientIp, publicGuest, rateLimited, resolveRoom, tooMany } from "@/lib/jukebox-request";
 
 export const dynamic = "force-dynamic";
-
-export async function GET(req: NextRequest) {
-  if (rateLimited(`suggest:${clientIp(req)}`, 40)) return tooMany();
-  return NextResponse.json({ ok: true, suggestion: await suggestGuestName(sjb()) });
-}
 
 export async function POST(req: NextRequest) {
   try {

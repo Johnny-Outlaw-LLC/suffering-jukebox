@@ -5,7 +5,7 @@
 // duplicate rule, the ban and the offline setting cannot drift between the
 // guest app and the host console.
 import { NextRequest, NextResponse } from "next/server";
-import { decideAdd } from "@/lib/jukebox";
+import { decideAdd, displayNameFor } from "@/lib/jukebox";
 import { getTrackForQueue, insertQueueItem, loadPending } from "@/lib/jukebox-db";
 import {
   bad,
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       trackId,
       videoId: typeof body.video_id === "string" ? body.video_id.slice(0, 40) : null,
       guestId: isOwner ? null : (guest?.id ?? null),
-      addedByName: isOwner ? jukebox.name : (guest?.display_name ?? "Guest"),
+      addedByName: isOwner ? jukebox.name : guest ? displayNameFor(guest) : "Guest",
       addedByOwner: isOwner,
       sort: decision.sort,
     });
