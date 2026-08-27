@@ -19015,11 +19015,15 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-27';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-27', items: [
+    'Import from Spotify can open your playlists again. Picking one used to come back with nothing in it, or with an error asking you to reconnect, which never helped.',
+    'The list of Spotify lists is now split into your own playlists and the ones you only follow. Spotify will not hand over the songs in a playlist somebody else made, so those are grouped apart and the panel says why instead of looking broken.',
+  ] },
   { date: '2026-08-26', items: [
     'The "Add from YouTube directly" option in Add Songs to Playlist can now import a whole YouTube playlist link at once, not just one song at a time - paste it, review the list (songs already on the playlist are skipped), and import the rest with one click.',
     'Songs added from YouTube now try to land under their real album, with its real cover art, instead of always going into a catch-all Singles list.',
@@ -25140,6 +25144,8 @@ let _spiTotal = 0;
 let _spiTruncated = false;
 let _spiLoading = false;
 let _spiLoaded = false;
+// Set when Spotify refuses a list for a reason connecting again cannot fix.
+let _spiBlocked = '';
 let _spiQuery = '';
 let _spiHideKnown = true;
 let _spiKnown = new Set();      // indexes into _spiTracks the Jukebox already has
@@ -25320,13 +25326,20 @@ async function spiDisconnect() {
 
 // ── Step 2: pick a list, then pick songs ──────────────────────────────────
 function spiPane2HTML() {
-  const options = ['<option value="saved"' + (_spiSource === 'saved' ? ' selected' : '') + '>Liked Songs</option>']
-    .concat(_spiPlaylists.map(pl => '<option value="' + escHtml(pl.id) + '"' + (_spiSource === pl.id ? ' selected' : '') + '>' +
-      escHtml(pl.name) + (pl.trackCount ? ' (' + pl.trackCount + ')' : '') + '</option>'));
+  // Spotify hands over the songs in a playlist the connected account made,
+  // and nothing else - a playlist you only follow comes back refused. Say so
+  // in the list rather than letting somebody pick one and hit a wall.
+  const spiOpt = pl => '<option value="' + escHtml(pl.id) + '"' + (_spiSource === pl.id ? ' selected' : '') + '>' +
+    escHtml(pl.name) + (pl.trackCount ? ' (' + pl.trackCount + ')' : '') + '</option>';
+  const spiMine = _spiPlaylists.filter(pl => pl.owned !== false);
+  const spiTheirs = _spiPlaylists.filter(pl => pl.owned === false);
+  let options = ['<option value="saved"' + (_spiSource === 'saved' ? ' selected' : '') + '>Liked Songs</option>'];
+  if (spiMine.length) options = options.concat('<optgroup label="Your playlists">', spiMine.map(spiOpt), '</optgroup>');
+  if (spiTheirs.length) options = options.concat('<optgroup label="Playlists you follow (Spotify will not share these)">', spiTheirs.map(spiOpt), '</optgroup>');
   const head = '<div><div class="m-fl">Which Spotify list?</div>' +
     '<div class="spi-srcrow"><select id="spiSource" class="m-input" onchange="spiLoadSource(this.value)">' + options.join('') + '</select></div></div>';
   if (_spiLoading) return head + '<div class="sjj-empty">Reading your Spotify…</div>';
-  if (!_spiTracks.length) return head + '<div class="sjj-empty">' + (_spiLoaded ? 'Nothing to import from this list.' : 'Choose a list to see what is in it.') + '</div>';
+  if (!_spiTracks.length) return head + '<div class="sjj-empty">' + escHtml(_spiBlocked || (_spiLoaded ? 'Nothing to import from this list.' : 'Choose a list to see what is in it.')) + '</div>';
   return head +
     '<div><div class="m-fl">Tick the songs you want</div>' +
     '<div class="spi-filter">' +
@@ -25354,7 +25367,7 @@ async function spiLoadPlaylists() {
 
 async function spiLoadSource(source) {
   if (source !== undefined) _spiSource = source || 'saved';
-  _spiLoading = true; _spiTracks = []; _spiSel.clear(); _spiKnown.clear(); _spiQuery = '';
+  _spiLoading = true; _spiTracks = []; _spiSel.clear(); _spiKnown.clear(); _spiQuery = ''; _spiBlocked = '';
   spiRenderStep();
   try {
     if (_spiStatus.canReadPlaylists && !_spiPlaylists.length) await spiLoadPlaylists();
@@ -25367,7 +25380,10 @@ async function spiLoadSource(source) {
   } catch (e) {
     _spiTracks = []; _spiLoaded = true;
     if (e.data && e.data.reconnect) _spiStatus.canReadPlaylists = false;
-    showToast(e.message || 'Could not load your Spotify songs.');
+    // A playlist somebody else made is not an error worth a toast - the
+    // panel explains it where the songs would have been.
+    if (e.data && e.data.notOwned) _spiBlocked = e.message;
+    else showToast(e.message || 'Could not load your Spotify songs.');
   } finally {
     _spiLoading = false;
     spiRenderStep();

@@ -40,6 +40,10 @@ function shape(track: SpotifyTrack | undefined | null) {
 }
 
 export async function GET(req: NextRequest) {
+  // Read before the try so the catch can tell a missing permission (which
+  // reconnecting fixes) from somebody else's playlist (which it does not).
+  let playlistId = "";
+  let scoped = false;
   try {
     if (rateLimited(`spotify-library:${clientIp(req)}`, 30)) return tooMany();
     const user = await getAuthUser(req);
@@ -50,9 +54,10 @@ export async function GET(req: NextRequest) {
     // A playlist id turns this into "that playlist"; no id means saved songs.
     // One route, because the picker treats the two as one list of sources and
     // the shape it gets back has to be identical either way.
-    const playlistId = new URL(req.url).searchParams.get("playlist")?.trim() || "";
+    playlistId = new URL(req.url).searchParams.get("playlist")?.trim() || "";
+    scoped = canReadPlaylists(found.session);
     if (playlistId && !/^[A-Za-z0-9]+$/.test(playlistId)) return NextResponse.json({ ok: false, error: "That playlist could not be read." }, { status: 400 });
-    if (playlistId && !canReadPlaylists(found.session)) throw new SpotifyScopeError();
+    if (playlistId && !scoped) throw new SpotifyScopeError();
 
     const token = await freshSpotifySession(found.session, found.config);
     const tracks: ReturnType<typeof shape> = [];
@@ -76,7 +81,19 @@ export async function GET(req: NextRequest) {
     if (token.refreshed) response.cookies.set(SPOTIFY_SESSION_COOKIE, sealSpotifySession(token.session, found.config.clientSecret), spotifyCookieOptions(req, 180 * 24 * 60 * 60));
     return response;
   } catch (error) {
-    if (error instanceof SpotifyScopeError) return NextResponse.json({ ok: false, error: error.message, reconnect: true }, { status: 403 });
+    if (error instanceof SpotifyScopeError) {
+      // Permission is already granted and Spotify still said no, so this is
+      // not something the listener can fix by connecting again. Spotify hands
+      // out the contents of playlists you made yourself and nothing else.
+      if (playlistId && scoped) {
+        return NextResponse.json({
+          ok: false,
+          error: "Spotify only lets us open playlists made by the connected account. This one belongs to someone else, so its songs cannot be read. Your own playlists and Liked Songs still work.",
+          notOwned: true,
+        }, { status: 403 });
+      }
+      return NextResponse.json({ ok: false, error: error.message, reconnect: true }, { status: 403 });
+    }
     console.error("[spotify:library]", error);
     return NextResponse.json({ ok: false, error: "Could not load those Spotify songs." }, { status: 502 });
   }

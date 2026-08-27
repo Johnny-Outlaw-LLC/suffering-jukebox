@@ -15,7 +15,7 @@ import {
 export const dynamic = "force-dynamic";
 
 type PlaylistPage = {
-  items?: Array<{ id?: string; name?: string; images?: Array<{ url?: string }>; owner?: { display_name?: string }; tracks?: { total?: number } }>;
+  items?: Array<{ id?: string; name?: string; images?: Array<{ url?: string }>; owner?: { id?: string; display_name?: string }; tracks?: { total?: number } }>;
   next?: string | null;
 };
 
@@ -32,13 +32,17 @@ export async function GET(req: NextRequest) {
     if (!canReadPlaylists(found.session)) throw new SpotifyScopeError();
 
     const token = await freshSpotifySession(found.session, found.config);
-    const playlists: Array<{ id: string; name: string; trackCount: number; imageUrl: string | null; ownerName: string | null }> = [];
+    const playlists: Array<{ id: string; name: string; trackCount: number; imageUrl: string | null; ownerName: string | null; owned: boolean }> = [];
     let url = `https://api.spotify.com/v1/me/playlists?limit=${PAGE}`;
     for (let page = 0; page < MAX_PAGES && url; page += 1) {
       const data = await spotifyApi<PlaylistPage>(url, token.session.accessToken);
       (data.items ?? []).forEach((item) => {
         if (!item?.id || !item.name) return;
-        playlists.push({ id: item.id, name: item.name, trackCount: item.tracks?.total ?? 0, imageUrl: item.images?.[0]?.url || null, ownerName: item.owner?.display_name || null });
+        // Spotify only lets a Development-mode app read the contents of
+        // playlists the connected account made itself. Somebody else's
+        // playlist answers 403 no matter what we ask for, so the picker has
+        // to know which is which before it offers one.
+        playlists.push({ id: item.id, name: item.name, trackCount: item.tracks?.total ?? 0, imageUrl: item.images?.[0]?.url || null, ownerName: item.owner?.display_name || null, owned: !!item.owner?.id && item.owner.id === token.session.spotifyUserId });
       });
       url = data.next || "";
     }
