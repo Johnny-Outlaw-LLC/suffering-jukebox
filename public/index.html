@@ -4058,6 +4058,14 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
           oninput="plbDebounce(this.value)"
           onkeydown="if(event.key==='Enter'){event.preventDefault();plbRunSearch(this.value)}if(event.key==='Escape')closePlaylistBuilder()">
       </div>
+      <div class="plb-yt">
+        <button type="button" class="mj-analytics-link" id="plb-yt-toggle" onclick="plbyToggle()">+ Can’t find it? Add from YouTube directly</button>
+        <div id="plb-yt-panel" style="display:none;margin-top:.5rem">
+          <div class="mj-search"><input type="text" id="plby-search-input" placeholder="Search YouTube for a song" autocomplete="off"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();plbySearch()}"><button class="pl-btn" onclick="plbySearch()">Search</button></div>
+          <div id="plby-results"></div>
+        </div>
+      </div>
       <div class="plb-split">
         <div class="plb-results" id="plb-results"><div class="plb-empty">Search the catalogue to add artists, albums, or tracks.</div></div>
         <div class="plb-basket">
@@ -12657,6 +12665,17 @@ function openPlaylistBuilder(mode, playlistId) {
   _plbDraft = [];
   _plbExisting = new Set();
   _plbBusy = false;
+  _plbyOpen = false;
+  _plbyResults = [];
+  _plbyVisibility = 'private';
+  const ytPanel = document.getElementById('plb-yt-panel');
+  const ytToggle = document.getElementById('plb-yt-toggle');
+  const ytResults = document.getElementById('plby-results');
+  const ytInput = document.getElementById('plby-search-input');
+  if (ytPanel) ytPanel.style.display = 'none';
+  if (ytToggle) ytToggle.textContent = "+ Can’t find it? Add from YouTube directly";
+  if (ytResults) ytResults.innerHTML = '';
+  if (ytInput) ytInput.value = '';
   if (_plbMode === 'add') {
     const p = playlists.find(x => x.id === playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
     if (!p) { showToast('Playlist not found.'); return; }
@@ -12792,6 +12811,105 @@ function plbPushTracks(rows) {
 function plbAddTrack(trackId, title, artist, album) {
   const n = plbPushTracks([{ trackId, title, artist, album }]);
   if (!n) showToast(_plbExisting.has(trackId) ? 'Already on this playlist.' : 'Already in the draft.');
+}
+
+// ── Add from YouTube, from inside the playlist builder ───────────────
+// Same Import a Song flow as My Jukebox (mjReadArtist / add_youtube): search,
+// let the reader fix the artist name, choose who can see it on the catalogue.
+// The difference is the last step — the new catalogue track goes straight
+// into this playlist's draft instead of just landing in My Jukebox.
+let _plbyOpen = false;
+let _plbyResults = [];
+let _plbyVisibility = 'private';
+
+function plbyToggle() {
+  _plbyOpen = !_plbyOpen;
+  const panel = document.getElementById('plb-yt-panel');
+  const toggle = document.getElementById('plb-yt-toggle');
+  if (panel) panel.style.display = _plbyOpen ? '' : 'none';
+  if (toggle) toggle.textContent = (_plbyOpen ? '− ' : '+ ') + "Can’t find it? Add from YouTube directly";
+  if (_plbyOpen) setTimeout(() => document.getElementById('plby-search-input')?.focus(), 40);
+}
+
+async function plbySearch() {
+  const input = document.getElementById('plby-search-input');
+  const query = (input?.value || '').trim();
+  if (query.length < 2) { showToast('Type at least two characters to search YouTube.'); return; }
+  const results = document.getElementById('plby-results');
+  if (results) results.innerHTML = '<div class="plb-empty small">Searching YouTube…</div>';
+  try {
+    _plbyResults = [];
+    const data = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(query), 'GET');
+    _plbyResults = data.results || [];
+    plbyRenderResults();
+  } catch (e) {
+    if (results) results.innerHTML = '';
+    showToast(e.message || 'Could not search YouTube.');
+  }
+}
+
+function plbyRenderResults() {
+  const el = document.getElementById('plby-results');
+  if (!el) return;
+  if (!_plbyResults.length) { el.innerHTML = '<div class="plb-empty small">No YouTube results.</div>'; return; }
+  const rows = _plbyResults.map((r, n) => {
+    const read = mjReadArtist(r.title, r.channelTitle);
+    if (r._artist == null) r._artist = read.artistName;
+    if (r._track  == null) r._track  = read.trackName;
+    const thumb = r.thumbnail || ('https://i.ytimg.com/vi/' + r.videoId + '/mqdefault.jpg');
+    return '<div class="plb-row" style="align-items:flex-start">' +
+      '<img class="plb-art" alt="" src="' + escHtml(thumb) + '">' +
+      '<div class="plb-info">' +
+        '<div class="plb-name">' + escHtml(r._track) + '</div>' +
+        '<div class="plb-meta">' + escHtml(r.channelTitle || '') + (r.views != null ? ' · ' + fmtV(r.views) + ' views' : '') + '</div>' +
+        '<div style="margin-top:.3rem">' +
+          '<label style="display:block;font-size:.42rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:2px">Artist</label>' +
+          '<input type="text" class="pl-input" style="font-size:.54rem;padding:.3rem .5rem" data-plby-artist="' + n + '" value="' + escHtml(r._artist) + '" oninput="plbySetArtist(' + n + ',this.value)" placeholder="Artist name">' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="plb-add" data-plby-track="' + n + '" onclick="plbyAdd(' + n + ')">+ Add</button>' +
+    '</div>';
+  }).join('');
+  el.innerHTML =
+    '<div class="mj-vis" style="margin:.3rem 0 .5rem">Who can see this on the catalogue?' +
+      '<button type="button" class="pl-btn ' + (_plbyVisibility === 'public' ? '' : 'ghost') + '" onclick="plbySetVisibility(\'public\')">Visible to All</button>' +
+      '<button type="button" class="pl-btn ' + (_plbyVisibility === 'private' ? '' : 'ghost') + '" onclick="plbySetVisibility(\'private\')">In My Private Jukebox</button>' +
+    '</div>' + rows;
+}
+
+function plbySetArtist(n, value) { if (_plbyResults[n]) _plbyResults[n]._artist = value; }
+
+function plbySetVisibility(v) {
+  _plbyVisibility = v === 'public' ? 'public' : 'private';
+  plbyRenderResults();
+}
+
+async function plbyAdd(n) {
+  const row = _plbyResults[n];
+  if (!row) return;
+  const btn = document.querySelector('[data-plby-track="' + n + '"]');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const data = await mjRequest('/api/my-jukebox', 'POST', {
+      action: 'add_youtube',
+      videoId: row.videoId,
+      artistName: (row._artist || '').trim() || null,
+      trackName: (row._track || '').trim() || null,
+      visibility: _plbyVisibility,
+      userName: googleUser?.name || null
+    });
+    if (data.items && typeof _mjState !== 'undefined' && _mjState) _mjState.items = data.items;
+    if (!data.catalogTrackId) {
+      showToast('Added to My Jukebox, but could not add it to the catalogue.');
+      if (btn) { btn.disabled = false; btn.textContent = '+ Add'; }
+      return;
+    }
+    plbAddTrack(data.catalogTrackId, row._track, data.artist?.name || row._artist, null);
+    if (btn) { btn.textContent = 'Added'; btn.classList.add('on'); }
+  } catch (e) {
+    showToast(e.message || 'Could not add that song.');
+    if (btn) { btn.disabled = false; btn.textContent = '+ Add'; }
+  }
 }
 
 async function plbAddAlbum(albumId, btn) {
@@ -18739,6 +18857,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
+    'Add Songs to Playlist now has a "Can’t find it? Add from YouTube directly" option, so a song missing from the catalogue can be pulled in from YouTube and added to the playlist in one step.',
     'A playlist’s title and stats (songs, total time, artists) now sit in their own block at the top left of the page, above the toolbar buttons.',
     'Add Songs search results let you drill into an artist or album hit the same way the browse list does, instead of only offering to add everything at once.',
     'The X on your own songs in a playlist is back to just being there - no more turning on Edit first - and removing one no longer stops to ask you to confirm.',
