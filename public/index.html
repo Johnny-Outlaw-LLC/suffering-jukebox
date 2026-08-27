@@ -1561,6 +1561,11 @@ textarea.report-input { resize:vertical; }
   row-gap: 6px;
   width: 100%;
   min-width: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  align-content: start;
+  padding-bottom: 22px;
+  box-sizing: border-box;
 }
 .ytp-mini-footer.dock-grown .ytp-mf-main {
   /* The video grows, but the metadata beside it keeps its resting usable width. */
@@ -1606,7 +1611,8 @@ textarea.report-input { resize:vertical; }
 }
 /* ── Scrub / seek bar ── */
 .ytp-mf-scrub {
-  grid-area: scrub; display: flex; align-items: center; gap: 8px; width: 100%;
+  grid-area: scrub; display: flex; align-items: center; gap: 8px; width: auto;
+  position: absolute; left: 2px; right: 2px; bottom: 0;
   cursor: default; flex-shrink: 0; padding: 0 2px;
 }
 .ytp-mf-scrub-time {
@@ -1719,7 +1725,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-lyr .mf-lyr-font-ctrl {
   display: flex; align-items: center; gap: 4px; line-height: 1; flex-shrink: 0;
 }
-.ytp-mf-font-slot { display:flex; justify-content:flex-end; align-items:center; }
+.ytp-mf-font-slot { display:none; justify-content:flex-end; align-items:center; }
 .ytp-mf-font-slot .mf-lyr-font-ctrl { display:flex; align-items:center; gap:4px; line-height:1; padding:7px 9px; border:1px solid var(--border); border-radius:7px; background:color-mix(in srgb,var(--bg-card) 92%,transparent); }
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-right {
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
@@ -7246,17 +7252,17 @@ function ytpArrangeDockControls() {
   ['ytp-mf-more', 'ytp-mf-restore', 'ytp-mf-close'].forEach(id => {
     const el = document.getElementById(id); if (el) top.appendChild(el);
   });
-  ['ytp-mf-playpause', 'ytp-mf-next', 'ytp-mf-prev', 'ytp-mf-shuffle'].forEach(id => {
+  ['ytp-mf-playpause', 'ytp-mf-prev', 'ytp-mf-next', 'ytp-mf-shuffle'].forEach(id => {
     const el = document.getElementById(id); if (el) middle.appendChild(el);
   });
   const lyrics = document.getElementById('ytp-mf-lyrics');
   const slot = document.getElementById('ytp-mf-font-slot');
   const sizer = document.querySelector('#ytp-mini-footer .mf-lyr-font-ctrl');
-  if (lyrics) bottom.appendChild(lyrics);
   if (slot) {
     if (sizer) slot.appendChild(sizer);
     bottom.appendChild(slot);
   }
+  if (lyrics) bottom.appendChild(lyrics);
   right.classList.add('arranged');
 }
 
@@ -7494,12 +7500,14 @@ function ytpMfApplyLyricStrip() {
   const pane   = document.getElementById('ytp-mf-lyrics-pane');
   const btn    = document.getElementById('ytp-mf-lyrics');
   const footer = document.getElementById('ytp-mini-footer');
+  const fontSlot = document.getElementById('ytp-mf-font-slot');
   const hasSync = !!(nowPlayingTrackId && syncedLyricsCache[nowPlayingTrackId]);
   const visible = hasSync && _mfLyricStripOn && !!footer && footer.classList.contains('open');
   if (btn) {
     btn.classList.toggle('on', _mfLyricStripOn);
     btn.title = _mfLyricStripOn ? 'Hide lyrics' : 'Show lyrics';
   }
+  if (fontSlot) fontSlot.style.display = visible ? 'flex' : 'none';
   if (pane) {
     pane.classList.toggle('show', visible);
     const sl = document.querySelector('.mf-lyr-font-slider');
@@ -13981,7 +13989,8 @@ function playlistExploreRows() {
   if (playlistExploreContributor && playlistExploreFilter !== 'mine') {
     rows = rows.filter(p => (p.user_email || '') === playlistExploreContributor);
   }
-  const dynamic = playlistExploreFilter === 'public' || playlistExploreContributor
+  const dynamic = playlistExploreFilter === 'public'
+      || (playlistExploreFilter !== 'mine' && playlistExploreContributor)
     ? []
     : dynamicPlaylistRows();
   const q = playlistExploreSearchQ.trim().toLowerCase();
