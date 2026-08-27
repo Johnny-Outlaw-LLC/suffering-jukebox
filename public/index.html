@@ -3027,6 +3027,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 }
 .landing-action-btn:hover { background: var(--accent)18; }
 .landing-action-btn:disabled { opacity: .5; cursor: default; }
+.la-songs-view { padding:16px 20px 20px; }
+.la-songs-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.la-songs-head strong { font-size:.72rem; }
+.la-songs-head span { font-family:var(--mono); font-size:.48rem; color:var(--text-muted); }
+.la-songs-view .tt-scroll { max-height:58vh; overflow:auto; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); }
 .landing-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .12s;
@@ -16158,6 +16163,7 @@ async function landingShuffleFavorites() {
 // ══════════════════════════════════════════════════════════════
 const _laLoadedArtists = new Set();  // artist ids whose catalog is in the globals
 const laOpenAlbumIds   = new Set();  // albums open inside the expanded card
+const laSongViewIds    = new Set();  // expanded artists flattened into an All Tracks-style table
 const _laReduceMotion  = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 function toggleLandingCard(artistId) {
@@ -16240,6 +16246,7 @@ function laExpandedCardHTML(r, i) {
             ${r.discography_complete === false
                 ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
                 : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>`}
+            <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();laToggleSongView('${r.artist_id}')">${laSongViewIds.has(r.artist_id) ? 'View Albums' : 'View Songs'}</button>
           </div>
         </div>
         <button type="button" class="la-close" onclick="event.stopPropagation();toggleLandingCard('${r.artist_id}')" title="Collapse" aria-label="Collapse artist card">×</button>
@@ -16296,12 +16303,34 @@ async function laPopulateAlbums(artistId) {
     const albList = memberIds.flatMap(aid => albums[aid] || [])
       .sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
     if (!albList.length) { target.innerHTML = '<div class="la-note">No albums here yet.</div>'; return; }
-    target.innerHTML = albList.map((alb, idx) => laAlbumHTML(alb, idx)).join('');
+    if (laSongViewIds.has(artistId)) {
+      const songList = memberIds.flatMap(aid => tracks[aid] || []);
+      ttTrackCache = songList;
+      target.innerHTML = '<div class="la-songs-view"><div class="la-songs-head"><strong>All Songs</strong><span>'
+        + songList.length + ' track' + (songList.length === 1 ? '' : 's')
+        + ' · click column headers to sort</span></div><div class="tt-scroll"><div class="tt-wrap">'
+        + renderTopTracks(songList) + '</div></div></div>';
+    } else {
+      target.innerHTML = albList.map((alb, idx) => laAlbumHTML(alb, idx)).join('');
+    }
     Object.keys(localVotes).forEach(refreshVoteUI);
     laOpenAlbumIds.forEach(id => { if (albList.some(a => a.id === id)) laToggleAlbum(id, true); });
   } catch (e) {
     console.warn('laPopulateAlbums error', e);
     box.innerHTML = '<div class="la-note">Could not load albums - try again in a moment.</div>';
+  }
+}
+
+function laToggleSongView(artistId) {
+  if (laSongViewIds.has(artistId)) laSongViewIds.delete(artistId);
+  else laSongViewIds.add(artistId);
+  const row = landingStats.find(r => r.artist_id === artistId);
+  const card = document.querySelector(`.landing-card.la-expanded[data-artist-id="${artistId}"]`);
+  if (row && card) {
+    const replacement = document.createElement('div');
+    replacement.innerHTML = laExpandedCardHTML(row, landingStats.indexOf(row));
+    card.replaceWith(replacement.firstElementChild);
+    laPopulateAlbums(artistId);
   }
 }
 
