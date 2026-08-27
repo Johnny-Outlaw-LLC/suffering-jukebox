@@ -14,7 +14,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-type SpotifyTrack = { id?: string; name?: string; uri?: string; artists?: Array<{ name?: string }>; album?: { name?: string; images?: Array<{ url?: string }> }; duration_ms?: number };
+type SpotifyTrack = { id?: string | null; name?: string; uri?: string; artists?: Array<{ name?: string }>; album?: { name?: string; images?: Array<{ url?: string }> }; duration_ms?: number };
 // Saved songs put the song under `track`. The playlist `/items` endpoint puts
 // it under `item`. Same object, different key, and reading only `track` is
 // why a playlist came back with a total and no songs.
@@ -26,10 +26,15 @@ type SavedPage = { items?: Array<{ track?: SpotifyTrack; item?: SpotifyTrack }>;
 const PAGE = 50;
 const MAX_PAGES = 4;
 
+// A song added from the listener's own hard drive years ago carries no Spotify
+// id - it is a local file, and the whole row is a name, an artist and a
+// duration. That is everything the import needs, because the next step looks
+// the song up on YouTube by name anyway. Demanding an id dropped 34 of the 35
+// songs on one playlist.
 function shape(track: SpotifyTrack | undefined | null) {
-  if (!track?.id || !track.name || !track.uri) return [];
+  if (!track?.name || !track.uri) return [];
   return [{
-    id: track.id,
+    id: track.id || track.uri,
     uri: track.uri,
     title: track.name,
     artistName: (track.artists ?? []).map((artist) => artist.name).filter(Boolean).join(", ") || "Unknown artist",
