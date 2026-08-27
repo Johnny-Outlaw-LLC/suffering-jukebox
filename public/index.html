@@ -6407,13 +6407,7 @@ function attachYTAPIPlayer() {
         if (_ytpLayoutRestore) {
           const restore = _ytpLayoutRestore;
           _ytpLayoutRestore = null;
-          try {
-            if (restore.sec > 0) ytAPIPlayer.seekTo(restore.sec, true);
-            if (restore.playing) ytAPIPlayer.playVideo();
-            else ytAPIPlayer.pauseVideo();
-          } catch (_) {}
-          _ytUserWantsPlay = restore.playing;
-          ytpSetPlayPauseIcon(restore.playing);
+          ytpApplyLayoutPlayback(restore);
           return;
         }
         if (_pbRestoreOpts) {
@@ -7131,10 +7125,35 @@ const YTP_DOCK_BODY_MAX_VW = 0.5; // video/art may grow to half the viewport wid
 
 function ytpCaptureLayoutPlayback() {
   if (_taBgActive || !ytAPIPlayer) return null;
-  let sec = 0, state = -1;
+  let sec = 0, state = -1, apiVideoId = '';
   try { sec = Math.max(0, Number(ytAPIPlayer.getCurrentTime?.()) || 0); } catch (_) {}
   try { state = ytAPIPlayer.getPlayerState?.(); } catch (_) {}
-  return { sec, playing: state === 1 || (state === 3 && _ytUserWantsPlay) };
+  try { apiVideoId = ytAPIPlayer.getVideoData?.()?.video_id || ''; } catch (_) {}
+  const videoId = ytQueue[ytQueueIdx]?.videoId || apiVideoId || ytVideoId || '';
+  return { videoId, sec, playing: state === 1 || (state === 3 && _ytUserWantsPlay), videoRequested: false };
+}
+
+function ytpApplyLayoutPlayback(snapshot) {
+  if (!snapshot || !ytAPIPlayer) return;
+  try {
+    const currentVideoId = ytAPIPlayer.getVideoData?.()?.video_id || '';
+    if (snapshot.videoId && currentVideoId !== snapshot.videoId) {
+      // Reparenting reloads the iframe's original src, which may name a song
+      // played much earlier. Restore the queue's current video, not just time.
+      if (!snapshot.videoRequested) {
+        snapshot.videoRequested = true;
+        const spec = { videoId: snapshot.videoId, startSeconds: snapshot.sec || 0 };
+        if (snapshot.playing) ytAPIPlayer.loadVideoById(spec);
+        else ytAPIPlayer.cueVideoById(spec);
+      }
+    } else {
+      if (snapshot.sec > 0) ytAPIPlayer.seekTo(snapshot.sec, true);
+      if (snapshot.playing) ytAPIPlayer.playVideo();
+      else ytAPIPlayer.pauseVideo();
+    }
+  } catch (_) {}
+  _ytUserWantsPlay = snapshot.playing;
+  ytpSetPlayPauseIcon(snapshot.playing);
 }
 
 function ytpRestoreAfterLayoutMove(snapshot) {
@@ -7146,13 +7165,7 @@ function ytpRestoreAfterLayoutMove(snapshot) {
   // API emits onReady first, that handler consumes this snapshot instead.
   const apply = (last) => {
     if (_ytpLayoutRestore !== snapshot) return;
-    try {
-      if (snapshot.sec > 0) ytAPIPlayer?.seekTo?.(snapshot.sec, true);
-      if (snapshot.playing) ytAPIPlayer?.playVideo?.();
-      else ytAPIPlayer?.pauseVideo?.();
-      _ytUserWantsPlay = snapshot.playing;
-      ytpSetPlayPauseIcon(snapshot.playing);
-    } catch (_) {}
+    ytpApplyLayoutPlayback(snapshot);
     if (last && _ytpLayoutRestore === snapshot) _ytpLayoutRestore = null;
   };
   setTimeout(() => apply(false), 80);
@@ -7180,6 +7193,7 @@ function ytpDockClaimFrame() {
   const art   = document.getElementById('ytp-mf-art');
   if (!frame || !slot || slot.contains(frame)) return;
   const playback = ytpCaptureLayoutPlayback();
+  if (playback) _ytpLayoutRestore = playback; // guard events before appendChild reloads it
   slot.appendChild(frame);
   slot.style.display = 'block';
   if (art) art.style.display = _ytpDockVideoOn ? 'none' : '';
@@ -7193,6 +7207,7 @@ function ytpDockReleaseFrame() {
   const art   = document.getElementById('ytp-mf-art');
   if (frame) {
     const playback = ytpCaptureLayoutPlayback();
+    if (playback) _ytpLayoutRestore = playback; // guard events before appendChild reloads it
     const anchor = ytPlayerEl.querySelector('#ytp-up-next-slot');
     if (anchor) anchor.after(frame); else ytPlayerEl.appendChild(frame);
     frame.style.width = '';
