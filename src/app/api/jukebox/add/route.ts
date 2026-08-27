@@ -53,7 +53,6 @@ export async function POST(req: NextRequest) {
       pending,
       guestId: isOwner ? null : (guest?.id ?? null),
       trackId,
-      trackIsExplicit: track.explicit,
       isOwner,
     });
 

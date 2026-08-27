@@ -5,24 +5,25 @@
 // disagree with each other. If you are about to write `if (settings.` in a
 // route handler, write it in this file instead.
 
-export type FairnessMode = "fifo" | "round_robin";
-
+/**
+ * Four things used to be settings and are now simply how the jukebox works,
+ * because every one of them had an answer the host would always give:
+ *
+ *   - adding while off air: never. A song queued into a room nobody is
+ *     playing is a request nobody hears.
+ *   - the same song twice: never. It is a queue, not a repeat button.
+ *   - explicit tracks: always allowed. This is a record collection.
+ *   - round robin: gone with the Order control. The per-guest cap is what
+ *     stops one person stacking the queue, and it does it without anybody
+ *     having to understand what "take turns between guests" means.
+ *
+ * A setting nobody changes is a question nobody wanted asked.
+ */
 export type JukeboxSettings = {
   /** Songs a single guest may have waiting at once. 0 = unlimited. */
   maxPendingPerGuest: number;
-  /** Allow a song already waiting in the queue to be added again. */
-  allowDuplicates: boolean;
-  /**
-   * Let guests queue songs while the host is not playing. This is the "add
-   * from bed, hear it in the bar tomorrow" setting.
-   */
-  allowOfflineAdds: boolean;
-  /** FIFO appends. Round robin interleaves so one guest cannot stack the queue. */
-  fairness: FairnessMode;
-  /** Guests must enter a name rather than being numbered. */
+  /** Guests must type a name before they can request anything. */
   requireName: boolean;
-  /** Allow tracks flagged explicit. */
-  allowExplicit: boolean;
   /**
    * A song somebody in the room asked for goes in front of the host's own
    * list rather than behind all of it. On a night with a long playlist loaded
@@ -34,11 +35,7 @@ export type JukeboxSettings = {
 
 export const DEFAULT_SETTINGS: JukeboxSettings = {
   maxPendingPerGuest: 3,
-  allowDuplicates: false,
-  allowOfflineAdds: false,
-  fairness: "fifo",
   requireName: false,
-  allowExplicit: true,
   guestsFirst: false,
 };
 
@@ -63,13 +60,11 @@ export function normalizeSettings(raw: unknown): JukeboxSettings {
   };
   const bool = (v: unknown, fallback: boolean) =>
     typeof v === "boolean" ? v : fallback;
+  // Keys that are no longer settings are simply not read. Stored blobs still
+  // carry them; ignoring them is the whole migration.
   return {
     maxPendingPerGuest: int(s.maxPendingPerGuest, DEFAULT_SETTINGS.maxPendingPerGuest, 0, 50),
-    allowDuplicates: bool(s.allowDuplicates, DEFAULT_SETTINGS.allowDuplicates),
-    allowOfflineAdds: bool(s.allowOfflineAdds, DEFAULT_SETTINGS.allowOfflineAdds),
-    fairness: s.fairness === "round_robin" ? "round_robin" : "fifo",
     requireName: bool(s.requireName, DEFAULT_SETTINGS.requireName),
-    allowExplicit: bool(s.allowExplicit, DEFAULT_SETTINGS.allowExplicit),
     guestsFirst: bool(s.guestsFirst, DEFAULT_SETTINGS.guestsFirst),
   };
 }
@@ -414,63 +409,16 @@ export function midpointSort(before: number | null, after: number | null): numbe
  * last-in-first-out, and jumping in front of somebody who asked before you
  * would be a worse jukebox than the one we started with.
  */
-export function guestsFirstSort(
-  pending: PendingItem[],
-  /** Whose add this is, when round robin is also on. Null for plain order. */
-  guestId: string | null,
-): number {
+export function guestsFirstSort(pending: PendingItem[]): number {
   const ordered = [...pending].sort((a, b) => a.sort - b.sort);
   if (!ordered.length) return SORT_STEP;
 
   // Index 0 is the song already on screen. Nothing goes in front of it.
   let end = 0;
   while (end + 1 < ordered.length && ordered[end + 1].guestId) end++;
-  const block = ordered.slice(1, end + 1);
   const nextOwn = end + 1 < ordered.length ? ordered[end + 1].sort : null;
-
-  if (guestId && block.length) {
-    // Round robin still decides the order among guests. It just does it inside
-    // the block sitting in front of the host's list rather than across the
-    // whole queue.
-    const at = roundRobinSort(block, guestId);
-    // roundRobinSort appends past the block when this guest's round is last,
-    // which would land on top of the host's next song. Pull it back inside.
-    if (nextOwn != null && at >= nextOwn) {
-      return midpointSort(block[block.length - 1].sort, nextOwn);
-    }
-    return at;
-  }
   return midpointSort(ordered[end].sort, nextOwn);
 }
-
-/**
- * Where a new add lands under round robin. Each guest's Nth waiting song sits
- * in round N, and rounds play in order, so a guest who queues five songs gets
- * one slot per lap instead of five in a row.
- */
-export function roundRobinSort(pending: PendingItem[], guestId: string | null): number {
-  const ordered = [...pending].sort((a, b) => a.sort - b.sort);
-  const seen = new Map<string, number>();
-  const rounds: number[] = [];
-  for (const item of ordered) {
-    const key = item.guestId ?? "__owner__";
-    const n = seen.get(key) ?? 0;
-    rounds.push(n);
-    seen.set(key, n + 1);
-  }
-  const newRound = seen.get(guestId ?? "__owner__") ?? 0;
-
-  // Insert after the last item in a round at or before ours.
-  let insertAfter = -1;
-  for (let i = 0; i < ordered.length; i++) {
-    if (rounds[i] <= newRound) insertAfter = i;
-  }
-  if (insertAfter === ordered.length - 1) return appendSort(pending);
-  const before = insertAfter >= 0 ? ordered[insertAfter].sort : null;
-  const after = ordered[insertAfter + 1].sort;
-  return midpointSort(before, after);
-}
-
 
 // ── Host queue mirror ─────────────────────────────────────────────────────
 // The room's queue is a mirror of what the host's own player is holding, not
@@ -593,8 +541,7 @@ export type AddContext = {
   pending: PendingItem[];
   guestId: string | null;
   trackId: string;
-  trackIsExplicit: boolean;
-  /** Owner adds bypass the guest fairness rules; it is their jukebox. */
+  /** Owner adds bypass the guest rules; it is their jukebox. */
   isOwner: boolean;
 };
 
@@ -608,12 +555,13 @@ export function decideAdd(ctx: AddContext): AddDecision {
   if (ctx.guestBanned) {
     return { ok: false, code: "banned", message: "You can no longer add songs to this jukebox." };
   }
-  if (!ctx.isOwner && !ctx.isLive && !settings.allowOfflineAdds) {
+  // Never, and it is not a setting. A song queued into a room nobody is
+  // playing is a request nobody hears.
+  if (!ctx.isOwner && !ctx.isLive) {
     return {
       ok: false,
       code: "offline",
-      message:
-        "This jukebox is not playing right now, and the owner has turned off adding while it is offline.",
+      message: "This jukebox is not playing right now, so it is not taking requests.",
     };
   }
   if (ctx.pending.length >= MAX_PENDING_TOTAL) {
@@ -623,14 +571,8 @@ export function decideAdd(ctx: AddContext): AddDecision {
       message: "The queue is full. Try again once a few songs have played.",
     };
   }
-  if (!ctx.isOwner && !settings.allowExplicit && ctx.trackIsExplicit) {
-    return {
-      ok: false,
-      code: "explicit",
-      message: "The owner has turned off explicit tracks on this jukebox.",
-    };
-  }
-  if (!settings.allowDuplicates && ctx.pending.some((p) => p.trackId === ctx.trackId)) {
+  // Explicit tracks are always allowed; this is a record collection.
+  if (ctx.pending.some((p) => p.trackId === ctx.trackId)) {
     return { ok: false, code: "duplicate", message: "That song is already waiting in the queue." };
   }
   if (!ctx.isOwner && settings.maxPendingPerGuest > 0) {
@@ -645,20 +587,12 @@ export function decideAdd(ctx: AddContext): AddDecision {
     }
   }
 
-  // The host's own adds always go on the end; it is their list. Everything
-  // else is the two settings composing: requests first decides where the block
-  // of guest songs sits, round robin decides the order inside it.
-  const roundRobin = settings.fairness === "round_robin";
-  let sort: number;
-  if (ctx.isOwner) {
-    sort = appendSort(ctx.pending);
-  } else if (settings.guestsFirst) {
-    sort = guestsFirstSort(ctx.pending, roundRobin ? ctx.guestId : null);
-  } else if (roundRobin) {
-    sort = roundRobinSort(ctx.pending, ctx.guestId);
-  } else {
-    sort = appendSort(ctx.pending);
-  }
+  // The host's own adds always go on the end; it is their list. A guest's
+  // goes in front of it or behind it, which is the only question left.
+  const sort =
+    !ctx.isOwner && settings.guestsFirst
+      ? guestsFirstSort(ctx.pending)
+      : appendSort(ctx.pending);
   return { ok: true, sort };
 }
 

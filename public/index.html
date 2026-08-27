@@ -3955,6 +3955,12 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   .sjj-mini:disabled { opacity:.3; cursor:default; }
   .sjj-h { font-size:.62rem; font-weight:700; text-transform:uppercase; letter-spacing:.1em;
            color:var(--text-muted); margin:1.1rem 0 .4rem; }
+  /* A select is as wide as its longest option, so "Add guest songs at end of
+     playlist" dragged this row off the side of a phone. Let the row wrap and
+     let the control shrink; the same trap the Spotify picker hit. */
+  .sjj-set { flex-wrap:wrap; }
+  .sjj-set > span { min-width:0; }
+  .sjj-set select { max-width:100%; min-width:0; flex:1 1 11rem; }
   .sjj-set { display:flex; align-items:center; justify-content:space-between; gap:.75rem;
              padding:.4rem 0; font-size:.78rem; }
   .sjj-set select, .sjj-set input[type=number] { font:inherit; font-size:.75rem; padding:.25rem .4rem;
@@ -4030,7 +4036,14 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   .sjj-float-hd { display:flex; justify-content:space-between; align-items:center; cursor:move; user-select:none; padding:.42rem .55rem; font-size:.62rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
   .sjj-float-qr img { display:block; width:calc(100% - 1rem); aspect-ratio:1; object-fit:contain; margin:0 .5rem .2rem; background:#fff; border-radius:5px; }
   .sjj-float-url { font-size:.48rem; color:#bbb; text-align:center; padding:0 .45rem .5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  @media (max-width:640px) { .sjj-float-qr { width:170px; } }
+  @media (max-width:640px) {
+    .sjj-float-qr { width:170px; }
+    /* 13rem of text plus a 132px code plus the card padding is wider than a
+       phone, which pushed the longest button off the edge. */
+    .sjj-stage-l { min-width:0; }
+    .sjj-qr { width:104px; height:104px; }
+    .sjj-stage-btns .pl-btn { max-width:100%; white-space:normal; text-align:center; }
+  }
   /* Who is in the room. Floats over the page like the QR card, because the
      host is usually looking at the room rather than at this app, and the
      console being closed is the normal case. */
@@ -4062,8 +4075,9 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   .sjj-req:first-child { border-top:0; }
   .sjj-req:hover { background:var(--bg-elevated,#1a1a1a); }
   .sjj-req-body { flex:1; min-width:0; }
-  .sjj-req-t { font-size:.78rem; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .sjj-req-s { font-size:.62rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sjj-req-t, .sjj-req-s { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sjj-req-t { font-size:.78rem; font-weight:500; }
+  .sjj-req-s { font-size:.62rem; color:var(--text-muted); margin-top:.1rem; }
   .sjj-req-tag { flex-shrink:0; font-size:.55rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
                  padding:.16rem .4rem; border-radius:999px; border:1px solid var(--border); color:var(--text-muted); }
   .sjj-req-tag.unplayed { color:var(--accent); border-color:var(--accent); }
@@ -4073,6 +4087,15 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   /* The join address, sitting under the field that sets it. */
   .sjj-addr { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; padding:.3rem .5rem 0; }
   .sjj-addr .sjj-url { margin:0; flex:1; min-width:10rem; }
+  /* Address and name are the same kind of thing - what this room is called -
+     so they are edited on one row. */
+  .sjj-ident { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; padding:0 .5rem; }
+  .sjj-ident-f { flex:1 1 15rem; min-width:0; }
+  .sjj-ident-f .sjj-h { margin:0 0 .25rem; padding:0; }
+  .sjj-ident-row { display:flex; align-items:center; gap:.35rem; }
+  .sjj-ident-row input { font:inherit; font-size:.78rem; padding:.3rem .45rem; flex:1; min-width:5rem;
+                         background:var(--bg-elevated,#151515); color:var(--text);
+                         border:1px solid var(--border); border-radius:6px; }
   /* Broadcasting Live, in the player. Small, unmissable, and it goes away the
      moment the mirror stops - a badge that lies about being on air is worse
      than no badge. */
@@ -19112,6 +19135,12 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-27';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-27', items: [
+    'Four Online Jukebox settings are gone, because each of them had an answer you would always give. Guests can never add while you are off air, the same song can never be queued twice, explicit songs are always allowed, and the Order control has gone with them - the per-guest limit is what stops one person filling the queue.',
+    'What is left is one clear choice: Guest playback, set to either "Add guest songs at end of playlist" or "Play guest songs first".',
+    'Web address and Jukebox name are now two editable fields on one row with a single Save. The Rename button is gone - just type the new name.',
+    'The Who is listening button is now Show listener popup, which is what it does.',
+    'In Songs added by others, who asked and when moved onto their own line instead of running into the song title.',
+    'The Online Jukebox window no longer ran off the side of a phone screen. The settings row and the top card both fit now.',
     'The Online Jukebox window no longer carries an Up Next list. It was your own player queue read back to you a second time, and on shuffle it did not even agree with what played next. The player is the queue.',
     'In its place: Songs added by others. Everything anyone in the room has asked for tonight, newest first, marked Played or Unplayed, with who asked and when. Click any one of them to play it next.',
     'New setting: Play requests before my own songs. With it on, a song somebody asks for goes in front of your loaded playlist instead of behind all of it - but behind the song playing, and behind anyone who asked before them.',
@@ -24624,27 +24653,34 @@ function sjjRender() {
     +        (j.isLive ? 'Take off air' : 'Start the jukebox') + '</button>'
     +      '<button class="pl-btn" onclick="sjjPlayHere()">Play the queue on this device</button>'
     +      (j.isLive ? '<button class="pl-btn ghost" onclick="sjjToggleFloatingQr()">Show QR on screen</button>' : '')
-    +      (j.isLive ? '<button class="pl-btn ghost" onclick="sjjToggleListeners()">Who is listening</button>' : '')
+    +      (j.isLive ? '<button class="pl-btn ghost" onclick="sjjToggleListeners()">Show listener popup</button>' : '')
     +    '</div>'
     +  '</div>'
     +  '<img class="sjj-qr" alt="Scan to join this jukebox" src="/api/jukebox/qr?code=' + encodeURIComponent(j.code) + '&v=' + encodeURIComponent(j.slug || j.code) + '">'
     +  '</div>';
 
-  // ── The address people type, and the name they see when they get there.
-  h += '<div class="sjj-h">Web address</div>'
-    +  '<div class="sjj-slug">'
-    +    '<span class="sjj-slug-pre">' + escHtml(location.host) + '/</span>'
-    +    '<input id="sjj-slug-input" value="' + escHtml(j.slug || '') + '" placeholder="' + escHtml(j.code.toLowerCase()) + '" maxlength="32" spellcheck="false" autocapitalize="off">'
-    +    '<button class="pl-btn" onclick="sjjSaveSlug()">Save</button>'
+  // ── What this room is called, in both senses. The address people type and
+  //    the name they see when they get there are the same kind of thing, so
+  //    they are edited on one row and saved together.
+  h += '<div class="sjj-ident">'
+    +    '<div class="sjj-ident-f">'
+    +      '<div class="sjj-h">Web address</div>'
+    +      '<div class="sjj-ident-row">'
+    +        '<span class="sjj-slug-pre">' + escHtml(location.host) + '/</span>'
+    +        '<input id="sjj-slug-input" value="' + escHtml(j.slug || '') + '" placeholder="' + escHtml(j.code.toLowerCase()) + '" maxlength="32" spellcheck="false" autocapitalize="off">'
+    +      '</div>'
+    +    '</div>'
+    +    '<div class="sjj-ident-f">'
+    +      '<div class="sjj-h">Jukebox name</div>'
+    +      '<div class="sjj-ident-row">'
+    +        '<input id="sjj-name-input" value="' + escHtml(j.name || '') + '" maxlength="60" placeholder="Jukebox">'
+    +        '<button class="pl-btn" onclick="sjjSaveIdentity()">Save</button>'
+    +      '</div>'
+    +    '</div>'
     +  '</div>'
     +  '<div class="sjj-addr">'
     +    '<span class="sjj-url">' + escHtml(url) + '</span>'
     +    '<button class="pl-btn ghost" onclick="sjjCopyLink()">Copy link</button>'
-    +    '<button class="pl-btn ghost" onclick="sjjRename()">Rename</button>'
-    +  '</div>'
-    +  '<div class="sjj-s" style="padding:.15rem .5rem .3rem">'
-    +    (j.slug ? 'Guests see this jukebox as &ldquo;' + escHtml(j.name) + '&rdquo;.'
-              : 'Pick a word and the join address becomes yours instead of a six letter code.')
     +  '</div>'
     +  '</div>';   // end stage card
 
@@ -24659,15 +24695,11 @@ function sjjRender() {
     +  '<div class="sjj-h">Settings</div>'
     +  sjjSetting('Songs each guest may have waiting',
          '<input type="number" min="0" max="50" value="' + st.maxPendingPerGuest + '" onchange="sjjSet({maxPendingPerGuest:Number(this.value)})">')
-    +  sjjSetting('Order',
-         '<select onchange="sjjSet({fairness:this.value})">'
-         + '<option value="fifo"' + (st.fairness === 'fifo' ? ' selected' : '') + '>First come, first served</option>'
-         + '<option value="round_robin"' + (st.fairness === 'round_robin' ? ' selected' : '') + '>Take turns between guests</option></select>')
-    +  sjjToggle('Play requests before my own songs', 'guestsFirst', st.guestsFirst)
-    +  sjjToggle('Allow the same song twice', 'allowDuplicates', st.allowDuplicates)
-    +  sjjToggle('Let guests add while off air', 'allowOfflineAdds', st.allowOfflineAdds)
-    +  sjjToggle('Make guests type a name', 'requireName', st.requireName)
-    +  sjjToggle('Allow explicit songs', 'allowExplicit', st.allowExplicit)
+    +  sjjSetting('Guest playback',
+         '<select onchange="sjjSet({guestsFirst:this.value===\'first\'})">'
+         + '<option value="end"' + (st.guestsFirst ? '' : ' selected') + '>Add guest songs at end of playlist</option>'
+         + '<option value="first"' + (st.guestsFirst ? ' selected' : '') + '>Play guest songs first</option></select>')
+    +  sjjToggle('Always require a name to request a song', 'requireName', st.requireName)
     +  '</div>';
   h += '</div>';   // end left column
 
@@ -24954,15 +24986,16 @@ function sjjToggle(label, key, on) {
 const sjjSet = (patch) => sjjAct({ action: 'settings', settings: patch });
 const sjjBan = (id, on) => sjjAct({ action: on ? 'ban' : 'unban', guestId: id });
 
-function sjjRename() {
-  const name = prompt('What should this jukebox be called?', _sjjState?.jukebox?.name || '');
-  if (name && name.trim()) sjjAct({ action: 'rename', name: name.trim() });
-}
-
-function sjjSaveSlug() {
-  const input = document.getElementById('sjj-slug-input');
-  if (!input) return;
-  sjjAct({ action: 'slug', slug: input.value.trim() });
+// Both fields, one button. Each is only sent when it actually changed, so
+// saving a rename cannot fail on a slug somebody else took in the meantime,
+// and awaited in turn because sjjAct() refuses to run two at once.
+async function sjjSaveIdentity() {
+  const j = _sjjState?.jukebox;
+  if (!j) return;
+  const slug = (document.getElementById('sjj-slug-input')?.value || '').trim();
+  const name = (document.getElementById('sjj-name-input')?.value || '').trim();
+  if (name && name !== j.name) await sjjAct({ action: 'rename', name });
+  if (slug !== (j.slug || '')) await sjjAct({ action: 'slug', slug });
 }
 
 function sjjCopyLink() {

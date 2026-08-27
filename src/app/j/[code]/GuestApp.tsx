@@ -13,11 +13,8 @@ import css from "./guest.module.css";
 
 type Settings = {
   maxPendingPerGuest: number;
-  allowDuplicates: boolean;
-  allowOfflineAdds: boolean;
-  fairness: string;
   requireName: boolean;
-  allowExplicit: boolean;
+  guestsFirst: boolean;
 };
 
 type Room = {
@@ -505,9 +502,7 @@ export default function GuestApp({ code }: { code: string }) {
                 </p>
               )}
               <p className={css.noticeText}>
-                {room?.settings.allowOfflineAdds
-                  ? "Songs you add now will be waiting when the host starts up again."
-                  : "The host is not taking requests until they are back on air."}
+                The host is not taking requests until they are back on air.
               </p>
             </div>
           )}
