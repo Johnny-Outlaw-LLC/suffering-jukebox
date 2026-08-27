@@ -104,6 +104,74 @@ export function parseYouTubeVideoId(input: string): string | null {
   return null;
 }
 
+export function parseYouTubePlaylistId(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  // A bare playlist id, pasted directly rather than a full link.
+  if (/^(PL|UU|LL|FL|RD|OLAK5uy)[A-Za-z0-9_-]{10,}$/.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    const list = url.searchParams.get("list");
+    return list && list.length >= 10 ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+export type YtPlaylistItem = {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  thumbnail: string | null;
+};
+
+// One huge playlist should not blow the request budget or the quota, so
+// fetching stops here and the caller is told the list was cut short.
+export const MAX_PLAYLIST_ITEMS = 300;
+
+export async function fetchYouTubePlaylistItems(
+  playlistId: string,
+): Promise<{ items: YtPlaylistItem[]; truncated: boolean }> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) throw new Error("YouTube API key not configured.");
+  const items: YtPlaylistItem[] = [];
+  let pageToken: string | undefined;
+  let truncated = false;
+  do {
+    const url = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+    url.searchParams.set("part", "snippet");
+    url.searchParams.set("playlistId", playlistId);
+    url.searchParams.set("maxResults", "50");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    url.searchParams.set("key", key);
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      if (res.status === 404) {
+        throw new Error("That playlist could not be found — check it is public or unlisted.");
+      }
+      throw new Error(`YouTube API error (${res.status})`);
+    }
+    const json = (await res.json()) as { items?: any[]; nextPageToken?: string };
+    for (const item of json.items ?? []) {
+      const sn = item.snippet ?? {};
+      const videoId = sn.resourceId?.videoId as string | undefined;
+      if (!videoId) continue;
+      // Deleted/private entries carry a placeholder title and nothing playable.
+      if (/^(deleted|private) video$/i.test(sn.title || "")) continue;
+      const thumbs = sn.thumbnails;
+      items.push({
+        videoId,
+        title: sn.title || "Untitled",
+        channelTitle: sn.videoOwnerChannelTitle || sn.channelTitle || "",
+        thumbnail: thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
+      });
+      if (items.length >= MAX_PLAYLIST_ITEMS) { truncated = true; break; }
+    }
+    pageToken = truncated ? undefined : json.nextPageToken;
+  } while (pageToken);
+  return { items, truncated };
+}
+
 export type YtVideoInfo = {
   id: string;
   /** True only if the video will actually play inside our embedded player. */

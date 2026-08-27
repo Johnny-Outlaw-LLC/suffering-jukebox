@@ -2403,6 +2403,10 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-add:hover { border-color:var(--accent); color:var(--accent); }
 .plb-add.on { background:rgba(255,107,53,.12); border-color:var(--accent); color:var(--accent); }
 .plb-add:disabled { opacity:.4; cursor:not-allowed; }
+.plb-yt-toggle { background:var(--bg-elevated); border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; font-weight:700; padding:.35rem .65rem; border-radius:7px; cursor:pointer; }
+.plb-yt-toggle:hover { border-color:var(--accent); color:var(--accent); }
+.plb-row-dupe { opacity:.55; }
+.plb-pl-bar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; justify-content:space-between; padding:.4rem 0; }
 .plb-b-item { display:flex; align-items:center; gap:.4rem; padding:.35rem .4rem; border-radius:7px; }
 .plb-b-item:hover { background:var(--bg-elevated); }
 .plb-b-num { font-size:.42rem; color:var(--text-muted); width:1.4rem; flex-shrink:0; font-variant-numeric:tabular-nums; }
@@ -4059,9 +4063,9 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
           onkeydown="if(event.key==='Enter'){event.preventDefault();plbRunSearch(this.value)}if(event.key==='Escape')closePlaylistBuilder()">
       </div>
       <div class="plb-yt">
-        <button type="button" class="mj-analytics-link" id="plb-yt-toggle" onclick="plbyToggle()">+ Can’t find it? Add from YouTube directly</button>
+        <button type="button" class="plb-yt-toggle" id="plb-yt-toggle" onclick="plbyToggle()">+ Can’t find it? Add from YouTube directly</button>
         <div id="plb-yt-panel" style="display:none;margin-top:.5rem">
-          <div class="mj-search"><input type="text" id="plby-search-input" placeholder="Search YouTube for a song" autocomplete="off"
+          <div class="mj-search"><input type="text" id="plby-search-input" placeholder="Search YouTube for a song, or paste a YouTube playlist link" autocomplete="off"
             onkeydown="if(event.key==='Enter'){event.preventDefault();plbySearch()}"><button class="pl-btn" onclick="plbySearch()">Search</button></div>
           <div id="plby-results"></div>
         </div>
@@ -12676,6 +12680,10 @@ function openPlaylistBuilder(mode, playlistId) {
   if (ytToggle) ytToggle.textContent = "+ Can’t find it? Add from YouTube directly";
   if (ytResults) ytResults.innerHTML = '';
   if (ytInput) ytInput.value = '';
+  _plbyMode = 'search';
+  _plbyPlaylistItems = [];
+  _plbyPlaylistTruncated = false;
+  _plbyImporting = false;
   if (_plbMode === 'add') {
     const p = playlists.find(x => x.id === playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
     if (!p) { showToast('Playlist not found.'); return; }
@@ -12819,8 +12827,12 @@ function plbAddTrack(trackId, title, artist, album) {
 // The difference is the last step — the new catalogue track goes straight
 // into this playlist's draft instead of just landing in My Jukebox.
 let _plbyOpen = false;
+let _plbyMode = 'search'; // 'search' | 'playlist' - which render/visibility path is live
 let _plbyResults = [];
 let _plbyVisibility = 'private';
+let _plbyPlaylistItems = [];
+let _plbyPlaylistTruncated = false;
+let _plbyImporting = false;
 
 function plbyToggle() {
   _plbyOpen = !_plbyOpen;
@@ -12836,8 +12848,11 @@ async function plbySearch() {
   const query = (input?.value || '').trim();
   if (query.length < 2) { showToast('Type at least two characters to search YouTube.'); return; }
   const results = document.getElementById('plby-results');
+  const playlistId = plbyExtractPlaylistId(query);
+  if (playlistId) { await plbyLoadPlaylist(playlistId); return; }
   if (results) results.innerHTML = '<div class="plb-empty small">Searching YouTube…</div>';
   try {
+    _plbyMode = 'search';
     _plbyResults = [];
     const data = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(query), 'GET');
     _plbyResults = data.results || [];
@@ -12846,6 +12861,15 @@ async function plbySearch() {
     if (results) results.innerHTML = '';
     showToast(e.message || 'Could not search YouTube.');
   }
+}
+
+// A pasted playlist link (or a bare playlist id) routes to the whole-playlist
+// import instead of a single-song search - same box, no extra button.
+function plbyExtractPlaylistId(text) {
+  const m = text.match(/[?&]list=([A-Za-z0-9_-]{10,})/);
+  if (m) return m[1];
+  if (/^(PL|UU|LL|FL|RD|OLAK5uy)[A-Za-z0-9_-]{10,}$/.test(text)) return text;
+  return null;
 }
 
 function plbyRenderResults() {
@@ -12881,7 +12905,7 @@ function plbySetArtist(n, value) { if (_plbyResults[n]) _plbyResults[n]._artist 
 
 function plbySetVisibility(v) {
   _plbyVisibility = v === 'public' ? 'public' : 'private';
-  plbyRenderResults();
+  if (_plbyMode === 'playlist') plbyRenderPlaylist(); else plbyRenderResults();
 }
 
 async function plbyAdd(n) {
@@ -12910,6 +12934,146 @@ async function plbyAdd(n) {
     showToast(e.message || 'Could not add that song.');
     if (btn) { btn.disabled = false; btn.textContent = '+ Add'; }
   }
+}
+
+// Import a whole playlist. A wedding-set or a road-trip mix lives on YouTube
+// as one playlist, not one song at a time. Pasting its link lists every
+// track with a checkbox, skips what this playlist already has, and otherwise
+// runs the exact same add_youtube import as a single song - just once per
+// song, in order, with a running "Importing N of M" line instead of one
+// click per row.
+async function plbyLoadPlaylist(playlistId) {
+  const results = document.getElementById('plby-results');
+  if (results) results.innerHTML = '<div class="plb-empty small">Loading playlist…</div>';
+  try {
+    _plbyMode = 'playlist';
+    _plbyPlaylistItems = [];
+    const data = await mjRequest('/api/my-jukebox/search?playlist=' + encodeURIComponent(playlistId), 'GET');
+    _plbyPlaylistTruncated = !!data.truncated;
+    _plbyPlaylistItems = (data.results || []).map((r) => {
+      const read = mjReadArtist(r.title, r.channelTitle);
+      const already = !!(r.existingTrackId && (_plbExisting.has(r.existingTrackId) || plbDraftHas(r.existingTrackId)));
+      return Object.assign({}, r, {
+        _artist: read.artistName,
+        _track: read.trackName,
+        _already: already,
+        _include: !already,
+      });
+    });
+    plbyRenderPlaylist();
+  } catch (e) {
+    if (results) results.innerHTML = '';
+    showToast(e.message || 'Could not load that playlist.');
+  }
+}
+
+function plbyRenderPlaylist() {
+  const el = document.getElementById('plby-results');
+  if (!el) return;
+  if (!_plbyPlaylistItems.length) { el.innerHTML = '<div class="plb-empty small">No importable songs found in that playlist.</div>'; return; }
+  const already = _plbyPlaylistItems.filter(r => r._already).length;
+  const fresh = _plbyPlaylistItems.length - already;
+  const rows = _plbyPlaylistItems.map((r, n) => {
+    const thumb = r.thumbnail || ('https://i.ytimg.com/vi/' + r.videoId + '/mqdefault.jpg');
+    return '<label class="plb-row' + (r._already ? ' plb-row-dupe' : '') + '" style="align-items:flex-start;cursor:pointer">' +
+      '<input type="checkbox" data-plby-pl="' + n + '" ' + (r._include ? 'checked' : '') + (r._already ? ' disabled' : '') + ' onchange="plbyPlToggle(' + n + ',this.checked)" style="margin-top:.3rem">' +
+      '<img class="plb-art" alt="" src="' + escHtml(thumb) + '">' +
+      '<div class="plb-info">' +
+        '<div class="plb-name">' + escHtml(r._track) + '</div>' +
+        '<div class="plb-meta">' + escHtml(r.channelTitle || '') + (r.views != null ? ' \u00b7 ' + fmtV(r.views) + ' views' : '') + (r._already ? ' \u00b7 Already on this playlist' : '') + '</div>' +
+        (r._already ? '' :
+          '<div style="margin-top:.3rem" onclick="event.preventDefault()">' +
+            '<label style="display:block;font-size:.42rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:2px">Artist</label>' +
+            '<input type="text" class="pl-input" style="font-size:.54rem;padding:.3rem .5rem" value="' + escHtml(r._artist) + '" oninput="plbyPlSetArtist(' + n + ',this.value)" placeholder="Artist name">' +
+          '</div>') +
+      '</div>' +
+    '</label>';
+  }).join('');
+  el.innerHTML =
+    '<div class="plb-pl-bar">' +
+      '<span class="mj-vis">' + _plbyPlaylistItems.length + ' song' + (_plbyPlaylistItems.length === 1 ? '' : 's') + ' found' + (already ? ' \u00b7 ' + already + ' already on this playlist' : '') + (_plbyPlaylistTruncated ? ' \u00b7 showing the first ' + _plbyPlaylistItems.length : '') + '</span>' +
+      '<span class="mj-vis">' +
+        '<button type="button" class="pl-btn ghost" onclick="plbyPlSelectAll(true)">Select all</button>' +
+        '<button type="button" class="pl-btn ghost" onclick="plbyPlSelectAll(false)">Clear</button>' +
+      '</span>' +
+    '</div>' +
+    '<div class="mj-vis" style="margin:.2rem 0 .5rem">Who can see new songs on the catalogue?' +
+      '<button type="button" class="pl-btn ' + (_plbyVisibility === 'public' ? '' : 'ghost') + '" onclick="plbySetVisibility(\'public\')">Visible to All</button>' +
+      '<button type="button" class="pl-btn ' + (_plbyVisibility === 'private' ? '' : 'ghost') + '" onclick="plbySetVisibility(\'private\')">In My Private Jukebox</button>' +
+    '</div>' +
+    '<button type="button" class="pl-btn" id="plby-pl-import-btn" style="width:100%;margin-bottom:.5rem" onclick="plbyImportPlaylist()">Import ' + fresh + ' Song' + (fresh === 1 ? '' : 's') + '</button>' +
+    '<div id="plby-pl-progress"></div>' + rows;
+}
+
+function plbyPlToggle(n, checked) {
+  if (_plbyPlaylistItems[n]) _plbyPlaylistItems[n]._include = checked;
+  plbyUpdateImportBtnLabel();
+}
+
+function plbyPlSetArtist(n, value) { if (_plbyPlaylistItems[n]) _plbyPlaylistItems[n]._artist = value; }
+
+function plbyPlSelectAll(on) {
+  _plbyPlaylistItems.forEach(r => { if (!r._already) r._include = on; });
+  plbyRenderPlaylist();
+}
+
+function plbyUpdateImportBtnLabel() {
+  const btn = document.getElementById('plby-pl-import-btn');
+  if (!btn) return;
+  const n = _plbyPlaylistItems.filter(r => r._include && !r._already).length;
+  btn.textContent = 'Import ' + n + ' Song' + (n === 1 ? '' : 's');
+}
+
+async function plbyImportPlaylist() {
+  if (_plbyImporting) return;
+  const queue = _plbyPlaylistItems.filter(r => r._include && !r._already);
+  if (!queue.length) { showToast('Nothing selected to import.'); return; }
+  _plbyImporting = true;
+  const btn = document.getElementById('plby-pl-import-btn');
+  const progress = document.getElementById('plby-pl-progress');
+  if (btn) btn.disabled = true;
+  let done = 0, added = 0, failed = 0;
+  for (const row of queue) {
+    if (progress) progress.innerHTML = '<div class="plb-empty small">Importing ' + (done + 1) + ' of ' + queue.length + '\u2026</div>';
+    try {
+      if (row.existingTrackId) {
+        // Already a catalogue track under this exact upload - add it straight
+        // to the playlist rather than importing it a second time.
+        plbAddTrack(row.existingTrackId, row._track, row._artist, null);
+        added++;
+      } else {
+        const data = await mjRequest('/api/my-jukebox', 'POST', {
+          action: 'add_youtube',
+          videoId: row.videoId,
+          artistName: (row._artist || '').trim() || null,
+          trackName: (row._track || '').trim() || null,
+          visibility: _plbyVisibility,
+          userName: googleUser?.name || null
+        });
+        if (data.items && typeof _mjState !== 'undefined' && _mjState) _mjState.items = data.items;
+        if (data.catalogTrackId) {
+          plbAddTrack(data.catalogTrackId, row._track, data.artist?.name || row._artist, null);
+          added++;
+        } else {
+          failed++;
+        }
+      }
+    } catch (e) {
+      failed++;
+    }
+    done++;
+    // A small pause between imports is the same courtesy to iTunes and to our
+    // own per-minute request cap that a person clicking one at a time gives
+    // for free.
+    await new Promise(r => setTimeout(r, 400));
+  }
+  if (progress) progress.innerHTML = '';
+  if (btn) btn.disabled = false;
+  _plbyImporting = false;
+  showToast(added + ' song' + (added === 1 ? '' : 's') + ' added to the playlist' + (failed ? ', ' + failed + ' could not be added' : '') + '.');
+  // Drop what just went in so a second Import only ever offers what's left.
+  _plbyPlaylistItems = _plbyPlaylistItems.filter(r => !(r._include && !r._already));
+  plbyRenderPlaylist();
 }
 
 async function plbAddAlbum(albumId, btn) {
@@ -18857,6 +19021,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
+    'The "Add from YouTube directly" option in Add Songs to Playlist can now import a whole YouTube playlist link at once, not just one song at a time - paste it, review the list (songs already on the playlist are skipped), and import the rest with one click.',
+    'Songs added from YouTube now try to land under their real album, with its real cover art, instead of always going into a catch-all Singles list.',
     'Add Songs to Playlist now has a "Can’t find it? Add from YouTube directly" option, so a song missing from the catalogue can be pulled in from YouTube and added to the playlist in one step.',
     'A playlist’s title and stats (songs, total time, artists) now sit in their own block at the top left of the page, above the toolbar buttons.',
     'Add Songs search results let you drill into an artist or album hit the same way the browse list does, instead of only offering to add everything at once.',

@@ -16,6 +16,7 @@
 // the catalogue half; it does not replace the library.
 
 import { JUKEBOX_SCHEMA, type createSjServiceClient } from "@/lib/sj-admin-auth";
+import { lookupAlbumForTrack } from "@/lib/album-match";
 import { lrclibLookup, plainFrom } from "@/lib/lrclib";
 import { recordTrackVideo, thumbFor } from "@/lib/track-videos";
 
@@ -235,27 +236,32 @@ export async function importSingleTrack(
     .insert({ artist_id: artist.id, user_email: input.userEmail.toLowerCase() })
     .then(() => undefined, () => undefined);
 
-  // ── Album. One "Singles" record per artist, so every loose song by that
-  // artist groups under one cover instead of minting an album each time.
+  // ── Album. iTunes usually knows the real record a song came from; only
+  // fall back to the "Singles" catch-all when nothing confident comes back
+  // (a cover, a live recording, a wedding-playlist mashup).
+  const smartAlbum = await lookupAlbumForTrack(artistName, trackName, input.durationMs ?? null);
+  const albumName = smartAlbum?.albumName || SINGLES_ALBUM;
+  const albumArt = smartAlbum?.artworkUrl || art;
   let albumId: string;
   const { data: album, error: albumErr } = await T(sb, "albums")
     .select("id,art_url")
     .eq("artist_id", artist.id)
-    .ilike("name", SINGLES_ALBUM)
+    .ilike("name", albumName)
     .maybeSingle();
   if (albumErr) throw albumErr;
   if (album) {
     albumId = album.id;
-    // The first single supplies the cover; later ones do not overwrite it.
-    if (!album.art_url) await T(sb, "albums").update({ art_url: art }).eq("id", albumId);
+    // The first song into an album supplies its cover; later ones do not
+    // overwrite it, whether that first song was smart-matched or not.
+    if (!album.art_url) await T(sb, "albums").update({ art_url: albumArt }).eq("id", albumId);
   } else {
     const { data, error } = await T(sb, "albums")
       .insert({
         artist_id: artist.id,
-        name: SINGLES_ALBUM,
+        name: albumName,
         added_by: input.userEmail,
         added_by_name: input.userName,
-        art_url: art,
+        art_url: albumArt,
         visibility: artist.visibility ?? input.visibility,
       })
       .select("id")
@@ -305,8 +311,8 @@ export async function importSingleTrack(
     .insert({
       album_id: albumId,
       name: trackName,
-      track_number: (count ?? 0) + 1,
-      disc_number: 1,
+      track_number: smartAlbum?.trackNumber ?? (count ?? 0) + 1,
+      disc_number: smartAlbum?.discNumber ?? 1,
       duration_ms: input.durationMs ?? null,
       explicit: false,
       yt_snapshot_enabled: true,
