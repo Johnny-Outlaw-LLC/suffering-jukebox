@@ -2586,6 +2586,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
 .pl-wall-back { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; padding:.45rem .75rem; border-radius:8px; cursor:pointer; transition:all .15s; }
 .pl-wall-back:hover { border-color:var(--text-muted); color:var(--text); }
+.pl-wall-back.on { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
 .pl-wall-title { font-size:1rem; font-weight:700; margin:0; flex:1; min-width:120px; letter-spacing:-.01em; }
 .pl-wall-toolbar-right { display:flex; align-items:center; gap:12px; margin-left:auto; flex-wrap:nowrap; }
 .pl-wall-transport { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; }
@@ -2676,6 +2677,20 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-play.on:hover { box-shadow:0 4px 16px #0008; }
 .pl-wall-cell.blocked img { opacity:.22; filter:grayscale(1); }
 .pl-wall-cell.blocked::before { content:'⊘'; position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:#fff9; background:#0007; pointer-events:none; }
+.pl-wall-cell.editable { cursor:grab; }
+.pl-wall-cell.editable:active { cursor:grabbing; }
+.pl-wall-cell-x {
+  position: absolute; top: 8px; right: 8px; z-index: 6;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.28);
+  color: #fff; font-size: .7rem; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  opacity: 0; transition: opacity .15s, background .15s, border-color .15s, transform .12s;
+}
+.pl-wall-cell:hover .pl-wall-cell-x,
+.pl-wall-cell:focus-within .pl-wall-cell-x { opacity: 1; }
+.pl-wall-cell-x:hover { background: var(--accent); border-color: var(--accent); transform: scale(1.12); }
+@media (hover: none) { .pl-wall-cell-x { opacity: .85; } }
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
 #pl-wall-card .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
 .pl-wall-page.pl-wall-detail-mode .pl-wall-size { display:none; }
@@ -2711,6 +2726,8 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-detail-move:disabled:hover { border-color:transparent; color:var(--text-muted); }
 .pl-detail-rm:hover { border-color:#ef4444; color:#ef4444; }
 .pl-detail-locked { color:var(--text-muted); opacity:.4; font-size:.5rem; }
+.pl-detail-row.editable { cursor:grab; }
+.pl-detail-row.editable:active { cursor:grabbing; }
 @media (max-width:900px) {
   .pl-wall-toolbar-right { width:100%; margin-left:0; flex-wrap:wrap; }
   .pl-wall-transport { flex-wrap:wrap; width:100%; }
@@ -13162,6 +13179,7 @@ let playlistChartRows = [];
 let playlistChartBaseQueue = [];
 let playlistWallSize = 120;
 let playlistWallMode = 'thumbs'; // 'thumbs' | 'detail'
+let playlistWallEditMode = false; // toggled per visit, never persisted
 try {
   const _pws = parseInt(localStorage.getItem('sj_pl_wall_size'), 10);
   if (Number.isFinite(_pws) && _pws >= 72 && _pws <= 260) playlistWallSize = _pws;
@@ -13182,6 +13200,11 @@ function setPlaylistWallSize(px) {
 function setPlaylistWallMode(mode) {
   playlistWallMode = mode === 'detail' ? 'detail' : 'thumbs';
   try { localStorage.setItem('sj_pl_wall_mode', playlistWallMode); } catch (_) {}
+  if (viewMode === 'playlistchart') renderPlaylistChart();
+}
+
+function togglePlWallEditMode() {
+  playlistWallEditMode = !playlistWallEditMode;
   if (viewMode === 'playlistchart') renderPlaylistChart();
 }
 
@@ -13986,6 +14009,7 @@ async function openPlaylistChart(playlistId) {
   if (!p) return;
   playlistChartId = playlistId;
   playlistChartName = p.name || 'Untitled Playlist';
+  playlistWallEditMode = false;
   playlistChartRows = [];
   playlistChartBaseQueue = [];
   playlistChartPlayedIds = new Set();
@@ -14072,18 +14096,18 @@ function plWallNearestOwnIndex(fromIndex, dir, email) {
   return -1;
 }
 
-async function plWallMoveMyTrack(index, dir) {
-  if (!googleUser || !playlistChartId) return;
+async function plWallSwapPositions(indexA, indexB) {
+  if (!googleUser || !playlistChartId || indexA === indexB) return;
   const q = playlistChartQueue();
-  const row = playlistChartRowFor(q[index], index);
-  if (!row.ptId || row.addedByEmail !== googleUser.email) return;
-  const targetIdx = plWallNearestOwnIndex(index, dir, googleUser.email);
-  if (targetIdx < 0) return;
-  const targetRow = playlistChartRowFor(q[targetIdx], targetIdx);
-  if (!targetRow.ptId) return;
+  const rowA = playlistChartRowFor(q[indexA], indexA);
+  const rowB = playlistChartRowFor(q[indexB], indexB);
+  if (!rowA.ptId || !rowB.ptId) return;
+  // Both ends of the swap have to be the caller's own - this is what keeps
+  // everyone else's songs locked in place no matter which side initiates it.
+  if (rowA.addedByEmail !== googleUser.email || rowB.addedByEmail !== googleUser.email) return;
   const pl = (_savedPlaylists || []).find(x => x.id === playlistChartId);
-  const a = pl?._tracks?.find(t => t.id === row.ptId);
-  const b = pl?._tracks?.find(t => t.id === targetRow.ptId);
+  const a = pl?._tracks?.find(t => t.id === rowA.ptId);
+  const b = pl?._tracks?.find(t => t.id === rowB.ptId);
   if (!a || !b) return;
   const p1 = a.position, p2 = b.position;
   try {
@@ -14096,6 +14120,50 @@ async function plWallMoveMyTrack(index, dir) {
   } catch (e) {
     showToast('Could not reorder that song.');
   }
+}
+
+async function plWallMoveMyTrack(index, dir) {
+  if (!googleUser || !playlistChartId) return;
+  const q = playlistChartQueue();
+  const row = playlistChartRowFor(q[index], index);
+  if (!row.ptId || row.addedByEmail !== googleUser.email) return;
+  const targetIdx = plWallNearestOwnIndex(index, dir, googleUser.email);
+  if (targetIdx < 0) return;
+  await plWallSwapPositions(index, targetIdx);
+}
+
+// Drag a Covers-wall card onto another to swap their spots. dragover only
+// allows the drop when the target is also one of the dragger's own songs -
+// plWallSwapPositions re-checks the same rule server-side-equivalent before
+// touching anything, so a drop that slips past this still can't move a
+// locked card.
+let _plWallDragFrom = -1;
+
+function plWallDragCardStart(ev, index) {
+  _plWallDragFrom = index;
+  ev.dataTransfer.effectAllowed = 'move';
+  try { ev.dataTransfer.setData('text/plain', String(index)); } catch (_) {}
+}
+
+function plWallDragCardOver(ev, index) {
+  if (_plWallDragFrom < 0 || !googleUser) return;
+  const q = playlistChartQueue();
+  const target = playlistChartRowFor(q[index], index);
+  if (target.addedByEmail !== googleUser.email) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+}
+
+async function plWallDragCardDrop(ev, index) {
+  ev.preventDefault();
+  const from = _plWallDragFrom;
+  _plWallDragFrom = -1;
+  if (from < 0 || from === index) return;
+  await plWallSwapPositions(from, index);
+}
+
+function plWallDragCardEnd() {
+  _plWallDragFrom = -1;
 }
 
 async function plWallRemoveMyTrack(index) {
@@ -14168,12 +14236,20 @@ function renderPlaylistChart(error) {
     const row = playlistChartRowFor(item, i);
     const isCurrent = i === curIdx;
     const blocked = isTrackBlocked(row.trackId);
+    const isMine = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
+    const editable = playlistWallEditMode && isMine;
     const art = row.artwork
       ? `<img src="${row.artwork}" loading="lazy" alt="">`
       : '<span class="pl-wall-fallback">♫</span>';
     const tip = plWallPlayTip(row.trackId);
     const tipAttr = tip ? ` title="${esc(tip)}"` : '';
-    return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" role="button" tabindex="0"${tipAttr} onclick="plWallOpenPop(${i},event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();plWallOpenPop(${i},event)}">${art}${plWallCellOverlays(row.trackId, row.title)}</div>`;
+    const dragAttrs = editable
+      ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
+      : '';
+    const xBtn = editable
+      ? `<button type="button" class="pl-wall-cell-x" title="Remove from this playlist" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})">✕</button>`
+      : '';
+    return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${editable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" role="button" tabindex="0"${tipAttr}${dragAttrs} onclick="plWallOpenPop(${i},event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();plWallOpenPop(${i},event)}">${art}${plWallCellOverlays(row.trackId, row.title)}${xBtn}</div>`;
   }).join('') : '';
 
   const detailRows = isDetail ? q.map((item, i) => {
@@ -14188,19 +14264,23 @@ function renderPlaylistChart(error) {
     const uploaded = plWallUploadedBy(row.trackId);
     const addedByLbl = row.addedByName || (row.addedByEmail ? row.addedByEmail.split('@')[0] : '');
     const isMine = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
-    const canUp = isMine && plWallNearestOwnIndex(i, -1, row.addedByEmail) >= 0;
-    const canDown = isMine && plWallNearestOwnIndex(i, 1, row.addedByEmail) >= 0;
-    const manageCell = isMine
-      ? `<div class="pl-detail-mine-actions">` +
+    const rowEditable = playlistWallEditMode && isMine;
+    const canUp = rowEditable && plWallNearestOwnIndex(i, -1, row.addedByEmail) >= 0;
+    const canDown = rowEditable && plWallNearestOwnIndex(i, 1, row.addedByEmail) >= 0;
+    const manageCell = !playlistWallEditMode ? '' : (isMine
+      ? `<td class="rxn" onclick="event.stopPropagation()"><div class="pl-detail-mine-actions">` +
           `<button type="button" class="pl-detail-move" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},-1)" title="Move up among your songs">▲</button>` +
           `<button type="button" class="pl-detail-move" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},1)" title="Move down among your songs">▼</button>` +
           `<button type="button" class="pl-detail-rm" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})" title="Remove from this playlist">✕</button>` +
-        `</div>`
-      : `<span class="pl-detail-locked" title="Added by someone else - only they (or the playlist owner) can move or remove it">🔒</span>`;
+        `</div></td>`
+      : `<td class="rxn" onclick="event.stopPropagation()"><span class="pl-detail-locked" title="Added by someone else - only they (or the playlist owner) can move or remove it">🔒</span></td>`);
+    const dragAttrs = rowEditable
+      ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
+      : '';
     const art = row.artwork
       ? `<img class="pl-detail-art" src="${row.artwork}" loading="lazy" alt="">`
       : '<span class="pl-detail-art-ph">♫</span>';
-    return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" onclick="togglePlDetailAccordion(${i},event)">` +
+    return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${rowEditable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}"${dragAttrs} onclick="togglePlDetailAccordion(${i},event)">` +
       `<td><div class="pl-detail-track">${art}<span class="pl-detail-title">${esc(row.title)}</span></div></td>` +
       `<td><div class="pl-detail-muted" title="${esc(row.album)}">${esc(row.album) || '—'}</div></td>` +
       `<td><div class="pl-detail-muted" title="${esc(row.artist)}">${esc(row.artist) || '—'}</div></td>` +
@@ -14211,24 +14291,28 @@ function renderPlaylistChart(error) {
       `<td class="num" data-pl-yt>${yt ? fmtV(yt) : '—'}</td>` +
       `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="tvb-cycle pl-detail-rxn${voteClass(vote)}" data-vote-track="${row.trackId}" onclick="cycleVote('${row.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button></td>` +
       `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button></td>` +
-      `<td class="rxn" onclick="event.stopPropagation()">${manageCell}</td>` +
+      manageCell +
     `</tr>`;
   }).join('') : '';
 
+  const manageTh = playlistWallEditMode ? '<th class="rxn" title="Manage your songs">⚙</th>' : '';
   const body = error
     ? `<div class="landing-no-results">${esc(error)}</div>`
     : (!q.length
       ? '<div class="landing-no-results">Loading playlist…</div>'
       : (isDetail
-        ? `<div class="pl-wall-scroll" id="playlist-chart-scroll"><table class="pl-detail-tbl" id="pl-detail-tbl"><thead><tr><th>Track</th><th>Album</th><th>Artist</th><th>Uploaded By</th><th>Added To Playlist By</th><th class="num">Last Played</th><th class="num">Total Plays</th><th class="num">YT Plays</th><th class="rxn" title="Your rating">👍</th><th class="rxn" title="Hearts">♥</th><th class="rxn" title="Manage your songs">⚙</th></tr></thead><tbody>${detailRows}</tbody></table></div>`
+        ? `<div class="pl-wall-scroll" id="playlist-chart-scroll"><table class="pl-detail-tbl" id="pl-detail-tbl"><thead><tr><th>Track</th><th>Album</th><th>Artist</th><th>Uploaded By</th><th>Added To Playlist By</th><th class="num">Last Played</th><th class="num">Total Plays</th><th class="num">YT Plays</th><th class="rxn" title="Your rating">👍</th><th class="rxn" title="Hearts">♥</th>${manageTh}</tr></thead><tbody>${detailRows}</tbody></table></div>`
         : `<div class="pl-wall-scroll" id="playlist-chart-scroll"><div class="pl-wall-grid${miniClass}" id="pl-wall-grid" style="${gridStyle}">${cells}</div></div>`));
 
   const _plObj = playlistChartId ? (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId)) : null;
   const minePl = !!(googleUser && _plObj && _plObj.user_email === googleUser.email);
   const canAddSongs = !!(googleUser && _plObj && (minePl || _plObj.is_public));
+  const contributedSome = !!(googleUser && playlistChartRows.some(r => r.addedByEmail === googleUser.email));
+  const canEditWall = minePl || contributedSome;
   const manageBtns =
     (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>` : '') +
-    (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
+    (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '') +
+    (canEditWall ? `<button type="button" class="pl-wall-back${playlistWallEditMode ? ' on' : ''}" onclick="togglePlWallEditMode()" title="Move or remove the songs you added">${playlistWallEditMode ? '✓ Done' : '✎ Edit'}</button>` : '');
   const modeTog =
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
@@ -18631,6 +18715,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
+    'A playlist you own or have contributed to now has an Edit button. Turn it on for an ✕ on each of your own covers (drag them to swap spots with another of your own songs) in Covers, or the same move/remove controls in Detail - everyone else’s songs stay locked either way.',
     'Adding songs to a playlist you do not own no longer pops up My Playlists afterward (which only ever lists playlists you own, and looked like it wanted you to start a new one). It now just takes you back to the playlist you were adding to.',
     'A playlist’s Detail view now shows who added each song, and lets you move or remove the songs you added yourself - among your own songs only, everyone else’s stay exactly where they are.',
     'The fullscreen player no longer clips the bottom of the YouTube controls when an Up Next banner is showing - the video area is sized to actually leave room for it now.',
