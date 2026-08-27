@@ -2048,6 +2048,12 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .yt-queue-section { background:var(--bg-card); max-height:280px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--border) transparent; }
 .yt-queue-sticky { position:sticky; top:0; z-index:3; background:var(--bg-card); border-bottom:1px solid var(--border); }
 .yt-queue-head { display:flex; align-items:center; gap:6px; font-size:.42rem; letter-spacing:.12em; text-transform:uppercase; color:var(--text-muted); padding:6px 10px 5px; font-weight:600; }
+.yt-queue-find { display:flex; align-items:center; gap:6px; padding:0 10px 6px; }
+.yt-queue-find input { flex:1; min-width:0; font:inherit; font-size:.5rem; padding:4px 7px; color:var(--text);
+                       background:var(--bg-elevated); border:1px solid var(--border); border-radius:5px; outline:none; }
+.yt-queue-find input:focus { border-color:var(--accent); }
+.yt-queue-find .cnt { flex-shrink:0; font-size:.42rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); }
+.yt-queue-row.filtered { display:none; }
 .yt-queue-up-next { display:flex; align-items:center; gap:7px; min-width:0; padding:5px 10px 6px; background:var(--bg-elevated); border-bottom:1px solid var(--border); }
 .yt-queue-up-next-lbl { color:var(--accent); font-size:.42rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; flex-shrink:0; }
 .yt-queue-up-next-title { flex:1; min-width:0; color:var(--text); font-size:.55rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -4082,8 +4088,12 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
                  padding:.16rem .4rem; border-radius:999px; border:1px solid var(--border); color:var(--text-muted); }
   .sjj-req-tag.unplayed { color:var(--accent); border-color:var(--accent); }
   .sjj-req-tag.playing  { color:#0a0a0a; background:var(--accent); border-color:var(--accent); }
-  .sjj-req-next { flex-shrink:0; font-size:.58rem; font-weight:700; color:var(--accent); opacity:0; }
-  .sjj-req:hover .sjj-req-next { opacity:1; }
+  .sjj-req-acts { flex-shrink:0; display:flex; gap:.25rem; }
+  .sjj-req-act { font:inherit; font-size:.56rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+                 padding:.2rem .4rem; border-radius:5px; cursor:pointer;
+                 background:transparent; border:1px solid var(--border); color:var(--text-muted); }
+  .sjj-req-act:hover { color:var(--accent); border-color:var(--accent); }
+  .sjj-req-act.danger:hover { color:#ef4444; border-color:#ef4444; }
   /* The join address, sitting under the field that sets it. */
   .sjj-addr { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; padding:.3rem .5rem 0; }
   .sjj-addr .sjj-url { margin:0; flex:1; min-width:10rem; }
@@ -5965,6 +5975,30 @@ function _ytWeightedShufflePick(candidates) {
 
 // Picks the next shuffle index without repeating any track until every
 // track in the current queue has been played once ("shuffle bag").
+// { jbItemId?, trackId?, videoId } - whatever identifies the one song that
+// must play next, whatever the running order says.
+let _ytPlayNext = null;
+
+function ytSetPlayNext(item) {
+  _ytPlayNext = item
+    ? { jbItemId: item.jbItemId || null, trackId: item.trackId || null, videoId: item.videoId || null }
+    : null;
+}
+
+/** Index of the forced next song, or -1. Self-clearing once it is unreachable. */
+function ytPlayNextIndex() {
+  const w = _ytPlayNext;
+  if (!w) return -1;
+  const idx = ytQueue.findIndex(q =>
+    w.jbItemId ? q.jbItemId === w.jbItemId
+      : w.trackId ? q.trackId === w.trackId
+        : q.videoId === w.videoId);
+  // Gone from the queue, or it is the song already playing: the instruction
+  // has been carried out or can no longer be.
+  if (idx < 0 || idx === ytQueueIdx) { _ytPlayNext = null; return -1; }
+  return idx;
+}
+
 function _ytShuffleNextIdx() {
   const candidates = _ytShuffleCandidates();
   const idx = (_ytShufflePreviewIdx != null && candidates.includes(_ytShufflePreviewIdx))
@@ -5978,6 +6012,10 @@ function _ytShuffleNextIdx() {
 
 function ytUpNextIndex() {
   if (!ytQueue.length) return -1;
+  // An explicit Play next wins over both shuffle's preview and plain order,
+  // and the banner has to say so or the host cannot tell it worked.
+  const forced = ytPlayNextIndex();
+  if (forced >= 0) return forced;
   if (ytShuffle && ytQueue.length > 1) {
     const candidates = _ytShuffleCandidates();
     if (_ytShufflePreviewIdx == null || !candidates.includes(_ytShufflePreviewIdx)) {
@@ -5990,6 +6028,8 @@ function ytUpNextIndex() {
 }
 
 function ytSkipUpNext() {
+  // Skip means "not that one", including when that one was pinned by hand.
+  _ytPlayNext = null;
   const current = ytUpNextIndex();
   if (current < 0 || ytQueue.length < 2) return;
   if (!ytShuffle) {
@@ -6053,8 +6093,10 @@ function ytNextTrack() {
   if (viewMode === 'playlistchart' && playlistChartIsLive() && ytQueueIdx >= 0) {
     playlistChartMarkPlayed(ytQueueIdx);
   }
-  let next = -1;
-  if (ytShuffle && ytQueue.length > 1) {
+  let next = ytPlayNextIndex();
+  if (next >= 0) {
+    _ytPlayNext = null;
+  } else if (ytShuffle && ytQueue.length > 1) {
     next = _ytShuffleNextIdx();
   } else if (ytQueueIdx < ytQueue.length - 1) {
     next = ytQueueIdx + 1;
@@ -6206,8 +6248,11 @@ function ytpMaybeCrossfade(pos, dur) {
   // Leave at least one quarter-second for the progress clock before asking
   // YouTube to swap, so an imprecise duration never triggers immediately.
   if (pos < Math.max(.25, dur - sjCrossfadeSeconds)) return;
-  let next = -1;
-  if (ytShuffle && ytQueue.length > 1) next = _ytShuffleNextIdx();
+  // The crossfade picks the next song a few seconds early, so it has to obey
+  // the override too - otherwise Play next works only when nothing crossfades.
+  let next = ytPlayNextIndex();
+  if (next >= 0) _ytPlayNext = null;
+  else if (ytShuffle && ytQueue.length > 1) next = _ytShuffleNextIdx();
   else if (ytQueueIdx < ytQueue.length - 1) next = ytQueueIdx + 1;
   else if (ytRepeat && ytQueue.length > 1) next = 0;
   if (next >= 0 && next !== ytQueueIdx) ytpCrossfadeToQueueIdx(next);
@@ -6558,13 +6603,20 @@ function updateYTQueueUI(opts) {
           <span>Queue · ${ytQueue.length} track${ytQueue.length === 1 ? '' : 's'}</span>
           <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
         </div>
+        <div class="yt-queue-find">
+          <input type="text" id="yt-queue-find" placeholder="Search this playlist"
+            value="${(_ytQueueFilter || '').replace(/"/g, '&quot;')}"
+            oninput="ytQueueFilter(this.value)" onmousedown="event.stopPropagation()"
+            autocomplete="off" spellcheck="false" aria-label="Search this playlist">
+          <span class="cnt" id="yt-queue-find-count"></span>
+        </div>
       </div>
       ${ytQueue.map((item, i) => {
         const _qm = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
         const _qArtist = (_qm && _qm.artist) || item.artist || '';
         const _qSong = item.title || (_qm && _qm.title) || '';
         const _qLabel = (_qArtist ? (_qArtist + ' - ' + _qSong) : _qSong).replace(/</g, '&lt;');
-        return `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" onclick="ytPlayQueueIdx(${i})">
+        return `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" data-find="${_qLabel.toLowerCase().replace(/"/g, '&quot;')}" onclick="ytPlayQueueIdx(${i})">
         <span class="yt-queue-num">${i + 1}</span>
         <span class="yt-queue-title">${_qLabel}</span>
         ${(item.addedBy && !item.addedByOwner) ? `<span class="yt-queue-by" title="Queued from the Online Jukebox by ${escHtml(item.addedBy)}">Added by ${escHtml(item.addedBy)}</span>` : ''}
@@ -6585,10 +6637,25 @@ function updateYTQueueUI(opts) {
     </div>
   </div>`;
 
+  // Replacing the wrap destroys the search box, so anything the host was
+  // typing has to be carried across: a track change mid-word must not cost
+  // them the caret.
+  const findEl = ytPlayerEl.querySelector('#yt-queue-find');
+  const findFocused = findEl && document.activeElement === findEl;
+  const findAt = findFocused ? findEl.selectionStart : null;
+
   if (existingWrap) {
     existingWrap.outerHTML = queueHTML;
   } else if (resizeHandle) {
     resizeHandle.insertAdjacentHTML('beforebegin', queueHTML);
+  }
+  ytApplyQueueFilter();
+  if (findFocused) {
+    const fresh = ytPlayerEl.querySelector('#yt-queue-find');
+    if (fresh) {
+      fresh.focus();
+      try { fresh.setSelectionRange(findAt, findAt); } catch (_) {}
+    }
   }
   // Rebuilding the queue wrap replaces the DOM node, which would silently
   // un-hide it even while the player is minimized (e.g. after Next/shuffle
@@ -6621,6 +6688,32 @@ function updateYTQueueUI(opts) {
   if (!opts.skipMetaHydrate) ytpHydrateQueueMeta();
 }
 
+// ── Searching the playlist ───────────────────────────────────────────────
+// Rows are hidden in place rather than re-rendered. Re-rendering the list on
+// every keystroke would take the caret out of the box - the same lesson the
+// Spotify picker learned - and a five hundred row queue is not worth rebuilding
+// to hide four of them.
+let _ytQueueFilter = '';
+
+function ytQueueFilter(text) {
+  _ytQueueFilter = text || '';
+  ytApplyQueueFilter();
+}
+
+function ytApplyQueueFilter() {
+  if (!ytPlayerEl) return;
+  const q = _ytQueueFilter.trim().toLowerCase();
+  const rows = ytPlayerEl.querySelectorAll('.yt-queue-row');
+  let shown = 0;
+  rows.forEach(row => {
+    const hit = !q || (row.dataset.find || '').includes(q);
+    row.classList.toggle('filtered', !hit);
+    if (hit) shown++;
+  });
+  const count = ytPlayerEl.querySelector('#yt-queue-find-count');
+  if (count) count.textContent = q ? shown + ' of ' + rows.length : '';
+}
+
 // Undo the inline hiding above. A queue rebuilt while the player was minimized
 // carries display:none on its own nodes, which would leave the Playlist tab
 // blank once the player is opened back up.
@@ -6637,6 +6730,43 @@ function ytMoveQueue(from, to) {
   if (ytQueueIdx === from) ytQueueIdx = to;
   else if (ytQueueIdx === to) ytQueueIdx = from;
   updateYTQueueUI({ preserveScroll: true, keepIdx: to });
+}
+
+function ytMoveToIndex(from, to) {
+  if (from < 0 || from >= ytQueue.length) return -1;
+  const playing = ytQueue[ytQueueIdx] || null;
+  const item = ytQueue.splice(from, 1)[0];
+  const at = Math.max(0, Math.min(to, ytQueue.length));
+  ytQueue.splice(at, 0, item);
+  // Found again by identity rather than by arithmetic: a splice on either side
+  // of the playing song moves it, and getting that sum wrong points the player
+  // at the wrong row.
+  if (playing) {
+    const i = ytQueue.indexOf(playing);
+    if (i >= 0) ytQueueIdx = i;
+  }
+  updateYTQueueUI({ preserveScroll: true, keepIdx: at });
+  return at;
+}
+
+/**
+ * Move a row to directly behind the song on screen.
+ *
+ * Its own function rather than ytMoveToIndex(idx + 1) because the destination
+ * has to be worked out AFTER the row is lifted out: taking a song from below
+ * the playing one shifts everything above it down, so a target computed first
+ * lands one place too far.
+ */
+function ytMoveAfterCurrent(from) {
+  if (from < 0 || from >= ytQueue.length) return -1;
+  const playing = ytQueue[ytQueueIdx] || null;
+  const item = ytQueue.splice(from, 1)[0];
+  const base = playing ? ytQueue.indexOf(playing) : -1;
+  const at = Math.max(0, Math.min(base + 1, ytQueue.length));
+  ytQueue.splice(at, 0, item);
+  if (playing) ytQueueIdx = ytQueue.indexOf(playing);
+  updateYTQueueUI({ preserveScroll: true, keepIdx: at });
+  return at;
 }
 
 function ytQueueResizeStart(e) {
@@ -9922,8 +10052,9 @@ function taPlayBgIdx(idx) {
 function taAdvanceBg() {
   if (!ytQueue.length) { taStopBg(); return; }
   for (let hops = 0; hops < ytQueue.length; hops++) {
-    let ni;
-    if (ytShuffle && ytQueue.length > 1) ni = _ytShuffleNextIdx();
+    let ni = ytPlayNextIndex();
+    if (ni >= 0) _ytPlayNext = null;
+    else if (ytShuffle && ytQueue.length > 1) ni = _ytShuffleNextIdx();
     else if (ytQueueIdx < ytQueue.length - 1) ni = ytQueueIdx + 1;
     else if (ytRepeat) ni = 0;
     else { taStopBg(); return; }
@@ -19135,6 +19266,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-27';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-27', items: [
+    'Play next on a song someone requested now actually plays it next. With shuffle on it did nothing at all - the next song was picked at random and never read off the running order - and if the song sat behind the one playing, moving it also left the player pointing at the wrong track.',
+    'Songs added by others now has three buttons on every row: Next to hear it straight away, End to push it to the back of the queue, and a cross to take it out altogether. Removing one tells the person who asked, instead of leaving it sitting in their list forever.',
+    'The playlist has a search box at the top. Type any part of an artist or song and the queue narrows to it, with a count of how many matched. Clearing the box brings the rest back, and it survives the track changing while you are still typing.',
     'Four Online Jukebox settings are gone, because each of them had an answer you would always give. Guests can never add while you are off air, the same song can never be queued twice, explicit songs are always allowed, and the Order control has gone with them - the per-guest limit is what stops one person filling the queue.',
     'What is left is one clear choice: Guest playback, set to either "Add guest songs at end of playlist" or "Play guest songs first".',
     'Web address and Jukebox name are now two editable fields on one row with a single Save. The Rename button is gone - just type the new name.',
@@ -24744,67 +24878,108 @@ function sjjGuestAddsHTML() {
     const tag = a.status === 'played' ? 'Played'
       : a.status === 'playing' ? 'Playing' : 'Unplayed';
     const cls = a.status === 'played' ? '' : a.status === 'playing' ? 'playing' : 'unplayed';
-    return '<button class="sjj-req" onclick="sjjQueueNext(\'' + a.id + '\')" '
-      + 'title="Play this next">'
+    const playing = a.status === 'playing';
+    // Next and End rather than one-step arrows: with five hundred songs loaded,
+    // moving a request up by one place is not a thing anybody wanted to do.
+    return '<div class="sjj-req">'
       + '<span class="sjj-req-body">'
       +   '<span class="sjj-req-t">' + escHtml([a.artistName, a.trackName].filter(Boolean).join(' - ')) + '</span>'
       +   '<span class="sjj-req-s">' + escHtml(a.addedByName) + ' &middot; ' + escHtml(sjjWhen(a.createdAt)) + '</span>'
       + '</span>'
-      + '<span class="sjj-req-next">Play next</span>'
       + '<span class="sjj-req-tag ' + cls + '">' + tag + '</span>'
-      + '</button>';
+      + '<span class="sjj-req-acts">'
+      +   (playing ? '' : '<button class="sjj-req-act" title="Play this one next" onclick="sjjQueueNext(\'' + a.id + '\')">Next</button>')
+      +   (playing ? '' : '<button class="sjj-req-act" title="Move it to the end of the queue" onclick="sjjQueueEnd(\'' + a.id + '\')">End</button>')
+      +   (playing ? '' : '<button class="sjj-req-act danger" title="Take it out of the queue" onclick="sjjQueueDrop(\'' + a.id + '\')">&#10005;</button>')
+      + '</span>'
+      + '</div>';
   }).join('') + '</div>';
   return h;
 }
 
-// Put a request straight after the song on screen. A row already in the
-// player's queue is MOVED rather than copied - clicking a song twice should
-// not mean hearing it twice.
-async function sjjQueueNext(itemId) {
-  const row = (_sjjGuestAdds || []).find(a => a.id === itemId);
-  if (!row) return;
+// ── Doing something about a request ─────────────────────────────────────
+// Three things a host actually wants: hear it next, push it to the back, or
+// take it out. A row already in the player's queue is moved, never copied -
+// pressing Next twice should not mean hearing it twice.
 
-  const existing = ytQueue.findIndex(q => q.jbItemId === itemId);
-  if (existing >= 0 && existing === ytQueueIdx) { showToast('That one is playing now.'); return; }
+const sjjReqLabel = (row) => [row.artistName, row.trackName].filter(Boolean).join(' - ');
 
-  if (existing >= 0) {
-    ytMoveQueue(existing, Math.max(0, ytQueueIdx) + 1);
-    showToast('\u266b Up next: ' + [row.artistName, row.trackName].filter(Boolean).join(' - '));
-    if (_sjjLive) sjjNudgeSync();
-    return;
-  }
+/**
+ * Find the request in the player's queue, putting it back if it is not there
+ * any more (already played, or this device joined the room late). Returns its
+ * index, or -1 when it cannot be played at all.
+ */
+async function _sjjEnsureQueued(row, at) {
+  const existing = ytQueue.findIndex(q => q.jbItemId === row.id);
+  if (existing >= 0) return existing;
 
-  // Not in the queue any more - already played, or this device joined the room
-  // late. Resolve the version that actually plays and put it back in.
   const info = await resolvePlaylistTracks([row.trackId]).catch(() => ({}));
   const videoId = info[row.trackId]?.videoId || row.videoId;
-  if (!videoId) { showToast('That song has no playable video.'); return; }
-  const item = {
+  if (!videoId) { showToast('That song has no playable video.'); return -1; }
+  const item = Object.assign(ytNormalizeQueue([{
     videoId,
     title:   info[row.trackId]?.name || row.trackName,
     trackId: row.trackId,
-    artist:  row.artistName || null,
-    jbItemId: row.id,
-    addedBy: row.addedByName || null,
-    addedByOwner: false
-  };
+    artist:  row.artistName || null
+  }])[0], { jbItemId: row.id, addedBy: row.addedByName || null, addedByOwner: false });
 
   _queueHasAdditions = true;
   if (!ytPlayerEl) {
     // openYTPlayer() resets ytQueue internally, so it is assigned afterwards.
     openYTPlayer(item.videoId, item.title, item.trackId);
-    ytQueue = ytNormalizeQueue([item]).map(it => Object.assign(it, {
-      jbItemId: item.jbItemId, addedBy: item.addedBy, addedByOwner: false
-    }));
+    ytQueue = [item];
     ytQueueIdx = 0;
-  } else {
-    const at = Math.max(0, ytQueueIdx) + 1;
-    ytQueue.splice(at, 0, Object.assign(ytNormalizeQueue([item])[0], {
-      jbItemId: item.jbItemId, addedBy: item.addedBy, addedByOwner: false
-    }));
+    return 0;
   }
-  updateYTQueueUI();
-  showToast('\u266b Up next: ' + [row.artistName, row.trackName].filter(Boolean).join(' - '));
+  const where = Math.max(0, Math.min(at, ytQueue.length));
+  ytQueue.splice(where, 0, item);
+  if (ytQueueIdx >= where) ytQueueIdx++;
+  return where;
+}
+
+async function sjjQueueNext(itemId) {
+  const row = (_sjjGuestAdds || []).find(a => a.id === itemId);
+  if (!row) return;
+  if (ytQueue[ytQueueIdx]?.jbItemId === itemId) { showToast('That one is playing now.'); return; }
+
+  const at = await _sjjEnsureQueued(row, Math.max(0, ytQueueIdx) + 1);
+  if (at < 0) return;
+  const landed = ytMoveAfterCurrent(at);
+  // Position alone is not enough: on a shuffled queue the next song is picked
+  // at random and never read off the order. Pin it by identity as well.
+  ytSetPlayNext(ytQueue[landed >= 0 ? landed : at]);
+  ytpPaintUpNext();
+  showToast('\u266b Up next: ' + sjjReqLabel(row));
+  if (_sjjLive) sjjNudgeSync();
+}
+
+async function sjjQueueEnd(itemId) {
+  const row = (_sjjGuestAdds || []).find(a => a.id === itemId);
+  if (!row) return;
+  if (ytQueue[ytQueueIdx]?.jbItemId === itemId) { showToast('That one is playing now.'); return; }
+  const at = await _sjjEnsureQueued(row, ytQueue.length);
+  if (at < 0) return;
+  if (_ytPlayNext && ytQueue[at]?.jbItemId === _ytPlayNext.jbItemId) _ytPlayNext = null;
+  ytMoveToIndex(at, ytQueue.length - 1);
+  ytpPaintUpNext();
+  showToast('Moved to the end: ' + sjjReqLabel(row));
+  if (_sjjLive) sjjNudgeSync();
+}
+
+// Out of the player's queue AND out of the room, so the person who asked for
+// it sees it go rather than watching it sit there forever.
+async function sjjQueueDrop(itemId) {
+  const row = (_sjjGuestAdds || []).find(a => a.id === itemId);
+  if (!row) return;
+  const at = ytQueue.findIndex(q => q.jbItemId === itemId);
+  if (at >= 0 && at !== ytQueueIdx) {
+    if (_ytPlayNext && _ytPlayNext.jbItemId === itemId) _ytPlayNext = null;
+    ytRemoveFromQueue(at);
+  }
+  _sjjGuestAdds = (_sjjGuestAdds || []).filter(a => a.id !== itemId);
+  sjjRender();
+  showToast('Removed: ' + sjjReqLabel(row));
+  try { await sjjApi({ action: 'remove', itemId }); } catch (e) { showToast(e.message); }
   if (_sjjLive) sjjNudgeSync();
 }
 
