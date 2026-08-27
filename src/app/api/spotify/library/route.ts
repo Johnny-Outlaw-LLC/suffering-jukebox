@@ -15,7 +15,10 @@ import {
 export const dynamic = "force-dynamic";
 
 type SpotifyTrack = { id?: string; name?: string; uri?: string; artists?: Array<{ name?: string }>; album?: { name?: string; images?: Array<{ url?: string }> }; duration_ms?: number };
-type SavedPage = { items?: Array<{ track?: SpotifyTrack }>; next?: string | null; total?: number };
+// Saved songs put the song under `track`. The playlist `/items` endpoint puts
+// it under `item`. Same object, different key, and reading only `track` is
+// why a playlist came back with a total and no songs.
+type SavedPage = { items?: Array<{ track?: SpotifyTrack; item?: SpotifyTrack }>; next?: string | null; total?: number };
 
 // Four pages. Enough that a real library is worth browsing, small enough that
 // the panel opens while somebody is still looking at it - and well inside the
@@ -56,13 +59,16 @@ export async function GET(req: NextRequest) {
     let total = 0;
     // Spotify's Feb 2026 API update removed /playlists/{id}/tracks; /items is
     // its replacement with the same response shape.
+    // No `fields` filter on the playlist read. The filter has to name the key
+    // the song sits under, and naming the wrong one returns a full page of
+    // empty rows with a 200 rather than an error worth reading.
     let url = playlistId
-      ? `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/items?limit=${PAGE}&fields=total,next,items(track(id,name,uri,duration_ms,artists(name),album(name,images)))`
+      ? `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/items?limit=${PAGE}&additional_types=track`
       : `https://api.spotify.com/v1/me/tracks?limit=${PAGE}`;
     for (let page = 0; page < MAX_PAGES && url; page += 1) {
       const data = await spotifyApi<SavedPage>(url, token.session.accessToken);
       if (typeof data.total === "number") total = data.total;
-      (data.items ?? []).forEach(({ track }) => tracks.push(...shape(track)));
+      (data.items ?? []).forEach((entry) => tracks.push(...shape(entry?.item ?? entry?.track)));
       url = data.next || "";
     }
 

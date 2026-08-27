@@ -22,21 +22,17 @@ export async function GET(req: NextRequest) {
   const token = await freshSpotifySession(found.session, found.config);
   const access = token.session.accessToken;
   const base = `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}`;
-  const fields = "total,next,items(track(id,name,uri,duration_ms,artists(name),album(name,images)))";
 
   const attempts: Array<[string, string]> = [
-    ["me", "https://api.spotify.com/v1/me"],
-    ["saved", "https://api.spotify.com/v1/me/tracks?limit=1"],
-    ["myPlaylists", "https://api.spotify.com/v1/me/playlists?limit=1"],
-    ["playlistObject", base],
-    ["playlistObjectFields", `${base}?fields=id,name,owner(id,display_name),public,collaborative,tracks(total)`],
-    ["playlistNestedTracks", `${base}?fields=tracks(total,next,items(track(id,name,uri,duration_ms,artists(name),album(name,images))))`],
-    ["tracksPlain", `${base}/tracks?limit=5`],
-    ["tracksFields", `${base}/tracks?limit=5&fields=${encodeURIComponent(fields)}`],
-    ["tracksMarket", `${base}/tracks?limit=5&market=US`],
-    ["tracksMarketFromToken", `${base}/tracks?limit=5&market=from_token`],
-    ["itemsPlain", `${base}/items?limit=5`],
-    ["itemsFields", `${base}/items?limit=5&fields=${encodeURIComponent(fields)}`],
+    ["playlistPlain", base],
+    ["playlistFieldsTracks", `${base}?fields=tracks`],
+    ["playlistFieldsTracksItems", `${base}?fields=tracks.items`],
+    ["itemsPlain", `${base}/items?limit=3`],
+    ["itemsAdditional", `${base}/items?limit=3&additional_types=track`],
+    ["itemsMarket", `${base}/items?limit=3&market=from_token`],
+    ["itemsFieldsItem", `${base}/items?limit=3&fields=${encodeURIComponent("total,next,items(item(id,name,uri,duration_ms,artists(name),album(name,images)))")}`],
+    ["tracksAdditional", `${base}/tracks?limit=3&additional_types=track`],
+    ["followers", `${base}/followers/contains?ids=${encodeURIComponent(found.session.spotifyUserId)}`],
   ];
 
   const results: Record<string, unknown> = {};
@@ -44,7 +40,7 @@ export async function GET(req: NextRequest) {
     try {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${access}` }, cache: "no-store" });
       const body = await res.text();
-      results[name] = { status: res.status, body: body.slice(0, 400) };
+      results[name] = { status: res.status, body: body.slice(0, 2500) };
     } catch (error) {
       results[name] = { status: "threw", body: String(error).slice(0, 200) };
     }
