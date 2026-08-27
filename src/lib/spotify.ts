@@ -142,7 +142,11 @@ export async function freshSpotifySession(session: SpotifySession, config: Retur
 
 export async function spotifyApi<T>(url: string, accessToken: string): Promise<T> {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" });
-  if (res.status === 401 || res.status === 403) throw new SpotifyScopeError();
+  if (res.status === 401 || res.status === 403) {
+    const body = await res.text().catch(() => "");
+    console.error(`[spotify:api] ${res.status} on ${url}:`, body);
+    throw new SpotifyScopeError();
+  }
   if (!res.ok) throw new Error(`Spotify request failed (${res.status})`);
   return (await res.json()) as T;
 }
