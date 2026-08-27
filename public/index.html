@@ -2587,7 +2587,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-wall-back { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; padding:.45rem .75rem; border-radius:8px; cursor:pointer; transition:all .15s; }
 .pl-wall-back:hover { border-color:var(--text-muted); color:var(--text); }
 .pl-wall-back.on { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
-.pl-wall-title { font-size:1rem; font-weight:700; margin:0; flex:1; min-width:120px; letter-spacing:-.01em; }
+.pl-wall-header { margin-bottom:12px; }
+.pl-wall-title { font-size:1.3rem; font-weight:700; margin:0 0 4px; letter-spacing:-.01em; }
+.pl-wall-stats { display:flex; align-items:center; gap:7px; font-size:.56rem; color:var(--text-muted); }
+.pl-wall-stat b { color:var(--text); font-weight:700; }
+.pl-wall-stat-sep { opacity:.5; }
 .pl-wall-toolbar-right { display:flex; align-items:center; gap:12px; margin-left:auto; flex-wrap:nowrap; }
 .pl-wall-transport { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; }
 .pl-wall-tog { background:var(--bg-card); border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.58rem; font-weight:700; letter-spacing:.04em; padding:.55rem 1rem; border-radius:8px; cursor:pointer; transition:all .15s; min-height:44px; flex-shrink:0; }
@@ -12872,7 +12876,7 @@ function plbBrowseArtistRows(artists) {
   return artists.map(a => {
     const color = a.color || 'var(--accent)';
     return `<div class="plb-acc-item" data-artist-id="${a.id}">` +
-      `<div class="plb-row plb-row-drill" onclick="plbToggleArtist('${a.id}')">` +
+      `<div class="plb-row plb-row-drill" onclick="plbToggleArtist('${a.id}','${plbJsStr(a.name)}')">` +
         `<span class="plb-caret">\u203a</span>` +
         `<div class="plb-art-ph" style="background:${color}22;color:${color}">${escHtml((a.name || '?')[0].toUpperCase())}</div>` +
         `<div class="plb-info"><div class="plb-name">${escHtml(a.name)}</div><div class="plb-meta">Artist</div></div>` +
@@ -12883,7 +12887,7 @@ function plbBrowseArtistRows(artists) {
   }).join('');
 }
 
-async function plbToggleArtist(artistId) {
+async function plbToggleArtist(artistId, knownName) {
   const item = document.querySelector(`.plb-acc-item[data-artist-id="${CSS.escape(artistId)}"]`);
   const nest = document.getElementById(`plb-nest-artist-${artistId}`);
   if (!item || !nest) return;
@@ -12907,8 +12911,10 @@ async function plbToggleArtist(artistId) {
       if (allTracks.length) Object.assign(ytData, await loadYT(allTracks.map(t => t.id)));
     }
     if (!item.classList.contains('open')) return; // collapsed again while fetching
-    const artist = _plbBrowseArtists.find(a => a.id === artistId);
-    nest.innerHTML = plbBrowseAlbumRows(_plbArtistAlbums[artistId], artistId, artist?.name || '');
+    // Reaching here from a search hit rather than the browse list means
+    // _plbBrowseArtists may never have loaded - knownName covers that.
+    const artistName = knownName || _plbBrowseArtists?.find(a => a.id === artistId)?.name || '';
+    nest.innerHTML = plbBrowseAlbumRows(_plbArtistAlbums[artistId], artistId, artistName);
     nest.dataset.loaded = '1';
     plbRefreshAddButtons();
   } catch (e) {
@@ -13010,12 +13016,18 @@ function plbRenderResults(data) {
   const body = document.getElementById('plb-results');
   if (!body) return;
   const q = data.q;
+  // Artist and album hits drill in on click, same accordion as the plain
+  // browse list - only the bulk-add button forces the all-or-nothing add.
   const artistCards = (data.artists || []).map(a => {
     const color = a.color || 'var(--accent)';
-    return `<div class="plb-row">` +
-      `<div class="plb-art-ph" style="background:${color}22;color:${color}">${escHtml((a.name || '?')[0].toUpperCase())}</div>` +
-      `<div class="plb-info"><div class="plb-name">${plbHl(a.name, q)}</div><div class="plb-meta">Artist</div></div>` +
-      `<button type="button" class="plb-add" data-plb-bulk="artist" data-plb-id="${a.id}" onclick="plbAddArtist('${a.id}',this)">+ Add all songs</button>` +
+    return `<div class="plb-acc-item" data-artist-id="${a.id}">` +
+      `<div class="plb-row plb-row-drill" onclick="plbToggleArtist('${a.id}','${plbJsStr(a.name)}')">` +
+        `<span class="plb-caret">›</span>` +
+        `<div class="plb-art-ph" style="background:${color}22;color:${color}">${escHtml((a.name || '?')[0].toUpperCase())}</div>` +
+        `<div class="plb-info"><div class="plb-name">${plbHl(a.name, q)}</div><div class="plb-meta">Artist</div></div>` +
+        `<button type="button" class="plb-add" data-plb-bulk="artist" data-plb-id="${a.id}" onclick="event.stopPropagation();plbAddArtist('${a.id}',this)">+ Add all songs</button>` +
+      `</div>` +
+      `<div class="plb-nest" id="plb-nest-artist-${a.id}"></div>` +
     `</div>`;
   });
   const albumCards = (data.albums || []).map(album => {
@@ -13026,10 +13038,14 @@ function plbRenderResults(data) {
       ? `<img class="plb-art" src="${escHtml(thumb)}" alt="">`
       : `<div class="plb-art-ph">${escHtml((album.name || '?')[0].toUpperCase())}</div>`;
     const meta = [artist?.name, year].filter(Boolean).join(' · ');
-    return `<div class="plb-row">` +
-      art +
-      `<div class="plb-info"><div class="plb-name">${plbHl(album.name, q)}</div>${meta ? `<div class="plb-meta">${plbHl(meta, q)}</div>` : ''}</div>` +
-      `<button type="button" class="plb-add" data-plb-bulk="album" data-plb-id="${album.id}" onclick="plbAddAlbum('${album.id}',this)">+ Add album</button>` +
+    return `<div class="plb-acc-item" data-album-id="${album.id}">` +
+      `<div class="plb-row plb-row-drill" onclick="plbToggleAlbum('${album.id}','${plbJsStr(album.name)}','${plbJsStr(artist?.name || '')}')">` +
+        `<span class="plb-caret">›</span>` +
+        art +
+        `<div class="plb-info"><div class="plb-name">${plbHl(album.name, q)}</div>${meta ? `<div class="plb-meta">${plbHl(meta, q)}</div>` : ''}</div>` +
+        `<button type="button" class="plb-add" data-plb-bulk="album" data-plb-id="${album.id}" onclick="event.stopPropagation();plbAddAlbum('${album.id}',this)">+ Add album</button>` +
+      `</div>` +
+      `<div class="plb-nest" id="plb-nest-album-${album.id}"></div>` +
     `</div>`;
   });
   const trackCards = (data.tracks || []).map(hit => {
@@ -13179,7 +13195,6 @@ let playlistChartRows = [];
 let playlistChartBaseQueue = [];
 let playlistWallSize = 120;
 let playlistWallMode = 'thumbs'; // 'thumbs' | 'detail'
-let playlistWallEditMode = false; // toggled per visit, never persisted
 try {
   const _pws = parseInt(localStorage.getItem('sj_pl_wall_size'), 10);
   if (Number.isFinite(_pws) && _pws >= 72 && _pws <= 260) playlistWallSize = _pws;
@@ -13200,11 +13215,6 @@ function setPlaylistWallSize(px) {
 function setPlaylistWallMode(mode) {
   playlistWallMode = mode === 'detail' ? 'detail' : 'thumbs';
   try { localStorage.setItem('sj_pl_wall_mode', playlistWallMode); } catch (_) {}
-  if (viewMode === 'playlistchart') renderPlaylistChart();
-}
-
-function togglePlWallEditMode() {
-  playlistWallEditMode = !playlistWallEditMode;
   if (viewMode === 'playlistchart') renderPlaylistChart();
 }
 
@@ -13518,6 +13528,14 @@ function playlistChartSyncToCurrent() {
     const cell = scroll?.querySelector(`[data-pc-index="${idx}"]`);
     if (scroll && cell) cell.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'nearest' });
   });
+}
+
+function plWallFmtDuration(ms) {
+  const totalMin = Math.round((Number(ms) || 0) / 60000);
+  if (totalMin < 1) return '<1m';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 function plWallFmtLastPlay(iso) {
@@ -14009,7 +14027,6 @@ async function openPlaylistChart(playlistId) {
   if (!p) return;
   playlistChartId = playlistId;
   playlistChartName = p.name || 'Untitled Playlist';
-  playlistWallEditMode = false;
   playlistChartRows = [];
   playlistChartBaseQueue = [];
   playlistChartPlayedIds = new Set();
@@ -14171,7 +14188,6 @@ async function plWallRemoveMyTrack(index) {
   const q = playlistChartQueue();
   const row = playlistChartRowFor(q[index], index);
   if (!row.ptId || row.addedByEmail !== googleUser.email) return;
-  if (!confirm(`Remove "${row.title}" from this playlist?`)) return;
   const pl = (_savedPlaylists || []).find(x => x.id === playlistChartId);
   try {
     await dbDelete(`/playlist_tracks?id=eq.${row.ptId}`);
@@ -14236,8 +14252,7 @@ function renderPlaylistChart(error) {
     const row = playlistChartRowFor(item, i);
     const isCurrent = i === curIdx;
     const blocked = isTrackBlocked(row.trackId);
-    const isMine = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
-    const editable = playlistWallEditMode && isMine;
+    const editable = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
     const art = row.artwork
       ? `<img src="${row.artwork}" loading="lazy" alt="">`
       : '<span class="pl-wall-fallback">♫</span>';
@@ -14264,10 +14279,10 @@ function renderPlaylistChart(error) {
     const uploaded = plWallUploadedBy(row.trackId);
     const addedByLbl = row.addedByName || (row.addedByEmail ? row.addedByEmail.split('@')[0] : '');
     const isMine = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
-    const rowEditable = playlistWallEditMode && isMine;
+    const rowEditable = isMine;
     const canUp = rowEditable && plWallNearestOwnIndex(i, -1, row.addedByEmail) >= 0;
     const canDown = rowEditable && plWallNearestOwnIndex(i, 1, row.addedByEmail) >= 0;
-    const manageCell = !playlistWallEditMode ? '' : (isMine
+    const manageCell = (isMine
       ? `<td class="rxn" onclick="event.stopPropagation()"><div class="pl-detail-mine-actions">` +
           `<button type="button" class="pl-detail-move" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},-1)" title="Move up among your songs">▲</button>` +
           `<button type="button" class="pl-detail-move" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},1)" title="Move down among your songs">▼</button>` +
@@ -14295,7 +14310,7 @@ function renderPlaylistChart(error) {
     `</tr>`;
   }).join('') : '';
 
-  const manageTh = playlistWallEditMode ? '<th class="rxn" title="Manage your songs">⚙</th>' : '';
+  const manageTh = '<th class="rxn" title="Manage your songs">⚙</th>';
   const body = error
     ? `<div class="landing-no-results">${esc(error)}</div>`
     : (!q.length
@@ -14307,17 +14322,26 @@ function renderPlaylistChart(error) {
   const _plObj = playlistChartId ? (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId)) : null;
   const minePl = !!(googleUser && _plObj && _plObj.user_email === googleUser.email);
   const canAddSongs = !!(googleUser && _plObj && (minePl || _plObj.is_public));
-  const contributedSome = !!(googleUser && playlistChartRows.some(r => r.addedByEmail === googleUser.email));
-  const canEditWall = minePl || contributedSome;
   const manageBtns =
     (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>` : '') +
-    (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '') +
-    (canEditWall ? `<button type="button" class="pl-wall-back${playlistWallEditMode ? ' on' : ''}" onclick="togglePlWallEditMode()" title="Move or remove the songs you added">${playlistWallEditMode ? '✓ Done' : '✎ Edit'}</button>` : '');
+    (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
   const modeTog =
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
   const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<h2 class="pl-wall-title">${esc(playlistChartName)}</h2><div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
+  const totalSongs = playlistChartRows.length;
+  const totalDurMs = playlistChartRows.reduce((s, r) => s + (Number(r.duration) || 0), 0);
+  const uniqueArtists = new Set(playlistChartRows.map(r => (r.artist || '').trim()).filter(Boolean)).size;
+  const statsHTML = totalSongs
+    ? `<div class="pl-wall-stats">` +
+        `<span class="pl-wall-stat"><b>${totalSongs}</b> song${totalSongs === 1 ? '' : 's'}</span>` +
+        `<span class="pl-wall-stat-sep">·</span>` +
+        `<span class="pl-wall-stat"><b>${plWallFmtDuration(totalDurMs)}</b> total</span>` +
+        `<span class="pl-wall-stat-sep">·</span>` +
+        `<span class="pl-wall-stat"><b>${uniqueArtists}</b> artist${uniqueArtists === 1 ? '' : 's'}</span>` +
+      `</div>`
+    : '';
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
   plWallLoadReactionCounts(q.map(it => it.trackId));
@@ -18715,7 +18739,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-26';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-26', items: [
-    'A playlist you own or have contributed to now has an Edit button. Turn it on for an ✕ on each of your own covers (drag them to swap spots with another of your own songs) in Covers, or the same move/remove controls in Detail - everyone else’s songs stay locked either way.',
+    'A playlist’s title and stats (songs, total time, artists) now sit in their own block at the top left of the page, above the toolbar buttons.',
+    'Add Songs search results let you drill into an artist or album hit the same way the browse list does, instead of only offering to add everything at once.',
+    'The X on your own songs in a playlist is back to just being there - no more turning on Edit first - and removing one no longer stops to ask you to confirm.',
     'Adding songs to a playlist you do not own no longer pops up My Playlists afterward (which only ever lists playlists you own, and looked like it wanted you to start a new one). It now just takes you back to the playlist you were adding to.',
     'A playlist’s Detail view now shows who added each song, and lets you move or remove the songs you added yourself - among your own songs only, everyone else’s stay exactly where they are.',
     'The fullscreen player no longer clips the bottom of the YouTube controls when an Up Next banner is showing - the video area is sized to actually leave room for it now.',
