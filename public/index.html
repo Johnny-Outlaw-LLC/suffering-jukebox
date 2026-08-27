@@ -1702,6 +1702,18 @@ textarea.report-input { resize:vertical; }
 /* ── Right: transport + window buttons ── */
 .ytp-mf-right { grid-area: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .ytp-mini-footer.dock-grown .ytp-mf-right { align-self: end; align-items: flex-end; }
+.ytp-mf-playlist {
+  display:none; position:absolute; top:0; right:0; width:min(270px,22vw);
+  max-height:calc(100% - 112px); overflow:auto; padding:8px 10px;
+  background:color-mix(in srgb,var(--bg-card) 94%,transparent);
+  border:1px solid var(--border); border-radius:8px; scrollbar-width:thin;
+}
+.ytp-mini-footer.dock-show-playlist .ytp-mf-playlist { display:block; }
+.ytp-mf-playlist-head { position:sticky; top:-8px; z-index:1; padding:5px 0 7px; background:var(--bg-card); font-size:.48rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
+.ytp-mf-playlist-row { display:flex; gap:7px; padding:5px 0; border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent); font-size:.5rem; color:var(--text-muted); cursor:pointer; }
+.ytp-mf-playlist-row.on { color:var(--accent); font-weight:700; }
+.ytp-mf-playlist-num { width:1.6em; flex:none; text-align:right; }
+.ytp-mf-playlist-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .ytp-mf-top, .ytp-mf-middle, .ytp-mf-bottom { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
 .ytp-mf-win { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 @keyframes ytpMfAttention {
@@ -3211,6 +3223,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
         <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close" id="ytp-mf-close">✕</button>
       </div>
     </div>
+    <div class="ytp-mf-playlist" id="ytp-mf-playlist" onclick="event.stopPropagation()"></div>
     <div class="ytp-mf-scrub ytp-scrub-zone" id="ytp-mf-scrub" data-scrub-prefix="mf" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
       <div class="ytp-scrub-rxn-wrap" aria-hidden="true"><div class="ytp-scrub-rxn-track"></div></div>
       <span class="ytp-mf-scrub-time" id="ytp-mf-cur">0:00</span>
@@ -6651,6 +6664,7 @@ function updateYTQueueUI(opts) {
   try { if (_sjjLive) sjjNudgeSync(); } catch (_) {}
   refreshQuickPlaylistNowPlaying();
   playlistChartRefreshPlayback();
+  ytpPaintDockPlaylist();
   if (!ytPlayerEl) return;
   // The player is rebuilt often enough that the badge has to be re-applied
   // rather than set once when the broadcast starts.
@@ -6771,6 +6785,18 @@ function updateYTQueueUI(opts) {
   }
   ytpMobSyncDeck();
   if (!opts.skipMetaHydrate) ytpHydrateQueueMeta();
+}
+
+function ytpPaintDockPlaylist() {
+  const el = document.getElementById('ytp-mf-playlist');
+  if (!el) return;
+  el.innerHTML = '<div class="ytp-mf-playlist-head">Current playlist · ' + ytQueue.length + '</div>'
+    + ytQueue.map((item, i) => {
+        const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
+        const label = [meta?.artist || item.artist, item.title || meta?.title].filter(Boolean).join(' - ');
+        return '<div class="ytp-mf-playlist-row' + (i === ytQueueIdx ? ' on' : '') + '" onclick="ytPlayQueueIdx(' + i + ')">'
+          + '<span class="ytp-mf-playlist-num">' + (i + 1) + '</span><span class="ytp-mf-playlist-name">' + escHtml(label) + '</span></div>';
+      }).join('');
 }
 
 // ── Searching the playlist ───────────────────────────────────────────────
@@ -7287,6 +7313,10 @@ function ytpApplyDockHeight() {
   const mfBody = Math.min(Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW), bodyBase + extra);
   el.style.setProperty('--mf-body', mfBody + 'px');
   el.classList.toggle('dock-grown', extra > 16);
+  // The queue earns the otherwise-empty space above the three control rows;
+  // below that point it stays hidden so it never crowds the transport.
+  el.classList.toggle('dock-show-playlist', ytQueue.length > 1 && h > 158 && !ytpIsMob());
+  ytpPaintDockPlaylist();
   requestAnimationFrame(ytpDockSyncFontControl);
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
   if (wantVideo !== _ytpDockVideoOn) {
@@ -13124,7 +13154,9 @@ function openPlaylistBuilder(mode, playlistId) {
   _plbyPlaylistTruncated = false;
   _plbyImporting = false;
   if (_plbMode === 'add') {
-    const p = playlists.find(x => x.id === playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
+    const p = playlistId === '__dynamic_now_playing'
+      ? dynamicPlaylistById(playlistId)
+      : playlists.find(x => x.id === playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
     if (!p) { showToast('Playlist not found.'); return; }
     (p._tracks || []).forEach(r => { if (r.track_id) _plbExisting.add(r.track_id); });
   }
@@ -13153,7 +13185,9 @@ function plbPaintChrome() {
   const top = document.getElementById('plb-top');
   const save = document.getElementById('plb-save-btn');
   if (_plbMode === 'add') {
-    const p = playlists.find(x => x.id === _plbPlaylistId) || (_savedPlaylists || []).find(x => x.id === _plbPlaylistId);
+    const p = _plbPlaylistId === '__dynamic_now_playing'
+      ? dynamicPlaylistById(_plbPlaylistId)
+      : playlists.find(x => x.id === _plbPlaylistId) || (_savedPlaylists || []).find(x => x.id === _plbPlaylistId);
     if (title) title.textContent = 'Add Songs to Playlist';
     const isMine = p && googleUser && p.user_email === googleUser.email;
     if (top) top.innerHTML = `<div class="plb-hint">Adding to <b>${escHtml(p?.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}${!isMine && p?.is_public ? ' · a public playlist, open to add to' : ''}. Browse artists and albums below, or search by song, artist, album, or a lyric line — same search as the main bar.</div>`;
@@ -13833,6 +13867,22 @@ async function plbSave() {
       openManagePlaylists();
       if (isLandingMode) renderLanding();
     } else {
+      if (_plbPlaylistId === '__dynamic_now_playing') {
+        const fresh = _plbDraft.filter(d => !_plbExisting.has(d.trackId));
+        const videos = await loadYT(fresh.map(d => d.trackId));
+        const additions = fresh.filter(d => videos[d.trackId]?.video_id).map(d => {
+          SJ_TRACK_META[d.trackId] = Object.assign({}, SJ_TRACK_META[d.trackId] || {}, {
+            title:d.title || '', artist:d.artist || '', album:d.album || ''
+          });
+          return ytQueueItem(videos[d.trackId].video_id, d.title, d.trackId, d.artist);
+        });
+        ytQueue.push(...additions);
+        updateYTQueueUI({ preserveScroll:true });
+        closePlaylistBuilder();
+        showToast(`Added ${additions.length} song${additions.length === 1 ? '' : 's'} to Now Playing.`);
+        await openPlaylistChart('__dynamic_now_playing');
+        return;
+      }
       const p = playlists.find(x => x.id === _plbPlaylistId) || (_savedPlaylists || []).find(x => x.id === _plbPlaylistId);
       if (!p) throw new Error('Playlist missing');
       let pos = (p._tracks || []).length;
@@ -14009,16 +14059,17 @@ function dynamicPlaylistTracks(trackIds) {
 function dynamicPlaylistRows() {
   const favoriteIds = Object.keys(localVotes).filter(trackId => getMyVote(trackId) > 0);
   const plusIds = [...new Set(favoriteIds.concat(myHeartTrackIds))];
-  const rows = [
-    { id:'__dynamic_favorites', name:'Favorites', _dynamic:true, _tracks:dynamicPlaylistTracks(favoriteIds) },
-    { id:'__dynamic_favorites_plus', name:'Favorites Plus', _dynamic:true, _tracks:dynamicPlaylistTracks(plusIds) },
-  ];
+  const rows = [];
   if (ytPlayerEl && ytQueueIdx >= 0 && ytQueue.length > 1) {
     rows.push({
       id:'__dynamic_now_playing', name:'Now Playing', _dynamic:true,
       _tracks:ytQueue.map((item, position) => ({ track_id:item.trackId, position })).filter(row => row.track_id),
     });
   }
+  rows.push(
+    { id:'__dynamic_favorites', name:'Favorites', _dynamic:true, _tracks:dynamicPlaylistTracks(favoriteIds) },
+    { id:'__dynamic_favorites_plus', name:'Favorites Plus', _dynamic:true, _tracks:dynamicPlaylistTracks(plusIds) },
+  );
   return rows;
 }
 
@@ -15103,7 +15154,9 @@ function renderPlaylistChart(error) {
 
   const _plObj = playlistChartId ? (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId)) : null;
   const minePl = !!(googleUser && _plObj && _plObj.user_email === googleUser.email);
-  const canAddSongs = !!(googleUser && _plObj && (minePl || _plObj.is_public));
+  const canAddSongs = !!(googleUser && (
+    playlistChartId === '__dynamic_now_playing' || (_plObj && (minePl || _plObj.is_public))
+  ));
   const manageBtns =
     (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>` : '') +
     (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
