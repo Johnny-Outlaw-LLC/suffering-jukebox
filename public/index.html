@@ -1616,6 +1616,18 @@ textarea.report-input { resize:vertical; }
   position: absolute; left: 2px; right: 2px; bottom: 0;
   cursor: default; flex-shrink: 0; padding: 0 2px;
 }
+/* On the desktop dock the scrubber belongs to the dock itself, not to the
+   content grid. The grid changes shape as the dock grows; anchoring here keeps
+   the timeline on the same bottom edge throughout the resize. */
+@media (min-width: 641px) {
+  .ytp-mf-main { position: static; }
+  #ytp-mini-footer .ytp-mf-scrub {
+    position: absolute; left: 18px; right: 18px; bottom: 8px; z-index: 5;
+  }
+  #ytp-mini-footer .ytp-mf-right {
+    position: absolute; right: 16px; bottom: 48px; z-index: 6;
+  }
+}
 .ytp-mf-scrub-time {
   font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
   min-width: 2.4em; flex-shrink: 0; font-variant-numeric: tabular-nums;
@@ -1705,8 +1717,8 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-right { grid-area: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .ytp-mini-footer.dock-grown .ytp-mf-right { align-self: end; align-items: flex-end; }
 .ytp-mf-playlist {
-  display:none; position:absolute; top:0; right:0; width:min(270px,22vw);
-  max-height:calc(100% - 112px); overflow:auto; padding:8px 10px;
+  display:none; position:absolute; top:14px; right:16px; width:min(270px,22vw);
+  overflow:auto; padding:8px 10px; box-sizing:border-box;
   background:color-mix(in srgb,var(--bg-card) 94%,transparent);
   border:1px solid var(--border); border-radius:8px; scrollbar-width:thin;
 }
@@ -6832,6 +6844,7 @@ function ytpPaintDockPlaylist() {
         return '<div class="ytp-mf-playlist-row' + (i === ytQueueIdx ? ' on' : '') + '" onclick="ytPlayQueueIdx(' + i + ')">'
           + '<span class="ytp-mf-playlist-num">' + (i + 1) + '</span><span class="ytp-mf-playlist-name">' + escHtml(label) + '</span></div>';
       }).join('');
+  if (_ytpMinimized) requestAnimationFrame(ytpDockSyncPlaylist);
 }
 
 // ── Searching the playlist ───────────────────────────────────────────────
@@ -7200,6 +7213,10 @@ let _ytpDockMinHCache = null;
 let _ytpLayoutRestore = null;     // playhead/state carried across dock/fullscreen iframe moves
 const YTP_DOCK_VIDEO_EXTRA = 80;  // px past the resting height before video kicks in
 const YTP_DOCK_BODY_MAX_VW = 0.5; // video/art may grow to half the viewport width
+const YTP_DOCK_PLAYLIST_GAP = 20;  // clear space between the queue and dock buttons
+const YTP_DOCK_PLAYLIST_MIN_H = 112;
+let _ytpDockPlaylistObserver = null;
+let _ytpDockPlaylistFrame = 0;
 
 function ytpCaptureLayoutPlayback() {
   if (_taBgActive || !ytAPIPlayer) return null;
@@ -7332,6 +7349,52 @@ function ytpDockSyncFontControl() {
   ytpArrangeDockControls();
 }
 
+// The button stack changes height and position as the dock grows. Measure its
+// real top edge rather than guessing from the resize amount: the playlist is
+// allowed to appear only when a useful panel fits above it with a 20px gap.
+function ytpDockSyncPlaylist() {
+  const dock = document.getElementById('ytp-mini-footer');
+  const playlist = document.getElementById('ytp-mf-playlist');
+  const buttons = dock?.querySelector('.ytp-mf-right');
+  if (!dock || !playlist) return;
+
+  dock.classList.remove('dock-show-playlist');
+  playlist.style.maxHeight = '';
+  if (!_ytpMinimized || ytpIsMob() || ytQueue.length <= 1 || !buttons) return;
+
+  const dockRect = dock.getBoundingClientRect();
+  const buttonRect = buttons.getBoundingClientRect();
+  const playlistTop = parseFloat(getComputedStyle(playlist).top) || 0;
+  // Keep one extra physical pixel so fractional browser geometry can never
+  // round the requested 20px clearance down to 19px.
+  const available = Math.floor(buttonRect.top - dockRect.top - playlistTop - YTP_DOCK_PLAYLIST_GAP - 1);
+  if (available < YTP_DOCK_PLAYLIST_MIN_H) return;
+
+  playlist.style.maxHeight = available + 'px';
+  dock.classList.add('dock-show-playlist');
+}
+
+function ytpDockSchedulePlaylistSync() {
+  if (_ytpDockPlaylistFrame) cancelAnimationFrame(_ytpDockPlaylistFrame);
+  _ytpDockPlaylistFrame = requestAnimationFrame(() => {
+    _ytpDockPlaylistFrame = 0;
+    ytpDockSyncPlaylist();
+  });
+}
+
+// Lyrics and their font control can make the right-hand button stack taller
+// after the first dock layout. Keep watching that geometry so the queue is
+// immediately shortened (or hidden) instead of drifting over the controls.
+function ytpDockObservePlaylistLayout() {
+  if (_ytpDockPlaylistObserver || typeof ResizeObserver === 'undefined') return;
+  const dock = document.getElementById('ytp-mini-footer');
+  const buttons = dock?.querySelector('.ytp-mf-right');
+  if (!dock || !buttons) return;
+  _ytpDockPlaylistObserver = new ResizeObserver(ytpDockSchedulePlaylistSync);
+  _ytpDockPlaylistObserver.observe(dock);
+  _ytpDockPlaylistObserver.observe(buttons);
+}
+
 // Applies the current (clamped) dock height and swaps thumbnail ⟷ video as
 // needed. Called whenever the dock is shown, on window resize, and on every
 // tick of a drag.
@@ -7351,11 +7414,11 @@ function ytpApplyDockHeight() {
   const mfBody = Math.min(Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW), bodyBase + extra);
   el.style.setProperty('--mf-body', mfBody + 'px');
   el.classList.toggle('dock-grown', extra > 16);
-  // The queue earns the otherwise-empty space above the three control rows;
-  // below that point it stays hidden so it never crowds the transport.
-  el.classList.toggle('dock-show-playlist', ytQueue.length > 1 && extra >= 140 && !ytpIsMob());
   ytpPaintDockPlaylist();
-  requestAnimationFrame(ytpDockSyncFontControl);
+  requestAnimationFrame(() => {
+    ytpDockSyncFontControl();
+    ytpDockSyncPlaylist();
+  });
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
   if (wantVideo !== _ytpDockVideoOn) {
     _ytpDockVideoOn = wantVideo;
@@ -7434,6 +7497,7 @@ function showYtpMiniFooter() {
   const el = document.getElementById('ytp-mini-footer');
   if (!el) return;
   ytpArrangeDockControls();
+  ytpDockObservePlaylistLayout();
   _ytpDockMinHCache = null;
   el.classList.add('open');
   const restoreBtn = document.getElementById('ytp-mf-restore');
