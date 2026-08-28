@@ -15,6 +15,21 @@ const IMPORT_MAX = 2000;
 // for a ~25k-event export from ~50 down to ~25.
 const HISTORY_BATCH_MAX = 1000;
 const HISTORY_TYPES = new Set(["music", "podcast", "audiobook", "other"]);
+const BUCKETS = new Set(["auto", "day", "week", "month", "year"]);
+// A filter list of a few thousand names is a client bug, not a question worth
+// answering; trim it rather than handing Postgres an unbounded array.
+const FILTER_MAX = 2000;
+
+function cleanFilterList(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set<string>();
+  for (const item of value) {
+    const name = String(item ?? "").trim().slice(0, 1000);
+    if (name) seen.add(name);
+    if (seen.size >= FILTER_MAX) break;
+  }
+  return seen.size ? [...seen] : null;
+}
 
 type CleanHistoryEvent = {
   user_id: string;
@@ -66,30 +81,6 @@ export async function GET(req: NextRequest) {
     const user = await getAuthUser(req);
     if (!user?.email) return bad("Sign in to view your Spotify listening history.", 401);
     const sb = createSjServiceClient();
-    const wantAnalytics = req.nextUrl.searchParams.get("analytics") === "1"
-      || req.nextUrl.searchParams.get("view") === "analytics";
-    if (wantAnalytics) {
-      const tz = req.nextUrl.searchParams.get("tz") || "America/Chicago";
-      const artist = req.nextUrl.searchParams.get("artist") || null;
-      const sourceRaw = String(req.nextUrl.searchParams.get("source") || "all").trim().toLowerCase();
-      const source = sourceRaw === "jukebox" || sourceRaw === "spotify" ? sourceRaw : "all";
-      const fromRaw = req.nextUrl.searchParams.get("from");
-      const toRaw = req.nextUrl.searchParams.get("to");
-      const fromMs = fromRaw ? Date.parse(fromRaw) : NaN;
-      const toMs = toRaw ? Date.parse(toRaw) : NaN;
-      const { data, error } = await sb
-        .schema(JUKEBOX_SCHEMA)
-        .rpc("listening_analytics", {
-          p_user_id: user.id,
-          p_tz: tz,
-          p_artist: artist,
-          p_source: source,
-          p_from: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
-          p_to: Number.isFinite(toMs) ? new Date(toMs).toISOString() : null,
-        });
-      if (error) throw error;
-      return NextResponse.json({ ok: true, analytics: data ?? null });
-    }
     const { data, error } = await sb
       .schema(JUKEBOX_SCHEMA)
       .rpc("spotify_history_summary", { p_user_id: user.id });
@@ -112,6 +103,30 @@ export async function POST(req: NextRequest) {
     const sb = createSjServiceClient();
     const email = user.email.toLowerCase();
     const uid = user.id;
+
+    // Analytics is a POST because the artist and song filters are multi-select
+    // and a long selection does not survive a query string.
+    if (action === "analytics") {
+      if (rateLimited(`listening-analytics:${uid}`, 240, 60_000)) return tooMany();
+      const sourceRaw = String(body.source || "all").trim().toLowerCase();
+      const source = sourceRaw === "jukebox" || sourceRaw === "spotify" ? sourceRaw : "all";
+      const bucketRaw = String(body.bucket || "auto").trim().toLowerCase();
+      const bucket = BUCKETS.has(bucketRaw) ? bucketRaw : "auto";
+      const fromMs = body.from ? Date.parse(String(body.from)) : NaN;
+      const toMs = body.to ? Date.parse(String(body.to)) : NaN;
+      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("listening_analytics", {
+        p_user_id: uid,
+        p_tz: String(body.tz || "America/Chicago").slice(0, 64),
+        p_source: source,
+        p_from: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
+        p_to: Number.isFinite(toMs) ? new Date(toMs).toISOString() : null,
+        p_artists: cleanFilterList(body.artists),
+        p_tracks: cleanFilterList(body.tracks),
+        p_bucket: bucket,
+      });
+      if (error) throw error;
+      return NextResponse.json({ ok: true, analytics: data ?? null });
+    }
 
     if (action === "import-history") {
       // Signed-in GDPR imports are large and deliberate. Cap by user, not IP, and

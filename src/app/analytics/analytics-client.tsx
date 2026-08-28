@@ -41,11 +41,6 @@ function minutes(value: number) {
   const hours = Math.floor(total / 60);
   return hours ? `${hours}h ${total % 60}m` : `${total}m`;
 }
-function displayDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
-
 function normalizeRow(row: Record<string, unknown>, fileName: string): HistoryEvent | null {
   if (!row || typeof row !== "object") return null;
   const trackUri = String(row.spotify_track_uri || "").trim();
@@ -291,7 +286,7 @@ export default function AnalyticsClient() {
   const [sessionReady, setSessionReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [accessToken, setAccessToken] = useState("");
-  const [tab, setTab] = useState<"explore" | "spotify">("explore");
+  const [view, setView] = useState<"dashboard" | "import">("dashboard");
   const [dashKey, setDashKey] = useState(0);
   const [error, setError] = useState("");
 
@@ -337,6 +332,11 @@ export default function AnalyticsClient() {
           <p className={styles.eyebrow}>Suffering Jukebox</p>
           <h1>My Data <span>&amp; Analytics</span></h1>
         </div>
+        {sessionReady && signedIn && (
+          <button className={styles.secondaryButton} onClick={() => setView(view === "import" ? "dashboard" : "import")}>
+            {view === "import" ? "Back to Analytics" : "Import Spotify history"}
+          </button>
+        )}
       </header>
 
       {!sessionReady ? <div className={styles.loading}>Opening your Analytics…</div> : !signedIn ? (
@@ -348,18 +348,14 @@ export default function AnalyticsClient() {
         </section>
       ) : (
         <>
-          <nav className={styles.tabs} aria-label="Analytics sections">
-            <button className={tab === "explore" ? styles.tabActive : ""} onClick={() => setTab("explore")}>Listening</button>
-            <button className={tab === "spotify" ? styles.tabActive : ""} onClick={() => setTab("spotify")}>Import Spotify</button>
-          </nav>
           {error && <div className={styles.error}>{error}</div>}
-          {tab === "spotify" ? (
-            <Wizard onComplete={() => { setDashKey((k) => k + 1); setTab("explore"); setError(""); }} />
+          {view === "import" ? (
+            <Wizard onComplete={() => { setDashKey((k) => k + 1); setView("dashboard"); setError(""); }} />
           ) : accessToken ? (
             <AnalyticsDashboard
               key={dashKey}
               accessToken={accessToken}
-              onNeedImport={() => setTab("spotify")}
+              onNeedImport={() => setView("import")}
             />
           ) : (
             <div className={styles.loading}>Preparing your session…</div>
