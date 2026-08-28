@@ -1536,7 +1536,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mini-footer {
   display: flex; flex-direction: column; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4990;
   gap: 0; padding: 14px 16px 8px;
-  --mf-body: 144px;                    /* fills the 180px resting desktop dock */
+  --mf-body: 100px;                    /* clears the scrubber in the resting desktop dock */
   --mf-btn: 30px;                      /* every button in the bar is this square */
   min-height: calc(var(--mf-body) + 36px);
   background: var(--bg-card); border-top: 1px solid var(--border);
@@ -1630,7 +1630,7 @@ textarea.report-input { resize:vertical; }
     position: absolute; left: 18px; right: 18px; bottom: 8px; z-index: 5;
   }
   #ytp-mini-footer .ytp-mf-right {
-    position: absolute; right: 16px; bottom: 48px; z-index: 6;
+    position: absolute; right: 16px; bottom: 30px; z-index: 6;
   }
   /* Once the queue has enough room to appear, the lyrics use the matching
      upper band: video edge to queue edge, ending above both metadata and the
@@ -1640,7 +1640,7 @@ textarea.report-input { resize:vertical; }
     left: calc(16px + var(--mf-body) + 16px);
     right: calc(32px + min(270px, 22vw));
     top: 14px;
-    bottom: var(--mf-lyric-lower-clearance, 164px);
+    bottom: var(--mf-lyric-lower-clearance, 120px);
     z-index: 4;
     width: auto;
     height: auto;
@@ -1766,6 +1766,15 @@ textarea.report-input { resize:vertical; }
 }
 .ytp-mf-btn:hover { border-color: var(--accent); color: var(--accent); }
 .ytp-mf-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.14); }
+/* The transport draws its glyphs rather than typing them - the same set the
+   phone deck uses, because text arrows render at wildly different sizes. */
+.ytp-mf-btn svg { width: 15px; height: 15px; display: block; pointer-events: none; }
+#ytp-mf-playpause {
+  background: var(--accent); border-color: var(--accent); color: #fff; border-radius: 50%;
+}
+#ytp-mf-playpause:hover { background: var(--accent); border-color: var(--accent); color: #fff; filter: brightness(1.1); }
+#ytp-mf-playpause:active { transform: scale(.93); }
+#ytp-mf-prev:active, #ytp-mf-next:active, #ytp-mf-shuffle:active { transform: scale(.93); }
 /* Queue position may change what these buttons do, never whether the dock
    reserves their place. Stable controls prevent holes and row reshuffling. */
 #ytp-mini-footer #ytp-mf-playpause,
@@ -1825,8 +1834,10 @@ textarea.report-input { resize:vertical; }
   /* Phone: art + header on top, lyrics under it, scrub, big transport last. */
   .ytp-mini-footer {
     --mf-body: 56px;
-    /* Six buttons plus their gaps have to cross the narrowest phone. */
-    --mf-btn: clamp(42px, 12vw, 46px);
+    /* Seven buttons plus their gaps have to cross the narrowest phone, so
+       the window trio is deliberately smaller than the transport. */
+    --mf-btn: clamp(38px, 11.2vw, 46px);
+    --mf-win-btn: clamp(30px, 8.8vw, 36px);
     min-height: 0;
     gap: 8px;
     padding: 16px calc(16px + env(safe-area-inset-right, 0px))
@@ -1835,12 +1846,14 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-main {
     display: grid;
     grid-template-columns: 1fr auto;
+    /* Transport and the window buttons share the bottom row: transport from
+       the left, More / Full screen / Close hard right. Splitting them over
+       two rows cost a whole row of dock height for six small buttons. */
     grid-template-areas:
-      "now top"
-      "lyr lyr"
-      "scrub scrub"
-      "middle middle"
-      "bottom bottom";
+      "now    now"
+      "lyr    lyr"
+      "scrub  scrub"
+      "middle top";
     align-items: center;
     column-gap: 8px;
     row-gap: 10px;
@@ -1855,9 +1868,16 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
-  .ytp-mf-top { grid-area: top; }
-  .ytp-mf-middle { grid-area: middle; justify-content: center; width: 100%; }
-  .ytp-mf-bottom { grid-area: bottom; justify-content: center; width: 100%; }
+  .ytp-mf-top { grid-area: top; justify-content: flex-end; gap: 5px; }
+  .ytp-mf-middle { grid-area: middle; justify-content: flex-start; gap: 5px; min-width: 0; }
+  /* No row of its own on a phone: the font slider is hidden here and the
+     lyric toggle is usually hidden too, so a real row cost 10px of dock for
+     nothing. display:contents lets the toggle drop onto its own line only
+     when it actually appears. */
+  .ytp-mf-bottom { display: contents; }
+  /* The scrubber is in the flow on a phone, so the band the desktop dock
+     reserves underneath it is dead space here. */
+  .ytp-mf-main { padding-bottom: 0; }
   .ytp-mf-lyr { grid-area: lyr; margin-left: 0; }
   .ytp-mf-scrub { grid-area: scrub; }
   .ytp-mf-feedback #ytp-mf-vote { font-size: .85rem; }
@@ -1867,10 +1887,15 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-controls {
     grid-area: controls; justify-content: center; gap: clamp(6px, 2vw, 10px); width: 100%;
   }
-  /* One square for every button in the bar - rate, expand and close included.
-     Play/pause stands out by colour, not by being a different size. */
+  /* One square for every transport button. Play/pause stands out by being
+     filled, not by being a different size. */
   .ytp-mf-btn { font-size: 1.2rem; border-radius: 14px; }
-  #ytp-mf-playpause { font-size: 1.35rem; border-color: var(--accent); color: var(--accent); }
+  .ytp-mf-btn svg { width: 20px; height: 20px; }
+  .ytp-mf-top .ytp-mf-btn {
+    width: var(--mf-win-btn); height: var(--mf-win-btn);
+    border-radius: 11px; font-size: .95rem;
+  }
+  .ytp-mf-top .ytp-mf-btn svg { width: 15px; height: 15px; }
   .ytp-mf-sep { display: none !important; }
   /* The window glyphs are drawn at 10px for the desktop title bar - scale them
      up so they carry a button this size. */
@@ -6384,7 +6409,10 @@ function ytpSetPlayPauseIcon(playing) {
   const btn = document.getElementById('ytp-playpause-btn');
   if (btn) { btn.textContent = playing ? '⏸' : '▶'; btn.title = playing ? 'Pause' : 'Play'; }
   const mfBtn = document.getElementById('ytp-mf-playpause');
-  if (mfBtn) { mfBtn.textContent = playing ? '⏸' : '▶'; mfBtn.title = playing ? 'Pause' : 'Play'; }
+  if (mfBtn) {
+    mfBtn.innerHTML = playing ? YTP_DECK_ICONS.pause : YTP_DECK_ICONS.play;
+    mfBtn.title = playing ? 'Pause' : 'Play';
+  }
   const mdBtn = document.getElementById('ytp-md-playpause');
   if (mdBtn) {
     mdBtn.innerHTML = playing ? YTP_DECK_ICONS.pause : YTP_DECK_ICONS.play;
@@ -7182,8 +7210,13 @@ const YTP_DOCK_VIDEO_EXTRA = 80;  // px past the resting height before video kic
 const YTP_DOCK_BODY_MAX_VW = 0.5; // video/art may grow to half the viewport width
 const YTP_DOCK_PLAYLIST_GAP = 20;  // clear space between the queue and dock buttons
 const YTP_DOCK_PLAYLIST_MIN_H = 112;
-const YTP_DOCK_DESKTOP_MIN_H = 195;
-const YTP_DOCK_DESKTOP_BODY_H = 159;
+// Resting geometry follows the button stack, not the artwork: 14px of top
+// padding, the stack itself, then the 30px it sits above the scrubber. The
+// artwork is sized to leave real space between its bottom edge and the
+// timeline instead of resting on it.
+const YTP_DOCK_DESKTOP_MIN_H = 152;   // floor, for the two-row stack
+const YTP_DOCK_DESKTOP_CHROME = 50;   // 14 top pad + 30 stack offset + 6 clear
+const YTP_DOCK_DESKTOP_BODY_H = 100;
 let _ytpDockPlaylistObserver = null;
 let _ytpDockPlaylistFrame = 0;
 let _ytpDockVideoRevealTimer = 0;
@@ -7252,11 +7285,15 @@ function ytpRestoreAfterLayoutMove(snapshot) {
 function ytpDockMinH() {
   if (_ytpDockMinHCache != null) return _ytpDockMinHCache;
   const el = document.getElementById('ytp-mini-footer');
-  // Desktop has a canonical resting geometry. Measuring it while --mf-body
-  // still contains the last resized value made the minimum ratchet upward on
-  // every reopen/viewport resize and made the art progressively smaller.
+  // Desktop rests just clear of the button stack, which is two rows without
+  // lyrics and three with them. Measuring the WHOLE bar is what used to
+  // ratchet the minimum upward on every reopen, because --mf-body still held
+  // the last resized value; the stack is absolutely positioned, so its own
+  // height owes nothing to the dock's and can be measured safely.
   if (!ytpIsMob()) {
-    _ytpDockMinHCache = YTP_DOCK_DESKTOP_MIN_H;
+    const right = el?.querySelector('.ytp-mf-right');
+    const stack = right ? Math.round(right.getBoundingClientRect().height) : 0;
+    _ytpDockMinHCache = Math.max(YTP_DOCK_DESKTOP_MIN_H, stack + YTP_DOCK_DESKTOP_CHROME);
     return _ytpDockMinHCache;
   }
   const fallback = 150;
@@ -7414,6 +7451,13 @@ function ytpArrangeDockControls() {
     bottom.appendChild(slot);
   }
   if (lyrics) bottom.appendChild(lyrics);
+  // Swap the typed arrows for the deck's drawn ones. Play/pause is repainted
+  // by ytpSetPlayPauseIcon from here on, so only seed it.
+  const glyph = (id, icon) => { const el = document.getElementById(id); if (el) el.innerHTML = icon; };
+  glyph('ytp-mf-prev', YTP_DECK_ICONS.prev);
+  glyph('ytp-mf-next', YTP_DECK_ICONS.next);
+  glyph('ytp-mf-shuffle', YTP_DECK_ICONS.shuffle);
+  glyph('ytp-mf-playpause', ytpIsPlaying() ? YTP_DECK_ICONS.pause : YTP_DECK_ICONS.play);
   right.classList.add('arranged');
 }
 
@@ -7712,7 +7756,14 @@ function ytpMfApplyLyricStrip() {
     btn.classList.toggle('on', _mfLyricStripOn);
     btn.title = _mfLyricStripOn ? 'Hide lyrics' : 'Show lyrics';
   }
+  // The font row joins and leaves the button stack with the lyric strip, and
+  // the stack is what the dock's resting height is measured from.
+  const slotWas = fontSlot ? fontSlot.style.display : null;
   if (fontSlot) fontSlot.style.display = visible ? 'flex' : 'none';
+  if (fontSlot && slotWas !== fontSlot.style.display && _ytpMinimized && !ytpIsMob()) {
+    _ytpDockMinHCache = null;
+    requestAnimationFrame(ytpApplyDockHeight);
+  }
   if (pane) {
     pane.classList.toggle('show', visible);
     const sl = document.querySelector('.mf-lyr-font-slider');
@@ -20251,6 +20302,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'The player bar’s play, pause, previous, next and shuffle buttons are drawn properly now, the same way the full screen player draws them. Play and pause is a filled orange circle instead of a grey square with a typed arrow in it.',
+    'On a phone every button in the player bar sits on one row: play, previous, next and shuffle from the left, then More, full screen and close on the right. They used to be split across two rows, which cost a whole row of height for three small buttons.',
+    'The player bar now rests just clear of its own buttons instead of leaving a band of empty space underneath them, and the album picture no longer sits directly on top of the timeline.',
     'Removing one of your songs from a playlist no longer reloads the whole playlist. The cover fades out and the rest of the grid closes up, so the page stays where you left it instead of jumping back to the top.',
     'Moving one of your songs up or down a playlist, or dragging a cover onto another to swap them, no longer reloads the playlist either. The two covers trade places where they are.',
     'Add Songs on a playlist now runs the same three steps as Import Playlist. Choose where the songs come from — the Jukebox, a YouTube playlist, or a single song from YouTube — pick them, review the list, then add. It goes onto the playlist you were already looking at, so nothing asks you which one.',
