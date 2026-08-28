@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/sj-admin-auth";
 import { clientIp, rateLimited, tooMany } from "@/lib/jukebox-request";
-import { beginSpotifyAuthorize, spotifyCookieOptions, SPOTIFY_STATE_COOKIE } from "@/lib/spotify";
+import {
+  beginSpotifyAuthorize,
+  hasSpotifyBackup,
+  preferredSpotifyApp,
+  spotifyCookieOptions,
+  type SpotifyAppKey,
+  SPOTIFY_STATE_COOKIE,
+} from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
 // Saved songs and playlists are the only Spotify data this imports. No
@@ -14,10 +21,19 @@ export async function POST(req: NextRequest) {
     if (rateLimited(`spotify-connect:${clientIp(req)}`, 10)) return tooMany();
     const user = await getAuthUser(req);
     if (!user) return NextResponse.json({ ok: false, error: "Sign in to connect Spotify." }, { status: 401 });
-    // Always start on the primary allowlist app. The callback hops to the
-    // backup overflow app when Spotify refuses this account on primary.
-    const started = beginSpotifyAuthorize(req, user.id, "primary");
-    const response = NextResponse.json({ ok: true, authorizationUrl: started.authorizationUrl });
+
+    let app: SpotifyAppKey = preferredSpotifyApp();
+    try {
+      const body = (await req.json()) as { app?: string };
+      if (body?.app === "primary" || (body?.app === "backup" && hasSpotifyBackup())) {
+        app = body.app;
+      }
+    } catch {
+      // Empty body is fine - use the preferred app.
+    }
+
+    const started = beginSpotifyAuthorize(req, user.id, app);
+    const response = NextResponse.json({ ok: true, authorizationUrl: started.authorizationUrl, app });
     response.cookies.set(SPOTIFY_STATE_COOKIE, started.sealedState, spotifyCookieOptions(req, 10 * 60));
     return response;
   } catch (error) {

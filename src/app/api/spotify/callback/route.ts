@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   beginSpotifyAuthorize,
   exchangeSpotifyCode,
-  hasSpotifyBackup,
   readSpotifyState,
   sealSpotifySession,
   spotifyConfig,
   spotifyCookieOptions,
+  spotifyFallbackApp,
   spotifyProfile,
   spotifySealSecret,
   SPOTIFY_SESSION_COOKIE,
   SPOTIFY_STATE_COOKIE,
   stateMatches,
+  type SpotifyAppKey,
 } from "@/lib/spotify";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,16 @@ function returnHome(req: NextRequest, outcome: "connected" | "denied") {
   const url = new URL("/", req.url);
   url.searchParams.set("spotify", outcome);
   return NextResponse.redirect(url);
+}
+
+function hopToFallback(req: NextRequest, saved: { ownerId: string; app?: SpotifyAppKey; tried?: SpotifyAppKey[] }) {
+  const next = spotifyFallbackApp(saved);
+  if (!next) return null;
+  const tried: SpotifyAppKey[] = [...new Set<SpotifyAppKey>([...(saved.tried || []), saved.app === "backup" ? "backup" : "primary", next])];
+  const started = beginSpotifyAuthorize(req, saved.ownerId, next, tried);
+  const response = NextResponse.redirect(started.authorizationUrl);
+  response.cookies.set(SPOTIFY_STATE_COOKIE, started.sealedState, spotifyCookieOptions(req, 10 * 60));
+  return response;
 }
 
 export async function GET(req: NextRequest) {
@@ -37,7 +48,7 @@ export async function GET(req: NextRequest) {
     return response;
   }
 
-  const app = saved.app === "backup" ? "backup" : "primary";
+  const app: SpotifyAppKey = saved.app === "backup" ? "backup" : "primary";
   const config = (() => { try { return spotifyConfig(req, app); } catch { return null; } })();
   if (!config || saved.redirectUri !== config.redirectUri) {
     const response = returnHome(req, "denied");
@@ -45,22 +56,22 @@ export async function GET(req: NextRequest) {
     return response;
   }
 
-  // Development-mode apps refuse anyone not on their allowlist with
-  // access_denied. Hop once to the backup overflow app instead of failing.
-  // A real Cancel on primary also lands here - they get one more consent
-  // screen on backup, and a second Cancel still denies.
-  if (error === "access_denied" && app === "primary" && hasSpotifyBackup()) {
+  // Development-mode apps refuse allowlist misses with access_denied. Spotify
+  // also sometimes hands back a code and then 403s /v1/me for the same reason.
+  // Either way, hop once to the other dashboard app.
+  if (error) {
     try {
-      const started = beginSpotifyAuthorize(req, saved.ownerId, "backup");
-      const response = NextResponse.redirect(started.authorizationUrl);
-      response.cookies.set(SPOTIFY_STATE_COOKIE, started.sealedState, spotifyCookieOptions(req, 10 * 60));
-      return response;
+      const hop = hopToFallback(req, saved);
+      if (hop) return hop;
     } catch (err) {
-      console.error("[spotify:callback:backup]", err);
+      console.error("[spotify:callback:fallback]", err);
     }
+    const response = returnHome(req, "denied");
+    response.cookies.set(SPOTIFY_STATE_COOKIE, "", spotifyCookieOptions(req, 0));
+    return response;
   }
 
-  if (error || !code) {
+  if (!code) {
     const response = returnHome(req, "denied");
     response.cookies.set(SPOTIFY_STATE_COOKIE, "", spotifyCookieOptions(req, 0));
     return response;
@@ -79,6 +90,12 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (err) {
     console.error("[spotify:callback]", err);
+    try {
+      const hop = hopToFallback(req, saved);
+      if (hop) return hop;
+    } catch (hopErr) {
+      console.error("[spotify:callback:fallback]", hopErr);
+    }
     const response = returnHome(req, "denied");
     response.cookies.set(SPOTIFY_STATE_COOKIE, "", spotifyCookieOptions(req, 0));
     return response;

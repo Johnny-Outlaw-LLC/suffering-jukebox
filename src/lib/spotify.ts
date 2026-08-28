@@ -45,7 +45,15 @@ export function canReadPlaylists(session: SpotifySession) {
   return sessionScopes(session).includes("playlist-read-private");
 }
 
-type SpotifyState = { state: string; ownerId: string; redirectUri: string; app: SpotifyAppKey };
+type SpotifyState = {
+  state: string;
+  ownerId: string;
+  redirectUri: string;
+  app: SpotifyAppKey;
+  // Apps already tried this connect attempt. Stops a deny/403 loop between the
+  // two Development-mode allowlists.
+  tried?: SpotifyAppKey[];
+};
 type SpotifyTokenResponse = { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string };
 
 function redirectUriFor(req: NextRequest) {
@@ -62,6 +70,25 @@ export function spotifySealSecret() {
 
 export function hasSpotifyBackup() {
   return !!(process.env.SPOTIFY_BACKUP_CLIENT_ID?.trim() && process.env.SPOTIFY_BACKUP_CLIENT_SECRET?.trim());
+}
+
+// New test users are added on the overflow (backup) app. Start there when it
+// exists; the original allowlist app is the fallback.
+export function preferredSpotifyApp(): SpotifyAppKey {
+  return hasSpotifyBackup() ? "backup" : "primary";
+}
+
+export function otherSpotifyApp(app: SpotifyAppKey): SpotifyAppKey {
+  return app === "backup" ? "primary" : "backup";
+}
+
+export function spotifyFallbackApp(saved: { app?: SpotifyAppKey; tried?: SpotifyAppKey[] }): SpotifyAppKey | null {
+  const current: SpotifyAppKey = saved.app === "backup" ? "backup" : "primary";
+  const tried = new Set<SpotifyAppKey>([...(saved.tried || []), current]);
+  const next = otherSpotifyApp(current);
+  if (tried.has(next)) return null;
+  if (next === "backup" && !hasSpotifyBackup()) return null;
+  return next;
 }
 
 export function spotifyConfig(req: NextRequest, app: SpotifyAppKey = "primary"): SpotifyConfig {
@@ -112,9 +139,14 @@ export function stateMatches(expected: string, actual: string | null) {
   return !!actual && expected.length === actual.length && timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
 }
 
-// Starts (or restarts) the authorize hop for one dashboard app. Connect uses
-// primary; the callback hops to backup when Spotify refuses a primary user.
-export function beginSpotifyAuthorize(req: NextRequest, ownerId: string, app: SpotifyAppKey = "primary") {
+// Starts (or restarts) the authorize hop for one dashboard app. Connect prefers
+// the overflow app; the callback hops to the other allowlist on deny/403.
+export function beginSpotifyAuthorize(
+  req: NextRequest,
+  ownerId: string,
+  app: SpotifyAppKey = preferredSpotifyApp(),
+  tried: SpotifyAppKey[] = [app],
+) {
   const config = spotifyConfig(req, app);
   const state = randomSpotifyState();
   const authorizationUrl = new URL("https://accounts.spotify.com/authorize");
@@ -131,7 +163,7 @@ export function beginSpotifyAuthorize(req: NextRequest, ownerId: string, app: Sp
     show_dialog: "true",
   }).toString();
   const sealedState = sealSpotifyState(
-    { state, ownerId, redirectUri: config.redirectUri, app },
+    { state, ownerId, redirectUri: config.redirectUri, app, tried },
     spotifySealSecret(),
   );
   return { authorizationUrl: authorizationUrl.toString(), sealedState, config };
