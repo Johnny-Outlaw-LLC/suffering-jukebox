@@ -4,6 +4,10 @@ import type { NextRequest } from "next/server";
 export const SPOTIFY_SESSION_COOKIE = "sj_spotify_session";
 export const SPOTIFY_STATE_COOKIE = "sj_spotify_state";
 
+// Two Development-mode apps share the same redirect. Primary holds the original
+// allowlist; backup is the overflow app for anyone Spotify refuses on primary.
+export type SpotifyAppKey = "primary" | "backup";
+
 export type SpotifySession = {
   ownerId: string;
   spotifyUserId: string;
@@ -15,6 +19,16 @@ export type SpotifySession = {
   // which is why every reader treats a missing value as "saved songs only"
   // rather than as "everything".
   scopes?: string;
+  // Which dashboard app issued the tokens. Missing means primary - every
+  // session sealed before the overflow app existed.
+  app?: SpotifyAppKey;
+};
+
+export type SpotifyConfig = {
+  app: SpotifyAppKey;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
 };
 
 // Saved songs plus the two playlist reads. Nothing here touches playback, the
@@ -31,20 +45,36 @@ export function canReadPlaylists(session: SpotifySession) {
   return sessionScopes(session).includes("playlist-read-private");
 }
 
-type SpotifyState = { state: string; ownerId: string; redirectUri: string };
+type SpotifyState = { state: string; ownerId: string; redirectUri: string; app: SpotifyAppKey };
 type SpotifyTokenResponse = { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string };
 
-export function spotifyConfig(req: NextRequest) {
+function redirectUriFor(req: NextRequest) {
+  return process.env.SPOTIFY_REDIRECT_URI?.trim() || new URL("/api/spotify/callback", req.url).toString();
+}
+
+// Cookie crypto always uses the primary secret so a session survives switching
+// apps and so existing cookies keep reading after the backup app was added.
+export function spotifySealSecret() {
+  const secret = process.env.SPOTIFY_CLIENT_SECRET?.trim();
+  if (!secret) throw new Error("Spotify is not configured yet.");
+  return secret;
+}
+
+export function hasSpotifyBackup() {
+  return !!(process.env.SPOTIFY_BACKUP_CLIENT_ID?.trim() && process.env.SPOTIFY_BACKUP_CLIENT_SECRET?.trim());
+}
+
+export function spotifyConfig(req: NextRequest, app: SpotifyAppKey = "primary"): SpotifyConfig {
+  if (app === "backup") {
+    const clientId = process.env.SPOTIFY_BACKUP_CLIENT_ID?.trim();
+    const clientSecret = process.env.SPOTIFY_BACKUP_CLIENT_SECRET?.trim();
+    if (!clientId || !clientSecret) throw new Error("Spotify backup is not configured yet.");
+    return { app, clientId, clientSecret, redirectUri: redirectUriFor(req) };
+  }
   const clientId = process.env.SPOTIFY_CLIENT_ID?.trim();
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) throw new Error("Spotify is not configured yet.");
-  return {
-    clientId,
-    clientSecret,
-    // A dashboard-configured URI wins. The fallback makes localhost work while
-    // keeping all credentials on the server.
-    redirectUri: process.env.SPOTIFY_REDIRECT_URI?.trim() || new URL("/api/spotify/callback", req.url).toString(),
-  };
+  return { app: "primary", clientId, clientSecret, redirectUri: redirectUriFor(req) };
 }
 
 function key(secret: string) { return createHash("sha256").update(secret).digest(); }
@@ -82,7 +112,32 @@ export function stateMatches(expected: string, actual: string | null) {
   return !!actual && expected.length === actual.length && timingSafeEqual(Buffer.from(expected), Buffer.from(actual));
 }
 
-export async function exchangeSpotifyCode(code: string, config: ReturnType<typeof spotifyConfig>) {
+// Starts (or restarts) the authorize hop for one dashboard app. Connect uses
+// primary; the callback hops to backup when Spotify refuses a primary user.
+export function beginSpotifyAuthorize(req: NextRequest, ownerId: string, app: SpotifyAppKey = "primary") {
+  const config = spotifyConfig(req, app);
+  const state = randomSpotifyState();
+  const authorizationUrl = new URL("https://accounts.spotify.com/authorize");
+  // show_dialog because Disconnect has to mean something. Without it Spotify
+  // silently re-links the same account, so nobody could hand the panel a
+  // different one - and a listener reconnecting for playlist permission would
+  // never see what they were agreeing to.
+  authorizationUrl.search = new URLSearchParams({
+    client_id: config.clientId,
+    response_type: "code",
+    redirect_uri: config.redirectUri,
+    scope: SPOTIFY_SCOPES.join(" "),
+    state,
+    show_dialog: "true",
+  }).toString();
+  const sealedState = sealSpotifyState(
+    { state, ownerId, redirectUri: config.redirectUri, app },
+    spotifySealSecret(),
+  );
+  return { authorizationUrl: authorizationUrl.toString(), sealedState, config };
+}
+
+export async function exchangeSpotifyCode(code: string, config: SpotifyConfig) {
   const res = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: {
@@ -95,10 +150,10 @@ export async function exchangeSpotifyCode(code: string, config: ReturnType<typeo
   if (!res.ok) throw new Error("Spotify could not finish the connection.");
   const token = (await res.json()) as SpotifyTokenResponse;
   if (!token.access_token || !token.refresh_token || !token.expires_in) throw new Error("Spotify returned an incomplete connection.");
-  return { accessToken: token.access_token, refreshToken: token.refresh_token, expiresAt: Date.now() + token.expires_in * 1000, scopes: token.scope || "" };
+  return { accessToken: token.access_token, refreshToken: token.refresh_token, expiresAt: Date.now() + token.expires_in * 1000, scopes: token.scope || "", app: config.app };
 }
 
-export async function refreshSpotifySession(session: SpotifySession, config: ReturnType<typeof spotifyConfig>) {
+export async function refreshSpotifySession(session: SpotifySession, config: SpotifyConfig) {
   const res = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: {
@@ -111,7 +166,14 @@ export async function refreshSpotifySession(session: SpotifySession, config: Ret
   if (!res.ok) throw new Error("Your Spotify connection has expired. Connect Spotify again.");
   const token = (await res.json()) as SpotifyTokenResponse;
   if (!token.access_token || !token.expires_in) throw new Error("Spotify could not refresh the connection.");
-  return { ...session, accessToken: token.access_token, refreshToken: token.refresh_token || session.refreshToken, expiresAt: Date.now() + token.expires_in * 1000, scopes: token.scope || session.scopes || "" };
+  return {
+    ...session,
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token || session.refreshToken,
+    expiresAt: Date.now() + token.expires_in * 1000,
+    scopes: token.scope || session.scopes || "",
+    app: config.app,
+  };
 }
 
 export async function spotifyProfile(accessToken: string) {
@@ -129,13 +191,14 @@ export async function spotifyProfile(accessToken: string) {
 // Doing it in one place is what keeps a new route from quietly skipping the
 // ownership check.
 export function spotifySessionFor(req: NextRequest, ownerId: string) {
-  const config = spotifyConfig(req);
-  const session = readSpotifySession(req.cookies.get(SPOTIFY_SESSION_COOKIE)?.value, config.clientSecret);
+  const sealSecret = spotifySealSecret();
+  const session = readSpotifySession(req.cookies.get(SPOTIFY_SESSION_COOKIE)?.value, sealSecret);
   if (!session || session.ownerId !== ownerId) return null;
-  return { config, session };
+  const app: SpotifyAppKey = session.app === "backup" ? "backup" : "primary";
+  return { config: spotifyConfig(req, app), session, sealSecret };
 }
 
-export async function freshSpotifySession(session: SpotifySession, config: ReturnType<typeof spotifyConfig>) {
+export async function freshSpotifySession(session: SpotifySession, config: SpotifyConfig) {
   if (session.expiresAt > Date.now() + 60_000) return { session, refreshed: false };
   return { session: await refreshSpotifySession(session, config), refreshed: true };
 }

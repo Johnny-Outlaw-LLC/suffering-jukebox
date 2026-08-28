@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
     }
 
     const response = NextResponse.json({ ok: true, tracks, total: total || tracks.length, truncated: !!url });
-    if (token.refreshed) response.cookies.set(SPOTIFY_SESSION_COOKIE, sealSpotifySession(token.session, found.config.clientSecret), spotifyCookieOptions(req, 180 * 24 * 60 * 60));
+    if (token.refreshed) response.cookies.set(SPOTIFY_SESSION_COOKIE, sealSpotifySession(token.session, found.sealSecret), spotifyCookieOptions(req, 180 * 24 * 60 * 60));
     return response;
   } catch (error) {
     if (error instanceof SpotifyScopeError) {

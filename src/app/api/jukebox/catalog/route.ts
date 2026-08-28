@@ -39,15 +39,33 @@ export async function GET(req: NextRequest) {
       const safe = q.replace(/[,.()*%]/g, " ").trim();
       if (!safe) return NextResponse.json({ ok: true, mode: "search", results: [] });
 
-      const { data, error } = await sb
-        .schema(JUKEBOX_SCHEMA)
-        .from("tracks")
-        .select("id,name,duration_ms,explicit,albums!inner(id,name,art_url,release_date,artists!inner(id,name,slug))")
-        .ilike("name", `%${safe}%`)
-        .order("name", { ascending: true })
-        .limit(SEARCH_LIMIT);
-      if (error) throw error;
-      return NextResponse.json({ ok: true, mode: "search", results: (data ?? []).map(shapeTrack) });
+      // Title-only search made "Tool" and "Windser" look empty: guests type the
+      // band, and the song names do not contain it. Hit title, artist and album
+      // in parallel, artist/album first so the band they asked for leads.
+      const pattern = `%${safe}%`;
+      const trackSelect =
+        "id,name,duration_ms,explicit,albums!inner(id,name,art_url,release_date,artists!inner(id,name,slug))";
+      const base = () =>
+        sb.schema(JUKEBOX_SCHEMA).from("tracks").select(trackSelect).order("name", { ascending: true }).limit(SEARCH_LIMIT);
+
+      const [byArtist, byAlbum, byTitle] = await Promise.all([
+        base().ilike("albums.artists.name", pattern),
+        base().ilike("albums.name", pattern),
+        base().ilike("name", pattern),
+      ]);
+      if (byArtist.error) throw byArtist.error;
+      if (byAlbum.error) throw byAlbum.error;
+      if (byTitle.error) throw byTitle.error;
+
+      const seen = new Set<string>();
+      const merged: any[] = [];
+      for (const row of [...(byArtist.data ?? []), ...(byAlbum.data ?? []), ...(byTitle.data ?? [])]) {
+        if (!row?.id || seen.has(row.id)) continue;
+        seen.add(row.id);
+        merged.push(row);
+        if (merged.length >= SEARCH_LIMIT) break;
+      }
+      return NextResponse.json({ ok: true, mode: "search", results: merged.map(shapeTrack) });
     }
 
     if (artistId) {
