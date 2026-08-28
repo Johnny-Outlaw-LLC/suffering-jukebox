@@ -15504,7 +15504,27 @@ async function plWallSwapPositions(indexA, indexB) {
       dbPatch(`/playlist_tracks?id=eq.${b.id}`, { position: p1 }),
     ]);
     a.position = p2; b.position = p1;
-    await openPlaylistChart(playlistChartId);
+    // Same reasoning as plWallRemoveMyTrack: swap the two in place and
+    // repaint the list rather than refetching the whole playlist.
+    const live = ytQueue === playlistChartBaseQueue;
+    const tmp = playlistChartBaseQueue[indexA];
+    playlistChartBaseQueue[indexA] = playlistChartBaseQueue[indexB];
+    playlistChartBaseQueue[indexB] = tmp;
+    const ra = playlistChartRows.findIndex(r => r.ptId === rowA.ptId);
+    const rb = playlistChartRows.findIndex(r => r.ptId === rowB.ptId);
+    if (ra >= 0 && rb >= 0) {
+      const t = playlistChartRows[ra];
+      playlistChartRows[ra] = playlistChartRows[rb];
+      playlistChartRows[rb] = t;
+      playlistChartRows.forEach((r, n) => { r.index = n; });
+    }
+    if (live) {
+      if (ytQueueIdx === indexA) ytQueueIdx = indexB;
+      else if (ytQueueIdx === indexB) ytQueueIdx = indexA;
+      updateYTQueueUI();
+    }
+    plWallClosePop();
+    plWallRepaintList();
   } catch (e) {
     showToast('Could not reorder that song.');
   }
@@ -15560,14 +15580,42 @@ async function plWallRemoveMyTrack(index) {
   const row = playlistChartRowFor(q[index], index);
   if (!row.ptId || row.addedByEmail !== googleUser.email) return;
   const pl = (_savedPlaylists || []).find(x => x.id === playlistChartId);
+  // Once the playlist is playing, ytQueue IS playlistChartBaseQueue, so the
+  // index the card carries is an index into both. Pulling the song being
+  // played out from under the player is the one case still worth the slow
+  // path - everything else is a splice and a repaint.
+  const live = ytQueue === playlistChartBaseQueue;
+  const playingThis = live && index === ytQueueIdx;
+  const scroll = document.getElementById('playlist-chart-scroll');
+  const cell = scroll ? scroll.querySelector(`[data-pc-index="${index}"]`) : null;
+  // Fade it the moment it is clicked rather than after the round trip, and
+  // put it back if the delete does not land.
+  if (cell) {
+    cell.style.transition = 'opacity .15s ease';
+    cell.style.opacity = '0.25';
+  }
   try {
     await dbDelete(`/playlist_tracks?id=eq.${row.ptId}`);
-    if (pl?._tracks) pl._tracks = pl._tracks.filter(t => t.id !== row.ptId);
-    showToast('Removed from the playlist.');
-    await openPlaylistChart(playlistChartId);
   } catch (e) {
+    if (cell) cell.style.opacity = '';
     showToast('Could not remove that song.');
+    return;
   }
+  if (pl?._tracks) pl._tracks = pl._tracks.filter(t => t.id !== row.ptId);
+  showToast('Removed from the playlist.');
+  if (playingThis) { await openPlaylistChart(playlistChartId); return; }
+  plWallClosePop();
+  const rowIdx = playlistChartRows.findIndex(r => r.ptId === row.ptId);
+  if (rowIdx >= 0) playlistChartRows.splice(rowIdx, 1);
+  playlistChartRows.forEach((r, n) => { r.index = n; });
+  // Splice in place. Reassigning would break the ytQueue === base identity
+  // that keeps the wall following the live queue.
+  playlistChartBaseQueue.splice(index, 1);
+  if (live) {
+    if (index < ytQueueIdx) ytQueueIdx--;
+    updateYTQueueUI();
+  }
+  plWallRepaintList();
 }
 
 function plWallUploadedBy(trackId) {
@@ -15606,6 +15654,120 @@ function togglePlDetailAccordion(i, ev) {
   if (body) fetchLyricsForAcc(trackId);
 }
 
+// One cover cell and one detail row, lifted out of renderPlaylistChart so a
+// removal can repaint the list on its own. Both take the index they sit at,
+// because every handler on them carries it.
+function plWallCellHTML(item, i, curIdx) {
+  const esc = s => escHtml(s || '');
+  const row = playlistChartRowFor(item, i);
+  const isCurrent = i === curIdx;
+  const blocked = isTrackBlocked(row.trackId);
+  const editable = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
+  const art = row.artwork
+    ? `<img src="${row.artwork}" loading="lazy" alt="">`
+    : '<span class="pl-wall-fallback">♫</span>';
+  const tip = plWallPlayTip(row.trackId);
+  const tipAttr = tip ? ` title="${esc(tip)}"` : '';
+  const dragAttrs = editable
+    ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
+    : '';
+  const xBtn = editable
+    ? `<button type="button" class="pl-wall-cell-x" title="Remove from this playlist" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})">✕</button>`
+    : '';
+  return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${editable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" role="button" tabindex="0"${tipAttr}${dragAttrs} onclick="plWallOpenPop(${i},event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();plWallOpenPop(${i},event)}">${art}${plWallCellOverlays(row.trackId, row.title)}${xBtn}</div>`;
+}
+
+function plWallDetailRowHTML(item, i, curIdx) {
+  const esc = s => escHtml(s || '');
+  const row = playlistChartRowFor(item, i);
+  const isCurrent = i === curIdx;
+  const blocked = isTrackBlocked(row.trackId);
+  const vote = getMyVote(row.trackId);
+  const heartN = Number((trackReactionCounts[row.trackId] || {}).heart) || 0;
+  const last = plWallFmtLastPlay(myLastPlayed[row.trackId]) || '—';
+  const tot = Number(inAppPlays[row.trackId]) || 0;
+  const yt = Number(ytData[row.trackId]?.views || row.views) || 0;
+  const uploaded = plWallUploadedBy(row.trackId);
+  const addedByLbl = row.addedByName || (row.addedByEmail ? row.addedByEmail.split('@')[0] : '');
+  const isMine = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
+  const rowEditable = isMine;
+  const canUp = rowEditable && plWallNearestOwnIndex(i, -1, row.addedByEmail) >= 0;
+  const canDown = rowEditable && plWallNearestOwnIndex(i, 1, row.addedByEmail) >= 0;
+  const manageCell = (isMine
+    ? `<td class="rxn" onclick="event.stopPropagation()"><div class="pl-detail-mine-actions">` +
+        `<button type="button" class="pl-detail-move" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},-1)" title="Move up among your songs">▲</button>` +
+        `<button type="button" class="pl-detail-move" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},1)" title="Move down among your songs">▼</button>` +
+        `<button type="button" class="pl-detail-rm" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})" title="Remove from this playlist">✕</button>` +
+      `</div></td>`
+    : `<td class="rxn" onclick="event.stopPropagation()"><span class="pl-detail-locked" title="Added by someone else - only they (or the playlist owner) can move or remove it">🔒</span></td>`);
+  const dragAttrs = rowEditable
+    ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
+    : '';
+  const art = row.artwork
+    ? `<img class="pl-detail-art" src="${row.artwork}" loading="lazy" alt="">`
+    : '<span class="pl-detail-art-ph">♫</span>';
+  return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${rowEditable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}"${dragAttrs} onclick="togglePlDetailAccordion(${i},event)">` +
+    `<td><div class="pl-detail-track">${art}<span class="pl-detail-title">${esc(row.title)}</span></div></td>` +
+    `<td><div class="pl-detail-muted" title="${esc(row.album)}">${esc(row.album) || '—'}</div></td>` +
+    `<td><div class="pl-detail-muted" title="${esc(row.artist)}">${esc(row.artist) || '—'}</div></td>` +
+    `<td><div class="pl-detail-muted" title="${esc(uploaded)}">${esc(uploaded) || '—'}</div></td>` +
+    `<td><div class="pl-detail-muted" title="${esc(row.addedByEmail)}">${esc(addedByLbl) || '—'}</div></td>` +
+    `<td class="num" data-pl-last>${esc(last)}</td>` +
+    `<td class="num" data-pl-total>${tot ? fmtV(tot) : '—'}</td>` +
+    `<td class="num" data-pl-yt>${yt ? fmtV(yt) : '—'}</td>` +
+    `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="tvb-cycle pl-detail-rxn${voteClass(vote)}" data-vote-track="${row.trackId}" onclick="cycleVote('${row.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button></td>` +
+    `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button></td>` +
+    manageCell +
+  `</tr>`;
+}
+
+function plWallSummaryHTML() {
+  const totalSongs = playlistChartRows.length;
+  const totalDurMs = playlistChartRows.reduce((s, r) => s + (Number(r.duration) || 0), 0);
+  return totalSongs
+    ? `<div class="pl-wall-summary"><span class="pl-wall-stat"><b>${totalSongs}</b> song${totalSongs === 1 ? '' : 's'}, <b>${plWallFmtClock(totalDurMs)}</b> total play time</span></div>`
+    : '';
+}
+
+// Repaint the songs and the count, and nothing else. Removing one song used
+// to call openPlaylistChart(), which refetches every track, album, artist,
+// view count and lyric on the playlist and redraws the page around them - so
+// the screen blanked and the scroll went back to the top for a change to one
+// card. The list is rebuilt whole rather than patched because each cell
+// carries its own index in its handlers, and everything after a removal
+// shifts up by one.
+function plWallRepaintList() {
+  if (viewMode !== 'playlistchart') return;
+  const q = playlistChartQueue();
+  const isDetail = playlistWallMode === 'detail';
+  const host = isDetail
+    ? document.querySelector('#pl-detail-tbl tbody')
+    : document.getElementById('pl-wall-grid');
+  // An empty playlist swaps the grid for a message, and a missing host means
+  // the page is not the one we think it is. Both want the full render - and
+  // an emptied playlist has to say so, or it sits on Loading forever.
+  if (!q.length || !host) {
+    renderPlaylistChart(playlistChartRows.length ? undefined : 'This playlist has no tracks.');
+    return;
+  }
+  const curIdx = playlistChartCurrentCellIndex();
+  const scroll = document.getElementById('playlist-chart-scroll');
+  const keepTop = scroll ? scroll.scrollTop : 0;
+  host.innerHTML = q.map((item, i) => isDetail
+    ? plWallDetailRowHTML(item, i, curIdx)
+    : plWallCellHTML(item, i, curIdx)).join('');
+  if (scroll) scroll.scrollTop = keepTop;
+  const sum = document.querySelector('.pl-wall-summary');
+  const sumHTML = plWallSummaryHTML();
+  if (sum && sumHTML) sum.outerHTML = sumHTML;
+  else if (sum) sum.remove();
+  playlistChartPaintTransport();
+  // Counts are already in memory, so this only repaints the badges the fresh
+  // markup has not been told about yet.
+  plWallLoadReactionCounts(q.map(it => it.trackId));
+  if (!isDetail) plWallBindBadgeHovers();
+}
+
 function renderPlaylistChart(error) {
   plWallClosePop();
   const main = document.getElementById('main');
@@ -15619,67 +15781,9 @@ function renderPlaylistChart(error) {
   const miniClass = !isDetail && playlistWallSize <= 96 ? ' pl-wall-mini' : '';
   const modeClass = isDetail ? ' pl-wall-detail-mode' : '';
 
-  const cells = !isDetail ? q.map((item, i) => {
-    const row = playlistChartRowFor(item, i);
-    const isCurrent = i === curIdx;
-    const blocked = isTrackBlocked(row.trackId);
-    const editable = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
-    const art = row.artwork
-      ? `<img src="${row.artwork}" loading="lazy" alt="">`
-      : '<span class="pl-wall-fallback">♫</span>';
-    const tip = plWallPlayTip(row.trackId);
-    const tipAttr = tip ? ` title="${esc(tip)}"` : '';
-    const dragAttrs = editable
-      ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
-      : '';
-    const xBtn = editable
-      ? `<button type="button" class="pl-wall-cell-x" title="Remove from this playlist" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})">✕</button>`
-      : '';
-    return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${editable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" role="button" tabindex="0"${tipAttr}${dragAttrs} onclick="plWallOpenPop(${i},event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();plWallOpenPop(${i},event)}">${art}${plWallCellOverlays(row.trackId, row.title)}${xBtn}</div>`;
-  }).join('') : '';
+  const cells = !isDetail ? q.map((item, i) => plWallCellHTML(item, i, curIdx)).join('') : '';
 
-  const detailRows = isDetail ? q.map((item, i) => {
-    const row = playlistChartRowFor(item, i);
-    const isCurrent = i === curIdx;
-    const blocked = isTrackBlocked(row.trackId);
-    const vote = getMyVote(row.trackId);
-    const heartN = Number((trackReactionCounts[row.trackId] || {}).heart) || 0;
-    const last = plWallFmtLastPlay(myLastPlayed[row.trackId]) || '—';
-    const tot = Number(inAppPlays[row.trackId]) || 0;
-    const yt = Number(ytData[row.trackId]?.views || row.views) || 0;
-    const uploaded = plWallUploadedBy(row.trackId);
-    const addedByLbl = row.addedByName || (row.addedByEmail ? row.addedByEmail.split('@')[0] : '');
-    const isMine = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
-    const rowEditable = isMine;
-    const canUp = rowEditable && plWallNearestOwnIndex(i, -1, row.addedByEmail) >= 0;
-    const canDown = rowEditable && plWallNearestOwnIndex(i, 1, row.addedByEmail) >= 0;
-    const manageCell = (isMine
-      ? `<td class="rxn" onclick="event.stopPropagation()"><div class="pl-detail-mine-actions">` +
-          `<button type="button" class="pl-detail-move" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},-1)" title="Move up among your songs">▲</button>` +
-          `<button type="button" class="pl-detail-move" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},1)" title="Move down among your songs">▼</button>` +
-          `<button type="button" class="pl-detail-rm" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})" title="Remove from this playlist">✕</button>` +
-        `</div></td>`
-      : `<td class="rxn" onclick="event.stopPropagation()"><span class="pl-detail-locked" title="Added by someone else - only they (or the playlist owner) can move or remove it">🔒</span></td>`);
-    const dragAttrs = rowEditable
-      ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
-      : '';
-    const art = row.artwork
-      ? `<img class="pl-detail-art" src="${row.artwork}" loading="lazy" alt="">`
-      : '<span class="pl-detail-art-ph">♫</span>';
-    return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${rowEditable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}"${dragAttrs} onclick="togglePlDetailAccordion(${i},event)">` +
-      `<td><div class="pl-detail-track">${art}<span class="pl-detail-title">${esc(row.title)}</span></div></td>` +
-      `<td><div class="pl-detail-muted" title="${esc(row.album)}">${esc(row.album) || '—'}</div></td>` +
-      `<td><div class="pl-detail-muted" title="${esc(row.artist)}">${esc(row.artist) || '—'}</div></td>` +
-      `<td><div class="pl-detail-muted" title="${esc(uploaded)}">${esc(uploaded) || '—'}</div></td>` +
-      `<td><div class="pl-detail-muted" title="${esc(row.addedByEmail)}">${esc(addedByLbl) || '—'}</div></td>` +
-      `<td class="num" data-pl-last>${esc(last)}</td>` +
-      `<td class="num" data-pl-total>${tot ? fmtV(tot) : '—'}</td>` +
-      `<td class="num" data-pl-yt>${yt ? fmtV(yt) : '—'}</td>` +
-      `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="tvb-cycle pl-detail-rxn${voteClass(vote)}" data-vote-track="${row.trackId}" onclick="cycleVote('${row.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button></td>` +
-      `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button></td>` +
-      manageCell +
-    `</tr>`;
-  }).join('') : '';
+  const detailRows = isDetail ? q.map((item, i) => plWallDetailRowHTML(item, i, curIdx)).join('') : '';
 
   const manageTh = '<th class="rxn" title="Manage your songs">⚙</th>';
   const body = error
@@ -15702,11 +15806,7 @@ function renderPlaylistChart(error) {
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
   const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
-  const totalSongs = playlistChartRows.length;
-  const totalDurMs = playlistChartRows.reduce((s, r) => s + (Number(r.duration) || 0), 0);
-  const statsHTML = totalSongs
-    ? `<div class="pl-wall-summary"><span class="pl-wall-stat"><b>${totalSongs}</b> song${totalSongs === 1 ? '' : 's'}, <b>${plWallFmtClock(totalDurMs)}</b> total play time</span></div>`
-    : '';
+  const statsHTML = plWallSummaryHTML();
   main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
@@ -20151,6 +20251,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Removing one of your songs from a playlist no longer reloads the whole playlist. The cover fades out and the rest of the grid closes up, so the page stays where you left it instead of jumping back to the top.',
+    'Moving one of your songs up or down a playlist, or dragging a cover onto another to swap them, no longer reloads the playlist either. The two covers trade places where they are.',
     'Add Songs on a playlist now runs the same three steps as Import Playlist. Choose where the songs come from — the Jukebox, a YouTube playlist, or a single song from YouTube — pick them, review the list, then add. It goes onto the playlist you were already looking at, so nothing asks you which one.',
     'Import Playlist now asks at the end where the songs should go: into a brand new playlist, or onto one you already have. Songs already on that playlist are skipped rather than added twice.',
     'Import Playlist can also pull in one song at a time from YouTube now, not only a whole playlist.',
