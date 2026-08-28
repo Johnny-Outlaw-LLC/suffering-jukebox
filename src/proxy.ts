@@ -70,11 +70,24 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   let response = NextResponse.next();
+  // A room is rendered by the main application in its restricted room mode.
+  // Keep the old printed /j/CODE cards working, but never send a visitor to a
+  // second guest-only player implementation.
+  const codeMatch = request.method === "GET" && pathname.match(/^\/j\/([a-z0-9-]{3,40})\/?$/i);
+  if (codeMatch) {
+    const to = request.nextUrl.clone();
+    to.pathname = "/";
+    to.searchParams.set("live", codeMatch[1]);
+    response = NextResponse.rewrite(to);
+    response.cookies.set("sj_live_room", codeMatch[1], { maxAge: 120, path: "/", sameSite: "lax", secure: true });
+  }
   const slug = request.method === "GET" ? slugCandidate(pathname) : null;
   if (slug && (await vanitySlugs()).has(slug)) {
     const to = request.nextUrl.clone();
-    to.pathname = `/j/${slug}`;
+    to.pathname = "/";
+    to.searchParams.set("live", slug);
     response = NextResponse.rewrite(to);
+    response.cookies.set("sj_live_room", slug, { maxAge: 120, path: "/", sameSite: "lax", secure: true });
   }
 
   const navRef = request.headers.get("referer") || request.headers.get("referrer");

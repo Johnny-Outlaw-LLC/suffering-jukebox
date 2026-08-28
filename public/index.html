@@ -1594,6 +1594,19 @@ textarea.report-input { resize:vertical; }
 /* ── Left: art + header ── */
 .ytp-mf-now { grid-area: now; display: flex; align-items: center; gap: 11px; min-width: 0; }
 .ytp-mf-art-wrap { position: relative; width: var(--mf-body); height: var(--mf-body); flex-shrink: 0; transition: width .12s, height .12s; }
+.ytp-mf-ver-slot {
+  display:none; position:absolute; left:0; right:0; bottom:calc(100% + 5px); z-index:7;
+}
+.ytp-mf-ver-slot:not([hidden]) { display:block; }
+.ytp-mf-ver-btn {
+  display:block; width:100%; box-sizing:border-box;
+  border:1px solid var(--accent); border-radius:6px; background:rgba(13,10,16,.92);
+  color:var(--accent); font-family:var(--mono); font-size:.48rem; font-weight:700;
+  letter-spacing:.02em; padding:4px 7px; cursor:pointer; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; text-align:left;
+  box-shadow:0 4px 14px #0008;
+}
+.ytp-mf-ver-btn:hover { background:rgba(255,107,53,.18); }
 .ytp-mf-art {
   width: 100%; height: 100%; display: block; border-radius: 6px;
   object-fit: cover; background: var(--bg-elevated); border: 1px solid var(--border);
@@ -1620,11 +1633,20 @@ textarea.report-input { resize:vertical; }
   min-width: 0; flex: 1 1 auto;
 }
 .ytp-mf-song.now-playing { color: var(--accent); }
-.ytp-mf-feedback { display: flex; align-items: center; gap: 4px; min-height: 24px; margin-top: 4px; }
+.ytp-mf-feedback { display: flex; align-items: center; gap: 4px; min-height: 24px; margin-top: 4px; flex-wrap: wrap; }
 .ytp-mf-feedback #ytp-mf-vote,
-.ytp-mf-feedback #ytp-mf-lyrics { width: 24px; height: 24px; border-radius: 6px; font-size: .7rem; flex-shrink: 0; }
+.ytp-mf-feedback #ytp-mf-more { width: 24px; height: 24px; border-radius: 6px; font-size: .7rem; flex-shrink: 0; }
 .ytp-mf-reactions { display: flex; flex-direction: row; gap: 4px; flex-shrink: 0; }
 .ytp-mf-reactions .ytp-mf-btn { width: 24px; height: 24px; border-radius: 6px; }
+.ytp-mf-font-row {
+  display: none; align-items: center; margin-top: 6px; min-height: 22px;
+}
+.ytp-mf-font-row.show { display: flex; }
+.ytp-mf-font-row .mf-lyr-font-ctrl {
+  display: flex; align-items: center; gap: 4px; line-height: 1;
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+}
 .ytp-mf-album {
   font-size: .5rem; line-height: 1.2; color: var(--text-muted); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1646,22 +1668,13 @@ textarea.report-input { resize:vertical; }
   #ytp-mini-footer .ytp-mf-right {
     position: absolute; right: 16px; bottom: 30px; z-index: 6;
   }
-  /* Once the queue has enough room to appear, the lyrics use the matching
-     upper band: video edge to queue edge, ending above both metadata and the
-     three-row button stack. JS supplies the live lower boundary. */
+  /* Lyrics stay in the middle band beside the title / transport. The queue
+     takes the upper-right above that title bar rather than pushing lyrics up. */
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr.show {
-    position: absolute;
-    left: calc(16px + var(--mf-body) + 16px);
-    right: calc(32px + min(270px, 22vw));
-    top: 14px;
-    bottom: var(--mf-lyric-lower-clearance, 120px);
-    z-index: 4;
-    width: auto;
-    height: auto;
-    padding-left: 0;
-    align-self: auto;
+    align-self: end;
+    height: var(--mf-body);
   }
-  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: 100%; }
+  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: var(--mf-body); }
 }
 .ytp-mf-scrub-time {
   font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
@@ -1730,8 +1743,6 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-lyr.show { display: flex; }
 .ytp-mini-footer.dock-grown .ytp-mf-lyr {
   align-self: end; width: 100%; justify-self: stretch;
-  /* Its left edge stays just beyond the heart buttons. The growing video
-     already narrows this grid column, so do not throw away usable lyric room. */
   padding-left: 4px;
 }
 .ytp-mf-lyr-view {
@@ -1756,6 +1767,8 @@ textarea.report-input { resize:vertical; }
   overflow:auto; padding:8px 10px; box-sizing:border-box;
   background:color-mix(in srgb,var(--bg-card) 94%,transparent);
   border:1px solid var(--border); border-radius:8px; scrollbar-width:thin;
+  /* Sit above the title / transport band; lyrics keep the middle column. */
+  z-index:5;
 }
 .ytp-mini-footer.dock-show-playlist .ytp-mf-playlist { display:block; }
 .ytp-mf-playlist-head { position:sticky; top:-8px; z-index:1; padding:5px 0 7px; background:var(--bg-card); font-size:.48rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
@@ -1764,6 +1777,14 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-playlist-num { width:1.6em; flex:none; text-align:right; }
 .ytp-mf-playlist-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .ytp-mf-top, .ytp-mf-middle, .ytp-mf-bottom { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+.ytp-mf-up-next {
+  display:none; align-items:center; gap:7px; min-width:0; max-width:min(320px,42vw);
+  padding:4px 0 0; align-self:stretch;
+}
+.ytp-mf-up-next:not(:empty) { display:flex; }
+.ytp-mf-up-next .yt-queue-up-next {
+  flex:1; min-width:0; padding:4px 0; background:transparent; border:none;
+}
 .ytp-mf-win { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 @keyframes ytpMfAttention {
   0%, 100% { transform: scale(1); }
@@ -1798,38 +1819,26 @@ textarea.report-input { resize:vertical; }
 #ytp-mini-footer #ytp-mf-more,
 #ytp-mini-footer #ytp-mf-restore,
 #ytp-mini-footer #ytp-mf-close { display: flex !important; visibility: visible !important; }
-/* Font-size slider sits at the right edge of the lyric window. It is also what
-   picks how many lines fit: bigger type, fewer lines. */
-.ytp-mf-lyr .mf-lyr-font-ctrl {
-  display: flex; align-items: center; gap: 4px; line-height: 1; flex-shrink: 0;
-}
-.ytp-mf-font-slot { display:none; justify-content:flex-end; align-items:center; }
-.ytp-mf-font-slot .mf-lyr-font-ctrl { display:flex; align-items:center; gap:4px; line-height:1; padding:7px 9px; border:1px solid var(--border); border-radius:7px; background:color-mix(in srgb,var(--bg-card) 92%,transparent); }
+/* Font-size slider lives under the thumbs / hearts on the left. */
+.ytp-mf-lyr .mf-lyr-font-ctrl { display: none; }
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-right {
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: "font win" "controls win";
+  grid-template-areas: "upnext win" "controls win";
   align-items: end; column-gap: 8px; row-gap: 8px;
 }
-.ytp-mini-footer.dock-controls-wrapped .ytp-mf-font-slot {
-  grid-area: font; display: flex; justify-content: flex-end; align-items: center;
+.ytp-mini-footer.dock-controls-wrapped .ytp-mf-up-next {
+  grid-area: upnext; max-width: none;
 }
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-controls {
   grid-area: controls; display: grid; grid-template-columns: repeat(3, var(--mf-btn));
   justify-content: end; gap: 6px;
 }
-.ytp-mini-footer.dock-controls-wrapped #ytp-mf-lyrics { grid-column: 1; grid-row: 1; }
 .ytp-mini-footer.dock-controls-wrapped #ytp-mf-next   { grid-column: 2; grid-row: 1; }
-.ytp-mini-footer.dock-controls-wrapped #ytp-mf-more   { grid-column: 3; grid-row: 1; }
 .ytp-mini-footer.dock-controls-wrapped #ytp-mf-comment { grid-column: 1; grid-row: 2; }
 .ytp-mini-footer.dock-controls-wrapped #ytp-mf-shuffle { grid-column: 1; grid-row: 2; }
 .ytp-mini-footer.dock-controls-wrapped #ytp-mf-prev    { grid-column: 2; grid-row: 2; }
 .ytp-mini-footer.dock-controls-wrapped #ytp-mf-playpause { grid-column: 3; grid-row: 2; }
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-win { grid-area: win; }
-.ytp-mini-footer.dock-controls-wrapped .ytp-mf-font-slot .mf-lyr-font-ctrl {
-  display: flex; align-items: center; gap: 4px; line-height: 1;
-  padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px;
-  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
-}
 /* Separator between the transport controls and the window buttons. */
 .ytp-mf-sep { width: 1px; align-self: stretch; margin: 2px 0; background: var(--border); flex-shrink: 0; }
 /* Match the restore glyph's square fill to the bar, not the player window. */
@@ -1866,12 +1875,12 @@ textarea.report-input { resize:vertical; }
     display: grid;
     grid-template-columns: 1fr auto;
     /* Transport and the window buttons share the bottom row: transport from
-       the left, More / Full screen / Close hard right. Splitting them over
-       two rows cost a whole row of dock height for six small buttons. */
+       the left, Full screen / Close hard right. ⋯ lives beside the hearts. */
     grid-template-areas:
       "now    now"
       "lyr    lyr"
       "scrub  scrub"
+      "upnext upnext"
       "middle top";
     align-items: center;
     column-gap: 8px;
@@ -1883,38 +1892,31 @@ textarea.report-input { resize:vertical; }
   .ytp-mini-footer.dock-grown .ytp-mf-controls { flex-wrap: wrap; justify-content: center; }
   .ytp-mini-footer.dock-grown .ytp-mf-win { flex-direction: row; }
   .ytp-mini-footer.dock-controls-wrapped .ytp-mf-right { display: contents; }
-  .ytp-mini-footer.dock-controls-wrapped .ytp-mf-font-slot { display: none; }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
   .ytp-mf-top { grid-area: top; justify-content: flex-end; gap: 5px; }
   .ytp-mf-middle { grid-area: middle; justify-content: flex-start; gap: 5px; min-width: 0; }
-  /* The window trio is the same size as the transport - a row of buttons that
-     step down in size halfway along reads as a mistake, not a hierarchy. */
-  /* No row of its own on a phone: the font slider is hidden here and the
-     lyric toggle is usually hidden too, so a real row cost 10px of dock for
-     nothing. display:contents lets the toggle drop onto its own line only
-     when it actually appears. */
+  .ytp-mf-up-next {
+    grid-area: upnext; max-width: none; width: 100%;
+  }
+  .ytp-mf-up-next:empty { display: none; }
   .ytp-mf-bottom { display: contents; }
   /* The bars are frozen on the bottom edge: the artwork row takes every pixel
      a drag adds and the scrubber and buttons stay where they are. */
-  .ytp-mf-main { grid-template-rows: minmax(56px, 1fr) auto auto auto; }
+  .ytp-mf-main { grid-template-rows: minmax(56px, 1fr) auto auto auto auto; }
   .ytp-mf-art-wrap { max-height: 100%; }
   /* The lyric window is two lines on a phone whatever the dock's height.
      Tying it to --mf-body meant a drag grew the artwork AND the lyrics, so
      the content outgrew the dock and the bottom row was clipped away. */
   .ytp-mf-lyr, .ytp-mf-lyr-view { height: 56px; }
-  /* The lyric toggle only exists for tracks that have synced words. Span it
-     across the grid so it takes a row of its own when it appears instead of
-     opening a column and stealing width from the row of buttons. */
-  #ytp-mf-lyrics { grid-column: 1 / -1; justify-self: end; }
   /* The scrubber is in the flow on a phone, so the band the desktop dock
      reserves underneath it is dead space here. */
   .ytp-mf-main { padding-bottom: 0; }
   .ytp-mf-lyr { grid-area: lyr; margin-left: 0; }
   .ytp-mf-scrub { grid-area: scrub; }
   .ytp-mf-feedback #ytp-mf-vote,
-  .ytp-mf-feedback #ytp-mf-lyrics { font-size: .8rem; }
+  .ytp-mf-feedback #ytp-mf-more { font-size: .8rem; }
   .ytp-mf-song   { font-size: .78rem; }
   .ytp-mf-artist { font-size: .5rem; }
   .ytp-mf-album  { font-size: .52rem; }
@@ -2821,6 +2823,24 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .playlist-mosaic[data-n="9"] { grid-template-columns:repeat(3,1fr); }
 .playlist-mosaic-cell { min-width:0; min-height:0; background:#24130c center/cover no-repeat; border:1px solid #0008; }
 .playlist-mosaic-empty { display:flex; align-items:center; justify-content:center; aspect-ratio:1; background:#100d0a; color:var(--text-muted); font-size:1.6rem; opacity:.35; }
+.playlist-broadcasting-now { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:linear-gradient(135deg,rgba(13,10,16,.72),rgba(106,49,126,.82)); color:#fff; text-align:center; text-transform:uppercase; font-size:.9rem; font-weight:900; letter-spacing:.12em; text-shadow:0 2px 8px #000; }
+.playlist-broadcasting-now::before { content:''; width:.8em; height:.8em; margin-right:.55em; border-radius:50%; background:#ff593d; box-shadow:0 0 0 5px rgba(255,89,61,.22),0 0 18px rgba(255,89,61,.9); animation:playlist-live-pulse 1.4s ease-in-out infinite; }
+@keyframes playlist-live-pulse { 50% { transform:scale(.72); opacity:.58; } }
+.live-room-listening-overlay { position:fixed; z-index:5200; left:50%; bottom:calc(var(--ytp-dock-height, 0px) + 14px); transform:translateX(-50%); display:flex; align-items:center; gap:12px; max-width:calc(100vw - 28px); padding:10px 14px; border:1px solid #9a5bc4; border-radius:999px; background:rgba(20,12,26,.95); box-shadow:0 10px 28px #0009; color:#fff; font-size:.62rem; font-weight:700; }
+.live-room-listening-overlay::before { content:''; width:9px; height:9px; flex:none; border-radius:50%; background:#ff593d; box-shadow:0 0 0 4px rgba(255,89,61,.18); animation:playlist-live-pulse 1.4s ease-in-out infinite; }
+.live-room-listening-overlay button { border:1px solid #a66aca; border-radius:999px; background:transparent; color:#fff; padding:5px 9px; font:inherit; cursor:pointer; }
+body.live-room-listening .ytp-next-btn,
+body.live-room-listening .ytp-prev-btn,
+body.live-room-listening #ytp-prev-btn,
+body.live-room-listening #ytp-shuffle-tog,
+body.live-room-listening #ytp-repeat-tog,
+body.live-room-listening #ytp-mf-prev,
+body.live-room-listening #ytp-mf-next,
+body.live-room-listening #ytp-mf-shuffle,
+body.live-room-listening #ytp-md-prev,
+body.live-room-listening #ytp-md-next,
+body.live-room-listening #ytp-md-shuffle,
+body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .playlist-explore-body { padding:14px 16px 15px; display:flex; flex-direction:column; gap:7px; }
 .playlist-explore-name { font-size:.82rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .playlist-explore-meta { color:var(--text-muted); font-size:.5rem; }
@@ -3314,6 +3334,9 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   <div class="ytp-mf-main">
     <div class="ytp-mf-now">
       <div class="ytp-mf-art-wrap">
+        <div class="ytp-mf-ver-slot" id="ytp-mf-ver-slot" hidden>
+          <button type="button" class="ytp-mf-ver-btn" id="ytp-mf-ver" onclick="event.stopPropagation();ytpToggleVersionMenu()" title="Switch YouTube version">Versions ▾</button>
+        </div>
         <img class="ytp-mf-art" id="ytp-mf-art" alt="" src="/favicon.png" data-yt="" onerror="ytpMfArtFallback(this)">
         <div class="ytp-mf-video-slot" id="ytp-mf-video-slot"></div>
       </div>
@@ -3329,24 +3352,25 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
             <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('heart',this,event)" oncontextmenu="ytpOpenReactionUndo('heart',this,event)" onpointerdown="ytpReactionPressStart('heart',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heart reaction. Right-click or long-press to undo." aria-label="Send a heart reaction" id="ytp-mf-react-heart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/></svg></button>
             <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('sad',this,event)" oncontextmenu="ytpOpenReactionUndo('sad',this,event)" onpointerdown="ytpReactionPressStart('sad',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heartbreak reaction. Right-click or long-press to undo." aria-label="Send a heartbreak reaction" id="ytp-mf-react-sad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/><path d="m12 5.67-2 4 3 2-2 4 1 5.56"/></svg></button>
           </span>
+          <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
+        </div>
+        <div class="ytp-mf-font-row" id="ytp-mf-font-row">
+          <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
         </div>
       </div>
     </div>
     <div class="ytp-mf-lyr" id="ytp-mf-lyrics-pane" onclick="event.stopPropagation()">
       <div class="ytp-mf-lyr-view" id="ytp-mf-lyr-view"><div class="ytp-mf-lyr-track" id="ytp-mf-lyr-track"></div></div>
-      <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
     </div>
     <div class="ytp-mf-right">
-      <div class="ytp-mf-font-slot" id="ytp-mf-font-slot"></div>
       <div class="ytp-mf-controls">
-        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleLyricStrip()" title="Show lyrics" id="ytp-mf-lyrics" style="display:none">♫</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpOpenComments()" title="Comment on this track" id="ytp-mf-comment">🗩</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMfToggleShuffle()" title="Shuffle" id="ytp-mf-shuffle">⇄</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytBackTrack()" title="Previous" id="ytp-mf-prev">⏮</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
-        <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
       </div>
+      <div class="ytp-mf-up-next" id="ytp-mf-up-next"></div>
       <span class="ytp-mf-sep" aria-hidden="true"></span>
       <div class="ytp-mf-win">
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Full screen" id="ytp-mf-restore"></button>
@@ -5814,6 +5838,7 @@ function ytpCloseToMini() {
 
 function closeYTPlayer() {
   if (!ytPlayerEl) return;
+  if (_liveRoomListen) liveRoomStopListening();
   ytpCancelCrossfade(false);
   ytpClearPlaybackWatchdog();
   markPlayerClosed();
@@ -6223,14 +6248,19 @@ function ytpUpNextQueueHTML() {
 }
 
 function ytpPaintUpNext() {
-  if (!ytPlayerEl) return;
-  const slot = ytPlayerEl.querySelector('#ytp-up-next-slot');
-  if (!slot) return;
-  slot.innerHTML = (ytQueue.length > 1) ? ytpUpNextQueueHTML() : '';
-  // The banner just showed up, changed, or disappeared - resize the frame so
-  // a fullscreen player's video (and YouTube's own bottom control bar) isn't
-  // left clipped by the space this now takes.
-  ytpUpdateFsLayout();
+  const html = (ytQueue.length > 1) ? ytpUpNextQueueHTML() : '';
+  if (ytPlayerEl) {
+    const slot = ytPlayerEl.querySelector('#ytp-up-next-slot');
+    if (slot) {
+      slot.innerHTML = html;
+      // The banner just showed up, changed, or disappeared - resize the frame so
+      // a fullscreen player's video (and YouTube's own bottom control bar) isn't
+      // left clipped by the space this now takes.
+      ytpUpdateFsLayout();
+    }
+  }
+  const dockSlot = document.getElementById('ytp-mf-up-next');
+  if (dockSlot) dockSlot.innerHTML = html;
 }
 
 function ytpPaintTogs() {
@@ -6247,6 +6277,10 @@ function ytpPaintTogs() {
 }
 
 function ytNextTrack() {
+  if (_liveRoomListen) {
+    showToast('The host controls playback in a live jukebox.');
+    return;
+  }
   if (viewMode === 'playlistchart' && playlistChartIsLive() && ytQueueIdx >= 0) {
     playlistChartMarkPlayed(ytQueueIdx);
   }
@@ -6270,12 +6304,20 @@ function ytNextTrack() {
 }
 
 function ytPrevTrack() {
+  if (_liveRoomListen) {
+    showToast('The host controls playback in a live jukebox.');
+    return;
+  }
   if (ytQueueIdx > 0) ytPlayQueueIdx(ytQueueIdx - 1);
   else if (ytRepeat && ytQueue.length > 0) ytPlayQueueIdx(ytQueue.length - 1);
   else if (ytAPIPlayer?.seekTo) { ytAPIPlayer.seekTo(0); ytAPIPlayer.playVideo(); }
 }
 
 function ytBackTrack() {
+  if (_liveRoomListen) {
+    showToast('The host controls playback in a live jukebox.');
+    return;
+  }
   if (_ytLastPlayed?.videoId) {
     const target = _ytLastPlayed;
     const idx = ytQueue.findIndex(q =>
@@ -6401,6 +6443,7 @@ function ytpStartCrossfadeIn() {
 }
 
 function ytpMaybeCrossfade(pos, dur) {
+  if (_liveRoomListen) return;
   if (!ytpCrossfadeAvailable() || _ytCrossfade || !Number.isFinite(dur) || dur <= 0) return;
   // Leave at least one quarter-second for the progress clock before asking
   // YouTube to swap, so an imprecise duration never triggers immediately.
@@ -6604,6 +6647,9 @@ function attachYTAPIPlayer() {
           lyrSyncStop();
           if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
           patchYTPlayDuration();
+          // A live-room listener waits for the host's next report rather than
+          // advancing locally — otherwise we race the mirror and skip ahead.
+          if (_liveRoomListen) return;
           if (ytRepeat && ytQueue.length === 1) { ytAPIPlayer.seekTo(0); ytAPIPlayer.playVideo(); }
           else ytNextTrack();
         }
@@ -7100,6 +7146,10 @@ function ytpMobSyncDeck() {
 }
 
 function ytpSetRepeat(on) {
+  if (_liveRoomListen && on) {
+    showToast('The host controls playback in a live jukebox.');
+    return;
+  }
   ytRepeat = !!on;
   ytpPaintTogs();
   ytpMobSyncDeck();
@@ -7109,6 +7159,8 @@ function ytpMobToggleRepeat() { ytpSetRepeat(!ytRepeat); }
 
 // The version menu anchors itself to whichever control opened it.
 function ytpVerAnchorBtn() {
+  const dock = document.getElementById('ytp-mf-ver');
+  if (_ytpMinimized && dock && !dock.closest('[hidden]') && dock.offsetParent !== null) return dock;
   const deck = document.getElementById('ytp-md-ver');
   if (deck && deck.offsetParent !== null) return deck;
   return document.getElementById('ytp-ver-btn');
@@ -7458,17 +7510,10 @@ function ytpDockReleaseFrame() {
   _ytpDockVideoOn = false;
 }
 
-// Where the lyric toggle lives. On a phone it joins the track's other
-// per-track controls beside the artwork, after the heart buttons: a row of
-// its own cost 51px of dock height for one small button, on the surface with
-// the least height to spare.
+// ⋯ lives beside the hearts. The lyric toggle is gone — lyrics show whenever
+// we have them. Font size sits under the thumbs on the left.
 function ytpDockPlaceLyricBtn() {
-  const btn = document.getElementById('ytp-mf-lyrics');
-  if (!btn) return;
-  const host = document.querySelector(ytpIsMob()
-    ? '#ytp-mini-footer .ytp-mf-feedback'
-    : '#ytp-mini-footer .ytp-mf-bottom');
-  if (host && btn.parentNode !== host) host.appendChild(btn);
+  /* no-op: the ♫ toggle was removed from the dock */
 }
 
 function ytpArrangeDockControls() {
@@ -7483,23 +7528,17 @@ function ytpArrangeDockControls() {
   const top = row('ytp-mf-top');
   const middle = row('ytp-mf-middle');
   const bottom = row('ytp-mf-bottom');
-  ['ytp-mf-more', 'ytp-mf-restore', 'ytp-mf-close'].forEach(id => {
+  ['ytp-mf-restore', 'ytp-mf-close'].forEach(id => {
     const el = document.getElementById(id); if (el) top.appendChild(el);
   });
   ['ytp-mf-playpause', 'ytp-mf-prev', 'ytp-mf-next', 'ytp-mf-shuffle'].forEach(id => {
     const el = document.getElementById(id); if (el) middle.appendChild(el);
   });
-  const lyrics = document.getElementById('ytp-mf-lyrics');
-  const slot = document.getElementById('ytp-mf-font-slot');
-  const sizer = document.querySelector('#ytp-mini-footer .mf-lyr-font-ctrl');
-  if (slot) {
-    if (sizer) slot.appendChild(sizer);
-    bottom.appendChild(slot);
-  }
-  if (lyrics) bottom.appendChild(lyrics);
-  ytpDockPlaceLyricBtn();
-  // Swap the typed arrows for the deck's drawn ones. Play/pause is repainted
-  // by ytpSetPlayPauseIcon from here on, so only seed it.
+  const upNext = document.getElementById('ytp-mf-up-next');
+  if (upNext) bottom.appendChild(upNext);
+  const more = document.getElementById('ytp-mf-more');
+  const feedback = document.querySelector('#ytp-mini-footer .ytp-mf-feedback');
+  if (more && feedback && more.parentNode !== feedback) feedback.appendChild(more);
   // The original containers are left holding nothing once their buttons move
   // into the rows above. On a phone .ytp-mf-right is display:contents, so an
   // empty leftover is still a grid item and opens an implicit column - which
@@ -7514,9 +7553,7 @@ function ytpArrangeDockControls() {
   right.classList.add('arranged');
 }
 
-// The font control participates in layout instead of floating over it. As soon
-// as transport wraps onto a second row, move the control into the dedicated row
-// directly above those buttons; move it back to the lyric pane when they fit.
+// Font control stays under the thumbs. Transport wrapping used to move it;
 function ytpDockSyncFontControl() {
   ytpArrangeDockControls();
 }
@@ -7543,14 +7580,6 @@ function ytpDockSyncPlaylist() {
   if (available < YTP_DOCK_PLAYLIST_MIN_H) return;
 
   playlist.style.maxHeight = available + 'px';
-  const metadataLines = [...dock.querySelectorAll('.ytp-mf-meta > *')]
-    .map(el => el.getBoundingClientRect())
-    .filter(rect => rect.width > 0 && rect.height > 0);
-  const metadataTop = metadataLines.length
-    ? Math.min(...metadataLines.map(rect => rect.top))
-    : buttonRect.top;
-  const lowerTop = Math.min(buttonRect.top, metadataTop);
-  dock.style.setProperty('--mf-lyric-lower-clearance', Math.ceil(dockRect.bottom - lowerTop + 12) + 'px');
   dock.classList.add('dock-show-playlist');
   ytpMfLayoutLyrics();
 }
@@ -7601,6 +7630,7 @@ function ytpApplyDockHeight() {
   requestAnimationFrame(() => {
     ytpDockSyncFontControl();
     ytpDockSyncPlaylist();
+    ytpSyncDockVersionBtn(nowPlayingTrackId || ytQueue[ytQueueIdx]?.trackId, ytVideoId);
   });
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
   if (wantVideo !== _ytpDockVideoOn) {
@@ -7609,6 +7639,7 @@ function ytpApplyDockHeight() {
     // dock-sized surface has painted.
     ytpDockClaimFrame();
   }
+  ytpSyncDockVersionBtn(nowPlayingTrackId || ytQueue[ytQueueIdx]?.trackId, ytVideoId);
   if (wantVideo) {
     // Both the dock and art/video box animate. Track their real rectangle for
     // the whole transition instead of freezing the iframe at the first frame.
@@ -7798,33 +7829,23 @@ function ytpMfPaintLyrics(idx) {
   track.style.transform = 'translateY(' + (-top * lh) + 'px)';
 }
 
-// Reflects _mfLyricStripOn + "do we actually have synced lyrics" onto the DOM.
+// Reflects synced lyrics onto the dock strip. Lyrics always show when we have
+// them — there is no toggle on the dock any more.
 function ytpMfApplyLyricStrip() {
   const pane   = document.getElementById('ytp-mf-lyrics-pane');
-  const btn    = document.getElementById('ytp-mf-lyrics');
   const footer = document.getElementById('ytp-mini-footer');
-  const fontSlot = document.getElementById('ytp-mf-font-slot');
+  const fontRow = document.getElementById('ytp-mf-font-row');
   const hasSync = !!(nowPlayingTrackId && syncedLyricsCache[nowPlayingTrackId]);
-  const visible = hasSync && _mfLyricStripOn && !!footer && footer.classList.contains('open');
-  if (btn) {
-    btn.classList.toggle('on', _mfLyricStripOn);
-    btn.title = _mfLyricStripOn ? 'Hide lyrics' : 'Show lyrics';
-  }
-  // Showing the strip adds a row on a phone and a font-size row to the
-  // desktop button stack, and the dock's resting height is measured from
-  // both. Without this the dock keeps the height it was measured at and
-  // simply clips its own bottom row, which is what cut the buttons off on
-  // an iPhone.
+  const visible = hasSync && !!footer && footer.classList.contains('open');
   const paneWas = pane ? pane.classList.contains('show') : false;
-  const slotWas = fontSlot ? fontSlot.style.display : null;
-  if (fontSlot) fontSlot.style.display = visible ? 'flex' : 'none';
+  const rowWas = fontRow ? fontRow.classList.contains('show') : false;
+  if (fontRow) fontRow.classList.toggle('show', visible);
   if (pane) {
     pane.classList.toggle('show', visible);
     const sl = document.querySelector('.mf-lyr-font-slider');
     if (sl) sl.value = globalLyricSize;
   }
-  const layoutChanged = paneWas !== visible
-    || (fontSlot && slotWas !== fontSlot.style.display);
+  const layoutChanged = paneWas !== visible || rowWas !== visible;
   if (layoutChanged && _ytpMinimized) {
     _ytpDockMinHCache = null;
     requestAnimationFrame(ytpApplyDockHeight);
@@ -7837,18 +7858,14 @@ function ytpMfApplyLyricStrip() {
   }
 }
 
-// Fetches LRC for the current track (cached) and shows/hides the ♫ button.
+// Fetches LRC for the current track (cached) and shows the lyric strip when ready.
 function ytpMfRefreshLyricBtn(trackId) {
-  const btn = document.getElementById('ytp-mf-lyrics');
-  if (!btn) return;
   ytpMfBuildLyrics(null); // don't carry the outgoing track's lines across the fetch
-  if (!trackId) { btn.style.display = 'none'; ytpMfApplyLyricStrip(); return; }
-  if (syncedLyricsCache[trackId] === undefined) btn.style.display = 'none';
+  if (!trackId) { ytpMfApplyLyricStrip(); return; }
   fetchSyncedLyrics(trackId).then(sync => {
     if (nowPlayingTrackId !== trackId) return; // track changed while we fetched
-    btn.style.display = sync ? '' : 'none';
     ytpMfApplyLyricStrip();
-  }).catch(() => {});
+  }).catch(() => { ytpMfApplyLyricStrip(); });
 }
 
 function ytpUpdateMiniFooter() {
@@ -7887,6 +7904,7 @@ function ytpUpdateMiniFooter() {
   ytpSyncBlockBtn(item?.trackId || null);
   setYtShuffleEnabled(ytShuffle); // paints the mini-footer shuffle button state
   ytpMfRefreshLyricBtn(item?.trackId || null);
+  ytpPaintUpNext();
   ytpMfStartProgress();
   if (item?.trackId) ytpEnsureTrackMeta(item.trackId);
 }
@@ -10656,6 +10674,7 @@ function taPlayBgIdx(idx) {
 // the page hidden, so they're passed over (the queue index still moves so the
 // embed resumes in the right place); if nothing ahead has audio, stop.
 function taAdvanceBg() {
+  if (_liveRoomListen) return;
   if (!ytQueue.length) { taStopBg(); return; }
   for (let hops = 0; hops < ytQueue.length; hops++) {
     let ni = ytPlayNextIndex();
@@ -10670,6 +10689,7 @@ function taAdvanceBg() {
 }
 
 function taPrevBg() {
+  if (_liveRoomListen) return;
   const a = _taAudioEl;
   if (a && a.currentTime > 3) { try { a.currentTime = 0; } catch (_) {} return; }
   let ni = ytQueueIdx > 0 ? ytQueueIdx - 1 : (ytRepeat ? ytQueue.length - 1 : -1);
@@ -11481,22 +11501,18 @@ function ytpOnTrackChange(videoId, trackId, title) {
   ytpApplyLyricsPreference(trackId);
 }
 
-// Prefer lyrics ON by default. If this track has them, open the pane / strip;
-// if it does not, leave the preference alone so the next song can still show.
+// Prefer lyrics ON by default. The dock always shows them when a track has
+// synced words. Fullscreen still honours the Lyrics toggle preference.
 async function ytpApplyLyricsPreference(trackId) {
-  if (!_mfLyricStripOn || !trackId) return;
+  if (!trackId) return;
   const has = await ytpTrackHasLyrics(trackId);
   if ((ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId) !== trackId) return;
-  if (!has) {
-    // Mini strip already hides itself without lyrics; keep the full pane open
-    // with its "not in database" placeholder if the user already had it up.
-    ytpMfApplyLyricStrip();
-    return;
-  }
   if (_ytpMinimized) {
     ytpMfApplyLyricStrip();
     return;
   }
+  if (!_mfLyricStripOn) return;
+  if (!has) return;
   if (!_ytpLyricsOpen) ytpToggleLyrics(true);
   else ytpUpdateLyrics(trackId);
   if (_ytpFs && ytpIsMob() && !_ytpMobTabUserSet && _ytpMobTab !== 'lyrics') {
@@ -11511,14 +11527,35 @@ let _tvMenuEl = null;
 
 function ytpSyncVersionBtn(trackId, videoId) {
   const btn = document.getElementById('ytp-ver-btn');
-  if (!btn) return;
   const vs = tvList(trackId);
-  if (vs.length < 2) { btn.style.display = 'none'; ytpMobSyncDeck(); return; }
-  const cur = tvFor(trackId, videoId);
-  btn.style.display = '';
-  btn.textContent   = '⇄ ' + (cur ? tvLabel(cur) : 'Versions') + ' ▾';
-  btn.title         = vs.length + ' versions of this song on YouTube - tap to switch';
+  if (btn) {
+    if (vs.length < 2) { btn.style.display = 'none'; }
+    else {
+      const cur = tvFor(trackId, videoId);
+      btn.style.display = '';
+      btn.textContent   = '⇄ ' + (cur ? tvLabel(cur) : 'Versions') + ' ▾';
+      btn.title         = vs.length + ' versions of this song on YouTube - tap to switch';
+    }
+  }
+  ytpSyncDockVersionBtn(trackId, videoId);
   ytpMobSyncDeck();
+}
+
+function ytpSyncDockVersionBtn(trackId, videoId) {
+  const slot = document.getElementById('ytp-mf-ver-slot');
+  const btn = document.getElementById('ytp-mf-ver');
+  if (!slot || !btn) return;
+  const tid = trackId || nowPlayingTrackId || ytQueue[ytQueueIdx]?.trackId;
+  const vs = tvList(tid);
+  const show = !!_ytpMinimized && !!_ytpDockVideoOn && vs.length >= 2;
+  if (show) {
+    slot.hidden = false;
+    const cur = tvFor(tid, videoId || ytVideoId);
+    btn.textContent = (cur ? tvLabel(cur) : 'Versions') + ' ▾';
+    btn.title = vs.length + ' versions of this song on YouTube - tap to switch';
+  } else {
+    slot.hidden = true;
+  }
 }
 
 function ytpCloseVersionMenu() {
@@ -11526,7 +11563,8 @@ function ytpCloseVersionMenu() {
   document.removeEventListener('mousedown', _tvMenuOutside, true);
 }
 function _tvMenuOutside(e) {
-  const onBtn = e.target.id === 'ytp-ver-btn' || e.target.id === 'ytp-md-ver';
+  const onBtn = e.target.id === 'ytp-ver-btn' || e.target.id === 'ytp-md-ver' || e.target.id === 'ytp-mf-ver'
+    || (typeof e.target.closest === 'function' && e.target.closest('#ytp-mf-ver'));
   if (_tvMenuEl && !_tvMenuEl.contains(e.target) && !onBtn) ytpCloseVersionMenu();
 }
 
@@ -12635,7 +12673,7 @@ function lyrSyncTick() {
   if (!_anySyncedLyricViewOpen()) { lyrSyncStop(); return; }
   const sync = syncedLyricsCache[nowPlayingTrackId];
   if (!sync) return;
-  const stripOn = _mfLyricStripOn && !!document.querySelector('#ytp-mf-lyrics-pane.show');
+  const stripOn = !!document.querySelector('#ytp-mf-lyrics-pane.show');
   if (!_lyrSyncEnabled && !stripOn) return;
   let t;
   if (_taBgActive && _taAudioEl) { t = _taAudioEl.currentTime || 0; }
@@ -12682,7 +12720,7 @@ function lyrSyncTick() {
 // is currently showing a synced (karaoke-style) view - keeps the tick loop alive for either.
 function _anySyncedLyricViewOpen() {
   if (_ytpLyricsOpen) return true;
-  if (_mfLyricStripOn && document.querySelector('#ytp-mf-lyrics-pane.show')) return true;
+  if (document.querySelector('#ytp-mf-lyrics-pane.show')) return true;
   return !!document.querySelector('[data-lyr-synced="1"]');
 }
 
@@ -14597,6 +14635,67 @@ let playlistChartId = null;
 let playlistChartName = '';
 let playlistChartRows = [];
 let playlistChartBaseQueue = [];
+let liveRoomPlaylists = [];
+let _liveRoomPlaylistsLoading = null;
+// A Live Now card is rendered by this same playlist wall.  The flag only
+// changes what the controls are allowed to do; it never creates another
+// player or another playlist UI.
+let liveRoomMode = null;
+// Guest mirror of a host room into THIS page's ordinary player. Separate from
+// liveRoomMode (the wall you are looking at) so Leave Room is the only way
+// out, and walking back to Explore Playlists does not drop the sync.
+let _liveRoomListen = null; // { code, name }
+let _liveRoomPlayback = null;
+let _liveRoomServerOffsetMs = 0;
+let _liveRoomSince = null;
+let _liveRoomPollTimer = null;
+let _liveRoomDriftTimer = null;
+const LIVE_ROOM_POLL_MS = 5000;
+const LIVE_ROOM_DRIFT_MS = 3500;
+const LIVE_ROOM_STALE_MS = 600000;
+
+async function loadLiveRoomPlaylists() {
+  if (_liveRoomPlaylistsLoading) return _liveRoomPlaylistsLoading;
+  _liveRoomPlaylistsLoading = Promise.resolve(typeof sjAuthHeaders === 'function' ? sjAuthHeaders() : {})
+    .catch(() => ({}))
+    .then(headers => fetch('/api/jukebox/live', { cache: 'no-store', headers }))
+    .then(r => r.json())
+    .then(d => {
+      const next = (d.ok ? d.playlists : []).map(room => ({
+        id: room.id,
+        name: room.name + ' · Live Now',
+        _liveRoom: true,
+        _roomCode: room.code,
+        _roomSlug: room.slug,
+        _listenerCount: Number(room.listenerCount) || 0,
+        _queuedSongCount: Number(room.queuedSongCount) || 0,
+        _roomQueue: room.queue || [],
+        _roomIsOwner: !!room.isOwner,
+        _description: room.playback?.title
+          ? 'Now playing: ' + room.playback.title + (room.playback.artistName ? ' — ' + room.playback.artistName : '')
+          : 'Live jukebox',
+        _tracks: (room.tracks || []).map((t, position) => ({ track_id: t.trackId, position }))
+      }));
+      const changed = JSON.stringify(next.map(p => [p.id, p._tracks.length, p._description, p._listenerCount, p._queuedSongCount])) !== JSON.stringify(liveRoomPlaylists.map(p => [p.id, p._tracks.length, p._description, p._listenerCount, p._queuedSongCount]));
+      liveRoomPlaylists = next;
+      if (changed && isLandingMode && landingTab === 'playlists') renderLanding();
+    })
+    .catch(() => {})
+    .finally(() => { _liveRoomPlaylistsLoading = null; });
+  return _liveRoomPlaylistsLoading;
+}
+
+async function openLiveRoomFromUrl() {
+  const fromUrl = new URLSearchParams(location.search).get('live');
+  const fromRewrite = document.cookie.split('; ').find(row => row.startsWith('sj_live_room='))?.split('=').slice(1).join('') || '';
+  const key = fromUrl || decodeURIComponent(fromRewrite);
+  if (!key) return;
+  if (fromRewrite) document.cookie = 'sj_live_room=; Max-Age=0; path=/; SameSite=Lax; Secure';
+  await loadLiveRoomPlaylists();
+  const room = liveRoomPlaylists.find(p => p._roomCode.toLowerCase() === key.toLowerCase() || (p._roomSlug || '').toLowerCase() === key.toLowerCase());
+  if (!room) { showToast('That live jukebox is not on air right now.'); return; }
+  openPlaylistChart(room.id);
+}
 let playlistWallSize = 120;
 let playlistWallMode = 'thumbs'; // 'thumbs' | 'detail'
 try {
@@ -14679,7 +14778,11 @@ function playlistExploreRows() {
   else if (playlistExploreSort === 'tracks_desc') sorted.sort((a, b) => (b._tracks?.length || 0) - (a._tracks?.length || 0));
   else if (playlistExploreSort === 'tracks_asc') sorted.sort((a, b) => (a._tracks?.length || 0) - (b._tracks?.length || 0));
   else sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-  return dynamic.filter(p => !q || playlistMatchesSearch(p, q)).concat(sorted);
+  // A host already has this running order as their own Now Playing playlist.
+  // Showing it again as a separate room card is confusing, so reserve Live
+  // Now for rooms they can join and mark their own Now Playing card instead.
+  const live = liveRoomPlaylists.filter(p => !p._roomIsOwner && (!q || playlistMatchesSearch(p, q)));
+  return live.concat(dynamic.filter(p => !q || playlistMatchesSearch(p, q)), sorted);
 }
 
 function dynamicPlaylistTracks(trackIds) {
@@ -14689,8 +14792,10 @@ function dynamicPlaylistTracks(trackIds) {
 function dynamicPlaylistRows() {
   const rows = [];
   if (ytPlayerEl && ytQueueIdx >= 0 && ytQueue.length > 1) {
+    const myLiveRoom = liveRoomPlaylists.find(p => p._roomIsOwner);
     rows.push({
       id:'__dynamic_now_playing', name:'Now Playing', _dynamic:true,
+      _broadcastingNow: !!myLiveRoom,
       _tracks:ytQueue.map((item, position) => ({ track_id:item.trackId, position })).filter(row => row.track_id),
     });
   }
@@ -14879,7 +14984,7 @@ function playlistMosaicHTML(p) {
   const cells = arts.slice(0, n).map(art =>
     `<span class="playlist-mosaic-cell" style="background-image:url('${art.replace(/'/g, '%27')}')"></span>`
   ).join('');
-  return `<div class="playlist-mosaic" data-n="${n}" aria-hidden="true">${cells}</div>`;
+  return `<div class="playlist-mosaic" data-n="${n}" aria-hidden="true">${cells}${p._broadcastingNow ? '<span class="playlist-broadcasting-now">Broadcasting Now</span>' : ''}</div>`;
 }
 
 async function ensurePlaylistArtwork() {
@@ -15178,6 +15283,7 @@ function playlistChartRefreshPlayback() {
 }
 
 function playlistChartPlayAt(i) {
+  if (liveRoomMode) { showToast('The host controls playback in a live jukebox.'); return; }
   const q = playlistChartQueue();
   const item = q[i];
   if (!item) return;
@@ -15396,6 +15502,7 @@ function plWallPopMore(anchor, ev) {
 }
 
 function playlistChartQueueNext(i) {
+  if (liveRoomMode) { showToast('The host controls the running order in a live jukebox.'); return; }
   const q = playlistChartQueue();
   const item = q[i];
   if (!item || isTrackSkipped(item.trackId)) return;
@@ -15430,6 +15537,7 @@ function playlistChartQueueNext(i) {
 }
 
 function playlistChartReshuffleFuture() {
+  if (liveRoomMode) return;
   if (ytQueue !== playlistChartBaseQueue || ytQueueIdx >= ytQueue.length - 1) return;
   const future = ytQueue.slice(ytQueueIdx + 1);
   shuffleInPlace(future);
@@ -15441,6 +15549,7 @@ function playlistChartReshuffleFuture() {
 }
 
 function playlistChartRemoveFuture(i) {
+  if (liveRoomMode) return;
   if (ytQueue !== playlistChartBaseQueue || i <= ytQueueIdx || i >= ytQueue.length) return;
   const removed = ytQueue.splice(i, 1)[0];
   ytResetShufflePool();
@@ -15450,6 +15559,7 @@ function playlistChartRemoveFuture(i) {
 }
 
 async function playlistChartPlay(startIndex) {
+  if (liveRoomMode) { showToast('The host controls playback in a live jukebox.'); return; }
   if (!playlistChartBaseQueue.length) return;
   const q = playlistChartBaseQueue;
   const explicit = arguments.length > 0 && startIndex != null;
@@ -15480,8 +15590,12 @@ async function playlistChartPlay(startIndex) {
 }
 
 async function openPlaylistChart(playlistId) {
-  const p = dynamicPlaylistById(playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
+  const p = liveRoomPlaylists.find(x => x.id === playlistId) || dynamicPlaylistById(playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
   if (!p) return;
+  if (_liveRoomListen && p._liveRoom && p._roomCode !== _liveRoomListen.code) {
+    liveRoomStopListening();
+  }
+  liveRoomMode = p._liveRoom ? p : null;
   playlistChartId = playlistId;
   playlistChartName = p.name || 'Untitled Playlist';
   playlistChartRows = [];
@@ -15534,6 +15648,14 @@ async function openPlaylistChart(playlistId) {
       if (viewMode === 'playlistchart' && playlistChartId === playlistId) renderPlaylistChart();
     });
     renderPlaylistChart();
+    // Returning guests already have a seat cookie — pick the mirror back up
+    // without making them press Join again.
+    if (liveRoomMode && !liveRoomMode._roomIsOwner && !_sjjLive) {
+      liveRoomRefreshState().then(() => {
+        if (liveRoomMode?._guest && !_liveRoomListen) liveRoomStartListening();
+        else if (_liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode) liveRoomPaintOverlay();
+      }).catch(() => {});
+    }
   } catch (e) {
     playlistChartRows = [];
     playlistChartBaseQueue = [];
@@ -15545,6 +15667,9 @@ function returnToPlaylistExplorer() {
   plWallClosePop();
   playlistChartId = null; playlistChartRows = []; playlistChartBaseQueue = [];
   playlistChartPlayedIds = new Set();
+  liveRoomMode = null;
+  // Intentionally leave _liveRoomListen alone — walking back to Explore
+  // Playlists must not drop the host mirror. Leave Room is the only exit.
   _plWallLastCurrentIdx = -1;
   // Drop playlistchart mode so a later render() / play-count refresh cannot
   // yank the listener back onto the cover wall while they browse elsewhere.
@@ -15854,6 +15979,346 @@ function plWallRepaintList() {
   if (!isDetail) plWallBindBadgeHovers();
 }
 
+async function liveRoomRefreshState() {
+  if (!liveRoomMode) return null;
+  const res = await fetch('/api/jukebox/state?code=' + encodeURIComponent(liveRoomMode._roomCode), { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok) throw new Error(data.error || 'Could not refresh this jukebox.');
+  liveRoomMode._guest = data.guest || null;
+  liveRoomMode._roomQueue = data.queue || [];
+  return data;
+}
+
+async function liveRoomEnsureGuest() {
+  if (!liveRoomMode) return false;
+  await liveRoomRefreshState();
+  if (liveRoomMode._guest) return true;
+  const name = prompt('Choose a name for this live jukebox:');
+  if (!name || !name.trim()) return false;
+  const res = await fetch('/api/jukebox/join', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: liveRoomMode._roomCode, name: name.trim() })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok) throw new Error(data.error || 'Could not join this jukebox.');
+  liveRoomMode._guest = data.guest || null;
+  liveRoomMode._roomQueue = data.queue || [];
+  return true;
+}
+
+async function liveRoomJoin() {
+  try {
+    if (await liveRoomEnsureGuest()) {
+      await liveRoomStartListening();
+      renderPlaylistChart();
+      showToast('You joined ' + liveRoomDisplayName(liveRoomMode) + '. Listening along with the host.');
+    }
+  }
+  catch (e) { showToast(e.message || 'Could not join this jukebox.'); }
+}
+
+function liveRoomDisplayName(p) {
+  return String((p && p.name) || 'Live Jukebox').replace(/ · Live Now$/, '');
+}
+
+function liveRoomListening() {
+  return !!_liveRoomListen;
+}
+
+function liveRoomPaintOverlay() {
+  let el = document.getElementById('live-room-listening-overlay');
+  if (!_liveRoomListen) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'live-room-listening-overlay';
+    el.className = 'live-room-listening-overlay';
+    el.setAttribute('role', 'status');
+    document.body.appendChild(el);
+  }
+  const name = escHtml(_liveRoomListen.name || 'Live Jukebox');
+  el.innerHTML = '<span>Listening to ' + name + '</span>'
+    + '<button type="button" onclick="liveRoomStopListening()">Leave Room</button>';
+}
+
+function liveRoomExpectedMs() {
+  const pb = _liveRoomPlayback;
+  if (!pb) return 0;
+  if (!pb.updatedAt) return Number(pb.positionMs) || 0;
+  const stampedAt = Date.parse(pb.updatedAt);
+  if (!Number.isFinite(stampedAt)) return Number(pb.positionMs) || 0;
+  if (!pb.isPlaying) return Number(pb.positionMs) || 0;
+  const elapsed = Date.now() - _liveRoomServerOffsetMs - stampedAt;
+  const at = (Number(pb.positionMs) || 0) + Math.max(0, elapsed);
+  const dur = Number(pb.durationMs) || 0;
+  return dur > 0 ? Math.min(at, dur) : at;
+}
+
+function liveRoomSeedQueue(pb) {
+  // Prefer the Live Now wall's order when we have it, so the listener's
+  // playlist matches what they were looking at. Fall back to a one-song queue
+  // built from the host playback blob.
+  let q = [];
+  if (liveRoomMode && liveRoomMode._roomCode === _liveRoomListen.code && playlistChartBaseQueue.length) {
+    q = playlistChartBaseQueue.map(it => Object.assign({}, it));
+  } else if (ytQueue.length) {
+    q = ytQueue.slice();
+  }
+  let idx = q.findIndex(it =>
+    (pb.trackId && it.trackId === pb.trackId) || (pb.videoId && it.videoId === pb.videoId));
+  if (idx < 0) {
+    const item = ytQueueItem(pb.videoId, pb.title || 'Track', pb.trackId, pb.artistName || null);
+    if (q.length) { q.splice(Math.max(0, ytQueueIdx + 1), 0, item); idx = Math.max(0, ytQueueIdx + 1); }
+    else { q = [item]; idx = 0; }
+  }
+  // Stamp the host video id onto the row — is_primary on the catalogue may
+  // disagree with the version the host is actually playing.
+  if (q[idx] && pb.videoId) q[idx].videoId = pb.videoId;
+  return { q, idx };
+}
+
+function liveRoomEnsureTrack(pb, forceSeek) {
+  if (!_liveRoomListen || !pb?.videoId) return;
+  const { q, idx } = liveRoomSeedQueue(pb);
+  const wantSec = liveRoomExpectedMs() / 1000;
+  const wallGrew = q.length > ytQueue.length;
+  const videoChanged = ytVideoId !== pb.videoId || ytQueueIdx !== idx
+    || !ytQueue.length || ytQueue[idx]?.videoId !== pb.videoId;
+
+  if (!ytPlayerEl) {
+    _pbRestoreDone = true;
+    openYTPlayer(pb.videoId, pb.title || q[idx]?.title || '', pb.trackId || q[idx]?.trackId);
+    ytQueue = q;
+    ytQueueIdx = idx;
+    ytVideoId = pb.videoId;
+    updateYTQueueUI();
+    // Player attaches async — the drift tick seeks once getCurrentTime works.
+    return;
+  }
+
+  if (videoChanged || wallGrew) {
+    ytQueue = q;
+    ytQueueIdx = idx;
+    ytVideoId = pb.videoId;
+    if (videoChanged && ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
+      try {
+        ytAPIPlayer.loadVideoById({ videoId: pb.videoId, startSeconds: Math.max(0, wantSec) });
+        if (pb.isPlaying) { _ytUserWantsPlay = true; ytAPIPlayer.playVideo(); }
+        else { _ytUserWantsPlay = false; ytAPIPlayer.pauseVideo(); }
+      } catch (_) {}
+      const titleEl = ytPlayerEl.querySelector('.ytp-title');
+      if (titleEl) titleEl.textContent = pb.title || q[idx]?.title || '';
+      ytpOnTrackChange(pb.videoId, pb.trackId || q[idx]?.trackId, pb.title || q[idx]?.title);
+    } else if (wallGrew) {
+      // Same song, fuller playlist landed from the wall — keep playing, just
+      // adopt the host order so next/overlay state stays honest.
+      updateYTQueueUI();
+    }
+    if (videoChanged) updateYTQueueUI();
+    if (viewMode === 'playlistchart' && liveRoomMode) renderPlaylistChart();
+    return;
+  }
+
+  if (forceSeek && ytAPIPlayer?.seekTo) {
+    try { ytAPIPlayer.seekTo(Math.max(0, wantSec), true); } catch (_) {}
+  }
+}
+
+function liveRoomDriftTick() {
+  if (!_liveRoomListen || !_liveRoomPlayback) return;
+  const pb = _liveRoomPlayback;
+  if (!pb.videoId) return;
+
+  const stampedAt = pb.updatedAt ? Date.parse(pb.updatedAt) : NaN;
+  const fresh = Number.isFinite(stampedAt)
+    && (Date.now() - _liveRoomServerOffsetMs - stampedAt) < LIVE_ROOM_STALE_MS;
+  if (!fresh) return;
+
+  liveRoomEnsureTrack(pb, false);
+
+  if (!ytAPIPlayer || typeof ytAPIPlayer.getCurrentTime !== 'function') return;
+  const want = liveRoomExpectedMs() / 1000;
+  let at;
+  try { at = ytAPIPlayer.getCurrentTime(); } catch (_) { return; }
+  if (typeof at !== 'number' || Number.isNaN(at)) return;
+
+  if (pb.isPlaying && Math.abs(at - want) * 1000 > LIVE_ROOM_DRIFT_MS) {
+    try { ytAPIPlayer.seekTo(Math.max(0, want), true); } catch (_) {}
+  }
+
+  let state = -1;
+  try { state = ytAPIPlayer.getPlayerState(); } catch (_) { return; }
+  // 1 playing, 2 paused, 3 buffering — leave buffering alone.
+  if (pb.isPlaying && state === 2) {
+    _ytUserWantsPlay = true;
+    try { ytAPIPlayer.playVideo(); } catch (_) {}
+  } else if (!pb.isPlaying && state === 1) {
+    _ytUserWantsPlay = false;
+    try { ytAPIPlayer.pauseVideo(); } catch (_) {}
+  }
+}
+
+async function liveRoomPollTick(force) {
+  if (!_liveRoomListen) return;
+  try {
+    let url = '/api/jukebox/state?code=' + encodeURIComponent(_liveRoomListen.code);
+    if (_liveRoomSince) url += '&since=' + encodeURIComponent(_liveRoomSince);
+    const res = await fetch(url, { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) return;
+
+    if (data.serverTime) {
+      const at = Date.parse(data.serverTime);
+      if (Number.isFinite(at)) _liveRoomServerOffsetMs = Date.now() - at;
+      _liveRoomSince = data.serverTime;
+    }
+
+    const jb = data.jukebox;
+    if (!jb || !jb.isLive) {
+      liveRoomStopListening('That jukebox went offline.');
+      return;
+    }
+
+    _liveRoomListen.name = jb.name || _liveRoomListen.name;
+    _liveRoomPlayback = jb.playback || null;
+
+    if (liveRoomMode && liveRoomMode._roomCode === _liveRoomListen.code) {
+      liveRoomMode._guest = data.guest || liveRoomMode._guest;
+      liveRoomMode._roomQueue = data.queue || [];
+    }
+
+    liveRoomPaintOverlay();
+    if (_liveRoomPlayback?.videoId) liveRoomEnsureTrack(_liveRoomPlayback, !!force);
+  } catch (_) {
+    // A dropped poll is fine; the next one is five seconds away.
+  }
+}
+
+async function liveRoomStartListening() {
+  if (!liveRoomMode || liveRoomMode._roomIsOwner || _sjjLive) return;
+  if (_liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode) {
+    liveRoomPaintOverlay();
+    return;
+  }
+  if (_liveRoomListen) liveRoomStopListening();
+
+  _liveRoomListen = {
+    code: liveRoomMode._roomCode,
+    name: liveRoomDisplayName(liveRoomMode),
+  };
+  _liveRoomPlayback = null;
+  _liveRoomSince = null;
+  _liveRoomServerOffsetMs = 0;
+  document.body.classList.add('live-room-listening');
+  ytShuffle = false;
+  ytRepeat = false;
+  try { ytpPaintTogs(); } catch (_) {}
+  try { ytpMobSyncDeck(); } catch (_) {}
+  liveRoomPaintOverlay();
+
+  await liveRoomPollTick(true);
+  if (_liveRoomPollTimer) clearInterval(_liveRoomPollTimer);
+  _liveRoomPollTimer = setInterval(() => { liveRoomPollTick(false); }, LIVE_ROOM_POLL_MS);
+  if (_liveRoomDriftTimer) clearInterval(_liveRoomDriftTimer);
+  _liveRoomDriftTimer = setInterval(liveRoomDriftTick, 250);
+}
+
+function liveRoomStopListening(toastMsg) {
+  if (_liveRoomPollTimer) { clearInterval(_liveRoomPollTimer); _liveRoomPollTimer = null; }
+  if (_liveRoomDriftTimer) { clearInterval(_liveRoomDriftTimer); _liveRoomDriftTimer = null; }
+  _liveRoomListen = null;
+  _liveRoomPlayback = null;
+  _liveRoomSince = null;
+  document.body.classList.remove('live-room-listening');
+  liveRoomPaintOverlay();
+  if (viewMode === 'playlistchart' && liveRoomMode) renderPlaylistChart();
+  if (toastMsg) showToast(toastMsg);
+}
+
+function liveRoomCloseAddSongs() { document.getElementById('live-room-add-overlay')?.remove(); }
+
+async function openLiveRoomAddSongs() {
+  if (!liveRoomMode) return;
+  try { if (!(await liveRoomEnsureGuest())) return; }
+  catch (e) { showToast(e.message || 'Could not join this jukebox.'); return; }
+  const old = document.getElementById('live-room-add-overlay'); if (old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'live-room-add-overlay';
+  el.style.cssText = 'position:fixed;inset:0;z-index:2200;background:#000b;display:grid;place-items:center;padding:18px';
+  el.innerHTML = '<div style="width:min(680px,100%);max-height:82vh;overflow:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px">'
+    + '<div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><b>Add Songs to ' + escHtml(liveRoomMode.name) + '</b><button class="pl-wall-back" onclick="liveRoomCloseAddSongs()">Close</button></div>'
+    + '<input id="live-room-song-search" class="landing-search-input" style="width:100%;margin:14px 0 8px" placeholder="Search the jukebox catalogue" autocomplete="off">'
+    + '<div id="live-room-song-results" class="landing-no-results">Start typing to find a song.</div></div>';
+  document.body.appendChild(el);
+  const input = el.querySelector('#live-room-song-search');
+  let timer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(timer); const q = input.value.trim(); const out = el.querySelector('#live-room-song-results');
+    if (q.length < 2) { out.innerHTML = 'Start typing to find a song.'; return; }
+    timer = setTimeout(async () => {
+      out.textContent = 'Searching…';
+      try {
+        const data = await fetch('/api/jukebox/catalog?q=' + encodeURIComponent(q)).then(r => r.json());
+        const rows = data.results || [];
+        out.innerHTML = rows.length ? rows.map(t => '<div class="pl-detail-row" style="display:flex;align-items:center;gap:10px;padding:9px 0"><span style="flex:1"><b>' + escHtml(t.name) + '</b><br><small>' + escHtml(t.artistName || '') + '</small></span><button class="pl-wall-back" onclick="liveRoomAddTrack(\'' + t.id + '\',\'' + escHtml(t.name).replace(/'/g, '&#39;') + '\')">Add</button></div>').join('') : 'No songs found.';
+      } catch (_) { out.textContent = 'Could not search the catalogue.'; }
+    }, 220);
+  });
+  input.focus();
+}
+
+async function liveRoomAddTrack(trackId, name) {
+  if (!liveRoomMode) return;
+  try {
+    const res = await fetch('/api/jukebox/add', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code:liveRoomMode._roomCode, trackId }) });
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) throw new Error(data.error || 'Could not add that song.');
+    await liveRoomRefreshState();
+    liveRoomCloseAddSongs(); renderPlaylistChart(); showToast((name || 'Song') + ' added to the host queue.');
+  } catch (e) { showToast(e.message || 'Could not add that song.'); }
+}
+
+function liveRoomRequests() {
+  if (!liveRoomMode?._guest) { liveRoomJoin(); return; }
+  const mine = (liveRoomMode._roomQueue || []).filter(q => q.guestId === liveRoomMode._guest.id);
+  const msg = mine.length ? mine.map((q, i) => (i + 1) + '. ' + q.trackName).join('\n') + '\n\nTo remove a request, use the number:' : 'You have no waiting song requests.';
+  if (!mine.length) { alert(msg); return; }
+  const chosen = Number(prompt(msg)); const item = mine[chosen - 1]; if (item) liveRoomRemoveRequest(item.id, item.trackName);
+}
+
+async function liveRoomRemoveRequest(itemId, name) {
+  try {
+    const res = await fetch('/api/jukebox/remove', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code:liveRoomMode._roomCode, itemId }) });
+    const data = await res.json().catch(() => ({})); if (!data.ok) throw new Error(data.error || 'Could not remove that request.');
+    await liveRoomRefreshState(); renderPlaylistChart(); showToast((name || 'Song') + ' removed from your requests.');
+  } catch (e) { showToast(e.message || 'Could not remove that request.'); }
+}
+
+async function saveLiveRoomAsPlaylist() {
+  if (!liveRoomMode) return;
+  if (!googleUser) { alert('Sign in to save this live jukebox as a playlist.'); return; }
+  const trackIds = playlistChartRows.map(row => row.trackId).filter(Boolean);
+  if (!trackIds.length) { showToast('There are no songs to save yet.'); return; }
+  const suggestion = (liveRoomMode.name || 'Live Jukebox').replace(/ · Live Now$/, '') + ' — Live Set';
+  const name = prompt('Name this saved playlist:', suggestion);
+  if (!name || !name.trim()) return;
+  try {
+    const [playlist] = await dbPost('/playlists', {
+      name: name.trim().slice(0, 120), is_public: false,
+      user_email: googleUser.email,
+      user_name: googleUser.displayName || googleUser.name || '',
+      context: _playlistContext(),
+    });
+    for (let i = 0; i < trackIds.length; i++) {
+      await dbPost('/playlist_tracks', { playlist_id: playlist.id, track_id: trackIds[i], position: i });
+    }
+    await loadPlaylists();
+    showToast('Saved "' + name.trim() + '" to My Playlists.');
+  } catch (e) { showToast(e.message || 'Could not save this playlist.'); }
+}
+
 function renderPlaylistChart(error) {
   plWallClosePop();
   const main = document.getElementById('main');
@@ -15885,15 +16350,28 @@ function renderPlaylistChart(error) {
   const canAddSongs = !!(googleUser && (
     playlistChartId === '__dynamic_now_playing' || (_plObj && (minePl || _plObj.is_public))
   ));
-  const manageBtns =
+  const roomBtns = liveRoomMode
+    ? `<button type="button" class="pl-wall-back" onclick="openLiveRoomAddSongs()">Add Songs</button>` +
+      `<button type="button" class="pl-wall-back" onclick="liveRoomRequests()">${liveRoomMode._guest ? 'My Requests' : 'Join Jukebox'}</button>` +
+      (_liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode
+        ? `<button type="button" class="pl-wall-back" onclick="liveRoomStopListening()">Leave Room</button>`
+        : '') +
+      `<button type="button" class="pl-wall-back" onclick="saveLiveRoomAsPlaylist()">Save as Playlist</button>` +
+      (liveRoomMode._roomIsOwner ? `<button type="button" class="pl-wall-back" onclick="openJukeboxHost()">Live Jukebox Settings</button>` : '')
+    : '';
+  const manageBtns = liveRoomMode ? roomBtns :
     (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>` : '') +
     (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
   const modeTog =
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
   const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
-  const statsHTML = plWallSummaryHTML();
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button></div></div></div>${body}</section>`;
+  const statsHTML = liveRoomMode
+    ? `<div class="pl-wall-summary"><span>LIVE NOW</span><span>${liveRoomMode._listenerCount} listening</span><span>${liveRoomMode._queuedSongCount} requests waiting</span></div>`
+    : plWallSummaryHTML();
+  const roomNotice = liveRoomMode ? `<div class="landing-no-results" style="margin:0 0 12px">The host controls playback and order. You can add songs and remove only your own waiting requests.</div>` : '';
+  const transport = liveRoomMode ? `${sizeCtrl}${modeTog}` : `${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
   plWallLoadReactionCounts(q.map(it => it.trackId));
@@ -15959,6 +16437,7 @@ async function initLanding() {
     landingStats = rows;
     await refreshBgUnlock();
     renderLanding();
+    void openLiveRoomFromUrl();
     loadPlaylists().then(() => { if (isLandingMode) renderLanding(); });
     ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
@@ -16543,6 +17022,7 @@ function renderLandingHomeHTML(esc) {
 }
 
 function renderLanding() {
+  if (landingTab === 'playlists' && !_liveRoomPlaylistsLoading) loadLiveRoomPlaylists();
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const main = document.getElementById('main');
   main.classList.add('main-landing');
@@ -16608,9 +17088,11 @@ function renderLanding() {
                 : ''}
             </div>
           </div>
-          ${rows.length ? `<div class="playlist-explore-grid">${rows.map(p => {
+          ${rows.length ? `${rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid">${rows.map(p => {
             const mine = googleUser && p.user_email === googleUser.email;
-            const by = p._dynamic ? ' · dynamic' : (p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : '');
+            const by = p._liveRoom
+              ? ' · LIVE NOW · ' + (p._listenerCount || 0) + ' listening · ' + (p._queuedSongCount || 0) + ' waiting'
+              : (p._dynamic ? ' · dynamic' : (p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : ''));
             const vis = mine && !p.is_public ? ' · private' : '';
             const tip = p._description ? ` title="${p._description}" aria-description="${p._description}"` : '';
             return `<button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}${p._description ? ' ⓘ' : ''}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`;
@@ -19096,6 +19578,37 @@ function openImportDiscography(artistName) {
   if (artistName) setTimeout(() => amSearch(), 60);
 }
 
+// Analytics opens this existing import flow with an artist and (when there is
+// one) song already named.  Consume the short-lived URL instruction only once
+// the signed-in UI is available, then remove it so refreshing does not reopen
+// the import panel later.
+let _analyticsImportConsumed = false;
+function consumeAnalyticsImport() {
+  if (_analyticsImportConsumed || !googleUser) return;
+  const params = new URLSearchParams(window.location.search);
+  const kind = params.get('import');
+  if (kind !== 'artist' && kind !== 'song') return;
+  const artist = (params.get('artist') || '').trim().slice(0, 300);
+  const title = (params.get('title') || '').trim().slice(0, 300);
+  if (!artist) return;
+
+  _analyticsImportConsumed = true;
+  const clean = new URL(window.location.href);
+  clean.searchParams.delete('import');
+  clean.searchParams.delete('artist');
+  clean.searchParams.delete('title');
+  window.history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
+
+  if (kind === 'artist') { openImportDiscography(artist); return; }
+  const query = [artist, title].filter(Boolean).join(' - ');
+  void openMyJukebox('import').then(() => {
+    const input = document.getElementById('mj-search-input');
+    if (!input) return;
+    input.value = query;
+    if (query.length >= 2) void mjSearchYouTube();
+  });
+}
+
 function openAddMusic() {
   if (!googleUser) {
     if (confirm('Sign in with Google to add music to the jukebox. Sign in now?')) handleAuthClick();
@@ -20337,6 +20850,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'In the docked player, ⋯ sits beside the heartbreak button, the lyric size slider sits under the thumbs, and lyrics always show when a song has them - the note button that turned them off is gone.',
+    'The docked player now shows Up Next under the skip buttons, the same preview the full-screen player has, and when the video grows large enough a Versions menu appears above it so you can switch uploads without leaving the dock.',
+    'When the dock grows tall enough for the current playlist, that list sits above the title bar and the lyrics stay in the middle, instead of stacking up over the song name.',
+    'Joining a live jukebox from Explore Playlists now keeps your player in step with the host - same song, same place in the track. Previous, next, shuffle and repeat stay with the host while you listen, and a Listening bar lets you Leave Room when you are done.',
     'Dragging the player bar taller on a phone no longer pushes the row of buttons off the bottom of the screen. The timeline and the buttons are fixed to the bottom edge and never move now - the artwork takes whatever height you add.',
     'A playlist page no longer repeats the player’s play, pause and next buttons. There is one button, Start Playlist, because the player itself is on screen the moment anything is playing.',
     'The previous, play, pause and next buttons in the player window, and the ones inside a song’s ⋯ menu, are drawn the same way as the ones in the player bar. On an iPhone they were coming out as blue plastic emoji.',
@@ -21232,6 +21749,7 @@ function initGoogleAuth() {
         sjjResumeBroadcast();
         spiConsumeReturn();
         consumeGuestImport();
+        consumeAnalyticsImport();
         if (isLandingMode) initLanding();
         try {
           const rp = localStorage.getItem('auth_return_path');
@@ -21280,6 +21798,7 @@ function initGoogleAuth() {
       sjjResumeBroadcast();
       spiConsumeReturn();
       consumeGuestImport();
+      consumeAnalyticsImport();
       if (isLandingMode) initLanding();
     } else if (_guestImportKey) {
       // Importing owns catalogue data, so this is the one guest action that
@@ -24665,6 +25184,10 @@ function getVisibleTracksWithVideo(shuffle) {
 }
 
 function setYtShuffleEnabled(on) {
+  if (_liveRoomListen && on) {
+    showToast('The host controls playback in a live jukebox.');
+    return;
+  }
   const was = ytShuffle;
   ytShuffle = !!on;
   ytpPaintTogs();
@@ -26372,6 +26895,7 @@ function sjjSetHostFlag(on) {
 
 function sjjStartBroadcast() {
   if (_sjjLive) return;
+  if (_liveRoomListen) liveRoomStopListening();
   _sjjLive = true;
   // The host's currently playing queue is the startup source of truth. Using
   // the state snapshot time makes older room rows eligible for removal while

@@ -236,6 +236,16 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     {step === 1 && <div className={styles.stepBody}>
       <p className={styles.lead}>Upload every JSON file from your Spotify Extended Streaming History export. We strip IP-address fields before anything can be saved.</p>
       <label className={styles.dropZone}><input type="file" multiple accept=".json,application/json" onChange={onFilesChosen} /><strong>Choose Spotify history JSON files</strong><span>You can select or drop multiple files at once.</span></label>
+      <section className={styles.spotifyHowTo} aria-labelledby="spotify-history-how-to">
+        <p className={styles.eyebrow}>Need your files first?</p>
+        <h2 id="spotify-history-how-to">How to get your Spotify history</h2>
+        <ol>
+          <li>Open Spotify&apos;s <a href="https://www.spotify.com/account/privacy/" target="_blank" rel="noopener noreferrer">Account Privacy</a> page and choose <b>Download your data</b>.</li>
+          <li>Request <b>Extended Streaming History</b>—not just the recent streaming-history download.</li>
+          <li>When Spotify emails your download, unzip it and upload every history <code>.json</code> file here.</li>
+        </ol>
+        <p>Spotify prepares the download separately, so it may not arrive immediately. We use the listening records only for your private Analytics, and remove IP-address fields before saving.</p>
+      </section>
     </div>}
 
     {step === 2 && <div className={styles.stepBody}>

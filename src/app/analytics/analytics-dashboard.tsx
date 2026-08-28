@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./dashboard.module.css";
 
-/* One screen, four questions: how much, over what stretch of time, who and
-   what, and when in the week. Every filter and every click on a bar reloads
-   the same payload, so nothing on the page can disagree with anything else. */
+/* One screen. Everything answers to the same filter rail, and every measure is
+   split by where the listen came from, so Suffering Jukebox and Spotify are
+   two colours in the same bar rather than one indistinguishable total. */
 
 type Bucket = "day" | "week" | "month" | "year";
 type BucketMode = "auto" | Bucket;
@@ -13,10 +13,18 @@ type SourceFilter = "all" | "jukebox" | "spotify";
 type Metric = "hours" | "plays";
 type Preset = "all" | "30d" | "90d" | "12m" | "ytd" | "custom";
 
-type SeriesRow = { bucket_start: string; events: number; duration_ms: number };
-type ArtistRow = { artist: string; events: number; duration_ms: number; tracks?: number };
-type TrackRow = { key: string; title: string; artist: string; events: number; duration_ms: number };
-type ClockRow = { dow?: number; hour?: number; events: number; duration_ms: number };
+/* A picker starts with everything ticked, so the common shape is "all but
+   these four". Saying that as an include list would mean shipping 2,752 names,
+   hence the third mode. "all" is the same as an empty filter. */
+type Selection = { mode: "all" } | { mode: "none" } | { mode: "include" | "exclude"; keys: string[] };
+
+type Split = { duration_ms: number; events: number; spotify_ms: number; jukebox_ms: number; spotify_events: number; jukebox_events: number };
+type SeriesRow = Split & { bucket_start: string };
+type CalendarRow = Split & { day: string };
+type ArtistRow = Split & { artist: string; tracks?: number; in_jukebox?: boolean };
+type TrackRow = Split & { key: string; title: string; artist: string; in_jukebox?: boolean };
+type HeatRow = Split & { dow: number; hour: number };
+type OptionRow = { artist: string; key?: string; title?: string; events: number; duration_ms: number };
 
 export type AnalyticsPayload = {
   tz?: string;
@@ -24,27 +32,22 @@ export type AnalyticsPayload = {
   bucket?: Bucket;
   bounds?: { first_played_at?: string | null; last_played_at?: string | null; events?: number };
   available?: { spotify?: boolean; jukebox?: boolean };
-  totals?: {
-    events?: number;
-    duration_ms?: number;
+  totals?: Partial<Split> & {
     artists?: number;
     tracks?: number;
     albums?: number;
     first_played_at?: string | null;
     last_played_at?: string | null;
     skipped?: number;
-    spotify_events?: number;
-    jukebox_events?: number;
     active_days?: number;
   };
   series?: SeriesRow[];
+  calendar?: CalendarRow[];
   topArtists?: ArtistRow[];
   topTracks?: TrackRow[];
-  byDow?: ClockRow[];
-  byHour?: ClockRow[];
-  byHourDow?: ClockRow[];
-  artistOptions?: ArtistRow[];
-  trackOptions?: TrackRow[];
+  byHourDow?: HeatRow[];
+  artistOptions?: OptionRow[];
+  trackOptions?: OptionRow[];
 };
 
 const DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -68,12 +71,49 @@ const BUCKET_MODES: Array<[BucketMode, string]> = [
 // Past this many buckets the bars are thinner than the gap between them, so
 // the silent stretches stop being drawn and only real activity is shown.
 const MAX_BARS = 1200;
-// Long option lists are searched, not scrolled. Rendering all 3,000 artists
-// into a popover costs more than it tells anyone.
+// Long option lists are searched, not scrolled.
 const MAX_OPTION_ROWS = 200;
 // jukebox.listening_analytics joins artist and title with chr(31) to make a
 // song key, because two artists share a title often enough to matter.
-const TRACK_KEY_SEP = "\u001f";
+const TRACK_KEY_SEP = "";
+const JUKEBOX_RGB = [255, 107, 53];
+const SPOTIFY_RGB = [29, 185, 84];
+
+const ALL: Selection = { mode: "all" };
+
+function selShows(sel: Selection, key: string) {
+  if (sel.mode === "all") return true;
+  if (sel.mode === "none") return false;
+  const listed = sel.keys.includes(key);
+  return sel.mode === "include" ? listed : !listed;
+}
+/* Everything ticked is no filter at all, whatever the option list was capped
+   at. That is what keeps the truncated song list honest: unticking one song
+   yields an exclude of one, which applies to every song, not just the 1,500
+   the picker could show. */
+function normalizeSelection(checked: Set<string>, allKeys: string[]): Selection {
+  if (checked.size === 0 && allKeys.length) return { mode: "none" };
+  if (checked.size >= allKeys.length) return ALL;
+  const unchecked = allKeys.filter((key) => !checked.has(key));
+  return unchecked.length < checked.size
+    ? { mode: "exclude", keys: unchecked }
+    : { mode: "include", keys: [...checked] };
+}
+/* Clicking a bar means "focus on this one", and clicking a second means "and
+   this one too" - which is only possible because the rankings deliberately do
+   not apply their own filter. */
+function selectionAfterBarClick(sel: Selection, key: string): Selection {
+  if (sel.mode === "all") return { mode: "include", keys: [key] };
+  if (sel.mode === "none") return { mode: "include", keys: [key] };
+  if (sel.mode === "exclude") {
+    const kept = sel.keys.filter((item) => item !== key);
+    // Clicking something the picker had hidden puts it back.
+    if (kept.length !== sel.keys.length) return kept.length ? { mode: "exclude", keys: kept } : ALL;
+    return { mode: "include", keys: [key] };
+  }
+  const keys = sel.keys.includes(key) ? sel.keys.filter((item) => item !== key) : [...sel.keys, key];
+  return keys.length ? { mode: "include", keys } : ALL;
+}
 
 function count(value: number | undefined) {
   return new Intl.NumberFormat().format(Math.round(value || 0));
@@ -82,17 +122,31 @@ function hoursOf(ms: number | undefined) {
   return (Number(ms) || 0) / 3_600_000;
 }
 function fmtHours(ms: number | undefined) {
-  const h = hoursOf(ms);
-  if (h === 0) return "0";
-  if (h < 1) return `${Math.round(h * 60)}m`;
-  if (h < 10) return `${h.toFixed(1)}h`;
-  return `${count(h)}h`;
+  const hours = hoursOf(ms);
+  if (hours === 0) return "0";
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  if (hours < 10) return `${hours.toFixed(1)}h`;
+  return `${count(hours)}h`;
 }
-function fmtMetric(row: { duration_ms?: number; events?: number }, metric: Metric) {
-  return metric === "hours" ? fmtHours(row.duration_ms) : count(row.events);
-}
-function metricValue(row: { duration_ms?: number; events?: number }, metric: Metric) {
+function metricValue(row: Partial<Split> | undefined, metric: Metric) {
+  if (!row) return 0;
   return metric === "hours" ? hoursOf(row.duration_ms) : Number(row.events) || 0;
+}
+function metricParts(row: Partial<Split> | undefined, metric: Metric) {
+  if (!row) return { jukebox: 0, spotify: 0 };
+  return metric === "hours"
+    ? { jukebox: hoursOf(row.jukebox_ms), spotify: hoursOf(row.spotify_ms) }
+    : { jukebox: Number(row.jukebox_events) || 0, spotify: Number(row.spotify_events) || 0 };
+}
+function fmtMetric(row: Partial<Split> | undefined, metric: Metric) {
+  return metric === "hours" ? fmtHours(row?.duration_ms) : count(row?.events);
+}
+function describe(row: Partial<Split> | undefined) {
+  const jukebox = Number(row?.jukebox_ms) || 0;
+  const spotify = Number(row?.spotify_ms) || 0;
+  const both = jukebox > 0 && spotify > 0;
+  const total = `${fmtHours(row?.duration_ms)} · ${count(row?.events)} plays`;
+  return both ? `${total} (Jukebox ${fmtHours(jukebox)}, Spotify ${fmtHours(spotify)})` : total;
 }
 function usDate(value?: string | null) {
   if (!value) return "—";
@@ -147,38 +201,57 @@ function hourLabel(hour: number) {
   if (hour === 12) return "12pm";
   return hour < 12 ? `${hour}am` : `${hour - 12}pm`;
 }
-function heatColor(t: number) {
-  if (t <= 0) return "rgba(255,255,255,.045)";
-  const x = Math.max(0, Math.min(1, t));
-  return `rgb(${Math.round(38 + x * 217)},${Math.round(22 + x * 85)},${Math.round(20 + x * 33)})`;
+/* A cell's hue says which source it mostly came from; its brightness says how
+   much listening it holds. */
+function heatColor(row: Partial<Split> | undefined, intensity: number) {
+  const level = Math.max(0, Math.min(1, intensity));
+  if (level <= 0) return "rgba(255,255,255,.045)";
+  const jukebox = Number(row?.jukebox_ms) || 0;
+  const spotify = Number(row?.spotify_ms) || 0;
+  const share = jukebox + spotify > 0 ? spotify / (jukebox + spotify) : 0;
+  const channels = JUKEBOX_RGB.map((value, index) => value + (SPOTIFY_RGB[index] - value) * share);
+  return `rgb(${channels.map((value) => Math.round(16 + (value - 16) * (0.22 + 0.78 * level))).join(",")})`;
+}
+function importHref(artist: string, title?: string) {
+  const params = new URLSearchParams();
+  params.set("import", title ? "song" : "artist");
+  params.set("artist", artist);
+  if (title) params.set("title", title);
+  return `/?${params.toString()}`;
 }
 
 type Option = { key: string; label: string; sub?: string; duration_ms: number; events: number };
 
 function MultiSelect({
-  label,
+  noun,
   allLabel,
   options,
-  selected,
+  selection,
   metric,
-  onToggle,
-  onClear,
-  onSelectShown,
+  onApply,
   note,
 }: {
-  label: string;
+  noun: string;
   allLabel: string;
   options: Option[];
-  selected: string[];
+  selection: Selection;
   metric: Metric;
-  onToggle: (key: string) => void;
-  onClear: () => void;
-  onSelectShown: (keys: string[]) => void;
+  onApply: (next: Selection) => void;
   note?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState<Set<string>>(new Set());
   const wrap = useRef<HTMLDivElement | null>(null);
+
+  const allKeys = useMemo(() => options.map((option) => option.key), [options]);
+
+  // The popover holds a draft until Apply, so ticking six boxes is one request.
+  const openPicker = useCallback(() => {
+    setDraft(new Set(allKeys.filter((key) => selShows(selection, key))));
+    setQuery("");
+    setOpen(true);
+  }, [allKeys, selection]);
 
   useEffect(() => {
     if (!open) return;
@@ -196,36 +269,32 @@ function MultiSelect({
     };
   }, [open]);
 
-  const chosen = useMemo(() => new Set(selected), [selected]);
   const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((option) => option.label.toLowerCase().includes(q) || (option.sub || "").toLowerCase().includes(q));
+    const needle = query.trim().toLowerCase();
+    if (!needle) return options;
+    return options.filter((option) => option.label.toLowerCase().includes(needle) || (option.sub || "").toLowerCase().includes(needle));
   }, [options, query]);
   const shown = matches.slice(0, MAX_OPTION_ROWS);
-  // A selection that scrolled out of the search results still has to be
-  // removable, so anything chosen is pinned to the top of the list.
-  const pinned = useMemo(() => {
-    const inShown = new Set(shown.map((option) => option.key));
-    return options.filter((option) => chosen.has(option.key) && !inShown.has(option.key));
-  }, [chosen, options, shown]);
-  const rows = [...pinned, ...shown];
 
-  const summary = selected.length === 0
+  const label = selection.mode === "all"
     ? allLabel
-    : selected.length === 1
-      ? (options.find((option) => option.key === selected[0])?.label || `1 selected`)
-      : `${selected.length} selected`;
+    : selection.mode === "none"
+      ? `No ${noun}`
+    : selection.mode === "exclude"
+      ? `All but ${count(selection.keys.length)} ${noun}`
+      : selection.keys.length === 1
+        ? (options.find((option) => option.key === selection.keys[0])?.label || `1 ${noun.replace(/s$/, "")}`)
+        : `${count(selection.keys.length)} of ${count(options.length)} ${noun}`;
 
   return (
     <div className={styles.msWrap} ref={wrap}>
       <button
         type="button"
-        className={`${styles.msBtn} ${selected.length ? styles.msBtnOn : ""}`}
+        className={`${styles.msBtn} ${selection.mode === "all" ? "" : styles.msBtnOn}`}
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => (open ? setOpen(false) : openPicker())}
       >
-        <span>{summary}</span>
+        <span>{label}</span>
         <em>{open ? "▲" : "▼"}</em>
       </button>
       {open && (
@@ -235,40 +304,57 @@ function MultiSelect({
             type="search"
             autoFocus
             value={query}
-            placeholder={`Search ${label.toLowerCase()}`}
-            aria-label={`Search ${label.toLowerCase()}`}
+            placeholder={`Search ${noun}`}
+            aria-label={`Search ${noun}`}
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className={styles.msTools}>
             <span>{count(matches.length)} {matches.length === 1 ? "match" : "matches"}</span>
             <span>
-              <button type="button" disabled={!shown.length} onClick={() => onSelectShown(shown.map((option) => option.key))}>Select shown</button>
+              <button type="button" onClick={() => setDraft(new Set(allKeys))}>Select all</button>
               {"  ·  "}
-              <button type="button" disabled={!selected.length} onClick={onClear}>Clear</button>
+              <button type="button" onClick={() => setDraft(new Set())}>Clear all</button>
             </span>
           </div>
           <div className={styles.msList}>
-            {rows.map((option) => (
-              <button
-                type="button"
-                key={option.key}
-                className={`${styles.msRow} ${chosen.has(option.key) ? styles.msRowOn : ""}`}
-                onClick={() => onToggle(option.key)}
-              >
-                <i className={styles.msTick}>{chosen.has(option.key) ? "✓" : ""}</i>
-                <span className={styles.msName}>
-                  {option.label}
-                  {option.sub ? <small>{option.sub}</small> : null}
-                </span>
-                <span className={styles.msVal}>{fmtMetric(option, metric)}</span>
-              </button>
-            ))}
-            {!rows.length && <p className={styles.msNote}>Nothing matches that search.</p>}
+            {shown.map((option) => {
+              const ticked = draft.has(option.key);
+              return (
+                <button
+                  type="button"
+                  key={option.key}
+                  className={`${styles.msRow} ${ticked ? styles.msRowOn : ""}`}
+                  onClick={() => setDraft((current) => {
+                    const next = new Set(current);
+                    if (next.has(option.key)) next.delete(option.key);
+                    else next.add(option.key);
+                    return next;
+                  })}
+                >
+                  <i className={styles.msTick}>{ticked ? "✓" : ""}</i>
+                  <span className={styles.msName}>
+                    {option.label}
+                    {option.sub ? <small>{option.sub}</small> : null}
+                  </span>
+                  <span className={styles.msVal}>{fmtMetric(option as unknown as Split, metric)}</span>
+                </button>
+              );
+            })}
+            {!shown.length && <p className={styles.msNote}>Nothing matches that search.</p>}
           </div>
           {matches.length > shown.length && (
-            <p className={styles.msNote}>Showing the top {count(shown.length)} of {count(matches.length)}. Keep typing to narrow it down.</p>
+            <p className={styles.msNote}>Showing the first {count(shown.length)} of {count(matches.length)}. Keep typing to narrow it down.</p>
           )}
           {note && <p className={styles.msNote}>{note}</p>}
+          <div className={styles.msFoot}>
+            <span>{count(draft.size)} of {count(options.length)} ticked</span>
+            <button type="button" className={styles.msCancel} onClick={() => setOpen(false)}>Cancel</button>
+            <button
+              type="button"
+              className={styles.msApply}
+              onClick={() => { onApply(normalizeSelection(draft, allKeys)); setOpen(false); }}
+            >Apply</button>
+          </div>
         </div>
       )}
     </div>
@@ -286,10 +372,11 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const [preset, setPreset] = useState<Preset>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [artists, setArtists] = useState<string[]>([]);
-  const [tracks, setTracks] = useState<string[]>([]);
+  const [artistSel, setArtistSel] = useState<Selection>(ALL);
+  const [trackSel, setTrackSel] = useState<Selection>(ALL);
   const [bucketMode, setBucketMode] = useState<BucketMode>("auto");
-  const [hover, setHover] = useState<{ chart: string; index: number } | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const [calendarYear, setCalendarYear] = useState<number | null>(null);
 
   // Local calendar days, not instants: the range the picker shows has to be
   // the range the headline reads back.
@@ -305,18 +392,11 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     return { from: ymd(from), to: ymd(today) };
   }, [customFrom, customTo, preset]);
 
-  const requestKey = JSON.stringify({
-    source,
-    from: range.from,
-    to: range.to,
-    artists: [...artists].sort(),
-    tracks: [...tracks].sort(),
-    bucketMode,
-  });
+  const requestKey = JSON.stringify({ source, from: range.from, to: range.to, artistSel, trackSel, bucketMode });
 
   const load = useCallback(async (key: string, signal: AbortSignal) => {
     const query = JSON.parse(key) as {
-      source: SourceFilter; from: string; to: string; artists: string[]; tracks: string[]; bucketMode: BucketMode;
+      source: SourceFilter; from: string; to: string; artistSel: Selection; trackSel: Selection; bucketMode: BucketMode;
     };
     setLoading(true);
     setError("");
@@ -333,8 +413,10 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
           source: query.source,
           from: query.from ? new Date(`${query.from}T00:00:00`).toISOString() : null,
           to: toExclusive ? toExclusive.toISOString() : null,
-          artists: query.artists,
-          tracks: query.tracks,
+          artists: query.artistSel.mode === "all" ? null : query.artistSel.mode === "none" ? [] : query.artistSel.keys,
+          artistsMode: query.artistSel.mode === "all" ? "include" : query.artistSel.mode,
+          tracks: query.trackSel.mode === "all" ? null : query.trackSel.mode === "none" ? [] : query.trackSel.keys,
+          tracksMode: query.trackSel.mode === "all" ? "include" : query.trackSel.mode,
           bucket: query.bucketMode,
         }),
       });
@@ -350,7 +432,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   }, [accessToken]);
 
   useEffect(() => {
-    // Ticking four artists in a row is one question, not four.
+    // Clicking three artist bars in a row is one question, not three.
     const controller = new AbortController();
     const timer = setTimeout(() => void load(requestKey, controller.signal), data ? 220 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
@@ -362,6 +444,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const bucket: Bucket = (data?.bucket as Bucket) || "month";
   const hasAnyHistory = Number(data?.bounds?.events || 0) > 0;
   const hasRows = Number(totals?.events || 0) > 0;
+  const bothSources = Number(totals?.jukebox_ms || 0) > 0 && Number(totals?.spotify_ms || 0) > 0;
 
   const artistOptions = useMemo<Option[]>(
     () => (data?.artistOptions || []).map((row) => ({
@@ -371,16 +454,10 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   );
   const trackOptions = useMemo<Option[]>(
     () => (data?.trackOptions || []).map((row) => ({
-      key: row.key, label: row.title, sub: row.artist, duration_ms: row.duration_ms, events: row.events,
+      key: row.key || "", label: row.title || "", sub: row.artist, duration_ms: row.duration_ms, events: row.events,
     })),
     [data],
   );
-  const trackTitle = useCallback((key: string) => {
-    const found = (data?.trackOptions || []).find((row) => row.key === key);
-    if (found) return `${found.title} — ${found.artist}`;
-    const [artist, title] = key.split(TRACK_KEY_SEP);
-    return title ? `${title} — ${artist}` : key;
-  }, [data]);
 
   // Only non-empty buckets come back, so the silent stretches are drawn here.
   const series = useMemo(() => {
@@ -388,21 +465,19 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     if (!rows.length) return [] as SeriesRow[];
     const known = new Map(rows.map((row) => [row.bucket_start, row]));
     const first = truncBucket(range.from ? parseYmd(range.from) : parseYmd(rows[0].bucket_start), bucket);
-    const lastSource = range.to ? parseYmd(range.to) : parseYmd(rows[rows.length - 1].bucket_start);
-    const last = truncBucket(lastSource, bucket);
+    const last = truncBucket(range.to ? parseYmd(range.to) : parseYmd(rows[rows.length - 1].bucket_start), bucket);
     const filled: SeriesRow[] = [];
     for (let cursor = first; cursor.getTime() <= last.getTime(); cursor = stepBucket(cursor, bucket)) {
       const key = cursor.toISOString().slice(0, 10);
-      filled.push(known.get(key) || { bucket_start: key, events: 0, duration_ms: 0 });
+      filled.push(known.get(key) || {
+        bucket_start: key, events: 0, duration_ms: 0, spotify_ms: 0, jukebox_ms: 0, spotify_events: 0, jukebox_events: 0,
+      });
       if (filled.length > MAX_BARS) return rows;
     }
     return filled.length ? filled : rows;
   }, [bucket, data, range.from, range.to]);
 
-  const seriesSpansYears = useMemo(() => {
-    if (series.length < 2) return true;
-    return series[0].bucket_start.slice(0, 4) !== series[series.length - 1].bucket_start.slice(0, 4);
-  }, [series]);
+  const seriesSpansYears = series.length < 2 || series[0].bucket_start.slice(0, 4) !== series[series.length - 1].bucket_start.slice(0, 4);
   const seriesMax = Math.max(1, ...series.map((row) => metricValue(row, metric)));
   const axisStep = Math.max(1, Math.ceil(series.length / 12));
 
@@ -411,16 +486,6 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const artistMax = Math.max(1, ...topArtists.map((row) => metricValue(row, metric)));
   const trackMax = Math.max(1, ...topTracks.map((row) => metricValue(row, metric)));
 
-  const dowRows = useMemo(() => {
-    const map = new Map((data?.byDow || []).map((row) => [Number(row.dow), row]));
-    return DOW_SHORT.map((_, index) => map.get(index) || { dow: index, events: 0, duration_ms: 0 });
-  }, [data]);
-  const hourRows = useMemo(() => {
-    const map = new Map((data?.byHour || []).map((row) => [Number(row.hour), row]));
-    return Array.from({ length: 24 }, (_, hour) => map.get(hour) || { hour, events: 0, duration_ms: 0 });
-  }, [data]);
-  const dowMax = Math.max(1, ...dowRows.map((row) => metricValue(row, metric)));
-  const hourMax = Math.max(1, ...hourRows.map((row) => metricValue(row, metric)));
   const heat = useMemo(() => {
     const map = new Map((data?.byHourDow || []).map((row) => [`${row.dow}:${row.hour}`, row]));
     let max = 0;
@@ -428,25 +493,80 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     return { map, max: Math.max(1, max) };
   }, [data, metric]);
 
-  function toggleArtist(name: string) {
-    setArtists((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
-  }
-  function toggleTrack(key: string) {
-    setTracks((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
-  }
+  const calendarDays = useMemo(() => new Map((data?.calendar || []).map((row) => [row.day, row])), [data]);
+  const calendarYears = useMemo(() => {
+    const years = new Set<number>();
+    (data?.calendar || []).forEach((row) => years.add(Number(row.day.slice(0, 4))));
+    return [...years].sort((a, b) => b - a);
+  }, [data]);
+  useEffect(() => {
+    if (!calendarYears.length) return;
+    setCalendarYear((current) => (current && calendarYears.includes(current) ? current : calendarYears[0]));
+  }, [calendarYears]);
+
+  // A GitHub-style year: one column per week, Sunday at the top.
+  const calendar = useMemo(() => {
+    const year = calendarYear || calendarYears[0];
+    if (!year) return { weeks: [] as Array<Array<CalendarRow | null>>, max: 1 };
+    const cells: Array<CalendarRow | null> = [];
+    const start = new Date(Date.UTC(year, 0, 1));
+    for (let pad = 0; pad < start.getUTCDay(); pad += 1) cells.push(null);
+    let max = 0;
+    for (let cursor = start; cursor.getUTCFullYear() === year; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      const key = cursor.toISOString().slice(0, 10);
+      const row = calendarDays.get(key) || null;
+      if (row) max = Math.max(max, metricValue(row, metric));
+      cells.push(row || { day: key, events: 0, duration_ms: 0, spotify_ms: 0, jukebox_ms: 0, spotify_events: 0, jukebox_events: 0 });
+    }
+    const weeks: Array<Array<CalendarRow | null>> = [];
+    for (let index = 0; index < cells.length; index += 7) weeks.push(cells.slice(index, index + 7));
+    return { weeks, max: Math.max(1, max) };
+  }, [calendarDays, calendarYear, calendarYears, metric]);
+
   function clearAll() {
     setSource("all");
-    setArtists([]);
-    setTracks([]);
+    setArtistSel(ALL);
+    setTrackSel(ALL);
     setPreset("all");
     setCustomFrom("");
     setCustomTo("");
     setBucketMode("auto");
   }
+  const anyFilter = source !== "all" || preset !== "all" || artistSel.mode !== "all" || trackSel.mode !== "all";
+  const readout = hover === null ? null : series[hover];
 
-  const filterCount = artists.length + tracks.length + (source === "all" ? 0 : 1) + (preset === "all" ? 0 : 1);
-  const headHours = count(hoursOf(totals?.duration_ms));
-  const readout = hover && hover.chart === "series" ? series[hover.index] : null;
+  function rankRows<T extends Split & { in_jukebox?: boolean }>(
+    rows: T[],
+    max: number,
+    keyOf: (row: T) => string,
+    nameOf: (row: T) => React.ReactNode,
+    selection: Selection,
+    onClick: (key: string) => void,
+    hrefOf: (row: T) => string,
+  ) {
+    return rows.map((row) => {
+      const key = keyOf(row);
+      const on = selection.mode !== "all" && selection.mode === "include" && selection.keys.includes(key);
+      const parts = metricParts(row, metric);
+      const total = Math.max(parts.jukebox + parts.spotify, metricValue(row, metric));
+      return (
+        <div className={`${styles.rankRow} ${on ? styles.rankRowOn : ""}`} key={key}>
+          <button type="button" className={styles.rankHit} aria-pressed={on} title={describe(row)} onClick={() => onClick(key)}>
+            <span className={styles.rankName}>{nameOf(row)}</span>
+            <span className={styles.rankTrack}>
+              <i className={styles.segJukebox} style={{ width: `${(parts.jukebox / max) * 100}%` }} />
+              <i className={styles.segSpotify} style={{ width: `${(parts.spotify / max) * 100}%` }} />
+              {total === 0 && <i style={{ width: "2px", background: "#333" }} />}
+            </span>
+          </button>
+          <span className={styles.rankVal}>{fmtMetric(row, metric)}</span>
+          {row.in_jukebox === false
+            ? <a className={styles.rankAdd} href={hrefOf(row)} target="_blank" rel="noopener" title="Open Import Music with this filled in">Add to Jukebox</a>
+            : <span />}
+        </div>
+      );
+    });
+  }
 
   return (
     <div className={styles.dash}>
@@ -456,7 +576,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
         {hasRows ? (
           <>
             <h1 className={styles.heroTitle}>
-              Analyzing <b>{headHours}</b> hours of playback history between{" "}
+              Analyzing <b>{count(hoursOf(totals?.duration_ms))}</b> hours of playback history between{" "}
               <i>{usDate(totals?.first_played_at)}</i> and <i>{usDate(totals?.last_played_at)}</i>
             </h1>
             <ul className={styles.heroSub}>
@@ -475,24 +595,25 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
       </header>
 
       <div className={styles.toolbar}>
-        <div className={styles.toolGroup}>
-          <span className={styles.toolLabel}>Listening platform</span>
-          <div className={styles.seg}>
-            <button type="button" className={source === "all" ? styles.segOn : ""} onClick={() => setSource("all")}>All</button>
-            <button
-              type="button"
-              className={source === "jukebox" ? styles.segOn : ""}
-              disabled={available.jukebox === false}
-              onClick={() => setSource("jukebox")}
-            >Suffering Jukebox</button>
-            <button
-              type="button"
-              className={source === "spotify" ? styles.segOn : ""}
-              disabled={available.spotify === false}
-              onClick={() => setSource("spotify")}
-            >Spotify</button>
+        {available.spotify && (
+          <div className={styles.toolGroup}>
+            <span className={styles.toolLabel}>Listening platform</span>
+            <div className={styles.seg}>
+              <button type="button" className={source === "all" ? styles.segOn : ""} onClick={() => setSource("all")}>All</button>
+              <button
+                type="button"
+                className={source === "jukebox" ? styles.segOn : ""}
+                disabled={available.jukebox === false}
+                onClick={() => setSource("jukebox")}
+              >Suffering Jukebox</button>
+              <button
+                type="button"
+                className={source === "spotify" ? styles.segOn : ""}
+                onClick={() => setSource("spotify")}
+              >Spotify</button>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className={styles.toolGroup}>
           <span className={styles.toolLabel}>Date range</span>
@@ -517,29 +638,25 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
         <div className={styles.toolGroup}>
           <span className={styles.toolLabel}>Artist</span>
           <MultiSelect
-            label="artists"
+            noun="artists"
             allLabel="All artists"
             options={artistOptions}
-            selected={artists}
+            selection={artistSel}
             metric={metric}
-            onToggle={toggleArtist}
-            onClear={() => setArtists([])}
-            onSelectShown={(keys) => setArtists((current) => [...new Set([...current, ...keys])])}
+            onApply={setArtistSel}
           />
         </div>
 
         <div className={styles.toolGroup}>
           <span className={styles.toolLabel}>Song</span>
           <MultiSelect
-            label="songs"
+            noun="songs"
             allLabel="All songs"
             options={trackOptions}
-            selected={tracks}
+            selection={trackSel}
             metric={metric}
-            onToggle={toggleTrack}
-            onClear={() => setTracks([])}
-            onSelectShown={(keys) => setTracks((current) => [...new Set([...current, ...keys])])}
-            note="The song list is your most played 1,500. Pick an artist to narrow it."
+            onApply={setTrackSel}
+            note="The list holds your 1,500 most played. Unticking works on all of them; ticking only works on what is listed."
           />
         </div>
 
@@ -550,35 +667,23 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
             <button type="button" className={metric === "plays" ? styles.segOn : ""} onClick={() => setMetric("plays")}>Plays</button>
           </div>
         </div>
+
+        {anyFilter && (
+          <div className={styles.toolGroup}>
+            <span className={styles.toolLabel}>&nbsp;</span>
+            <button type="button" className={styles.resetBtn} onClick={clearAll}>Clear all filters</button>
+          </div>
+        )}
       </div>
 
-      {filterCount > 0 && (
-        <div className={styles.chips}>
-          {source !== "all" && (
-            <span className={styles.chip}>
-              <span>{source === "spotify" ? "Spotify" : "Suffering Jukebox"}</span>
-              <button type="button" aria-label="Clear platform filter" onClick={() => setSource("all")}>×</button>
-            </span>
+      {hasRows && (
+        <div className={styles.legend}>
+          {Number(totals?.jukebox_ms || 0) > 0 && (
+            <span><i className={styles.swJukebox} /> Suffering Jukebox <b>{fmtHours(totals?.jukebox_ms)}</b> · {count(totals?.jukebox_events)} plays</span>
           )}
-          {preset !== "all" && (
-            <span className={styles.chip}>
-              <span>{range.from || "start"} → {range.to || "now"}</span>
-              <button type="button" aria-label="Clear date filter" onClick={() => { setPreset("all"); setCustomFrom(""); setCustomTo(""); }}>×</button>
-            </span>
+          {Number(totals?.spotify_ms || 0) > 0 && (
+            <span><i className={styles.swSpotify} /> Spotify <b>{fmtHours(totals?.spotify_ms)}</b> · {count(totals?.spotify_events)} plays</span>
           )}
-          {artists.map((name) => (
-            <span className={styles.chip} key={`a:${name}`}>
-              <span>{name}</span>
-              <button type="button" aria-label={`Remove ${name}`} onClick={() => toggleArtist(name)}>×</button>
-            </span>
-          ))}
-          {tracks.map((key) => (
-            <span className={styles.chip} key={`t:${key}`}>
-              <span>{trackTitle(key)}</span>
-              <button type="button" aria-label="Remove song" onClick={() => toggleTrack(key)}>×</button>
-            </span>
-          ))}
-          <button type="button" className={styles.clearAll} onClick={clearAll}>Clear all filters</button>
         </div>
       )}
 
@@ -591,19 +696,99 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
               <>
                 <h2>Nothing in this slice</h2>
                 <p>No plays match the platform, dates, artists and songs you have selected.</p>
-                <button type="button" className={styles.clearAll} onClick={clearAll}>Clear all filters</button>
+                <button type="button" className={styles.resetBtn} onClick={clearAll}>Clear all filters</button>
               </>
             ) : (
               <>
                 <h2>Your listening history is empty</h2>
                 <p>Play something in the Jukebox, or bring in your Spotify Extended Streaming History to analyze years of listening at once.</p>
-                <button type="button" className={styles.clearAll} onClick={onNeedImport}>Import Spotify history</button>
+                <button type="button" className={styles.resetBtn} onClick={onNeedImport}>Import Spotify history</button>
               </>
             )}
           </div>
         </div>
       ) : (
         <div className={`${styles.cards} ${loading ? styles.dimmed : ""}`}>
+          <div className={styles.pair}>
+            <section className={styles.card}>
+              <div className={styles.cardHead}>
+                <h2>Every day of {calendarYear || calendarYears[0] || ""}</h2>
+                {calendarYears.length > 1 && (
+                  <div className={styles.calYears}>
+                    {calendarYears.map((year) => (
+                      <button
+                        key={year}
+                        type="button"
+                        className={(calendarYear || calendarYears[0]) === year ? styles.segOn : ""}
+                        onClick={() => setCalendarYear(year)}
+                      >{year}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className={styles.cardNote}>One square per day, brighter for more listening.</p>
+              <div className={styles.heatWrap}>
+                <div className={styles.calMonths} aria-hidden="true">
+                  {calendar.weeks.map((week, index) => {
+                    const firstOfMonth = week.find((cell) => cell && cell.day.slice(8) === "01");
+                    return <span key={index}>{firstOfMonth ? MONTHS[Number(firstOfMonth.day.slice(5, 7)) - 1] : ""}</span>;
+                  })}
+                </div>
+                <div className={styles.calGrid}>
+                  {calendar.weeks.map((week, weekIndex) => week.map((cell, dayIndex) => (
+                    <i
+                      key={`${weekIndex}:${dayIndex}`}
+                      style={{ background: cell ? heatColor(cell, metricValue(cell, metric) / calendar.max) : "transparent" }}
+                      title={cell ? `${cell.day} · ${describe(cell)}` : undefined}
+                    />
+                  )))}
+                </div>
+              </div>
+              <div className={styles.heatLegend}>
+                <span>Quiet</span>
+                {[0, 0.25, 0.5, 0.75, 1].map((stop) => (
+                  <i key={stop} style={{ background: heatColor(totals, stop) }} />
+                ))}
+                <span>Busiest</span>
+              </div>
+            </section>
+
+            <section className={styles.card}>
+              <div className={styles.cardHead}><h2>Day of week and time of day</h2></div>
+              <p className={styles.cardNote}>Your own clock ({data?.tz || "local time"}).</p>
+              <div className={styles.heatWrap}>
+                <div className={styles.heat}>
+                  {DOW_SHORT.map((label, dow) => (
+                    <div className={styles.heatRow} key={label}>
+                      <b>{label}</b>
+                      {Array.from({ length: 24 }, (_, hour) => {
+                        const cell = heat.map.get(`${dow}:${hour}`);
+                        return (
+                          <i
+                            key={hour}
+                            style={{ background: heatColor(cell, metricValue(cell, metric) / heat.max) }}
+                            title={`${DOW_LONG[dow]} ${hourLabel(hour)} · ${describe(cell)}`}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className={styles.heatAxis} aria-hidden="true">
+                  <span />
+                  {Array.from({ length: 24 }, (_, hour) => <span key={hour}>{hour % 3 === 0 ? hour : ""}</span>)}
+                </div>
+              </div>
+              <div className={styles.heatLegend}>
+                <span>Quiet</span>
+                {[0, 0.25, 0.5, 0.75, 1].map((stop) => (
+                  <i key={stop} style={{ background: heatColor(totals, stop) }} />
+                ))}
+                <span>Busiest</span>
+              </div>
+            </section>
+          </div>
+
           <section className={styles.card}>
             <div className={styles.cardHead}>
               <h2>{metric === "hours" ? "Listening hours over time" : "Plays over time"}</h2>
@@ -615,25 +800,27 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                 ))}
               </div>
             </div>
-            <p className={styles.cardNote}>
-              {count(series.length)} {bucket}{series.length === 1 ? "" : "s"} from {usDate(totals?.first_played_at)} to {usDate(totals?.last_played_at)}
-            </p>
             <p className={styles.readout}>
               {readout
-                ? <><b>{bucketFullLabel(readout.bucket_start, bucket)}</b> · {fmtHours(readout.duration_ms)} · {count(readout.events)} plays</>
-                : <em>Hover a bar for the exact {bucket}.</em>}
+                ? <><b>{bucketFullLabel(readout.bucket_start, bucket)}</b> · {describe(readout)}</>
+                : <em>{count(series.length)} {bucket}{series.length === 1 ? "" : "s"} · hover a bar for the exact {bucket}.</em>}
             </p>
             <div className={styles.tsBars} onMouseLeave={() => setHover(null)}>
               {series.map((row, index) => {
                 const value = metricValue(row, metric);
+                const parts = metricParts(row, metric);
+                const sum = parts.jukebox + parts.spotify || 1;
                 return (
                   <div
                     key={row.bucket_start}
-                    className={`${styles.tsBar} ${value ? "" : styles.tsBarZero} ${hover?.chart === "series" && hover.index === index ? styles.tsBarOn : ""}`}
-                    title={`${bucketFullLabel(row.bucket_start, bucket)} · ${fmtHours(row.duration_ms)} · ${count(row.events)} plays`}
-                    onMouseEnter={() => setHover({ chart: "series", index })}
+                    className={`${styles.tsBar} ${value ? "" : styles.tsBarZero} ${hover === index ? styles.tsBarOn : ""}`}
+                    title={`${bucketFullLabel(row.bucket_start, bucket)} · ${describe(row)}`}
+                    onMouseEnter={() => setHover(index)}
                   >
-                    <i style={{ height: `${Math.max(value > 0 ? 2 : 1, (value / seriesMax) * 100)}%` }} />
+                    <i style={{ height: `${Math.max(value > 0 ? 2 : 1, (value / seriesMax) * 100)}%` }}>
+                      <b className={styles.segJukebox} style={{ height: `${(parts.jukebox / sum) * 100}%` }} />
+                      <b className={styles.segSpotify} style={{ height: `${(parts.spotify / sum) * 100}%` }} />
+                    </i>
                   </div>
                 );
               })}
@@ -648,140 +835,45 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
           <div className={styles.pair}>
             <section className={styles.card}>
               <div className={styles.cardHead}><h2>{metric === "hours" ? "Hours by artist" : "Plays by artist"}</h2></div>
-              <p className={styles.cardNote}>Top {count(topArtists.length)}. Click one to filter the whole page by it.</p>
-              <div className={styles.rank}>
-                {topArtists.map((row) => {
-                  const on = artists.includes(row.artist);
-                  return (
-                    <button
-                      type="button"
-                      key={row.artist}
-                      className={`${styles.rankRow} ${on ? styles.rankRowOn : ""}`}
-                      aria-pressed={on}
-                      onClick={() => toggleArtist(row.artist)}
-                    >
-                      <span>
-                        <span className={styles.rankName}>{row.artist} <small>· {count(row.tracks)} songs</small></span>
-                        <span className={styles.rankTrack}><i style={{ width: `${Math.max(2, (metricValue(row, metric) / artistMax) * 100)}%` }} /></span>
-                      </span>
-                      <span className={styles.rankVal}>{fmtMetric(row, metric)}</span>
-                    </button>
-                  );
-                })}
+              <p className={styles.cardNote}>Click any bar to filter the page by it; click more to add them. This chart never filters itself.</p>
+              <div className={styles.rankScroll}>
+                {rankRows(
+                  topArtists,
+                  artistMax,
+                  (row) => row.artist,
+                  (row) => <>{row.artist} <small>· {count(row.tracks)} songs</small></>,
+                  artistSel,
+                  (key) => setArtistSel((current) => selectionAfterBarClick(current, key)),
+                  (row) => importHref(row.artist),
+                )}
               </div>
             </section>
 
             <section className={styles.card}>
               <div className={styles.cardHead}><h2>{metric === "hours" ? "Hours by song" : "Plays by song"}</h2></div>
-              <p className={styles.cardNote}>Top {count(topTracks.length)}. Click one to filter the whole page by it.</p>
-              <div className={styles.rank}>
-                {topTracks.map((row) => {
-                  const on = tracks.includes(row.key);
-                  return (
-                    <button
-                      type="button"
-                      key={row.key}
-                      className={`${styles.rankRow} ${on ? styles.rankRowOn : ""}`}
-                      aria-pressed={on}
-                      onClick={() => toggleTrack(row.key)}
-                    >
-                      <span>
-                        <span className={styles.rankName}>{row.title} <small>· {row.artist}</small></span>
-                        <span className={styles.rankTrack}><i style={{ width: `${Math.max(2, (metricValue(row, metric) / trackMax) * 100)}%` }} /></span>
-                      </span>
-                      <span className={styles.rankVal}>{fmtMetric(row, metric)}</span>
-                    </button>
-                  );
-                })}
+              <p className={styles.cardNote}>Click any bar to filter the page by it; click more to add them. This chart never filters itself.</p>
+              <div className={styles.rankScroll}>
+                {rankRows(
+                  topTracks,
+                  trackMax,
+                  (row) => row.key,
+                  (row) => <>{row.title} <small>· {row.artist}</small></>,
+                  trackSel,
+                  (key) => setTrackSel((current) => selectionAfterBarClick(current, key)),
+                  (row) => importHref(row.artist, row.title),
+                )}
               </div>
             </section>
           </div>
-
-          <section className={styles.card}>
-            <div className={styles.cardHead}><h2>When you listen</h2></div>
-            <p className={styles.cardNote}>Your own clock ({data?.tz || "local time"}).</p>
-            <div className={styles.pair}>
-              <div>
-                <p className={styles.readout}>
-                  {hover?.chart === "dow"
-                    ? <><b>{DOW_LONG[hover.index]}</b> · {fmtHours(dowRows[hover.index]?.duration_ms)} · {count(dowRows[hover.index]?.events)} plays</>
-                    : <em>Day of week</em>}
-                </p>
-                <div className={styles.miniBars} onMouseLeave={() => setHover(null)}>
-                  {dowRows.map((row, index) => (
-                    <div
-                      key={index}
-                      title={`${DOW_LONG[index]} · ${fmtHours(row.duration_ms)} · ${count(row.events)} plays`}
-                      onMouseEnter={() => setHover({ chart: "dow", index })}
-                    >
-                      <i style={{ height: `${Math.max(1, (metricValue(row, metric) / dowMax) * 100)}%` }} />
-                    </div>
-                  ))}
-                </div>
-                <div className={styles.miniAxis} aria-hidden="true">
-                  {DOW_SHORT.map((label) => <span key={label}>{label}</span>)}
-                </div>
-              </div>
-              <div>
-                <p className={styles.readout}>
-                  {hover?.chart === "hour"
-                    ? <><b>{hourLabel(hover.index)}</b> · {fmtHours(hourRows[hover.index]?.duration_ms)} · {count(hourRows[hover.index]?.events)} plays</>
-                    : <em>Time of day</em>}
-                </p>
-                <div className={styles.miniBars} onMouseLeave={() => setHover(null)}>
-                  {hourRows.map((row, index) => (
-                    <div
-                      key={index}
-                      title={`${hourLabel(index)} · ${fmtHours(row.duration_ms)} · ${count(row.events)} plays`}
-                      onMouseEnter={() => setHover({ chart: "hour", index })}
-                    >
-                      <i style={{ height: `${Math.max(1, (metricValue(row, metric) / hourMax) * 100)}%` }} />
-                    </div>
-                  ))}
-                </div>
-                <div className={styles.miniAxis} aria-hidden="true">
-                  {hourRows.map((_, hour) => <span key={hour}>{hour % 3 === 0 ? hourLabel(hour).replace("m", "") : ""}</span>)}
-                </div>
-              </div>
-            </div>
-
-            <div className={styles.heatWrap}>
-              <div className={styles.heat}>
-                {DOW_SHORT.map((label, dow) => (
-                  <div className={styles.heatRow} key={label}>
-                    <b>{label}</b>
-                    {Array.from({ length: 24 }, (_, hour) => {
-                      const cell = heat.map.get(`${dow}:${hour}`);
-                      const value = cell ? metricValue(cell, metric) : 0;
-                      return (
-                        <i
-                          key={hour}
-                          style={{ background: heatColor(value / heat.max) }}
-                          title={`${DOW_LONG[dow]} ${hourLabel(hour)} · ${fmtHours(cell?.duration_ms)} · ${count(cell?.events)} plays`}
-                        />
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-              <div className={styles.heatAxis} aria-hidden="true">
-                <span />
-                {Array.from({ length: 24 }, (_, hour) => <span key={hour}>{hour % 3 === 0 ? hour : ""}</span>)}
-              </div>
-            </div>
-            <div className={styles.heatLegend}>
-              <span>Quiet</span>
-              {[0, 0.25, 0.5, 0.75, 1].map((stop) => <i key={stop} style={{ background: heatColor(stop) }} />)}
-              <span>Busiest</span>
-            </div>
-          </section>
         </div>
       )}
 
       <p className={styles.footNote}>
         Hours come from how long each track actually played. A Jukebox play with no measured length falls back to
         the song&apos;s own running time, so the two sources can be added together.
-        {Number(totals?.skipped || 0) > 0 && ` ${count(totals?.skipped)} of these plays were skipped early.`}
+        {bothSources ? " Orange is listening inside Suffering Jukebox, green is imported Spotify history." : ""}
+        {Number(totals?.skipped || 0) > 0 ? ` ${count(totals?.skipped)} of these plays were skipped early.` : ""}
+        {" "}<b>Add to Jukebox</b> appears beside anything the catalogue does not already hold, and opens Import Music with the name filled in.
       </p>
     </div>
   );

@@ -340,6 +340,18 @@ export async function setGuestBanned(
   if (error) throw error;
 }
 
+/** Public live rooms, shaped for the Explore Playlists Live Now collection. */
+export async function listLiveJukeboxes(sb: ServiceClient): Promise<JukeboxRow[]> {
+  const { data, error } = await T(sb, "jukeboxes")
+    .select(JUKEBOX_SELECT)
+    .eq("is_live", true)
+    .eq("is_public", true)
+    .order("last_live_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return (data ?? []).map(hydrate);
+}
+
 export async function setIpBanned(
   sb: ServiceClient,
   jukeboxId: string,
@@ -845,6 +857,7 @@ export type OfflineTrack = {
   albumName: string | null;
   albumArt: string | null;
   addedByName: string | null;
+  durationMs: number | null;
 };
 
 export async function loadLastSyncedPlaylist(
@@ -857,7 +870,7 @@ export async function loadLastSyncedPlaylist(
 
   const [metaRes, videoRes] = await Promise.all([
     T(sb, "tracks")
-      .select("id,name,albums!inner(name,art_url,artists!inner(name))")
+      .select("id,name,duration_ms,albums!inner(name,art_url,artists!inner(name))")
       .in("id", ids),
     T(sb, "track_videos")
       .select("track_id,video_id,is_primary,is_playable,view_count")
@@ -890,6 +903,7 @@ export async function loadLastSyncedPlaylist(
       albumName: album.name ?? null,
       albumArt: album.art_url ?? null,
       addedByName: e.by,
+      durationMs: m?.duration_ms ?? null,
     };
   });
 }

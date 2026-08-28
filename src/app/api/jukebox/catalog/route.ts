@@ -15,6 +15,7 @@ import { bad, clientIp, rateLimited, resolveRoom, tooMany } from "@/lib/jukebox-
 export const dynamic = "force-dynamic";
 
 const SEARCH_LIMIT = 60;
+const PLAYLIST_LIMIT = 800;
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
 
     const q = (url.searchParams.get("q") ?? "").trim();
     const artistId = url.searchParams.get("artist");
+    const playlistView = url.searchParams.get("view") === "playlist";
 
     if (q) {
       if (q.length < 2) return NextResponse.json({ ok: true, mode: "search", results: [] });
@@ -80,6 +82,20 @@ export async function GET(req: NextRequest) {
           })),
       }));
       return NextResponse.json({ ok: true, mode: "artist", albums });
+    }
+
+    // The room's Explore Playlist view needs one flat, addable song list.
+    // Keep it deliberately capped: this runs on a phone in a room, not the
+    // dashboard's exhaustive catalog browser.
+    if (playlistView) {
+      const { data, error } = await sb
+        .schema(JUKEBOX_SCHEMA)
+        .from("tracks")
+        .select("id,name,duration_ms,explicit,albums!inner(id,name,art_url,release_date,artists!inner(id,name,slug))")
+        .order("name", { ascending: true })
+        .limit(PLAYLIST_LIMIT);
+      if (error) throw error;
+      return NextResponse.json({ ok: true, mode: "playlist", tracks: (data ?? []).map(shapeTrack) });
     }
 
     const { data, error } = await sb

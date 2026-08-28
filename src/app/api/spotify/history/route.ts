@@ -28,7 +28,8 @@ function cleanFilterList(value: unknown): string[] | null {
     if (name) seen.add(name);
     if (seen.size >= FILTER_MAX) break;
   }
-  return seen.size ? [...seen] : null;
+  // An explicit [] means "match no artists/songs". null means no filter.
+  return [...seen];
 }
 
 type CleanHistoryEvent = {
@@ -121,7 +122,9 @@ export async function POST(req: NextRequest) {
         p_from: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
         p_to: Number.isFinite(toMs) ? new Date(toMs).toISOString() : null,
         p_artists: cleanFilterList(body.artists),
+        p_artists_mode: body.artistsMode === "exclude" ? "exclude" : "include",
         p_tracks: cleanFilterList(body.tracks),
+        p_tracks_mode: body.tracksMode === "exclude" ? "exclude" : "include",
         p_bucket: bucket,
       });
       if (error) throw error;

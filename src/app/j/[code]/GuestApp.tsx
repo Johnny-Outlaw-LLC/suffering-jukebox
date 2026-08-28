@@ -58,6 +58,7 @@ type Track = {
   artistName?: string | null;
   year?: string | null;
   explicit?: boolean;
+  durationMs?: number | null;
 };
 
 type Artist = { id: string; name: string; slug: string; color: string | null };
@@ -70,8 +71,9 @@ type Toast = { key: string; title: string; by: string; art: string | null; error
 // phone, not about how tight the video sync is.
 const POLL_MS = 4000;
 
-// How long a host may go quiet before the guests stop mirroring it.
-const STALE_MS = 120_000;
+// A room can be between songs or briefly buffering; wait ten minutes before
+// deciding the host has truly gone away.
+const STALE_MS = 600_000;
 
 const NO_PLAYBACK: Playback = {
   videoId: null,
@@ -100,9 +102,14 @@ export default function GuestApp({ code }: { code: string }) {
   // different laptops with two different ideas of what time it is.
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
 
-  const [tab, setTab] = useState<"queue" | "browse">("queue");
+  const [view, setView] = useState<"playlist" | "player">("playlist");
+  const [playlistStyle, setPlaylistStyle] = useState<"covers" | "detail">("covers");
+  const [coverSize, setCoverSize] = useState(150);
+  const [addSongsOpen, setAddSongsOpen] = useState(false);
+  const [dockHeight, setDockHeight] = useState(92);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Track[] | null>(null);
+  const [catalog, setCatalog] = useState<Track[] | null>(null);
 
   const [artists, setArtists] = useState<Artist[] | null>(null);
   const [openArtist, setOpenArtist] = useState<Artist | null>(null);
@@ -243,6 +250,31 @@ export default function GuestApp({ code }: { code: string }) {
       /* the retry is tapping the tab again */
     }
   }, [artists, code]);
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      // This is the host's synced Now Playing list, not the room's whole
+      // catalogue. It is the same running order the host sees in their player.
+      const res = await fetch(`/api/jukebox/offline?code=${encodeURIComponent(code)}`);
+      const d = await res.json();
+      if (d.ok) {
+        setCatalog((d.tracks ?? []).map((track: any) => ({
+          id: track.trackId,
+          name: track.trackName,
+          artistName: track.artistName,
+          albumName: track.albumName,
+          albumArt: track.albumArt,
+          durationMs: track.durationMs,
+        })));
+      }
+    } catch {
+      setCatalog([]);
+    }
+  }, [code]);
+
+  useEffect(() => {
+    if (phase === "ready") void loadCatalog();
+  }, [room?.lastPlaylistCount, phase, loadCatalog]);
 
   const openArtistAlbums = useCallback(
     async (artist: Artist) => {
@@ -413,242 +445,116 @@ export default function GuestApp({ code }: { code: string }) {
     </div>
   );
 
-  // The mirror only makes sense while the host is actually driving something,
-  // and only while it is still saying so. A host that closed its laptop stops
-  // writing, and a stale position would have the phone playing a song the room
-  // finished ten minutes ago. Past STALE_MS the stage comes down and the plain
-  // Now playing card takes over.
+  // A live video is only trusted while the host is actively playing it and
+  // has reported a recent position. Once it goes quiet, nothing in the old
+  // queue is shown as if it were still current.
   const stampedAt = playback.updatedAt ? Date.parse(playback.updatedAt) : NaN;
   const fresh =
     Number.isFinite(stampedAt) && Date.now() - serverOffsetMs - stampedAt < STALE_MS;
-  const showStage = !!playback.videoId && fresh;
+  const isPlaying = !!playback.videoId && playback.isPlaying && fresh;
+  const currentTrack: Track | null = nowPlaying
+    ? {
+        id: nowPlaying.trackId,
+        name: nowPlaying.trackName,
+        artistName: nowPlaying.artistName,
+        albumName: nowPlaying.albumName,
+        albumArt: nowPlaying.albumArt,
+      }
+    : null;
+  const playlistDurationMs = (catalog ?? []).reduce((total, track) => total + (track.durationMs ?? 0), 0);
+  const playlistDuration = playlistDurationMs
+    ? `${Math.floor(playlistDurationMs / 3_600_000)}:${String(Math.floor((playlistDurationMs / 60_000) % 60)).padStart(2, "0")}:${String(Math.floor((playlistDurationMs / 1000) % 60)).padStart(2, "0")}`
+    : null;
 
-  // Closing time. A station that has gone quiet still has its last running
-  // order, and the visitor is handed it in the ordinary Suffering Jukebox
-  // player rather than in a second one built into this page: there they can
-  // reorder it, save it, rate it, read the words, and keep the queue when they
-  // wander off to something else. A cut-down player here would have been a
-  // worse copy of a thing they already have.
-  const lastCount = room?.lastPlaylistCount ?? 0;
+  const renderAdd = (track: Track, compact = false) => (
+    <button
+      className={compact ? css.coverAdd : `${css.iconBtn} ${css.addBtn}`}
+      disabled={banned || atCap || pendingAdd === track.id}
+      onClick={() => void addTrack(track)}
+      aria-label={`Add ${track.name} to the queue`}
+      title={atCap ? "You have reached your limit of waiting songs" : "Add to queue"}
+    >
+      {pendingAdd === track.id ? "Adding…" : compact ? "Add to Queue" : "+"}
+    </button>
+  );
 
   return (
     <div className={css.app}>
       <header className={css.header}>
         <div className={css.headRow}>
           <div className={css.roomName}>{room?.name}</div>
-          <span className={room?.isLive ? css.live : css.dark}>
-            {room?.isLive ? "Live" : "Off air"}
+          <div className={css.headerIdentity}>
+            <span>{guest?.displayName ?? "Guest"}</span>
+            {cap > 0 && <span className={css.headerCap}>{mine.length}/{cap}</span>}
+            <button className={css.headerRename} onClick={() => void rename()}>{guest?.hasName ? "Rename" : "Name"}</button>
+          </div>
+          <span className={isPlaying ? css.live : css.dark}>
+            {isPlaying ? "Live" : "Idle"}
           </span>
-        </div>
-        <input
-          className={css.search}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search for a song"
-          inputMode="search"
-        />
-        <div className={css.tabs}>
-          <button
-            className={`${css.tab} ${tab === "queue" ? css.tabOn : ""}`}
-            onClick={() => setTab("queue")}
-          >
-            Up Next ({queue.length})
-          </button>
-          <button
-            className={`${css.tab} ${tab === "browse" ? css.tabOn : ""}`}
-            onClick={() => {
-              setTab("browse");
-              void loadArtists();
-            }}
-          >
-            Browse
-          </button>
-          {room?.settings.allowGuestImports && (
-            <a className={css.tab} href={`/?guestImport=${encodeURIComponent(code)}`}>
-              Add a new song
-            </a>
-          )}
         </div>
       </header>
 
-      {/* Two columns from a laptop width up: what is playing stays put on the
-          left while the collection scrolls on the right. One column on a
-          phone, in the order a thumb wants them. */}
-      <div className={css.shell}>
-        <div className={css.colStage}>
-          {showStage && <Stage code={code} playback={playback} serverOffsetMs={serverOffsetMs} />}
-
-          {banned && (
-            <div className={css.notice}>
-              The owner has stopped you adding songs to this jukebox. You can still see what is
-              playing.
+      {!isPlaying ? (
+        <main className={css.idleOverlay} role="status" aria-live="polite">
+          <div className={css.idleCard}>
+            <div className={css.idleEyebrow}>Jukebox idle</div>
+            <h1>Nothing is playing right now</h1>
+            <p>The host may have stepped away. Explore Suffering Jukebox on your own while you wait.</p>
+            <a className={css.idleLink} href="/">Explore Suffering Jukebox</a>
+          </div>
+        </main>
+      ) : view === "player" ? (
+        <main className={css.playerView}>
+          <button className={css.playerClose} onClick={() => setView("playlist")}>← Now Playing</button>
+          <Stage code={code} playback={playback} serverOffsetMs={serverOffsetMs} />
+          {currentTrack && <div className={css.playerAdd}>{renderAdd(currentTrack, true)}</div>}
+        </main>
+      ) : (
+        <main className={css.playlistView}>
+          <div className={css.nowPlayingHead}>
+            <div>
+              <h1>Now Playing</h1>
+              <p>{catalog?.length ?? 0} songs{playlistDuration ? `, ${playlistDuration} total play time` : ""}</p>
             </div>
-          )}
-
-          {/* Off air. An offer, not an apology. */}
-          {!room?.isLive && (
-            <div className={css.notice}>
-              <div className={css.noticeTitle}>This station is offline right now</div>
-              {lastCount > 0 ? (
-                <>
-                  <p className={css.noticeText}>
-                    You can still listen to the last synced playlist. It opens in the Suffering
-                    Jukebox player, where it works like any other queue.
-                  </p>
-                  {/* A real link, not a button that calls navigate: this is a
-                      place you can go, and it should behave like one. */}
-                  <a className={css.noticeBtn} href={`/?station=${encodeURIComponent(code)}`}>
-                    Send {lastCount} song{lastCount === 1 ? "" : "s"} to my player
-                  </a>
-                </>
-              ) : (
-                <p className={css.noticeText}>
-                  This jukebox has not broadcast a playlist yet, so there is nothing to load.
-                </p>
-              )}
-              <p className={css.noticeText}>
-                The host is not taking requests until they are back on air.
-              </p>
+            <div className={css.viewControls}>
+              <button className={css.smallBtn} onClick={() => { setQuery(""); setResults(null); setAddSongsOpen(true); }}>Add Songs</button>
+              <button className={`${css.smallBtn} ${playlistStyle === "covers" ? css.controlOn : ""}`} onClick={() => setPlaylistStyle("covers")}>Covers</button>
+              <button className={`${css.smallBtn} ${playlistStyle === "detail" ? css.controlOn : ""}`} onClick={() => setPlaylistStyle("detail")}>Detail</button>
+              {playlistStyle === "covers" && <label className={css.sizeControl}>Size <input type="range" min="110" max="230" value={coverSize} onChange={(e) => setCoverSize(Number(e.target.value))} aria-label="Cover size" /></label>}
             </div>
-          )}
-
-          {nowPlaying && !showStage && (
-            <div className={css.nowPlaying}>
-              {nowPlaying.albumArt && (
-                <img className={css.npArt} src={nowPlaying.albumArt} alt="" loading="lazy" />
-              )}
-              <div className={css.rowBody}>
-                <div className={css.npLabel}>{room?.isLive ? "Now playing" : "Last played"}</div>
-                <div className={css.npTitle}>{nowPlaying.trackName}</div>
-                <div className={css.npSub}>
-                  {nowPlaying.artistName}
-                  {nowPlaying.addedByOwner ? "" : ` · Added by ${nowPlaying.addedByName}`}
-                </div>
+          </div>
+          {banned && <div className={css.notice}>The owner has stopped you adding songs to this jukebox.</div>}
+          <section className={css.section}>
+            {results !== null ? (
+              results.length ? (playlistStyle === "covers" ? <div className={css.coverGrid} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${coverSize}px, 1fr))` }}>{results.map((track) => <article key={track.id} className={css.coverCard}>{track.albumArt ? <img src={track.albumArt} alt="" loading="lazy" /> : <div className={css.coverFallback} />}<div className={css.coverTitle}>{track.name}</div><div className={css.coverSub}>{track.artistName}</div>{renderAdd(track, true)}</article>)}</div> : <div>{results.map(renderTrackRow)}</div>) : <div className={css.empty}>No songs found.</div>
+            ) : catalog === null ? <div className={css.empty}>Loading the playlist...</div> : playlistStyle === "covers" ? (
+              <div className={css.coverGrid} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${coverSize}px, 1fr))` }}>
+                {catalog.map((track) => <article key={track.id} className={css.coverCard}>{track.albumArt ? <img src={track.albumArt} alt="" loading="lazy" /> : <div className={css.coverFallback} />}<div className={css.coverTitle}>{track.name}</div><div className={css.coverSub}>{track.artistName}</div></article>)}
               </div>
+            ) : <div>{catalog.map(renderTrackRow)}</div>}
+          </section>
+          {currentTrack && (
+            <div className={css.playerDock} style={{ height: dockHeight }}>
+              <label className={css.dockResize} aria-label="Resize docked player"><input type="range" min="76" max="260" value={dockHeight} onChange={(e) => setDockHeight(Number(e.target.value))} /></label>
+              <button className={css.dockMain} onClick={() => setView("player")} aria-label="Open the full screen player">
+                {currentTrack.albumArt && <img src={currentTrack.albumArt} alt="" />}
+                <span className={css.dockMeta}><strong>{currentTrack.name}</strong><span>{currentTrack.artistName}</span></span>
+                <span className={css.dockPlay}>Open Player</span>
+              </button>
             </div>
           )}
-        </div>
+        </main>
+      )}
 
-        <div className={css.colList}>
-          {/* Search results take over the body whenever there is a query. */}
-          {results !== null ? (
-            <section className={css.section}>
-              <h2 className={css.sectionTitle}>
-                {results.length
-                  ? `${results.length} result${results.length === 1 ? "" : "s"}`
-                  : "No songs found"}
-              </h2>
-              {results.map(renderTrackRow)}
-            </section>
-          ) : tab === "queue" ? (
-            <section className={css.section}>
-              <h2 className={css.sectionTitle}>Up next</h2>
-              {queue.length === 0 ? (
-                <div className={css.empty}>
-                  Nothing queued yet.
-                  <br />
-                  Search for a song, or browse the collection.
-                </div>
-              ) : (
-                queue.map((item, i) => {
-                  const isMine = !!guest && item.guestId === guest.id;
-                  return (
-                    <div className={`${css.row} ${isMine ? css.rowMine : ""}`} key={item.id}>
-                      <div className={css.pos}>{i + 1}</div>
-                      <div className={css.rowBody}>
-                        <div className={css.rowTitle}>{item.trackName}</div>
-                        <div className={css.rowSub}>
-                          {item.artistName}
-                          {/* The host's own songs are most of the list, so
-                              crediting every one of them to the jukebox is
-                              noise. Only a person's name is worth printing. */}
-                          {isMine ? (
-                            <>
-                              {" · "}
-                              <span className={css.by}>you added this</span>
-                            </>
-                          ) : item.addedByOwner ? null : (
-                            <>
-                              {" · "}
-                              <span>Added by {item.addedByName}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      {isMine && (
-                        <button
-                          className={css.iconBtn}
-                          onClick={() => void removeItem(item)}
-                          aria-label={`Remove ${item.trackName}`}
-                          title="Remove your song"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </section>
-          ) : (
-            <section className={css.section}>
-              {openArtist ? (
-                <>
-                  <button
-                    className={css.backBtn}
-                    onClick={() => {
-                      setOpenArtist(null);
-                      setAlbums(null);
-                    }}
-                  >
-                    ← All artists
-                  </button>
-                  <h2 className={css.sectionTitle}>{openArtist.name}</h2>
-                  {albums === null ? (
-                    <div className={css.empty}>Loading...</div>
-                  ) : (
-                    albums.map((album) => (
-                      <div key={album.id}>
-                        <div className={css.albumHead}>
-                          {album.art && (
-                            <img className={css.albumArt} src={album.art} alt="" loading="lazy" />
-                          )}
-                          <div>
-                            <div className={css.albumName}>{album.name}</div>
-                            <div className={css.albumYear}>{album.year}</div>
-                          </div>
-                        </div>
-                        {album.tracks.map((t) =>
-                          renderTrackRow({
-                            ...t,
-                            artistName: openArtist.name,
-                            albumName: album.name,
-                          }),
-                        )}
-                      </div>
-                    ))
-                  )}
-                </>
-              ) : artists === null ? (
-                <div className={css.empty}>Loading the collection...</div>
-              ) : (
-                <div className={css.artistGrid}>
-                  {artists.map((a) => (
-                    <button
-                      key={a.id}
-                      className={css.artistCard}
-                      style={{ ["--card-accent" as string]: a.color ?? "#ff6b35" }}
-                      onClick={() => void openArtistAlbums(a)}
-                    >
-                      {a.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
+      {addSongsOpen && (
+        <div className={css.addSongsModal} role="dialog" aria-modal="true" aria-label="Add songs">
+          <div className={css.addSongsPanel}>
+            <div className={css.addSongsHead}><strong>Add Songs</strong><button className={css.smallBtn} onClick={() => { setQuery(""); setResults(null); setAddSongsOpen(false); }}>Close</button></div>
+            <input className={css.search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search the Suffering Jukebox" autoFocus />
+            <div className={css.addSongsResults}>{results === null ? "Start typing a song name." : results.length ? results.map(renderTrackRow) : "No songs found."}</div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className={css.toasts}>
         {toasts.map((t) => (
@@ -662,23 +568,6 @@ export default function GuestApp({ code }: { code: string }) {
         ))}
       </div>
 
-      <div className={css.identity}>
-        <div className={css.identityText}>
-          {guest?.hasName ? "Adding as" : "The room calls you"}
-          <span className={css.identityName}>{guest?.displayName ?? "Guest"}</span>
-        </div>
-        {cap > 0 && (
-          <div className={css.identityText} style={{ flex: "0 0 auto", textAlign: "right" }}>
-            {mine.length}/{cap}
-            <span className={css.identityName} style={{ fontSize: "0.62rem", fontWeight: 500 }}>
-              waiting
-            </span>
-          </div>
-        )}
-        <button className={css.smallBtn} onClick={() => void rename()}>
-          {guest?.hasName ? "Rename" : "Set your name"}
-        </button>
-      </div>
     </div>
   );
 }
