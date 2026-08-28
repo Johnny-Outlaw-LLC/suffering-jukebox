@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
         name: room.name,
         isOwner: !!user?.email && user.email.toLowerCase() === room.owner_email.toLowerCase(),
         playback: room.playback,
+        settings: room.settings || null,
         tracks,
         queue,
         listenerCount: listeners.length,

@@ -2839,6 +2839,53 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .live-room-listening-overlay { position:fixed; z-index:5200; left:50%; bottom:calc(var(--ytp-dock-height, 0px) + 14px); transform:translateX(-50%); display:flex; align-items:center; gap:12px; max-width:calc(100vw - 28px); padding:10px 14px; border:1px solid #9a5bc4; border-radius:999px; background:rgba(20,12,26,.95); box-shadow:0 10px 28px #0009; color:#fff; font-size:.62rem; font-weight:700; }
 .live-room-listening-overlay::before { content:''; width:9px; height:9px; flex:none; border-radius:50%; background:#ff593d; box-shadow:0 0 0 4px rgba(255,89,61,.18); animation:playlist-live-pulse 1.4s ease-in-out infinite; }
 .live-room-listening-overlay button { border:1px solid #a66aca; border-radius:999px; background:transparent; color:#fff; padding:5px 9px; font:inherit; cursor:pointer; }
+.live-room-listening-overlay button.on { border-color:var(--accent); color:var(--accent); background:rgba(255,107,53,.14); }
+.pl-wall-join-now {
+  background:var(--accent); border:1px solid var(--accent); color:#0a0a0a;
+  font-family:var(--mono); font-size:.58rem; font-weight:800; letter-spacing:.06em;
+  text-transform:uppercase; padding:.55rem 1.15rem; border-radius:8px; cursor:pointer;
+  min-height:44px; box-shadow:0 0 18px #ff6b3544; transition:transform .12s, box-shadow .12s;
+}
+.pl-wall-join-now:hover { transform:translateY(-1px); box-shadow:0 6px 22px #ff6b3566; }
+.pl-wall-now {
+  margin-top:4px; font-size:.62rem; font-weight:700; color:var(--accent);
+  letter-spacing:.02em; max-width:min(720px,92vw); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.pl-wall-now span { color:var(--text-muted); font-weight:600; margin-right:.35rem; letter-spacing:.08em; text-transform:uppercase; font-size:.5rem; }
+.lr-join-overlay {
+  position:fixed; inset:0; z-index:5600; background:#000b;
+  display:grid; place-items:center; padding:18px;
+}
+.lr-join-card {
+  width:min(440px,100%); background:var(--bg-card); border:1px solid var(--border);
+  border-radius:14px; padding:22px 22px 18px; box-shadow:0 24px 60px #000a;
+}
+.lr-join-card h3 { margin:0 0 8px; font-size:1.05rem; letter-spacing:-.01em; }
+.lr-join-card p { margin:0 0 14px; font-size:.72rem; line-height:1.55; color:var(--text-muted); }
+.lr-join-perms {
+  border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:0 0 14px;
+  background:color-mix(in srgb,var(--bg-elevated) 80%,transparent);
+}
+.lr-join-perms-h {
+  font-size:.48rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted);
+  font-weight:700; margin-bottom:8px;
+}
+.lr-join-perms ul { margin:0; padding:0 0 0 1.1em; font-size:.62rem; line-height:1.55; color:var(--text); }
+.lr-join-perms li { margin:0 0 4px; }
+.lr-join-field { margin:0 0 12px; }
+.lr-join-field label { display:block; font-size:.48rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); margin-bottom:5px; }
+.lr-join-field input[type="text"] {
+  width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border);
+  border-radius:8px; color:var(--text); font:inherit; font-size:.72rem; padding:9px 11px;
+}
+.lr-join-mute {
+  display:flex; align-items:flex-start; gap:10px; margin:0 0 16px; font-size:.68rem;
+  line-height:1.45; color:var(--text); cursor:pointer;
+}
+.lr-join-mute input { margin-top:3px; accent-color:var(--accent); flex:none; }
+.lr-join-actions { display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; }
+.lr-join-actions .pl-wall-back { min-height:40px; }
+.lr-join-actions .pl-wall-join-now { min-height:40px; }
 body.live-room-listening .ytp-next-btn,
 body.live-room-listening .ytp-prev-btn,
 body.live-room-listening #ytp-prev-btn,
@@ -14660,9 +14707,28 @@ let _liveRoomServerOffsetMs = 0;
 let _liveRoomSince = null;
 let _liveRoomPollTimer = null;
 let _liveRoomDriftTimer = null;
+let _liveRoomWatchTimer = null;
+let _liveRoomMuted = false;
+let _liveRoomMuteSavedVol = 100;
 const LIVE_ROOM_POLL_MS = 5000;
 const LIVE_ROOM_DRIFT_MS = 3500;
 const LIVE_ROOM_STALE_MS = 600000;
+
+function liveRoomPlaybackLabel(pb) {
+  if (!pb || !pb.title) return '';
+  return (pb.artistName ? pb.artistName + ' - ' : '') + pb.title;
+}
+
+function liveRoomTakePlayback(roomOrPlayback, settings) {
+  const pb = roomOrPlayback && roomOrPlayback.videoId !== undefined
+    ? roomOrPlayback
+    : (roomOrPlayback?.playback || null);
+  if (!liveRoomMode) return;
+  if (settings) liveRoomMode._settings = settings;
+  liveRoomMode._playback = pb || null;
+  liveRoomMode._nowPlayingTrackId = pb?.trackId || null;
+  liveRoomMode._nowPlayingLabel = liveRoomPlaybackLabel(pb);
+}
 
 async function loadLiveRoomPlaylists() {
   if (_liveRoomPlaylistsLoading) return _liveRoomPlaylistsLoading;
@@ -14681,6 +14747,10 @@ async function loadLiveRoomPlaylists() {
         _queuedSongCount: Number(room.queuedSongCount) || 0,
         _roomQueue: room.queue || [],
         _roomIsOwner: !!room.isOwner,
+        _settings: room.settings || null,
+        _playback: room.playback || null,
+        _nowPlayingTrackId: room.playback?.trackId || null,
+        _nowPlayingLabel: liveRoomPlaybackLabel(room.playback),
         _description: room.playback?.title
           ? 'Now playing: ' + room.playback.title + (room.playback.artistName ? ' — ' + room.playback.artistName : '')
           : 'Live jukebox',
@@ -15039,6 +15109,15 @@ function playlistChartIsLive() {
 }
 
 function playlistChartLiveTrackId() {
+  if (liveRoomMode) {
+    if (_liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode) {
+      return ytQueue[ytQueueIdx]?.trackId
+        || _liveRoomPlayback?.trackId
+        || liveRoomMode._nowPlayingTrackId
+        || null;
+    }
+    return liveRoomMode._nowPlayingTrackId || null;
+  }
   if (!playlistChartIsLive()) return null;
   return ytQueue[ytQueueIdx]?.trackId || null;
 }
@@ -15605,6 +15684,7 @@ async function openPlaylistChart(playlistId) {
   if (_liveRoomListen && p._liveRoom && p._roomCode !== _liveRoomListen.code) {
     liveRoomStopListening();
   }
+  if (!p._liveRoom) liveRoomStopWatching();
   liveRoomMode = p._liveRoom ? p : null;
   playlistChartId = playlistId;
   playlistChartName = p.name || 'Untitled Playlist';
@@ -15658,13 +15738,18 @@ async function openPlaylistChart(playlistId) {
       if (viewMode === 'playlistchart' && playlistChartId === playlistId) renderPlaylistChart();
     });
     renderPlaylistChart();
-    // Returning guests already have a seat cookie — pick the mirror back up
-    // without making them press Join again.
+    // Browse first — do not auto-join. Watch the host's now-playing so the
+    // wall can highlight it; JOIN NOW is what starts the mirror.
     if (liveRoomMode && !liveRoomMode._roomIsOwner && !_sjjLive) {
-      liveRoomRefreshState().then(() => {
-        if (liveRoomMode?._guest && !_liveRoomListen) liveRoomStartListening();
-        else if (_liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode) liveRoomPaintOverlay();
-      }).catch(() => {});
+      if (liveRoomListeningHere()) {
+        liveRoomPaintOverlay();
+        liveRoomPaintNowPlaying();
+      } else {
+        liveRoomRefreshState().then(() => {
+          liveRoomStartWatching();
+          liveRoomPaintNowPlaying();
+        }).catch(() => { liveRoomStartWatching(); });
+      }
     }
   } catch (e) {
     playlistChartRows = [];
@@ -15675,6 +15760,8 @@ async function openPlaylistChart(playlistId) {
 
 function returnToPlaylistExplorer() {
   plWallClosePop();
+  liveRoomStopWatching();
+  liveRoomCloseJoinModal();
   playlistChartId = null; playlistChartRows = []; playlistChartBaseQueue = [];
   playlistChartPlayedIds = new Set();
   liveRoomMode = null;
@@ -15996,35 +16083,28 @@ async function liveRoomRefreshState() {
   if (!data.ok) throw new Error(data.error || 'Could not refresh this jukebox.');
   liveRoomMode._guest = data.guest || null;
   liveRoomMode._roomQueue = data.queue || [];
+  if (data.jukebox) liveRoomTakePlayback(data.jukebox, data.jukebox.settings);
+  if (Array.isArray(data.queue)) liveRoomMode._queuedSongCount = data.queue.length;
   return data;
 }
 
-async function liveRoomEnsureGuest() {
+async function liveRoomEnsureGuest(preferredName) {
   if (!liveRoomMode) return false;
   await liveRoomRefreshState();
   if (liveRoomMode._guest) return true;
-  const name = prompt('Choose a name for this live jukebox:');
-  if (!name || !name.trim()) return false;
+  const name = (preferredName && String(preferredName).trim())
+    || prompt('Choose a name for this live jukebox:');
+  if (!name || !String(name).trim()) return false;
   const res = await fetch('/api/jukebox/join', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code: liveRoomMode._roomCode, name: name.trim() })
+    body: JSON.stringify({ code: liveRoomMode._roomCode, name: String(name).trim() })
   });
   const data = await res.json().catch(() => ({}));
   if (!data.ok) throw new Error(data.error || 'Could not join this jukebox.');
   liveRoomMode._guest = data.guest || null;
   liveRoomMode._roomQueue = data.queue || [];
+  if (data.jukebox) liveRoomTakePlayback(data.jukebox, data.jukebox.settings);
   return true;
-}
-
-async function liveRoomJoin() {
-  try {
-    if (await liveRoomEnsureGuest()) {
-      await liveRoomStartListening();
-      renderPlaylistChart();
-      showToast('You joined ' + liveRoomDisplayName(liveRoomMode) + '. Listening along with the host.');
-    }
-  }
-  catch (e) { showToast(e.message || 'Could not join this jukebox.'); }
 }
 
 function liveRoomDisplayName(p) {
@@ -16033,6 +16113,124 @@ function liveRoomDisplayName(p) {
 
 function liveRoomListening() {
   return !!_liveRoomListen;
+}
+
+function liveRoomListeningHere() {
+  return !!(liveRoomMode && _liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode);
+}
+
+function liveRoomPermLines(settings) {
+  const s = settings || liveRoomMode?._settings || {};
+  const max = Number(s.maxPendingPerGuest);
+  const lines = [];
+  if (Number.isFinite(max) && max > 0) {
+    lines.push('Up to ' + max + ' waiting song' + (max === 1 ? '' : 's') + ' per listener.');
+  } else if (max === 0) {
+    lines.push('Song requests from guests are turned off.');
+  } else {
+    lines.push('Listeners can queue songs while the room is live.');
+  }
+  lines.push(s.guestsFirst
+    ? 'Guest requests play ahead of the host\'s own list.'
+    : 'Songs play in the order they were added.');
+  lines.push(s.allowGuestImports
+    ? 'Listeners may add songs from outside the shared catalogue.'
+    : 'Requests stay within songs already in this jukebox.');
+  return lines;
+}
+
+function liveRoomCloseJoinModal() {
+  document.getElementById('lr-join-overlay')?.remove();
+}
+
+function liveRoomOpenJoinModal() {
+  if (!liveRoomMode || liveRoomMode._roomIsOwner || _sjjLive) return;
+  if (liveRoomListeningHere()) {
+    liveRoomPaintOverlay();
+    return;
+  }
+  liveRoomCloseJoinModal();
+  const name = liveRoomDisplayName(liveRoomMode);
+  const needName = !liveRoomMode._guest;
+  const perms = liveRoomPermLines(liveRoomMode._settings)
+    .map(l => '<li>' + escHtml(l) + '</li>').join('');
+  const el = document.createElement('div');
+  el.id = 'lr-join-overlay';
+  el.className = 'lr-join-overlay';
+  el.onclick = (ev) => { if (ev.target === el) liveRoomCloseJoinModal(); };
+  el.innerHTML =
+    '<div class="lr-join-card" role="dialog" aria-labelledby="lr-join-title" onclick="event.stopPropagation()">'
+    + '<h3 id="lr-join-title">Join ' + escHtml(name) + '?</h3>'
+    + '<p>Joining will take over your current playlist and follow along with '
+    + escHtml(name) + '\'s live set: same song, same place in the track. '
+    + 'Previous, next, shuffle and repeat stay with the host until you leave.</p>'
+    + '<div class="lr-join-perms"><div class="lr-join-perms-h">Room permissions</div><ul>'
+    + perms + '</ul></div>'
+    + (needName
+      ? '<div class="lr-join-field"><label for="lr-join-name">Your name in the room</label>'
+        + '<input id="lr-join-name" type="text" maxlength="40" placeholder="Listener" autocomplete="nickname"></div>'
+      : '')
+    + '<label class="lr-join-mute"><input type="checkbox" id="lr-join-mute">'
+    + '<span>Mute my speakers. Following along in the same room as the host? Mute your audio so you do not double the sound.</span></label>'
+    + '<div class="lr-join-actions">'
+    + '<button type="button" class="pl-wall-back" onclick="liveRoomCloseJoinModal()">Not now</button>'
+    + '<button type="button" class="pl-wall-join-now" onclick="liveRoomConfirmJoin()">Join Now</button>'
+    + '</div></div>';
+  document.body.appendChild(el);
+  const input = document.getElementById('lr-join-name');
+  if (input) setTimeout(() => input.focus(), 30);
+}
+
+async function liveRoomConfirmJoin() {
+  if (!liveRoomMode) return;
+  const muteEl = document.getElementById('lr-join-mute');
+  const wantMute = !!(muteEl && muteEl.checked);
+  const nameEl = document.getElementById('lr-join-name');
+  const preferredName = nameEl ? nameEl.value : '';
+  const btn = document.querySelector('#lr-join-overlay .pl-wall-join-now');
+  if (btn) { btn.disabled = true; btn.textContent = 'Joining…'; }
+  try {
+    if (!(await liveRoomEnsureGuest(preferredName))) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Join Now'; }
+      return;
+    }
+    liveRoomCloseJoinModal();
+    await liveRoomStartListening();
+    if (wantMute) liveRoomApplyMute(true);
+    renderPlaylistChart();
+    showToast('You joined ' + liveRoomDisplayName(liveRoomMode) + '. Listening along with the host.');
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Join Now'; }
+    showToast(e.message || 'Could not join this jukebox.');
+  }
+}
+
+/** @deprecated entry point kept for older onclick handlers */
+function liveRoomJoin() { liveRoomOpenJoinModal(); }
+
+function liveRoomApplyMute(on) {
+  const next = !!on;
+  if (next && !_liveRoomMuted) {
+    const cur = ytpGetVolume();
+    if (Number.isFinite(cur) && cur > 0) _liveRoomMuteSavedVol = cur;
+  }
+  _liveRoomMuted = next;
+  try {
+    if (_liveRoomMuted) {
+      if (ytAPIPlayer && typeof ytAPIPlayer.mute === 'function') ytAPIPlayer.mute();
+      ytpSetVolume(0);
+    } else {
+      if (ytAPIPlayer && typeof ytAPIPlayer.unMute === 'function') ytAPIPlayer.unMute();
+      ytpSetVolume(_liveRoomMuteSavedVol || 100);
+    }
+  } catch (_) {}
+  const slider = document.getElementById('ytp-vol-slider');
+  if (slider) slider.value = String(_liveRoomMuted ? 0 : (_liveRoomMuteSavedVol || 100));
+  liveRoomPaintOverlay();
+}
+
+function liveRoomToggleMute() {
+  liveRoomApplyMute(!_liveRoomMuted);
 }
 
 function liveRoomPaintOverlay() {
@@ -16049,8 +16247,57 @@ function liveRoomPaintOverlay() {
     document.body.appendChild(el);
   }
   const name = escHtml(_liveRoomListen.name || 'Live Jukebox');
-  el.innerHTML = '<span>Listening to ' + name + '</span>'
+  el.innerHTML = '<span>Listening to ' + name + '\'s Jukebox</span>'
+    + '<button type="button" class="' + (_liveRoomMuted ? 'on' : '') + '" onclick="liveRoomToggleMute()" title="'
+    + (_liveRoomMuted ? 'Unmute speakers' : 'Mute speakers') + '">'
+    + (_liveRoomMuted ? 'Unmute' : 'Mute') + '</button>'
     + '<button type="button" onclick="liveRoomStopListening()">Leave Room</button>';
+}
+
+function liveRoomPaintNowPlaying() {
+  if (viewMode !== 'playlistchart' || !liveRoomMode) return;
+  const label = liveRoomMode._nowPlayingLabel || '';
+  const el = document.getElementById('pl-wall-now');
+  if (el) {
+    if (label) {
+      el.hidden = false;
+      el.innerHTML = '<span>Now Playing</span>' + escHtml(label);
+    } else {
+      el.hidden = true;
+      el.textContent = '';
+    }
+  }
+  const tid = playlistChartLiveTrackId();
+  const idx = tid ? playlistChartQueue().findIndex(it => it.trackId === tid) : -1;
+  document.querySelectorAll('#pl-wall-grid .pl-wall-cell.current, #pl-detail-tbl .pl-detail-row.current')
+    .forEach(n => n.classList.remove('current'));
+  if (idx >= 0) {
+    const cell = document.querySelector(`[data-pc-index="${idx}"]`);
+    if (cell) cell.classList.add('current');
+    if (_plWallLastCurrentIdx !== idx) {
+      _plWallLastCurrentIdx = idx;
+      playlistChartSyncToCurrent();
+    }
+  }
+}
+
+async function liveRoomWatchTick() {
+  if (!liveRoomMode || _liveRoomListen || liveRoomMode._roomIsOwner) return;
+  try {
+    const data = await liveRoomRefreshState();
+    if (!data?.jukebox?.isLive) return;
+    liveRoomPaintNowPlaying();
+  } catch (_) {}
+}
+
+function liveRoomStartWatching() {
+  if (!liveRoomMode || liveRoomMode._roomIsOwner || _sjjLive || _liveRoomListen) return;
+  if (_liveRoomWatchTimer) clearInterval(_liveRoomWatchTimer);
+  _liveRoomWatchTimer = setInterval(liveRoomWatchTick, LIVE_ROOM_POLL_MS);
+}
+
+function liveRoomStopWatching() {
+  if (_liveRoomWatchTimer) { clearInterval(_liveRoomWatchTimer); _liveRoomWatchTimer = null; }
 }
 
 function liveRoomExpectedMs() {
@@ -16197,9 +16444,11 @@ async function liveRoomPollTick(force) {
     if (liveRoomMode && liveRoomMode._roomCode === _liveRoomListen.code) {
       liveRoomMode._guest = data.guest || liveRoomMode._guest;
       liveRoomMode._roomQueue = data.queue || [];
+      liveRoomTakePlayback(jb, jb.settings);
     }
 
     liveRoomPaintOverlay();
+    liveRoomPaintNowPlaying();
     if (_liveRoomPlayback?.videoId) liveRoomEnsureTrack(_liveRoomPlayback, !!force);
   } catch (_) {
     // A dropped poll is fine; the next one is five seconds away.
@@ -16213,6 +16462,7 @@ async function liveRoomStartListening() {
     return;
   }
   if (_liveRoomListen) liveRoomStopListening();
+  liveRoomStopWatching();
 
   _liveRoomListen = {
     code: liveRoomMode._roomCode,
@@ -16238,12 +16488,26 @@ async function liveRoomStartListening() {
 function liveRoomStopListening(toastMsg) {
   if (_liveRoomPollTimer) { clearInterval(_liveRoomPollTimer); _liveRoomPollTimer = null; }
   if (_liveRoomDriftTimer) { clearInterval(_liveRoomDriftTimer); _liveRoomDriftTimer = null; }
+  const unmute = _liveRoomMuted;
   _liveRoomListen = null;
   _liveRoomPlayback = null;
   _liveRoomSince = null;
   document.body.classList.remove('live-room-listening');
+  if (unmute) {
+    _liveRoomMuted = false;
+    try {
+      if (ytAPIPlayer && typeof ytAPIPlayer.unMute === 'function') ytAPIPlayer.unMute();
+      ytpSetVolume(_liveRoomMuteSavedVol || 100);
+      const slider = document.getElementById('ytp-vol-slider');
+      if (slider) slider.value = String(_liveRoomMuteSavedVol || 100);
+    } catch (_) {}
+  }
+  liveRoomCloseJoinModal();
   liveRoomPaintOverlay();
-  if (viewMode === 'playlistchart' && liveRoomMode) renderPlaylistChart();
+  if (viewMode === 'playlistchart' && liveRoomMode) {
+    renderPlaylistChart();
+    if (!liveRoomMode._roomIsOwner && !_sjjLive) liveRoomStartWatching();
+  }
   if (toastMsg) showToast(toastMsg);
 }
 
@@ -16291,11 +16555,22 @@ async function liveRoomAddTrack(trackId, name) {
 }
 
 function liveRoomRequests() {
-  if (!liveRoomMode?._guest) { liveRoomJoin(); return; }
-  const mine = (liveRoomMode._roomQueue || []).filter(q => q.guestId === liveRoomMode._guest.id);
-  const msg = mine.length ? mine.map((q, i) => (i + 1) + '. ' + q.trackName).join('\n') + '\n\nTo remove a request, use the number:' : 'You have no waiting song requests.';
-  if (!mine.length) { alert(msg); return; }
-  const chosen = Number(prompt(msg)); const item = mine[chosen - 1]; if (item) liveRoomRemoveRequest(item.id, item.trackName);
+  if (!liveRoomMode) return;
+  (async () => {
+    try {
+      if (!(await liveRoomEnsureGuest())) return;
+      const mine = (liveRoomMode._roomQueue || []).filter(q => q.guestId === liveRoomMode._guest.id);
+      const msg = mine.length
+        ? mine.map((q, i) => (i + 1) + '. ' + q.trackName).join('\n') + '\n\nTo remove a request, use the number:'
+        : 'You have no waiting song requests.';
+      if (!mine.length) { alert(msg); return; }
+      const chosen = Number(prompt(msg));
+      const item = mine[chosen - 1];
+      if (item) liveRoomRemoveRequest(item.id, item.trackName);
+    } catch (e) {
+      showToast(e.message || 'Could not open your requests.');
+    }
+  })();
 }
 
 async function liveRoomRemoveRequest(itemId, name) {
@@ -16360,10 +16635,14 @@ function renderPlaylistChart(error) {
   const canAddSongs = !!(googleUser && (
     playlistChartId === '__dynamic_now_playing' || (_plObj && (minePl || _plObj.is_public))
   ));
+  const listeningHere = liveRoomListeningHere();
   const roomBtns = liveRoomMode
     ? `<button type="button" class="pl-wall-back" onclick="openLiveRoomAddSongs()">Add Songs</button>` +
-      `<button type="button" class="pl-wall-back" onclick="liveRoomRequests()">${liveRoomMode._guest ? 'My Requests' : 'Join Jukebox'}</button>` +
-      (_liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode
+      `<button type="button" class="pl-wall-back" onclick="liveRoomRequests()">My Requests</button>` +
+      (!listeningHere && !liveRoomMode._roomIsOwner && !_sjjLive
+        ? `<button type="button" class="pl-wall-join-now" onclick="liveRoomOpenJoinModal()">Join Now</button>`
+        : '') +
+      (listeningHere
         ? `<button type="button" class="pl-wall-back" onclick="liveRoomStopListening()">Leave Room</button>`
         : '') +
       `<button type="button" class="pl-wall-back" onclick="saveLiveRoomAsPlaylist()">Save as Playlist</button>` +
@@ -16379,9 +16658,17 @@ function renderPlaylistChart(error) {
   const statsHTML = liveRoomMode
     ? `<div class="pl-wall-summary"><span>LIVE NOW</span><span>${liveRoomMode._listenerCount} listening</span><span>${liveRoomMode._queuedSongCount} requests waiting</span></div>`
     : plWallSummaryHTML();
-  const roomNotice = liveRoomMode ? `<div class="landing-no-results" style="margin:0 0 12px">The host controls playback and order. You can add songs and remove only your own waiting requests.</div>` : '';
+  const nowLabel = liveRoomMode ? (liveRoomMode._nowPlayingLabel || '') : '';
+  const nowPlayingHTML = liveRoomMode
+    ? `<div class="pl-wall-now" id="pl-wall-now"${nowLabel ? '' : ' hidden'}>${nowLabel ? '<span>Now Playing</span>' + esc(nowLabel) : ''}</div>`
+    : '';
+  const roomNotice = liveRoomMode
+    ? (listeningHere
+      ? `<div class="landing-no-results" style="margin:0 0 12px">You are following the host. Playback and order stay with them until you Leave Room. You can still add songs and remove only your own waiting requests.</div>`
+      : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player, or Add Songs to request without joining the playlist.</div>`)
+    : '';
   const transport = liveRoomMode ? `${sizeCtrl}${modeTog}` : `${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
   plWallLoadReactionCounts(q.map(it => it.trackId));
@@ -20860,6 +21147,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Opening a live jukebox from Explore Playlists no longer joins the host playlist automatically. You can browse the set first: the song playing now is highlighted on the wall and named under the title.',
+    'Join Now is an orange button on a live room. It explains that joining takes over your playlist to follow the host, lists that room\'s permissions, and asks whether to mute your speakers if you are in the same room as the host.',
+    'While you are listening along, the Listening bar has a Mute toggle beside Leave Room.',
     'When the dock is pulled tall, the current playlist sits above the artist and title on the left, and the play controls hang from the top instead of the bottom, so the lyrics keep the middle.',
     'In the docked player, ⋯ sits beside the heartbreak button, the lyric size slider sits under the thumbs, and lyrics always show when a song has them - the note button that turned them off is gone.',
     'The docked player now shows Up Next under the skip buttons, the same preview the full-screen player has, and when the video grows large enough a Versions menu appears above it so you can switch uploads without leaving the dock.',
