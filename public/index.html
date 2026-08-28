@@ -1536,7 +1536,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mini-footer {
   display: flex; flex-direction: column; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4990;
   gap: 0; padding: 14px 16px 8px;
-  --mf-body: 76px;                     /* height of the art / video window */
+  --mf-body: 144px;                    /* fills the 180px resting desktop dock */
   --mf-btn: 30px;                      /* every button in the bar is this square */
   min-height: calc(var(--mf-body) + 36px);
   background: var(--bg-card); border-top: 1px solid var(--border);
@@ -1766,6 +1766,15 @@ textarea.report-input { resize:vertical; }
 }
 .ytp-mf-btn:hover { border-color: var(--accent); color: var(--accent); }
 .ytp-mf-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.14); }
+/* Queue position may change what these buttons do, never whether the dock
+   reserves their place. Stable controls prevent holes and row reshuffling. */
+#ytp-mini-footer #ytp-mf-playpause,
+#ytp-mini-footer #ytp-mf-prev,
+#ytp-mini-footer #ytp-mf-next,
+#ytp-mini-footer #ytp-mf-shuffle,
+#ytp-mini-footer #ytp-mf-more,
+#ytp-mini-footer #ytp-mf-restore,
+#ytp-mini-footer #ytp-mf-close { display: flex !important; visibility: visible !important; }
 /* Font-size slider sits at the right edge of the lyric window. It is also what
    picks how many lines fit: bigger type, fewer lines. */
 .ytp-mf-lyr .mf-lyr-font-ctrl {
@@ -3109,16 +3118,6 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .landing-card:focus-within .landing-card-x { opacity: 1; }
 .landing-card-x:hover { background: var(--accent); border-color: var(--accent); transform: scale(1.12); }
 @media (hover: none) { .landing-card-x { opacity: .85; } }
-.faq-modal { max-width: 680px; }
-.faq-section { margin-bottom: 1.5rem; }
-.faq-section:last-child { margin-bottom: 0; }
-.faq-q { font-size: .72rem; font-weight: 700; color: var(--text); letter-spacing: .02em; margin-bottom: .55rem; display: flex; align-items: baseline; gap: .5rem; }
-.faq-q-ico { color: var(--accent); font-size: .85rem; }
-.faq-a { font-size: .62rem; line-height: 1.75; color: var(--text-muted); }
-.faq-a ul { margin: .35rem 0 0; padding-left: 1.15rem; }
-.faq-a li { margin-bottom: .45rem; }
-.faq-a b { color: var(--text); font-weight: 600; }
-.faq-a .faq-chip { display: inline-block; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 5px; padding: .05rem .35rem; font-family: var(--mono); font-size: .92em; color: var(--text); }
 .landing-card-art {
   width: 100%; aspect-ratio: 4 / 3; background-size: cover; background-position: center;
   background-color: var(--bg-elevated); border-bottom: 4px solid var(--card-accent, var(--accent)); flex-shrink: 0;
@@ -3342,7 +3341,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-playback" onclick="userMenuAction('playback')">Playback preferences</button>
-          <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">FAQ / How-To Guide</button>
+          <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">Help &amp; How-To Guide</button>
           <button type="button" class="user-menu-item" id="user-menu-updates" style="display:none" onclick="userMenuAction('updates')">What's New</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
@@ -3354,7 +3353,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
       <div class="hdr-icon-btns">
         <button type="button" class="hdr-search-btn hdr-icon-btn-labeled" onclick="openSearchModal('')" title="Search songs or lyrics" aria-label="Search songs or lyrics">🔍 Search</button>
         <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark"><span id="themeIcon">☀</span></button>
-        <button type="button" class="hdr-search-btn" onclick="openFaq()" title="FAQ &amp; how-to guide" aria-label="FAQ and how-to guide">?</button>
+        <button type="button" class="hdr-search-btn" onclick="openFaq()" title="Help &amp; how-to guide" aria-label="Help and how-to guide">?</button>
       </div>
     </div>
   </div>
@@ -3743,80 +3742,6 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
     </div>
   </div>
 </div>
-<div class="modal-overlay" id="faqOverlay" onclick="if(event.target===this)closeFaq()">
-  <div class="modal faq-modal">
-    <div class="modal-header">
-      <span class="modal-title">FAQ &amp; How-To Guide</span>
-      <button class="modal-close" onclick="closeFaq()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="faq-section">
-        <div class="faq-q"><span class="faq-q-ico">▸</span>Exploring an artist's jukebox</div>
-        <div class="faq-a">
-          From the home grid, tap any artist card to expand it, then hit <b>Explore artist jukebox →</b> to dig in (or <b>▶ Play</b> to start listening right away).
-          <ul>
-            <li>Up top, the <b>Sort</b> menu and <b>Card Size</b> buttons (<span class="faq-chip">Artist Name Only</span> · <span class="faq-chip">Total YT Plays</span> · <span class="faq-chip">Full Details</span>) change how the grid looks.</li>
-            <li>Inside an artist's jukebox, the view toggle switches the layout: <span class="faq-chip">By Year</span>, <span class="faq-chip">Timeline</span>, <span class="faq-chip">By Views</span>, <span class="faq-chip">Albums List</span>, and <span class="faq-chip">All Tracks</span>.</li>
-            <li>The <b>bar-chart</b> toggles below recolor the bars by metric — <span class="faq-chip">Total YouTube Views</span>, <span class="faq-chip">Jukebox Score</span>, <span class="faq-chip">Jukebox Plays</span>, <span class="faq-chip">My Jukebox Plays</span> (when signed in), or <span class="faq-chip">Hide Bars</span> to turn the chart off entirely.</li>
-            <li>Use <b>Expand All Tracks</b> / <b>Collapse All Tracks</b> to open or close every song at once.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="faq-section">
-        <div class="faq-q"><span class="faq-q-ico">▸</span>Playing &amp; queuing songs</div>
-        <div class="faq-a">
-          Click any song to get a <b>Play Now / Add to Queue</b> popup.
-          <ul>
-            <li><b>Play Now</b> starts the track immediately; <b>Add to Queue</b> drops it at the end of your up-next list.</li>
-            <li>The queue panel under the player lets you reorder, remove, or clear tracks — and you can <b>save the whole queue as a playlist</b> to come back to later.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="faq-section">
-        <div class="faq-q"><span class="faq-q-ico">▸</span>My Jukebox vs Explore Artists</div>
-        <div class="faq-a">
-          <ul>
-            <li><b>Explore Artists</b> is the front door — the full community grid: every artist people have added from YouTube, with discography views, charts, and Add Artist. Free forever.</li>
-            <li><b>My Jukebox</b> is your personal shelf — continue listening, favorites, playlists, and artists you have added or uploaded background-play audio for.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="faq-section">
-        <div class="faq-q"><span class="faq-q-ico">▸</span>Adding artists &amp; background audio for mobile</div>
-        <div class="faq-a">
-          Hit <b>＋ Add Artist to the Jukebox</b> on Explore Artists to grow the collection.
-          <ul>
-            <li>Type an artist name to <b>auto-match</b>, or paste a <b>YouTube playlist link</b> to import it manually.</li>
-            <li>YouTube playback works free on desktop and phone. To keep music going with the screen off, sign in and upload your own audio file for a track, then tap <b>Enable Background Play</b> on your phone.</li>
-            <li>Upload storage follows your account level: <b>Standard 500 MB</b>, <b>Premium 2 GB</b>, and <b>Admin 10 GB</b>. You must have the right to store and personally play what you upload. Audio stays private to your signed-in account and is never used for another listener.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="faq-section">
-        <div class="faq-q"><span class="faq-q-ico">▸</span>Sharing playlists &amp; jukebox pages</div>
-        <div class="faq-a">
-          <ul>
-            <li>Use the <b>⤴ Share</b> button in the header to share the current playlist — anyone with the link can open it and press play.</li>
-            <li>Every artist has its own shareable jukebox page at <span class="faq-chip">sufferingjukebox.stream/artist-name</span>. While you're exploring an artist, just copy the URL from your browser's address bar to send their whole jukebox to a friend.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="faq-section">
-        <div class="faq-q"><span class="faq-q-ico">▸</span>Customizing your jukebox</div>
-        <div class="faq-a">
-          <ul>
-            <li>Tap the <b>✕</b> in the corner of any artist card to hide it from your grid. Hidden artists are remembered on your account and <b>stay hidden after you sign back in</b>.</li>
-            <li>Changed your mind? Restore anything you've hidden under the account menu → <b>Manage My Jukebox</b>.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="m-btn ghost" onclick="closeFaq()">Close</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="reportOverlay" onclick="if(event.target===this)closeReportModal()">
   <div class="modal" style="max-width:480px">
     <div class="modal-header">
@@ -7240,6 +7165,8 @@ const YTP_DOCK_VIDEO_EXTRA = 80;  // px past the resting height before video kic
 const YTP_DOCK_BODY_MAX_VW = 0.5; // video/art may grow to half the viewport width
 const YTP_DOCK_PLAYLIST_GAP = 20;  // clear space between the queue and dock buttons
 const YTP_DOCK_PLAYLIST_MIN_H = 112;
+const YTP_DOCK_DESKTOP_MIN_H = 195;
+const YTP_DOCK_DESKTOP_BODY_H = 159;
 let _ytpDockPlaylistObserver = null;
 let _ytpDockPlaylistFrame = 0;
 let _ytpDockVideoRevealTimer = 0;
@@ -7308,14 +7235,23 @@ function ytpRestoreAfterLayoutMove(snapshot) {
 function ytpDockMinH() {
   if (_ytpDockMinHCache != null) return _ytpDockMinHCache;
   const el = document.getElementById('ytp-mini-footer');
-  // Desktop needs room for the measured three-row control stack, the 48px
-  // scrubber clearance, and the 14px drag handle above it.
-  const fallback = ytpIsMob() ? 150 : 180;
+  // Desktop has a canonical resting geometry. Measuring it while --mf-body
+  // still contains the last resized value made the minimum ratchet upward on
+  // every reopen/viewport resize and made the art progressively smaller.
+  if (!ytpIsMob()) {
+    _ytpDockMinHCache = YTP_DOCK_DESKTOP_MIN_H;
+    return _ytpDockMinHCache;
+  }
+  const fallback = 150;
   if (!el) return fallback;
-  const had = el.style.height;
+  const hadHeight = el.style.height;
+  const hadBody = el.style.getPropertyValue('--mf-body');
   el.style.height = '';
+  el.style.setProperty('--mf-body', '56px');
   const h = Math.max(fallback, Math.round(el.getBoundingClientRect().height) || 0);
-  el.style.height = had;
+  el.style.height = hadHeight;
+  if (hadBody) el.style.setProperty('--mf-body', hadBody);
+  else el.style.removeProperty('--mf-body');
   _ytpDockMinHCache = h;
   return h;
 }
@@ -7542,7 +7478,7 @@ function ytpApplyDockHeight() {
   el.style.height = h + 'px';
   ytpDockSetPageInset(h);
   const extra = Math.max(0, h - min);
-  const bodyBase = ytpIsMob() ? 56 : 76;
+  const bodyBase = ytpIsMob() ? 56 : YTP_DOCK_DESKTOP_BODY_H;
   const mfBody = Math.min(Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW), bodyBase + extra);
   el.style.setProperty('--mf-body', mfBody + 'px');
   el.classList.toggle('dock-grown', extra > 16);
@@ -7813,10 +7749,12 @@ function ytpUpdateMiniFooter() {
       : (ytThumb || '/favicon.png');
     if (artEl.getAttribute('src') !== src) artEl.setAttribute('src', src);
   }
+  // Keep transport geometry stable even at queue boundaries. The handlers
+  // already decide whether a previous/next action is available.
   const prevBtn = document.getElementById('ytp-mf-prev');
-  if (prevBtn) prevBtn.style.visibility = (_ytLastPlayed || ytQueueIdx > 0) ? 'visible' : 'hidden';
+  if (prevBtn) prevBtn.style.visibility = 'visible';
   const nextBtn = document.getElementById('ytp-mf-next');
-  if (nextBtn) nextBtn.style.visibility = (ytQueue.length > 1 && ytQueueIdx < ytQueue.length - 1) ? 'visible' : 'hidden';
+  if (nextBtn) nextBtn.style.visibility = 'visible';
   ytpSyncVoteBtn(item?.trackId || null);
   ytpSyncBlockBtn(item?.trackId || null);
   setYtShuffleEnabled(ytShuffle); // paints the mini-footer shuffle button state
@@ -16240,8 +16178,8 @@ function renderLandingHomeHTML(esc) {
   const unlockCard = googleUser
     ? `<div class="home-unlock-card">
         <h3>Background Play</h3>
-        <p class="quota-line">${esc(sjLevelLabel())} · ${limit > 0 ? `${fmtBytes(used)} used of ${fmtBytes(limit)}` : 'No upload storage'}</p>
-        <p>Upload your own audio on any track to keep it playing with the screen off. Storage allocations are 500 MB for Standard, 2 GB for Premium, and 10 GB for Admin.</p>
+        <p class="quota-line">${limit > 0 ? `${fmtBytes(used)} used of ${fmtBytes(limit)}` : 'No upload storage'}</p>
+        <p>Upload your own audio on any track to keep it playing with the screen off. Everyone gets 500 MB of storage while the site is being built out. <a href="/help#how" target="_blank" rel="noopener" style="color:var(--accent)">How this works</a></p>
       </div>`
     : `<div class="home-unlock-card">
         <h3>Background Play</h3>
@@ -16953,11 +16891,12 @@ function hideArtistFromCard(artistId) {
   showToast('Hidden — restore it anytime from the Artists filter.');
 }
 
+// Help is a real page at /help - linkable, indexable, and not 1.4 MB of
+// player shipped with it. The in-app modal it replaced went stale twice.
 function openFaq() {
   if (typeof closeUserMenu === 'function') closeUserMenu();
-  document.getElementById('faqOverlay')?.classList.add('open');
+  window.open('/help', '_blank', 'noopener');
 }
-function closeFaq() { document.getElementById('faqOverlay')?.classList.remove('open'); }
 
 async function landingPlayArtist(artistId, ev) {
   const row = landingStats.find(r => r.artist_id === artistId);
@@ -20075,11 +20014,20 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-27';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-28', items: [
+    'New: a proper Help page at sufferingjukebox.stream/help, with pictures. It covers finding music, playing it, the five jukebox views and what the chart bars measure, playlists, importing a song or a playlist or a whole discography, keeping music public or private, fixing what you added, lyrics, the Online Jukebox, sharing and exporting pictures, and how the site actually works. The ? button at the top of the screen and Help in the account menu both open it.',
+    'The old FAQ window is gone. It had drifted out of date - it still described a row of chart buttons that was removed, and called Import Music by a name it has not had for months - and a window that cannot be linked to is a window nobody can send anybody.',
+    'The About page has been rewritten. It still tells the Silver Jews and Purple Mountains story the site is named after, but it now says what the site has become: a jukebox that anyone can add to, with music from more than 170 artists.',
+    'Help and About are now linked at the bottom of every page. About had been reachable only through a search engine.',
+    'Everyone now gets 500 MB of storage for background-play audio. The Standard, Premium and Admin allowances are gone while the site is being built out, so there is one number instead of three.',
+    'The player dock no longer creeps taller every time you reopen it. It measured its own smallest size while still holding the last size you dragged it to, so the floor climbed a little each time and the artwork shrank to match.',
+    'The previous and next buttons in the dock stay where they are at the start and end of the queue instead of disappearing and letting the other buttons slide across.',
+  ] },
   { date: '2026-08-27', items: [
     'The playlist song count and total play time now sit directly beneath the playlist name instead of appearing over the bottom of the cover grid.',
     'Import Playlist is now a three-step wizard: choose the Jukebox or YouTube as the source, find and select the songs, then review the order, name the playlist, choose whether it is public, and save.',
@@ -20691,8 +20639,8 @@ async function userMenuAction(action) {
     const used = Number(sjBgUnlock?.used) || 0;
     const limit = sjQuotaLimit();
     showToast(limit > 0
-      ? `${sjLevelLabel()} · ${fmtBytes(used)} used of ${fmtBytes(limit)} audio storage`
-      : `${sjLevelLabel()} · no audio upload allocation`);
+      ? `${fmtBytes(used)} used of ${fmtBytes(limit)} audio storage`
+      : 'No audio upload allocation');
     return;
   }
   if (action === 'playlists') {
@@ -21036,7 +20984,7 @@ function updateAuthBtn() {
       const limit = sjQuotaLimit();
       bgMenu.textContent = limit > 0
         ? `Audio storage · ${fmtBytes(used)} / ${fmtBytes(limit)}`
-        : `Audio storage · ${sjLevelLabel()}`;
+        : 'Audio storage';
     } else {
       bgMenu.textContent = 'Audio storage';
     }
@@ -24224,6 +24172,8 @@ _initPromise.then(scheduleViewControlsGuard).catch(() => {});
 </script>
 <footer style="text-align:center;padding:1.5rem 2rem 2rem;font-family:var(--mono);font-size:.46rem;color:var(--text-muted);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:2rem">
   a <a href="https://outlawapps.online" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">Johnny Outlaw</a> Project
+  · <a href="/help" style="color:var(--text-muted);text-decoration:none">Help</a>
+  · <a href="/about" style="color:var(--text-muted);text-decoration:none">About</a>
   · <a href="/privacy" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">Privacy</a>
   · <a href="/terms" style="color:var(--text-muted);text-decoration:none">Terms</a>
   · <a href="/dmca" style="color:var(--text-muted);text-decoration:none">Copyright</a>
