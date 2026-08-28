@@ -2539,7 +2539,10 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-wizard-step.on { border-color:var(--accent); color:var(--text); background:color-mix(in srgb,var(--accent) 8%,transparent); }
 .plb-wizard-step.on b { background:var(--accent); color:#0a0a0a; }
 .plb-wizard-step.done { color:var(--text); }
-.plb-source-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; margin-top:.15rem; }
+.plb-source-grid { display:grid; grid-template-columns:repeat(var(--src-cols,2),minmax(0,1fr)); gap:.65rem; margin-top:.15rem; }
+.plb-dest { display:flex; flex-direction:column; gap:.3rem; }
+.plb-dest-lbl { font-size:.44rem; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); }
+.plb-dest select { width:100%; min-width:0; max-width:100%; }
 .plb-source-card { display:flex; flex-direction:column; gap:.35rem; min-height:104px; padding:.9rem; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); text-align:left; cursor:pointer; font-family:var(--mono); transition:border-color .15s,background .15s,transform .15s; }
 .plb-source-card:hover { border-color:var(--text-muted); transform:translateY(-1px); }
 .plb-source-card.on { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,var(--bg)); }
@@ -2598,6 +2601,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
   .plb-results, .plb-basket { max-height:36vh; }
   .plb-source-grid { grid-template-columns:1fr; }
   .plb-wizard-step { padding:.4rem; font-size:.42rem; }
+  /* Cancel + Back + a primary button is wider than a phone. Let the row wrap
+     and let the buttons shrink rather than clipping the one that matters. */
+  .plb-modal .pl-modal-footer { flex-wrap:wrap; padding:.75rem .9rem; gap:.5rem; }
+  .plb-modal .pl-modal-footer .pl-btn { flex:1 1 auto; min-width:0; padding-left:.6rem; padding-right:.6rem; }
+  .plb-modal .pl-modal-footer #plb-back-btn { margin-left:0 !important; }
 }
 .pl-btn { background:var(--accent); border:none; color:#fff; font-family:var(--mono); font-size:.55rem; letter-spacing:.06em; padding:.42rem 1rem; border-radius:7px; cursor:pointer; transition:background .15s; white-space:nowrap; text-transform:uppercase; }
 .pl-btn:hover { background:var(--accent-hover); }
@@ -13322,7 +13330,8 @@ let _plbTimer = null;
 let _plbToken = 0;
 let _plbBusy = false;
 let _plbWizardStep = 1;
-let _plbImportSource = null; // jukebox | youtube
+let _plbImportSource = null; // jukebox | yt-playlist | yt-song
+let _plbImportDest = 'new'; // import mode: 'new' or an existing playlist id
 let _plbImportName = '';
 let _plbImportPublic = false;
 
@@ -13335,6 +13344,7 @@ function openPlaylistBuilder(mode, playlistId) {
   _plbBusy = false;
   _plbWizardStep = 1;
   _plbImportSource = null;
+  _plbImportDest = mode === 'add' ? (playlistId || 'new') : 'new';
   _plbImportName = '';
   _plbImportPublic = false;
   _plbyOpen = false;
@@ -13369,10 +13379,10 @@ function openPlaylistBuilder(mode, playlistId) {
   _plbBrowseArtists = null;
   _plbArtistAlbums = {};
   _plbAlbumTracks = {};
-  if (_plbMode !== 'import') plbRenderBrowse();
+  if (!plbIsWizard()) plbRenderBrowse();
   const inp = document.getElementById('plb-search');
   if (inp) inp.value = '';
-  if (_plbMode !== 'import') {
+  if (!plbIsWizard()) {
     if (ytInput) ytInput.placeholder = 'Search YouTube for a song, or paste a YouTube playlist link';
     setTimeout(() => inp?.focus(), 40);
   }
@@ -13386,25 +13396,47 @@ function closePlaylistBuilder() {
   _plbBusy = false;
 }
 
+// Add Songs and Import a Playlist run the same three-step wizard. The only
+// difference is where the songs land at the end: Add Songs already knows its
+// playlist, Import asks on the last step.
+function plbIsWizard() { return _plbMode === 'import' || _plbMode === 'add'; }
+
+function plbPlaylistById(id) {
+  if (!id || id === 'new') return null;
+  if (id === '__dynamic_now_playing') return dynamicPlaylistById(id);
+  return playlists.find(x => x.id === id) || (_savedPlaylists || []).find(x => x.id === id) || null;
+}
+
+// Playlists this reader may add to: their own, plus any public one. Same rule
+// the Add Songs button on a playlist page uses.
+function plbDestOptions() {
+  if (!googleUser) return [];
+  return (_savedPlaylists || []).filter(p => p.user_email === googleUser.email || p.is_public);
+}
+
+function plbTargetId() {
+  if (_plbMode === 'add') return _plbPlaylistId;
+  if (_plbMode === 'import') return _plbImportDest;
+  return 'new';
+}
+
+function plbTargetTrackIds() {
+  if (_plbMode === 'add') return _plbExisting;
+  const p = plbPlaylistById(plbTargetId());
+  return new Set((p?._tracks || []).map(r => r.track_id).filter(Boolean));
+}
+
 function plbPaintChrome() {
   const title = document.getElementById('plb-title');
   const top = document.getElementById('plb-top');
   const save = document.getElementById('plb-save-btn');
-  if (_plbMode === 'import') {
-    if (title) title.textContent = 'Import a Playlist';
+  if (plbIsWizard()) {
+    if (title) title.textContent = _plbMode === 'import' ? 'Import a Playlist' : 'Add Songs to Playlist';
     if (top) top.innerHTML = plbWizardTopHTML();
     plbPaintImportLayout();
     return;
   }
-  if (_plbMode === 'add') {
-    const p = _plbPlaylistId === '__dynamic_now_playing'
-      ? dynamicPlaylistById(_plbPlaylistId)
-      : playlists.find(x => x.id === _plbPlaylistId) || (_savedPlaylists || []).find(x => x.id === _plbPlaylistId);
-    if (title) title.textContent = 'Add Songs to Playlist';
-    const isMine = p && googleUser && p.user_email === googleUser.email;
-    if (top) top.innerHTML = `<div class="plb-hint">Adding to <b>${escHtml(p?.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}${!isMine && p?.is_public ? ' · a public playlist, open to add to' : ''}. Browse artists and albums below, or search by song, artist, album, or a lyric line — same search as the main bar.</div>`;
-    if (save) save.textContent = 'Add to Playlist';
-  } else {
+  {
     if (title) title.textContent = 'Build a Playlist';
     if (top) top.innerHTML =
       `<div class="plb-name-row">` +
@@ -13426,19 +13458,31 @@ function plbWizardTopHTML() {
     return `<div class="plb-wizard-step${cls}"><b>${n < _plbWizardStep ? '✓' : n}</b><span>${label}</span></div>`;
   }).join('')}</div>`;
   if (_plbWizardStep === 1) {
-    return steps + `<div class="plb-hint">Choose where the songs for this playlist will come from.</div>` +
-      `<div class="plb-source-grid">` +
-        `<button type="button" class="plb-source-card${_plbImportSource === 'jukebox' ? ' on' : ''}" onclick="plbSetImportSource('jukebox')"><b>Search the Jukebox</b><span>Find songs, albums, or artists already in Suffering Jukebox and build the playlist from the catalogue.</span></button>` +
-        `<button type="button" class="plb-source-card${_plbImportSource === 'youtube' ? ' on' : ''}" onclick="plbSetImportSource('youtube')"><b>Search YouTube</b><span>Find a YouTube playlist, review its songs, and choose which ones to bring in.</span></button>` +
+    const target = _plbMode === 'add' ? plbPlaylistById(_plbPlaylistId) : null;
+    const lead = target
+      ? `Adding to <b>${escHtml(target.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}. Choose where the new songs come from.`
+      : 'Choose where the songs for this playlist will come from.';
+    return steps + `<div class="plb-hint">${lead}</div>` +
+      `<div class="plb-source-grid" style="--src-cols:3">` +
+        `<button type="button" class="plb-source-card${_plbImportSource === 'jukebox' ? ' on' : ''}" onclick="plbSetImportSource('jukebox')"><b>Search the Jukebox</b><span>Find songs, albums, or artists already in Suffering Jukebox.</span></button>` +
+        `<button type="button" class="plb-source-card${_plbImportSource === 'yt-playlist' ? ' on' : ''}" onclick="plbSetImportSource('yt-playlist')"><b>A YouTube playlist</b><span>Find a playlist or paste its link, review its songs, and choose which ones to bring in.</span></button>` +
+        `<button type="button" class="plb-source-card${_plbImportSource === 'yt-song' ? ' on' : ''}" onclick="plbSetImportSource('yt-song')"><b>A song from YouTube</b><span>Search YouTube one song at a time and pull each one into the Jukebox.</span></button>` +
       `</div>`;
   }
   if (_plbWizardStep === 2) {
-    const hint = _plbImportSource === 'youtube'
+    const hint = _plbImportSource === 'yt-playlist'
       ? 'Search for a YouTube playlist or paste its link, choose the songs, then add the selection to your draft.'
-      : 'Search or browse the Jukebox, then add individual songs, full albums, or an artist’s catalogue to your draft.';
-    return steps + `<div class="plb-hint"><span class="plb-confirm-source">${_plbImportSource === 'youtube' ? 'YouTube' : 'Jukebox'} source</span> · ${hint}</div>`;
+      : (_plbImportSource === 'yt-song'
+        ? 'Search YouTube for a song, check the artist name is right, and add it to your draft. A playlist link works here too.'
+        : 'Search or browse the Jukebox, then add individual songs, full albums, or an artist’s catalogue to your draft.');
+    const label = _plbImportSource === 'jukebox' ? 'Jukebox' : 'YouTube';
+    return steps + `<div class="plb-hint"><span class="plb-confirm-source">${label} source</span> · ${hint}</div>`;
   }
-  return steps + `<div class="plb-hint">Review the songs in order, name the playlist, choose its visibility, and save.</div>`;
+  if (_plbMode === 'add') {
+    const target = plbPlaylistById(_plbPlaylistId);
+    return steps + `<div class="plb-hint">Review the songs, then add them to <b>${escHtml(target?.name || 'the playlist')}</b>.</div>`;
+  }
+  return steps + `<div class="plb-hint">Review the songs in order, choose whether they start a new playlist or join one you already have, and save.</div>`;
 }
 
 function plbPaintDefaultLayout() {
@@ -13462,7 +13506,7 @@ function plbPaintDefaultLayout() {
 
 function plbPaintImportLayout() {
   const step2 = _plbWizardStep === 2;
-  const youtube = _plbImportSource === 'youtube';
+  const youtube = _plbImportSource === 'yt-playlist' || _plbImportSource === 'yt-song';
   const catalogSearch = document.getElementById('plb-catalog-search-row');
   const ytSection = document.getElementById('plb-yt-section');
   const ytToggle = document.getElementById('plb-yt-toggle');
@@ -13477,7 +13521,9 @@ function plbPaintImportLayout() {
   if (ytSection) ytSection.style.display = step2 && youtube ? '' : 'none';
   if (ytToggle) ytToggle.style.display = 'none';
   if (ytPanel) ytPanel.style.display = step2 && youtube ? '' : 'none';
-  if (ytInput) ytInput.placeholder = 'Search YouTube playlists, or paste a playlist link';
+  if (ytInput) ytInput.placeholder = _plbImportSource === 'yt-song'
+    ? 'Search YouTube for a song, or paste a YouTube playlist link'
+    : 'Search YouTube playlists, or paste a playlist link';
   if (split) {
     split.style.display = step2 ? 'grid' : 'none';
     split.style.gridTemplateColumns = youtube ? '1fr' : '';
@@ -13493,42 +13539,91 @@ function plbPaintImportLayout() {
 function plbPaintImportConfirm() {
   const panel = document.getElementById('plb-confirm-panel');
   if (!panel) return;
-  const artists = new Set(_plbDraft.map(d => (d.artist || '').trim()).filter(Boolean));
-  const source = _plbImportSource === 'youtube' ? 'YouTube' : 'the Jukebox';
+  const source = _plbImportSource === 'jukebox' ? 'the Jukebox' : 'YouTube';
   const rows = _plbDraft.map((d, i) => {
     const meta = [d.artist, d.album].filter(Boolean).join(' · ');
     return `<div class="plb-b-item"><span class="plb-b-num">${i + 1}</span><div class="plb-info"><div class="plb-name">${escHtml(d.title || 'Track')}</div>${meta ? `<div class="plb-meta">${escHtml(meta)}</div>` : ''}</div></div>`;
   }).join('');
+
+  // Import chooses its destination here; Add Songs already has one.
+  let head = '';
+  if (_plbMode === 'import') {
+    const opts = plbDestOptions().map(p =>
+      `<option value="${escHtml(p.id)}"${_plbImportDest === p.id ? ' selected' : ''}>${escHtml(p.name || 'Untitled')}${(p._tracks || []).length ? ` (${(p._tracks || []).length})` : ''}</option>`).join('');
+    head =
+      `<div class="plb-dest">` +
+        `<span class="plb-dest-lbl">Where do these songs go?</span>` +
+        `<select class="pl-input" id="plb-dest" onchange="plbSetDest(this.value)">` +
+          `<option value="new"${_plbImportDest === 'new' ? ' selected' : ''}>Create a new playlist</option>` +
+          (opts ? `<optgroup label="Add to a playlist you already have">${opts}</optgroup>` : '') +
+        `</select>` +
+      `</div>`;
+    if (_plbImportDest === 'new') {
+      head +=
+        `<div class="plb-name-row">` +
+          `<input class="pl-input" id="plb-name" maxlength="80" placeholder="Playlist name" autocomplete="off" value="${escHtml(_plbImportName).replace(/"/g, '&quot;')}" oninput="_plbImportName=this.value;plbSyncSaveBtn()">` +
+          `<div class="pl-toggle-row" style="margin:0"><button type="button" class="pl-toggle${_plbImportPublic ? ' on' : ''}" id="plb-pub-toggle" onclick="_plbImportPublic=!_plbImportPublic;this.classList.toggle('on',_plbImportPublic)"></button><span class="pl-toggle-lbl">Make public</span></div>` +
+        `</div>`;
+    }
+  }
+
+  const target = _plbMode === 'import' && _plbImportDest === 'new' ? null : plbPlaylistById(plbTargetId());
+  const have = target ? plbTargetTrackIds() : new Set();
+  const landing = _plbDraft.filter(d => !have.has(d.trackId));
+  const dupes = _plbDraft.length - landing.length;
+  const going = landing.length;
+  // Count the artists actually going in, not the ones being skipped.
+  const artists = new Set(landing.map(d => (d.artist || '').trim()).filter(Boolean));
+  const dest = target
+    ? ` · going to the end of <b>${escHtml(target.name || 'playlist')}</b>${dupes ? `, ${dupes} already on it and skipped` : ''}.`
+    : '.';
+
   panel.innerHTML =
-    `<div class="plb-name-row">` +
-      `<input class="pl-input" id="plb-name" maxlength="80" placeholder="Playlist name" autocomplete="off" value="${escHtml(_plbImportName).replace(/"/g, '&quot;')}" oninput="_plbImportName=this.value;plbSyncSaveBtn()">` +
-      `<div class="pl-toggle-row" style="margin:0"><button type="button" class="pl-toggle${_plbImportPublic ? ' on' : ''}" id="plb-pub-toggle" onclick="_plbImportPublic=!_plbImportPublic;this.classList.toggle('on',_plbImportPublic)"></button><span class="pl-toggle-lbl">Make public</span></div>` +
-    `</div>` +
-    `<div class="plb-confirm-summary"><b>${_plbDraft.length}</b> song${_plbDraft.length === 1 ? '' : 's'}${artists.size ? ` · <b>${artists.size}</b> artist${artists.size === 1 ? '' : 's'}` : ''} · selected from <span class="plb-confirm-source">${source}</span>.</div>` +
+    head +
+    `<div class="plb-confirm-summary"><b>${going}</b> song${going === 1 ? '' : 's'}${artists.size ? ` · <b>${artists.size}</b> artist${artists.size === 1 ? '' : 's'}` : ''} · selected from <span class="plb-confirm-source">${source}</span>${dest}</div>` +
     `<div class="plb-confirm-list">${rows || '<div class="plb-empty">No songs selected.</div>'}</div>`;
 }
 
+function plbSetDest(value) {
+  if (_plbMode !== 'import') return;
+  _plbImportDest = value || 'new';
+  plbPaintImportConfirm();
+  plbSyncSaveBtn();
+  if (_plbImportDest === 'new') setTimeout(() => document.getElementById('plb-name')?.focus(), 30);
+}
+
 function plbSetImportSource(source) {
-  if (_plbMode !== 'import' || !['jukebox', 'youtube'].includes(source)) return;
+  if (!plbIsWizard() || !['jukebox', 'yt-playlist', 'yt-song'].includes(source)) return;
   if (_plbImportSource && _plbImportSource !== source && _plbDraft.length) {
     if (!confirm('Switching sources will clear the songs already selected. Continue?')) return;
     plbClearDraft();
-    _plbImportName = '';
+    if (_plbMode === 'import') _plbImportName = '';
   }
   _plbImportSource = source;
+  // A YouTube pane left showing a playlist from the source you just left is
+  // confusing at best, so wipe it whenever the source changes.
+  _plbyMode = 'search';
+  _plbyResults = [];
+  _plbyPlaylistItems = [];
+  _plbyPlaylistSearchResults = [];
+  _plbyPlaylistTruncated = false;
+  const ytResults = document.getElementById('plby-results');
+  const ytInput = document.getElementById('plby-search-input');
+  if (ytResults) ytResults.innerHTML = '';
+  if (ytInput) ytInput.value = '';
   plbPaintChrome();
 }
 
 function plbWizardGo(step) {
-  if (_plbMode !== 'import') return;
+  if (!plbIsWizard()) return;
   _plbWizardStep = Math.max(1, Math.min(3, step));
   if (_plbWizardStep === 2) {
     if (_plbImportSource === 'jukebox' && !_plbBrowseArtists) plbRenderBrowse();
-    _plbyOpen = _plbImportSource === 'youtube';
+    _plbyOpen = _plbImportSource !== 'jukebox';
   }
   plbPaintChrome();
   if (_plbWizardStep === 2) {
-    const focusId = _plbImportSource === 'youtube' ? 'plby-search-input' : 'plb-search';
+    const focusId = _plbImportSource === 'jukebox' ? 'plb-search' : 'plby-search-input';
     setTimeout(() => document.getElementById(focusId)?.focus(), 40);
   } else if (_plbWizardStep === 3) {
     setTimeout(() => document.getElementById('plb-name')?.focus(), 40);
@@ -13536,14 +13631,14 @@ function plbWizardGo(step) {
 }
 
 function plbWizardBack() {
-  if (_plbMode !== 'import') return;
+  if (!plbIsWizard()) return;
   plbWizardGo(_plbWizardStep - 1);
 }
 
 function plbPrimaryAction() {
-  if (_plbMode !== 'import') { plbSave(); return; }
+  if (!plbIsWizard()) { plbSave(); return; }
   if (_plbWizardStep === 1) {
-    if (!_plbImportSource) { showToast('Choose the Jukebox or YouTube first.'); return; }
+    if (!_plbImportSource) { showToast('Choose a source first.'); return; }
     plbWizardGo(2);
     return;
   }
@@ -13567,16 +13662,23 @@ function plbDraftHas(trackId) {
 function plbSyncSaveBtn() {
   const save = document.getElementById('plb-save-btn');
   if (!save) return;
-  if (_plbMode === 'import') {
+  if (plbIsWizard()) {
+    const makingNew = _plbMode === 'import' && _plbImportDest === 'new';
     if (_plbWizardStep === 1) {
       save.textContent = 'Continue';
       save.disabled = _plbBusy || !_plbImportSource;
     } else if (_plbWizardStep === 2) {
-      save.textContent = 'Review Playlist';
+      save.textContent = _plbMode === 'add' ? 'Review Songs' : 'Review Playlist';
       save.disabled = _plbBusy || !_plbDraft.length;
     } else {
-      save.textContent = _plbBusy ? 'Saving…' : 'Save Playlist';
-      save.disabled = _plbBusy || !_plbDraft.length || !_plbImportName.trim();
+      // Picking a destination that already holds every chosen song leaves
+      // nothing to write, so say so rather than reporting "added 0 songs".
+      const have = makingNew ? new Set() : plbTargetTrackIds();
+      const going = _plbDraft.filter(d => !have.has(d.trackId)).length;
+      save.textContent = _plbBusy
+        ? 'Saving…'
+        : (makingNew ? 'Save Playlist' : (going ? 'Add to Playlist' : 'Already on that playlist'));
+      save.disabled = _plbBusy || !going || (makingNew && !_plbImportName.trim());
     }
     return;
   }
@@ -13676,7 +13778,7 @@ function plbyToggle() {
   const panel = document.getElementById('plb-yt-panel');
   const toggle = document.getElementById('plb-yt-toggle');
   if (panel) panel.style.display = _plbyOpen ? '' : 'none';
-  if (toggle) toggle.textContent = (_plbyOpen ? '− ' : '+ ') + (_plbMode === 'import' ? 'Search YouTube playlists' : "Can’t find it? Add from YouTube directly");
+  if (toggle) toggle.textContent = (_plbyOpen ? '− ' : '+ ') + (_plbImportSource === 'yt-playlist' ? 'Search YouTube playlists' : "Can’t find it? Add from YouTube directly");
   if (_plbyOpen) setTimeout(() => document.getElementById('plby-search-input')?.focus(), 40);
 }
 
@@ -13687,10 +13789,10 @@ async function plbySearch() {
   const results = document.getElementById('plby-results');
   const playlistId = plbyExtractPlaylistId(query);
   if (playlistId) { await plbyLoadPlaylist(playlistId); return; }
-  if (results) results.innerHTML = '<div class="plb-empty small">Searching YouTube' + (_plbMode === 'import' ? ' playlists' : '') + '…</div>';
+  if (results) results.innerHTML = '<div class="plb-empty small">Searching YouTube' + (_plbImportSource === 'yt-playlist' ? ' playlists' : '') + '…</div>';
   try {
     _plbyMode = 'search';
-    if (_plbMode === 'import') {
+    if (_plbImportSource === 'yt-playlist') {
       _plbyPlaylistSearchResults = [];
       const data = await mjRequest('/api/my-jukebox/search?playlistQuery=' + encodeURIComponent(query), 'GET');
       _plbyPlaylistSearchResults = data.results || [];
@@ -13820,8 +13922,10 @@ async function plbyLoadPlaylist(playlistId, suggestedName) {
     _plbyPlaylistItems = [];
     const data = await mjRequest('/api/my-jukebox/search?playlist=' + encodeURIComponent(playlistId), 'GET');
     const sourceName = data.playlist?.title || suggestedName || '';
-    if (_plbMode === 'import' && sourceName) {
-      if (!_plbImportName.trim()) _plbImportName = sourceName;
+    // A new playlist named after the YouTube one it came from. Never overwrite
+    // a name already typed, and never rename a playlist we are adding to.
+    if (_plbMode === 'import' && _plbImportDest === 'new' && sourceName && !_plbImportName.trim()) {
+      _plbImportName = sourceName;
     }
     _plbyPlaylistTruncated = !!data.truncated;
     _plbyPlaylistItems = (data.results || []).map((r) => {
@@ -13875,7 +13979,7 @@ function plbyRenderPlaylist() {
       '<button type="button" class="pl-btn ' + (_plbyVisibility === 'public' ? '' : 'ghost') + '" onclick="plbySetVisibility(\'public\')">Visible to All</button>' +
       '<button type="button" class="pl-btn ' + (_plbyVisibility === 'private' ? '' : 'ghost') + '" onclick="plbySetVisibility(\'private\')">In My Private Jukebox</button>' +
     '</div>' +
-    '<button type="button" class="pl-btn" id="plby-pl-import-btn" style="width:100%;margin-bottom:.5rem" onclick="plbyImportPlaylist()">' + (_plbMode === 'import' ? 'Add ' + fresh + ' Selected Song' : 'Import ' + fresh + ' Song') + (fresh === 1 ? '' : 's') + '</button>' +
+    '<button type="button" class="pl-btn" id="plby-pl-import-btn" style="width:100%;margin-bottom:.5rem" onclick="plbyImportPlaylist()">' + (plbIsWizard() ? 'Add ' + fresh + ' Selected Song' : 'Import ' + fresh + ' Song') + (fresh === 1 ? '' : 's') + '</button>' +
     '<div id="plby-pl-progress"></div>' + rows;
 }
 
@@ -13895,7 +13999,7 @@ function plbyUpdateImportBtnLabel() {
   const btn = document.getElementById('plby-pl-import-btn');
   if (!btn) return;
   const n = _plbyPlaylistItems.filter(r => r._include && !r._already).length;
-  btn.textContent = (_plbMode === 'import' ? 'Add ' + n + ' Selected Song' : 'Import ' + n + ' Song') + (n === 1 ? '' : 's');
+  btn.textContent = (plbIsWizard() ? 'Add ' + n + ' Selected Song' : 'Import ' + n + ' Song') + (n === 1 ? '' : 's');
 }
 
 async function plbyImportPlaylist() {
@@ -13944,7 +14048,7 @@ async function plbyImportPlaylist() {
   if (progress) progress.innerHTML = '';
   if (btn) btn.disabled = false;
   _plbyImporting = false;
-  showToast(added + ' song' + (added === 1 ? '' : 's') + (_plbMode === 'import' ? ' added to the draft' : ' added to the playlist') + (failed ? ', ' + failed + ' could not be added' : '') + '.');
+  showToast(added + ' song' + (added === 1 ? '' : 's') + (plbIsWizard() ? ' added to the draft' : ' added to the playlist') + (failed ? ', ' + failed + ' could not be added' : '') + '.');
   // Drop what just went in so a second Import only ever offers what's left.
   _plbyPlaylistItems = _plbyPlaylistItems.filter(r => !(r._include && !r._already));
   plbyRenderPlaylist();
@@ -14234,7 +14338,11 @@ function plbRenderResults(data) {
 
 async function plbSave() {
   if (_plbBusy || !_plbDraft.length) return;
-  if (_plbMode !== 'add') {
+  // Build always makes a playlist, Add Songs never does, Import asks on the
+  // last step. Everything below reads that one answer.
+  const targetId = plbTargetId();
+  const makingNew = targetId === 'new';
+  if (makingNew) {
     const name = (_plbMode === 'import' ? _plbImportName : (document.getElementById('plb-name')?.value || '')).trim();
     if (!name) { document.getElementById('plb-name')?.focus(); showToast('Give the playlist a name.'); return; }
   }
@@ -14243,7 +14351,7 @@ async function plbSave() {
   const save = document.getElementById('plb-save-btn');
   if (save) save.textContent = 'Saving…';
   try {
-    if (_plbMode !== 'add') {
+    if (makingNew) {
       const name = (_plbMode === 'import' ? _plbImportName : (document.getElementById('plb-name')?.value || '')).trim();
       const isPublic = _plbMode === 'import'
         ? _plbImportPublic
@@ -14275,8 +14383,9 @@ async function plbSave() {
         if (isLandingMode) renderLanding();
       }
     } else {
-      if (_plbPlaylistId === '__dynamic_now_playing') {
-        const fresh = _plbDraft.filter(d => !_plbExisting.has(d.trackId));
+      const have = plbTargetTrackIds();
+      if (targetId === '__dynamic_now_playing') {
+        const fresh = _plbDraft.filter(d => !have.has(d.trackId));
         const videos = await loadYT(fresh.map(d => d.trackId));
         const additions = fresh.filter(d => videos[d.trackId]?.video_id).map(d => {
           SJ_TRACK_META[d.trackId] = Object.assign({}, SJ_TRACK_META[d.trackId] || {}, {
@@ -14291,10 +14400,10 @@ async function plbSave() {
         await openPlaylistChart('__dynamic_now_playing');
         return;
       }
-      const p = playlists.find(x => x.id === _plbPlaylistId) || (_savedPlaylists || []).find(x => x.id === _plbPlaylistId);
+      const p = plbPlaylistById(targetId);
       if (!p) throw new Error('Playlist missing');
       let pos = (p._tracks || []).length;
-      const fresh = _plbDraft.filter(d => !_plbExisting.has(d.trackId));
+      const fresh = _plbDraft.filter(d => !have.has(d.trackId));
       const addedByEmail = googleUser.email;
       const addedByName = googleUser.displayName || googleUser.name || '';
       const rows = fresh.map(d => ({ playlist_id: p.id, track_id: d.trackId, position: pos++, added_by_email: addedByEmail, added_by_name: addedByName }));
@@ -14304,7 +14413,9 @@ async function plbSave() {
       p._tracks = (p._tracks || []).concat(rows);
       showToast(`Added ${fresh.length} song${fresh.length === 1 ? '' : 's'} to ${p.name || 'playlist'}.`);
       const wasOwner = p.user_email === googleUser.email;
-      const backToChart = viewMode === 'playlistchart' && playlistChartId === p.id;
+      // Import lands the reader on the playlist it just filled; Add Songs
+      // puts them back wherever they were.
+      const backToChart = _plbMode === 'import' || (viewMode === 'playlistchart' && playlistChartId === p.id);
       closePlaylistBuilder();
       await loadPlaylists();
       if (backToChart) await openPlaylistChart(p.id);
@@ -14314,7 +14425,7 @@ async function plbSave() {
   } catch (e) {
     console.error('plbSave', e);
     showToast('Could not save that playlist.');
-    if (save) save.textContent = _plbMode === 'add' ? 'Add to Playlist' : (_plbMode === 'import' ? 'Save Imported Playlist' : 'Create Playlist');
+    if (save && !plbIsWizard()) save.textContent = 'Create Playlist';
   } finally {
     _plbBusy = false;
     plbSyncSaveBtn();
@@ -20040,6 +20151,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Add Songs on a playlist now runs the same three steps as Import Playlist. Choose where the songs come from — the Jukebox, a YouTube playlist, or a single song from YouTube — pick them, review the list, then add. It goes onto the playlist you were already looking at, so nothing asks you which one.',
+    'Import Playlist now asks at the end where the songs should go: into a brand new playlist, or onto one you already have. Songs already on that playlist are skipped rather than added twice.',
+    'Import Playlist can also pull in one song at a time from YouTube now, not only a whole playlist.',
     'The Help and About pages now say plainly what Suffering Jukebox is for: personal listening and exploring music, not commercial use or public performance.',
     'Fixed the wrong album cover showing in the player. Picking a song while something else was playing stamped the previous song’s picture onto the new one, and it stayed wrong until you reloaded the page. It was most obvious in the small dock, where the cover is the biggest thing on screen.',
     'New: a proper Help page at sufferingjukebox.stream/help, with pictures. It covers finding music, playing it, the five jukebox views and what the chart bars measure, playlists, importing a song or a playlist or a whole discography, keeping music public or private, fixing what you added, lyrics, the Online Jukebox, sharing and exporting pictures, and how the site actually works. The ? button at the top of the screen and Help in the account menu both open it.',
