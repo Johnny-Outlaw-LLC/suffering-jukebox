@@ -2516,6 +2516,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-add:disabled { opacity:.4; cursor:not-allowed; }
 .plb-yt-toggle { background:var(--bg-elevated); border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; font-weight:700; padding:.35rem .65rem; border-radius:7px; cursor:pointer; }
 .plb-yt-toggle:hover { border-color:var(--accent); color:var(--accent); }
+.plb-yt-playlist-results { display:grid; gap:.4rem; margin-top:.5rem; }
+.plb-yt-playlist-card { display:flex; align-items:center; gap:.6rem; padding:.5rem; border:1px solid var(--border); border-radius:9px; background:var(--bg); }
+.plb-yt-playlist-card:hover { border-color:var(--text-muted); background:var(--bg-elevated); }
+.plb-yt-playlist-art { width:64px; aspect-ratio:16/9; border-radius:5px; object-fit:cover; flex-shrink:0; background:var(--bg-elevated); }
+.plb-yt-playlist-desc { font-size:.44rem; color:var(--text-muted); line-height:1.35; margin-top:3px; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .plb-row-dupe { opacity:.55; }
 .plb-pl-bar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; justify-content:space-between; padding:.4rem 0; }
 .plb-b-item { display:flex; align-items:center; gap:.4rem; padding:.35rem .4rem; border-radius:7px; }
@@ -13144,7 +13149,7 @@ let _plbBusy = false;
 
 function openPlaylistBuilder(mode, playlistId) {
   if (!googleUser) { showToast('Sign in to build playlists.'); return; }
-  _plbMode = mode === 'add' ? 'add' : 'build';
+  _plbMode = mode === 'add' ? 'add' : (mode === 'import' ? 'import' : 'build');
   _plbPlaylistId = playlistId || null;
   _plbDraft = [];
   _plbExisting = new Set();
@@ -13162,6 +13167,7 @@ function openPlaylistBuilder(mode, playlistId) {
   if (ytInput) ytInput.value = '';
   _plbyMode = 'search';
   _plbyPlaylistItems = [];
+  _plbyPlaylistSearchResults = [];
   _plbyPlaylistTruncated = false;
   _plbyImporting = false;
   if (_plbMode === 'add') {
@@ -13182,8 +13188,20 @@ function openPlaylistBuilder(mode, playlistId) {
   _plbAlbumTracks = {};
   plbRenderBrowse();
   const inp = document.getElementById('plb-search');
-  if (inp) { inp.value = ''; setTimeout(() => inp.focus(), 40); }
+  if (inp) inp.value = '';
+  if (_plbMode === 'import') {
+    _plbyOpen = true;
+    if (ytPanel) ytPanel.style.display = '';
+    if (ytToggle) ytToggle.textContent = '− Search YouTube playlists';
+    if (ytInput) ytInput.placeholder = 'Search YouTube playlists, or paste a playlist link';
+    setTimeout(() => ytInput?.focus(), 40);
+  } else {
+    if (ytInput) ytInput.placeholder = 'Search YouTube for a song, or paste a YouTube playlist link';
+    setTimeout(() => inp?.focus(), 40);
+  }
 }
+
+function openPlaylistImporter() { openPlaylistBuilder('import'); }
 
 function closePlaylistBuilder() {
   document.getElementById('plBuilderOverlay')?.classList.remove('open');
@@ -13204,14 +13222,17 @@ function plbPaintChrome() {
     if (top) top.innerHTML = `<div class="plb-hint">Adding to <b>${escHtml(p?.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}${!isMine && p?.is_public ? ' · a public playlist, open to add to' : ''}. Browse artists and albums below, or search by song, artist, album, or a lyric line — same search as the main bar.</div>`;
     if (save) save.textContent = 'Add to Playlist';
   } else {
-    if (title) title.textContent = 'Build a Playlist';
+    const importing = _plbMode === 'import';
+    if (title) title.textContent = importing ? 'Import a Playlist' : 'Build a Playlist';
     if (top) top.innerHTML =
       `<div class="plb-name-row">` +
         `<input class="pl-input" id="plb-name" maxlength="80" placeholder="Playlist name" autocomplete="off">` +
         `<div class="pl-toggle-row" style="margin:0"><button type="button" class="pl-toggle" id="plb-pub-toggle" onclick="this.classList.toggle('on')"></button><span class="pl-toggle-lbl">Make public</span></div>` +
       `</div>` +
-      `<div class="plb-hint">Search the catalogue and add whole artists, albums, or single tracks. Same search as the main Search bar.</div>`;
-    if (save) save.textContent = 'Create Playlist';
+      `<div class="plb-hint">${importing
+        ? 'Search YouTube playlists or paste a playlist link below. You can also use the Jukebox search to mix in songs, albums, or artists that are already here.'
+        : 'Search the catalogue and add whole artists, albums, or single tracks. Same search as the main Search bar.'}</div>`;
+    if (save) save.textContent = importing ? 'Save Imported Playlist' : 'Create Playlist';
   }
   plbSyncSaveBtn();
 }
@@ -13315,6 +13336,7 @@ let _plbyMode = 'search'; // 'search' | 'playlist' - which render/visibility pat
 let _plbyResults = [];
 let _plbyVisibility = 'private';
 let _plbyPlaylistItems = [];
+let _plbyPlaylistSearchResults = [];
 let _plbyPlaylistTruncated = false;
 let _plbyImporting = false;
 
@@ -13323,7 +13345,7 @@ function plbyToggle() {
   const panel = document.getElementById('plb-yt-panel');
   const toggle = document.getElementById('plb-yt-toggle');
   if (panel) panel.style.display = _plbyOpen ? '' : 'none';
-  if (toggle) toggle.textContent = (_plbyOpen ? '− ' : '+ ') + "Can’t find it? Add from YouTube directly";
+  if (toggle) toggle.textContent = (_plbyOpen ? '− ' : '+ ') + (_plbMode === 'import' ? 'Search YouTube playlists' : "Can’t find it? Add from YouTube directly");
   if (_plbyOpen) setTimeout(() => document.getElementById('plby-search-input')?.focus(), 40);
 }
 
@@ -13334,17 +13356,50 @@ async function plbySearch() {
   const results = document.getElementById('plby-results');
   const playlistId = plbyExtractPlaylistId(query);
   if (playlistId) { await plbyLoadPlaylist(playlistId); return; }
-  if (results) results.innerHTML = '<div class="plb-empty small">Searching YouTube…</div>';
+  if (results) results.innerHTML = '<div class="plb-empty small">Searching YouTube' + (_plbMode === 'import' ? ' playlists' : '') + '…</div>';
   try {
     _plbyMode = 'search';
-    _plbyResults = [];
-    const data = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(query), 'GET');
-    _plbyResults = data.results || [];
-    plbyRenderResults();
+    if (_plbMode === 'import') {
+      _plbyPlaylistSearchResults = [];
+      const data = await mjRequest('/api/my-jukebox/search?playlistQuery=' + encodeURIComponent(query), 'GET');
+      _plbyPlaylistSearchResults = data.results || [];
+      plbyRenderPlaylistSearchResults();
+    } else {
+      _plbyResults = [];
+      const data = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(query), 'GET');
+      _plbyResults = data.results || [];
+      plbyRenderResults();
+    }
   } catch (e) {
     if (results) results.innerHTML = '';
     showToast(e.message || 'Could not search YouTube.');
   }
+}
+
+function plbyRenderPlaylistSearchResults() {
+  const el = document.getElementById('plby-results');
+  if (!el) return;
+  if (!_plbyPlaylistSearchResults.length) {
+    el.innerHTML = '<div class="plb-empty small">No public YouTube playlists found. Try another search or paste a playlist link.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="plb-yt-playlist-results">' + _plbyPlaylistSearchResults.map((r, n) => {
+    const count = r.itemCount == null ? 'Playlist' : r.itemCount + ' song' + (r.itemCount === 1 ? '' : 's');
+    return '<div class="plb-yt-playlist-card">' +
+      (r.thumbnail ? '<img class="plb-yt-playlist-art" alt="" src="' + escHtml(r.thumbnail) + '">' : '<div class="plb-yt-playlist-art"></div>') +
+      '<div class="plb-info"><div class="plb-name">' + escHtml(r.title || 'Untitled playlist') + '</div>' +
+        '<div class="plb-meta">' + escHtml(r.channelTitle || 'YouTube') + ' · ' + count + '</div>' +
+        (r.description ? '<div class="plb-yt-playlist-desc">' + escHtml(r.description) + '</div>' : '') +
+      '</div>' +
+      '<button type="button" class="plb-add" onclick="plbyChoosePlaylist(' + n + ')">Choose</button>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+function plbyChoosePlaylist(n) {
+  const playlist = _plbyPlaylistSearchResults[n];
+  if (!playlist) return;
+  plbyLoadPlaylist(playlist.playlistId, playlist.title);
 }
 
 // A pasted playlist link (or a bare playlist id) routes to the whole-playlist
@@ -13426,13 +13481,18 @@ async function plbyAdd(n) {
 // runs the exact same add_youtube import as a single song - just once per
 // song, in order, with a running "Importing N of M" line instead of one
 // click per row.
-async function plbyLoadPlaylist(playlistId) {
+async function plbyLoadPlaylist(playlistId, suggestedName) {
   const results = document.getElementById('plby-results');
   if (results) results.innerHTML = '<div class="plb-empty small">Loading playlist…</div>';
   try {
     _plbyMode = 'playlist';
     _plbyPlaylistItems = [];
     const data = await mjRequest('/api/my-jukebox/search?playlist=' + encodeURIComponent(playlistId), 'GET');
+    const sourceName = data.playlist?.title || suggestedName || '';
+    if (_plbMode === 'import' && sourceName) {
+      const nameInput = document.getElementById('plb-name');
+      if (nameInput && !nameInput.value.trim()) nameInput.value = sourceName;
+    }
     _plbyPlaylistTruncated = !!data.truncated;
     _plbyPlaylistItems = (data.results || []).map((r) => {
       const read = mjReadArtist(r.title, r.channelTitle);
@@ -13844,7 +13904,7 @@ function plbRenderResults(data) {
 
 async function plbSave() {
   if (_plbBusy || !_plbDraft.length) return;
-  if (_plbMode === 'build') {
+  if (_plbMode !== 'add') {
     const name = (document.getElementById('plb-name')?.value || '').trim();
     if (!name) { document.getElementById('plb-name')?.focus(); showToast('Give the playlist a name.'); return; }
   }
@@ -13853,7 +13913,7 @@ async function plbSave() {
   const save = document.getElementById('plb-save-btn');
   if (save) save.textContent = 'Saving…';
   try {
-    if (_plbMode === 'build') {
+    if (_plbMode !== 'add') {
       const name = (document.getElementById('plb-name')?.value || '').trim();
       const isPublic = document.getElementById('plb-pub-toggle')?.classList.contains('on') || false;
       const [pl] = await dbPost('/playlists', {
@@ -13875,8 +13935,13 @@ async function plbSave() {
       showToast(`Created “${name}” with ${_plbDraft.length} song${_plbDraft.length === 1 ? '' : 's'}.`);
       closePlaylistBuilder();
       syncManagePlaylistsBtn();
-      openManagePlaylists();
-      if (isLandingMode) renderLanding();
+      if (_plbMode === 'import') {
+        await loadPlaylists();
+        await openPlaylistChart(pl.id);
+      } else {
+        openManagePlaylists();
+        if (isLandingMode) renderLanding();
+      }
     } else {
       if (_plbPlaylistId === '__dynamic_now_playing') {
         const fresh = _plbDraft.filter(d => !_plbExisting.has(d.trackId));
@@ -13917,7 +13982,7 @@ async function plbSave() {
   } catch (e) {
     console.error('plbSave', e);
     showToast('Could not save that playlist.');
-    if (save) save.textContent = _plbMode === 'add' ? 'Add to Playlist' : 'Create Playlist';
+    if (save) save.textContent = _plbMode === 'add' ? 'Add to Playlist' : (_plbMode === 'import' ? 'Save Imported Playlist' : 'Create Playlist');
   } finally {
     _plbBusy = false;
     plbSyncSaveBtn();
@@ -15889,6 +15954,7 @@ function renderLanding() {
               </select>
             </div>
             <div class="playlist-explore-actions">
+              <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
               ${googleUser
                 ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>`
                 : ''}
@@ -19621,6 +19687,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-27';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-27', items: [
+    'Explore Playlists now has an Import Playlist button. Search YouTube for a playlist or paste its link, review the songs, reuse anything already in the Jukebox, import only what is new, mix in catalogue songs if you want, and save the result as its own ordered playlist.',
     'The player is Full Screen or Docked now - the floating window is gone. Docked has a drag handle across the top: pull it up to grow the bar, all the way to half the screen, and the thumbnail grows into the actual video as there is room for it. Drop it back down and it returns to a thumbnail.',
     'Play next on a song someone requested now actually plays it next. With shuffle on it did nothing at all - the next song was picked at random and never read off the running order - and if the song sat behind the one playing, moving it also left the player pointing at the wrong track.',
     'Songs added by others now has three buttons on every row: Next to hear it straight away, End to push it to the back of the queue, and a cross to take it out altogether. Removing one tells the person who asked, instead of leaving it sitting in their list forever.',

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ownerMyJukebox } from "@/lib/my-jukebox";
 import {
+  fetchYouTubePlaylistInfo,
   fetchYouTubePlaylistItems,
   fetchYouTubeVideoInfo,
   JUKEBOX_SCHEMA,
   parseYouTubePlaylistId,
+  searchYouTubePlaylists,
   searchYouTubeVideos,
 } from "@/lib/sj-admin-auth";
 import { bad, clientIp, rateLimited, tooMany } from "@/lib/jukebox-request";
@@ -21,12 +23,23 @@ export async function GET(req: NextRequest) {
     if (rateLimited(`my-jukebox-search:${clientIp(req)}`, 20)) return tooMany();
     const url = new URL(req.url);
 
+    const playlistQuery = url.searchParams.get("playlistQuery")?.trim() ?? "";
+    if (playlistQuery) {
+      if (playlistQuery.length < 2) return NextResponse.json({ ok: true, results: [] });
+      return NextResponse.json({ ok: true, results: await searchYouTubePlaylists(playlistQuery) });
+    }
+
     const playlistParam = url.searchParams.get("playlist")?.trim();
     if (playlistParam) {
       const playlistId = parseYouTubePlaylistId(playlistParam);
       if (!playlistId) return bad("That doesn't look like a YouTube playlist link.");
-      const { items, truncated } = await fetchYouTubePlaylistItems(playlistId);
-      if (!items.length) return NextResponse.json({ ok: true, results: [], truncated: false });
+      const [playlist, playlistItems] = await Promise.all([
+        fetchYouTubePlaylistInfo(playlistId),
+        fetchYouTubePlaylistItems(playlistId),
+      ]);
+      if (!playlist) return bad("That playlist could not be found — check it is public or unlisted.", 404);
+      const { items, truncated } = playlistItems;
+      if (!items.length) return NextResponse.json({ ok: true, playlist, results: [], truncated: false });
 
       // A playlist can list the same video twice; keep the first occurrence.
       const seen = new Set<string>();
@@ -54,7 +67,7 @@ export async function GET(req: NextRequest) {
           // playlist builder adds it directly rather than importing it again.
           existingTrackId: knownMap.get(it.videoId) ?? null,
         }));
-      return NextResponse.json({ ok: true, results, truncated });
+      return NextResponse.json({ ok: true, playlist, results, truncated });
     }
 
     const query = url.searchParams.get("q")?.trim() ?? "";

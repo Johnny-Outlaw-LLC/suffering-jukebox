@@ -125,6 +125,15 @@ export type YtPlaylistItem = {
   thumbnail: string | null;
 };
 
+export type YouTubePlaylistInfo = {
+  playlistId: string;
+  title: string;
+  description: string;
+  channelTitle: string;
+  thumbnail: string | null;
+  itemCount: number | null;
+};
+
 // One huge playlist should not blow the request budget or the quota, so
 // fetching stops here and the caller is told the list was cut short.
 export const MAX_PLAYLIST_ITEMS = 300;
@@ -170,6 +179,83 @@ export async function fetchYouTubePlaylistItems(
     pageToken = truncated ? undefined : json.nextPageToken;
   } while (pageToken);
   return { items, truncated };
+}
+
+export async function fetchYouTubePlaylistInfo(playlistId: string): Promise<YouTubePlaylistInfo | null> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) throw new Error("YouTube API key not configured.");
+  const url = new URL("https://www.googleapis.com/youtube/v3/playlists");
+  url.searchParams.set("part", "snippet,contentDetails,status");
+  url.searchParams.set("id", playlistId);
+  url.searchParams.set("maxResults", "1");
+  url.searchParams.set("key", key);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`YouTube API error (${res.status})`);
+  const json = (await res.json()) as { items?: any[] };
+  const item = json.items?.[0];
+  if (!item || item.status?.privacyStatus === "private") return null;
+  const snippet = item.snippet ?? {};
+  const thumbs = snippet.thumbnails;
+  return {
+    playlistId: item.id,
+    title: snippet.title || "Untitled playlist",
+    description: snippet.description || "",
+    channelTitle: snippet.channelTitle || "",
+    thumbnail: thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
+    itemCount: Number.isFinite(Number(item.contentDetails?.itemCount))
+      ? Number(item.contentDetails.itemCount)
+      : null,
+  };
+}
+
+export async function searchYouTubePlaylists(
+  query: string,
+  maxResults = 10,
+): Promise<YouTubePlaylistInfo[]> {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) throw new Error("YouTube API key not configured.");
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("q", query.trim());
+  url.searchParams.set("type", "playlist");
+  url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 15)));
+  url.searchParams.set("key", key);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`YouTube playlist search error (${res.status})`);
+  const json = (await res.json()) as { items?: any[] };
+  const candidates = (json.items ?? [])
+    .map((item) => ({ playlistId: item.id?.playlistId as string | undefined, snippet: item.snippet ?? {} }))
+    .filter((item): item is { playlistId: string; snippet: any } => !!item.playlistId);
+  if (!candidates.length) return [];
+
+  // search.list does not include a playlist's item count. One batched
+  // playlists.list call fills it in without making the client fetch every
+  // candidate playlist just to show useful search results.
+  const detailsUrl = new URL("https://www.googleapis.com/youtube/v3/playlists");
+  detailsUrl.searchParams.set("part", "contentDetails,status");
+  detailsUrl.searchParams.set("id", candidates.map((item) => item.playlistId).join(","));
+  detailsUrl.searchParams.set("maxResults", String(candidates.length));
+  detailsUrl.searchParams.set("key", key);
+  const detailsRes = await fetch(detailsUrl.toString());
+  if (!detailsRes.ok) throw new Error(`YouTube playlist details error (${detailsRes.status})`);
+  const detailsJson = (await detailsRes.json()) as { items?: any[] };
+  const details = new Map((detailsJson.items ?? []).map((item) => [item.id as string, item]));
+
+  return candidates.flatMap(({ playlistId, snippet }) => {
+    const detail = details.get(playlistId);
+    if (!detail || detail.status?.privacyStatus === "private") return [];
+    const thumbs = snippet.thumbnails;
+    return [{
+      playlistId,
+      title: snippet.title || "Untitled playlist",
+      description: snippet.description || "",
+      channelTitle: snippet.channelTitle || "",
+      thumbnail: thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
+      itemCount: Number.isFinite(Number(detail.contentDetails?.itemCount))
+        ? Number(detail.contentDetails.itemCount)
+        : null,
+    }];
+  });
 }
 
 export type YtVideoInfo = {
