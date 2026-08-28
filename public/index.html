@@ -55,12 +55,14 @@ html { font-size: 20px; } /* base rem - all rem values scale from here */
   --border: #2a2a2a; --text: #f5f5f5; --text-muted: #888888;
   --accent: #ff6b35; --accent-hover: #ff8555;
   --mono: 'Inter', -apple-system, sans-serif;
+  --ytp-dock-height: 0px;
 }
 body.light {
   --bg: #f5f5f5; --bg-card: #ffffff; --bg-elevated: #eeeeee;
   --border: #e0e0e0; --text: #1a1a1a; --text-muted: #666666;
 }
-body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; transition: background .2s, color .2s; }
+html { scroll-padding-bottom: var(--ytp-dock-height); }
+body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-bottom: var(--ytp-dock-height); transition: background .2s, color .2s; }
 
 /* ── HEADER ── */
 header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; gap: 0.3rem; background: var(--bg); overflow: visible; }
@@ -841,7 +843,7 @@ body:not(.light) .tt-num { color: var(--text); }
   .filter-dd-wrap, .filter-pm-btn { flex-shrink: 0; }
 
   /* All-tracks: fixed viewport height, scroll table in both axes */
-  body.view-alltracks { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+  body.view-alltracks { height: calc(100dvh - var(--ytp-dock-height)); overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
   body.view-alltracks header { flex-shrink: 0; }
   body.view-alltracks main { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0.4rem !important; gap: 0 !important; }
   body.view-alltracks .alltracks-page { flex: 1; min-height: 0; }
@@ -1519,8 +1521,10 @@ textarea.report-input { resize:vertical; }
 .ytp-docked-source {
   position: fixed !important; left: -200vw !important; top: 0 !important;
   width: 1px !important; height: 1px !important; overflow: visible !important;
-  z-index: 4991 !important; pointer-events: none !important;
+  /* Stay behind the dock thumbnail until the moved iframe reports ready. */
+  z-index: 4989 !important; pointer-events: none !important;
 }
+.ytp-docked-source.dock-video-ready { z-index: 4991 !important; }
 .ytp-docked-source .yt-player { overflow: visible !important; }
 .ytp-docked-source .yt-player > :not(.yt-player-frame) { display: none !important; }
 .yt-player-frame { flex: 1; background: var(--bg); min-height: 170px; position: relative; cursor: pointer; overflow: hidden; }
@@ -1587,15 +1591,15 @@ textarea.report-input { resize:vertical; }
    changing modes cannot interrupt playback. */
 .ytp-mf-video-slot { position: absolute; inset: 0; display: none; border-radius: 6px; overflow: hidden; background: #000; }
 .ytp-mf-video-slot .yt-player-frame { flex: none !important; min-height: 0 !important; width: 100% !important; height: 100% !important; }
-.ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; flex: 1; }
+.ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0; flex: 1; }
 .ytp-mini-footer.dock-grown .ytp-mf-now { align-items: flex-end; }
 .ytp-mini-footer.dock-grown .ytp-mf-meta { flex: 0 0 240px; width: 240px; justify-content: flex-end; align-self: stretch; padding-bottom: 2px; }
 .ytp-mf-artist {
-  font-size: .46rem; letter-spacing: .1em; text-transform: uppercase;
+  font-size: .52rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ytp-mf-song-row {
-  display: flex; align-items: center; gap: 8px; min-width: 0;
+  display: flex; align-items: center; min-width: 0; margin-top: 1px;
 }
 .ytp-mf-song {
   font-size: .74rem; font-weight: 700; color: var(--text); line-height: 1.25;
@@ -1603,11 +1607,12 @@ textarea.report-input { resize:vertical; }
   min-width: 0; flex: 1 1 auto;
 }
 .ytp-mf-song.now-playing { color: var(--accent); }
-.ytp-mf-song-row #ytp-mf-vote { font-size: .7rem; flex-shrink: 0; }
-.ytp-mf-reactions { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+.ytp-mf-feedback { display: flex; align-items: center; gap: 4px; min-height: 24px; margin-top: 4px; }
+.ytp-mf-feedback #ytp-mf-vote { width: 24px; height: 24px; border-radius: 6px; font-size: .7rem; flex-shrink: 0; }
+.ytp-mf-reactions { display: flex; flex-direction: row; gap: 4px; flex-shrink: 0; }
 .ytp-mf-reactions .ytp-mf-btn { width: 24px; height: 24px; border-radius: 6px; }
 .ytp-mf-album {
-  font-size: .5rem; color: var(--text-muted);
+  font-size: .5rem; line-height: 1.2; color: var(--text-muted); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 /* ── Scrub / seek bar ── */
@@ -1627,6 +1632,22 @@ textarea.report-input { resize:vertical; }
   #ytp-mini-footer .ytp-mf-right {
     position: absolute; right: 16px; bottom: 48px; z-index: 6;
   }
+  /* Once the queue has enough room to appear, the lyrics use the matching
+     upper band: video edge to queue edge, ending above both metadata and the
+     three-row button stack. JS supplies the live lower boundary. */
+  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr.show {
+    position: absolute;
+    left: calc(16px + var(--mf-body) + 16px);
+    right: calc(32px + min(270px, 22vw));
+    top: 14px;
+    bottom: var(--mf-lyric-lower-clearance, 164px);
+    z-index: 4;
+    width: auto;
+    height: auto;
+    padding-left: 0;
+    align-self: auto;
+  }
+  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: 100%; }
 }
 .ytp-mf-scrub-time {
   font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
@@ -1830,7 +1851,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-bottom { grid-area: bottom; justify-content: center; width: 100%; }
   .ytp-mf-lyr { grid-area: lyr; margin-left: 0; }
   .ytp-mf-scrub { grid-area: scrub; }
-  .ytp-mf-song-row #ytp-mf-vote { font-size: .85rem; }
+  .ytp-mf-feedback #ytp-mf-vote { font-size: .85rem; }
   .ytp-mf-song   { font-size: .78rem; }
   .ytp-mf-artist { font-size: .5rem; }
   .ytp-mf-album  { font-size: .52rem; }
@@ -3238,13 +3259,15 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
         <div class="ytp-mf-artist" id="ytp-mf-artist"></div>
         <div class="ytp-mf-song-row">
           <div class="ytp-mf-song" id="ytp-mf-song">-</div>
+        </div>
+        <div class="ytp-mf-album" id="ytp-mf-album"></div>
+        <div class="ytp-mf-feedback">
           <button class="ytp-mf-btn" data-vote-track="" onclick="event.stopPropagation();ytpCycleVote()" title="Rate" id="ytp-mf-vote">-</button>
           <span class="ytp-mf-reactions" id="ytp-mf-reactions">
             <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('heart',this,event)" oncontextmenu="ytpOpenReactionUndo('heart',this,event)" onpointerdown="ytpReactionPressStart('heart',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heart reaction. Right-click or long-press to undo." aria-label="Send a heart reaction" id="ytp-mf-react-heart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/></svg></button>
             <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('sad',this,event)" oncontextmenu="ytpOpenReactionUndo('sad',this,event)" onpointerdown="ytpReactionPressStart('sad',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heartbreak reaction. Right-click or long-press to undo." aria-label="Send a heartbreak reaction" id="ytp-mf-react-sad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/><path d="m12 5.67-2 4 3 2-2 4 1 5.56"/></svg></button>
           </span>
         </div>
-        <div class="ytp-mf-album" id="ytp-mf-album"></div>
       </div>
     </div>
     <div class="ytp-mf-lyr" id="ytp-mf-lyrics-pane" onclick="event.stopPropagation()">
@@ -6476,10 +6499,12 @@ function attachYTAPIPlayer() {
   if (!window.YT || !window.YT.Player) { setTimeout(attachYTAPIPlayer, 150); return; }
   const iframe = document.getElementById('yt-embed-iframe');
   if (!iframe) return;
+  if (_ytpDockVideoOn) ytpDockMaskVideo();
   try { if (ytAPIPlayer) { ytAPIPlayer.destroy(); ytAPIPlayer = null; } } catch(e) {}
   ytAPIPlayer = new YT.Player('yt-embed-iframe', {
     events: {
       onReady: function(ev) {
+        if (_ytpDockVideoOn) ytpDockRevealVideoWhenReady();
         if (_ytpLayoutRestore) {
           const restore = _ytpLayoutRestore;
           _ytpLayoutRestore = null;
@@ -7217,6 +7242,18 @@ const YTP_DOCK_PLAYLIST_GAP = 20;  // clear space between the queue and dock but
 const YTP_DOCK_PLAYLIST_MIN_H = 112;
 let _ytpDockPlaylistObserver = null;
 let _ytpDockPlaylistFrame = 0;
+let _ytpDockVideoRevealTimer = 0;
+let _ytpDockVideoGeometryFrame = 0;
+let _ytpDockVideoGeometryUntil = 0;
+
+function ytpDockViewportH() {
+  return Math.round(window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight);
+}
+
+function ytpDockSetPageInset(height) {
+  const px = Math.max(0, Math.round(Number(height) || 0));
+  document.documentElement.style.setProperty('--ytp-dock-height', px + 'px');
+}
 
 function ytpCaptureLayoutPlayback() {
   if (_taBgActive || !ytAPIPlayer) return null;
@@ -7271,24 +7308,105 @@ function ytpRestoreAfterLayoutMove(snapshot) {
 function ytpDockMinH() {
   if (_ytpDockMinHCache != null) return _ytpDockMinHCache;
   const el = document.getElementById('ytp-mini-footer');
-  const fallback = ytpIsMob() ? 150 : 112;
+  // Desktop needs room for the measured three-row control stack, the 48px
+  // scrubber clearance, and the 14px drag handle above it.
+  const fallback = ytpIsMob() ? 150 : 180;
   if (!el) return fallback;
   const had = el.style.height;
   el.style.height = '';
-  const h = Math.round(el.getBoundingClientRect().height) || fallback;
+  const h = Math.max(fallback, Math.round(el.getBoundingClientRect().height) || 0);
   el.style.height = had;
   _ytpDockMinHCache = h;
   return h;
+}
+
+function ytpDockMaskVideo() {
+  const source = _ytpContainerEl || ytPlayerEl;
+  const art = document.getElementById('ytp-mf-art');
+  if (_ytpDockVideoRevealTimer) {
+    clearTimeout(_ytpDockVideoRevealTimer);
+    _ytpDockVideoRevealTimer = 0;
+  }
+  source?.classList.remove('dock-video-ready');
+  if (art) art.style.display = '';
+}
+
+function ytpDockRevealVideoWhenReady() {
+  if (!_ytpDockVideoOn || !_ytpMinimized || _ytpDockVideoRevealTimer) return;
+  const source = _ytpContainerEl || ytPlayerEl;
+  const frame = ytPlayerEl?.querySelector('.yt-player-frame');
+  const iframe = frame?.querySelector('iframe');
+  if (!source || !iframe) return;
+  let apiReady = false;
+  try { apiReady = Number.isFinite(ytAPIPlayer?.getPlayerState?.()); } catch (_) {}
+  const box = frame?.getBoundingClientRect();
+  const slotBox = document.getElementById('ytp-mf-video-slot')?.getBoundingClientRect();
+  const geometryReady = !!box && !!slotBox && box.width > 1 && box.height > 1
+    && Math.abs(box.left - slotBox.left) <= 2
+    && Math.abs(box.top - slotBox.top) <= 2
+    && Math.abs(box.width - slotBox.width) <= 2
+    && Math.abs(box.height - slotBox.height) <= 2;
+  if (!apiReady || !geometryReady) {
+    _ytpDockVideoRevealTimer = setTimeout(() => {
+      _ytpDockVideoRevealTimer = 0;
+      ytpDockRevealVideoWhenReady();
+    }, 100);
+    return;
+  }
+  // Give Chromium two paints at the new iframe geometry. Until then the
+  // source remains under the thumbnail, so a transient black frame is hidden.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (!_ytpDockVideoOn) return;
+    source.classList.add('dock-video-ready');
+    const art = document.getElementById('ytp-mf-art');
+    if (art) art.style.display = 'none';
+  }));
+}
+
+function ytpDockSyncVideoFrame() {
+  if (!_ytpDockVideoOn || !ytPlayerEl) return;
+  const frame = ytPlayerEl.querySelector('.yt-player-frame');
+  const box = document.getElementById('ytp-mf-video-slot')?.getBoundingClientRect();
+  if (!frame || !box || box.width <= 1 || box.height <= 1) return;
+  frame.style.position = 'fixed';
+  frame.style.left = box.left + 'px';
+  frame.style.top = box.top + 'px';
+  frame.style.width = box.width + 'px';
+  frame.style.height = box.height + 'px';
+  frame.style.minHeight = '0';
+  frame.style.zIndex = '4991';
+  frame.style.pointerEvents = 'auto';
+  const iframe = frame.querySelector('iframe');
+  if (iframe) iframe.style.height = box.height + 'px';
+}
+
+function ytpDockScheduleVideoGeometry(duration = 400) {
+  _ytpDockVideoGeometryUntil = Math.max(_ytpDockVideoGeometryUntil, performance.now() + duration);
+  if (_ytpDockVideoGeometryFrame) return;
+  const tick = () => {
+    _ytpDockVideoGeometryFrame = 0;
+    if (!_ytpDockVideoOn) return;
+    ytpDockSyncVideoFrame();
+    ytpDockRevealVideoWhenReady();
+    if (performance.now() < _ytpDockVideoGeometryUntil) {
+      _ytpDockVideoGeometryFrame = requestAnimationFrame(tick);
+    }
+  };
+  _ytpDockVideoGeometryFrame = requestAnimationFrame(tick);
 }
 
 function ytpDockClaimFrame() {
   if (!ytPlayerEl) return;
   const frame = ytPlayerEl.querySelector('.yt-player-frame');
   const slot  = document.getElementById('ytp-mf-video-slot');
-  const art   = document.getElementById('ytp-mf-art');
   if (!frame || !slot) return;
+  const source = _ytpContainerEl || ytPlayerEl;
+  if (source) {
+    source.style.display = '';
+    source.classList.add('ytp-docked-source');
+  }
   slot.style.display = 'block';
-  if (art) art.style.display = _ytpDockVideoOn ? 'none' : '';
+  ytpDockMaskVideo();
 }
 
 function ytpDockReleaseFrame() {
@@ -7310,6 +7428,10 @@ function ytpDockReleaseFrame() {
   }
   if (slot) slot.style.display = 'none';
   if (art) art.style.display = '';
+  (_ytpContainerEl || ytPlayerEl)?.classList.remove('dock-video-ready');
+  if (_ytpDockVideoGeometryFrame) cancelAnimationFrame(_ytpDockVideoGeometryFrame);
+  _ytpDockVideoGeometryFrame = 0;
+  _ytpDockVideoGeometryUntil = 0;
   _ytpDockVideoOn = false;
 }
 
@@ -7371,7 +7493,16 @@ function ytpDockSyncPlaylist() {
   if (available < YTP_DOCK_PLAYLIST_MIN_H) return;
 
   playlist.style.maxHeight = available + 'px';
+  const metadataLines = [...dock.querySelectorAll('.ytp-mf-meta > *')]
+    .map(el => el.getBoundingClientRect())
+    .filter(rect => rect.width > 0 && rect.height > 0);
+  const metadataTop = metadataLines.length
+    ? Math.min(...metadataLines.map(rect => rect.top))
+    : buttonRect.top;
+  const lowerTop = Math.min(buttonRect.top, metadataTop);
+  dock.style.setProperty('--mf-lyric-lower-clearance', Math.ceil(dockRect.bottom - lowerTop + 12) + 'px');
   dock.classList.add('dock-show-playlist');
+  ytpMfLayoutLyrics();
 }
 
 function ytpDockSchedulePlaylistSync() {
@@ -7402,13 +7533,14 @@ function ytpApplyDockHeight() {
   const el = document.getElementById('ytp-mini-footer');
   if (!el || !ytPlayerEl || !_ytpMinimized) return;
   const min = ytpDockMinH();
-  // Leave enough vertical drag range for a square player to reach 50vw. On a
-  // short/wide screen the viewport-height guard still keeps the page usable.
-  const maxForHalfWidth = Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW + 36);
-  const max = Math.max(min, Math.min(Math.round(window.innerHeight * 0.75), maxForHalfWidth));
+  // The dock may use at most half of the live browser viewport. The minimum
+  // remains the floor on exceptionally short windows so its controls cannot
+  // be crushed below their resting layout.
+  const max = Math.max(min, Math.floor(ytpDockViewportH() * 0.5));
   const h = _ytpDockH == null ? min : Math.min(Math.max(_ytpDockH, min), max);
   _ytpDockH = h;
   el.style.height = h + 'px';
+  ytpDockSetPageInset(h);
   const extra = Math.max(0, h - min);
   const bodyBase = ytpIsMob() ? 56 : 76;
   const mfBody = Math.min(Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW), bodyBase + extra);
@@ -7422,27 +7554,19 @@ function ytpApplyDockHeight() {
   const wantVideo = extra >= YTP_DOCK_VIDEO_EXTRA;
   if (wantVideo !== _ytpDockVideoOn) {
     _ytpDockVideoOn = wantVideo;
-    // Keep the iframe mounted and only reveal/conceal it, preserving playback.
+    // Keep the iframe mounted, but leave the thumbnail over it until its new
+    // dock-sized surface has painted.
     ytpDockClaimFrame();
-    const art = document.getElementById('ytp-mf-art');
-    if (art) art.style.display = wantVideo ? 'none' : '';
   }
   if (wantVideo) {
-    const frame = ytPlayerEl.querySelector('.yt-player-frame');
-    if (frame) {
-      const box = document.getElementById('ytp-mf-video-slot')?.getBoundingClientRect();
-      frame.style.position = 'fixed';
-      frame.style.left = (box?.left || 0) + 'px';
-      frame.style.top = (box?.top || 0) + 'px';
-      frame.style.width = (box?.width || mfBody) + 'px';
-      frame.style.height = mfBody + 'px';
-      frame.style.minHeight = '0';
-      frame.style.zIndex = '4991';
-      frame.style.pointerEvents = 'auto';
-      const iframe = frame.querySelector('iframe');
-      if (iframe) iframe.style.height = mfBody + 'px';
-    }
+    // Both the dock and art/video box animate. Track their real rectangle for
+    // the whole transition instead of freezing the iframe at the first frame.
+    ytpDockScheduleVideoGeometry();
   } else {
+    ytpDockMaskVideo();
+    if (_ytpDockVideoGeometryFrame) cancelAnimationFrame(_ytpDockVideoGeometryFrame);
+    _ytpDockVideoGeometryFrame = 0;
+    _ytpDockVideoGeometryUntil = 0;
     const frame = ytPlayerEl.querySelector('.yt-player-frame');
     if (frame) {
       frame.style.position = 'fixed';
@@ -7522,6 +7646,7 @@ function showYtpMiniFooter() {
 function hideYtpMiniFooter() {
   const el = document.getElementById('ytp-mini-footer');
   if (el) el.classList.remove('open');
+  ytpDockSetPageInset(0);
   const pane = document.getElementById('ytp-mf-lyrics-pane');
   if (pane) pane.classList.remove('show');
   ytpMfStopProgress();
@@ -11104,6 +11229,12 @@ function ytpSyncFsMode() {
 window.addEventListener('resize', () => {
   if (_ytpFs) { ytpSyncFsMode(); ytpUpdateFsLayout(); }
   else if (_ytpMinimized) { _ytpDockMinHCache = null; ytpApplyDockHeight(); }
+}, { passive: true });
+window.visualViewport?.addEventListener('resize', () => {
+  if (!_ytpFs && _ytpMinimized) {
+    _ytpDockMinHCache = null;
+    ytpApplyDockHeight();
+  }
 }, { passive: true });
 
 
