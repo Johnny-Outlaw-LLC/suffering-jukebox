@@ -5872,7 +5872,9 @@ function showYTQueueChoice(videoId, title, trackId, triggerEl) {
 
 function ytQueueItem(videoId, title, trackId, artistName) {
   const tid = trackId || null;
-  const meta = tid ? ytpTrackMeta(tid, title) : null;
+  // Pass videoId through: this row is being built for that video, and at this
+  // point it is not in ytQueue yet for ytpTrackMeta to find on its own.
+  const meta = tid ? ytpTrackMeta(tid, title, videoId) : null;
   const item = {
     videoId,
     title: title || meta?.title || 'Track',
@@ -5881,7 +5883,14 @@ function ytQueueItem(videoId, title, trackId, artistName) {
   };
   if (meta?.album) item.album = meta.album;
   if (meta?.year) item.year = meta.year;
-  if (meta?.artwork && meta.artwork !== '/favicon.png') item.artwork = meta.artwork;
+  let art = (meta?.artwork && meta.artwork !== '/favicon.png') ? meta.artwork : '';
+  // Repair rows saved before the fix above: a YouTube thumbnail belonging to
+  // some other video is never this song's artwork, whatever the cache says.
+  const wrongThumb = art.match(/i\.ytimg\.com\/vi\/([^/]+)\//);
+  if (wrongThumb && videoId && wrongThumb[1] !== videoId) {
+    art = 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg';
+  }
+  if (art) item.artwork = art;
   return item;
 }
 
@@ -7908,7 +7917,7 @@ function ytKickMobilePlay() {
 }
 
 // ── Mobile background playback (Media Session + keepalive) ─────
-function ytpTrackMeta(trackId, fallbackTitle) {
+function ytpTrackMeta(trackId, fallbackTitle, videoIdHint) {
   if (!trackId) {
     return { title: fallbackTitle || 'Suffering Jukebox', artist: 'Silver Jews', album: '', artwork: '/favicon.png' };
   }
@@ -7935,7 +7944,18 @@ function ytpTrackMeta(trackId, fallbackTitle) {
   // Cover first, then whatever the album resolver can find, then the video's own
   // thumbnail (or a constructed YouTube thumb from the queue video id) - never
   // leave the mini bar on the app favicon when a track is actually playing.
-  const qVid = (qItem && qItem.videoId) || (typeof ytVideoId !== 'undefined' ? ytVideoId : null) || null;
+  // The global ytVideoId is whatever is playing RIGHT NOW, so it may only
+  // stand in for this track when this track is the one playing. It used to be
+  // taken unconditionally, and ytPlayNow builds the new queue row before it
+  // reassigns ytVideoId - so a song picked while something else was playing got
+  // stamped with the PREVIOUS video's thumbnail, and that stamp stuck to the
+  // queue row and the meta cache until a reload. Callers that already know the
+  // video (ytQueueItem does) pass it in instead.
+  const qVid = (qItem && qItem.videoId)
+    || videoIdHint
+    || ((typeof nowPlayingTrackId !== 'undefined' && nowPlayingTrackId === trackId
+         && typeof ytVideoId !== 'undefined') ? ytVideoId : null)
+    || null;
   const art = (cache && cache.artwork)
     || (qItem && qItem.artwork)
     || (albumName ? ALBUM_ART[albumName] : null)
@@ -20020,6 +20040,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Fixed the wrong album cover showing in the player. Picking a song while something else was playing stamped the previous song’s picture onto the new one, and it stayed wrong until you reloaded the page. It was most obvious in the small dock, where the cover is the biggest thing on screen.',
     'New: a proper Help page at sufferingjukebox.stream/help, with pictures. It covers finding music, playing it, the five jukebox views and what the chart bars measure, playlists, importing a song or a playlist or a whole discography, keeping music public or private, fixing what you added, lyrics, the Online Jukebox, sharing and exporting pictures, and how the site actually works. The ? button at the top of the screen and Help in the account menu both open it.',
     'The old FAQ window is gone. It had drifted out of date - it still described a row of chart buttons that was removed, and called Import Music by a name it has not had for months - and a window that cannot be linked to is a window nobody can send anybody.',
     'The About page has been rewritten. It still tells the Silver Jews and Purple Mountains story the site is named after, but it now says what the site has become: a jukebox that anyone can add to, with music from more than 170 artists.',
