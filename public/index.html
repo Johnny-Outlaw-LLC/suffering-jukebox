@@ -1437,6 +1437,12 @@ body.light .sc-link:hover { background: #e8e8e8; }
 .yt-player-header:active { cursor: grabbing; }
 .ytp-icon { color: #ff4444; font-size: .65rem; flex-shrink: 0; }
 .ytp-title { flex: 1; font-size: .55rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: clip; }
+/* Transport glyphs are drawn everywhere they appear. The ⏮ / ⏸ / ⏭
+   characters get emoji presentation on iOS, which turned every one of these
+   into a blue plastic button on a phone. */
+.sj-tr-btn { display: inline-flex; align-items: center; justify-content: center; gap: .5em; }
+.sj-tr-ic { display: inline-flex; align-items: center; justify-content: center; }
+.sj-tr-ic svg, .sjm-ic svg { width: 1.25em; height: 1.25em; display: block; }
 .ytp-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; font-size: .6rem; padding: 2px 7px; border-radius: 5px; transition: color .1s, border-color .1s; line-height: 1.5; white-space: nowrap; font-family: var(--mono); }
 .ytp-btn:hover { color: var(--text); border-color: var(--text-muted); }
 .ytp-report-btn { }
@@ -1483,7 +1489,14 @@ textarea.report-input { resize:vertical; }
 .wn-items { margin:6px 0 0; padding-left:16px; display:flex; flex-direction:column; gap:5px; }
 .wn-items li { font-size:.6rem; color:var(--text); line-height:1.5; }
 #updates-body .ai-card[onclick]:hover { border-color:var(--accent); }
-.ytp-playpause-btn { padding: 2px 8px; font-size: .65rem; }
+.ytp-prev-btn, .ytp-next-btn, .ytp-playpause-btn { display: inline-flex; align-items: center; justify-content: center; }
+.ytp-prev-btn svg, .ytp-next-btn svg, .ytp-playpause-btn svg { width: 13px; height: 13px; display: block; }
+/* Play/pause is the filled one here too, matching the dock and the phone deck. */
+.ytp-playpause-btn {
+  padding: 4px 9px; font-size: .65rem; border-radius: 999px;
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.ytp-playpause-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; filter: brightness(1.1); }
 #ytp-vote-btn { font-size: .6rem; }
 .ytp-block-btn:hover { color: #ef4444; border-color: #ef4444; }
 .ytp-titlebar-btns { display: flex; align-items: center; flex-shrink: 0; }
@@ -1883,6 +1896,14 @@ textarea.report-input { resize:vertical; }
      nothing. display:contents lets the toggle drop onto its own line only
      when it actually appears. */
   .ytp-mf-bottom { display: contents; }
+  /* The bars are frozen on the bottom edge: the artwork row takes every pixel
+     a drag adds and the scrubber and buttons stay where they are. */
+  .ytp-mf-main { grid-template-rows: minmax(56px, 1fr) auto auto auto; }
+  .ytp-mf-art-wrap { max-height: 100%; }
+  /* The lyric window is two lines on a phone whatever the dock's height.
+     Tying it to --mf-body meant a drag grew the artwork AND the lyrics, so
+     the content outgrew the dock and the bottom row was clipped away. */
+  .ytp-mf-lyr, .ytp-mf-lyr-view { height: 56px; }
   /* The lyric toggle only exists for tracks that have synced words. Span it
      across the grid so it takes a row of its own when it appears instead of
      opening a column and stealing width from the row of buttons. */
@@ -5658,9 +5679,9 @@ function openYTPlayer(videoId, title, trackId, ev) {
         </div>
       </div>
       <div class="ytp-toolbar-row" style="display:flex;align-items:center;flex-wrap:wrap;row-gap:4px;gap:5px;padding:2px 8px 6px 10px">
-        <button class="ytp-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">⏮</button>
-        <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">⏭</button>
-        <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">⏸</button>
+        <button class="ytp-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.prev}</button>
+        <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.next}</button>
+        <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.pause}</button>
         <button type="button" class="ytp-live-badge" id="ytp-live-badge" title="This player is on air. Click to see who is listening." onmousedown="event.stopPropagation()" onclick="sjjToggleListeners();event.stopPropagation()"><span class="dot"></span>Broadcasting Live</button>
         <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen, {user:true});event.stopPropagation()">Lyrics</button>
         <button type="button" class="ytp-tog" id="ytp-shuffle-tog" title="Shuffle queue" onmousedown="event.stopPropagation()" onclick="setYtShuffleEnabled(!ytShuffle);event.stopPropagation()">Shuffle</button>
@@ -6416,7 +6437,10 @@ function ytpSyncVolumeSlider() {
 
 function ytpSetPlayPauseIcon(playing) {
   const btn = document.getElementById('ytp-playpause-btn');
-  if (btn) { btn.textContent = playing ? '⏸' : '▶'; btn.title = playing ? 'Pause' : 'Play'; }
+  if (btn) {
+    btn.innerHTML = playing ? YTP_DECK_ICONS.pause : YTP_DECK_ICONS.play;
+    btn.title = playing ? 'Pause' : 'Play';
+  }
   const mfBtn = document.getElementById('ytp-mf-playpause');
   if (mfBtn) {
     mfBtn.innerHTML = playing ? YTP_DECK_ICONS.pause : YTP_DECK_ICONS.play;
@@ -12040,7 +12064,7 @@ function sjmRenderRoot() {
       (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
     '</button>' +
     '<button class="sjm-item" onclick="sjmPlayNext()">' +
-      '<span class="sjm-ic">⏭</span><span class="sjm-label">Play this song next</span></button>' +
+      '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play this song next</span></button>' +
     (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore ' + escHtml(navArtist.name || 'Artist') + ' Jukebox</span></button>'
@@ -12050,7 +12074,7 @@ function sjmRenderRoot() {
       '<span class="sjm-sub">›</span></button>' +
     (googleUser
       ? '<button class="sjm-item" onclick="sjmOpenBreak()">' +
-          '<span class="sjm-ic">⏸</span>' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span>' +
           '<span class="sjm-label">' + (blocked ? 'Blocked · manage' : (isTrackOnBreak(tid) ? ('On break until ' + sjBreakUntilLabel(tid)) : 'Take a break from this song')) + '</span>' +
           '<span class="sjm-sub">›</span></button>'
       : '') +
@@ -12145,7 +12169,7 @@ function sjmOpenBreak() {
       : '<div class="sjm-empty">Skip this song in shuffle and the queue. You can still play it yourself.</div>') +
     (blocked ? '' : SJ_BREAK_OPTS.map(o =>
       '<button class="sjm-item" onclick="sjmSetBreak(' + o.days + ')">' +
-        '<span class="sjm-ic">⏸</span><span class="sjm-label">' + o.label + '</span></button>'
+        '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span><span class="sjm-label">' + o.label + '</span></button>'
     ).join('')) +
     '<div class="sjm-sep"></div>' +
     '<button class="sjm-item' + (blocked ? '' : ' sjm-danger') + '" onclick="sjmBlock()">' +
@@ -14924,37 +14948,12 @@ async function playlistChartAutoLyrics() {
 
 function playlistChartPaintTransport() {
   if (viewMode !== 'playlistchart') return;
-  const active = playlistChartIsLive();
-  const playing = active && ytpIsPlaying();
-  const ppBtn = document.getElementById('pl-wall-playpause-btn');
-  const nextBtn = document.getElementById('pl-wall-next-btn');
-  if (ppBtn) {
-    ppBtn.disabled = !playlistChartBaseQueue.length;
-    ppBtn.textContent = playing ? '⏸ Pause' : '▶ Play';
-    ppBtn.classList.toggle('on', !!playing);
-  }
-  if (nextBtn) {
-    const hasNext = active && (ytQueue.length > 1 || ytRepeat);
-    nextBtn.disabled = !hasNext;
-  }
-}
-
-function playlistChartTransportToggle() {
-  if (!playlistChartBaseQueue.length) return;
-  if (!playlistChartIsLive()) {
-    playlistChartPlay();
-    return;
-  }
-  ytTogglePlayPause();
-}
-
-function playlistChartTransportNext() {
-  if (!playlistChartBaseQueue.length) return;
-  if (!playlistChartIsLive()) {
-    playlistChartPlay();
-    return;
-  }
-  ytNextTrack();
+  // Play / pause and next live in the player, which is on screen the moment
+  // anything is playing. Repeating them here left two controls claiming to
+  // own the same queue. The wall only needs the one thing the player cannot
+  // do: start this playlist.
+  const startBtn = document.getElementById('pl-wall-start-btn');
+  if (startBtn) startBtn.disabled = !playlistChartBaseQueue.length;
 }
 
 function playlistChartQueue() {
@@ -15894,7 +15893,7 @@ function renderPlaylistChart(error) {
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
   const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
   const statsHTML = plWallSummaryHTML();
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play" id="pl-wall-playpause-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartTransportToggle()">▶ Play</button><button type="button" class="pl-wall-tog" id="pl-wall-next-btn" disabled onclick="playlistChartTransportNext()">⏭ Next</button></div></div></div>${body}</section>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button></div></div></div>${body}</section>`;
   playlistChartSyncToCurrent();
   playlistChartPaintTransport();
   plWallLoadReactionCounts(q.map(it => it.trackId));
@@ -20338,6 +20337,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Dragging the player bar taller on a phone no longer pushes the row of buttons off the bottom of the screen. The timeline and the buttons are fixed to the bottom edge and never move now - the artwork takes whatever height you add.',
+    'A playlist page no longer repeats the player’s play, pause and next buttons. There is one button, Start Playlist, because the player itself is on screen the moment anything is playing.',
+    'The previous, play, pause and next buttons in the player window, and the ones inside a song’s ⋯ menu, are drawn the same way as the ones in the player bar. On an iPhone they were coming out as blue plastic emoji.',
     'My Data & Analytics is now one page instead of five tabs. It opens by telling you how many hours of playback it is looking at, between which two dates, and how many songs, artists and albums that covers.',
     'You can now filter your listening by platform - Suffering Jukebox or Spotify - by date range, and by any number of artists and songs at once. Every chart on the page answers to the same filters.',
     'A bar chart shows your listening hours over time, and it sizes itself to the stretch of time you picked: by day for a short range, by week, month or year for longer ones. You can override the scale.',
