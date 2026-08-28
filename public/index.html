@@ -1608,7 +1608,8 @@ textarea.report-input { resize:vertical; }
 }
 .ytp-mf-song.now-playing { color: var(--accent); }
 .ytp-mf-feedback { display: flex; align-items: center; gap: 4px; min-height: 24px; margin-top: 4px; }
-.ytp-mf-feedback #ytp-mf-vote { width: 24px; height: 24px; border-radius: 6px; font-size: .7rem; flex-shrink: 0; }
+.ytp-mf-feedback #ytp-mf-vote,
+.ytp-mf-feedback #ytp-mf-lyrics { width: 24px; height: 24px; border-radius: 6px; font-size: .7rem; flex-shrink: 0; }
 .ytp-mf-reactions { display: flex; flex-direction: row; gap: 4px; flex-shrink: 0; }
 .ytp-mf-reactions .ytp-mf-btn { width: 24px; height: 24px; border-radius: 6px; }
 .ytp-mf-album {
@@ -1832,15 +1833,20 @@ textarea.report-input { resize:vertical; }
   /* Mobile mini bar: title row + big transport row. No windowed chrome —
      restore expands to fullscreen; maximize is unused (hidden). */
   /* Phone: art + header on top, lyrics under it, scrub, big transport last. */
+  /* A 14px strip is a desktop pointer target, not a thumb one. Give the
+     handle real height and paint a wider grip, and lift the dock's own top
+     padding to match so it only ever covers padding. */
+  .ytp-mf-resize { height: 26px; }
+  .ytp-mf-resize::after { width: 52px; height: 5px; border-radius: 3px; }
+  .ytp-mf-resize:active::after { background: var(--accent); }
   .ytp-mini-footer {
     --mf-body: 56px;
-    /* Seven buttons plus their gaps have to cross the narrowest phone, so
-       the window trio is deliberately smaller than the transport. */
-    --mf-btn: clamp(38px, 11.2vw, 46px);
-    --mf-win-btn: clamp(30px, 8.8vw, 36px);
+    /* One square for all seven, sized so they still cross a 320px phone:
+       7 x 36 + 6 x 5 = 282 inside 288px of usable width. */
+    --mf-btn: clamp(36px, 10.5vw, 44px);
     min-height: 0;
     gap: 8px;
-    padding: 16px calc(16px + env(safe-area-inset-right, 0px))
+    padding: 26px calc(16px + env(safe-area-inset-right, 0px))
              calc(14px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
   }
   .ytp-mf-main {
@@ -1870,17 +1876,24 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-right { display: contents; }
   .ytp-mf-top { grid-area: top; justify-content: flex-end; gap: 5px; }
   .ytp-mf-middle { grid-area: middle; justify-content: flex-start; gap: 5px; min-width: 0; }
+  /* The window trio is the same size as the transport - a row of buttons that
+     step down in size halfway along reads as a mistake, not a hierarchy. */
   /* No row of its own on a phone: the font slider is hidden here and the
      lyric toggle is usually hidden too, so a real row cost 10px of dock for
      nothing. display:contents lets the toggle drop onto its own line only
      when it actually appears. */
   .ytp-mf-bottom { display: contents; }
+  /* The lyric toggle only exists for tracks that have synced words. Span it
+     across the grid so it takes a row of its own when it appears instead of
+     opening a column and stealing width from the row of buttons. */
+  #ytp-mf-lyrics { grid-column: 1 / -1; justify-self: end; }
   /* The scrubber is in the flow on a phone, so the band the desktop dock
      reserves underneath it is dead space here. */
   .ytp-mf-main { padding-bottom: 0; }
   .ytp-mf-lyr { grid-area: lyr; margin-left: 0; }
   .ytp-mf-scrub { grid-area: scrub; }
-  .ytp-mf-feedback #ytp-mf-vote { font-size: .85rem; }
+  .ytp-mf-feedback #ytp-mf-vote,
+  .ytp-mf-feedback #ytp-mf-lyrics { font-size: .8rem; }
   .ytp-mf-song   { font-size: .78rem; }
   .ytp-mf-artist { font-size: .5rem; }
   .ytp-mf-album  { font-size: .52rem; }
@@ -1891,11 +1904,7 @@ textarea.report-input { resize:vertical; }
      filled, not by being a different size. */
   .ytp-mf-btn { font-size: 1.2rem; border-radius: 14px; }
   .ytp-mf-btn svg { width: 20px; height: 20px; }
-  .ytp-mf-top .ytp-mf-btn {
-    width: var(--mf-win-btn); height: var(--mf-win-btn);
-    border-radius: 11px; font-size: .95rem;
-  }
-  .ytp-mf-top .ytp-mf-btn svg { width: 15px; height: 15px; }
+  .ytp-mf-top .ytp-mf-btn svg { width: 18px; height: 18px; }
   .ytp-mf-sep { display: none !important; }
   /* The window glyphs are drawn at 10px for the desktop title bar - scale them
      up so they carry a button this size. */
@@ -7425,6 +7434,19 @@ function ytpDockReleaseFrame() {
   _ytpDockVideoOn = false;
 }
 
+// Where the lyric toggle lives. On a phone it joins the track's other
+// per-track controls beside the artwork, after the heart buttons: a row of
+// its own cost 51px of dock height for one small button, on the surface with
+// the least height to spare.
+function ytpDockPlaceLyricBtn() {
+  const btn = document.getElementById('ytp-mf-lyrics');
+  if (!btn) return;
+  const host = document.querySelector(ytpIsMob()
+    ? '#ytp-mini-footer .ytp-mf-feedback'
+    : '#ytp-mini-footer .ytp-mf-bottom');
+  if (host && btn.parentNode !== host) host.appendChild(btn);
+}
+
 function ytpArrangeDockControls() {
   const right = document.querySelector('#ytp-mini-footer .ytp-mf-right');
   if (!right || right.classList.contains('arranged')) return;
@@ -7451,8 +7473,15 @@ function ytpArrangeDockControls() {
     bottom.appendChild(slot);
   }
   if (lyrics) bottom.appendChild(lyrics);
+  ytpDockPlaceLyricBtn();
   // Swap the typed arrows for the deck's drawn ones. Play/pause is repainted
   // by ytpSetPlayPauseIcon from here on, so only seed it.
+  // The original containers are left holding nothing once their buttons move
+  // into the rows above. On a phone .ytp-mf-right is display:contents, so an
+  // empty leftover is still a grid item and opens an implicit column - which
+  // is what pulled the window buttons in off the dock's right edge.
+  const stale = right.querySelector(':scope > .ytp-mf-win');
+  if (stale && !stale.children.length) stale.style.display = 'none';
   const glyph = (id, icon) => { const el = document.getElementById(id); if (el) el.innerHTML = icon; };
   glyph('ytp-mf-prev', YTP_DECK_ICONS.prev);
   glyph('ytp-mf-next', YTP_DECK_ICONS.next);
@@ -7543,6 +7572,7 @@ function ytpApplyDockHeight() {
   const mfBody = Math.min(Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW), bodyBase + extra);
   el.style.setProperty('--mf-body', mfBody + 'px');
   el.classList.toggle('dock-grown', extra > 16);
+  ytpDockPlaceLyricBtn();
   ytpPaintDockPlaylist();
   requestAnimationFrame(() => {
     ytpDockSyncFontControl();
@@ -7756,18 +7786,24 @@ function ytpMfApplyLyricStrip() {
     btn.classList.toggle('on', _mfLyricStripOn);
     btn.title = _mfLyricStripOn ? 'Hide lyrics' : 'Show lyrics';
   }
-  // The font row joins and leaves the button stack with the lyric strip, and
-  // the stack is what the dock's resting height is measured from.
+  // Showing the strip adds a row on a phone and a font-size row to the
+  // desktop button stack, and the dock's resting height is measured from
+  // both. Without this the dock keeps the height it was measured at and
+  // simply clips its own bottom row, which is what cut the buttons off on
+  // an iPhone.
+  const paneWas = pane ? pane.classList.contains('show') : false;
   const slotWas = fontSlot ? fontSlot.style.display : null;
   if (fontSlot) fontSlot.style.display = visible ? 'flex' : 'none';
-  if (fontSlot && slotWas !== fontSlot.style.display && _ytpMinimized && !ytpIsMob()) {
-    _ytpDockMinHCache = null;
-    requestAnimationFrame(ytpApplyDockHeight);
-  }
   if (pane) {
     pane.classList.toggle('show', visible);
     const sl = document.querySelector('.mf-lyr-font-slider');
     if (sl) sl.value = globalLyricSize;
+  }
+  const layoutChanged = paneWas !== visible
+    || (fontSlot && slotWas !== fontSlot.style.display);
+  if (layoutChanged && _ytpMinimized) {
+    _ytpDockMinHCache = null;
+    requestAnimationFrame(ytpApplyDockHeight);
   }
   if (visible) {
     if (_mfLyrBuiltFor !== nowPlayingTrackId) ytpMfBuildLyrics(nowPlayingTrackId);
@@ -20302,6 +20338,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Turning lyrics on in the player bar on a phone no longer pushes the row of buttons off the bottom of the screen. The bar grows to fit them instead of hiding them under the edge.',
+    'More, full screen and close in the player bar are now the same size as play, previous, next and shuffle rather than noticeably smaller, and the whole row reaches the right edge of the screen.',
+    'The drag handle along the top of the player bar is easier to catch with a thumb: a taller grab area and a wider grip.',
+    'The lyrics button sits beside the thumbs up and the hearts on a phone instead of taking a whole row to itself.',
     'The player bar’s play, pause, previous, next and shuffle buttons are drawn properly now, the same way the full screen player draws them. Play and pause is a filled orange circle instead of a grey square with a typed arrow in it.',
     'On a phone every button in the player bar sits on one row: play, previous, next and shuffle from the left, then More, full screen and close on the right. They used to be split across two rows, which cost a whole row of height for three small buttons.',
     'The player bar now rests just clear of its own buttons instead of leaving a band of empty space underneath them, and the album picture no longer sits directly on top of the timeline.',
