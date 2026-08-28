@@ -1588,19 +1588,22 @@ textarea.report-input { resize:vertical; }
 .ytp-mini-footer.dock-grown .ytp-mf-main {
   /* The video grows, but the metadata beside it keeps its resting usable width. */
   grid-template-columns: calc(var(--mf-body) + 251px) minmax(160px, 1fr) minmax(112px, 176px);
-  /* Title + art stay on the bottom edge; transport and the playlist hang from the top. */
+  /* Title + art stay on the bottom edge with the transport. */
   align-items: end;
 }
 
 /* ── Left: art + header ── */
 .ytp-mf-now { grid-area: now; display: flex; align-items: center; gap: 11px; min-width: 0; }
 .ytp-mf-art-wrap { position: relative; width: var(--mf-body); height: var(--mf-body); flex-shrink: 0; transition: width .12s, height .12s; }
+/* Versions sits on top of the video frame so overflow:hidden on the dock
+   cannot clip it the way an above-the-art popout did. */
 .ytp-mf-ver-slot {
-  display:none; position:absolute; left:0; right:0; bottom:calc(100% + 5px); z-index:7;
+  display:none; position:absolute; left:5px; right:5px; top:5px; z-index:7;
+  pointer-events:none;
 }
 .ytp-mf-ver-slot:not([hidden]) { display:block; }
 .ytp-mf-ver-btn {
-  display:block; width:100%; box-sizing:border-box;
+  display:block; width:100%; box-sizing:border-box; pointer-events:auto;
   border:1px solid var(--accent); border-radius:6px; background:rgba(13,10,16,.92);
   color:var(--accent); font-family:var(--mono); font-size:.48rem; font-weight:700;
   letter-spacing:.02em; padding:4px 7px; cursor:pointer; white-space:nowrap;
@@ -1616,7 +1619,7 @@ textarea.report-input { resize:vertical; }
 /* The real fullscreen iframe stays mounted behind the thumbnail throughout a
    docked session. Past the resize threshold only the thumbnail is hidden, so
    changing modes cannot interrupt playback. */
-.ytp-mf-video-slot { position: absolute; inset: 0; display: none; border-radius: 6px; overflow: hidden; background: #000; }
+.ytp-mf-video-slot { position: absolute; inset: 0; display: none; border-radius: 6px; overflow: hidden; background: #000; z-index: 1; }
 .ytp-mf-video-slot .yt-player-frame { flex: none !important; min-height: 0 !important; width: 100% !important; height: 100% !important; }
 .ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0; flex: 1; }
 .ytp-mini-footer.dock-grown .ytp-mf-now { align-items: flex-end; }
@@ -1669,13 +1672,9 @@ textarea.report-input { resize:vertical; }
   #ytp-mini-footer .ytp-mf-right {
     position: absolute; right: 16px; bottom: 30px; z-index: 6;
   }
-  /* Grown dock: hang the transport from the top so the middle stays clear for lyrics. */
-  #ytp-mini-footer.dock-grown .ytp-mf-right {
-    top: 14px; bottom: auto; align-items: flex-end;
-  }
-  /* Lyrics stay in the middle band beside the title. */
+  /* Lyrics fill the middle band between title and transport, centred in that gap. */
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr.show {
-    align-self: end;
+    align-self: center;
     height: var(--mf-body);
   }
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: var(--mf-body); }
@@ -1748,16 +1747,17 @@ textarea.report-input { resize:vertical; }
    active line sits in the same slot every time, which is what reads as
    scrolling rather than flashing. */
 .ytp-mf-lyr {
-  grid-area: lyr; min-width: 0; display: none; align-items: center; gap: 10px;
+  grid-area: lyr; min-width: 0; display: none; align-items: center; justify-content: center; gap: 10px;
   height: var(--mf-body); cursor: default;
 }
 .ytp-mf-lyr.show { display: flex; }
 .ytp-mini-footer.dock-grown .ytp-mf-lyr {
-  align-self: end; width: 100%; justify-self: stretch;
-  padding-left: 4px;
+  align-self: center; width: 100%; justify-self: stretch;
+  padding: 0 8px;
 }
 .ytp-mf-lyr-view {
   flex: 1; min-width: 0; height: var(--mf-body); overflow: hidden;
+  text-align: center;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
           mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
 }
@@ -1765,14 +1765,15 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-lyr-line {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--text-muted); opacity: .4; font-weight: 600;
+  text-align: center;
   transition: opacity .22s ease, color .22s ease;
 }
 .ytp-mf-lyr-line.on { color: var(--accent); opacity: 1; }
-.ytp-mf-lyr-empty { font-size: .55rem; color: var(--text-muted); opacity: .6; }
+.ytp-mf-lyr-empty { font-size: .55rem; color: var(--text-muted); opacity: .6; text-align: center; }
 
 /* ── Right: transport + window buttons ── */
 .ytp-mf-right { grid-area: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
-.ytp-mini-footer.dock-grown .ytp-mf-right { align-self: start; align-items: flex-end; }
+.ytp-mini-footer.dock-grown .ytp-mf-right { align-self: end; align-items: flex-end; }
 .ytp-mf-playlist {
   display:none; position:absolute; top:14px; right:16px; width:min(270px,22vw);
   overflow:auto; padding:8px 10px; box-sizing:border-box;
@@ -7616,7 +7617,7 @@ function ytpDockSyncFontControl() {
 }
 
 // The playlist hangs above the artist / title column. Measure down to that
-// band (not the button stack, which now lives at the top when the dock is grown).
+// band so it never covers the title while the transport stays bottom-right.
 function ytpDockSyncPlaylist() {
   const dock = document.getElementById('ytp-mini-footer');
   const playlist = document.getElementById('ytp-mf-playlist');
@@ -21147,6 +21148,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'In the tall dock, play controls sit bottom-right again, lyrics sit centred in the space between the title and those buttons, and the Versions control sits on the video instead of getting clipped off the top of the bar.',
     'Opening a live jukebox from Explore Playlists no longer joins the host playlist automatically. You can browse the set first: the song playing now is highlighted on the wall and named under the title.',
     'Join Now is an orange button on a live room. It explains that joining takes over your playlist to follow the host, lists that room\'s permissions, and asks whether to mute your speakers if you are in the same room as the host.',
     'While you are listening along, the Listening bar has a Mute toggle beside Leave Room.',
