@@ -1588,6 +1588,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mini-footer.dock-grown .ytp-mf-main {
   /* The video grows, but the metadata beside it keeps its resting usable width. */
   grid-template-columns: calc(var(--mf-body) + 251px) minmax(160px, 1fr) minmax(112px, 176px);
+  /* Title + art stay on the bottom edge; transport and the playlist hang from the top. */
   align-items: end;
 }
 
@@ -1668,13 +1669,23 @@ textarea.report-input { resize:vertical; }
   #ytp-mini-footer .ytp-mf-right {
     position: absolute; right: 16px; bottom: 30px; z-index: 6;
   }
-  /* Lyrics stay in the middle band beside the title / transport. The queue
-     takes the upper-right above that title bar rather than pushing lyrics up. */
+  /* Grown dock: hang the transport from the top so the middle stays clear for lyrics. */
+  #ytp-mini-footer.dock-grown .ytp-mf-right {
+    top: 14px; bottom: auto; align-items: flex-end;
+  }
+  /* Lyrics stay in the middle band beside the title. */
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr.show {
     align-self: end;
     height: var(--mf-body);
   }
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: var(--mf-body); }
+  /* Playlist sits above the artist / title column (left of lyrics), not the top-right. */
+  #ytp-mini-footer.dock-show-playlist .ytp-mf-playlist {
+    left: calc(16px + var(--mf-body) + 11px);
+    right: auto;
+    width: 240px;
+    top: 14px;
+  }
 }
 .ytp-mf-scrub-time {
   font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
@@ -1761,13 +1772,12 @@ textarea.report-input { resize:vertical; }
 
 /* ── Right: transport + window buttons ── */
 .ytp-mf-right { grid-area: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
-.ytp-mini-footer.dock-grown .ytp-mf-right { align-self: end; align-items: flex-end; }
+.ytp-mini-footer.dock-grown .ytp-mf-right { align-self: start; align-items: flex-end; }
 .ytp-mf-playlist {
   display:none; position:absolute; top:14px; right:16px; width:min(270px,22vw);
   overflow:auto; padding:8px 10px; box-sizing:border-box;
   background:color-mix(in srgb,var(--bg-card) 94%,transparent);
   border:1px solid var(--border); border-radius:8px; scrollbar-width:thin;
-  /* Sit above the title / transport band; lyrics keep the middle column. */
   z-index:5;
 }
 .ytp-mini-footer.dock-show-playlist .ytp-mf-playlist { display:block; }
@@ -7558,25 +7568,25 @@ function ytpDockSyncFontControl() {
   ytpArrangeDockControls();
 }
 
-// The button stack changes height and position as the dock grows. Measure its
-// real top edge rather than guessing from the resize amount: the playlist is
-// allowed to appear only when a useful panel fits above it with a 20px gap.
+// The playlist hangs above the artist / title column. Measure down to that
+// band (not the button stack, which now lives at the top when the dock is grown).
 function ytpDockSyncPlaylist() {
   const dock = document.getElementById('ytp-mini-footer');
   const playlist = document.getElementById('ytp-mf-playlist');
-  const buttons = dock?.querySelector('.ytp-mf-right');
+  const now = dock?.querySelector('.ytp-mf-now');
   if (!dock || !playlist) return;
 
   dock.classList.remove('dock-show-playlist');
   playlist.style.maxHeight = '';
-  if (!_ytpMinimized || ytpIsMob() || ytQueue.length <= 1 || !buttons) return;
+  if (!_ytpMinimized || ytpIsMob() || ytQueue.length <= 1 || !now) return;
+  if (!dock.classList.contains('dock-grown')) return;
 
   const dockRect = dock.getBoundingClientRect();
-  const buttonRect = buttons.getBoundingClientRect();
-  const playlistTop = parseFloat(getComputedStyle(playlist).top) || 0;
+  const nowRect = now.getBoundingClientRect();
+  const playlistTop = parseFloat(getComputedStyle(playlist).top) || 14;
   // Keep one extra physical pixel so fractional browser geometry can never
   // round the requested 20px clearance down to 19px.
-  const available = Math.floor(buttonRect.top - dockRect.top - playlistTop - YTP_DOCK_PLAYLIST_GAP - 1);
+  const available = Math.floor(nowRect.top - dockRect.top - playlistTop - YTP_DOCK_PLAYLIST_GAP - 1);
   if (available < YTP_DOCK_PLAYLIST_MIN_H) return;
 
   playlist.style.maxHeight = available + 'px';
@@ -7598,11 +7608,11 @@ function ytpDockSchedulePlaylistSync() {
 function ytpDockObservePlaylistLayout() {
   if (_ytpDockPlaylistObserver || typeof ResizeObserver === 'undefined') return;
   const dock = document.getElementById('ytp-mini-footer');
-  const buttons = dock?.querySelector('.ytp-mf-right');
-  if (!dock || !buttons) return;
+  const now = dock?.querySelector('.ytp-mf-now');
+  if (!dock || !now) return;
   _ytpDockPlaylistObserver = new ResizeObserver(ytpDockSchedulePlaylistSync);
   _ytpDockPlaylistObserver.observe(dock);
-  _ytpDockPlaylistObserver.observe(buttons);
+  _ytpDockPlaylistObserver.observe(now);
 }
 
 // Applies the current (clamped) dock height and swaps thumbnail ⟷ video as
@@ -20850,6 +20860,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'When the dock is pulled tall, the current playlist sits above the artist and title on the left, and the play controls hang from the top instead of the bottom, so the lyrics keep the middle.',
     'In the docked player, ⋯ sits beside the heartbreak button, the lyric size slider sits under the thumbs, and lyrics always show when a song has them - the note button that turned them off is gone.',
     'The docked player now shows Up Next under the skip buttons, the same preview the full-screen player has, and when the video grows large enough a Versions menu appears above it so you can switch uploads without leaving the dock.',
     'When the dock grows tall enough for the current playlist, that list sits above the title bar and the lyrics stay in the middle, instead of stacking up over the song name.',
