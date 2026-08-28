@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
       let query = createSjClient()
         .from("track_reactions")
         .select("track_id")
-        .eq("reaction", "heart");
+        .in("reaction", [...REACTIONS]);
       query = userId ? query.eq("user_id", userId) : query.eq("device_id", device!);
       const { data, error } = await query.limit(5000);
       if (error) throw error;
