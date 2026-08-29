@@ -4636,7 +4636,10 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
     <div class="pl-modal-body" style="gap:.75rem">
       <input class="pl-input" id="pls-name-input" maxlength="80" placeholder="Playlist name" autocomplete="off"
         onkeydown="if(event.key==='Enter'){event.preventDefault();savePlaylistSettings()}">
-      <div class="pl-toggle-row"><button type="button" class="pl-toggle" id="pls-pub-toggle" onclick="this.classList.toggle('on')"></button><span class="pl-toggle-lbl">Make public</span></div>
+      <label class="pl-toggle-lbl" for="pls-access-mode">Who can open this playlist?</label>
+      <select class="pl-input" id="pls-access-mode" onchange="playlistShareModeChanged()"><option value="private">Only me</option><option value="shared">Specific people</option><option value="link">Anyone with the link</option><option value="public">Public — appears in Explore</option></select>
+      <div id="pls-share-people" style="display:none"><div style="display:flex;gap:.4rem"><input class="pl-input" id="pls-share-email" type="email" placeholder="person@example.com"><button class="pl-btn" type="button" onclick="playlistInvitePerson()">Add</button></div><div id="pls-share-people-list" style="margin-top:.45rem;font-size:.55rem;color:var(--text-muted)"></div></div>
+      <div id="pls-share-link" style="display:none"><button class="pl-btn ghost" type="button" onclick="playlistCreateLink()">Create / replace link</button><div id="pls-share-link-result" style="margin-top:.45rem;font-size:.52rem;color:var(--text-muted)"></div></div>
     </div>
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closePlaylistSettings()">Cancel</button>
@@ -12133,7 +12136,10 @@ function _sjmScroll(e) {
   if (_sjmScrollGuard) return;
   const t = e && e.target;
   if (t && t.nodeType === 1) {
-    if (t.id === 'ytp-lyr-body' || t.id === 'ytp-lyr-text' ||
+    // The Add to playlist list is intentionally scrollable.  This listener is
+    // capture-phase so its own scroll event reaches window before it can be
+    // stopped anywhere else; treating it as page scroll made long lists close.
+    if (t.closest?.('#sjm-menu') || t.id === 'ytp-lyr-body' || t.id === 'ytp-lyr-text' ||
         t.classList.contains('yt-queue-section') ||
         (typeof t.closest === 'function' && (t.closest('#ytp-lyrics-pane') || t.closest('.yt-queue-wrap') || t.closest('#ytp-up-next-slot')))) {
       return;
@@ -13723,7 +13729,9 @@ function openPlaylistSettings(playlistId) {
   const nameInp = document.getElementById('pls-name-input');
   const pubTog = document.getElementById('pls-pub-toggle');
   if (nameInp) nameInp.value = p.name || '';
-  if (pubTog) pubTog.classList.toggle('on', !!p.is_public);
+  const mode = document.getElementById('pls-access-mode');
+  if (mode) mode.value = p.visibility || (p.is_public ? 'public' : 'private');
+  playlistShareModeChanged();
   document.getElementById('plSettingsOverlay')?.classList.add('open');
   setTimeout(() => nameInp?.focus(), 40);
 }
@@ -13737,13 +13745,15 @@ async function savePlaylistSettings() {
   if (!_plsPlaylistId) return;
   const id = _plsPlaylistId;
   const name = (document.getElementById('pls-name-input')?.value || '').trim();
-  const isPublic = document.getElementById('pls-pub-toggle')?.classList.contains('on') || false;
+  const visibility = document.getElementById('pls-access-mode')?.value || 'private';
+  const isPublic = visibility === 'public';
   if (!name) { document.getElementById('pls-name-input')?.focus(); showToast('Give the playlist a name.'); return; }
   const btn = document.getElementById('pls-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
   try {
-    await dbPatch(`/playlists?id=eq.${id}`, { name, is_public: isPublic });
-    [playlists, _savedPlaylists].forEach(arr => { const p = arr.find(p => p.id === id); if (p) { p.name = name; p.is_public = isPublic; } });
+    await dbPatch(`/playlists?id=eq.${id}`, { name, is_public: isPublic, visibility });
+    await playlistShareRequest({ action:'settings', playlistId:id, visibility });
+    [playlists, _savedPlaylists].forEach(arr => { const p = arr.find(p => p.id === id); if (p) { p.name = name; p.is_public = isPublic; p.visibility = visibility; } });
     if (playlistChartId === id) { playlistChartName = name; renderPlaylistChart(); }
     closePlaylistSettings();
     showToast('Playlist updated.');
@@ -13753,6 +13763,15 @@ async function savePlaylistSettings() {
     if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
   }
 }
+
+async function playlistShareRequest(body) {
+  const { data:{session} } = await sbAuth.auth.getSession();
+  const r = await fetch('/api/playlist-share', { method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${session?.access_token || ''}`}, body:JSON.stringify(body) });
+  const d = await r.json().catch(()=>({})); if (!r.ok || !d.ok) throw new Error(d.error || 'Could not update sharing.'); return d;
+}
+function playlistShareModeChanged() { const m=document.getElementById('pls-access-mode')?.value; document.getElementById('pls-share-people').style.display=m==='shared'?'':'none'; document.getElementById('pls-share-link').style.display=m==='link'?'':'none'; }
+async function playlistInvitePerson() { const email=document.getElementById('pls-share-email')?.value||''; try { await playlistShareRequest({action:'invite',playlistId:_plsPlaylistId,email}); document.getElementById('pls-share-email').value=''; showToast('Playlist shared with '+email); } catch(e) { showToast(e.message); } }
+async function playlistCreateLink() { try { const d=await playlistShareRequest({action:'new-link',playlistId:_plsPlaylistId}); const url=location.origin+'/?playlistShare='+encodeURIComponent(d.token); document.getElementById('pls-share-link-result').innerHTML='Link ready · <button class="pl-btn ghost" onclick="navigator.clipboard.writeText(\''+url+'\');showToast(\'Link copied\')">Copy link</button>'; } catch(e) { showToast(e.message); } }
 
 async function changePlaylistPlayMode(id, mode) {
   try {
@@ -15955,7 +15974,6 @@ function plWallExpandedHTML(row, i) {
       ${stats ? `<div class="pl-wall-exp-stats">${stats}</div>` : ''}
       <div class="pl-wall-exp-actions">
         <button type="button" class="sc-link yt" onclick="plWallPopPlayNow()"${skipped ? ' disabled' : ''}>&#9654; Play Now</button>
-        <button type="button" class="sc-link" onclick="plWallPopQueueNext()"${skipped ? ' disabled' : ''}>+ Queue for Next</button>
         ${blocked ? '<button type="button" class="sc-link sj-block blocked" onclick="plWallPopUnblock()">&#8635; Unblock</button>' : ''}
         <button type="button" class="sc-link" onclick="plWallPopMore(this,event)">+ Playlist &amp; more &#8943;</button>
         <button type="button" class="tvb-cycle pl-wall-exp-rxn${voteClass(vote)}" data-vote-track="${row.trackId}" onclick="cycleVote('${row.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button>
@@ -26330,6 +26348,22 @@ async function hydratePlaylistLink() {
 }
 hydratePlaylistLink();
 
+async function hydratePlaylistShareLink() {
+  const token = new URLSearchParams(location.search).get('playlistShare');
+  if (!token) return;
+  try {
+    const d = await fetch('/api/playlist-share?token=' + encodeURIComponent(token)).then(r => r.json());
+    if (!d.ok) throw new Error(d.error || 'That shared playlist is unavailable.');
+    const info = await resolvePlaylistTracks((d.tracks || []).map(r => r.track_id));
+    const q = (d.tracks || []).map(r => info[r.track_id]?.videoId ? ({ videoId:info[r.track_id].videoId, title:info[r.track_id].name || 'Track', trackId:r.track_id }) : null).filter(Boolean);
+    if (!q.length) throw new Error("Couldn't load this playlist's tracks.");
+    openYTPlayer(q[0].videoId, q[0].title, q[0].trackId); ytQueue=q; ytQueueIdx=0; updateYTQueueUI();
+    try { history.replaceState(null, '', location.pathname); } catch (_) {}
+    showToast('♫ Shared playlist: ' + (d.playlist.name || 'Playlist'));
+  } catch (e) { showToast(e.message || 'Could not open shared playlist.'); }
+}
+hydratePlaylistShareLink();
+
 // Init Google auth after GIS script loads
 window.addEventListener('load', initGoogleAuth);
 
@@ -26983,20 +27017,13 @@ async function loadPlaylists() {
   playlists = []; pubPlaylists = [];
   try {
     const myEmail = googleUser?.email;
-    const all = myEmail
-      ? ((await dbGetAuth('/playlists?order=created_at.desc')) || [])
-      : ((await dbGet('/playlists?is_public=eq.true&order=created_at.desc')) || []);
+    const { data:{session} } = await sbAuth.auth.getSession();
+    const sharedResponse = await fetch('/api/playlist-share', { headers: session ? { Authorization:`Bearer ${session.access_token}` } : {} });
+    const sharedData = await sharedResponse.json();
+    if (!sharedResponse.ok || !sharedData.ok) throw new Error(sharedData.error || 'Could not load playlists.');
+    const all = sharedData.playlists || [];
     playlists    = myEmail ? all.filter(p => p.user_email === myEmail) : [];
     pubPlaylists = all.filter(p => p.is_public && p.user_email !== myEmail);
-    const ids = all.map(p => p.id).join(',');
-    if (ids) {
-      const { data: { session } } = await sbAuth.auth.getSession();
-      const tok = session?.access_token || ANON;
-      const tResp = await fetch(`${REST}/playlist_tracks?playlist_id=in.(${ids})&order=position.asc`,
-        { headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Accept-Profile': 'jukebox' } });
-      const trackRows = await tResp.json();
-      all.forEach(p => { p._tracks = trackRows.filter(r => r.playlist_id === p.id); });
-    } else { all.forEach(p => { p._tracks = []; }); }
     _savedPlaylists = all;
   } catch(e) { _savedPlaylists = []; playlists = []; pubPlaylists = []; }
   return _savedPlaylists;

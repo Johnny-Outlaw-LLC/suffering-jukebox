@@ -11,7 +11,7 @@ type Bucket = "day" | "week" | "month" | "year";
 type BucketMode = "auto" | Bucket;
 type SourceFilter = "all" | "jukebox" | "spotify";
 type Metric = "hours" | "plays";
-type Preset = "all" | "30d" | "90d" | "12m" | "ytd" | "custom";
+type Preset = "all" | "30d" | "90d" | "12m" | "24m" | "ytd" | "custom";
 
 /* A picker starts with everything ticked, so the common shape is "all but
    these four". Saying that as an include list would mean shipping 2,752 names,
@@ -58,6 +58,7 @@ const PRESETS: Array<[Preset, string]> = [
   ["30d", "30 days"],
   ["90d", "90 days"],
   ["12m", "12 months"],
+  ["24m", "Last 2 years"],
   ["ytd", "This year"],
   ["custom", "Custom"],
 ];
@@ -369,7 +370,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const [error, setError] = useState("");
   const [source, setSource] = useState<SourceFilter>("all");
   const [metric, setMetric] = useState<Metric>("hours");
-  const [preset, setPreset] = useState<Preset>("all");
+  const [preset, setPreset] = useState<Preset>("24m");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [artistSel, setArtistSel] = useState<Selection>(ALL);
@@ -388,7 +389,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     const from = new Date(today);
     if (preset === "30d") from.setDate(from.getDate() - 29);
     else if (preset === "90d") from.setDate(from.getDate() - 89);
-    else from.setFullYear(from.getFullYear() - 1);
+    else from.setFullYear(from.getFullYear() - (preset === "24m" ? 2 : 1));
     return { from: ymd(from), to: ymd(today) };
   }, [customFrom, customTo, preset]);
 
@@ -712,45 +713,23 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
           <div className={styles.pair}>
             <section className={styles.card}>
               <div className={styles.cardHead}>
-                <h2>Every day of {calendarYear || calendarYears[0] || ""}</h2>
-                {calendarYears.length > 1 && (
-                  <div className={styles.calYears}>
-                    {calendarYears.map((year) => (
-                      <button
-                        key={year}
-                        type="button"
-                        className={(calendarYear || calendarYears[0]) === year ? styles.segOn : ""}
-                        onClick={() => setCalendarYear(year)}
-                      >{year}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <p className={styles.cardNote}>One square per day, brighter for more listening.</p>
-              <div className={styles.heatWrap}>
-                <div className={styles.calMonths} aria-hidden="true">
-                  {calendar.weeks.map((week, index) => {
-                    const firstOfMonth = week.find((cell) => cell && cell.day.slice(8) === "01");
-                    return <span key={index}>{firstOfMonth ? MONTHS[Number(firstOfMonth.day.slice(5, 7)) - 1] : ""}</span>;
-                  })}
-                </div>
-                <div className={styles.calGrid}>
-                  {calendar.weeks.map((week, weekIndex) => week.map((cell, dayIndex) => (
-                    <i
-                      key={`${weekIndex}:${dayIndex}`}
-                      style={{ background: cell ? heatColor(cell, metricValue(cell, metric) / calendar.max) : "transparent" }}
-                      title={cell ? `${cell.day} · ${describe(cell)}` : undefined}
-                    />
-                  )))}
+                <h2>{metric === "hours" ? "Listening hours over time" : "Plays over time"}</h2>
+                <div className={styles.seg}>
+                  {BUCKET_MODES.map(([value, label]) => (
+                    <button key={value} type="button" className={bucketMode === value ? styles.segOn : ""} onClick={() => setBucketMode(value)}>
+                      {value === "auto" ? `Auto (${bucket})` : label}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className={styles.heatLegend}>
-                <span>Quiet</span>
-                {[0, 0.25, 0.5, 0.75, 1].map((stop) => (
-                  <i key={stop} style={{ background: heatColor(totals, stop) }} />
-                ))}
-                <span>Busiest</span>
+              <p className={styles.readout}>{readout ? <><b>{bucketFullLabel(readout.bucket_start, bucket)}</b> · {describe(readout)}</> : <em>{count(series.length)} {bucket}{series.length === 1 ? "" : "s"} · hover a bar for the exact {bucket}.</em>}</p>
+              <div className={styles.tsBars} onMouseLeave={() => setHover(null)}>
+                {series.map((row, index) => {
+                  const value = metricValue(row, metric); const parts = metricParts(row, metric); const sum = parts.jukebox + parts.spotify || 1;
+                  return <div key={row.bucket_start} className={`${styles.tsBar} ${value ? "" : styles.tsBarZero} ${hover === index ? styles.tsBarOn : ""}`} title={`${bucketFullLabel(row.bucket_start, bucket)} · ${describe(row)}`} onMouseEnter={() => setHover(index)}><i style={{ height: `${Math.max(value > 0 ? 2 : 1, (value / seriesMax) * 100)}%` }}><b className={styles.segJukebox} style={{ height: `${(parts.jukebox / sum) * 100}%` }} /><b className={styles.segSpotify} style={{ height: `${(parts.spotify / sum) * 100}%` }} /></i></div>;
+                })}
               </div>
+              <div className={styles.tsAxis} aria-hidden="true">{series.map((row, index) => <span key={row.bucket_start}>{index % axisStep === 0 ? bucketLabel(row.bucket_start, bucket, seriesSpansYears) : ""}</span>)}</div>
             </section>
 
             <section className={styles.card}>
@@ -789,7 +768,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
             </section>
           </div>
 
-          <section className={styles.card}>
+          {false && <section className={styles.card}>
             <div className={styles.cardHead}>
               <h2>{metric === "hours" ? "Listening hours over time" : "Plays over time"}</h2>
               <div className={styles.seg}>
@@ -802,7 +781,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
             </div>
             <p className={styles.readout}>
               {readout
-                ? <><b>{bucketFullLabel(readout.bucket_start, bucket)}</b> · {describe(readout)}</>
+                ? <><b>{bucketFullLabel(readout!.bucket_start, bucket)}</b> · {describe(readout!)}</>
                 : <em>{count(series.length)} {bucket}{series.length === 1 ? "" : "s"} · hover a bar for the exact {bucket}.</em>}
             </p>
             <div className={styles.tsBars} onMouseLeave={() => setHover(null)}>
@@ -830,7 +809,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                 <span key={row.bucket_start}>{index % axisStep === 0 ? bucketLabel(row.bucket_start, bucket, seriesSpansYears) : ""}</span>
               ))}
             </div>
-          </section>
+          </section>}
 
           <div className={styles.pair}>
             <section className={styles.card}>
