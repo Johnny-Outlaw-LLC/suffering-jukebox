@@ -15592,6 +15592,7 @@ function setArtistExploreFilter(mode) {
   }
   artistExploreFilter = ['mine', 'public', 'all'].includes(mode) ? mode : 'all';
   try { localStorage.setItem('sj_artist_explore_filter', artistExploreFilter); } catch (_) {}
+  if (artistExploreFilter === 'mine') ensureMyArtistIds();
   if (landingTab === 'songs') esEnsureLibrary();
   if (isLandingMode && (landingTab === 'explore' || landingTab === 'songs')) renderLanding();
 }
@@ -21450,16 +21451,36 @@ async function oaToggleAlbum(albumId, show, artistId) {
   oaRerenderOpen();
 }
 
-// Artists are only ever attributed by display name in the client (the email in
-// added_by is never selected), so "mine" matches on the signed-in name.
+// Ownership is deliberately resolved from the authenticated email on the
+// server. A display name is not a safe owner key, and holding a song in My
+// Jukebox must not make its artist appear under My Artists.
+let _myArtistIds = null;
+let _myArtistIdsLoading = false;
+
+async function ensureMyArtistIds() {
+  if (!googleUser || _myArtistIdsLoading || _myArtistIds) return;
+  _myArtistIdsLoading = true;
+  try {
+    const res = await fetch(sjApiUrl('/api/my-jukebox/artists'));
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load your artists.');
+    _myArtistIds = new Set((data.artistIds || []).filter(Boolean));
+  } catch (e) {
+    console.warn('ensureMyArtistIds', e);
+    _myArtistIds = new Set();
+  } finally {
+    _myArtistIdsLoading = false;
+    if (isLandingMode && artistScope() === 'mine') renderLanding();
+  }
+}
+
 function oaIsMine(a) {
   if (!googleUser) return false;
-  // Two ways an artist is mine: I imported them, or I hold their music.
-  // in_my_library comes from landing_stats, which is the only catalog read
-  // sent with my own access token - the browser never says who it is.
-  if (a && a.in_my_library) return true;
-  const me = (googleUser.name || '').trim().toLowerCase();
-  return !!me && (a.added_by_name || '').trim().toLowerCase() === me;
+  if (!_myArtistIds) {
+    ensureMyArtistIds();
+    return false;
+  }
+  return !!(a && _myArtistIds.has(a.artist_id));
 }
 
 // The landing_stats row for an artist, which is where in_my_library lives.
@@ -23925,6 +23946,8 @@ function initGoogleAuth() {
         picture : u.user_metadata?.avatar_url || null
       };
       if (_prevAuthEmail !== u.email) {
+        _myArtistIds = null;
+        _myArtistIdsLoading = false;
         _myVotesLoaded = false;
         myReactionTrackIds = [];
         _myReactionTracksLoaded = false;
@@ -23952,6 +23975,8 @@ function initGoogleAuth() {
       }
     } else {
       googleUser = null;
+      _myArtistIds = null;
+      _myArtistIdsLoading = false;
       _myVotesLoaded = false;
       myReactionTrackIds = [];
       _myReactionTracksLoaded = false;
@@ -23971,6 +23996,8 @@ function initGoogleAuth() {
   sbAuth.auth.getSession().then(({ data: { session } }) => {
     if (session?.user) {
       const u = session.user;
+      _myArtistIds = null;
+      _myArtistIdsLoading = false;
       _myVotesLoaded = false;
       myReactionTrackIds = [];
       _myReactionTracksLoaded = false;
