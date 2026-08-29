@@ -3039,6 +3039,11 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-play.on:hover { box-shadow:0 4px 16px #0008; }
 .pl-wall-cell.blocked img { opacity:.22; filter:grayscale(1); }
 .pl-wall-cell.blocked::before { content:'⊘'; position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:#fff9; background:#0007; pointer-events:none; }
+/* Nothing inside a cover is the browser's to drag. Without this the native
+   image drag pre-empts the reorder entirely. */
+.pl-wall-cell, .pl-wall-cell img, .pl-wall-name {
+  -webkit-user-drag:none; user-select:none; -webkit-user-select:none;
+}
 .pl-wall-cell.pl-wall-draggable { cursor:grab; }
 .pl-wall-cell.pl-wall-draggable:active { cursor:grabbing; }
 .pl-wall-cell-x {
@@ -15449,15 +15454,34 @@ function plWallBindBadgeHovers() {
     if (ev.button != null && ev.button !== 0) return;
     const cell = ev.target.closest('.pl-wall-cell.pl-wall-draggable');
     if (!cell) return;
-    // The buttons on a cover are controls, not handles.
-    if (ev.target.closest('.pl-wall-badges, .pl-wall-cell-x, .pl-wall-badge-hot')) return;
+    // The rate/heart buttons and the X are controls, so a press on them is
+    // not a drag. The invisible hover corner is NOT a control - it is 42% by
+    // 42% of the cover, so excluding it made most of the top right of every
+    // card refuse to start a drag while still showing the grab cursor.
+    if (ev.target.closest('.pl-wall-badges, .pl-wall-cell-x')) return;
     plWallDragBegin(cell, ev);
   });
+
+  // A cover is an <img> and a title is text, and the browser wants to drag
+  // both by itself. Its native drag fires pointercancel, which silently killed
+  // every reorder: the card was picked up and then dropped by the browser
+  // before a pointermove ever arrived.
+  grid.addEventListener('dragstart', (ev) => { ev.preventDefault(); });
 
   grid.addEventListener('pointermove', (ev) => {
     if (!_plDrag) return;
     ev.preventDefault();
     plWallDragMove(grid, ev);
+  });
+
+  // A pointer released outside the grid never reaches the handler below, which
+  // used to leave the drag half open and the next one refusing to start.
+  grid.addEventListener('pointercancel', () => {
+    if (_plDrag) {
+      _plDrag.cell.classList.remove('pl-wall-dragging');
+      if (_plDrag.marker) _plDrag.marker.remove();
+      _plDrag = null;
+    }
   });
 
   const finish = async (ev) => {
@@ -16435,7 +16459,7 @@ function plWallCellHTML(item, i, curIdx) {
   const canDrag = plWallCanArrange();
   const canRemove = plWallCanRemove(row);
   const art = row.artwork
-    ? `<img src="${row.artwork}" loading="lazy" alt="">`
+    ? `<img src="${row.artwork}" loading="lazy" alt="" draggable="false">`
     : '<span class="pl-wall-fallback">♫</span>';
   const tip = plWallPlayTip(row.trackId);
   const tipAttr = tip ? ` title="${esc(tip)}"` : '';
@@ -21759,6 +21783,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Dragging a cover to reorder a playlist works now. It was refusing in two ways: the top right corner of every cover is an invisible area that reveals the rating buttons on hover, and a press there would not start a drag even though the cursor said it would; and the browser was starting its own drag of the artwork, which cancelled ours before it began.',
     'Very large playlists no longer hang the page. A few thousand songs used to lock the browser long enough for Chrome to offer to close the tab. The wall now draws the first few hundred covers and adds more as you scroll, so a five thousand song Now Playing opens straight away. Everything is still there - the count, the running time, Start Playlist and shuffle all cover the whole list, however much of it is on screen.',
     'Big playlists open much faster. A few hundred songs used to take four full redraws of the page and one request per song just to fetch the hearts; now it draws twice, asks once, and only builds the parts of a cover you can actually see. Scrolling a long playlist is smooth.',
     'Drag a cover to move a song. Pick it up, drop it where you want it, and the rest of the playlist closes up behind it. Works with a finger as well as a mouse, and in the Detail list there are up and down arrows instead.',
