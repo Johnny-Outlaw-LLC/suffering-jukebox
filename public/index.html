@@ -2981,7 +2981,7 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-cell.pl-wall-expanded {
   grid-column:1 / -1;
   aspect-ratio:auto;
-  height:clamp(230px, 38vh, 330px);
+  height:clamp(272px, 38vh, 340px);
   cursor:default;
   overflow:hidden;
   transition:height .28s cubic-bezier(.2,.7,.3,1);
@@ -3022,7 +3022,7 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-exp-stats { font-size:.55rem; color:var(--text-muted); }
 .pl-wall-exp-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; align-items:center; }
 .pl-wall-exp-actions .sc-link { min-height:34px; }
-.pl-wall-exp-rxn { width:34px; min-height:34px; border-radius:8px; }
+
 .pl-wall-exp-x {
   flex:none; width:30px; height:30px; border-radius:8px; cursor:pointer;
   background:rgba(255,255,255,.06); border:1px solid var(--border); color:var(--text-muted);
@@ -3034,6 +3034,15 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-exp-lyrics .sc-lyric-font-ctrl { display:flex; align-items:center; gap:3px; margin-left:auto; }
 .pl-wall-exp-lyrics > div:nth-child(2) { flex:1; overflow:auto; min-height:0; }
 .pl-wall-exp-src { font-size:.36rem; opacity:.35; margin-top:5px; font-family:var(--mono); letter-spacing:.04em; text-align:right; }
+
+/* Between a phone and a roomy desktop the artwork is the first thing to go.
+   It is decorative here - the same cover is on the wall a row above - and at
+   820px it was taking a third of the card, which pushed the six controls into
+   a wrapped stack that the card then clipped. */
+@media (max-width: 1000px) {
+  .pl-wall-cell.pl-wall-expanded > img { display:none; }
+  .pl-wall-exp { inset:0; }
+}
 
 /* On a phone the artwork steps aside entirely - there is no room for a
    square, the words are what the reader came for. */
@@ -3128,6 +3137,55 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
   .pl-wall-rxn[data-track-reaction="sad"] { display:none; }
   .pl-wall-stats { display:none; }
 }
+/* ── Rate / heart / heartbreak on an opened cover ─────────────────────
+   Written after the cover-badge rules above on purpose. `.pl-wall-rxn` and
+   `.pl-wall-exp-rxn` carry the same specificity, so whichever comes last
+   wins - and while this block sat above them the heart and heartbreak kept
+   the 26px badge sizing meant for a thumbnail corner. The thumbs button had
+   the opposite problem: its box comes from `.pl-wall-badges .tvb-cycle`,
+   which needs an ancestor the card does not have, so it drew with no box at
+   all beside two that had one.
+
+   All three are one control here: same box, same size as the text buttons
+   beside them, and the card's own solid surface rather than the translucent
+   blur that suits a cover. */
+.pl-wall-exp-actions .pl-wall-exp-rxn {
+  width:auto; min-width:34px; height:34px; min-height:34px;
+  padding:0 9px; gap:5px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--border);
+  border-radius:9px;
+  backdrop-filter:none;
+  color:var(--text-muted);
+  font-family:var(--mono); font-size:.5rem; font-weight:700; line-height:1;
+  cursor:pointer;
+  transition:color .13s, border-color .13s, background .13s;
+}
+.pl-wall-exp-actions .pl-wall-exp-rxn:hover {
+  color:var(--text); border-color:var(--text-muted); background:rgba(255,255,255,.09);
+}
+.pl-wall-exp-actions .pl-wall-exp-rxn svg { width:16px; height:16px; display:block; }
+.pl-wall-exp-actions .pl-wall-exp-rxn .tvb-dbl { display:inline-flex; align-items:center; gap:1px; }
+/* The count only earns its space once there is one. */
+.pl-wall-exp-actions .pl-wall-exp-rxn .pl-wall-rxn-n { font-size:.5rem; min-width:0; }
+.pl-wall-exp-actions .pl-wall-exp-rxn .pl-wall-rxn-n:empty { display:none; }
+/* A gap that says these three are a set, apart from the wordy buttons. */
+.pl-wall-exp-actions .pl-wall-exp-rxn:first-of-type { margin-left:6px; }
+
+/* States, matching what the same reactions mean everywhere else. */
+.pl-wall-exp-actions .pl-wall-exp-rxn.tvb-up { color:#22c55e; border-color:#22c55e66; background:#22c55e14; }
+.pl-wall-exp-actions .pl-wall-exp-rxn.tvb-down { color:#ef4444; border-color:#ef444466; background:#ef444414; }
+.pl-wall-exp-actions .pl-wall-exp-rxn[data-track-reaction="heart"].on {
+  color:var(--accent); border-color:#ff6b3566; background:#ff6b3514;
+}
+.pl-wall-exp-actions .pl-wall-exp-rxn[data-track-reaction="sad"].on {
+  color:#a78bfa; border-color:#a78bfa66; background:#a78bfa14;
+}
+/* The wall hides the heartbreak button on tiny covers; an opened card is
+   never tiny, and losing a control on the way in would be a surprise. */
+.pl-wall-exp-actions .pl-wall-exp-rxn { display:inline-flex !important; }
+
 .pl-wall-play.on { background:var(--bg-card); border-color:var(--border); color:var(--text); box-shadow:none; }
 .pl-wall-play.on:hover { box-shadow:0 4px 16px #0008; }
 .pl-wall-cell.blocked img { opacity:.22; filter:grayscale(1); }
@@ -16349,6 +16407,184 @@ async function liveRoomMoveTrack(from, to) {
 }
 
 /**
+ * Mix Order - shuffle the playlist itself.
+ *
+ * Deliberately a different thing from Shuffle Playback, which is why that
+ * button got its longer name. Shuffle Playback leaves the playlist alone and
+ * picks a random song each time one finishes; Mix Order rewrites the running
+ * order, and everybody who opens the playlist afterwards sees the new one.
+ *
+ * The song playing now is left where it is. Reshuffling the thing you are
+ * listening to into the middle of the list is not what anybody means by mix.
+ */
+async function plWallMixOrder() {
+  if (!plWallCanArrange()) return;
+  const q = playlistChartQueue();
+  if (q.length < 3) return;
+
+  const btn = document.getElementById('pl-wall-mix');
+  if (btn) { btn.disabled = true; btn.classList.add('on'); }
+
+  // Where every drawn cover is now, so they can be animated from here to
+  // wherever the shuffle puts them.
+  const grid = document.getElementById('pl-wall-grid');
+  const wasAt = new Map();
+  if (grid) {
+    plWallGridCells(grid).forEach(cell => {
+      const id = cell.getAttribute('data-pc-track');
+      if (id) wasAt.set(id, cell.getBoundingClientRect());
+    });
+  }
+
+  // Fisher-Yates over the indexes, holding the playing song in place.
+  const curIdx = playlistChartCurrentCellIndex();
+  const order = q.map((_, i) => i).filter(i => i !== curIdx);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  if (curIdx >= 0) order.splice(curIdx, 0, curIdx);
+
+  const rowsBefore = playlistChartRows.slice();
+  const queueBefore = playlistChartBaseQueue.slice();
+  const nextQueue = order.map(i => queueBefore[i]).filter(Boolean);
+  const byTrack = new Map(rowsBefore.map(r => [r.trackId, r]));
+  const nextRows = nextQueue.map(it => byTrack.get(it.trackId)).filter(Boolean);
+  if (nextRows.length !== rowsBefore.length) { if (btn) { btn.disabled = false; btn.classList.remove('on'); } return; }
+
+  const live = ytQueue === playlistChartBaseQueue;
+  const playing = live ? ytQueue[ytQueueIdx] || null : null;
+  playlistChartBaseQueue.length = 0;
+  playlistChartBaseQueue.push(...nextQueue);
+  playlistChartRows.length = 0;
+  playlistChartRows.push(...nextRows);
+  playlistChartRows.forEach((r, n) => { r.index = n; });
+  plWallIndexRows();
+
+  // Now Playing is this browser's own queue; its order IS the playlist.
+  if (playlistChartId === '__dynamic_now_playing') {
+    const idx = new Map(nextQueue.map((it, n) => [it.trackId, n]));
+    ytQueue.sort((a, b) => (idx.get(a.trackId) ?? 0) - (idx.get(b.trackId) ?? 0));
+    if (playing) {
+      const i = ytQueue.indexOf(playing);
+      if (i >= 0) ytQueueIdx = i;
+    }
+    updateYTQueueUI();
+  } else if (live && playing) {
+    const i = ytQueue.indexOf(playing);
+    if (i >= 0) ytQueueIdx = i;
+    updateYTQueueUI();
+  }
+
+  plWallRepaintList();
+  plWallFlipCards(wasAt);
+
+  // A saved playlist keeps its new order. One call rather than a write per
+  // song: a few hundred round trips for one button is not a feature.
+  if (playlistChartId !== '__dynamic_now_playing' && !liveRoomMode) {
+    const ids = playlistChartRows.map(r => r.ptId).filter(Boolean);
+    try {
+      await dbRpcAuth('/rpc/set_playlist_order', { p_playlist_id: playlistChartId, p_ids: ids });
+      playlistChartRows.forEach((r, n) => { r.position = (n + 1) * PL_POS_STEP; });
+      const pl = (_savedPlaylists || []).find(x => x.id === playlistChartId);
+      if (pl?._tracks) {
+        const at = new Map(playlistChartRows.map((r, n) => [r.ptId, (n + 1) * PL_POS_STEP]));
+        pl._tracks.forEach(t => { if (at.has(t.id)) t.position = at.get(t.id); });
+      }
+      showToast('Mixed into a new order.');
+    } catch (e) {
+      showToast('Could not save the new order.');
+      await openPlaylistChart(playlistChartId);
+    }
+  } else {
+    showToast('Mixed into a new order.');
+  }
+  if (btn) { btn.disabled = false; btn.classList.remove('on'); }
+}
+
+/**
+ * Slide every cover from where it was to where it ended up.
+ *
+ * The list is rebuilt rather than shuffled node by node, so the cells are new
+ * elements: they are matched back to the old positions by track. A cover that
+ * was not on screen before has nowhere to travel from, so it fades up in
+ * place instead. Anything left over from a previous mix is cleaned up on a
+ * timer as well as on transitionend, because a frame callback is not
+ * guaranteed to run.
+ */
+function plWallFlipCards(wasAt) {
+  const grid = document.getElementById('pl-wall-grid');
+  if (!grid || !wasAt || !wasAt.size) return;
+  const cells = plWallGridCells(grid);
+  const moves = [];
+  cells.forEach(cell => {
+    const id = cell.getAttribute('data-pc-track');
+    const from = id && wasAt.get(id);
+    const to = cell.getBoundingClientRect();
+    if (!to.width) return;
+    if (!from) { moves.push({ cell, dx: 0, dy: 0, fresh: true }); return; }
+    const dx = Math.round(from.left - to.left);
+    const dy = Math.round(from.top - to.top);
+    if (!dx && !dy) return;
+    moves.push({ cell, dx, dy, fresh: false });
+  });
+  if (!moves.length) return;
+
+  moves.forEach(({ cell, dx, dy, fresh }) => {
+    cell.style.transition = 'none';
+    cell.style.transform = fresh ? 'scale(.82)' : `translate(${dx}px, ${dy}px)`;
+    cell.style.opacity = fresh ? '0' : '';
+    cell.style.zIndex = '3';
+  });
+
+  const settle = () => {
+    moves.forEach(({ cell }, n) => {
+      // A little stagger so it reads as a shuffle rather than one block
+      // sliding. Capped, or the tail of a long wall is still moving after
+      // the toast has gone.
+      const delay = Math.min(n * 4, 240);
+      cell.style.transition = `transform .5s cubic-bezier(.2,.8,.25,1) ${delay}ms, opacity .35s ease ${delay}ms`;
+      cell.style.transform = '';
+      cell.style.opacity = '';
+    });
+    setTimeout(() => moves.forEach(({ cell }) => {
+      cell.style.transition = '';
+      cell.style.transform = '';
+      cell.style.opacity = '';
+      cell.style.zIndex = '';
+    }), 1000);
+  };
+  // Two ways in, because rAF does not fire everywhere and a wall left holding
+  // its start transforms would simply look wrong.
+  requestAnimationFrame(settle);
+  setTimeout(() => { if (moves[0].cell.style.transition === 'none') settle(); }, 50);
+}
+
+/**
+ * Move a song within the wall's own two lists, keeping the playing row's
+ * index pointing at the same song. Used by the drag and by Mix Order.
+ */
+function plWallReorderLocal(from, to) {
+  const live = ytQueue === playlistChartBaseQueue;
+  const playing = live ? ytQueue[ytQueueIdx] || null : null;
+  const item = playlistChartBaseQueue.splice(from, 1)[0];
+  if (!item) return;
+  playlistChartBaseQueue.splice(to, 0, item);
+  const ri = playlistChartRows.findIndex(r => r.trackId === item.trackId);
+  if (ri >= 0) {
+    const row = playlistChartRows.splice(ri, 1)[0];
+    playlistChartRows.splice(Math.min(to, playlistChartRows.length), 0, row);
+    playlistChartRows.forEach((r, n) => { r.index = n; });
+  }
+  if (live && playing) {
+    // By identity. Arithmetic on ytQueueIdx is what broke the old swap.
+    const i = ytQueue.indexOf(playing);
+    if (i >= 0) ytQueueIdx = i;
+    updateYTQueueUI();
+  }
+}
+
+/**
  * Move one song to a new place in the playlist.
  *
  * A real move, not the swap this used to be: a swap cannot express "put this
@@ -16363,7 +16599,12 @@ async function plWallMoveTrack(from, to) {
 
   // Now Playing is this browser's own queue and has no rows behind it.
   if (playlistChartId === '__dynamic_now_playing') {
+    // ytQueue and playlistChartBaseQueue are NOT the same array here - the
+    // wall builds its own copy - so moving only ytQueue changed what played
+    // next and left the covers exactly where they were. A drag that half
+    // happens is worse than one that does not, so all three move together.
     ytMoveToIndex(from, to);
+    plWallReorderLocal(from, to);
     plWallRepaintList();
     return;
   }
@@ -17419,7 +17660,7 @@ function renderPlaylistChart(error) {
       ? `<div class="landing-no-results" style="margin:0 0 12px">You are following the host. Playback and order stay with them until you Leave Room. You can still add songs and remove only your own waiting requests.</div>`
       : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player, or Add Songs to request without joining the playlist.</div>`)
     : '';
-  const transport = liveRoomMode ? `${sizeCtrl}${modeTog}` : `${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
+  const transport = liveRoomMode ? `${sizeCtrl}${modeTog}` : `${sizeCtrl}${modeTog}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
   main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
   playlistChartPaintTransport();
   if (q.length) {
@@ -21905,6 +22146,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Now Playing can be dragged into a new order like any other playlist. Dragging a cover there used to change what played next without moving anything on screen, because the wall and the player were holding two separate copies of the list.',
+    'Explore Playlists has a Mix Order button. It shuffles the playlist itself into a new running order and the covers slide across the screen to their new places - the song playing now stays where it is. On one of your playlists the new order is saved for everyone; on Now Playing it just reorders your queue.',
+    'Shuffle is now called Shuffle Playback, because it does a different thing from Mix Order: it plays the songs in a random order and leaves the playlist alone.',
+    'On an opened cover, the rating, heart and heartbreak buttons match each other and the buttons beside them. The thumbs button had no outline while the other two did, and all three were sized for a thumbnail corner rather than a row of controls. On a narrower window the artwork now steps aside so those buttons are not clipped.',
     'Lyrics in the player bar stay out of the song title. They start centred under the drag handle where they always were, and as you pull the bar taller - which widens the artwork and the title beside it - they slide across and narrow just enough to keep clear, instead of running underneath the artist and album.',
     'Tapping a cover now opens it in place. The square grows into a wide card across the row and the songs below move down to make room, showing the artwork, the artist, the album and year, your play count, who added it, the buttons and the lyrics side by side. Tap it again, press the X or hit Escape to close it. The old floating card that hovered over the wall with a line drawn back to the cover is gone - it covered the songs it was describing, and on a phone it took over the whole screen.',
     'Dragging a cover to reorder a playlist works now. It was refusing in two ways: the top right corner of every cover is an invisible area that reveals the rating buttons on hover, and a press there would not start a drag even though the cursor said it would; and the browser was starting its own drag of the artwork, which cancelled ours before it began.',
