@@ -17884,14 +17884,19 @@ function defaultLandingCompare(a, b) {
   return (b.total_plays || 0) - (a.total_plays || 0);
 }
 
-function getVisibleLandingStats() {
+// opts.singlesAlways keeps singles-only artists in whatever the Include
+// Singles Only Artists box says. That box belongs to the Explore Artists grid
+// - it decides which cards are worth a tile - and has no business deciding
+// which songs exist. The two views are expected to disagree on the count.
+function getVisibleLandingStats(opts) {
+  opts = opts || {};
   let visible = landingStats.filter(r => !r.hidden);
   if (artistExploreFilter === 'mine') {
     visible = visible.filter(r => oaIsMine(r));
   } else if (artistExploreFilter === 'public') {
     visible = visible.filter(r => r.visibility !== 'private');
   }
-  if (!landingIncludeSinglesOnly) visible = visible.filter(r => r.discography_complete !== false);
+  if (!landingIncludeSinglesOnly && !opts.singlesAlways) visible = visible.filter(r => r.discography_complete !== false);
   if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
   else if (landingSubmitterFilter.size) {
     visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -18465,11 +18470,13 @@ function esGoArtist(artistId) {
 // list is that set flattened - hide an artist there and their songs go too.
 function esVisibleArtistIds() {
   const out = new Set();
-  getVisibleLandingStats().forEach(r => {
+  esVisibleStats().forEach(r => {
     ((r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id]).forEach(id => { if (id) out.add(id); });
   });
   return out;
 }
+
+function esVisibleStats() { return getVisibleLandingStats({ singlesAlways: true }); }
 
 function esSongRows() {
   const ids = esVisibleArtistIds();
@@ -18598,10 +18605,7 @@ function esFiltersHTML() {
         </div>
       </div>
     </div>`) +
-    `<label class="landing-control-group" style="gap:.45rem;cursor:pointer">
-      <span class="landing-control-lbl">Include</span>
-      <span style="display:flex;align-items:center;gap:.38rem;font-size:.52rem;color:var(--text-muted);white-space:nowrap"><input type="checkbox" ${landingIncludeSinglesOnly ? 'checked' : ''} onchange="setLandingIncludeSinglesOnly(this.checked)"> Singles Only Artists</span>
-    </label>`;
+    '';
 }
 
 function esSongsPageHTML() {
@@ -20070,7 +20074,7 @@ function updateLWYTBHeader() {
 function landingTotalsHTML() {
   const all = landingStats || [];
   if (!all.length) return '';
-  const vis = getVisibleLandingStats();
+  const vis = landingTab === 'songs' ? esVisibleStats() : getVisibleLandingStats();
   const songsOf = rows => rows.reduce((n, r) => n + (r.track_count || 0), 0);
   const aAll = all.length, aVis = vis.length;
   const sAll = songsOf(all), sVis = songsOf(vis);
@@ -22571,7 +22575,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
-    'Explore Songs carries the same Artists and Submitted By menus as Explore Artists, plus the Singles Only Artists switch, so you can narrow the song list the same way you narrow the artist grid.',
+    'Explore Songs carries the same Artists and Submitted By menus as Explore Artists, so you can narrow the song list the same way you narrow the artist grid.',
+    'Explore Songs lists every song, including the ones by artists who are here for a single track. Include Singles Only Artists stays an Explore Artists setting - it decides which cards get a tile on that grid, not which songs exist - so the two pages will show different counts, which is what the line under the tabs is there to say.',
     'Under the Explore Artists / Explore Playlists / Explore Songs buttons there is now a running count of how many artists and songs you are looking at, and how many there are altogether when a filter is holding some back.',
     'A new Explore Songs tab sits beside Explore Artists and Explore Playlists: every song in the Jukebox in one sortable table, with the artist on each row. Sort by YouTube views, song, artist or total plays, search by song, artist or album, and click a row for the lyrics, the buttons and the ratings, exactly as All Tracks does inside an artist jukebox. It follows the artist filters, so an artist you have hidden takes their songs with them.',
     'Add Songs to Playlist now opens straight on the Jukebox search instead of asking first where the songs should come from. The two YouTube doors - Add a Song from YouTube, and Add a Playlist from YouTube - sit as buttons across the top of that same screen, so you can search the Jukebox and reach either one without going back a step.',
