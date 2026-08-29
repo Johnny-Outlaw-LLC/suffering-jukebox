@@ -1692,6 +1692,21 @@ textarea.report-input { resize:vertical; }
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr.show {
     height: var(--mf-body);
   }
+  /* Measured placement. The default above centres the lyrics on the dock,
+     which is right while the dock is small: the drag handle is centred too,
+     so the words sit under it. It stops being right as the dock grows,
+     because the two sides are not the same width - the left carries artwork,
+     artist, title, album, the rating buttons and the lyric size slider, and
+     the right only carries the transport. Centred on the dock, the words ran
+     underneath the song title. ytpMfPlaceLyrics() measures both sides and
+     writes these, keeping the handle-centred position whenever it still
+     fits. */
+  #ytp-mini-footer.dock-lyr-fit .ytp-mf-lyr.show {
+    left: var(--mf-lyr-left);
+    width: var(--mf-lyr-w);
+    max-width: none;
+    transform: none;
+  }
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: var(--mf-body); }
   /* Playlist sits above the artist / title column (left of lyrics), not the top-right. */
   #ytp-mini-footer.dock-show-playlist .ytp-mf-playlist {
@@ -7744,8 +7759,11 @@ function ytpDockSyncPlaylist() {
 
   dock.classList.remove('dock-show-playlist');
   playlist.style.maxHeight = '';
-  if (!_ytpMinimized || ytpIsMob() || ytQueue.length <= 1 || !now) return;
-  if (!dock.classList.contains('dock-grown')) return;
+  // The lyrics have to be re-placed whatever happens to the playlist - the
+  // early returns below are all layouts too, and leaving them out is what let
+  // the words sit in a stale position after the dock changed shape.
+  if (!_ytpMinimized || ytpIsMob() || ytQueue.length <= 1 || !now) { ytpMfLayoutLyrics(); return; }
+  if (!dock.classList.contains('dock-grown')) { ytpMfLayoutLyrics(); return; }
 
   const dockRect = dock.getBoundingClientRect();
   const nowRect = now.getBoundingClientRect();
@@ -7753,7 +7771,7 @@ function ytpDockSyncPlaylist() {
   // Keep one extra physical pixel so fractional browser geometry can never
   // round the requested 20px clearance down to 19px.
   const available = Math.floor(nowRect.top - dockRect.top - playlistTop - YTP_DOCK_PLAYLIST_GAP - 1);
-  if (available < YTP_DOCK_PLAYLIST_MIN_H) return;
+  if (available < YTP_DOCK_PLAYLIST_MIN_H) { ytpMfLayoutLyrics(); return; }
 
   playlist.style.maxHeight = available + 'px';
   dock.classList.add('dock-show-playlist');
@@ -7802,6 +7820,10 @@ function ytpApplyDockHeight() {
   el.style.setProperty('--mf-body', mfBody + 'px');
   el.classList.toggle('dock-grown', extra > 16);
   ytpDockPlaceLyricBtn();
+  // Placed here as well as in the frame callback below. It is only a few
+  // measurements, and it means the words follow the drag rather than waiting
+  // on a frame that, in a view which is not painting, may never come.
+  ytpMfPlaceLyrics();
   ytpPaintDockPlaylist();
   requestAnimationFrame(() => {
     ytpDockSyncFontControl();
@@ -7985,7 +8007,76 @@ function ytpMfLayoutLyrics() {
   // Centre the visible band inside the window when the rows do not fill it.
   const view = document.getElementById('ytp-mf-lyr-view');
   if (view) view.style.paddingTop = Math.max(0, (view.getBoundingClientRect().height - lines * lh) / 2) + 'px';
+  ytpMfPlaceLyrics();
   ytpMfPaintLyrics(_lyrSyncActiveIdx);
+}
+
+/** Narrowest band of dock worth putting words in. */
+const YTP_MF_LYR_MIN_W = 150;
+/** Clear air either side of the lyrics. */
+const YTP_MF_LYR_GAP = 16;
+/** What the lyrics take when there is room for everything. */
+const YTP_MF_LYR_IDEAL_W = 576;   // 36rem
+
+/**
+ * Put the lyrics in the space the dock actually has for them.
+ *
+ * The rule this replaces centred them on the dock and reserved a fixed 34rem
+ * for the two sides. Centring only avoids the furniture when the two sides are
+ * the same width, and they are not: the left column holds the artwork, the
+ * artist, the title, the album, the rating and reaction buttons and the lyric
+ * size slider, while the right holds the transport. So the taller the dock
+ * grew, the further the words ran underneath the song title.
+ *
+ * Centred under the handle is still the resting position and still the
+ * preferred one - it is only given up to the extent the two columns need the
+ * room.
+ */
+function ytpMfPlaceLyrics() {
+  const dock = document.getElementById('ytp-mini-footer');
+  const pane = document.getElementById('ytp-mf-lyrics-pane');
+  if (!dock || !pane) return;
+  dock.classList.remove('dock-lyr-fit');
+  // Small dock and phones keep the plain centred rule: there is no second
+  // column to avoid, and the handle is the thing to sit under.
+  if (!pane.classList.contains('show') || ytpIsMob()) return;
+  if (!dock.classList.contains('dock-grown')) return;
+
+  const dockRect = dock.getBoundingClientRect();
+  if (!dockRect.width) return;
+
+  // Everything that shares the row, measured rather than assumed. A hidden
+  // element reports a zero box, which is exactly the right answer for it.
+  const edgeOf = (sel, side) => {
+    const el = dock.querySelector(sel);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return side === 'right' ? r.right : r.left;
+  };
+  const leftEdge = Math.max(
+    dockRect.left,
+    edgeOf('.ytp-mf-now', 'right') ?? dockRect.left,
+    edgeOf('.ytp-mf-playlist', 'right') ?? dockRect.left,
+  );
+  const rightEdge = Math.min(
+    dockRect.right,
+    edgeOf('.ytp-mf-right', 'left') ?? dockRect.right,
+  );
+
+  const bandStart = leftEdge - dockRect.left + YTP_MF_LYR_GAP;
+  const bandEnd = rightEdge - dockRect.left - YTP_MF_LYR_GAP;
+  const band = bandEnd - bandStart;
+  if (band < YTP_MF_LYR_MIN_W) return;   // too cramped to improve on centring
+
+  const width = Math.min(YTP_MF_LYR_IDEAL_W, band);
+  // Under the handle first, then pushed just far enough to clear the columns.
+  const centred = dockRect.width / 2 - width / 2;
+  const left = Math.max(bandStart, Math.min(centred, bandEnd - width));
+
+  dock.style.setProperty('--mf-lyr-left', Math.round(left) + 'px');
+  dock.style.setProperty('--mf-lyr-w', Math.round(width) + 'px');
+  dock.classList.add('dock-lyr-fit');
 }
 
 // Highlight the sung line and slide the stack so it sits in its slot.
@@ -21814,6 +21905,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Lyrics in the player bar stay out of the song title. They start centred under the drag handle where they always were, and as you pull the bar taller - which widens the artwork and the title beside it - they slide across and narrow just enough to keep clear, instead of running underneath the artist and album.',
     'Tapping a cover now opens it in place. The square grows into a wide card across the row and the songs below move down to make room, showing the artwork, the artist, the album and year, your play count, who added it, the buttons and the lyrics side by side. Tap it again, press the X or hit Escape to close it. The old floating card that hovered over the wall with a line drawn back to the cover is gone - it covered the songs it was describing, and on a phone it took over the whole screen.',
     'Dragging a cover to reorder a playlist works now. It was refusing in two ways: the top right corner of every cover is an invisible area that reveals the rating buttons on hover, and a press there would not start a drag even though the cursor said it would; and the browser was starting its own drag of the artwork, which cancelled ours before it began.',
     'Very large playlists no longer hang the page. A few thousand songs used to lock the browser long enough for Chrome to offer to close the tab. The wall now draws the first few hundred covers and adds more as you scroll, so a five thousand song Now Playing opens straight away. Everything is still there - the count, the running time, Start Playlist and shuffle all cover the whole list, however much of it is on screen.',
