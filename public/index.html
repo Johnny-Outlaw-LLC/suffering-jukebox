@@ -2240,11 +2240,14 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
    right-hand stack under the window buttons, so the two players read the
    same way round. The transport squares are the dock's --mf-btn look; they
    cannot share that class because --mf-btn only exists on .ytp-mini-footer. */
-.ytp-title-col { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
-.ytp-title-col .ytp-title { flex: none; }
-.ytp-title-col .sj-reaction-rail { margin-left: 0; }
 .ytp-toolbar-left { display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; gap: 5px; flex: 1; min-width: 0; }
+/* Lyrics, Volume, the ratings and ⋯ share this row, so the rail is an item
+   in it rather than something pushed to the far end. */
+.ytp-toolbar-left .sj-reaction-rail { margin-left: 0; }
 .ytp-toolbar-transport { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+/* Both right-hand clusters sat hard against the window edge in full screen. */
+.ytp-titlebar-btns { padding-right: 10px; }
+.ytp-toolbar-transport { padding-right: 10px; }
 .ytp-deck-btn {
   background: none; border: 1px solid var(--border); color: var(--text);
   width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: .8rem;
@@ -6005,11 +6008,8 @@ function openYTPlayer(videoId, title, trackId, ev) {
   ytPlayerEl.style.width = cW + 'px';
   ytPlayerEl.innerHTML = `
     <div class="yt-player-header" style="flex-direction:column;gap:0;padding:0;align-items:stretch">
-      <div style="display:flex;align-items:flex-start;gap:6px;padding:6px 8px 3px 10px">
-        <div class="ytp-title-col">
-          <span class="ytp-title">${trackId && ytpTrackMeta(trackId, title).artist ? (ytpTrackMeta(trackId, title).artist.replace(/</g, '&lt;') + ' - ') : ''}${safeTitle}${ytpAlbumYearHTML(trackId, 'ytp-title-sub')}</span>
-          ${ytpReactionRailHTML(trackId, 'ytp-desktop-reaction-rail', true)}
-        </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 8px 3px 10px">
+        <span class="ytp-title" style="flex:1;min-width:0">${trackId && ytpTrackMeta(trackId, title).artist ? (ytpTrackMeta(trackId, title).artist.replace(/</g, '&lt;') + ' - ') : ''}${safeTitle}${ytpAlbumYearHTML(trackId, 'ytp-title-sub')}</span>
         <div class="ytp-titlebar-btns">
           <button class="ytp-win-btn ytp-minimize-btn" onclick="ytpToggleMinimize()" title="Minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.minimize}</button>
           <button class="ytp-win-btn ytp-fs-btn" onclick="ytpToggleFullscreen()" title="Maximize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.maximize}</button>
@@ -6019,6 +6019,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
       <div class="ytp-toolbar-row" style="display:flex;align-items:flex-end;gap:8px;padding:2px 8px 6px 10px">
         <div class="ytp-toolbar-left">
           <button type="button" class="ytp-live-badge" id="ytp-live-badge" title="This player is on air. Click to see who is listening." onmousedown="event.stopPropagation()" onclick="sjjToggleListeners();event.stopPropagation()"><span class="dot"></span>Broadcasting Live</button>
+          <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
           <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen, {user:true});event.stopPropagation()">Lyrics</button>
           <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">&#8644; Versions &#9662;</button>
           <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
@@ -6029,7 +6030,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
               style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer"
               aria-label="Volume">
           </label>
-          <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
+          ${ytpReactionRailHTML(trackId, 'ytp-desktop-reaction-rail', true)}
           <button class="ytp-btn" id="ytp-more-btn" onclick="sjmOpenForPlayer(this,event)" onmousedown="event.stopPropagation()" title="Add to playlist, never play again, report a problem">&#8943;</button>
         </div>
         <div class="ytp-toolbar-transport">
@@ -7543,6 +7544,12 @@ function ytpEnterFullscreen() {
   ytpSetWinIcon(fsBtn, 'restore');
   if (fsBtn) fsBtn.title = ytpIsMob() ? 'Minimize' : 'Restore down';
   // Phones get the deck + tab layout; the panel is whichever tab was last used.
+  // Docked leaves the queue chrome hidden or stale, and nothing else repaints
+  // it until the next track change - which is why the playlist used to appear
+  // only when the following song started. Rebuilding here also kicks off the
+  // row metadata hydration straight away instead of a song later.
+  ytpShowQueueChrome();
+  updateYTQueueUI({ preserveScroll: true });
   if (ytpIsMob()) {
     ytpMobApplyFs(true);
     ytpSetPlayPauseIcon(ytpIsPlaying());
@@ -22716,6 +22723,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'In the full player, Lyrics, the volume slider, the rating buttons and the three dots menu now sit together on one row, in that order, instead of the ratings being off on their own line. The buttons on the right hand side of the player no longer sit hard against the edge of the window.',
+    'Maximizing a song from the bar at the bottom to the full player now brings the playlist up with it. It used to appear a while later, often not until the next song started.',
     'The song menu behind the three dots now has Add to My Library, with Add Song, Add Album and Add Artist inside it. Use it on music somebody else brought to the Jukebox and that artist starts showing under My Artists, so you can filter down to your own listening without having imported any of it yourself. Whoever imported the music keeps the credit for it. The option only appears on music you did not import - on your own, the artist is already there.',
     'The docked player now shows what is coming up beside the artwork. Drag the dock taller and the current playlist fills the space that opens up, between the cover and the song title, with whatever is playing marked. It used to sit in the top right corner and vanished at exactly the dock sizes that had room for it.',
     'The full player and the docked player now read the same way round. The rating and heart buttons sit under the song title rather than off to the right, and Shuffle, Repeat, Previous, Play and Next are a row of square buttons on the right hand side, under Minimize and Close, in the same shapes the dock uses.',
