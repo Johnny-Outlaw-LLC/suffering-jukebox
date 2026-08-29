@@ -2957,7 +2957,85 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:inline-size; content-visibility:auto; contain-intrinsic-size:auto var(--pl-cell,120px); }
 /* The song on screen, the card that is open and anything mid-drag must never
    be skipped: they carry a frame or a shadow that spills outside the cell. */
-.pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-dragging { content-visibility:visible; }
+.pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-dragging, .pl-wall-cell.pl-wall-expanded { content-visibility:visible; }
+
+/* ── A cover opened in place ──────────────────────────────────────────
+   The clicked square takes the whole row and everything after it moves
+   down, the way the artist rows on the home page open. It is still the
+   same grid cell, so it keeps its place in the running order. */
+.pl-wall-cell.pl-wall-expanded {
+  grid-column:1 / -1;
+  aspect-ratio:auto;
+  height:clamp(230px, 38vh, 330px);
+  cursor:default;
+  overflow:hidden;
+  transition:height .28s cubic-bezier(.2,.7,.3,1);
+  box-shadow:0 0 0 2px var(--accent), 0 18px 44px #000a;
+  z-index:6;
+}
+/* The artwork becomes a square panel on the left instead of the backdrop.
+   Qualified with .pl-wall-cell so it outranks `.pl-wall-cell img`, which
+   otherwise ties on specificity and stretches the art across the whole card. */
+.pl-wall-cell.pl-wall-expanded > img {
+  position:absolute; left:0; top:0;
+  width:clamp(230px, 38vh, 330px); height:100%;
+  object-fit:cover;
+}
+.pl-wall-expanded::after { opacity:0; }
+.pl-wall-expanded .pl-wall-name,
+.pl-wall-expanded .pl-wall-stats,
+.pl-wall-expanded .pl-wall-badges,
+.pl-wall-expanded .pl-wall-badge-hot,
+.pl-wall-expanded .pl-wall-cell-x { display:none !important; }
+
+.pl-wall-exp {
+  position:absolute; inset:0 0 0 clamp(230px, 38vh, 330px);
+  display:flex; gap:18px; padding:16px 18px; text-align:left;
+  background:linear-gradient(90deg, #12100ef2, var(--bg-card));
+  animation:plExpIn .26s ease both;
+}
+@keyframes plExpIn { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:none; } }
+.pl-wall-exp-main { flex:1 1 52%; min-width:0; display:flex; flex-direction:column; gap:7px; }
+.pl-wall-exp-head { display:flex; align-items:flex-start; gap:10px; }
+.pl-wall-exp-titles { min-width:0; flex:1; }
+.pl-wall-exp-title {
+  font-size:1.15rem; font-weight:800; line-height:1.15; letter-spacing:-.01em;
+  color:var(--text); overflow-wrap:anywhere;
+}
+.pl-wall-exp-sub { font-size:.62rem; color:var(--text-muted); margin-top:3px; }
+.pl-wall-exp-meta { font-size:.5rem; color:var(--accent); letter-spacing:.04em; }
+.pl-wall-exp-stats { font-size:.55rem; color:var(--text-muted); }
+.pl-wall-exp-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; align-items:center; }
+.pl-wall-exp-actions .sc-link { min-height:34px; }
+.pl-wall-exp-rxn { width:34px; min-height:34px; border-radius:8px; }
+.pl-wall-exp-x {
+  flex:none; width:30px; height:30px; border-radius:8px; cursor:pointer;
+  background:rgba(255,255,255,.06); border:1px solid var(--border); color:var(--text-muted);
+  font-size:.7rem; line-height:1;
+}
+.pl-wall-exp-x:hover { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
+.pl-wall-exp-lyrics { flex:1 1 48%; min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+.pl-wall-exp-lyrics .sc-section-lbl { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pl-wall-exp-lyrics .sc-lyric-font-ctrl { display:flex; align-items:center; gap:3px; margin-left:auto; }
+.pl-wall-exp-lyrics > div:nth-child(2) { flex:1; overflow:auto; min-height:0; }
+.pl-wall-exp-src { font-size:.36rem; opacity:.35; margin-top:5px; font-family:var(--mono); letter-spacing:.04em; text-align:right; }
+
+/* On a phone the artwork steps aside entirely - there is no room for a
+   square, the words are what the reader came for. */
+@media (max-width: 720px) {
+  /* Bounded, with the lyrics scrolling inside. Left to size itself the card
+     grew to whatever the longest song's words needed - 2,300px on a phone,
+     which pushes the rest of the wall off into next week. */
+  .pl-wall-cell.pl-wall-expanded { height:clamp(340px, 62vh, 520px); }
+  /* Same specificity as the desktop rule above, or that one wins and the
+     artwork stays. */
+  .pl-wall-cell.pl-wall-expanded > img { display:none; }
+  .pl-wall-exp { position:absolute; inset:0; flex-direction:column; gap:10px; }
+  .pl-wall-exp-main { flex:0 0 auto; }
+  .pl-wall-exp-lyrics { flex:1 1 auto; min-height:90px; }
+  .pl-wall-exp-title { font-size:1rem; }
+  .pl-wall-exp-actions { margin-top:8px; }
+}
 /* Drag to reorder. touch-action:none is what stops the browser scrolling the
    wall out from under a finger that meant to move a cover. */
 .pl-wall-draggable { touch-action:none; }
@@ -3059,7 +3137,7 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-cell-x:hover { background: var(--accent); border-color: var(--accent); transform: scale(1.12); }
 @media (hover: none) { .pl-wall-cell-x { opacity: .85; } }
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
-#pl-wall-card .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
+.pl-wall-exp .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
 .pl-wall-page.pl-wall-detail-mode .pl-wall-size { display:none; }
 .pl-detail-tbl { width:100%; border-collapse:collapse; min-width:860px; table-layout:auto; }
 .pl-detail-tbl th { font-size:.48rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); padding:.45rem .65rem; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:500; position:sticky; top:0; background:var(--bg); z-index:2; }
@@ -13085,7 +13163,8 @@ function drawSCLine(trackId) {
 
 function redrawAllSCLines() {
   Object.keys(songCards).forEach(drawSCLine);
-  plWallDrawLine();
+  // The cover wall used to float a card beside the cover with a leader line
+  // drawn to it. It expands in place now, so there is no line to redraw.
 }
 
 // Update lines on scroll and resize
@@ -15438,7 +15517,7 @@ function plWallBindBadgeHovers() {
       plWallRemoveMyTrack(i);
       return;
     }
-    plWallOpenPop(i, ev);
+    plWallToggleExpand(i, ev);
   });
 
   grid.addEventListener('keydown', (ev) => {
@@ -15447,7 +15526,7 @@ function plWallBindBadgeHovers() {
     if (!cell) return;
     ev.preventDefault();
     const i = indexOf(cell);
-    if (i >= 0) plWallOpenPop(i, ev);
+    if (i >= 0) plWallToggleExpand(i, ev);
   });
 
   grid.addEventListener('pointerdown', (ev) => {
@@ -15646,189 +15725,141 @@ function playlistChartPlayAt(i) {
 let _plWallPopIdx = null;
 let _plWallCard = null;
 
-function plWallPositionCard(el, anchorEl) {
-  const ar = anchorEl ? anchorEl.getBoundingClientRect() : null;
-  const cW = Math.max(300, 200 + globalLyricSize * 12);
-  let cx = ar ? Math.min(ar.right + 20, window.innerWidth - cW - 12) : (window.innerWidth / 2 - cW / 2);
-  let cy = ar ? Math.max(12, ar.top + ar.height / 2 - 120) : (window.innerHeight / 2 - 220);
-  if (ar && cx < ar.right + 8) cx = Math.max(12, ar.left - cW - 12);
-  cy = Math.min(cy, window.innerHeight - 280);
-  el.style.left = cx + 'px';
-  el.style.top = cy + 'px';
-  el.style.width = cW + 'px';
-  el.style.maxHeight = 'min(80vh, 640px)';
-}
-
-function plWallDrawLine() {
-  const sc = _plWallCard;
-  const svg = scLinesSVG();
-  if (!sc || !svg) return;
-  const old = document.getElementById('pl-wall-line');
-  if (old) old.remove();
-  const anchorEl = sc.anchorEl && document.contains(sc.anchorEl) ? sc.anchorEl : null;
-  if (!anchorEl) return;
-  const ar = anchorEl.getBoundingClientRect();
-  const cr = sc.el.getBoundingClientRect();
-  if (ar.bottom < 0 || ar.top > window.innerHeight || ar.right < 0 || ar.left > window.innerWidth) return;
-  const ax = ar.left + ar.width / 2;
-  const ay = ar.top + ar.height / 2;
-  const cx = cr.left + Math.min(28, cr.width / 2);
-  const cy = cr.top + Math.min(28, cr.height / 2);
-  const mx = (ax + cx) / 2;
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.id = 'pl-wall-line';
-  path.setAttribute('d', `M${ax},${ay} C${mx},${ay} ${mx},${cy} ${cx},${cy}`);
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', sc.color || 'var(--accent)');
-  path.setAttribute('stroke-width', '1.5');
-  path.setAttribute('stroke-opacity', '0.45');
-  path.setAttribute('stroke-dasharray', '5 3');
-  svg.appendChild(path);
-}
-
-function _plWallOutside(e) {
-  const card = document.getElementById('pl-wall-card');
-  if (card && !card.contains(e.target) && !e.target.closest('.pl-wall-cell') && !e.target.closest('.pl-detail-row') && !e.target.closest('#sjm-menu')) {
-    plWallClosePop();
-  }
-}
-
-function _plWallPopEsc(e) {
-  if (e.key === 'Escape') plWallClosePop();
-}
-
-function plWallClosePop() {
-  const el = document.getElementById('pl-wall-card');
-  if (el) {
-    if (window.innerWidth <= 640) {
-      const ov = document.getElementById('mob-overlay');
-      if (ov) ov.classList.remove('active');
-      document.body.classList.remove('mob-sheet-open');
-      document.body.style.top = '';
-      if (_mobScrollY) window.scrollTo(0, _mobScrollY);
-    }
-    el.style.transition = 'opacity .12s ease, transform .12s ease';
-    el.style.opacity = '0';
-    el.style.transform = window.innerWidth <= 640 ? 'translateY(100%)' : 'scale(0.94) translateY(6px)';
-    setTimeout(() => { if (el.parentNode) el.remove(); }, 140);
-  }
-  const ln = document.getElementById('pl-wall-line');
-  if (ln) ln.remove();
+/**
+ * A cover opens in place.
+ *
+ * This used to be a floating card pinned beside the cover with a leader line
+ * drawn to it, draggable around the screen. It was in the way of the thing it
+ * was describing, it covered other songs, and on a phone it became a sheet
+ * over the whole wall. Expanding the card itself is the same gesture the
+ * artist rows on the home page already use: the square grows into a full width
+ * panel and everything below it moves down to make room.
+ *
+ * The expanded card is still the same grid cell, so it keeps its place in the
+ * running order, its index, and everything the delegated handlers do with it.
+ */
+function plWallCollapseExpanded(immediate) {
+  const cell = document.querySelector('.pl-wall-cell.pl-wall-expanded');
   _plWallPopIdx = null;
   _plWallCard = null;
   document.removeEventListener('keydown', _plWallPopEsc);
-  document.removeEventListener('mousedown', _plWallOutside, true);
+  if (!cell) return;
+  const panel = cell.querySelector('.pl-wall-exp');
+  const done = () => {
+    cell.classList.remove('pl-wall-expanded');
+    cell.style.height = '';
+    if (panel) panel.remove();
+  };
+  if (immediate) { done(); return; }
+  // Back down to the square it came from, then put the cover back together.
+  cell.style.height = cell.offsetHeight + 'px';
+  if (panel) panel.style.opacity = '0';
+  requestAnimationFrame(() => {
+    cell.style.height = (cell.getBoundingClientRect().width) + 'px';
+    setTimeout(done, 260);
+  });
+  // A frame callback is not guaranteed to run (see plWallScheduleFill), and a
+  // card that never closes is worse than one that closes without animating.
+  setTimeout(() => { if (cell.classList.contains('pl-wall-expanded')) done(); }, 400);
 }
 
-function plWallDragStart(e) {
-  if (e.button !== 0 || window.innerWidth <= 640 || !_plWallCard) return;
-  e.preventDefault();
-  _plWallCard.el.style.zIndex = ++scZCounter;
-  const r = _plWallCard.el.getBoundingClientRect();
-  const ox = e.clientX - r.left, oy = e.clientY - r.top;
-  function onMove(ev) {
-    if (!_plWallCard) return;
-    const x = Math.max(0, Math.min(ev.clientX - ox, window.innerWidth - 80));
-    const y = Math.max(0, Math.min(ev.clientY - oy, window.innerHeight - 40));
-    _plWallCard.el.style.left = x + 'px';
-    _plWallCard.el.style.top = y + 'px';
-    plWallDrawLine();
-  }
-  function onUp() {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-  }
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+function _plWallPopEsc(ev) {
+  if (ev.key === 'Escape') plWallCollapseExpanded();
 }
 
-function plWallOpenPop(i, ev) {
-  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-  if (_plWallCard && _plWallPopIdx === i) { plWallClosePop(); return; }
-  plWallClosePop();
-  const q = playlistChartQueue();
-  const item = q[i];
-  if (!item) return;
-  const row = playlistChartRowFor(item, i);
+/** Kept under its old name: fourteen places close the card. */
+function plWallClosePop() {
+  plWallCollapseExpanded();
+}
+
+function plWallExpandedHTML(row, i) {
+  const esc = s => escHtml(s || '');
   const isCurrent = i === playlistChartCurrentCellIndex();
   const played = playlistChartIsTrackPlayed(row.trackId);
   const blocked = isTrackBlocked(row.trackId);
   const skipped = isTrackSkipped(row.trackId);
-  _plWallPopIdx = i;
-  const esc = s => escHtml(s || '');
   const meta = esc(playlistChartTipMeta(row, i, isCurrent, played, skipped));
-  const sub = esc(row.artist) + (row.album ? ' · ' + esc(row.album) : '');
-  // Only a song with no artwork shows a colour at all, so the one album that
-  // needs measuring is measured now rather than all of them up front.
-  if (!row.artwork && row._alb && !artColorCache[row._alb.id]) {
-    extractArtColors([row._alb]).then(() => {
-      if (_plWallCard && _plWallPopIdx === i) {
-        const ph = _plWallCard.el.querySelector('.sc-art-ph');
-        const c = artColorCache[row._alb.id];
-        if (ph && c) { ph.style.background = c + '22'; ph.style.color = c; }
-      }
-    }).catch(() => {});
-  }
-  const color = (row._alb && artColorCache[row._alb.id]) || row.color || DEFAULT_BAR_COLOR;
-  const anchorEl = (ev && ev.currentTarget) || document.querySelector(`.pl-wall-cell[data-pc-index="${i}"]`) || document.querySelector(`.pl-detail-row[data-pc-index="${i}"]`);
-  const artHtml = row.artwork
-    ? `<img class="sc-art" src="${row.artwork}" loading="lazy" alt="">`
-    : `<div class="sc-art-ph" style="background:${color}22;color:${color}">♫</div>`;
-  const el = document.createElement('div');
-  el.className = 'song-card';
-  el.id = 'pl-wall-card';
-  el.style.zIndex = String(++scZCounter);
-  el.innerHTML =
-    '<div class="sc-mob-pill"></div>' +
-    '<div class="sc-header" onmousedown="plWallDragStart(event)">' +
-    artHtml +
-    '<div class="sc-title-block"><div class="sc-track-name">' + esc(row.title) + '</div>' +
-    '<div class="sc-sub">' + sub + '</div></div>' +
-    '<button class="sc-close" onclick="plWallClosePop()" title="Close">✕</button></div>' +
-    '<div class="sc-body">' +
-    '<div class="sc-section-lbl">Playlist</div>' +
-    '<div class="sc-links">' +
-    '<button type="button" class="sc-link yt" onclick="plWallPopPlayNow()"' + (skipped ? ' disabled' : '') + '>▶ Play Now</button>' +
-    '<button type="button" class="sc-link" onclick="plWallPopQueueNext()"' + (skipped ? ' disabled' : '') + '>+ Queue for Next</button>' +
-    (blocked ? '<button type="button" class="sc-link sj-block blocked" onclick="plWallPopUnblock()">↺ Unblock</button>' : '') +
-    '<button type="button" class="sc-link" onclick="plWallPopMore(this,event)">+ Playlist &amp; more ⋯</button>' +
-    '</div>' +
-    '<div style="font-size:.48rem;color:var(--accent);margin-top:2px;letter-spacing:.04em">' + meta + '</div>' +
-    '<div style="flex:1;display:flex;flex-direction:column;min-height:100px">' +
-    '<div class="sc-section-lbl" style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">' +
-    '<span>Lyrics</span>' +
-    '<span class="sc-lyric-font-ctrl" style="display:flex;align-items:center;gap:3px;margin-left:auto">' +
-    '<span style="font-size:.3rem;color:var(--text-muted)">A</span>' +
-    '<input type="range" class="sc-font-slider" min="9" max="28" value="' + globalLyricSize + '" oninput="applyGlobalLyricSize(this.value)" style="width:44px">' +
-    '<span style="font-size:.44rem;color:var(--text-muted)">A</span></span>' +
-    (googleUser ? '<button class="lyr-edit-btn" onclick="startLyricsEdit(\'' + row.trackId + '\',\'card\');event.stopPropagation()">✏ Edit</button><button class="lyr-hist-btn" onclick="openLyricsHistory(\'' + row.trackId + '\');event.stopPropagation()" title="Edit history">🕐</button>' : '') +
-    '</div>' +
-    '<div id="sc-lyrics-' + row.trackId + '" class="sc-lyrics-ph">Loading lyrics…</div>' +
-    '<div id="sc-lyrics-src-' + row.trackId + '" style="font-size:.36rem;opacity:.35;margin-top:6px;font-family:var(--mono);letter-spacing:.04em;text-align:right"></div>' +
-    '</div>' +
-    '</div>';
-  document.body.appendChild(el);
-  plWallPositionCard(el, anchorEl);
-  _plWallCard = { el, anchorEl, idx: i, color };
+  const sub = [row.artist, row.album, (row._alb?.release_date || '').slice(0, 4)]
+    .filter(Boolean).map(esc).join(' · ');
+  const vote = getMyVote(row.trackId);
+  const counts = trackReactionCounts[row.trackId] || {};
+  const heartN = Number(counts.heart) || 0;
+  const sadN = Number(counts.sad) || 0;
+  const plays = googleUser ? (Number(myInAppPlays[row.trackId]) || 0) : 0;
+  const last = googleUser ? plWallFmtLastPlay(myLastPlayed[row.trackId]) : '';
+  const stats = [
+    plays ? `<b>${fmtV(plays)}</b> play${plays === 1 ? '' : 's'}` : '',
+    last ? 'Last ' + esc(last) : '',
+    row.addedByName ? 'Added by ' + esc(row.addedByName) : '',
+  ].filter(Boolean).join(' &middot; ');
+
+  return `<div class="pl-wall-exp" onclick="event.stopPropagation()">
+    <div class="pl-wall-exp-main">
+      <div class="pl-wall-exp-head">
+        <div class="pl-wall-exp-titles">
+          <div class="pl-wall-exp-title">${esc(row.title)}</div>
+          <div class="pl-wall-exp-sub">${sub}</div>
+        </div>
+        <button type="button" class="pl-wall-exp-x" title="Close" onclick="plWallClosePop()">&#10005;</button>
+      </div>
+      <div class="pl-wall-exp-meta">${meta}</div>
+      ${stats ? `<div class="pl-wall-exp-stats">${stats}</div>` : ''}
+      <div class="pl-wall-exp-actions">
+        <button type="button" class="sc-link yt" onclick="plWallPopPlayNow()"${skipped ? ' disabled' : ''}>&#9654; Play Now</button>
+        <button type="button" class="sc-link" onclick="plWallPopQueueNext()"${skipped ? ' disabled' : ''}>+ Queue for Next</button>
+        ${blocked ? '<button type="button" class="sc-link sj-block blocked" onclick="plWallPopUnblock()">&#8635; Unblock</button>' : ''}
+        <button type="button" class="sc-link" onclick="plWallPopMore(this,event)">+ Playlist &amp; more &#8943;</button>
+        <button type="button" class="tvb-cycle pl-wall-exp-rxn${voteClass(vote)}" data-vote-track="${row.trackId}" onclick="cycleVote('${row.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button>
+        <button type="button" class="pl-wall-rxn pl-wall-exp-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button>
+        <button type="button" class="pl-wall-rxn pl-wall-exp-rxn${sadN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="sad" onclick="event.stopPropagation();ytpReact('sad',this,event)" title="Heartbreak">${SJ_REACTION_ICONS.sad}<span class="pl-wall-rxn-n">${sadN ? ytpReactionCountLabel(sadN) : ''}</span></button>
+      </div>
+    </div>
+    <div class="pl-wall-exp-lyrics">
+      <div class="sc-section-lbl">
+        <span>Lyrics</span>
+        <span class="sc-lyric-font-ctrl">
+          <span style="font-size:.3rem;color:var(--text-muted)">A</span>
+          <input type="range" class="sc-font-slider" min="9" max="28" value="${globalLyricSize}" oninput="applyGlobalLyricSize(this.value)" style="width:44px">
+          <span style="font-size:.44rem;color:var(--text-muted)">A</span>
+        </span>
+        ${googleUser ? `<button class="lyr-edit-btn" onclick="startLyricsEdit('${row.trackId}','card');event.stopPropagation()">&#9998; Edit</button><button class="lyr-hist-btn" onclick="openLyricsHistory('${row.trackId}');event.stopPropagation()" title="Edit history">&#128336;</button>` : ''}
+      </div>
+      <div id="sc-lyrics-${row.trackId}" class="sc-lyrics-ph">Loading lyrics&hellip;</div>
+      <div id="sc-lyrics-src-${row.trackId}" class="pl-wall-exp-src"></div>
+    </div>
+  </div>`;
+}
+
+function plWallToggleExpand(i, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const already = _plWallPopIdx === i && document.querySelector('.pl-wall-cell.pl-wall-expanded');
+  plWallCollapseExpanded(true);
+  if (already) return;
+
+  const q = playlistChartQueue();
+  const item = q[i];
+  if (!item) return;
+  const row = playlistChartRowFor(item, i);
+  const grid = document.getElementById('pl-wall-grid');
+  const cell = grid ? plWallGridCells(grid)[i] : null;
+  if (!cell) return;
+
+  _plWallPopIdx = i;
+  _plWallCard = { el: cell, idx: i };
+  // Pin the square it is now, so the growth animates from there.
+  cell.style.height = cell.getBoundingClientRect().height + 'px';
+  cell.insertAdjacentHTML('beforeend', plWallExpandedHTML(row, i));
+  cell.classList.add('pl-wall-expanded');
+  requestAnimationFrame(() => { cell.style.height = ''; });
+  setTimeout(() => { cell.style.height = ''; }, 60);
+
   if (row.trackId) fetchLyrics(row.trackId);
-  if (window.innerWidth <= 640) {
-    el.style.zIndex = '1998';
-    const ov = document.getElementById('mob-overlay');
-    if (ov) ov.classList.add('active');
-    _mobScrollY = window.scrollY;
-    document.body.style.top = `-${_mobScrollY}px`;
-    document.body.classList.add('mob-sheet-open');
-  }
-  el.style.opacity = '0';
-  el.style.transform = 'scale(0.93) translateY(6px)';
-  requestAnimationFrame(() => {
-    el.style.transition = 'opacity .18s ease, transform .18s ease';
-    el.style.opacity = '1';
-    el.style.transform = 'scale(1) translateY(0)';
-    setTimeout(() => { el.style.transition = ''; plWallDrawLine(); }, 200);
-  });
+  // Bring it into view if the growth pushed it off the bottom.
+  setTimeout(() => {
+    if (_plWallPopIdx !== i) return;
+    cell.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 320);
   document.addEventListener('keydown', _plWallPopEsc);
-  setTimeout(() => document.addEventListener('mousedown', _plWallOutside, true), 0);
 }
 
 function plWallPopPlayNow() {
@@ -15991,7 +16022,7 @@ async function openPlaylistChart(playlistId) {
     // the grid's own thumbnails so nothing was shared, and a full re-render
     // when it finished. All of it bought one thing - the tint behind the ♫
     // placeholder on the track card of a song with no artwork - so that one
-    // album is now measured when the card opens instead. See plWallOpenPop().
+    // album is now measured when the card opens instead. See plWallToggleExpand().
     loadPlayCounts(ids);
     if (googleUser) loadMyPlayCounts().then(() => { if (viewMode === 'playlistchart') plWallRefreshStats(); });
     const rows = ordered.map((pt, index) => {
@@ -21783,6 +21814,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Tapping a cover now opens it in place. The square grows into a wide card across the row and the songs below move down to make room, showing the artwork, the artist, the album and year, your play count, who added it, the buttons and the lyrics side by side. Tap it again, press the X or hit Escape to close it. The old floating card that hovered over the wall with a line drawn back to the cover is gone - it covered the songs it was describing, and on a phone it took over the whole screen.',
     'Dragging a cover to reorder a playlist works now. It was refusing in two ways: the top right corner of every cover is an invisible area that reveals the rating buttons on hover, and a press there would not start a drag even though the cursor said it would; and the browser was starting its own drag of the artwork, which cancelled ours before it began.',
     'Very large playlists no longer hang the page. A few thousand songs used to lock the browser long enough for Chrome to offer to close the tab. The wall now draws the first few hundred covers and adds more as you scroll, so a five thousand song Now Playing opens straight away. Everything is still there - the count, the running time, Start Playlist and shuffle all cover the whole list, however much of it is on screen.',
     'Big playlists open much faster. A few hundred songs used to take four full redraws of the page and one request per song just to fetch the hearts; now it draws twice, asks once, and only builds the parts of a cover you can actually see. Scrolling a long playlist is smooth.',
