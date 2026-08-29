@@ -213,6 +213,11 @@ function heatColor(row: Partial<Split> | undefined, intensity: number) {
   const channels = JUKEBOX_RGB.map((value, index) => value + (SPOTIFY_RGB[index] - value) * share);
   return `rgb(${channels.map((value) => Math.round(16 + (value - 16) * (0.22 + 0.78 * level))).join(",")})`;
 }
+function sourceHeatColor(rgb: number[], intensity: number) {
+  const level = Math.max(0, Math.min(1, intensity));
+  if (level <= 0) return "rgba(255,255,255,.045)";
+  return `rgb(${rgb.map((value) => Math.round(16 + (value - 16) * (0.22 + 0.78 * level))).join(",")})`;
+}
 function importHref(artist: string, title?: string) {
   const params = new URLSearchParams();
   params.set("import", title ? "song" : "artist");
@@ -493,6 +498,17 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     map.forEach((row) => { max = Math.max(max, metricValue(row, metric)); });
     return { map, max: Math.max(1, max) };
   }, [data, metric]);
+  const heatSources = useMemo(() => {
+    const sourceValue = (row: HeatRow | undefined, key: "jukebox" | "spotify") => Number(metric === "hours" ? row?.[`${key}_ms`] : row?.[`${key}_events`]) || 0;
+    return ([
+      { key: "jukebox" as const, label: "Suffering Jukebox", rgb: JUKEBOX_RGB },
+      { key: "spotify" as const, label: "Spotify", rgb: SPOTIFY_RGB },
+    ]).filter((item) => source === "all" || source === item.key).map((item) => ({
+      ...item,
+      max: Math.max(1, ...(data?.byHourDow || []).map((row) => sourceValue(row, item.key))),
+      value: (row: HeatRow | undefined) => sourceValue(row, item.key),
+    })).filter((item) => (data?.byHourDow || []).some((row) => item.value(row) > 0));
+  }, [data, metric, source]);
 
   const calendarDays = useMemo(() => new Map((data?.calendar || []).map((row) => [row.day, row])), [data]);
   const calendarYears = useMemo(() => {
@@ -735,35 +751,25 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
             <section className={styles.card}>
               <div className={styles.cardHead}><h2>Day of week and time of day</h2></div>
               <p className={styles.cardNote}>Your own clock ({data?.tz || "local time"}).</p>
-              <div className={styles.heatWrap}>
-                <div className={styles.heat}>
-                  {DOW_SHORT.map((label, dow) => (
-                    <div className={styles.heatRow} key={label}>
-                      <b>{label}</b>
-                      {Array.from({ length: 24 }, (_, hour) => {
-                        const cell = heat.map.get(`${dow}:${hour}`);
-                        return (
-                          <i
-                            key={hour}
-                            style={{ background: heatColor(cell, metricValue(cell, metric) / heat.max) }}
-                            title={`${DOW_LONG[dow]} ${hourLabel(hour)} · ${describe(cell)}`}
-                          />
-                        );
-                      })}
+              <div className={`${styles.sourceHeats} ${heatSources.length === 1 ? styles.sourceHeatsOne : ""}`}>
+                {heatSources.map((item) => (
+                  <div className={styles.sourceHeat} key={item.key}>
+                    <div className={styles.sourceHeatTitle}><i style={{ background: `rgb(${item.rgb.join(",")})` }} />{item.label}</div>
+                    <div className={styles.heat}>
+                      {DOW_SHORT.map((label, dow) => (
+                        <div className={styles.heatRow} key={label}>
+                          <b>{label}</b>
+                          {Array.from({ length: 24 }, (_, hour) => {
+                            const cell = heat.map.get(`${dow}:${hour}`);
+                            const value = item.value(cell);
+                            return <i key={hour} style={{ background: sourceHeatColor(item.rgb, value / item.max) }} title={`${item.label} · ${DOW_LONG[dow]} ${hourLabel(hour)} · ${metric === "hours" ? fmtHours(value * 3_600_000) : `${count(value)} plays`}`} />;
+                          })}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <div className={styles.heatAxis} aria-hidden="true">
-                  <span />
-                  {Array.from({ length: 24 }, (_, hour) => <span key={hour}>{hour % 3 === 0 ? hour : ""}</span>)}
-                </div>
-              </div>
-              <div className={styles.heatLegend}>
-                <span>Quiet</span>
-                {[0, 0.25, 0.5, 0.75, 1].map((stop) => (
-                  <i key={stop} style={{ background: heatColor(totals, stop) }} />
+                    <div className={styles.heatAxis} aria-hidden="true"><span />{Array.from({ length: 24 }, (_, hour) => <span key={hour}>{hour % 3 === 0 ? hour : ""}</span>)}</div>
+                  </div>
                 ))}
-                <span>Busiest</span>
               </div>
             </section>
           </div>

@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
 import AnalyticsDashboard from "./analytics-dashboard";
+import DataManager from "./data-manager";
 import styles from "./analytics.module.css";
 
 type ContentType = "music" | "podcast" | "audiobook" | "other";
@@ -296,7 +297,7 @@ export default function AnalyticsClient() {
   const [sessionReady, setSessionReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [accessToken, setAccessToken] = useState("");
-  const [view, setView] = useState<"dashboard" | "import">("dashboard");
+  const [view, setView] = useState<"dashboard" | "import" | "manage">("dashboard");
   const [dashKey, setDashKey] = useState(0);
   const [error, setError] = useState("");
 
@@ -343,9 +344,11 @@ export default function AnalyticsClient() {
           <h1>My Data <span>&amp; Analytics</span></h1>
         </div>
         {sessionReady && signedIn && (
-          <button className={styles.secondaryButton} onClick={() => setView(view === "import" ? "dashboard" : "import")}>
-            {view === "import" ? "Back to Analytics" : "Import Spotify history"}
-          </button>
+          <nav className={styles.dataTabs} aria-label="My Data sections">
+            <button className={`${styles.secondaryButton} ${view === "dashboard" ? styles.activeTab : ""}`} onClick={() => setView("dashboard")}>Analytics</button>
+            <button className={`${styles.secondaryButton} ${view === "import" ? styles.activeTab : ""}`} onClick={() => setView("import")}>Import Spotify history</button>
+            <button className={`${styles.secondaryButton} ${view === "manage" ? styles.activeTab : ""}`} onClick={() => setView("manage")}>Manage my data</button>
+          </nav>
         )}
       </header>
 
@@ -361,6 +364,8 @@ export default function AnalyticsClient() {
           {error && <div className={styles.error}>{error}</div>}
           {view === "import" ? (
             <Wizard onComplete={() => { setDashKey((k) => k + 1); setView("dashboard"); setError(""); }} />
+          ) : view === "manage" && accessToken ? (
+            <DataManager accessToken={accessToken} onChange={() => setDashKey((k) => k + 1)} />
           ) : accessToken ? (
             <AnalyticsDashboard
               key={dashKey}

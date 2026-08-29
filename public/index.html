@@ -4637,9 +4637,8 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
       <input class="pl-input" id="pls-name-input" maxlength="80" placeholder="Playlist name" autocomplete="off"
         onkeydown="if(event.key==='Enter'){event.preventDefault();savePlaylistSettings()}">
       <label class="pl-toggle-lbl" for="pls-access-mode">Who can open this playlist?</label>
-      <select class="pl-input" id="pls-access-mode" onchange="playlistShareModeChanged()"><option value="private">Only me</option><option value="shared">Specific people</option><option value="link">Anyone with the link</option><option value="public">Public — appears in Explore</option></select>
+      <select class="pl-input" id="pls-access-mode" onchange="playlistShareModeChanged()"><option value="private">Only me</option><option value="shared">Specific people</option><option value="public">Public — appears in Explore</option></select>
       <div id="pls-share-people" style="display:none"><div style="display:flex;gap:.4rem"><input class="pl-input" id="pls-share-email" type="email" placeholder="person@example.com"><button class="pl-btn" type="button" onclick="playlistInvitePerson()">Add</button></div><div id="pls-share-people-list" style="margin-top:.45rem;font-size:.55rem;color:var(--text-muted)"></div></div>
-      <div id="pls-share-link" style="display:none"><button class="pl-btn ghost" type="button" onclick="playlistCreateLink()">Create / replace link</button><div id="pls-share-link-result" style="margin-top:.45rem;font-size:.52rem;color:var(--text-muted)"></div></div>
     </div>
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closePlaylistSettings()">Cancel</button>
@@ -13730,9 +13729,10 @@ function openPlaylistSettings(playlistId) {
   const pubTog = document.getElementById('pls-pub-toggle');
   if (nameInp) nameInp.value = p.name || '';
   const mode = document.getElementById('pls-access-mode');
-  if (mode) mode.value = p.visibility || (p.is_public ? 'public' : 'private');
+  if (mode) mode.value = ['private','shared','public'].includes(p.visibility) ? p.visibility : (p.is_public ? 'public' : 'private');
   playlistShareModeChanged();
   document.getElementById('plSettingsOverlay')?.classList.add('open');
+  void playlistLoadPeople();
   setTimeout(() => nameInp?.focus(), 40);
 }
 
@@ -13745,7 +13745,8 @@ async function savePlaylistSettings() {
   if (!_plsPlaylistId) return;
   const id = _plsPlaylistId;
   const name = (document.getElementById('pls-name-input')?.value || '').trim();
-  const visibility = document.getElementById('pls-access-mode')?.value || 'private';
+  const selectedVisibility = document.getElementById('pls-access-mode')?.value;
+  const visibility = ['private','shared','public'].includes(selectedVisibility) ? selectedVisibility : 'private';
   const isPublic = visibility === 'public';
   if (!name) { document.getElementById('pls-name-input')?.focus(); showToast('Give the playlist a name.'); return; }
   const btn = document.getElementById('pls-save-btn');
@@ -13769,9 +13770,38 @@ async function playlistShareRequest(body) {
   const r = await fetch('/api/playlist-share', { method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${session?.access_token || ''}`}, body:JSON.stringify(body) });
   const d = await r.json().catch(()=>({})); if (!r.ok || !d.ok) throw new Error(d.error || 'Could not update sharing.'); return d;
 }
-function playlistShareModeChanged() { const m=document.getElementById('pls-access-mode')?.value; document.getElementById('pls-share-people').style.display=m==='shared'?'':'none'; document.getElementById('pls-share-link').style.display=m==='link'?'':'none'; }
-async function playlistInvitePerson() { const email=document.getElementById('pls-share-email')?.value||''; try { await playlistShareRequest({action:'invite',playlistId:_plsPlaylistId,email}); document.getElementById('pls-share-email').value=''; showToast('Playlist shared with '+email); } catch(e) { showToast(e.message); } }
-async function playlistCreateLink() { try { const d=await playlistShareRequest({action:'new-link',playlistId:_plsPlaylistId}); const url=location.origin+'/?playlistShare='+encodeURIComponent(d.token); document.getElementById('pls-share-link-result').innerHTML='Link ready · <button class="pl-btn ghost" onclick="navigator.clipboard.writeText(\''+url+'\');showToast(\'Link copied\')">Copy link</button>'; } catch(e) { showToast(e.message); } }
+let _plsRecipients = [];
+function renderPlaylistSharePeople() {
+  const el = document.getElementById('pls-share-people-list');
+  if (!el) return;
+  if (!_plsRecipients.length) { el.innerHTML = '<div style="padding:.45rem 0;color:var(--text-muted)">No one else has access yet.</div>'; return; }
+  el.innerHTML = _plsRecipients.map(row => {
+    const email = String(row.recipient_email || '');
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.42rem 0;border-top:1px solid var(--border)"><span>' + escHtml(email) + '</span><button type="button" class="pl-btn ghost" style="padding:.2rem .42rem;font-size:.48rem" onclick="playlistRemovePerson(decodeURIComponent(\'' + encodeURIComponent(email) + '\'))">Remove</button></div>';
+  }).join('');
+}
+async function playlistLoadPeople() {
+  if (!_plsPlaylistId) return;
+  try {
+    const data = await playlistShareRequest({ action:'list-invites', playlistId:_plsPlaylistId });
+    _plsRecipients = Array.isArray(data.recipients) ? data.recipients : [];
+    renderPlaylistSharePeople();
+  } catch(e) { _plsRecipients = []; renderPlaylistSharePeople(); }
+}
+function playlistShareModeChanged() { const m=document.getElementById('pls-access-mode')?.value; document.getElementById('pls-share-people').style.display=m==='shared'?'':'none'; if (m==='shared') renderPlaylistSharePeople(); }
+async function playlistInvitePerson() {
+  const email=document.getElementById('pls-share-email')?.value||'';
+  try {
+    const result = await playlistShareRequest({action:'invite',playlistId:_plsPlaylistId,email});
+    document.getElementById('pls-share-email').value='';
+    await playlistLoadPeople();
+    showToast(result.emailSent ? 'Playlist shared and invitation emailed to '+result.email : 'Playlist shared with '+result.email+(result.emailNotice ? '. '+result.emailNotice : ''));
+  } catch(e) { showToast(e.message); }
+}
+async function playlistRemovePerson(email) {
+  try { await playlistShareRequest({action:'remove-invite',playlistId:_plsPlaylistId,email}); await playlistLoadPeople(); showToast('Access removed for '+email); }
+  catch(e) { showToast(e.message); }
+}
 
 async function changePlaylistPlayMode(id, mode) {
   try {

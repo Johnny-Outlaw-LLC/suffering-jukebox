@@ -1,11 +1,36 @@
-import { createHash, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
-import { bad } from "@/lib/jukebox-request";
+import { bad, rateLimited } from "@/lib/jukebox-request";
 
 export const dynamic = "force-dynamic";
-const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const cleanEmail = (value: unknown) => String(value || "").trim().toLowerCase();
+const siteUrl = () => (process.env.NEXT_PUBLIC_SITE_URL || "https://sufferingjukebox.stream").replace(/\/$/, "");
+
+function emailHtml(playlistName: string) {
+  const name = playlistName.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] || char);
+  return `<!doctype html><html><body style="margin:0;background:#090909;color:#f5f1eb;font-family:Arial,sans-serif"><main style="max-width:560px;margin:0 auto;padding:36px 24px"><p style="margin:0 0 18px;color:#ff6b35;font-size:12px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase">Suffering Jukebox</p><h1 style="margin:0 0 16px;font-size:28px;line-height:1.15">Johnny Outlaw has shared a playlist with you.</h1><p style="color:#c8c8c8;line-height:1.55">You now have access to <strong style="color:#fff">${name}</strong>.</p><p style="margin:28px 0"><a href="${siteUrl()}" style="display:inline-block;padding:13px 18px;border-radius:8px;background:#ff6b35;color:#17110f;font-weight:700;text-decoration:none">Log in to Suffering Jukebox to play</a></p><p style="color:#888;font-size:13px;line-height:1.5">Use the email address this invitation was sent to when you log in.</p></main></body></html>`;
+}
+
+async function sendShareEmail(recipient: string, playlistName: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM_EMAIL;
+  if (!apiKey || !from) return { sent: false, reason: "Email notifications are not configured yet." };
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from,
+      to: [recipient],
+      subject: "Johnny Outlaw shared a playlist with you",
+      html: emailHtml(playlistName),
+    }),
+  });
+  if (!response.ok) {
+    console.error("[playlist-share:email]", response.status, await response.text());
+    return { sent: false, reason: "The invitation email could not be sent." };
+  }
+  return { sent: true };
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -25,13 +50,7 @@ export async function GET(req: NextRequest) {
       const { data: tracks } = rows.length ? await sb.schema(JUKEBOX_SCHEMA).from("playlist_tracks").select("playlist_id,track_id,position").in("playlist_id", rows.map(x => x.id)).order("position") : { data: [] };
       return NextResponse.json({ ok:true, playlists: rows.map(row => ({ ...row, _tracks:(tracks || []).filter(track => track.playlist_id === row.id) })) });
     }
-    if (!/^[A-Za-z0-9_-]{32,}$/.test(token)) return bad("That share link is invalid.", 404);
-    const sb = createSjServiceClient();
-    const { data: playlist, error } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("id,name,default_play_mode").eq("share_token_hash", digest(token)).eq("visibility", "link").maybeSingle();
-    if (error) throw error; if (!playlist) return bad("That share link has expired or was revoked.", 404);
-    const { data: tracks, error: trackError } = await sb.schema(JUKEBOX_SCHEMA).from("playlist_tracks").select("track_id,position").eq("playlist_id", playlist.id).order("position");
-    if (trackError) throw trackError;
-    return NextResponse.json({ ok: true, playlist, tracks: tracks || [] });
+    return bad("Playlist link sharing is no longer available.", 404);
   } catch (error) { console.error("[playlist-share:read]", error); return bad("Could not open this shared playlist.", 500); }
 }
 
@@ -39,8 +58,8 @@ async function owner(req: NextRequest, playlistId: string) {
   const user = await getAuthUser(req);
   if (!user?.email) return null;
   const sb = createSjServiceClient();
-  const { data } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("id").eq("id", playlistId).eq("user_email", cleanEmail(user.email)).maybeSingle();
-  return data ? { user, sb } : null;
+  const { data } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("id,name").eq("id", playlistId).eq("user_email", cleanEmail(user.email)).maybeSingle();
+  return data ? { user, sb, data } : null;
 }
 
 export async function POST(req: NextRequest) {
@@ -50,31 +69,31 @@ export async function POST(req: NextRequest) {
     const action = String(body.action || "");
     const found = await owner(req, playlistId);
     if (!found) return bad("Only the playlist owner can change sharing.", 403);
-    const { sb } = found;
+    const { sb, user, data: playlist } = found;
     if (action === "settings") {
-      const visibility = ["private", "shared", "link", "public"].includes(body.visibility) ? body.visibility : "private";
-      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").update({ visibility, is_public: visibility === "public" }).eq("id", playlistId);
+      const visibility = ["private", "shared", "public"].includes(body.visibility) ? body.visibility : "private";
+      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").update({ visibility, is_public: visibility === "public", share_token_hash: null, share_token_created_at: null }).eq("id", playlistId);
       if (error) throw error;
       return NextResponse.json({ ok: true, visibility });
     }
     if (action === "invite") {
+      if (rateLimited(`playlist-share-invite:${user.id}`, 12, 60_000)) return bad("Please wait a moment before sending another invitation.", 429);
       const email = cleanEmail(body.email); if (!/^\S+@\S+\.\S+$/.test(email)) return bad("Enter a valid email address.");
+      const { data: existing, error: existingError } = await sb.schema(JUKEBOX_SCHEMA).from("playlist_access").select("recipient_email").eq("playlist_id", playlistId).eq("recipient_email", email).maybeSingle();
+      if (existingError) throw existingError;
       const { error } = await sb.schema(JUKEBOX_SCHEMA).from("playlist_access").upsert({ playlist_id: playlistId, recipient_email: email });
       if (error) throw error;
       await sb.schema(JUKEBOX_SCHEMA).from("playlists").update({ visibility: "shared", is_public: false }).eq("id", playlistId);
-      return NextResponse.json({ ok: true, email });
+      const emailResult = existing ? { sent: false, reason: "That person already has access." } : await sendShareEmail(email, playlist.name || "a playlist");
+      return NextResponse.json({ ok: true, email, emailSent: emailResult.sent, emailNotice: emailResult.reason || null });
+    }
+    if (action === "list-invites") {
+      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).from("playlist_access").select("recipient_email,created_at").eq("playlist_id", playlistId).order("created_at");
+      if (error) throw error;
+      return NextResponse.json({ ok: true, recipients: data || [] });
     }
     if (action === "remove-invite") {
       const { error } = await sb.schema(JUKEBOX_SCHEMA).from("playlist_access").delete().eq("playlist_id", playlistId).eq("recipient_email", cleanEmail(body.email));
-      if (error) throw error; return NextResponse.json({ ok: true });
-    }
-    if (action === "new-link") {
-      const token = randomBytes(32).toString("base64url");
-      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").update({ visibility: "link", is_public: false, share_token_hash: digest(token), share_token_created_at: new Date().toISOString() }).eq("id", playlistId);
-      if (error) throw error; return NextResponse.json({ ok: true, token });
-    }
-    if (action === "revoke-link") {
-      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").update({ share_token_hash: null, share_token_created_at: null, visibility: "private", is_public: false }).eq("id", playlistId);
       if (error) throw error; return NextResponse.json({ ok: true });
     }
     return bad("Unknown share action.");

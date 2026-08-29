@@ -19,6 +19,25 @@ const BUCKETS = new Set(["auto", "day", "week", "month", "year"]);
 // A filter list of a few thousand names is a client bug, not a question worth
 // answering; trim it rather than handing Postgres an unbounded array.
 const FILTER_MAX = 2000;
+const DATA_BATCH_MAX = 100;
+
+function cleanDataBatches(value: unknown): Array<{ source: "spotify" | "jukebox"; year: number }> {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const batches: Array<{ source: "spotify" | "jukebox"; year: number }> = [];
+  for (const item of value) {
+    const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const source = String(row.source || "").trim().toLowerCase();
+    const year = Number(row.year);
+    if ((source !== "spotify" && source !== "jukebox") || !Number.isInteger(year) || year < 1900 || year > 2200) continue;
+    const key = `${source}:${year}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    batches.push({ source, year });
+    if (batches.length >= DATA_BATCH_MAX) break;
+  }
+  return batches;
+}
 
 function cleanFilterList(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
@@ -104,6 +123,30 @@ export async function POST(req: NextRequest) {
     const sb = createSjServiceClient();
     const email = user.email.toLowerCase();
     const uid = user.id;
+
+    if (action === "data-batches") {
+      if (rateLimited(`listening-data-batches:${uid}`, 60, 60_000)) return tooMany();
+      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("listening_data_batches", { p_user_id: uid });
+      if (error) throw error;
+      return NextResponse.json({ ok: true, data: data ?? { batches: [] } });
+    }
+
+    if (action === "archive-data-batches" || action === "restore-data-batches") {
+      if (rateLimited(`listening-data-update:${uid}`, 12, 60_000)) return tooMany();
+      const batches = cleanDataBatches(body.batches);
+      if (!batches.length) return bad("Choose at least one year and source.");
+      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("set_listening_data_archive", {
+        p_user_id: uid,
+        p_batches: batches,
+        p_archive: action === "archive-data-batches",
+      });
+      if (error) throw error;
+      const { data: refreshed, error: refreshError } = await sb
+        .schema(JUKEBOX_SCHEMA)
+        .rpc("listening_data_batches", { p_user_id: uid });
+      if (refreshError) throw refreshError;
+      return NextResponse.json({ ok: true, result: data ?? { records: 0 }, data: refreshed ?? { batches: [] } });
+    }
 
     // Analytics is a POST because the artist and song filters are multi-select
     // and a long selection does not survive a query string.
