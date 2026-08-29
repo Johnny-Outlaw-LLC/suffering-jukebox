@@ -89,6 +89,35 @@ async function reactionCounts(trackId: string) {
   return counts;
 }
 
+/**
+ * Counts for a whole playlist in one query. The cover wall used to ask for
+ * these one track at a time - 120 serverless invocations and 120 round trips
+ * to paint one screen - which was most of what made a large playlist feel
+ * slow. Everything else about the shape stays the same so the single-track
+ * form still works for the player.
+ */
+const MAX_BATCH_IDS = 600;
+
+async function reactionCountsMany(trackIds: string[]) {
+  const out: Record<string, Record<Reaction, number>> = {};
+  for (const id of trackIds) {
+    out[id] = Object.fromEntries(REACTIONS.map((r) => [r, 0])) as Record<Reaction, number>;
+  }
+  if (!trackIds.length) return out;
+  const { data, error } = await createSjClient()
+    .from("track_reaction_totals")
+    .select("track_id,reaction,reaction_count")
+    .in("track_id", trackIds);
+  if (error) throw error;
+  for (const row of data ?? []) {
+    const bucket = out[row.track_id as string];
+    if (bucket && REACTION_SET.has(row.reaction)) {
+      bucket[row.reaction as Reaction] = Number(row.reaction_count) || 0;
+    }
+  }
+  return out;
+}
+
 const TIMELINE_CAP = 2500;
 
 async function reactionTimeline(trackId: string) {
@@ -130,6 +159,19 @@ export async function GET(req: NextRequest) {
         track_ids: [...new Set((data ?? []).map((row) => row.track_id).filter(Boolean))],
       });
     }
+    const rawMany = req.nextUrl.searchParams.get("track_ids");
+    if (rawMany) {
+      const ids = [...new Set(rawMany.split(",").map((v) => uuid(v.trim())).filter(Boolean) as string[])];
+      if (!ids.length) return NextResponse.json({ ok: false, error: "Invalid tracks." }, { status: 400 });
+      if (ids.length > MAX_BATCH_IDS) {
+        return NextResponse.json({ ok: false, error: "Too many tracks." }, { status: 400 });
+      }
+      // Deliberately not "counts": the single-track form already uses that key
+      // for a bare reaction map, and two shapes under one name is a silent bug
+      // waiting for whoever reads the wrong one.
+      return NextResponse.json({ ok: true, by_track: await reactionCountsMany(ids) });
+    }
+
     const trackId = uuid(req.nextUrl.searchParams.get("track_id"));
     if (!trackId) return NextResponse.json({ ok: false, error: "Invalid track." }, { status: 400 });
     const withTimeline = req.nextUrl.searchParams.get("timeline") === "1";

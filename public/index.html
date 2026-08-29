@@ -2945,7 +2945,27 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-size-slider::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--accent); border:none; box-shadow:0 0 10px #ff6b3566; }
 .pl-wall-scroll { overflow:auto; max-height:calc(100vh - 180px); scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding:16px; }
 .pl-wall-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--pl-cell,120px),1fr)); gap:2px; }
-.pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:size; }
+/* content-visibility lets the browser skip layout and paint for every cover
+   that is not on screen. On a 231 song wall this took a repaint from about
+   300ms to about 30ms, and it is the single reason a big playlist scrolls.
+   contain-intrinsic-size has to be given or the scrollbar jumps as cells are
+   realised; the cells are square, so one number does both axes.
+
+   container-type is inline-size and not size: the cqw units below only ever
+   need the width, and size containment made the browser lay every cell out
+   twice. */
+.pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:inline-size; content-visibility:auto; contain-intrinsic-size:auto var(--pl-cell,120px); }
+/* The song on screen, the card that is open and anything mid-drag must never
+   be skipped: they carry a frame or a shadow that spills outside the cell. */
+.pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-dragging { content-visibility:visible; }
+/* Drag to reorder. touch-action:none is what stops the browser scrolling the
+   wall out from under a finger that meant to move a cover. */
+.pl-wall-draggable { touch-action:none; }
+.pl-wall-cell.pl-wall-dragging { opacity:.35; transform:scale(.94); z-index:20; }
+.pl-wall-drop-marker {
+  aspect-ratio:1; border:2px dashed var(--accent); border-radius:2px;
+  background:#ff6b3514; pointer-events:none;
+}
 .pl-wall-cell img { width:100%; height:100%; object-fit:cover; display:block; transition:filter .3s, opacity .3s; }
 /* Soft dark wash so white title + stats stay readable — ShutterField-style. */
 .pl-wall-cell::after {
@@ -3019,8 +3039,8 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-play.on:hover { box-shadow:0 4px 16px #0008; }
 .pl-wall-cell.blocked img { opacity:.22; filter:grayscale(1); }
 .pl-wall-cell.blocked::before { content:'⊘'; position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:#fff9; background:#0007; pointer-events:none; }
-.pl-wall-cell.editable { cursor:grab; }
-.pl-wall-cell.editable:active { cursor:grabbing; }
+.pl-wall-cell.pl-wall-draggable { cursor:grab; }
+.pl-wall-cell.pl-wall-draggable:active { cursor:grabbing; }
 .pl-wall-cell-x {
   position: absolute; top: 8px; right: 8px; z-index: 6;
   width: 24px; height: 24px; border-radius: 50%;
@@ -12542,6 +12562,22 @@ async function dvAdd(i) {
 }
 
 // ── Add to playlist ───────────────────────────────────────────────────────
+/**
+ * Playlist positions sit on a grid of 1000 rather than 0, 1, 2, 3.
+ *
+ * Dragging a song writes the midpoint of its two new neighbours, so a move is
+ * one UPDATE however long the playlist is - but consecutive integers leave no
+ * midpoint at all, and the old data had duplicate positions besides. The grid
+ * is what gives every drop somewhere to land. Anything that appends has to use
+ * plAppendPosition(), or the new song sorts to the front.
+ */
+const PL_POS_STEP = 1000;
+
+function plAppendPosition(tracks) {
+  const positions = (tracks || []).map(t => Number(t.position)).filter(Number.isFinite);
+  return (positions.length ? Math.max(...positions) : 0) + PL_POS_STEP;
+}
+
 async function sjmOpenPlaylists() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_sjmTrackId) return;
@@ -12627,7 +12663,7 @@ async function sjmTogglePlaylist(playlistId) {
       p._tracks = (p._tracks || []).filter(r => r.track_id !== tid);
       showToast('Removed from ' + (p.name || 'playlist') + '.');
     } else {
-      const pos = (p._tracks || []).length;
+      const pos = plAppendPosition(p._tracks);
       await dbPost('/playlist_tracks', { playlist_id: playlistId, track_id: tid, position: pos });
       p._tracks = (p._tracks || []).concat([{ playlist_id: playlistId, track_id: tid, position: pos }]);
       showToast('Added to ' + (p.name || 'playlist') + '.');
@@ -12654,8 +12690,8 @@ async function sjmCreatePlaylist() {
       user_name:  googleUser.displayName || googleUser.name || '',
       context:    _playlistContext(),
     });
-    await dbPost('/playlist_tracks', { playlist_id: pl.id, track_id: tid, position: 0 });
-    pl._tracks = [{ playlist_id: pl.id, track_id: tid, position: 0 }];
+    await dbPost('/playlist_tracks', { playlist_id: pl.id, track_id: tid, position: PL_POS_STEP });
+    pl._tracks = [{ playlist_id: pl.id, track_id: tid, position: PL_POS_STEP }];
     playlists.unshift(pl);
     _savedPlaylists.unshift(pl);
     showToast('Created "' + name + '" and added this song.');
@@ -13281,7 +13317,7 @@ async function doSavePlaylist() {
   try {
     const [pl] = await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:googleUser.displayName||googleUser.name||'', context:_playlistContext() });
     for (let i=0; i<ytQueue.length; i++) {
-      if (ytQueue[i].trackId) await dbPost('/playlist_tracks', { playlist_id:pl.id, track_id:ytQueue[i].trackId, position:i });
+      if (ytQueue[i].trackId) await dbPost('/playlist_tracks', { playlist_id:pl.id, track_id:ytQueue[i].trackId, position:(i + 1) * PL_POS_STEP });
     }
     closeSavePlaylistDialog();
     await loadPlaylists(); if (ytPlayerEl) updateYTQueueUI(); render();
@@ -13520,7 +13556,7 @@ async function savePlaylistChanges(id) {
   try {
     await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
     for (let i = 0; i < newTracks.length; i++) {
-      await dbPost('/playlist_tracks', { playlist_id: id, track_id: newTracks[i].track_id, position: i });
+      await dbPost('/playlist_tracks', { playlist_id: id, track_id: newTracks[i].track_id, position: (i + 1) * PL_POS_STEP });
     }
     delete plDirty[id];
     await loadPlaylists(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
@@ -14587,7 +14623,7 @@ async function plbSave() {
       });
       const addedByEmail = googleUser.email;
       const addedByName = googleUser.displayName || googleUser.name || '';
-      const rows = _plbDraft.map((d, i) => ({ playlist_id: pl.id, track_id: d.trackId, position: i, added_by_email: addedByEmail, added_by_name: addedByName }));
+      const rows = _plbDraft.map((d, i) => ({ playlist_id: pl.id, track_id: d.trackId, position: (i + 1) * PL_POS_STEP, added_by_email: addedByEmail, added_by_name: addedByName }));
       for (let i = 0; i < rows.length; i += 80) {
         await dbPost('/playlist_tracks', rows.slice(i, i + 80));
       }
@@ -14624,11 +14660,11 @@ async function plbSave() {
       }
       const p = plbPlaylistById(targetId);
       if (!p) throw new Error('Playlist missing');
-      let pos = (p._tracks || []).length;
+      let pos = plAppendPosition(p._tracks);
       const fresh = _plbDraft.filter(d => !have.has(d.trackId));
       const addedByEmail = googleUser.email;
       const addedByName = googleUser.displayName || googleUser.name || '';
-      const rows = fresh.map(d => ({ playlist_id: p.id, track_id: d.trackId, position: pos++, added_by_email: addedByEmail, added_by_name: addedByName }));
+      const rows = fresh.map(d => ({ playlist_id: p.id, track_id: d.trackId, position: (pos += PL_POS_STEP), added_by_email: addedByEmail, added_by_name: addedByName }));
       for (let i = 0; i < rows.length; i += 80) {
         await dbPost('/playlist_tracks', rows.slice(i, i + 80));
       }
@@ -15229,6 +15265,44 @@ function plWallPlayTip(trackId) {
   return bits.join(' · ');
 }
 
+/** The rate / heart / heartbreak cluster for one cell. */
+function plWallBadgesHTML(trackId) {
+  const vote = getMyVote(trackId);
+  const counts = trackReactionCounts[trackId] || {};
+  const heartN = Number(counts.heart) || 0;
+  const sadN = Number(counts.sad) || 0;
+  return `<span class="pl-wall-badges" data-pl-badges="${trackId}">` +
+    `<button type="button" class="tvb-cycle${voteClass(vote)}${vote ? '' : ' pl-wall-badge-latent'}" data-vote-track="${trackId}" onclick="cycleVote('${trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button>` +
+    `<button type="button" class="pl-wall-rxn${heartN ? ' on' : ''}${heartN ? '' : ' pl-wall-badge-latent'}" data-reaction-track="${trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button>` +
+    `<button type="button" class="pl-wall-rxn${sadN ? ' on' : ''}${sadN ? '' : ' pl-wall-badge-latent'}" data-reaction-track="${trackId}" data-track-reaction="sad" onclick="event.stopPropagation();ytpReact('sad',this,event)" title="Heartbreak">${SJ_REACTION_ICONS.sad}<span class="pl-wall-rxn-n">${sadN ? ytpReactionCountLabel(sadN) : ''}</span></button>` +
+    `</span>`;
+}
+
+/** Build the cluster into a cell that does not have one yet. */
+function plWallEnsureBadges(cell) {
+  if (!cell || cell.querySelector('.pl-wall-badges')) return;
+  const tid = cell.getAttribute('data-pc-track');
+  if (!tid) return;
+  cell.insertAdjacentHTML('beforeend', plWallBadgesHTML(tid));
+}
+
+/**
+ * After counts land, give a cluster to every cell that has something to show.
+ * Cells with nothing to show stay bare until somebody hovers them.
+ */
+function plWallSyncBadges() {
+  if (viewMode !== 'playlistchart') return;
+  document.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
+    const tid = cell.getAttribute('data-pc-track');
+    if (!tid) return;
+    const counts = trackReactionCounts[tid] || {};
+    if (getMyVote(tid) || Number(counts.heart) || Number(counts.sad)) {
+      plWallEnsureBadges(cell);
+      refreshTrackReactionUI(tid);
+    }
+  });
+}
+
 function plWallCellOverlays(trackId, title) {
   if (!trackId) return '';
   const vote = getMyVote(trackId);
@@ -15240,13 +15314,14 @@ function plWallCellOverlays(trackId, title) {
     : '';
   // Only show thumbs / heart / heartbreak when set. Empty ones stay latent and
   // appear after a 2s hover on the top-right corner so the cover stays clean.
+  // The cluster is 13 of the 17 nodes a cell used to carry, and on a wall of
+  // several hundred songs almost none of them are ever looked at: the buttons
+  // are hidden until a two second hover unless the song already carries a
+  // rating or a reaction. So a bare song ships the hover target only, and the
+  // buttons are built the moment they are wanted - plWallEnsureBadges().
   const badges =
     `<span class="pl-wall-badge-hot" data-pl-badge-hot="${trackId}" title="Hover to rate or react"></span>` +
-    `<span class="pl-wall-badges" data-pl-badges="${trackId}">` +
-      `<button type="button" class="tvb-cycle${voteClass(vote)}${vote ? '' : ' pl-wall-badge-latent'}" data-vote-track="${trackId}" onclick="cycleVote('${trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button>` +
-      `<button type="button" class="pl-wall-rxn${heartN ? ' on' : ''}${heartN ? '' : ' pl-wall-badge-latent'}" data-reaction-track="${trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button>` +
-      `<button type="button" class="pl-wall-rxn${sadN ? ' on' : ''}${sadN ? '' : ' pl-wall-badge-latent'}" data-reaction-track="${trackId}" data-track-reaction="sad" onclick="event.stopPropagation();ytpReact('sad',this,event)" title="Heartbreak">${SJ_REACTION_ICONS.sad}<span class="pl-wall-rxn-n">${sadN ? ytpReactionCountLabel(sadN) : ''}</span></button>` +
-    `</span>`;
+    (vote || heartN || sadN ? plWallBadgesHTML(trackId) : '');
   let stats = '';
   if (googleUser) {
     const plays = Number(myInAppPlays[trackId]) || 0;
@@ -15261,36 +15336,119 @@ function plWallCellOverlays(trackId, title) {
   return name + badges + stats;
 }
 
+/**
+ * One listener on the grid instead of five on every cell.
+ *
+ * At 300 songs the old version attached about 1,500 listeners and had to be
+ * re-run after every repaint, walking the whole wall to find the cells it had
+ * already bound. Delegation binds once for the life of the grid, survives any
+ * number of repaints, and lets a bare cell grow its buttons on first hover.
+ */
+let _plWallHoverCell = null;
+let _plWallHoverOpen = null;
+let _plWallHoverClose = null;
+
 function plWallBindBadgeHovers() {
-  document.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
-    if (cell._plBadgeBound) return;
-    cell._plBadgeBound = true;
-    const hot = cell.querySelector('.pl-wall-badge-hot');
-    const badges = cell.querySelector('.pl-wall-badges');
-    if (!hot || !badges) return;
-    let openTimer = null;
-    let closeTimer = null;
-    const open = () => {
-      clearTimeout(closeTimer);
+  const grid = document.getElementById('pl-wall-grid');
+  if (!grid || grid._plBadgeBound) return;
+  grid._plBadgeBound = true;
+
+  const close = (cell) => { if (cell) cell.classList.remove('pl-wall-badges-open'); };
+
+  grid.addEventListener('pointerover', (ev) => {
+    const hot = ev.target.closest('.pl-wall-badge-hot, .pl-wall-badges');
+    const cell = ev.target.closest('.pl-wall-cell');
+    if (!cell || !hot) return;
+    clearTimeout(_plWallHoverClose);
+    if (_plWallHoverCell && _plWallHoverCell !== cell) close(_plWallHoverCell);
+    _plWallHoverCell = cell;
+    // Reached by moving onto the buttons themselves: they are already open.
+    if (hot.classList.contains('pl-wall-badges')) {
+      clearTimeout(_plWallHoverOpen);
       cell.classList.add('pl-wall-badges-open');
-    };
-    const scheduleOpen = () => {
-      clearTimeout(closeTimer);
-      clearTimeout(openTimer);
-      openTimer = setTimeout(open, 2000);
-    };
-    const scheduleClose = () => {
-      clearTimeout(openTimer);
-      clearTimeout(closeTimer);
-      closeTimer = setTimeout(() => cell.classList.remove('pl-wall-badges-open'), 280);
-    };
-    hot.addEventListener('pointerenter', scheduleOpen);
-    hot.addEventListener('pointerleave', scheduleClose);
-    badges.addEventListener('pointerenter', () => { clearTimeout(openTimer); clearTimeout(closeTimer); open(); });
-    badges.addEventListener('pointerleave', scheduleClose);
-    // Keep a click on the empty corner from opening the track card after a long hover.
-    hot.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+      return;
+    }
+    clearTimeout(_plWallHoverOpen);
+    _plWallHoverOpen = setTimeout(() => {
+      plWallEnsureBadges(cell);
+      cell.classList.add('pl-wall-badges-open');
+    }, 2000);
   });
+
+  grid.addEventListener('pointerout', (ev) => {
+    const cell = ev.target.closest('.pl-wall-cell');
+    if (!cell) return;
+    // Moving between the hot corner and the buttons inside one cell is not
+    // leaving it.
+    if (ev.relatedTarget && cell.contains(ev.relatedTarget)) return;
+    clearTimeout(_plWallHoverOpen);
+    clearTimeout(_plWallHoverClose);
+    _plWallHoverClose = setTimeout(() => close(cell), 280);
+  });
+
+  // A click on the empty corner must not open the track card behind it.
+  grid.addEventListener('click', (ev) => {
+    if (ev.target.closest('.pl-wall-badge-hot')) { ev.preventDefault(); ev.stopPropagation(); }
+  }, true);
+
+  // Everything a cover cell does, handled here instead of on the cell. The
+  // index comes from the cell's place among its siblings, so it is right after
+  // a removal or a drag without anything being renumbered.
+  const indexOf = (cell) => plWallGridCells(grid).indexOf(cell);
+
+  grid.addEventListener('click', (ev) => {
+    const cell = ev.target.closest('.pl-wall-cell');
+    if (!cell) return;
+    // The click the browser fires after a drag is not a click on the cover.
+    // Timestamped rather than a flag a later click clears: a drag that ends
+    // outside the grid, or on a touchscreen, fires no click at all, and a
+    // one-shot flag would then sit armed and swallow the next real tap.
+    if (Date.now() - (grid._plDragEndedAt || 0) < 300) { ev.stopPropagation(); return; }
+    if (ev.target.closest('.pl-wall-badges')) return;
+    const i = indexOf(cell);
+    if (i < 0) return;
+    if (ev.target.closest('.pl-wall-cell-x')) {
+      ev.stopPropagation();
+      plWallRemoveMyTrack(i);
+      return;
+    }
+    plWallOpenPop(i, ev);
+  });
+
+  grid.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const cell = ev.target.closest('.pl-wall-cell');
+    if (!cell) return;
+    ev.preventDefault();
+    const i = indexOf(cell);
+    if (i >= 0) plWallOpenPop(i, ev);
+  });
+
+  grid.addEventListener('pointerdown', (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    const cell = ev.target.closest('.pl-wall-cell.pl-wall-draggable');
+    if (!cell) return;
+    // The buttons on a cover are controls, not handles.
+    if (ev.target.closest('.pl-wall-badges, .pl-wall-cell-x, .pl-wall-badge-hot')) return;
+    plWallDragBegin(cell, ev);
+  });
+
+  grid.addEventListener('pointermove', (ev) => {
+    if (!_plDrag) return;
+    ev.preventDefault();
+    plWallDragMove(grid, ev);
+  });
+
+  const finish = async (ev) => {
+    if (!_plDrag) return;
+    const wasDrag = _plDrag.active;
+    // Stamped before the await: the click lands as soon as the pointer is up,
+    // well before an await on the network has come back.
+    if (wasDrag) grid._plDragEndedAt = Date.now();
+    await plWallDragEnd(grid, ev);
+  };
+  grid.addEventListener('pointerup', finish);
+  grid.addEventListener('pointercancel', finish);
 }
 
 function plWallRefreshStats() {
@@ -15333,9 +15491,46 @@ function plWallRefreshStats() {
   });
 }
 
-function plWallLoadReactionCounts(ids) {
-  const uniq = [...new Set((ids || []).filter(Boolean))];
-  uniq.slice(0, 120).forEach(id => { try { loadTrackReactionCounts(id); } catch (_) {} });
+/**
+ * Reaction counts for the whole wall in one request.
+ *
+ * This used to call loadTrackReactionCounts() once per track - 120 serverless
+ * invocations at about 180ms each, fired again on every re-render, all of it
+ * competing with a few hundred thumbnails for the same connection. It was the
+ * single biggest reason a large playlist felt slow to open.
+ *
+ * Only ids we have no answer for are asked about, so a repaint costs nothing.
+ */
+const _plWallRxnAsked = new Set();
+const PL_RXN_CHUNK = 100;
+
+async function plWallLoadReactionCounts(ids) {
+  const need = [...new Set((ids || []).filter(Boolean))]
+    .filter(id => !trackReactionCounts[id] && !_plWallRxnAsked.has(id))
+    .slice(0, 600);
+  if (!need.length) { plWallSyncBadges(); return; }
+  need.forEach(id => _plWallRxnAsked.add(id));
+  // Chunked because a uuid is 37 characters in a query string: a 300 song wall
+  // in one request is an 11KB URL, and 8KB is where proxies start refusing.
+  // Three requests instead of one is still forty times better than 120.
+  const chunks = [];
+  for (let i = 0; i < need.length; i += PL_RXN_CHUNK) chunks.push(need.slice(i, i + PL_RXN_CHUNK));
+  await Promise.all(chunks.map(async chunk => {
+    try {
+      const res = await fetch(sjApiUrl('/api/sj-reaction?track_ids=' + chunk.join(',')), { cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.ok) throw new Error(body.error || 'Could not load reactions.');
+      Object.entries(body.by_track || {}).forEach(([id, counts]) => {
+        trackReactionCounts[id] = counts || {};
+      });
+    } catch (e) {
+      // An empty answer is still an answer: without this the wall would ask
+      // for the same ids again on every repaint.
+      chunk.forEach(id => { if (!trackReactionCounts[id]) trackReactionCounts[id] = {}; });
+      console.warn('plWallLoadReactionCounts error', e);
+    }
+  }));
+  plWallSyncBadges();
 }
 
 function playlistChartTipMeta(row, i, isCurrent, played, skipped) {
@@ -15516,7 +15711,18 @@ function plWallOpenPop(i, ev) {
   const esc = s => escHtml(s || '');
   const meta = esc(playlistChartTipMeta(row, i, isCurrent, played, skipped));
   const sub = esc(row.artist) + (row.album ? ' · ' + esc(row.album) : '');
-  const color = row.color || DEFAULT_BAR_COLOR;
+  // Only a song with no artwork shows a colour at all, so the one album that
+  // needs measuring is measured now rather than all of them up front.
+  if (!row.artwork && row._alb && !artColorCache[row._alb.id]) {
+    extractArtColors([row._alb]).then(() => {
+      if (_plWallCard && _plWallPopIdx === i) {
+        const ph = _plWallCard.el.querySelector('.sc-art-ph');
+        const c = artColorCache[row._alb.id];
+        if (ph && c) { ph.style.background = c + '22'; ph.style.color = c; }
+      }
+    }).catch(() => {});
+  }
+  const color = (row._alb && artColorCache[row._alb.id]) || row.color || DEFAULT_BAR_COLOR;
   const anchorEl = (ev && ev.currentTarget) || document.querySelector(`.pl-wall-cell[data-pc-index="${i}"]`) || document.querySelector(`.pl-detail-row[data-pc-index="${i}"]`);
   const artHtml = row.artwork
     ? `<img class="sc-art" src="${row.artwork}" loading="lazy" alt="">`
@@ -15733,9 +15939,12 @@ async function openPlaylistChart(playlistId) {
     const artistById = Object.fromEntries(artistsRows.map(a => [a.id, a]));
     const chartYT = await loadYT(ids);
     Object.assign(ytData, chartYT);
-    extractArtColors(albRows).then(() => {
-      if (viewMode === 'playlistchart' && playlistChartId === playlistId) renderPlaylistChart();
-    });
+    // extractArtColors() used to run here over every album on the playlist:
+    // one CORS <img> plus a canvas scan each, on a different cache key from
+    // the grid's own thumbnails so nothing was shared, and a full re-render
+    // when it finished. All of it bought one thing - the tint behind the ♫
+    // placeholder on the track card of a song with no artwork - so that one
+    // album is now measured when the card opens instead. See plWallOpenPop().
     loadPlayCounts(ids);
     if (googleUser) loadMyPlayCounts().then(() => { if (viewMode === 'playlistchart') plWallRefreshStats(); });
     const rows = ordered.map((pt, index) => {
@@ -15750,9 +15959,10 @@ async function openPlaylistChart(playlistId) {
     playlistChartRows = rows;
     playlistChartBaseQueue = rows.filter(r => chartYT[r.trackId]?.video_id).map(r =>
       ytQueueItem(chartYT[r.trackId].video_id, r.title, r.trackId, r.artist));
-    _fetchLyricsForTracks(rows.map(r => r.trackId)).then(() => {
-      if (viewMode === 'playlistchart' && playlistChartId === playlistId) renderPlaylistChart();
-    });
+    // Prefetched so the track card opens with words already in hand. It used
+    // to redraw the whole wall when it landed, which was pure waste: no cell
+    // and no detail row shows a lyric.
+    _fetchLyricsForTracks(rows.map(r => r.trackId));
     renderPlaylistChart();
     // Browse first — do not auto-join. Watch the host's now-playing so the
     // wall can highlight it; JOIN NOW is what starts the mirror.
@@ -15793,116 +16003,243 @@ function returnToPlaylistExplorer() {
   renderLanding();
 }
 
-// Contributor self-service: a track's owner may reorder it only among their
-// own other tracks (never past someone else's, which never move) or remove
-// it outright. The playlist's own owner can already do all of this - and
-// more - from Manage Playlists / Playlist Settings; this is for everyone
-// else who has added something to a public playlist.
-function plWallNearestOwnIndex(fromIndex, dir, email) {
-  if (!email) return -1;
-  const q = playlistChartQueue();
-  for (let i = fromIndex + dir; i >= 0 && i < q.length; i += dir) {
-    const row = playlistChartRowFor(q[i], i);
-    if (row.addedByEmail && row.addedByEmail === email) return i;
-  }
-  return -1;
+// ── Drag a cover to a new place in the playlist ──────────────────────────
+//
+// Pointer events rather than HTML5 drag-and-drop, because dragstart never
+// fires on a touchscreen and the wall is mostly looked at on a phone. A press
+// only becomes a drag after DRAG_SLOP pixels, so an ordinary tap still opens
+// the track card.
+const PL_DRAG_SLOP = 6;
+let _plDrag = null;
+
+function plWallGridCells(grid) {
+  return [...grid.querySelectorAll('.pl-wall-cell')];
 }
 
-async function plWallSwapPositions(indexA, indexB) {
-  if (!googleUser || !playlistChartId || indexA === indexB) return;
-  const q = playlistChartQueue();
-  const rowA = playlistChartRowFor(q[indexA], indexA);
-  const rowB = playlistChartRowFor(q[indexB], indexB);
-  if (!rowA.ptId || !rowB.ptId) return;
-  // Both ends of the swap have to be the caller's own - this is what keeps
-  // everyone else's songs locked in place no matter which side initiates it.
-  if (rowA.addedByEmail !== googleUser.email || rowB.addedByEmail !== googleUser.email) return;
-  const pl = (_savedPlaylists || []).find(x => x.id === playlistChartId);
-  const a = pl?._tracks?.find(t => t.id === rowA.ptId);
-  const b = pl?._tracks?.find(t => t.id === rowB.ptId);
-  if (!a || !b) return;
-  const p1 = a.position, p2 = b.position;
-  try {
-    await Promise.all([
-      dbPatch(`/playlist_tracks?id=eq.${a.id}`, { position: p2 }),
-      dbPatch(`/playlist_tracks?id=eq.${b.id}`, { position: p1 }),
-    ]);
-    a.position = p2; b.position = p1;
-    // Same reasoning as plWallRemoveMyTrack: swap the two in place and
-    // repaint the list rather than refetching the whole playlist.
-    const live = ytQueue === playlistChartBaseQueue;
-    const tmp = playlistChartBaseQueue[indexA];
-    playlistChartBaseQueue[indexA] = playlistChartBaseQueue[indexB];
-    playlistChartBaseQueue[indexB] = tmp;
-    const ra = playlistChartRows.findIndex(r => r.ptId === rowA.ptId);
-    const rb = playlistChartRows.findIndex(r => r.ptId === rowB.ptId);
-    if (ra >= 0 && rb >= 0) {
-      const t = playlistChartRows[ra];
-      playlistChartRows[ra] = playlistChartRows[rb];
-      playlistChartRows[rb] = t;
-      playlistChartRows.forEach((r, n) => { r.index = n; });
-    }
-    if (live) {
-      if (ytQueueIdx === indexA) ytQueueIdx = indexB;
-      else if (ytQueueIdx === indexB) ytQueueIdx = indexA;
-      updateYTQueueUI();
-    }
+/** Which slot the pointer is currently over, counting gaps not cells. */
+function plWallDropIndex(grid, x, y) {
+  const cells = plWallGridCells(grid).filter(c => c !== _plDrag?.cell);
+  for (let i = 0; i < cells.length; i++) {
+    const b = cells[i].getBoundingClientRect();
+    // A grid reads left to right, top to bottom, so a point is "before" a cell
+    // when it is above its row or left of its middle within that row.
+    if (y < b.top) return i;
+    if (y <= b.bottom && x < b.left + b.width / 2) return i;
+  }
+  return cells.length;
+}
+
+function plWallDragBegin(cell, ev) {
+  _plDrag = { cell, startX: ev.clientX, startY: ev.clientY, active: false, from: -1, marker: null };
+}
+
+function plWallDragMove(grid, ev) {
+  if (!_plDrag) return;
+  if (!_plDrag.active) {
+    if (Math.abs(ev.clientX - _plDrag.startX) < PL_DRAG_SLOP
+      && Math.abs(ev.clientY - _plDrag.startY) < PL_DRAG_SLOP) return;
+    _plDrag.active = true;
+    _plDrag.from = plWallGridCells(grid).indexOf(_plDrag.cell);
+    _plDrag.cell.classList.add('pl-wall-dragging');
+    // A single placeholder moved around the grid, rather than re-rendering the
+    // wall on every pointermove.
+    const marker = document.createElement('div');
+    marker.className = 'pl-wall-drop-marker';
+    _plDrag.marker = marker;
+    grid.appendChild(marker);
     plWallClosePop();
-    plWallRepaintList();
-  } catch (e) {
-    showToast('Could not reorder that song.');
   }
+  const at = plWallDropIndex(grid, ev.clientX, ev.clientY);
+  const cells = plWallGridCells(grid).filter(c => c !== _plDrag.cell && c !== _plDrag.marker);
+  const ref = cells[at] || null;
+  if (ref) grid.insertBefore(_plDrag.marker, ref);
+  else grid.appendChild(_plDrag.marker);
 }
 
-async function plWallMoveMyTrack(index, dir) {
-  if (!googleUser || !playlistChartId) return;
+async function plWallDragEnd(grid, ev) {
+  const drag = _plDrag;
+  _plDrag = null;
+  if (!drag) return false;
+  drag.cell.classList.remove('pl-wall-dragging');
+  if (!drag.active) return false;
+
+  const marker = drag.marker;
+  // Where the placeholder ended up, measured with the dragged cell taken out
+  // of the reckoning - a cell moved downwards would otherwise count itself.
+  const order = plWallGridCells(grid).filter(c => c !== drag.cell);
+  let to = order.length;
+  for (let i = 0; i < order.length; i++) {
+    if (order[i] === marker || (marker && marker.compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING)) { to = i; break; }
+  }
+  if (marker) marker.remove();
+  if (drag.from < 0 || to === drag.from) return true;
+  await plWallMoveTrack(drag.from, to);
+  return true;
+}
+
+/**
+ * Move a song inside a live room.
+ *
+ * The wall is drawn from the host's last broadcast running order, which has no
+ * row ids in it, so the song is matched back to its jukebox_queue row by track
+ * - safe because a room refuses the same song twice. The server is told the
+ * two neighbours it landed between and works the sort out itself.
+ *
+ * The move is NOT final when this returns. The room's queue is a mirror of the
+ * host's player, so what really happens is: the row is marked as moved, the
+ * host picks it up on its next sync (up to five seconds), moves its own queue,
+ * and pushes the new order back. Until then the local wall is showing an
+ * intention. That is the honest shape of it - the running order lives with
+ * whoever is playing the music.
+ */
+async function liveRoomMoveTrack(from, to) {
   const q = playlistChartQueue();
-  const row = playlistChartRowFor(q[index], index);
-  if (!row.ptId || row.addedByEmail !== googleUser.email) return;
-  const targetIdx = plWallNearestOwnIndex(index, dir, googleUser.email);
-  if (targetIdx < 0) return;
-  await plWallSwapPositions(index, targetIdx);
+  const rowFor = i => playlistChartRowFor(q[i], i);
+  const itemIdFor = trackId => (liveRoomMode?._roomQueue || [])
+    .find(it => it.trackId === trackId && it.status !== 'removed')?.id || null;
+
+  const movingId = itemIdFor(rowFor(from).trackId);
+  if (!movingId) { showToast('That song cannot be moved right now.'); return; }
+
+  const order = q.map((it, i) => rowFor(i).trackId).filter((_, i) => i !== from);
+  const beforeId = to > 0 ? itemIdFor(order[to - 1]) : null;
+  const afterId = to < order.length ? itemIdFor(order[to]) : null;
+
+  try {
+    if (liveRoomMode._roomIsOwner) {
+      // sjjApi carries the owner's access token in the header. Ownership is
+      // never claimed in a body field - that would let any guest type it.
+      await sjjApi({ action: 'reorder', itemId: movingId, beforeId, afterId });
+    } else {
+      const res = await fetch('/api/jukebox/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: liveRoomMode._roomCode, itemId: movingId, beforeId, afterId })
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!d.ok) throw new Error(d.error || 'Could not move that song.');
+    }
+  } catch (e) {
+    showToast(e.message || 'Could not move that song.');
+    plWallRepaintList();
+    return;
+  }
+
+  // Show it where it was dropped straight away. The next poll brings the
+  // room's own answer, which is what settles it.
+  const item = playlistChartBaseQueue.splice(from, 1)[0];
+  playlistChartBaseQueue.splice(to, 0, item);
+  const ri = playlistChartRows.findIndex(r => r.trackId === item.trackId);
+  if (ri >= 0) {
+    const row = playlistChartRows.splice(ri, 1)[0];
+    playlistChartRows.splice(Math.min(to, playlistChartRows.length), 0, row);
+    playlistChartRows.forEach((r, n) => { r.index = n; });
+  }
+  plWallRepaintList();
+  if (!liveRoomMode._roomIsOwner) showToast('Asked the host to move that song.');
 }
 
-// Drag a Covers-wall card onto another to swap their spots. dragover only
-// allows the drop when the target is also one of the dragger's own songs -
-// plWallSwapPositions re-checks the same rule server-side-equivalent before
-// touching anything, so a drop that slips past this still can't move a
-// locked card.
-let _plWallDragFrom = -1;
+/**
+ * Move one song to a new place in the playlist.
+ *
+ * A real move, not the swap this used to be: a swap cannot express "put this
+ * one here", and its index bookkeeping quietly pointed ytQueueIdx at the wrong
+ * row whenever a song crossed the one that was playing. The position written
+ * is the midpoint of its two new neighbours, so a drag is a single UPDATE
+ * however long the playlist is - the same trick jukebox_queue.sort uses.
+ */
+async function plWallMoveTrack(from, to) {
+  if (from === to || from < 0) return;
+  if (!plWallCanArrange()) return;
 
-function plWallDragCardStart(ev, index) {
-  _plWallDragFrom = index;
-  ev.dataTransfer.effectAllowed = 'move';
-  try { ev.dataTransfer.setData('text/plain', String(index)); } catch (_) {}
-}
+  // Now Playing is this browser's own queue and has no rows behind it.
+  if (playlistChartId === '__dynamic_now_playing') {
+    ytMoveToIndex(from, to);
+    plWallRepaintList();
+    return;
+  }
 
-function plWallDragCardOver(ev, index) {
-  if (_plWallDragFrom < 0 || !googleUser) return;
-  const q = playlistChartQueue();
-  const target = playlistChartRowFor(q[index], index);
-  if (target.addedByEmail !== googleUser.email) return;
-  ev.preventDefault();
-  ev.dataTransfer.dropEffect = 'move';
-}
+  if (liveRoomMode) { await liveRoomMoveTrack(from, to); return; }
 
-async function plWallDragCardDrop(ev, index) {
-  ev.preventDefault();
-  const from = _plWallDragFrom;
-  _plWallDragFrom = -1;
-  if (from < 0 || from === index) return;
-  await plWallSwapPositions(from, index);
-}
+  const rows = playlistChartRows;
+  const moving = rows[from];
+  if (!moving || !moving.ptId) return;
 
-function plWallDragCardEnd() {
-  _plWallDragFrom = -1;
+  const after = rows.filter((_, i) => i !== from);
+  const prev = to > 0 ? after[to - 1] : null;
+  const next = to < after.length ? after[to] : null;
+  const a = prev ? Number(prev.position) : null;
+  const b = next ? Number(next.position) : null;
+  let pos = a == null && b == null ? 1000
+    : a == null ? b - 1000
+    : b == null ? a + 1000
+    : (a + b) / 2;
+
+  // Halving the gap forever eventually runs out of float. When the neighbours
+  // are already that close, respace the whole playlist first and work out the
+  // spot again from the fresh numbers.
+  if (a != null && b != null && Math.abs(b - a) < 1e-6) {
+    try {
+      await dbRpcAuth('/rpc/renumber_playlist', { p_playlist_id: playlistChartId });
+      const fresh = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${playlistChartId}&select=id,position`);
+      const byId = Object.fromEntries(fresh.map(r => [r.id, Number(r.position)]));
+      rows.forEach(r => { if (byId[r.ptId] != null) r.position = byId[r.ptId]; });
+      const re = rows.filter((_, i) => i !== from);
+      const p2 = to > 0 ? Number(re[to - 1].position) : null;
+      const n2 = to < re.length ? Number(re[to].position) : null;
+      pos = p2 == null ? n2 - 1000 : n2 == null ? p2 + 1000 : (p2 + n2) / 2;
+    } catch (e) {
+      showToast('Could not reorder that song.');
+      plWallRepaintList();
+      return;
+    }
+  }
+
+  const live = ytQueue === playlistChartBaseQueue;
+  const playing = live ? ytQueue[ytQueueIdx] || null : null;
+  // Move it locally first so the wall answers the finger, then write.
+  rows.splice(from, 1);
+  rows.splice(to, 0, moving);
+  rows.forEach((r, n) => { r.index = n; });
+  moving.position = pos;
+  const item = playlistChartBaseQueue.splice(from, 1)[0];
+  playlistChartBaseQueue.splice(to, 0, item);
+  if (live && playing) {
+    // Found again by identity. Arithmetic on ytQueueIdx is what broke the old
+    // swap when a song crossed the one on screen.
+    const i = ytQueue.indexOf(playing);
+    if (i >= 0) ytQueueIdx = i;
+    updateYTQueueUI();
+  }
+  plWallRepaintList();
+
+  try {
+    await dbPatch(`/playlist_tracks?id=eq.${moving.ptId}`, { position: pos });
+    const pl = (_savedPlaylists || []).find(x => x.id === playlistChartId);
+    const t = pl?._tracks?.find(t => t.id === moving.ptId);
+    if (t) t.position = pos;
+  } catch (e) {
+    showToast('Could not save the new order.');
+    await openPlaylistChart(playlistChartId);
+  }
 }
 
 async function plWallRemoveMyTrack(index) {
-  if (!googleUser || !playlistChartId) return;
+  if (!playlistChartId) return;
   const q = playlistChartQueue();
   const row = playlistChartRowFor(q[index], index);
-  if (!row.ptId || row.addedByEmail !== googleUser.email) return;
+  if (!plWallCanRemove(row)) return;
+
+  // Now Playing is this browser's own queue. There is no row to delete and
+  // nothing to ask permission for - taking a song out of it is exactly the
+  // same act as pressing the X in the player's own queue list.
+  if (playlistChartId === '__dynamic_now_playing') {
+    ytRemoveFromQueue(index);
+    plWallDropCell(index);
+    return;
+  }
+
+  if (!googleUser || !row.ptId) return;
   const pl = (_savedPlaylists || []).find(x => x.id === playlistChartId);
   // Once the playlist is playing, ytQueue IS playlistChartBaseQueue, so the
   // index the card carries is an index into both. Pulling the song being
@@ -15939,7 +16276,49 @@ async function plWallRemoveMyTrack(index) {
     if (index < ytQueueIdx) ytQueueIdx--;
     updateYTQueueUI();
   }
-  plWallRepaintList();
+  plWallDropCell(index);
+}
+
+/**
+ * Take one cover out of the wall.
+ *
+ * The list used to be rebuilt whole for this, because every cell had its own
+ * index written into its handlers and everything after the gap had to be
+ * renumbered. Nothing carries an index any more, so a removal is one node
+ * leaving - which is what makes it feel like removing a song rather than
+ * reloading a page. The scroll position, the images already decoded and the
+ * open hover state all survive.
+ */
+function plWallDropCell(index) {
+  if (viewMode !== 'playlistchart') return;
+  const grid = document.getElementById('pl-wall-grid');
+  const q = playlistChartQueue();
+  // An emptied playlist has to say so, and detail mode is a table rather than
+  // a grid, so both still want the ordinary repaint.
+  if (!grid || playlistWallMode === 'detail' || !q.length) { plWallRepaintList(); return; }
+  const cell = plWallGridCells(grid)[index];
+  if (!cell) { plWallRepaintList(); return; }
+  cell.style.transition = 'opacity .16s ease, transform .16s ease';
+  cell.style.opacity = '0';
+  cell.style.transform = 'scale(.86)';
+  setTimeout(() => {
+    cell.remove();
+    // The song on screen may have shifted; nothing else on the wall changed.
+    plWallMarkCurrent();
+  }, 160);
+  const sum = document.querySelector('.pl-wall-summary');
+  const sumHTML = plWallSummaryHTML();
+  if (sum && sumHTML) sum.outerHTML = sumHTML;
+  else if (sum) sum.remove();
+  playlistChartPaintTransport();
+}
+
+/** Move the orange now-playing frame without touching any other cell. */
+function plWallMarkCurrent() {
+  const grid = document.getElementById('pl-wall-grid');
+  if (!grid) return;
+  const cur = playlistChartCurrentCellIndex();
+  plWallGridCells(grid).forEach((cell, i) => cell.classList.toggle('current', i === cur));
 }
 
 function plWallUploadedBy(trackId) {
@@ -15986,19 +16365,65 @@ function plWallCellHTML(item, i, curIdx) {
   const row = playlistChartRowFor(item, i);
   const isCurrent = i === curIdx;
   const blocked = isTrackBlocked(row.trackId);
-  const editable = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
+  const canDrag = plWallCanArrange();
+  const canRemove = plWallCanRemove(row);
   const art = row.artwork
     ? `<img src="${row.artwork}" loading="lazy" alt="">`
     : '<span class="pl-wall-fallback">♫</span>';
   const tip = plWallPlayTip(row.trackId);
   const tipAttr = tip ? ` title="${esc(tip)}"` : '';
-  const dragAttrs = editable
-    ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
+  const xBtn = canRemove
+    ? `<button type="button" class="pl-wall-cell-x" title="Remove from this playlist">✕</button>`
     : '';
-  const xBtn = editable
-    ? `<button type="button" class="pl-wall-cell-x" title="Remove from this playlist" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})">✕</button>`
-    : '';
-  return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${editable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}" role="button" tabindex="0"${tipAttr}${dragAttrs} onclick="plWallOpenPop(${i},event)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();plWallOpenPop(${i},event)}">${art}${plWallCellOverlays(row.trackId, row.title)}${xBtn}</div>`;
+  // No inline onclick, onkeydown or drag attributes any more. Every one of
+  // them baked this cell's index into its own markup, which is why removing
+  // one song used to mean rebuilding the entire wall so the ones after it
+  // could be renumbered. The grid handles all of it by delegation now and
+  // reads the index off the cell's position among its siblings, which is
+  // still right after any removal, any drag and any repaint.
+  return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${canRemove ? ' editable' : ''}${canDrag ? ' pl-wall-draggable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}"${row.ptId ? ` data-pt-id="${row.ptId}"` : ''} role="button" tabindex="0"${tipAttr}>${art}${plWallCellOverlays(row.trackId, row.title)}${xBtn}</div>`;
+}
+
+/**
+ * May this listener arrange the playlist on screen?
+ *
+ * Deliberately says nothing about who added which song. A rule that let you
+ * move only your own songs would forbid the gesture outright - your song can
+ * only ever move past somebody else's - so either the playlist is arrangeable
+ * or it is not. Removing is a separate, narrower question: see
+ * plWallCanRemove(). The same test is enforced in the database by
+ * jukebox.can_arrange_playlist().
+ */
+function plWallCanArrange() {
+  // A live room is the host's player seen from outside. The host can always
+  // rearrange it; everybody else can only when the host has turned Allow
+  // Guests to Reorder Playlist on.
+  if (liveRoomMode) {
+    if (liveRoomMode._roomIsOwner) return true;
+    return !!liveRoomMode._settings?.allowGuestReorder;
+  }
+  if (playlistChartId === '__dynamic_now_playing') return true;
+  if (!googleUser) return false;
+  const pl = (playlists || []).find(x => x.id === playlistChartId)
+    || (_savedPlaylists || []).find(x => x.id === playlistChartId);
+  if (!pl) return false;
+  return pl.user_email === googleUser.email || !!pl.is_public;
+}
+
+/**
+ * Removing is not widened the way reordering is. Taking somebody else's song
+ * out of a playlist is destructive and cannot be undone by dragging it back,
+ * so it stays with the playlist's owner and with whoever added the song.
+ * Now Playing is nobody's but the listener's, so anything there can go.
+ */
+function plWallCanRemove(row) {
+  if (liveRoomMode) return false;
+  if (playlistChartId === '__dynamic_now_playing') return true;
+  if (!googleUser) return false;
+  if (row.addedByEmail && row.addedByEmail === googleUser.email) return true;
+  const pl = (playlists || []).find(x => x.id === playlistChartId)
+    || (_savedPlaylists || []).find(x => x.id === playlistChartId);
+  return !!(pl && pl.user_email === googleUser.email);
 }
 
 function plWallDetailRowHTML(item, i, curIdx) {
@@ -16013,20 +16438,28 @@ function plWallDetailRowHTML(item, i, curIdx) {
   const yt = Number(ytData[row.trackId]?.views || row.views) || 0;
   const uploaded = plWallUploadedBy(row.trackId);
   const addedByLbl = row.addedByName || (row.addedByEmail ? row.addedByEmail.split('@')[0] : '');
-  const isMine = !!(googleUser && row.addedByEmail && row.addedByEmail === googleUser.email);
-  const rowEditable = isMine;
-  const canUp = rowEditable && plWallNearestOwnIndex(i, -1, row.addedByEmail) >= 0;
-  const canDown = rowEditable && plWallNearestOwnIndex(i, 1, row.addedByEmail) >= 0;
-  const manageCell = (isMine
+  // Same two rules as the cover wall: anyone who can arrange the playlist can
+  // move any song, and removing stays with the owner or whoever added it.
+  // The arrows rather than a drag, because a row in a table is a poor drag
+  // target and these work the same on a phone.
+  const canArrange = plWallCanArrange();
+  const canRemove = plWallCanRemove(row);
+  const rowEditable = canArrange;
+  const q = playlistChartQueue();
+  const canUp = canArrange && i > 0;
+  const canDown = canArrange && i < q.length - 1;
+  const manageCell = (canArrange || canRemove
     ? `<td class="rxn" onclick="event.stopPropagation()"><div class="pl-detail-mine-actions">` +
-        `<button type="button" class="pl-detail-move" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},-1)" title="Move up among your songs">▲</button>` +
-        `<button type="button" class="pl-detail-move" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveMyTrack(${i},1)" title="Move down among your songs">▼</button>` +
-        `<button type="button" class="pl-detail-rm" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})" title="Remove from this playlist">✕</button>` +
+        (canArrange
+          ? `<button type="button" class="pl-detail-move" ${canUp ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveTrack(${i},${i - 1})" title="Move up">▲</button>` +
+            `<button type="button" class="pl-detail-move" ${canDown ? '' : 'disabled'} onclick="event.stopPropagation();plWallMoveTrack(${i},${i + 1})" title="Move down">▼</button>`
+          : '') +
+        (canRemove
+          ? `<button type="button" class="pl-detail-rm" onclick="event.stopPropagation();plWallRemoveMyTrack(${i})" title="Remove from this playlist">✕</button>`
+          : '') +
       `</div></td>`
-    : `<td class="rxn" onclick="event.stopPropagation()"><span class="pl-detail-locked" title="Added by someone else - only they (or the playlist owner) can move or remove it">🔒</span></td>`);
-  const dragAttrs = rowEditable
-    ? ` draggable="true" ondragstart="plWallDragCardStart(event,${i})" ondragover="plWallDragCardOver(event,${i})" ondrop="plWallDragCardDrop(event,${i})" ondragend="plWallDragCardEnd(event)"`
-    : '';
+    : `<td class="rxn" onclick="event.stopPropagation()"><span class="pl-detail-locked" title="Only the people who can edit this playlist may change it">🔒</span></td>`);
+  const dragAttrs = '';
   const art = row.artwork
     ? `<img class="pl-detail-art" src="${row.artwork}" loading="lazy" alt="">`
     : '<span class="pl-detail-art-ph">♫</span>';
@@ -16152,6 +16585,9 @@ function liveRoomPermLines(settings) {
   lines.push(s.allowGuestImports
     ? 'Listeners may add songs from outside the shared catalogue.'
     : 'Requests stay within songs already in this jukebox.');
+  lines.push(s.allowGuestReorder
+    ? 'Anyone in the room can drag the waiting list into a different order.'
+    : 'Only the host changes the running order.');
   return lines;
 }
 
@@ -16613,7 +17049,7 @@ async function saveLiveRoomAsPlaylist() {
       context: _playlistContext(),
     });
     for (let i = 0; i < trackIds.length; i++) {
-      await dbPost('/playlist_tracks', { playlist_id: playlist.id, track_id: trackIds[i], position: i });
+      await dbPost('/playlist_tracks', { playlist_id: playlist.id, track_id: trackIds[i], position: (i + 1) * PL_POS_STEP });
     }
     await loadPlaylists();
     showToast('Saved "' + name.trim() + '" to My Playlists.');
@@ -21163,6 +21599,13 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Big playlists open much faster. A few hundred songs used to take four full redraws of the page and one request per song just to fetch the hearts; now it draws twice, asks once, and only builds the parts of a cover you can actually see. Scrolling a long playlist is smooth.',
+    'Drag a cover to move a song. Pick it up, drop it where you want it, and the rest of the playlist closes up behind it. Works with a finger as well as a mouse, and in the Detail list there are up and down arrows instead.',
+    'Anyone who can add songs to a playlist can now put them in order. It used to be that you could only move your own songs, which meant you could never move them past anybody else’s - so nothing moved. Removing a song is unchanged: your own songs, or any song if the playlist is yours.',
+    'Removing a song from a playlist takes the song out and leaves everything else alone. The page no longer blinks, jumps back to the top, or reloads the covers.',
+    'Now Playing has an X on every cover, so you can drop a song from the queue without opening it first.',
+    'Online Jukebox hosts have a new setting: Allow Guests to Reorder Playlist. With it on, anyone in the room can drag the waiting list into a different order and the host’s player follows along. With it off, the running order stays with the host. The join screen says which it is.',
+    'Guests can see the waiting list on the jukebox page now, with who asked for what, and can pull back their own songs from there.',
     'In the dock, lyrics sit centred under the drag handle again instead of drifting toward the play buttons.',
     'Import from Spotify can take up to 100 songs in one pass instead of 15.',
     'In the tall dock, play controls sit bottom-right again, lyrics sit centred in the space between the title and those buttons, and the Versions control sits on the video instead of getting clipped off the top of the bar.',
@@ -25935,7 +26378,7 @@ async function confirmSavePlaylist() {
 
     // Insert tracks
     const trackRows = ytQueue.map((item, i) => ({
-      playlist_id: plId, track_id: item.trackId || '', position: i
+      playlist_id: plId, track_id: item.trackId || '', position: (i + 1) * PL_POS_STEP
     })).filter(r => r.track_id);
     await fetch(`${REST}/playlist_tracks`, {
       method: 'POST',
@@ -26828,6 +27271,7 @@ function sjjRender() {
          + '<option value="end"' + (st.guestsFirst ? '' : ' selected') + '>Add guest songs at end of playlist</option>'
          + '<option value="first"' + (st.guestsFirst ? ' selected' : '') + '>Play guest songs first</option></select>')
     +  sjjToggle('Allow Guests to Import New Songs', 'allowGuestImports', st.allowGuestImports)
+    +  sjjToggle('Allow Guests to Reorder Playlist', 'allowGuestReorder', st.allowGuestReorder)
     +  '<div class="sjj-h" style="margin-top:1rem">Banned users</div>'
     +  sjjBannedHTML()
     +  '</div>';
@@ -27337,6 +27781,10 @@ async function sjjSyncTick() {
 
     if (d.dropped?.length) sjjDropItems(d.dropped);
     if (d.adopted?.length) await sjjAdopt(d.adopted, _sjjAnnounceReady);
+    // A guest dragged the waiting list. The room holds the answer until this
+    // device applies it - the server deliberately leaves those rows' sort
+    // alone - so taking the move here is what completes it. Next push agrees.
+    if (d.reorder?.length) sjjApplyGuestMoves(d.reorder);
     _sjjAnnounceReady = true;
 
     // The room can be taken off air from another device.
@@ -27348,6 +27796,38 @@ async function sjjSyncTick() {
   } finally {
     _sjjSyncBusy = false;
   }
+}
+
+/**
+ * Apply drags a guest made in the room to this device's own ytQueue.
+ *
+ * The room queue IS ytQueue seen from outside, so a guest reordering it is
+ * really asking the host's player to reorder. Rows are found by jbItemId -
+ * never by index, which the poll and the player are both moving underneath -
+ * and ytMoveToIndex() re-finds the playing song by identity afterwards rather
+ * than doing arithmetic on ytQueueIdx.
+ */
+function sjjApplyGuestMoves(moves) {
+  let moved = 0;
+  (moves || []).forEach(mv => {
+    const from = ytQueue.findIndex(q => q.jbItemId === mv.id);
+    if (from < 0) return;
+    // afterId is the row it now sits behind, or null for the head of the list.
+    let to = 0;
+    if (mv.afterId) {
+      const anchor = ytQueue.findIndex(q => q.jbItemId === mv.afterId);
+      if (anchor < 0) return;
+      to = anchor + 1;
+    }
+    // Computed after the lift: taking a row from below the target shifts
+    // everything down, so a destination worked out first lands one place too
+    // far. Same trap ytMoveAfterCurrent() exists for.
+    if (from < to) to -= 1;
+    if (from === to) return;
+    ytMoveToIndex(from, to);
+    moved++;
+  });
+  if (moved) showToast(moved === 1 ? 'A listener moved a song.' : moved + ' songs moved by listeners.');
 }
 
 // Guest adds. Resolve each to a playable version, append to the queue that is

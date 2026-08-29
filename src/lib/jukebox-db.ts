@@ -664,6 +664,17 @@ export async function setQueueItemSort(sb: ServiceClient, itemId: string, sort: 
 }
 
 /**
+ * A guest's drag. Same write as the host's, plus the mark that tells the next
+ * host sync this is a move to adopt rather than a difference to correct.
+ */
+export async function setQueueItemSortByGuest(sb: ServiceClient, itemId: string, sort: number) {
+  const { error } = await T(sb, "jukebox_queue")
+    .update({ sort, moved_at: new Date().toISOString() })
+    .eq("id", itemId);
+  if (error) throw error;
+}
+
+/**
  * Mark one item as the song now playing. Anything previously playing in the
  * same room is retired to 'played' first, so the room can only ever have one.
  */
@@ -702,6 +713,12 @@ export type HostSyncResult = {
   /** Room rows the host still lists that have since been removed. */
   dropped: string[];
   removed: number;
+  /**
+   * Drags a guest made since the host's last push, as {trackId, afterId}. The
+   * host applies each to its own ytQueue; the room's sort is left alone until
+   * it does, so the move cannot be stamped back out before it is honoured.
+   */
+  reorder: { id: string; trackId: string; afterId: string | null }[];
 };
 
 export async function syncHostQueue(
@@ -716,7 +733,7 @@ export async function syncHostQueue(
     lastQueue: LastQueueEntry[];
   },
 ): Promise<HostSyncResult> {
-  const cols = "id,track_id,status,sort,created_at";
+  const cols = "id,track_id,status,sort,created_at,moved_at";
 
   const { data: active, error: activeErr } = await T(sb, "jukebox_queue")
     .select(cols)
@@ -747,6 +764,7 @@ export async function syncHostQueue(
     status: r.status,
     sort: Number(r.sort),
     createdAt: Date.parse(r.created_at),
+    movedAt: r.moved_at ? Date.parse(r.moved_at) : 0,
   });
 
   const plan = reconcileHostQueue({
@@ -827,7 +845,22 @@ export async function syncHostQueue(
     await T(sb, "jukeboxes").update({ last_queue: lastQueue }).eq("id", jukeboxId);
   }
 
-  return { assigned, adopted, dropped: plan.drop, removed: plan.remove.length };
+  // Handing a move to the host is what completes it, so the mark comes off
+  // here. If this push never reaches the host the mark stays and the move is
+  // simply offered again on the next one - which is the safe way round.
+  if (plan.reorder.length) {
+    await T(sb, "jukebox_queue")
+      .update({ moved_at: null })
+      .in("id", plan.reorder.map((r) => r.id));
+  }
+
+  return {
+    assigned,
+    adopted,
+    dropped: plan.drop,
+    removed: plan.remove.length,
+    reorder: plan.reorder,
+  };
 }
 
 function sameLastQueue(a: LastQueueEntry[], b: LastQueueEntry[]): boolean {

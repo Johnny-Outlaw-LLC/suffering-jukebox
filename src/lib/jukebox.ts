@@ -31,12 +31,27 @@ export type JukeboxSettings = {
    * tomorrow.
    */
   guestsFirst: boolean;
+  /**
+   * Anyone in the room may drag the waiting list into a different order.
+   *
+   * Deliberately one switch and not a set of them. "Guests may reorder their
+   * own songs" was considered and dropped: a guest with one song waiting can
+   * only ever move it up or down past somebody else's, so a rule that forbids
+   * passing other people's songs forbids the gesture entirely. Either the room
+   * arranges the queue together or the host does it alone, and that is the
+   * only question worth asking a host.
+   *
+   * The song on screen never moves, and this never grants removal - a guest
+   * still pulls back only their own song.
+   */
+  allowGuestReorder: boolean;
 };
 
 export const DEFAULT_SETTINGS: JukeboxSettings = {
   maxPendingPerGuest: 3,
   allowGuestImports: false,
   guestsFirst: false,
+  allowGuestReorder: false,
 };
 
 /**
@@ -66,7 +81,27 @@ export function normalizeSettings(raw: unknown): JukeboxSettings {
     maxPendingPerGuest: int(s.maxPendingPerGuest, DEFAULT_SETTINGS.maxPendingPerGuest, 0, 50),
     allowGuestImports: bool(s.allowGuestImports, DEFAULT_SETTINGS.allowGuestImports),
     guestsFirst: bool(s.guestsFirst, DEFAULT_SETTINGS.guestsFirst),
+    allowGuestReorder: bool(s.allowGuestReorder, DEFAULT_SETTINGS.allowGuestReorder),
   };
+}
+
+/**
+ * May this guest move this row?
+ *
+ * Ownership of the song is deliberately not consulted - see allowGuestReorder.
+ * What is consulted: the host has to have opened the queue up, the room has to
+ * be live, and the song has to be waiting. The one on screen is not a queue
+ * position, it is what everybody is listening to.
+ */
+export function canGuestReorder(opts: {
+  settings: JukeboxSettings;
+  isLive: boolean;
+  guestBanned: boolean;
+  status: string;
+}): boolean {
+  if (!opts.settings.allowGuestReorder) return false;
+  if (!opts.isLive || opts.guestBanned) return false;
+  return opts.status === "pending";
 }
 
 // ── Room codes ────────────────────────────────────────────────────────────
@@ -453,6 +488,8 @@ export type MirrorRow = {
   sort: number;
   /** Epoch ms. */
   createdAt: number;
+  /** Epoch ms a guest last dragged this row, or 0. */
+  movedAt?: number;
 };
 
 export type QueueStatus = "pending" | "playing" | "played";
@@ -466,6 +503,13 @@ export type MirrorPlan = {
   adopt: string[];
   /** Rows the host still lists that the room has removed. It drops these. */
   drop: string[];
+  /**
+   * Rows a guest dragged since the host last synced, in the order the room
+   * now wants them. The host moves them in its own ytQueue and pushes again;
+   * until it does, the server leaves their sort alone rather than stamping
+   * the host's order back over the drag.
+   */
+  reorder: { id: string; trackId: string; afterId: string | null }[];
 };
 
 export function statusForIndex(index: number, currentIndex: number): QueueStatus {
@@ -490,7 +534,30 @@ export function reconcileHostQueue(opts: {
 }): MirrorPlan {
   const byId = new Map(opts.existing.map((r) => [r.id, r]));
   const claimed = new Set<string>();
-  const plan: MirrorPlan = { insert: [], update: [], remove: [], adopt: [], drop: [] };
+  const plan: MirrorPlan = { insert: [], update: [], remove: [], adopt: [], drop: [], reorder: [] };
+
+  // A row a guest dragged since the host last checked in is a move the host
+  // has not applied yet. Its sort is the room's answer, not a difference to
+  // correct, so it is held back from plan.update entirely - otherwise the
+  // next push would overwrite the drag within five seconds and the song would
+  // visibly snap home.
+  const movedRows = opts.existing
+    .filter((r) => (r.movedAt ?? 0) > opts.snapshotAtMs && r.status === "pending")
+    .sort((a, b) => a.sort - b.sort);
+  const moved = new Set(movedRows.map((r) => r.id));
+  if (movedRows.length) {
+    const order = [...opts.existing]
+      .filter((r) => r.status === "pending" || r.status === "playing")
+      .sort((a, b) => a.sort - b.sort);
+    for (const row of movedRows) {
+      const at = order.findIndex((r) => r.id === row.id);
+      plan.reorder.push({
+        id: row.id,
+        trackId: row.trackId,
+        afterId: at > 0 ? order[at - 1].id : null,
+      });
+    }
+  }
 
   for (const item of opts.items) {
     const status = statusForIndex(item.index, opts.currentIndex);
@@ -508,6 +575,7 @@ export function reconcileHostQueue(opts: {
       // Only what actually moved. In the steady state a host pushing the same
       // queue every three seconds writes nothing at all; a track change writes
       // two rows.
+      if (moved.has(row.id)) continue;
       if (row.sort !== sort || row.status !== status) {
         plan.update.push({ id: row.id, sort, status });
       }
