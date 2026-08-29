@@ -15254,18 +15254,18 @@ function playlistExploreRows() {
   const all = _savedPlaylists || [];
   const email = googleUser?.email || '';
   let rows;
-  if (playlistExploreFilter === 'mine') {
+  if (plScope() === 'mine') {
     rows = email ? all.filter(p => p.user_email === email) : [];
-  } else if (playlistExploreFilter === 'public') {
+  } else if (plScope() === 'public') {
     rows = all.filter(p => p.is_public);
   } else {
     rows = all.filter(p => p.is_public || (email && p.user_email === email));
   }
-  if (playlistExploreContributor && playlistExploreFilter !== 'mine') {
+  if (playlistExploreContributor && plScope() !== 'mine') {
     rows = rows.filter(p => (p.user_email || '') === playlistExploreContributor);
   }
-  const dynamic = playlistExploreFilter === 'public'
-      || (playlistExploreFilter !== 'mine' && playlistExploreContributor)
+  const dynamic = plScope() === 'public'
+      || (plScope() !== 'mine' && playlistExploreContributor)
     ? []
     : dynamicPlaylistRows();
   const q = playlistExploreSearchQ.trim().toLowerCase();
@@ -15442,6 +15442,13 @@ function setPlaylistExploreContributor(v) {
   try { localStorage.setItem('sj_pl_explore_contributor', playlistExploreContributor); } catch (_) {}
   if (isLandingMode && landingTab === 'playlists') renderLanding();
 }
+
+// Signed out there is only public content, so the All / My / Public chips come
+// off the header and the stored scope stops counting. A browser that last
+// visited signed in must not come back to an empty My Playlists with no
+// control on screen to explain it.
+function artistScope() { return googleUser ? artistExploreFilter : 'public'; }
+function plScope() { return googleUser ? playlistExploreFilter : 'public'; }
 
 function setArtistExploreFilter(mode) {
   if (mode === 'mine' && !googleUser) {
@@ -17952,9 +17959,9 @@ function defaultLandingCompare(a, b) {
 function getVisibleLandingStats(opts) {
   opts = opts || {};
   let visible = landingStats.filter(r => !r.hidden);
-  if (artistExploreFilter === 'mine') {
+  if (artistScope() === 'mine') {
     visible = visible.filter(r => oaIsMine(r));
-  } else if (artistExploreFilter === 'public') {
+  } else if (artistScope() === 'public') {
     visible = visible.filter(r => r.visibility !== 'private');
   }
   if (!landingIncludeSinglesOnly && !opts.singlesAlways) visible = visible.filter(r => r.discography_complete !== false);
@@ -18656,7 +18663,7 @@ function esFiltersHTML() {
         </div>
       </div>
     </div>` +
-    (artistExploreFilter === 'mine' ? '' : `<div class="landing-control-group">
+    (artistScope() === 'mine' ? '' : `<div class="landing-control-group">
       <span class="landing-control-lbl">Submitted By</span>
       <div class="landing-submitter-dd">
         <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -18790,9 +18797,9 @@ function renderLanding() {
           ? 'Loading playlists…'
           : (playlistExploreSearchQ.trim()
             ? 'No playlists match “' + esc(playlistExploreSearchQ.trim()) + '”.'
-            : (playlistExploreFilter === 'mine'
+            : (plScope() === 'mine'
               ? (googleUser ? 'You have not saved a playlist yet.' : 'Sign in to see your playlists.')
-              : (playlistExploreFilter === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.')));
+              : (plScope() === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.')));
         const _contribOpts = playlistContributorOptions();
         return `<div class="playlist-explore-filters">
             <div class="landing-control-group" style="margin:0">
@@ -18804,7 +18811,7 @@ function renderLanding() {
                 ${playlistExploreSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="clearPlaylistExploreSearch()">✕</button>` : ''}
               </div>
             </div>
-            ${playlistExploreFilter === 'mine' ? '' : `<div class="landing-control-group" style="margin:0">
+            ${plScope() === 'mine' ? '' : `<div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Contributor</span>
               <select class="landing-sort-select" id="playlist-explore-contributor" onchange="setPlaylistExploreContributor(this.value)">
                 <option value="">All Contributors</option>
@@ -18850,7 +18857,7 @@ function renderLanding() {
             </div>
           </div>
         </div>
-        ${artistExploreFilter === 'mine' ? '' : `<div class="landing-control-group">
+        ${artistScope() === 'mine' ? '' : `<div class="landing-control-group">
           <span class="landing-control-lbl">Submitted By</span>
           <div class="landing-submitter-dd">
             <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -20181,17 +20188,18 @@ function updateLandingActionsHeader() {
   nav.style.display = 'block';
   const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
   const minePlCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
-  const scopeChips = (landingTab === 'explore' || landingTab === 'songs')
+  const scopeChips = !googleUser ? ''
+    : (landingTab === 'explore' || landingTab === 'songs')
     ? `<span class="landing-nav-scope" role="group" aria-label="Artist scope">
-        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
-        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
-        <button type="button" class="playlist-explore-filter${artistExploreFilter === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
+        <button type="button" class="playlist-explore-filter${artistScope() === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
+        <button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
+        <button type="button" class="playlist-explore-filter${artistScope() === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
       </span>`
     : landingTab === 'playlists'
     ? `<span class="landing-nav-scope" role="group" aria-label="Playlist scope">
-        <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
-        <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
-        <button type="button" class="playlist-explore-filter${playlistExploreFilter === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
+        <button type="button" class="playlist-explore-filter${plScope() === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
+        <button type="button" class="playlist-explore-filter${plScope() === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
+        <button type="button" class="playlist-explore-filter${plScope() === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
       </span>`
     : '';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
@@ -22649,6 +22657,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'Signed out, the All / My Artists / Public and All / My Playlists / Public buttons are gone. There is only public content to look at when nobody is signed in, so the pages simply show it - including a browser that was signed in last visit and had been left on My Playlists.',
     'On Explore Playlists the count under the tabs now describes the playlists themselves: every different song and every different artist across the playlists on screen, each counted once however many playlists it appears on. Narrow the list with search, contributor or All / My Playlists / Public and the count follows.',
     'Shuffle All on Explore Playlists now plays exactly those songs - every song across the playlists you are looking at, once each, in a random order - instead of shuffling the whole catalogue.',
     'Explore Songs carries the same Artists and Submitted By menus as Explore Artists, so you can narrow the song list the same way you narrow the artist grid.',
