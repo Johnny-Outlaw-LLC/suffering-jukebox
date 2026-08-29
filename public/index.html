@@ -1621,9 +1621,16 @@ textarea.report-input { resize:vertical; }
    changing modes cannot interrupt playback. */
 .ytp-mf-video-slot { position: absolute; inset: 0; display: none; border-radius: 6px; overflow: hidden; background: #000; z-index: 1; }
 .ytp-mf-video-slot .yt-player-frame { flex: none !important; min-height: 0 !important; width: 100% !important; height: 100% !important; }
-.ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0; flex: 1; }
+.ytp-mf-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0; flex: 0 1 auto; }
+/* The queue and the title block share one column beside the artwork. The
+   queue takes whatever height the artwork's growth creates; the title block
+   keeps its own height on the bottom edge. Before this the queue was absolute
+   and measured the gap ABOVE the art, which the growing art closed - so the
+   playlist vanished at exactly the dock size that had room for it. */
+.ytp-mf-side { display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 0; flex: 1; }
 .ytp-mini-footer.dock-grown .ytp-mf-now { align-items: flex-end; }
-.ytp-mini-footer.dock-grown .ytp-mf-meta { flex: 0 0 240px; width: 240px; justify-content: flex-end; align-self: stretch; padding-bottom: 2px; }
+.ytp-mini-footer.dock-grown .ytp-mf-side { flex: 0 0 240px; width: 240px; justify-content: flex-end; align-self: stretch; padding-bottom: 2px; }
+.ytp-mini-footer.dock-grown .ytp-mf-meta { justify-content: flex-end; flex: 0 0 auto; }
 .ytp-mf-artist {
   font-size: .52rem; letter-spacing: .1em; text-transform: uppercase;
   color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1708,13 +1715,6 @@ textarea.report-input { resize:vertical; }
     transform: none;
   }
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: var(--mf-body); }
-  /* Playlist sits above the artist / title column (left of lyrics), not the top-right. */
-  #ytp-mini-footer.dock-show-playlist .ytp-mf-playlist {
-    left: calc(16px + var(--mf-body) + 11px);
-    right: auto;
-    width: 240px;
-    top: 14px;
-  }
 }
 .ytp-mf-scrub-time {
   font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
@@ -1805,14 +1805,14 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-right { grid-area: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .ytp-mini-footer.dock-grown .ytp-mf-right { align-self: end; align-items: flex-end; }
 .ytp-mf-playlist {
-  display:none; position:absolute; top:14px; right:16px; width:min(270px,22vw);
-  overflow:auto; padding:8px 10px; box-sizing:border-box;
+  display:none; flex:1 1 auto; min-height:0; width:100%;
+  overflow:auto; padding:4px 10px 8px; box-sizing:border-box;
   background:color-mix(in srgb,var(--bg-card) 94%,transparent);
   border:1px solid var(--border); border-radius:8px; scrollbar-width:thin;
   z-index:5;
 }
 .ytp-mini-footer.dock-show-playlist .ytp-mf-playlist { display:block; }
-.ytp-mf-playlist-head { position:sticky; top:-8px; z-index:1; padding:5px 0 7px; background:var(--bg-card); font-size:.48rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
+.ytp-mf-playlist-head { position:sticky; top:-4px; z-index:1; padding:5px 0 7px; background:var(--bg-card); font-size:.48rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
 .ytp-mf-playlist-row { display:flex; gap:7px; padding:5px 0; border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent); font-size:.5rem; color:var(--text-muted); cursor:pointer; }
 .ytp-mf-playlist-row.on { color:var(--accent); font-weight:700; }
 .ytp-mf-playlist-num { width:1.6em; flex:none; text-align:right; }
@@ -2235,6 +2235,35 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 /* ── One-tap live reactions ─────────────────────────────────────────────── */
 .sj-reaction-rail { display: flex; align-items: center; min-width: 0; }
 .ytp-toolbar-row .sj-reaction-rail { margin-left: auto; }
+/* ── Maximized player: same shape as the dock ──────────────────────────────
+   The title carries its own ratings underneath it and the transport is a
+   right-hand stack under the window buttons, so the two players read the
+   same way round. The transport squares are the dock's --mf-btn look; they
+   cannot share that class because --mf-btn only exists on .ytp-mini-footer. */
+.ytp-title-col { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.ytp-title-col .ytp-title { flex: none; }
+.ytp-title-col .sj-reaction-rail { margin-left: 0; }
+.ytp-toolbar-left { display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; gap: 5px; flex: 1; min-width: 0; }
+.ytp-toolbar-transport { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-shrink: 0; }
+.ytp-deck-btn {
+  background: none; border: 1px solid var(--border); color: var(--text);
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: .8rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s; flex-shrink: 0; padding: 0; font-family: var(--mono);
+}
+.ytp-deck-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ytp-deck-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.14); }
+.ytp-deck-btn svg { width: 15px; height: 15px; display: block; pointer-events: none; }
+/* Beats .ytp-playpause-btn's pill padding without touching the phone deck. */
+#ytp-playpause-btn.ytp-deck-btn {
+  padding: 0; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+#yt-player-container.ytp-fs .ytp-deck-btn { width: 34px; height: 34px; min-width: 0; }
+#yt-player-container.ytp-fs #ytp-playpause-btn.ytp-deck-btn { width: 34px; height: 34px; min-width: 0; }
+@media (max-width: 640px) {
+  .ytp-toolbar-transport { margin-left: auto; }
+}
 .sj-reaction-buttons { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .sj-reaction-btn { position: relative; display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 27px; padding: 0; background: none; border: 1px solid var(--border);
@@ -3618,6 +3647,8 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
         <img class="ytp-mf-art" id="ytp-mf-art" alt="" src="/favicon.png" data-yt="" onerror="ytpMfArtFallback(this)">
         <div class="ytp-mf-video-slot" id="ytp-mf-video-slot"></div>
       </div>
+      <div class="ytp-mf-side">
+      <div class="ytp-mf-playlist" id="ytp-mf-playlist" onclick="event.stopPropagation()"></div>
       <div class="ytp-mf-meta">
         <div class="ytp-mf-artist" id="ytp-mf-artist"></div>
         <div class="ytp-mf-song-row">
@@ -3635,6 +3666,7 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
         <div class="ytp-mf-font-row" id="ytp-mf-font-row">
           <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
         </div>
+      </div>
       </div>
     </div>
     <div class="ytp-mf-lyr" id="ytp-mf-lyrics-pane" onclick="event.stopPropagation()">
@@ -3655,7 +3687,6 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
         <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close" id="ytp-mf-close">✕</button>
       </div>
     </div>
-    <div class="ytp-mf-playlist" id="ytp-mf-playlist" onclick="event.stopPropagation()"></div>
     <div class="ytp-mf-scrub ytp-scrub-zone" id="ytp-mf-scrub" data-scrub-prefix="mf" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
       <div class="ytp-scrub-rxn-wrap" aria-hidden="true"><div class="ytp-scrub-rxn-track"></div></div>
       <span class="ytp-mf-scrub-time" id="ytp-mf-cur">0:00</span>
@@ -5974,34 +6005,40 @@ function openYTPlayer(videoId, title, trackId, ev) {
   ytPlayerEl.style.width = cW + 'px';
   ytPlayerEl.innerHTML = `
     <div class="yt-player-header" style="flex-direction:column;gap:0;padding:0;align-items:stretch">
-      <div style="display:flex;align-items:center;gap:6px;padding:6px 8px 3px 10px">
-        <span class="ytp-title" style="flex:1;min-width:0">${trackId && ytpTrackMeta(trackId, title).artist ? (ytpTrackMeta(trackId, title).artist.replace(/</g, '&lt;') + ' - ') : ''}${safeTitle}${ytpAlbumYearHTML(trackId, 'ytp-title-sub')}</span>
+      <div style="display:flex;align-items:flex-start;gap:6px;padding:6px 8px 3px 10px">
+        <div class="ytp-title-col">
+          <span class="ytp-title">${trackId && ytpTrackMeta(trackId, title).artist ? (ytpTrackMeta(trackId, title).artist.replace(/</g, '&lt;') + ' - ') : ''}${safeTitle}${ytpAlbumYearHTML(trackId, 'ytp-title-sub')}</span>
+          ${ytpReactionRailHTML(trackId, 'ytp-desktop-reaction-rail', true)}
+        </div>
         <div class="ytp-titlebar-btns">
           <button class="ytp-win-btn ytp-minimize-btn" onclick="ytpToggleMinimize()" title="Minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.minimize}</button>
           <button class="ytp-win-btn ytp-fs-btn" onclick="ytpToggleFullscreen()" title="Maximize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">${YTP_WIN_ICONS.maximize}</button>
-          <button class="sc-close" onclick="ytpCloseToMini()" title="Pause &amp; minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">✕</button>
+          <button class="sc-close" onclick="ytpCloseToMini()" title="Pause &amp; minimize" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">&#10005;</button>
         </div>
       </div>
-      <div class="ytp-toolbar-row" style="display:flex;align-items:center;flex-wrap:wrap;row-gap:4px;gap:5px;padding:2px 8px 6px 10px">
-        <button class="ytp-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.prev}</button>
-        <button class="ytp-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.next}</button>
-        <button class="ytp-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.pause}</button>
-        <button type="button" class="ytp-live-badge" id="ytp-live-badge" title="This player is on air. Click to see who is listening." onmousedown="event.stopPropagation()" onclick="sjjToggleListeners();event.stopPropagation()"><span class="dot"></span>Broadcasting Live</button>
-        <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen, {user:true});event.stopPropagation()">Lyrics</button>
-        <button type="button" class="ytp-tog" id="ytp-shuffle-tog" title="Shuffle queue" onmousedown="event.stopPropagation()" onclick="setYtShuffleEnabled(!ytShuffle);event.stopPropagation()">Shuffle</button>
-        <button type="button" class="ytp-tog" id="ytp-repeat-tog" title="Repeat queue" onmousedown="event.stopPropagation()" onclick="ytpSetRepeat(!ytRepeat);event.stopPropagation()">Repeat</button>
-        <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">⇄ Versions ▾</button>
-        <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
-        <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
-          <span style="font-size:.5rem;letter-spacing:.02em">Vol</span>
-          <input type="range" id="ytp-vol-slider" min="0" max="100" value="100" step="5"
-            oninput="ytpSetVolume(this.valueAsNumber)" onmousedown="event.stopPropagation()"
-            style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer"
-            aria-label="Volume">
-        </label>
-        <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
-        <button class="ytp-btn" id="ytp-more-btn" onclick="sjmOpenForPlayer(this,event)" onmousedown="event.stopPropagation()" title="Add to playlist, never play again, report a problem">⋯</button>
-        ${ytpReactionRailHTML(trackId, 'ytp-desktop-reaction-rail', true)}
+      <div class="ytp-toolbar-row" style="display:flex;align-items:flex-end;gap:8px;padding:2px 8px 6px 10px">
+        <div class="ytp-toolbar-left">
+          <button type="button" class="ytp-live-badge" id="ytp-live-badge" title="This player is on air. Click to see who is listening." onmousedown="event.stopPropagation()" onclick="sjjToggleListeners();event.stopPropagation()"><span class="dot"></span>Broadcasting Live</button>
+          <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen, {user:true});event.stopPropagation()">Lyrics</button>
+          <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">&#8644; Versions &#9662;</button>
+          <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
+          <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
+            <span style="font-size:.5rem;letter-spacing:.02em">Vol</span>
+            <input type="range" id="ytp-vol-slider" min="0" max="100" value="100" step="5"
+              oninput="ytpSetVolume(this.valueAsNumber)" onmousedown="event.stopPropagation()"
+              style="width:60px;height:4px;accent-color:var(--accent);cursor:pointer"
+              aria-label="Volume">
+          </label>
+          <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
+          <button class="ytp-btn" id="ytp-more-btn" onclick="sjmOpenForPlayer(this,event)" onmousedown="event.stopPropagation()" title="Add to playlist, never play again, report a problem">&#8943;</button>
+        </div>
+        <div class="ytp-toolbar-transport">
+          <button type="button" class="ytp-deck-btn" id="ytp-shuffle-tog" title="Shuffle queue" onmousedown="event.stopPropagation()" onclick="setYtShuffleEnabled(!ytShuffle);event.stopPropagation()">${YTP_DECK_ICONS.shuffle}</button>
+          <button type="button" class="ytp-deck-btn" id="ytp-repeat-tog" title="Repeat queue" onmousedown="event.stopPropagation()" onclick="ytpSetRepeat(!ytRepeat);event.stopPropagation()">${YTP_DECK_ICONS.repeat}</button>
+          <button class="ytp-deck-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.prev}</button>
+          <button class="ytp-deck-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.pause}</button>
+          <button class="ytp-deck-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.next}</button>
+        </div>
       </div>
     </div>
     <div id="ytp-up-next-slot"></div>
@@ -7838,12 +7875,16 @@ function ytpDockSyncFontControl() {
   ytpArrangeDockControls();
 }
 
-// The playlist hangs above the artist / title column. Measure down to that
-// band so it never covers the title while the transport stays bottom-right.
+// The queue sits beside the artwork, filling the column above the title
+// block. It used to be absolutely placed and measured the gap ABOVE that
+// column - which the artwork closed as the dock grew, so the queue
+// disappeared at exactly the sizes with room to show it. Measure the column
+// it actually lives in instead.
 function ytpDockSyncPlaylist() {
   const dock = document.getElementById('ytp-mini-footer');
   const playlist = document.getElementById('ytp-mf-playlist');
-  const now = dock?.querySelector('.ytp-mf-now');
+  const side = dock?.querySelector('.ytp-mf-side');
+  const meta = dock?.querySelector('.ytp-mf-meta');
   if (!dock || !playlist) return;
 
   dock.classList.remove('dock-show-playlist');
@@ -7851,15 +7892,13 @@ function ytpDockSyncPlaylist() {
   // The lyrics have to be re-placed whatever happens to the playlist - the
   // early returns below are all layouts too, and leaving them out is what let
   // the words sit in a stale position after the dock changed shape.
-  if (!_ytpMinimized || ytpIsMob() || ytQueue.length <= 1 || !now) { ytpMfLayoutLyrics(); return; }
+  if (!_ytpMinimized || ytpIsMob() || ytQueue.length <= 1 || !side || !meta) { ytpMfLayoutLyrics(); return; }
   if (!dock.classList.contains('dock-grown')) { ytpMfLayoutLyrics(); return; }
 
-  const dockRect = dock.getBoundingClientRect();
-  const nowRect = now.getBoundingClientRect();
-  const playlistTop = parseFloat(getComputedStyle(playlist).top) || 14;
-  // Keep one extra physical pixel so fractional browser geometry can never
-  // round the requested 20px clearance down to 19px.
-  const available = Math.floor(nowRect.top - dockRect.top - playlistTop - YTP_DOCK_PLAYLIST_GAP - 1);
+  // Measured with the queue hidden, so `side` is the artwork's height and
+  // `meta` is the title block that has to keep its place on the bottom edge.
+  const available = Math.floor(
+    side.getBoundingClientRect().height - meta.getBoundingClientRect().height - YTP_DOCK_PLAYLIST_GAP - 1);
   if (available < YTP_DOCK_PLAYLIST_MIN_H) { ytpMfLayoutLyrics(); return; }
 
   playlist.style.maxHeight = available + 'px';
@@ -7886,6 +7925,8 @@ function ytpDockObservePlaylistLayout() {
   _ytpDockPlaylistObserver = new ResizeObserver(ytpDockSchedulePlaylistSync);
   _ytpDockPlaylistObserver.observe(dock);
   _ytpDockPlaylistObserver.observe(now);
+  const meta = dock.querySelector('.ytp-mf-meta');
+  if (meta) _ytpDockPlaylistObserver.observe(meta);
 }
 
 // Applies the current (clamped) dock height and swaps thumbnail ⟷ video as
@@ -22657,6 +22698,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'The docked player now shows what is coming up beside the artwork. Drag the dock taller and the current playlist fills the space that opens up, between the cover and the song title, with whatever is playing marked. It used to sit in the top right corner and vanished at exactly the dock sizes that had room for it.',
+    'The full player and the docked player now read the same way round. The rating and heart buttons sit under the song title rather than off to the right, and Shuffle, Repeat, Previous, Play and Next are a row of square buttons on the right hand side, under Minimize and Close, in the same shapes the dock uses.',
     'Signed out, the All / My Artists / Public and All / My Playlists / Public buttons are gone. There is only public content to look at when nobody is signed in, so the pages simply show it - including a browser that was signed in last visit and had been left on My Playlists.',
     'On Explore Playlists the count under the tabs now describes the playlists themselves: every different song and every different artist across the playlists on screen, each counted once however many playlists it appears on. Narrow the list with search, contributor or All / My Playlists / Public and the count follows.',
     'Shuffle All on Explore Playlists now plays exactly those songs - every song across the playlists you are looking at, once each, in a random order - instead of shuffling the whole catalogue.',
