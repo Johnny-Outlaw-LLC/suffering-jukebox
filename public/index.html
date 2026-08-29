@@ -14967,6 +14967,7 @@ let _myReactionTracksLoading = null;
 let _playlistSearchFocus = false;
 let _playlistSearchTimer = null;
 let artistExploreFilter = localStorage.getItem('sj_artist_explore_filter') || 'all'; // all | mine | public
+let landingSinglesOnly = localStorage.getItem('sj_landing_singles_only') === '1';
 const playlistSearchMetaByTrack = {}; // trackId -> { title, artist, lyrics }
 let _playlistSearchMetaLoading = null;
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
@@ -17806,6 +17807,7 @@ function getVisibleLandingStats() {
   } else if (artistExploreFilter === 'public') {
     visible = visible.filter(r => r.visibility !== 'private');
   }
+  if (landingSinglesOnly) visible = visible.filter(r => r.discography_complete === false);
   if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
   else if (landingSubmitterFilter.size) {
     visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -17850,6 +17852,12 @@ function setLandingSort(v) {
 function setLandingDetailLevel(level) {
   landingDetailLevel = level;
   try { localStorage.setItem('sj_landing_detail', level); } catch (e) {}
+  renderLanding();
+}
+
+function setLandingSinglesOnly(on) {
+  landingSinglesOnly = !!on;
+  try { localStorage.setItem('sj_landing_singles_only', landingSinglesOnly ? '1' : '0'); } catch (_) {}
   renderLanding();
 }
 
@@ -18462,6 +18470,10 @@ function renderLanding() {
             ${sizeOpt('full', 'Full Details')}
           </select>
         </div>
+        <label class="landing-control-group" style="justify-content:flex-end;gap:.45rem;cursor:pointer">
+          <span class="landing-control-lbl">Artists</span>
+          <span style="display:flex;align-items:center;gap:.38rem;font-size:.52rem;color:var(--text-muted);white-space:nowrap"><input type="checkbox" ${landingSinglesOnly ? 'checked' : ''} onchange="setLandingSinglesOnly(this.checked)"> Include Singles Only Artists</span>
+        </label>
         <button type="button" class="landing-add-artist-btn" onclick="openImportMusic()">＋ Import Music</button>
       </div>
       ${rows.length ? '' : `<div class="landing-no-results">No artists match ${landingSearchQ ? '“' + esc(landingSearchQ) + '”' : 'the current filters'}.</div>`}

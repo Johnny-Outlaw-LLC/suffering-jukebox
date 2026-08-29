@@ -12,7 +12,11 @@ export async function GET(req: NextRequest) {
     const token = new URL(req.url).searchParams.get("token") || "";
     if (!token) {
       const user = await getAuthUser(req); const sb = createSjServiceClient(); const email = cleanEmail(user?.email);
-      const { data: publicRows } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("*").eq("visibility", "public").order("created_at", { ascending:false });
+      // `is_public` is the established production contract.  The sharing
+      // migration adds `visibility`, but database migrations are deployed
+      // separately from this Next app; keep public Explore working before and
+      // after that migration has run.
+      const { data: publicRows } = await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("*").eq("is_public", true).order("created_at", { ascending:false });
       const { data: mine } = email ? await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("*").eq("user_email", email).order("created_at", { ascending:false }) : { data: [] };
       const { data: grants } = email ? await sb.schema(JUKEBOX_SCHEMA).from("playlist_access").select("playlist_id").eq("recipient_email", email) : { data: [] };
       const ids = [...new Set((grants || []).map(x => x.playlist_id))];
