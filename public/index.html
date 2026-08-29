@@ -3435,6 +3435,30 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .la-songs-head strong { font-size:.72rem; }
 .la-songs-head span { font-family:var(--mono); font-size:.48rem; color:var(--text-muted); }
 .la-songs-view .tt-scroll { max-height:58vh; overflow:auto; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); }
+/* Explore Songs - the same All Tracks table over the whole catalogue */
+.es-page { display:flex; flex-direction:column; gap:.6rem; min-height:0; }
+.es-head { display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:.5rem; }
+.es-head h2 { font-size:1rem; font-weight:700; letter-spacing:-.02em; }
+.es-head span { font-family:var(--mono); font-size:.48rem; color:var(--text-muted); letter-spacing:.06em; }
+.es-controls { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+.es-controls .landing-search-wrap { min-width:min(280px,100%); }
+.es-sorts { display:flex; align-items:center; gap:.35rem; flex-wrap:wrap; }
+.es-page .tt-scroll { max-height:calc(100vh - 320px); min-height:340px; overflow:auto; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); }
+/* .tt-wrap owns overflow-x, which makes it the sticky header's scroll
+   container and leaves the header behind. Here the outer .tt-scroll
+   scrolls both ways, so the column headers stay put over 400 rows. */
+.es-page .tt-wrap { overflow:visible; }
+.es-artist { color:var(--text); cursor:pointer; }
+.es-artist:hover { color:var(--accent); text-decoration:underline; }
+.es-more { align-self:center; background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; letter-spacing:.06em; padding:.45rem 1.1rem; border-radius:7px; cursor:pointer; }
+.es-more:hover { border-color:var(--accent); color:var(--accent); }
+@media (max-width:640px) {
+  .es-page .tt-scroll { max-height:calc(100vh - 280px); min-height:260px; }
+  /* One line per song and swipe sideways, the same bargain the artist
+     page strikes on a phone - wrapped titles make 400 rows enormous. */
+  .es-page .top-tracks-tbl { width:max-content; min-width:640px; }
+  .es-page .top-tracks-tbl th, .es-page .top-tracks-tbl td { white-space:nowrap; }
+}
 .landing-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 14px; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .12s;
@@ -15364,7 +15388,7 @@ function setArtistExploreFilter(mode) {
   }
   artistExploreFilter = ['mine', 'public', 'all'].includes(mode) ? mode : 'all';
   try { localStorage.setItem('sj_artist_explore_filter', artistExploreFilter); } catch (_) {}
-  if (isLandingMode && landingTab === 'explore') renderLanding();
+  if (isLandingMode && (landingTab === 'explore' || landingTab === 'songs')) renderLanding();
 }
 
 async function ensurePlaylistSearchMeta() {
@@ -18094,7 +18118,7 @@ function setLandingTab(tab) {
     openMyJukebox('library');
     return;
   }
-  landingTab = ['explore', 'playlists'].includes(tab) ? tab : 'explore';
+  landingTab = ['explore', 'playlists', 'songs'].includes(tab) ? tab : 'explore';
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
   if (tab === 'playlists') {
@@ -18402,6 +18426,235 @@ function renderLandingHomeHTML(esc) {
   </div>`;
 }
 
+// ══════════════════════════════════════════════════════════════
+// EXPLORE SONGS - the artist page's All Tracks table, run over every
+// artist in the catalogue instead of one jukebox. It fills the same
+// globals an artist page uses (albums / tracks / ytData / selectedIds /
+// trackVideos), so playing, rating, versions and the lyric accordion all
+// work here unchanged. One paged fetch per table beats the per-artist
+// chunked calls: 5,000 tracks through loadYT() would be 200 requests.
+// ══════════════════════════════════════════════════════════════
+let _esLoaded  = false;
+let _esLoading = false;
+let _esError   = '';
+let _esArtistById = {};    // artist_id -> {id, name, slug}
+let _esLimit   = 400;      // rows actually drawn; Show more grows it
+let _esSearchQ = '';
+const ES_PAGE  = 400;
+
+function esArtistName(artistId) {
+  if (!artistId) return '';
+  const a = _esArtistById[artistId];
+  if (a) return a.name || '';
+  const la = (landingStats || []).find(r => r.artist_id === artistId);
+  if (la) return la.name || '';
+  const g = (allArtists || []).find(x => x.id === artistId);
+  return g ? (g.name || '') : '';
+}
+
+function esGoArtist(artistId) {
+  const a = _esArtistById[artistId];
+  const la = (landingStats || []).find(r => r.artist_id === artistId);
+  const slug = (a && a.slug) || (la && la.slug);
+  if (!slug) return;
+  enterArtistJukebox({ id: artistId, name: (a && a.name) || (la && la.name) || '', slug });
+}
+
+// The artists the Explore Artists filters currently leave standing. The songs
+// list is that set flattened - hide an artist there and their songs go too.
+function esVisibleArtistIds() {
+  const out = new Set();
+  getVisibleLandingStats().forEach(r => {
+    ((r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id]).forEach(id => { if (id) out.add(id); });
+  });
+  return out;
+}
+
+function esSongRows() {
+  const ids = esVisibleArtistIds();
+  const rows = [];
+  ids.forEach(id => { (tracks[id] || []).forEach(t => rows.push(t)); });
+  const q = _esSearchQ.trim().toLowerCase();
+  if (!q) return rows;
+  const albById = {};
+  ids.forEach(id => (albums[id] || []).forEach(a => { albById[a.id] = a; }));
+  return rows.filter(t => {
+    const alb = albById[t.album_id];
+    return (t.name || '').toLowerCase().includes(q)
+      || (alb ? (alb.name || '').toLowerCase().includes(q) : false)
+      || esArtistName(alb && alb.artist_id).toLowerCase().includes(q);
+  });
+}
+
+async function esEnsureCatalog(force) {
+  if (_esLoading || (_esLoaded && !force)) return;
+  _esLoading = true;
+  _esError = '';
+  esRepaint();
+  const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
+  try {
+    const [artistRows, albRows, trackRows, videoRows, playRows] = await Promise.all([
+      dbGetAllPages(REST + '/artists?select=id,name,slug&order=name.asc', hdrs),
+      dbGetAllPages(REST + '/albums?select=*&order=release_date.asc', hdrs),
+      dbGetAllPages(REST + '/tracks?select=*&order=album_id,track_number', hdrs),
+      dbGetAllPages(REST + '/track_videos?select=track_id,video_id,title,channel,thumbnail,view_count,like_count,lyric_offset_seconds,is_primary,is_playable,label,counts_for_charts&order=view_count.desc.nullslast', hdrs),
+      dbGetAllPages(REST + '/track_play_counts?select=track_id,play_count&order=track_id.asc', hdrs),
+    ]);
+    _esArtistById = {};
+    artistRows.forEach(a => { _esArtistById[a.id] = a; });
+
+    // Early Times is a demo compilation, not a studio album - the artist
+    // pages drop it, so this list drops it too.
+    const albById = {}, albByArtist = {};
+    albRows.filter(a => !(a.name || '').toLowerCase().includes('early times')).forEach(a => {
+      albById[a.id] = a;
+      (albByArtist[a.artist_id] = albByArtist[a.artist_id] || []).push(a);
+    });
+    const tracksByArtist = {};
+    trackRows.forEach(t => {
+      const alb = albById[t.album_id];
+      if (!alb) return;
+      (tracksByArtist[alb.artist_id] = tracksByArtist[alb.artist_id] || []).push(t);
+      const art = (ALBUM_ART[alb.name] || alb.art_url) || null;
+      SJ_TRACK_META[t.id] = {
+        artist: esArtistName(alb.artist_id),
+        album: alb.name || '',
+        year: (alb.release_date || '').slice(0, 4),
+        artwork: art || undefined
+      };
+    });
+    Object.keys(albByArtist).forEach(id => {
+      albums[id] = albByArtist[id];
+      selectedIds.add(id);
+      _laLoadedArtists.add(id);   // an expanded artist card need not refetch this
+    });
+    Object.keys(tracksByArtist).forEach(id => { tracks[id] = tracksByArtist[id]; });
+
+    const tvNew = {};
+    videoRows.forEach(r => { if (r.track_id) (tvNew[r.track_id] = tvNew[r.track_id] || []).push(r); });
+    Object.keys(tvNew).forEach(tid => { trackVideos[tid] = tvNew[tid]; });
+    playRows.forEach(r => { if (r.track_id) inAppPlays[r.track_id] = Number(r.play_count) || 0; });
+
+    // track_videos already carries what loadYT() would go to metrics for, and
+    // it is the table the charts trust: tvTop for the count that shows, and
+    // tvPrimary for the upload that actually plays.
+    trackRows.forEach(t => {
+      const pri = tvPrimary(t.id), top = tvTop(t.id);
+      if (!pri && !top) return;
+      const cur = ytData[t.id] || (ytData[t.id] = {});
+      if (pri) { cur.video_id = pri.video_id; if (pri.thumbnail) cur.thumbnail = pri.thumbnail; }
+      if (top) { cur.views = Number(top.view_count) || 0; cur.likes = Number(top.like_count) || 0; }
+    });
+    _esLoaded = true;
+  } catch (e) {
+    console.warn('esEnsureCatalog', e);
+    _esError = (e && e.message) ? e.message : 'Could not load the songs.';
+  } finally {
+    _esLoading = false;
+    if (isLandingMode && landingTab === 'songs') esRepaint();
+  }
+}
+
+const _ES_SORTS = [
+  { col: 'views',  lbl: 'YouTube Views',       tip: 'Most watched first' },
+  { col: 'name',   lbl: 'Song A-Z',            tip: 'By song title' },
+  { col: 'artist', lbl: 'Artist A-Z',          tip: 'By artist, then album running order' },
+  { col: 'plays',  lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
+];
+
+function esSongsPageHTML() {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const sorts = _ES_SORTS.concat(googleUser ? [{ col: 'myplays', lbl: 'My Plays', tip: 'The songs you have played here most' }] : []);
+  return '<div class="es-page">' +
+    '<div class="es-head"><h2>All Songs</h2><span id="es-count">' + esCountLabel() + '</span></div>' +
+    '<div class="es-controls">' +
+      '<div class="landing-search-wrap">' +
+        '<input type="text" class="landing-search-input" id="es-search" placeholder="Song, artist, or album…" autocomplete="off" value="' +
+          esc(_esSearchQ).replace(/"/g, '&quot;') + '" oninput="esSetSearch(this.value)" onkeydown="if(event.key===\'Escape\')esSetSearch(\'\')">' +
+        (_esSearchQ ? '<button type="button" class="landing-search-clear" title="Clear search" onclick="esSetSearch(\'\')">✕</button>' : '') +
+      '</div>' +
+      '<span class="es-sorts" id="es-sort"><span class="ctrl-row-meta">Sort</span>' +
+        sorts.map(o => '<button type="button" class="sort-btn' + (ttSortCol === o.col ? ' active' : '') + '" data-col="' + o.col +
+          '" onclick="setAllTracksSort(\'' + o.col + '\')" title="' + o.tip + '">' + o.lbl + '</button>').join('') +
+      '</span>' +
+    '</div>' +
+    '<div id="es-body">' + esBodyHTML() + '</div>' +
+  '</div>';
+}
+
+function esCountLabel() {
+  if (!_esLoaded) return 'Click column headers to sort';
+  const n = esSongRows().length;
+  const shown = Math.min(n, _esLimit);
+  return n.toLocaleString() + ' song' + (n === 1 ? '' : 's') +
+    (shown < n ? ' · showing ' + shown.toLocaleString() : '') + ' · click column headers to sort';
+}
+
+function esBodyHTML() {
+  if (_esError) {
+    return '<div class="landing-no-results">' + _esError.replace(/</g, '&lt;') +
+      ' <button type="button" class="sort-btn" onclick="esEnsureCatalog(true)">Try again</button></div>';
+  }
+  if (!_esLoaded) return '<div class="landing-no-results">Loading every song in the Jukebox…</div>';
+  const rows = esSongRows();
+  ttTrackCache = rows;
+  if (!rows.length) {
+    return '<div class="landing-no-results">' +
+      (_esSearchQ.trim() ? 'No songs match that search.' : 'No songs to show - every artist is filtered out.') + '</div>';
+  }
+  const more = rows.length > _esLimit
+    ? '<button type="button" class="es-more" onclick="esShowMore()">Show ' +
+      Math.min(ES_PAGE, rows.length - _esLimit).toLocaleString() + ' more</button>'
+    : '';
+  return '<div class="tt-scroll"><div class="tt-wrap">' +
+    renderTopTracks(rows, { artistCol: true, limit: _esLimit }) + '</div></div>' + more;
+}
+
+function esRepaint() {
+  if (!isLandingMode || landingTab !== 'songs') return;
+  const body = document.getElementById('es-body');
+  if (!body) { renderLanding(); return; }
+  body.innerHTML = esBodyHTML();
+  esSyncCount();
+  esSyncSortChips();
+}
+
+function esSyncCount() {
+  const el = document.getElementById('es-count');
+  if (el) el.textContent = esCountLabel();
+}
+
+function esSyncSortChips() {
+  document.querySelectorAll('#es-sort .sort-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.col === ttSortCol));
+}
+
+// Repainting only the table keeps the caret in the search box - the lesson
+// spiRefreshList() already learned.
+function esSetSearch(v) {
+  _esSearchQ = v || '';
+  _esLimit = ES_PAGE;
+  const wrap = document.querySelector('.es-controls .landing-search-wrap');
+  if (wrap) {
+    const btn = wrap.querySelector('.landing-search-clear');
+    if (_esSearchQ && !btn) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'landing-search-clear'; b.title = 'Clear search';
+      b.textContent = '✕';
+      b.onclick = () => esSetSearch('');
+      wrap.appendChild(b);
+    } else if (!_esSearchQ && btn) btn.remove();
+  }
+  const input = document.getElementById('es-search');
+  if (input && input.value !== _esSearchQ) input.value = _esSearchQ;
+  esRepaint();
+}
+
+function esShowMore() {
+  _esLimit += ES_PAGE;
+  esRepaint();
+}
+
 function renderLanding() {
   if (landingTab === 'playlists' && !_liveRoomPlaylistsLoading) loadLiveRoomPlaylists();
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -18478,7 +18731,7 @@ function renderLanding() {
             const tip = p._description ? ` title="${p._description}" aria-description="${p._description}"` : '';
             return `<button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}${p._description ? ' ⓘ' : ''}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`;
           }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
-      })() : `
+      })() : landingTab === 'songs' ? esSongsPageHTML() : `
       <div class="landing-controls">
         <div class="landing-control-group">
           <span class="landing-control-lbl">Artists</span>
@@ -18576,6 +18829,7 @@ function renderLanding() {
     const si = document.getElementById('playlist-explore-search');
     if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
   }
+  if (landingTab === 'songs') esEnsureCatalog();
   if (landingTab === 'explore') landingExpandedIds.forEach(id => laPopulateAlbums(id));
   if (landingTab === 'playlists') {
     Promise.all([ensureMyReactionTracks(), ensurePlaylistArtwork(), ensurePlaylistSearchMeta()]).then(changed => {
@@ -19788,7 +20042,7 @@ function updateLandingActionsHeader() {
   nav.style.display = 'block';
   const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
   const minePlCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
-  const scopeChips = landingTab === 'explore'
+  const scopeChips = (landingTab === 'explore' || landingTab === 'songs')
     ? `<span class="landing-nav-scope" role="group" aria-label="Artist scope">
         <button type="button" class="playlist-explore-filter${artistExploreFilter === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
         <button type="button" class="playlist-explore-filter${artistExploreFilter === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
@@ -19804,6 +20058,7 @@ function updateLandingActionsHeader() {
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
     <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
     <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
+    <button type="button" class="landing-tab${landingTab === 'songs' ? ' active' : ''}" onclick="setLandingTab('songs')">Explore Songs</button>
     ${scopeChips}
   </nav>`;
   nav.dataset.armed = '1';
@@ -20201,7 +20456,16 @@ let ttSortCol = 'views';   // default sort
 let ttSortDir = 1;         // 1 = desc (most views first), -1 = asc
 let ttTrackCache = [];     // cached for re-sort without full render
 
-function renderTopTracks(trackList) {
+// opts.artistCol swaps the artist-specific Alb·Trk column for the artist's
+// name - Explore Songs spans every jukebox, where a chronological index across
+// 700 albums means nothing. opts.limit draws only the first N sorted rows;
+// the bars still measure against the whole list.
+let _ttLastOpts = null;
+
+function renderTopTracks(trackList, opts) {
+  opts = opts || {};
+  _ttLastOpts = opts;
+  const showArtist = !!opts.artistCol;
   const albById = {};
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { albById[a.id] = a; }));
 
@@ -20220,7 +20484,8 @@ function renderTopTracks(trackList) {
     _myPlays: myInAppPlays[t.id]  || 0,
     _alb   : albById[t.album_id],
     _albIdx: albChronoIdx[t.album_id] || 999,
-    _trkNum: t.track_number || 0
+    _trkNum: t.track_number || 0,
+    _artist: showArtist ? esArtistName((albById[t.album_id] || {}).artist_id) : ''
   }));
 
   if (!rows.length) return '<div class="empty-state"><p>No track data - try fetching YouTube data above.</p></div>';
@@ -20233,6 +20498,11 @@ function renderTopTracks(trackList) {
     else if (ttSortCol === 'dur')   { av = a._dur;   bv = b._dur; }
     else if (ttSortCol === 'name')  { av = a.name?.toLowerCase(); bv = b.name?.toLowerCase(); return ttSortDir * av.localeCompare(bv); }
     else if (ttSortCol === 'album') { av = (a._alb?.name||'').toLowerCase(); bv = (b._alb?.name||'').toLowerCase(); return ttSortDir * av.localeCompare(bv); }
+    else if (ttSortCol === 'artist') {
+      const byName = (a._artist || '').toLowerCase().localeCompare((b._artist || '').toLowerCase());
+      if (byName) return ttSortDir * byName;
+      return (a._albIdx - b._albIdx) || (a._trkNum - b._trkNum);
+    }
     else if (ttSortCol === 'chrono') {
       const diff = a._albIdx - b._albIdx;
       return ttSortDir * (diff !== 0 ? diff : a._trkNum - b._trkNum);
@@ -20255,7 +20525,9 @@ function renderTopTracks(trackList) {
   return `<table class="top-tracks-tbl" id="all-tracks-tbl">
     <thead><tr>
       <th style="width:28px"></th>
-      <th onclick="ttSort('chrono')" ${thCls('chrono')} style="width:44px;cursor:pointer;user-select:none;text-align:center${ttSortCol==='chrono'?';color:var(--text)':''}" title="Chronological album · track">Alb·Trk${sortArrow('chrono')}</th>
+      ${showArtist
+        ? `<th onclick="ttSort('artist')" ${thCls('artist')} style="min-width:110px;cursor:pointer;user-select:none${ttSortCol==='artist'?';color:var(--text)':''}" title="Artist">Artist${sortArrow('artist')}</th>`
+        : `<th onclick="ttSort('chrono')" ${thCls('chrono')} style="width:44px;cursor:pointer;user-select:none;text-align:center${ttSortCol==='chrono'?';color:var(--text)':''}" title="Chronological album · track">Alb·Trk${sortArrow('chrono')}</th>`}
       <th onclick="ttSort('name')" ${thCls('name')}>Track${sortArrow('name')}</th>
       <th onclick="ttSort('dur')"   ${thCls('dur')}   style="width:60px;text-align:right;cursor:pointer;user-select:none${ttSortCol==='dur'?';color:var(--text)':''}">Dur${sortArrow('dur')}</th>
       <th onclick="ttSort('album')" ${thCls('album')}>Album${sortArrow('album')}</th>
@@ -20265,7 +20537,7 @@ function renderTopTracks(trackList) {
       <th style="width:24px"></th>
     </tr></thead>
     <tbody>
-    ${rows.map((t, i) => {
+    ${(opts.limit ? rows.slice(0, opts.limit) : rows).map((t, i) => {
       const color    = t._alb ? albumColor(t._alb) : DEFAULT_BAR_COLOR;
       const vid      = ytData[t.id]?.video_id;
       const thumb    = t._alb ? albumThumb(t._alb) : (ytData[t.id]?.thumbnail || '');
@@ -20283,7 +20555,9 @@ function renderTopTracks(trackList) {
         data-tip-stats="${tipStats.replace(/"/g,'&quot;')}"
         style="animation-delay:${Math.min(i,.8) * .018}s" onclick="toggleTTAccordion('${t.id}')">
         <td class="tt-rank">${i + 1}</td>
-        <td style="text-align:center;font-size:.48rem;color:var(--text-muted);font-family:var(--mono);letter-spacing:0;white-space:nowrap">${t._albIdx !== 999 ? t._albIdx + '.' + String(t._trkNum||'?').padStart(2,'0') : '-'}</td>
+        ${showArtist
+          ? `<td style="font-size:.55rem;color:var(--text-muted);white-space:nowrap"><span class="es-artist" onclick="event.stopPropagation();esGoArtist('${(t._alb?.artist_id)||''}')">${(t._artist || '-').replace(/</g,'&lt;')}</span></td>`
+          : `<td style="text-align:center;font-size:.48rem;color:var(--text-muted);font-family:var(--mono);letter-spacing:0;white-space:nowrap">${t._albIdx !== 999 ? t._albIdx + '.' + String(t._trkNum||'?').padStart(2,'0') : '-'}</td>`}
         <td style="font-weight:500"><span class="artist-dot" style="background:${color}"></span>${t.name}</td>
         <td style="text-align:right;color:var(--text-muted);font-size:.58rem;white-space:nowrap">${durStr}</td>
         <td style="color:var(--text-muted);font-size:.58rem">${t._alb?.name || '-'}</td>
@@ -20316,10 +20590,11 @@ function ttRepaint() {
   const tbl = document.getElementById('all-tracks-tbl');
   if (tbl) {
     const tmp = document.createElement('div');
-    tmp.innerHTML = renderTopTracks(ttTrackCache);
+    tmp.innerHTML = renderTopTracks(ttTrackCache, _ttLastOpts);
     tbl.replaceWith(tmp.firstElementChild);
   }
   if (viewMode === 'alltracks') updateViewControlsHeader();
+  if (isLandingMode && landingTab === 'songs') { esSyncCount(); esSyncSortChips(); }
 }
 
 // ── YT prompt ────────────────────────────────────────────────
@@ -22235,6 +22510,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'A new Explore Songs tab sits beside Explore Artists and Explore Playlists: every song in the Jukebox in one sortable table, with the artist on each row. Sort by YouTube views, song, artist or total plays, search by song, artist or album, and click a row for the lyrics, the buttons and the ratings, exactly as All Tracks does inside an artist jukebox. It follows the artist filters, so an artist you have hidden takes their songs with them.',
     'Add Songs to Playlist now opens straight on the Jukebox search instead of asking first where the songs should come from. The two YouTube doors - Add a Song from YouTube, and Add a Playlist from YouTube - sit as buttons across the top of that same screen, so you can search the Jukebox and reach either one without going back a step.',
   ] },
   { date: '2026-08-28', items: [
