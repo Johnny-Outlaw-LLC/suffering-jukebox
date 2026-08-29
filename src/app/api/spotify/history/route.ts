@@ -131,6 +131,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, data: data ?? { batches: [] } });
     }
 
+    if (action === "set-insights-consent") {
+      if (rateLimited(`listening-insights-consent:${uid}`, 12, 60_000)) return tooMany();
+      const { error } = await sb.schema(JUKEBOX_SCHEMA).rpc("set_listening_insights_consent", {
+        p_user_id: uid,
+        p_contribute_spotify_history: body.contributeSpotifyHistoryInsights === true,
+        p_policy_version: String(body.policyVersion || "").trim().slice(0, 64) || "2026-08-29.1",
+      });
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
+
     if (action === "archive-data-batches" || action === "restore-data-batches") {
       if (rateLimited(`listening-data-update:${uid}`, 12, 60_000)) return tooMany();
       const batches = cleanDataBatches(body.batches);

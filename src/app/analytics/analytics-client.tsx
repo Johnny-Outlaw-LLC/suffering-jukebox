@@ -89,6 +89,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
   const [files, setFiles] = useState<FileProgress[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [contributeInsights, setContributeInsights] = useState(false);
   const [saveProgress, setSaveProgress] = useState({ done: 0, total: 0 });
   const [saved, setSaved] = useState<{ inserted: number; skipped: number } | null>(null);
   const [artistSearch, setArtistSearch] = useState("");
@@ -204,6 +205,20 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     return { inserted: Number(data.inserted || 0), skipped: Number(data.skipped || 0) };
   }
 
+  async function saveInsightsChoice(accessToken: string) {
+    const response = await fetch("/api/spotify/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        action: "set-insights-consent",
+        contributeSpotifyHistoryInsights: contributeInsights,
+        policyVersion: "2026-08-29.1",
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not save your data-use choice.");
+  }
+
   async function confirmImport() {
     if (!selectedEvents.length || saving) return;
     setSaving(true); setError("");
@@ -212,6 +227,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     try {
       const { data: { session } } = await sjBrowserAuth.auth.getSession();
       if (!session?.access_token) throw new Error("Sign in to save your Spotify history.");
+      await saveInsightsChoice(session.access_token);
       for (let index = 0; index < selectedEvents.length; index += IMPORT_BATCH) {
         const batch = selectedEvents.slice(index, index + IMPORT_BATCH);
         const result = await postHistoryBatch(session.access_token, batch);
@@ -226,7 +242,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     } finally { setSaving(false); }
   }
 
-  function reset() { setStep(1); setEvents([]); setIncludedEventIndexes(new Set()); setFiles([]); setError(""); setSaved(null); setArtistSearch(""); }
+  function reset() { setStep(1); setEvents([]); setIncludedEventIndexes(new Set()); setFiles([]); setError(""); setSaved(null); setArtistSearch(""); setContributeInsights(false); }
   const completedFiles = files.filter(file => file.state === "done").length;
   const topYearCount = Math.max(...summary.byYear.map(([, count]) => count), 1);
 
@@ -245,7 +261,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
           <li>Request <b>Extended Streaming History</b>—not just the recent streaming-history download.</li>
           <li>When Spotify emails your download, unzip it and upload every history <code>.json</code> file here.</li>
         </ol>
-        <p>Spotify prepares the download separately, so it may not arrive immediately. We use the listening records only for your private Analytics, and remove IP-address fields before saving.</p>
+        <p>Spotify prepares the download separately, so it may not arrive immediately. We remove IP-address fields before saving. At confirmation, you can separately choose whether to contribute de-identified music insights.</p>
       </section>
     </div>}
 
@@ -288,7 +304,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     </div>}
 
     {step === 4 && <div className={styles.stepBody}>
-      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} already on file and skipped` : ""}.</p><p className={styles.muted}>Re-importing the same export is safe — only missing listens are added.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><p className={styles.muted}>Safe to re-run the same files: listens you already imported are skipped, and only what is still missing gets saved.</p><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
+      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} already on file and skipped` : ""}.</p><p className={styles.muted}>Re-importing the same export is safe — only missing listens are added.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><p className={styles.muted}>Safe to re-run the same files: listens you already imported are skipped, and only what is still missing gets saved.</p><label className={styles.insightsConsent}><input type="checkbox" checked={contributeInsights} onChange={event => setContributeInsights(event.target.checked)} /><span><strong>Contribute de-identified music insights</strong><small>Optional. We may use music listening patterns from this import to create aggregated, de-identified research and commercial insights. We do not include raw files, account details, IP addresses, device data, podcasts, audiobooks, or other non-music activity. Your private Analytics work either way. You can withdraw this choice through a privacy request.</small></span></label><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
     </div>}
   </section>;
 }
