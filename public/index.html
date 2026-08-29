@@ -18270,7 +18270,13 @@ function landingArtistOptions() {
   // artist-level My Artists test here would erase the artist that a library
   // song belongs to before the song-level test gets a chance to include it.
   const songLevelMine = isLandingMode && landingTab === 'songs' && artistScope() === 'mine';
-  if (artistScope() === 'mine' && !songLevelMine) opts = opts.filter(r => oaIsMine(r));
+  if (songLevelMine) {
+    // Listing the artists I imported would drop the artist a library song
+    // belongs to, so list the artists that actually have a song in the list.
+    const withMine = esMineArtistIdsWithSongs();
+    if (withMine) opts = opts.filter(r =>
+      ((r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id]).some(id => withMine.has(id)));
+  } else if (artistScope() === 'mine') opts = opts.filter(r => oaIsMine(r));
   else if (artistScope() === 'public') opts = opts.filter(r => r.visibility !== 'private');
   if (landingSubmitterFilter.size) {
     opts = opts.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -18824,6 +18830,21 @@ function esIsMineTrack(t, mineArtists, albById) {
   if (_esLibTrackIds && _esLibTrackIds.has(t.id)) return true;
   const alb = albById[t.album_id];
   return !!(alb && mineArtists.has(alb.artist_id));
+}
+
+// The artists with at least one song in the current My Songs list. null while
+// the catalogue is still loading, so the Artists menu is never briefly emptied.
+function esMineArtistIdsWithSongs() {
+  if (!_esLoaded) return null;
+  const mineArtists = esMineArtistIds();
+  const albById = esAlbumIndex();
+  const out = new Set();
+  Object.keys(tracks).forEach(aid => (tracks[aid] || []).forEach(t => {
+    if (!esIsMineTrack(t, mineArtists, albById)) return;
+    const alb = albById[t.album_id];
+    if (alb && alb.artist_id) out.add(alb.artist_id);
+  }));
+  return out;
 }
 
 function esMineSongCount() {
