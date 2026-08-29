@@ -3537,6 +3537,19 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .es-artist:hover { color:var(--accent); text-decoration:underline; }
 .es-more { align-self:center; background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; letter-spacing:.06em; padding:.45rem 1.1rem; border-radius:7px; cursor:pointer; }
 .es-more:hover { border-color:var(--accent); color:var(--accent); }
+/* Multi-select. The bar is empty markup until something is ticked, so
+   nothing moves on the page until there is a selection to act on. */
+.es-selbar:empty { display:none; }
+.es-selbar-in { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; padding:.5rem .7rem; border:1px solid var(--accent); border-radius:9px; background:color-mix(in srgb, var(--accent) 8%, var(--bg-card)); }
+.es-selcount { font-family:var(--mono); font-size:.5rem; letter-spacing:.07em; text-transform:uppercase; color:var(--accent); margin-right:.3rem; white-space:nowrap; }
+.es-selbtn { background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; letter-spacing:.05em; padding:.36rem .8rem; border-radius:6px; cursor:pointer; white-space:nowrap; }
+.es-selbtn:hover { border-color:var(--accent); color:var(--accent); }
+.es-selbtn.primary { border-color:var(--accent); color:var(--accent); }
+.es-selbtn.primary:hover { background:var(--accent); color:#0a0a0a; }
+.es-selbtn.ghost { border-color:transparent; color:var(--text-muted); margin-left:auto; }
+.tt-selh, .tt-selc { text-align:center; padding-left:.35rem !important; padding-right:.15rem !important; }
+.tt-selh input, .tt-selc input { accent-color:var(--accent); cursor:pointer; width:13px; height:13px; margin:0; vertical-align:middle; }
+.tt-row.tt-selrow > td { background:color-mix(in srgb, var(--accent) 9%, transparent); }
 @media (max-width:640px) {
   .es-page .tt-scroll { max-height:calc(100vh - 280px); min-height:260px; }
   /* One line per song and swipe sideways, the same bargain the artist
@@ -18425,6 +18438,9 @@ function resetLandingSheetFilters() {
   _esLimit = ES_PAGE;
   _esLyricFilter.clear();
   _esLyricsMenuOpen = false;
+  _esSel.clear();
+  _esSelAnchorId = null;
+  esSelMenuClose();
   playlistExploreSearchQ = '';
   playlistExploreContributor = '';
   _landingArtistSearchQ = '';
@@ -18769,6 +18785,16 @@ let _esArtistById = {};    // artist_id -> {id, name, slug}
 let _esLimit   = 400;      // rows actually drawn; Show more grows it
 let _esSearchQ = '';
 const ES_PAGE  = 400;
+
+// Multi-select. The picks live here rather than in the checkboxes, because
+// searching, sorting and Show more all redraw the table - a selection that
+// only existed in the DOM would be lost on every keystroke, the same lesson
+// _spiSel learned. _esDrawn is the running order of the rows currently on
+// screen, which is what a shift-click range and Select all are measured in.
+let _esSel        = new Set();
+let _esDrawn      = [];
+let _esSelAllOn   = false;
+let _esSelAnchorId = null;   // last row ticked by hand, for shift-click
 
 // Lyric status. Two id-only reads rather than the words themselves: a track
 // carries its LRC in tracks.lyrics_synced and its plain words in a jukebox.lyrics
@@ -19143,7 +19169,7 @@ function esSongsPageHTML() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const sorts = _ES_SORTS.concat(googleUser ? [{ col: 'myplays', lbl: 'My Plays', tip: 'The songs you have played here most' }] : []);
   return '<div class="es-page">' +
-    '<div class="es-head"><h2>All Songs</h2><span id="es-count">' + esCountLabel() + '</span></div>' +
+    '<div class="es-head"><h2>Explore Songs</h2><span id="es-count">' + esCountLabel() + '</span></div>' +
     '<div class="es-controls">' + esFiltersHTML() +
       '<div class="landing-search-wrap">' +
         '<input type="text" class="landing-search-input" id="es-search" placeholder="Song, artist, or album…" autocomplete="off" value="' +
@@ -19155,6 +19181,7 @@ function esSongsPageHTML() {
           '" onclick="setAllTracksSort(\'' + o.col + '\')" title="' + o.tip + '">' + o.lbl + '</button>').join('') +
       '</span>' +
     '</div>' +
+    '<div class="es-selbar" id="es-selbar">' + esSelBarHTML() + '</div>' +
     '<div id="es-body">' + esBodyHTML() + '</div>' +
   '</div>';
 }
@@ -19184,7 +19211,319 @@ function esBodyHTML() {
       Math.min(ES_PAGE, rows.length - _esLimit).toLocaleString() + ' more</button>'
     : '';
   return '<div class="tt-scroll"><div class="tt-wrap">' +
-    renderTopTracks(rows, { artistCol: true, lyricCol: true, limit: _esLimit }) + '</div></div>' + more;
+    renderTopTracks(rows, { artistCol: true, lyricCol: true, selectCol: true, limit: _esLimit }) + '</div></div>' + more;
+}
+
+// -- Multi-select --------------------------------------------------------
+// Rows go in and out of the selection without a repaint: 400 rows is not
+// worth rebuilding to put a tick in one box, and repainting would take the
+// caret out of the search field.
+function esSelToggle(id, on, ev) {
+  if (ev && ev.shiftKey && _esSelAnchorId && _esDrawn.length) {
+    const a = _esDrawn.indexOf(_esSelAnchorId), b = _esDrawn.indexOf(id);
+    if (a !== -1 && b !== -1) {
+      const lo = Math.min(a, b), hi = Math.max(a, b);
+      for (let i = lo; i <= hi; i++) { if (on) _esSel.add(_esDrawn[i]); else _esSel.delete(_esDrawn[i]); }
+      _esSelAnchorId = id;
+      esSelSyncBoxes();
+      esSyncSelBar();
+      return;
+    }
+  }
+  if (on) _esSel.add(id); else _esSel.delete(id);
+  _esSelAnchorId = id;
+  const row = document.querySelector('#all-tracks-tbl tr[data-track-id="' + id + '"]');
+  if (row) row.classList.toggle('tt-selrow', !!on);
+  esSelSyncHeadBox();
+  esSyncSelBar();
+}
+
+// The header box acts on what is on screen, not on every matching song - a
+// filter that leaves 4,000 songs standing should not put 4,000 of them in a
+// playlist because one box was ticked.
+function esSelToggleAll(on) {
+  _esDrawn.forEach(id => { if (on) _esSel.add(id); else _esSel.delete(id); });
+  _esSelAnchorId = null;
+  esSelSyncBoxes();
+  esSyncSelBar();
+}
+
+function esSelClear() {
+  _esSel.clear();
+  _esSelAnchorId = null;
+  esSelMenuClose();
+  esSelSyncBoxes();
+  esSyncSelBar();
+}
+
+function esSelSyncBoxes() {
+  document.querySelectorAll('#all-tracks-tbl .tt-selc input').forEach(cb => {
+    const row = cb.closest('tr');
+    const tid = row && row.dataset.trackId;
+    if (!tid) return;
+    const on = _esSel.has(tid);
+    cb.checked = on;
+    row.classList.toggle('tt-selrow', on);
+  });
+  esSelSyncHeadBox();
+}
+
+function esSelSyncHeadBox() {
+  const h = document.querySelector('#all-tracks-tbl .tt-selh input');
+  if (!h) return;
+  const all = _esDrawn.length > 0 && _esDrawn.every(id => _esSel.has(id));
+  _esSelAllOn = all;
+  h.checked = all;
+  h.indeterminate = !all && _esDrawn.some(id => _esSel.has(id));
+}
+
+function esSyncSelBar() {
+  const el = document.getElementById('es-selbar');
+  if (el) el.innerHTML = esSelBarHTML();
+}
+
+function esSelBarHTML() {
+  const n = _esSel.size;
+  if (!n) return '';
+  const label = n.toLocaleString() + ' song' + (n === 1 ? '' : 's') + ' selected';
+  return '<div class="es-selbar-in">' +
+    '<span class="es-selcount">' + label + '</span>' +
+    '<button type="button" class="es-selbtn primary" onclick="esSelPlayNow()" title="Replace the queue with these songs and start playing">&#9654; Play now</button>' +
+    '<button type="button" class="es-selbtn" onclick="esSelAddQueue()" title="Add these songs to the end of the queue">+ Add to queue</button>' +
+    '<button type="button" class="es-selbtn" onclick="esSelOpenPlaylists(this,event)" title="Add these songs to one of your playlists">&#9776; Add to playlist</button>' +
+    '<button type="button" class="es-selbtn ghost" onclick="esSelClear()">Clear</button>' +
+  '</div>';
+}
+
+// Selected songs in the order they sit on screen, so Play now plays them the
+// way the table is sorted. Anything picked and then filtered out is still in
+// the selection and goes on the end - it was chosen deliberately.
+function esSelOrderedIds() {
+  const seen = new Set(), out = [];
+  _esDrawn.forEach(id => { if (_esSel.has(id) && !seen.has(id)) { seen.add(id); out.push(id); } });
+  _esSel.forEach(id => { if (!seen.has(id)) { seen.add(id); out.push(id); } });
+  return out;
+}
+
+// Explore Songs has already loaded every video id into ytData, so a queue is
+// built here with no request at all - no resolvePlaylistTracks round trip.
+function esSelQueueItems() {
+  return esSelOrderedIds().map(id => {
+    const vid = ytData[id] && ytData[id].video_id;
+    if (!vid) return null;
+    const t = findTrackById(id);
+    return { videoId: vid, title: (t && t.name) || 'Track', trackId: id };
+  }).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
+}
+
+function _esSelNoneMsg() {
+  showToast('None of those songs have a video to play.');
+}
+
+async function esSelPlayNow() {
+  const q = esSelQueueItems();
+  if (!q.length) { _esSelNoneMsg(); return; }
+  // On air, with other people's songs waiting? Ask before flattening them -
+  // the same guard playPlaylist() carries.
+  const resolved = await sjjResolveQueueOverwrite(q);
+  if (!resolved || !resolved.length) return;
+  landingPlayQueue(resolved);
+  showToast('Playing ' + resolved.length + ' song' + (resolved.length === 1 ? '' : 's') + '.');
+  try { await loadTrackAudio(resolved.slice(0, 40).map(x => x.trackId)); taSyncAudioBtn(); } catch (e) {}
+}
+
+function esSelAddQueue() {
+  const q = esSelQueueItems();
+  if (!q.length) { _esSelNoneMsg(); return; }
+  // A queue with no player is invisible, so the first songs added open one.
+  if (!ytPlayerEl) { esSelPlayNow(); return; }
+  ytAppendQueueItems(q);
+  updateYTQueueUI();
+  showToast('Added ' + q.length + ' song' + (q.length === 1 ? '' : 's') + ' to the queue.');
+}
+
+// -- Add to playlist -----------------------------------------------------
+// Its own popup rather than the per-track menu, which is single-track from
+// _sjmTrackId down. It borrows the .sjm-* classes so it looks the same, and
+// the verb is Add rather than a tick that toggles: with a hundred songs
+// picked, "already on it" and "not on it" are both true at once.
+let _esSelMenuAnchor = null;
+
+function esSelMenuClose() {
+  const m = document.getElementById('es-sel-menu');
+  if (m) m.remove();
+  _esSelMenuAnchor = null;
+  document.removeEventListener('mousedown', _esSelMenuOutside, true);
+  window.removeEventListener('resize', esSelMenuClose);
+}
+
+function _esSelMenuOutside(e) {
+  const m = document.getElementById('es-sel-menu');
+  if (m && !m.contains(e.target) && e.target !== _esSelMenuAnchor &&
+      !(_esSelMenuAnchor && _esSelMenuAnchor.contains(e.target))) esSelMenuClose();
+}
+
+function esSelMenuPosition() {
+  const menu = document.getElementById('es-sel-menu');
+  if (!menu) return;
+  if (!_esSelMenuAnchor) {
+    menu.style.left = Math.max(8, (window.innerWidth - menu.offsetWidth) / 2) + 'px';
+    menu.style.top = '20vh';
+    return;
+  }
+  const r = _esSelMenuAnchor.getBoundingClientRect();
+  const left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8);
+  menu.style.left = Math.max(8, left) + 'px';
+  const below = window.innerHeight - r.bottom;
+  menu.style.top = (below < menu.offsetHeight + 12 && r.top > menu.offsetHeight + 12)
+    ? Math.max(8, r.top - menu.offsetHeight - 6) + 'px'
+    : Math.min(r.bottom + 6, window.innerHeight - menu.offsetHeight - 8) + 'px';
+}
+
+async function esSelOpenPlaylists(anchorEl, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const already = document.getElementById('es-sel-menu');
+  esSelMenuClose();
+  if (already) return;
+  if (!_esSel.size) return;
+  _esSelMenuAnchor = anchorEl || null;
+  const menu = document.createElement('div');
+  menu.id = 'es-sel-menu';
+  menu.className = 'sjm-menu';
+  menu.onmousedown = e => e.stopPropagation();
+  menu.onclick = e => e.stopPropagation();
+  document.body.appendChild(menu);
+  setTimeout(() => {
+    document.addEventListener('mousedown', _esSelMenuOutside, true);
+    window.addEventListener('resize', esSelMenuClose);
+  }, 0);
+
+  const head = '<div class="sjm-hd"><span class="sjm-hd-name">Add ' + _esSel.size +
+    ' song' + (_esSel.size === 1 ? '' : 's') + ' to' + String.fromCharCode(8230) + '</span></div>';
+
+  if (!googleUser) {
+    menu.innerHTML = head +
+      '<div class="sjm-empty">Playlists are saved to your account.</div>' +
+      '<button class="sjm-item" onclick="esSelMenuClose();handleAuthClick()">' +
+        '<span class="sjm-ic">&#8594;</span><span class="sjm-label">Sign in with Google</span></button>';
+    esSelMenuPosition();
+    return;
+  }
+  if (!_playlistsLoaded) {
+    menu.innerHTML = head + '<div class="sjm-empty">Loading your playlists&#8230;</div>';
+    esSelMenuPosition();
+    await loadPlaylists();
+    _playlistsLoaded = true;
+    if (!document.getElementById('es-sel-menu')) return;
+  }
+  esSelRenderPlaylists();
+}
+
+function esSelPlaylistButton(p) {
+  const ids = esSelOrderedIds();
+  const have = new Set((p._tracks || []).map(r => r.track_id));
+  const already = ids.filter(id => have.has(id)).length;
+  const toAdd = ids.length - already;
+  const sub = toAdd ? '+' + toAdd : 'all here';
+  return '<button class="sjm-item" onclick="esSelAddToPlaylist(\'' + p.id + '\')"' +
+    (toAdd ? '' : ' disabled') +
+    ' title="' + (toAdd ? 'Add ' + toAdd + ' song' + (toAdd === 1 ? '' : 's') + ' to this playlist'
+                        : 'Every selected song is already on this playlist') + '">' +
+      '<span class="sjm-ic">+</span>' +
+      '<span class="sjm-label">' + escHtml(p.name || 'Untitled') + '</span>' +
+      '<span class="sjm-sub">' + sub + '</span>' +
+    '</button>';
+}
+
+function esSelRenderPlaylists(newFormOpen) {
+  const menu = document.getElementById('es-sel-menu');
+  if (!menu) return;
+  const mine = playlists.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const personal = mine.filter(p => !p.is_public);
+  const myPublic = mine.filter(p => !!p.is_public);
+  const head = '<div class="sjm-hd"><span class="sjm-hd-name">Add ' + _esSel.size +
+    ' song' + (_esSel.size === 1 ? '' : 's') + ' to' + String.fromCharCode(8230) + '</span></div>';
+
+  menu.innerHTML = head +
+    '<div class="sjm-scroll">' +
+      '<div class="sjm-sec">Personal Playlists</div>' +
+      (personal.length ? personal.map(esSelPlaylistButton).join('')
+        : '<div class="sjm-empty">No personal playlists yet.<br>Make your first one below.</div>') +
+      '<div class="sjm-sec">My Public Playlists</div>' +
+      (myPublic.length ? myPublic.map(esSelPlaylistButton).join('')
+        : '<div class="sjm-empty">None yet. Make a playlist public from Manage Playlists.</div>') +
+    '</div>' +
+    '<div class="sjm-sep"></div>' +
+    (newFormOpen
+      ? '<div class="sjm-newform">' +
+          '<input id="es-sel-new-name" placeholder="Playlist name" maxlength="80" ' +
+            'onkeydown="if(event.key===\'Enter\'){event.preventDefault();esSelCreatePlaylist()}if(event.key===\'Escape\'){esSelRenderPlaylists()}">' +
+          '<button id="es-sel-new-go" onclick="esSelCreatePlaylist()">Create</button>' +
+        '</div>'
+      : '<button class="sjm-item" onclick="esSelRenderPlaylists(true)">' +
+          '<span class="sjm-ic">+</span><span class="sjm-label">New playlist&#8230;</span></button>');
+  esSelMenuPosition();
+  if (newFormOpen) {
+    const inp = document.getElementById('es-sel-new-name');
+    if (inp) inp.focus();
+  }
+}
+
+// Songs already on the playlist are skipped rather than duplicated, and the
+// rows go up in chunks - one POST of several thousand is a request that can
+// fail whole where four can fail in part and say so.
+async function esSelWriteTracks(playlistId, tracks, ids) {
+  const have = new Set((tracks || []).map(r => r.track_id));
+  const fresh = ids.filter(id => !have.has(id));
+  if (!fresh.length) return [];
+  const base = plAppendPosition(tracks);
+  const rows = fresh.map((id, i) => ({ playlist_id: playlistId, track_id: id, position: base + i * PL_POS_STEP }));
+  for (let i = 0; i < rows.length; i += 200) await dbPost('/playlist_tracks', rows.slice(i, i + 200));
+  return rows;
+}
+
+async function esSelAddToPlaylist(playlistId) {
+  const p = playlists.find(x => x.id === playlistId);
+  if (!p) return;
+  const ids = esSelOrderedIds();
+  try {
+    const rows = await esSelWriteTracks(playlistId, p._tracks, ids);
+    if (!rows.length) { showToast('Already on ' + (p.name || 'that playlist') + '.'); return; }
+    p._tracks = (p._tracks || []).concat(rows);
+    showToast('Added ' + rows.length + ' song' + (rows.length === 1 ? '' : 's') + ' to ' + (p.name || 'playlist') + '.');
+    esSelRenderPlaylists();
+    _sjmRefreshPlaylistView();
+  } catch (e) {
+    showToast('Could not update that playlist.');
+  }
+}
+
+async function esSelCreatePlaylist() {
+  const inp = document.getElementById('es-sel-new-name');
+  const go  = document.getElementById('es-sel-new-go');
+  const name = ((inp && inp.value) || '').trim();
+  if (!name || !googleUser || !_esSel.size) return;
+  if (go) { go.disabled = true; go.textContent = String.fromCharCode(8230); }
+  const ids = esSelOrderedIds();
+  try {
+    const [pl] = await dbPost('/playlists', {
+      name,
+      is_public:  false,
+      user_email: googleUser.email,
+      user_name:  googleUser.displayName || googleUser.name || '',
+      context:    _playlistContext(),
+    });
+    const rows = await esSelWriteTracks(pl.id, [], ids);
+    pl._tracks = rows;
+    playlists.unshift(pl);
+    _savedPlaylists.unshift(pl);
+    showToast('Created "' + name + '" with ' + rows.length + ' song' + (rows.length === 1 ? '' : 's') + '.');
+    esSelRenderPlaylists();
+    _sjmRefreshPlaylistView();
+  } catch (e) {
+    if (go) { go.disabled = false; go.textContent = 'Create'; }
+    showToast('Could not create that playlist.');
+  }
 }
 
 function esRepaint() {
@@ -19194,6 +19533,7 @@ function esRepaint() {
   body.innerHTML = esBodyHTML();
   esSyncCount();
   esSyncSortChips();
+  esSyncSelBar();
 }
 
 function esSyncCount() {
@@ -21104,6 +21444,7 @@ function renderTopTracks(trackList, opts) {
   _ttLastOpts = opts;
   const showArtist = !!opts.artistCol;
   const showLyric  = !!opts.lyricCol;
+  const showSel    = !!opts.selectCol;
   const albById = {};
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { albById[a.id] = a; }));
 
@@ -21168,8 +21509,18 @@ function renderTopTracks(trackList, opts) {
   const sortArrow = col => col === ttSortCol ? (ttSortDir === -1 ? ' ↓' : ' ↑') : '';
   const thCls     = col => `style="cursor:pointer;user-select:none${col === ttSortCol ? ';color:var(--text)' : ''}"`;
 
+  // The rows actually drawn, worked out before the markup so the header
+  // checkbox knows whether the visible page is already ticked and shift-click
+  // has a running order to select a range within.
+  const drawn = opts.limit ? rows.slice(0, opts.limit) : rows;
+  if (showSel) {
+    _esDrawn = drawn.map(t => t.id);
+    _esSelAllOn = drawn.length > 0 && drawn.every(t => _esSel.has(t.id));
+  }
+
   return `<table class="top-tracks-tbl" id="all-tracks-tbl">
     <thead><tr>
+      ${showSel ? `<th class="tt-selh" style="width:26px"><input type="checkbox"${_esSelAllOn ? ' checked' : ''} title="Select every song shown" onclick="event.stopPropagation();esSelToggleAll(this.checked)"></th>` : ''}
       <th style="width:28px"></th>
       ${showArtist
         ? `<th onclick="ttSort('artist')" ${thCls('artist')} style="min-width:110px;cursor:pointer;user-select:none${ttSortCol==='artist'?';color:var(--text)':''}" title="Artist">Artist${sortArrow('artist')}</th>`
@@ -21185,7 +21536,7 @@ function renderTopTracks(trackList, opts) {
       <th style="width:24px"></th>
     </tr></thead>
     <tbody>
-    ${(opts.limit ? rows.slice(0, opts.limit) : rows).map((t, i) => {
+    ${drawn.map((t, i) => {
       const color    = t._alb ? albumColor(t._alb) : DEFAULT_BAR_COLOR;
       const vid      = ytData[t.id]?.video_id;
       const thumb    = t._alb ? albumThumb(t._alb) : (ytData[t.id]?.thumbnail || '');
@@ -21195,13 +21546,14 @@ function renderTopTracks(trackList, opts) {
       const yr       = (t._alb?.release_date || '').slice(0,4);
       const tipThumb = thumb ? `<img src="${thumb}" style="width:56px;height:56px;border-radius:5px;object-fit:cover;flex-shrink:0">` : `<div style="width:56px;height:56px;border-radius:5px;background:${color}22;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.2rem;color:${color}">♪</div>`;
       const tipStats = (t._views ? '\u25B6 ' + fmtV(t._views) + ' views' : '') + (t._likes ? '  \u2665 ' + fmtV(t._likes) : '') + (durStr !== '\u2014' ? '  \u23F1 ' + durStr : '');
-      return `<tr class="tt-row" data-track-id="${t.id}"
+      return `<tr class="tt-row${showSel && _esSel.has(t.id) ? ' tt-selrow' : ''}" data-track-id="${t.id}"
         data-tip-thumb="${(thumb||'').replace(/"/g,'&quot;')}"
         data-tip-name="${(t.name||'').replace(/"/g,'&quot;')}"
         data-tip-alb="${((t._alb?.name||'') + (yr ? ' \u00B7 ' + yr : '')).replace(/"/g,'&quot;')}"
         data-tip-color="${color}"
         data-tip-stats="${tipStats.replace(/"/g,'&quot;')}"
         style="animation-delay:${Math.min(i,.8) * .018}s" onclick="toggleTTAccordion('${t.id}')">
+        ${showSel ? `<td class="tt-selc" onclick="event.stopPropagation()"><input type="checkbox"${_esSel.has(t.id) ? ' checked' : ''} aria-label="Select ${(t.name||'').replace(/"/g,'&quot;')}" onclick="event.stopPropagation();esSelToggle('${t.id}',this.checked,event)"></td>` : ''}
         <td class="tt-rank">${i + 1}</td>
         ${showArtist
           ? `<td style="font-size:.55rem;color:var(--text-muted);white-space:nowrap"><span class="es-artist" onclick="event.stopPropagation();esGoArtist('${(t._alb?.artist_id)||''}')">${(t._artist || '-').replace(/</g,'&lt;')}</span></td>`
@@ -21242,6 +21594,7 @@ function ttRepaint() {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderTopTracks(ttTrackCache, _ttLastOpts);
     tbl.replaceWith(tmp.firstElementChild);
+    esSelSyncHeadBox();
   }
   if (viewMode === 'alltracks') updateViewControlsHeader();
   if (isLandingMode && landingTab === 'songs') { esSyncCount(); esSyncSortChips(); }
@@ -23189,6 +23542,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'Explore Songs lets you pick several songs at once. There is a tick box at the start of every row, and one in the column heading that takes everything currently on screen. Hold Shift while ticking to take the whole run between the last song you picked and this one.',
+    'With songs picked, a bar appears above the list: play them all now, add them to the end of the queue, or add them to one of your playlists. Songs already on that playlist are skipped rather than added twice, and you can make a new playlist out of the selection without leaving the list.',
+    'The picks are counted in the bar and survive searching, sorting and Show more, so you can gather songs from several searches before doing anything with them. They play in the order the table is sorted in. Clear empties the selection, and switching to another Explore page does too.',
+    'The page heading now reads Explore Songs, matching the button that opens it, instead of All Songs.',
     'The Playlist Controls box has gone from the top of the home page. In its place there is one Shuffle All button, sitting right beside the artist and song count, and it plays exactly what that count describes - the artists on Explore Artists, every song across the playlists on Explore Playlists, the songs on Explore Songs. Shuffle Favorites and the My Playlists / Public Playlists menus are retired there; Explore Playlists is the place to open a playlist, and Manage Playlists is still on that page. Artist jukebox pages keep their own Playlist Controls unchanged.',
     'Explore Songs has a Lyrics column and a Lyrics filter. Every song says whether it has Synced lyrics that scroll in time with the music, Static lyrics that are the words only, or none yet, and you can narrow the list to any of the three. Sort by the column heading, or with the new Lyrics sort button, to bring the best-covered songs to the top.',
     'Explore Songs also loads noticeably faster: it was quietly downloading the full timed lyrics of every song in the Jukebox to draw a table that never showed them.',
