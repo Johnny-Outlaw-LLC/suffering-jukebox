@@ -8237,12 +8237,16 @@ function ytpMfPlaceLyrics() {
   const bandStart = leftEdge - dockRect.left + YTP_MF_LYR_GAP;
   const bandEnd = rightEdge - dockRect.left - YTP_MF_LYR_GAP;
   const band = bandEnd - bandStart;
-  if (band < YTP_MF_LYR_MIN_W) {
-    // The middle lane has collapsed (usually because the queue is open), but
-    // the space directly above the transport is still useful.  Put the lyric
+  // The queue owns the middle lane the moment it is shown; do not wait for it
+  // to become impossibly narrow before moving the lyrics out of its way.
+  // Without a queue, retain the centred layout until that lane really is too
+  // cramped to read.
+  const useControlsAbove = dock.classList.contains('dock-show-playlist') || band < YTP_MF_LYR_MIN_W;
+  if (useControlsAbove) {
+    // The space directly above the transport is still useful. Put the lyric
     // strip there and leave a measured 12px of breathing room above the
-    // topmost control, rather than falling back to a centred strip that runs
-    // behind the title, queue, or buttons.
+    // topmost control, rather than letting the strip run behind the title,
+    // queue, or buttons.
     const controls = dock.querySelector('.ytp-mf-right');
     const controlsRect = controls?.getBoundingClientRect();
     const overStart = bandStart;
@@ -18378,13 +18382,41 @@ function clearArtistsFilter(e) {
   renderLanding();
 }
 
+// The three landing sheets answer different questions. Reusing the same
+// mutable filters made a filter chosen on one sheet silently alter another
+// one (especially confusing when its control was not visible there). A tab
+// change starts the destination sheet clean instead. Artist visibility is not
+// touched here: hiding an artist is a saved catalogue preference and remains
+// visibly represented by its checkbox whenever the Artists menu is opened.
+function resetLandingSheetFilters() {
+  artistExploreFilter = 'all';
+  playlistExploreFilter = 'all';
+  landingSubmitterFilter.clear();
+  landingSearchQ = '';
+  _esSearchQ = '';
+  _esLimit = ES_PAGE;
+  playlistExploreSearchQ = '';
+  playlistExploreContributor = '';
+  _landingArtistSearchQ = '';
+  _artistsMenuOpen = false;
+  _submitterMenuOpen = false;
+  try {
+    localStorage.setItem('sj_artist_explore_filter', 'all');
+    localStorage.setItem('sj_pl_explore_filter', 'all');
+    localStorage.removeItem('sj_landing_submitters');
+    localStorage.removeItem('sj_pl_explore_contributor');
+  } catch (_) {}
+}
+
 function setLandingTab(tab) {
   if (tab === 'home') {
     // Retired tab - open the personal library panel instead.
     openMyJukebox('library');
     return;
   }
-  landingTab = ['explore', 'playlists', 'songs'].includes(tab) ? tab : 'explore';
+  const nextTab = ['explore', 'playlists', 'songs'].includes(tab) ? tab : 'explore';
+  if (nextTab !== landingTab) resetLandingSheetFilters();
+  landingTab = nextTab;
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
   if (tab === 'playlists') {
@@ -22942,8 +22974,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'Explore Artists, Explore Playlists and Explore Songs now begin with clean page filters when you switch between them. A search, scope or contributor choice on one page no longer quietly empties another page; saved artist visibility remains your catalogue preference.',
     'My Songs now really starts with your songs, instead of first requiring the artist to be one you imported. A song you put in My Jukebox is there even when somebody else added its artist, and private artists you can access load with your signed-in catalogue too.',
-    'When the docked player gets too narrow for lyrics between the song details and transport controls, the lyrics move above the controls with a clear gap, instead of running behind the queue or buttons.',
+    'When the docked player shows the current playlist, lyrics move above the transport controls right away, with a clear gap. They no longer wait for the middle lane to get cramped and run behind the queue or buttons.',
     'Hovering a song on Explore Songs now draws the same trend line the artist jukebox pages draw, so you can see how a song has been picking up views over the last month without leaving the list.',
     'Every row on Explore Songs has a three dots button at the end, with the same menu the album track lines carry: add to a playlist, play it next, find another version, take a break from it, report a problem, open it on YouTube.',
     'That menu now offers Explore <Artist> Jukebox on songs whose artist has a full discography here, so you can jump from one song to everything else that artist has in the Jukebox. Artists who are here for a single track do not get the option, since their page would be the row you are already looking at.',
