@@ -2896,6 +2896,14 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
    right. The chips used to sit inline after the three tabs, which pushed the
    tabs off the side of a phone. */
 .landing-nav-row2 { display: flex; gap: 14px; row-gap: 6px; flex-wrap: wrap; align-items: center; margin-top: .5rem; }
+.landing-shuffle-btn {
+  background: var(--accent); border: 1px solid var(--accent); color: #0a0a0a;
+  font-family: var(--mono); font-size: .5rem; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; padding: .34rem .8rem; border-radius: 999px; cursor: pointer;
+  white-space: nowrap; transition: background .15s, color .15s, opacity .15s;
+}
+.landing-shuffle-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.landing-shuffle-btn:disabled { opacity: .55; cursor: default; }
 .landing-nav-row2 .landing-totals { margin: 0; }
 .landing-tab {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
@@ -20554,21 +20562,14 @@ function ctrlGroupHdHTML(openLabel) {
 function sjFitLwytbRow() {}
 function refreshQuickPlaylistNowPlaying() {}
 
-function renderLWYTBHTML(landing) {
+function renderLWYTBHTML() {
   const _hasFavs = Object.keys(localVotes).some(tid => (localVotes[tid] || 0) >= 1);
   const _myPls  = _savedPlaylists.filter(p => p.user_email === (googleUser && googleUser.email));
   const _pubPls = _savedPlaylists.filter(p => p.is_public);
-  // The landing page uses the same bar but its own catalogue-wide shuffles.
-  const _shufAll = landing
-    ? (landingTab === 'playlists' ? 'playlistsShuffleAll()' : 'landingShuffleAll()')
-    : 'shuffleAllVisible()';
-  const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
-  const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
-  const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
   return `<div class="ctrl-group">${ctrlGroupHdHTML('Playlist Controls')}
     <div class="lwytb-body"><div class="lwytb-row">
-      <button class="ctrl-btn"${_idAll} onclick="${_shufAll}">▶ Shuffle All</button>
-      ${_hasFavs ? `<button class="ctrl-btn"${_idFav} onclick="${_shufFav}">▶ Shuffle Favorites</button>` : ''}
+      <button class="ctrl-btn" onclick="shuffleAllVisible()">▶ Shuffle All</button>
+      ${_hasFavs ? `<button class="ctrl-btn" onclick="shuffleFavorites()">▶ Shuffle Favorites</button>` : ''}
       ${_myPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'my',event)">▶ My Playlists ▾</button></div>` : ''}
       ${_pubPls.length ? `<div class="plsel-wrap"><button class="ctrl-btn" onclick="plselToggle(this,'pub',event)">▶ Public Playlists ▾</button></div>` : ''}
     </div></div>
@@ -20658,11 +20659,7 @@ function updateLandingActionsHeader() {
     _playlistsLoading = true;
     loadPlaylists().then(() => { _playlistsLoading = false; _playlistsLoaded = true; if (isLandingMode) updateLandingActionsHeader(); });
   }
-  if (playlists) {
-    playlists.style.display = 'block';
-    playlists.innerHTML = renderLWYTBHTML(true);
-    playlists.dataset.armed = '1';
-  }
+  if (playlists) { playlists.innerHTML = ''; playlists.style.display = 'none'; playlists.dataset.armed = '0'; }
   nav.style.display = 'block';
   const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
   // Explore Songs is a list of songs, so its chip counts songs.
@@ -20688,8 +20685,13 @@ function updateLandingActionsHeader() {
   // Chips and totals share one row under the tabs, so the tab buttons keep the
   // full width of the header to themselves.
   const totals = landingTotalsHTML();
+  // Only offered when there is a count beside it - an empty totals line means
+  // there is nothing on screen to shuffle.
+  const shuffle = totals
+    ? `<button type="button" class="landing-shuffle-btn" id="landing-shuffle-all-btn" onclick="${landingTab === 'playlists' ? 'playlistsShuffleAll()' : 'landingShuffleAll()'}">▶ Shuffle All</button>`
+    : '';
   const row2 = (scopeChips || totals)
-    ? `<div class="landing-nav-row2">${scopeChips}${totals}</div>` : '';
+    ? `<div class="landing-nav-row2">${scopeChips}${totals}${shuffle}</div>` : '';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
     <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
     <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
@@ -23187,6 +23189,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'The Playlist Controls box has gone from the top of the home page. In its place there is one Shuffle All button, sitting right beside the artist and song count, and it plays exactly what that count describes - the artists on Explore Artists, every song across the playlists on Explore Playlists, the songs on Explore Songs. Shuffle Favorites and the My Playlists / Public Playlists menus are retired there; Explore Playlists is the place to open a playlist, and Manage Playlists is still on that page. Artist jukebox pages keep their own Playlist Controls unchanged.',
     'Explore Songs has a Lyrics column and a Lyrics filter. Every song says whether it has Synced lyrics that scroll in time with the music, Static lyrics that are the words only, or none yet, and you can narrow the list to any of the three. Sort by the column heading, or with the new Lyrics sort button, to bring the best-covered songs to the top.',
     'Explore Songs also loads noticeably faster: it was quietly downloading the full timed lyrics of every song in the Jukebox to draw a table that never showed them.',
     'All, My Artists and Public now sit on their own line underneath the Explore Artists, Explore Playlists and Explore Songs buttons, with the artist and song count beside them. The three Explore buttons keep the full width of the header, so nothing runs off the side of a narrow screen.',
