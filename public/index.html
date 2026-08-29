@@ -3469,6 +3469,8 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
   .landing-submitter-btn { justify-content: space-between; overflow: hidden; }
   .landing-submitter-menu { min-width: 180px; width: max-content; max-width: calc(100vw - 28px); }
   .landing-control-group:nth-child(even) .landing-submitter-menu { left: auto; right: 0; }
+  /* Third control in the row - nth-child(even) would swing it off the left. */
+  .es-lyrics-dd .landing-submitter-menu { left: 0; right: auto; }
   .landing-add-artist-btn { grid-column: 1 / -1; margin-left: 0; width: 100%; padding: .6rem .8rem; font-size: .58rem; }
 }
 .landing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--card-min, 240px), 1fr)); gap: 20px; }
@@ -3519,6 +3521,10 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
    container and leaves the header behind. Here the outer .tt-scroll
    scrolls both ways, so the column headers stay put over 400 rows. */
 .es-page .tt-wrap { overflow:visible; }
+.tt-lyr { font-family:var(--mono); font-size:.44rem; letter-spacing:.07em; text-transform:uppercase; padding:.16rem .34rem; border-radius:5px; border:1px solid transparent; white-space:nowrap; }
+.tt-lyr-synced { color:var(--accent); border-color:var(--accent); }
+.tt-lyr-static { color:var(--text-muted); border-color:var(--border); }
+.tt-lyr-none { color:var(--text-muted); opacity:.55; border:none; letter-spacing:0; }
 .es-artist { color:var(--text); cursor:pointer; }
 .es-artist:hover { color:var(--accent); text-decoration:underline; }
 .es-more { align-self:center; background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; letter-spacing:.06em; padding:.45rem 1.1rem; border-radius:7px; cursor:pointer; }
@@ -3527,7 +3533,7 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
   .es-page .tt-scroll { max-height:calc(100vh - 280px); min-height:260px; }
   /* One line per song and swipe sideways, the same bargain the artist
      page strikes on a phone - wrapped titles make 400 rows enormous. */
-  .es-page .top-tracks-tbl { width:max-content; min-width:640px; }
+  .es-page .top-tracks-tbl { width:max-content; min-width:700px; }
   .es-page .top-tracks-tbl th, .es-page .top-tracks-tbl td { white-space:nowrap; }
 }
 .landing-card {
@@ -18191,6 +18197,7 @@ function submitterBtnLabel() {
 function toggleSubmitterDD(e) {
   if (e) e.stopPropagation();
   closeArtistsDD();   // never leave two menus open at once
+  closeLyricsDD();
   _submitterMenuOpen = !_submitterMenuOpen;
   const menu = document.getElementById('landing-submitter-menu');
   if (menu) menu.style.display = _submitterMenuOpen ? 'block' : 'none';
@@ -18351,7 +18358,8 @@ function artistsBtnLabel() {
 
 function toggleArtistsDD(e) {
   if (e) e.stopPropagation();
-  closeSubmitterDD();   // never leave two menus open at once
+  closeSubmitterDD();
+  closeLyricsDD();   // never leave two menus open at once
   _artistsMenuOpen = !_artistsMenuOpen;
   const menu = document.getElementById('landing-artists-menu');
   if (menu) menu.style.display = _artistsMenuOpen ? 'block' : 'none';
@@ -18407,6 +18415,8 @@ function resetLandingSheetFilters() {
   landingSearchQ = '';
   _esSearchQ = '';
   _esLimit = ES_PAGE;
+  _esLyricFilter.clear();
+  _esLyricsMenuOpen = false;
   playlistExploreSearchQ = '';
   playlistExploreContributor = '';
   _landingArtistSearchQ = '';
@@ -18752,6 +18762,28 @@ let _esLimit   = 400;      // rows actually drawn; Show more grows it
 let _esSearchQ = '';
 const ES_PAGE  = 400;
 
+// Lyric status. Two id-only reads rather than the words themselves: a track
+// carries its LRC in tracks.lyrics_synced and its plain words in a jukebox.lyrics
+// row, and downloading either across 5,000 songs to answer yes/no would be
+// several megabytes for three labels.
+let _esSyncedIds = new Set();   // tracks with timed .lrc
+let _esStaticIds = new Set();   // tracks with a plain lyrics row
+const ES_LYRIC_OPTS = [
+  ['synced', 'Synced Lyrics', 'Words that scroll in time with the song'],
+  ['static', 'Static Lyrics', 'Words, but not timed to the music'],
+  ['none',   'No Lyrics',     'Nothing written down here yet'],
+];
+let _esLyricFilter = new Set();   // empty = every status
+let _esLyricsMenuOpen = false;
+
+// Synced wins when a track has both - it is the better of the two, and the
+// column names what you actually get.
+function esLyricStatus(trackId) {
+  if (_esSyncedIds.has(trackId)) return 'synced';
+  if (_esStaticIds.has(trackId)) return 'static';
+  return 'none';
+}
+
 function esArtistName(artistId) {
   if (!artistId) return '';
   const a = _esArtistById[artistId];
@@ -18850,7 +18882,10 @@ function esMineSongCount() {
   return n;
 }
 
-function esSongRows() {
+// opts.skipLyric leaves the lyric filter off, which is how the menu counts
+// what each status would give you without counting itself.
+function esSongRows(opts) {
+  const skipLyric = !!(opts && opts.skipLyric);
   const ids = esVisibleArtistIds();
   let rows = [];
   ids.forEach(id => { (tracks[id] || []).forEach(t => rows.push(t)); });
@@ -18860,6 +18895,9 @@ function esSongRows() {
     const mineArtists = esMineArtistIds();
     rows = rows.filter(t => esIsMineTrack(t, mineArtists, albById));
   }
+  if (!skipLyric && _esLyricFilter.size) {
+    rows = rows.filter(t => _esLyricFilter.has(esLyricStatus(t.id)));
+  }
   const q = _esSearchQ.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(t => {
@@ -18868,6 +18906,91 @@ function esSongRows() {
       || (alb ? (alb.name || '').toLowerCase().includes(q) : false)
       || esArtistName(alb && alb.artist_id).toLowerCase().includes(q);
   });
+}
+
+// ── The Lyrics menu ──
+function esLyricBtnLabel() {
+  const n = _esLyricFilter.size;
+  if (!n || n === ES_LYRIC_OPTS.length) return 'Any lyrics';
+  if (n === 1) {
+    const k = [..._esLyricFilter][0];
+    const o = ES_LYRIC_OPTS.find(x => x[0] === k);
+    return o ? o[1] : '1 selected';
+  }
+  return n + ' selected';
+}
+
+function esLyricCounts() {
+  const out = { synced: 0, static: 0, none: 0 };
+  esSongRows({ skipLyric: true }).forEach(t => { out[esLyricStatus(t.id)]++; });
+  return out;
+}
+
+function toggleLyricsDD(e) {
+  if (e) e.stopPropagation();
+  closeArtistsDD();
+  closeSubmitterDD();
+  _esLyricsMenuOpen = !_esLyricsMenuOpen;
+  // The counts are only knowable once the catalogue is in, which is usually
+  // after this menu's markup was first built. Redraw it on the way open.
+  if (_esLyricsMenuOpen) esRefreshLyricsMenu();
+  const menu = document.getElementById('es-lyrics-menu');
+  if (menu) menu.style.display = _esLyricsMenuOpen ? 'block' : 'none';
+  document.removeEventListener('click', _lyricsOutside);
+  if (_esLyricsMenuOpen) setTimeout(() => document.addEventListener('click', _lyricsOutside), 0);
+}
+
+function _lyricsOutside(e) {
+  if (e.target.closest && e.target.closest('.es-lyrics-dd')) return;
+  closeLyricsDD();
+}
+
+function closeLyricsDD() {
+  _esLyricsMenuOpen = false;
+  const menu = document.getElementById('es-lyrics-menu');
+  if (menu) menu.style.display = 'none';
+  document.removeEventListener('click', _lyricsOutside);
+}
+
+function toggleLyricFilter(key) {
+  if (_esLyricFilter.has(key)) _esLyricFilter.delete(key);
+  else _esLyricFilter.add(key);
+  // All three ticked says the same thing as none of them; keep the plain state.
+  if (_esLyricFilter.size === ES_LYRIC_OPTS.length) _esLyricFilter.clear();
+  _esLimit = ES_PAGE;
+  esRefreshLyricsMenu();
+  esRepaint();
+  updateLandingActionsHeader();   // the totals line under the tabs follows it
+}
+
+function selectAllLyricStatuses() {
+  _esLyricFilter.clear();
+  _esLimit = ES_PAGE;
+  esRefreshLyricsMenu();
+  esRepaint();
+  updateLandingActionsHeader();
+}
+
+// Repaint the open menu in place rather than the whole control row, so the
+// menu does not close under the finger that just ticked a box.
+function esRefreshLyricsMenu() {
+  const menu = document.getElementById('es-lyrics-menu');
+  if (menu) menu.innerHTML = esLyricsMenuHTML();
+  const btn = document.getElementById('es-lyrics-btn');
+  if (btn) btn.innerHTML = esLyricBtnLabel().replace(/&/g, '&amp;').replace(/</g, '&lt;') + ' <span class="lsb-caret">▾</span>';
+}
+
+function esLyricsMenuHTML() {
+  const counts = _esLoaded ? esLyricCounts() : null;
+  const allOn = _esLyricFilter.size === 0;
+  const all = '<label class="lsm-item lsm-all"><input type="checkbox"' + (allOn ? ' checked' : '') +
+    ' onchange="selectAllLyricStatuses()"><span class="lsm-name">All</span></label>';
+  return all + ES_LYRIC_OPTS.map(o =>
+    '<label class="lsm-item" title="' + o[2] + '"><input type="checkbox"' +
+    ((allOn || _esLyricFilter.has(o[0])) ? ' checked' : '') +
+    ` onchange="toggleLyricFilter('${o[0]}')"><span class="lsm-name">` + o[1] + '</span>' +
+    (counts ? '<span class="lsm-count">' + counts[o[0]].toLocaleString() + '</span>' : '') +
+    '</label>').join('');
 }
 
 async function esEnsureCatalog(force) {
@@ -18886,10 +19009,22 @@ async function esEnsureCatalog(force) {
     const [artistRows, albRows, trackRows, videoRows, playRows] = await Promise.all([
       dbGetAllPages(REST + '/artists?select=id,name,slug&order=name.asc', hdrs),
       dbGetAllPages(REST + '/albums?select=*&order=release_date.asc', hdrs),
-      dbGetAllPages(REST + '/tracks?select=*&order=album_id,track_number', hdrs),
+      // Deliberately not select=* - that dragged every track's full .lrc text
+      // along (about 7 MB across the catalogue) for a column nobody read here.
+      dbGetAllPages(REST + '/tracks?select=id,album_id,name,track_number,disc_number,duration_ms,explicit,created_at,yt_snapshot_enabled,visibility&order=album_id,track_number', hdrs),
       dbGetAllPages(REST + '/track_videos?select=track_id,video_id,title,channel,thumbnail,view_count,like_count,lyric_offset_seconds,is_primary,is_playable,label,counts_for_charts&order=view_count.desc.nullslast', hdrs),
       dbGetAllPages(REST + '/track_play_counts?select=track_id,play_count&order=track_id.asc', hdrs),
     ]);
+    // Lyric status is a separate, cheap pair of reads. A failure here must not
+    // lose the songs, so it is caught rather than joined into the load above.
+    try {
+      const [syncedRows, staticRows] = await Promise.all([
+        dbGetAllPages(REST + '/tracks?select=id&lyrics_synced=not.is.null&order=id.asc', hdrs),
+        dbGetAllPages(REST + '/lyrics?select=track_id&lyrics=not.is.null&order=track_id.asc', hdrs),
+      ]);
+      _esSyncedIds = new Set(syncedRows.map(r => r.id).filter(Boolean));
+      _esStaticIds = new Set(staticRows.map(r => r.track_id).filter(Boolean));
+    } catch (e) { console.warn('esEnsureCatalog lyrics', e); }
     _esArtistById = {};
     artistRows.forEach(a => { _esArtistById[a.id] = a; });
 
@@ -18951,6 +19086,7 @@ const _ES_SORTS = [
   { col: 'name',   lbl: 'Song A-Z',            tip: 'By song title' },
   { col: 'artist', lbl: 'Artist A-Z',          tip: 'By artist, then album running order' },
   { col: 'plays',  lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
+  { col: 'lyric',  lbl: 'Lyrics',               tip: 'Synced lyrics first, then static, then none' },
 ];
 
 // Artists and Submitted By are the same two menus Explore Artists carries,
@@ -18984,7 +19120,15 @@ function esFiltersHTML() {
         </div>
       </div>
     </div>`) +
-    '';
+    `<div class="landing-control-group">
+      <span class="landing-control-lbl">Lyrics</span>
+      <div class="landing-submitter-dd es-lyrics-dd">
+        <button type="button" class="landing-submitter-btn" id="es-lyrics-btn" onclick="toggleLyricsDD(event)">${esc(esLyricBtnLabel())} <span class="lsb-caret">▾</span></button>
+        <div class="landing-submitter-menu" id="es-lyrics-menu" style="display:${_esLyricsMenuOpen ? 'block' : 'none'}">
+          ${esLyricsMenuHTML()}
+        </div>
+      </div>
+    </div>`;
 }
 
 function esSongsPageHTML() {
@@ -19032,7 +19176,7 @@ function esBodyHTML() {
       Math.min(ES_PAGE, rows.length - _esLimit).toLocaleString() + ' more</button>'
     : '';
   return '<div class="tt-scroll"><div class="tt-wrap">' +
-    renderTopTracks(rows, { artistCol: true, limit: _esLimit }) + '</div></div>' + more;
+    renderTopTracks(rows, { artistCol: true, lyricCol: true, limit: _esLimit }) + '</div></div>' + more;
 }
 
 function esRepaint() {
@@ -20474,9 +20618,24 @@ function landingTotalsHTML() {
   // skips the artist-scope check so the song-level filter can run.
   const mineSongArtists = landingTab === 'songs' && artistScope() === 'mine' && _esLoaded
     ? esMineArtistIdsWithSongs() : null;
-  const aVis = mineSongArtists ? mineSongArtists.size : vis.length;
+  // A lyric status is a per-song fact, so track_count cannot answer it. Count
+  // the rows the table is actually drawing from instead.
+  const lyricRows = (landingTab === 'songs' && _esLoaded && _esLyricFilter.size)
+    ? esSongRows() : null;
+  let lyricArtists = null;
+  if (lyricRows) {
+    const albById = esAlbumIndex();
+    lyricArtists = new Set();
+    lyricRows.forEach(t => {
+      const alb = albById[t.album_id];
+      if (alb && alb.artist_id) lyricArtists.add(alb.artist_id);
+    });
+  }
+  const aVis = lyricArtists ? lyricArtists.size
+    : mineSongArtists ? mineSongArtists.size : vis.length;
   const sAll = songsOf(all);
-  const sVis = (landingTab === 'songs' && artistScope() === 'mine' && _esLoaded)
+  const sVis = lyricRows ? lyricRows.length
+    : (landingTab === 'songs' && artistScope() === 'mine' && _esLoaded)
     ? esMineSongCount() : songsOf(vis);
   const artistBit = aVis === aAll
     ? aAll.toLocaleString() + ' artist' + (aAll === 1 ? '' : 's')
@@ -20934,13 +21093,15 @@ let ttTrackCache = [];     // cached for re-sort without full render
 // opts.artistCol swaps the artist-specific Alb·Trk column for the artist's
 // name - Explore Songs spans every jukebox, where a chronological index across
 // 700 albums means nothing. opts.limit draws only the first N sorted rows;
-// the bars still measure against the whole list.
+// the bars still measure against the whole list. opts.lyricCol adds the Lyrics
+// column, which only Explore Songs has the status index loaded for.
 let _ttLastOpts = null;
 
 function renderTopTracks(trackList, opts) {
   opts = opts || {};
   _ttLastOpts = opts;
   const showArtist = !!opts.artistCol;
+  const showLyric  = !!opts.lyricCol;
   const albById = {};
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { albById[a.id] = a; }));
 
@@ -20960,7 +21121,10 @@ function renderTopTracks(trackList, opts) {
     _alb   : albById[t.album_id],
     _albIdx: albChronoIdx[t.album_id] || 999,
     _trkNum: t.track_number || 0,
-    _artist: showArtist ? esArtistName((albById[t.album_id] || {}).artist_id) : ''
+    _artist: showArtist ? esArtistName((albById[t.album_id] || {}).artist_id) : '',
+    // Ranked rather than alphabetical: sorting Lyrics should put the best
+    // provision first, and "Static" before "Synced" would be nonsense.
+    _lyric : showLyric ? esLyricStatus(t.id) : ''
   }));
 
   if (!rows.length) return '<div class="empty-state"><p>No track data - try fetching YouTube data above.</p></div>';
@@ -20981,6 +21145,11 @@ function renderTopTracks(trackList, opts) {
     else if (ttSortCol === 'chrono') {
       const diff = a._albIdx - b._albIdx;
       return ttSortDir * (diff !== 0 ? diff : a._trkNum - b._trkNum);
+    }
+    else if (ttSortCol === 'lyric') {
+      const rank = { synced: 2, static: 1, none: 0 };
+      av = rank[a._lyric] || 0; bv = rank[b._lyric] || 0;
+      if (av === bv) return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
     }
     else if (ttSortCol === 'plays')    { av = a._plays;   bv = b._plays; }
     else if (ttSortCol === 'myplays')  { av = a._myPlays; bv = b._myPlays; }
@@ -21006,6 +21175,7 @@ function renderTopTracks(trackList, opts) {
       <th onclick="ttSort('name')" ${thCls('name')}>Track${sortArrow('name')}</th>
       <th onclick="ttSort('dur')"   ${thCls('dur')}   style="width:60px;text-align:right;cursor:pointer;user-select:none${ttSortCol==='dur'?';color:var(--text)':''}">Dur${sortArrow('dur')}</th>
       <th onclick="ttSort('album')" ${thCls('album')}>Album${sortArrow('album')}</th>
+      ${showLyric ? `<th onclick="ttSort('lyric')" ${thCls('lyric')} style="width:78px;text-align:center;cursor:pointer;user-select:none${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyrics${sortArrow('lyric')}</th>` : ''}
       <th onclick="ttSort('views')" ${thCls('views')} style="min-width:130px;cursor:pointer;user-select:none${ttSortCol==='views'?';color:var(--text)':''}">YouTube Views${sortArrow('views')}</th>
       ${googleUser ? `<th onclick="ttSort('myplays')" ${thCls('myplays')} style="min-width:65px;cursor:pointer;user-select:none;text-align:right${ttSortCol==='myplays'?';color:var(--text)':''}" title="My plays">My Plays${sortArrow('myplays')}</th>` : ''}
       <th onclick="ttSort('plays')" ${thCls('plays')} style="min-width:65px;cursor:pointer;user-select:none;text-align:right${ttSortCol==='plays'?';color:var(--text)':''}" title="Total plays">Total Plays${sortArrow('plays')}</th>
@@ -21037,6 +21207,7 @@ function renderTopTracks(trackList, opts) {
         <td style="font-weight:500"><span class="artist-dot" style="background:${color}"></span>${t.name}</td>
         <td style="text-align:right;color:var(--text-muted);font-size:.58rem;white-space:nowrap">${durStr}</td>
         <td style="color:var(--text-muted);font-size:.58rem">${t._alb?.name || '-'}</td>
+        ${showLyric ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
         <td><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${viewsPct}%;background:${color}"></div></div><div class="tt-num">${fmtV(t._views)}</div></div></td>
         ${googleUser ? `<td data-myplays="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._myPlays/maxMyPlays*100).toFixed(1)}%;background:${color}88"></div></div><div class="tt-num" style="${t._myPlays?'color:var(--accent)':''}">${t._myPlays ? fmtV(t._myPlays) : '-'}</div></div></td>` : ''}
         <td data-inapp="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._plays/maxTotalPlays*100).toFixed(1)}%;background:${color}66"></div></div><div class="tt-num" style="${t._plays?'color:var(--accent)':''}">${t._plays ? fmtV(t._plays) : '-'}</div></div></td>
@@ -23016,6 +23187,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'Explore Songs has a Lyrics column and a Lyrics filter. Every song says whether it has Synced lyrics that scroll in time with the music, Static lyrics that are the words only, or none yet, and you can narrow the list to any of the three. Sort by the column heading, or with the new Lyrics sort button, to bring the best-covered songs to the top.',
+    'Explore Songs also loads noticeably faster: it was quietly downloading the full timed lyrics of every song in the Jukebox to draw a table that never showed them.',
     'All, My Artists and Public now sit on their own line underneath the Explore Artists, Explore Playlists and Explore Songs buttons, with the artist and song count beside them. The three Explore buttons keep the full width of the header, so nothing runs off the side of a narrow screen.',
     'Explore Artists, Explore Playlists and Explore Songs now begin with clean page filters when you switch between them. A search, scope or contributor choice on one page no longer quietly empties another page; saved artist visibility remains your catalogue preference.',
     'My Songs now really starts with your songs, instead of first requiring the artist to be one you imported. A song you put in My Jukebox is there even when somebody else added its artist, and private artists you can access load with your signed-in catalogue too.',
