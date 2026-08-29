@@ -2631,7 +2631,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-name-row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
 .plb-name-row .pl-input { flex:1; min-width:160px; }
 .plb-hint { font-size:.5rem; color:var(--text-muted); line-height:1.45; }
-.plb-wizard-steps { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.plb-wizard-steps { display:grid; grid-template-columns:repeat(var(--wz-cols,3),1fr); gap:6px; }
+.plb-src-row { display:flex; flex-wrap:wrap; gap:6px; }
+.plb-src-tab { flex:1 1 auto; min-width:0; padding:.5rem .7rem; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text-muted); font-family:var(--mono); font-size:.5rem; font-weight:700; text-align:center; cursor:pointer; transition:border-color .15s,background .15s,color .15s; }
+.plb-src-tab:hover { border-color:var(--text-muted); color:var(--text); }
+.plb-src-tab.on { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--bg)); color:var(--text); }
 .plb-wizard-step { display:flex; align-items:center; gap:6px; min-width:0; padding:.45rem .55rem; border:1px solid var(--border); border-radius:8px; color:var(--text-muted); font-size:.46rem; font-weight:700; }
 .plb-wizard-step b { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:var(--bg-elevated); color:var(--text-muted); flex-shrink:0; }
 .plb-wizard-step.on { border-color:var(--accent); color:var(--text); background:color-mix(in srgb,var(--accent) 8%,transparent); }
@@ -13882,8 +13886,10 @@ function openPlaylistBuilder(mode, playlistId) {
   _plbDraft = [];
   _plbExisting = new Set();
   _plbBusy = false;
-  _plbWizardStep = 1;
-  _plbImportSource = null;
+  // Add Songs has no source step - it opens on the Jukebox search, with the
+  // two YouTube doors sitting above it. Import still asks first.
+  _plbWizardStep = _plbMode === 'add' ? 2 : 1;
+  _plbImportSource = _plbMode === 'add' ? 'jukebox' : null;
   _plbImportDest = mode === 'add' ? (playlistId || 'new') : 'new';
   _plbImportName = '';
   _plbImportPublic = false;
@@ -13926,7 +13932,12 @@ function openPlaylistBuilder(mode, playlistId) {
     if (ytInput) ytInput.placeholder = 'Search YouTube for a song, or paste a YouTube playlist link';
     setTimeout(() => inp?.focus(), 40);
   }
+  if (_plbMode === 'add') plbWizardGo(2);
 }
+
+// The first step of the wizard: Import asks where the songs come from, Add
+// Songs does not, so back must not walk it off the front of its own flow.
+function plbFirstStep() { return _plbMode === 'add' ? 2 : 1; }
 
 function openPlaylistImporter() { openPlaylistBuilder('import'); }
 
@@ -13991,12 +14002,23 @@ function plbPaintChrome() {
 }
 
 function plbWizardTopHTML() {
-  const labels = ['Source', 'Choose Songs', 'Confirm'];
-  const steps = `<div class="plb-wizard-steps">${labels.map((label, i) => {
+  const addMode = _plbMode === 'add';
+  const labels = addMode ? ['Choose Songs', 'Confirm'] : ['Source', 'Choose Songs', 'Confirm'];
+  const cur = addMode ? _plbWizardStep - 1 : _plbWizardStep;
+  const steps = `<div class="plb-wizard-steps" style="--wz-cols:${labels.length}">${labels.map((label, i) => {
     const n = i + 1;
-    const cls = n === _plbWizardStep ? ' on' : (n < _plbWizardStep ? ' done' : '');
-    return `<div class="plb-wizard-step${cls}"><b>${n < _plbWizardStep ? '✓' : n}</b><span>${label}</span></div>`;
+    const cls = n === cur ? ' on' : (n < cur ? ' done' : '');
+    return `<div class="plb-wizard-step${cls}"><b>${n < cur ? '✓' : n}</b><span>${label}</span></div>`;
   }).join('')}</div>`;
+  // Add Songs carries the three sources as a row of tabs above the step bar,
+  // so the Jukebox search is what you land on and YouTube is one tap away.
+  const srcRow = addMode && _plbWizardStep === 2
+    ? `<div class="plb-src-row">` +
+        `<button type="button" class="plb-src-tab${_plbImportSource === 'jukebox' ? ' on' : ''}" onclick="plbSetImportSource('jukebox')">Search the Jukebox</button>` +
+        `<button type="button" class="plb-src-tab${_plbImportSource === 'yt-song' ? ' on' : ''}" onclick="plbSetImportSource('yt-song')">+ Add a Song from YouTube</button>` +
+        `<button type="button" class="plb-src-tab${_plbImportSource === 'yt-playlist' ? ' on' : ''}" onclick="plbSetImportSource('yt-playlist')">+ Add a Playlist from YouTube</button>` +
+      `</div>`
+    : '';
   if (_plbWizardStep === 1) {
     const target = _plbMode === 'add' ? plbPlaylistById(_plbPlaylistId) : null;
     const lead = target
@@ -14016,7 +14038,10 @@ function plbWizardTopHTML() {
         ? 'Search YouTube for a song, check the artist name is right, and add it to your draft. A playlist link works here too.'
         : 'Search or browse the Jukebox, then add individual songs, full albums, or an artist’s catalogue to your draft.');
     const label = _plbImportSource === 'jukebox' ? 'Jukebox' : 'YouTube';
-    return steps + `<div class="plb-hint"><span class="plb-confirm-source">${label} source</span> · ${hint}</div>`;
+    const target = addMode ? plbPlaylistById(_plbPlaylistId) : null;
+    const lead = target
+      ? `Adding to <b>${escHtml(target.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}. ` : '';
+    return srcRow + steps + `<div class="plb-hint">${lead}<span class="plb-confirm-source">${label} source</span> · ${hint}</div>`;
   }
   if (_plbMode === 'add') {
     const target = plbPlaylistById(_plbPlaylistId);
@@ -14071,7 +14096,7 @@ function plbPaintImportLayout() {
   if (results) results.style.display = step2 && !youtube ? 'flex' : 'none';
   if (basket) basket.style.display = step2 ? 'flex' : 'none';
   if (confirmPanel) confirmPanel.style.display = _plbWizardStep === 3 ? 'flex' : 'none';
-  if (back) back.style.display = _plbWizardStep > 1 ? '' : 'none';
+  if (back) back.style.display = _plbWizardStep > plbFirstStep() ? '' : 'none';
   if (_plbWizardStep === 3) plbPaintImportConfirm();
   plbSyncSaveBtn();
 }
@@ -14151,12 +14176,14 @@ function plbSetImportSource(source) {
   const ytInput = document.getElementById('plby-search-input');
   if (ytResults) ytResults.innerHTML = '';
   if (ytInput) ytInput.value = '';
-  plbPaintChrome();
+  // Switching source while already choosing songs has to redraw the browse
+  // list and move the caret, which is exactly what plbWizardGo(2) does.
+  if (_plbWizardStep === 2) plbWizardGo(2); else plbPaintChrome();
 }
 
 function plbWizardGo(step) {
   if (!plbIsWizard()) return;
-  _plbWizardStep = Math.max(1, Math.min(3, step));
+  _plbWizardStep = Math.max(plbFirstStep(), Math.min(3, step));
   if (_plbWizardStep === 2) {
     if (_plbImportSource === 'jukebox' && !_plbBrowseArtists) plbRenderBrowse();
     _plbyOpen = _plbImportSource !== 'jukebox';
@@ -22202,11 +22229,14 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-29', items: [
+    'Add Songs to Playlist now opens straight on the Jukebox search instead of asking first where the songs should come from. The two YouTube doors - Add a Song from YouTube, and Add a Playlist from YouTube - sit as buttons across the top of that same screen, so you can search the Jukebox and reach either one without going back a step.',
+  ] },
   { date: '2026-08-28', items: [
     'Now Playing can be dragged into a new order like any other playlist. Dragging a cover there used to change what played next without moving anything on screen, because the wall and the player were holding two separate copies of the list.',
     'Explore Playlists has a Mix Order button. It shuffles the playlist itself into a new running order and the covers slide across the screen to their new places - the song playing now stays where it is. On one of your playlists the new order is saved for everyone; on Now Playing it just reorders your queue.',
