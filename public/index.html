@@ -12503,6 +12503,14 @@ function sjmRenderRoot() {
     '</button>' +
     '<button class="sjm-item" onclick="sjmPlayNext()">' +
       '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play this song next</span></button>' +
+    // Only offered on music somebody else put here. On my own imports the
+    // artist is already under My Artists, so the section would be a button
+    // that changes nothing.
+    (googleUser && navArtist && navArtist.id && !oaIsMine(sjLandingRowFor(navArtist.id) || {})
+      ? '<button class="sjm-item" onclick="sjmOpenMyJukebox()">' +
+          '<span class="sjm-ic">+</span><span class="sjm-label">Add to My Library</span>' +
+          '<span class="sjm-sub">›</span></button>'
+      : '') +
     (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore ' + escHtml(navArtist.name || 'Artist') + ' Jukebox</span></button>'
@@ -12626,17 +12634,17 @@ function sjmOpenMyJukebox() {
   const navArtist = _sjmArtistFor(tid);
   const meta = ytpTrackMeta(tid, null);
   const title = (meta.title && meta.title !== 'Unknown') ? meta.title : 'this song';
-  menu.innerHTML = _sjmHeader('Send to My Online Jukebox', 'sjmRenderRoot()') +
-    (navArtist && navArtist.id
-      ? '<button class="sjm-item" onclick="sjmSendToMyJukebox(\'artist\',\'' + navArtist.id + '\',\'' + escHtml(navArtist.name || 'this artist').replace(/'/g, "\\'") + '\')">' +
-          '<span class="sjm-ic">＋</span><span class="sjm-label">Send Artist</span></button>'
-      : '') +
-    (track.album_id
-      ? '<button class="sjm-item" onclick="sjmSendToMyJukebox(\'album\',\'' + track.album_id + '\',\'' + escHtml(meta.album || 'this album').replace(/'/g, "\\'") + '\')">' +
-          '<span class="sjm-ic">＋</span><span class="sjm-label">Send Album</span></button>'
-      : '') +
-    '<button class="sjm-item" onclick="sjmSendToMyJukebox(\'track\',\'' + tid + '\',\'' + escHtml(title).replace(/'/g, "\\'") + '\')">' +
-      '<span class="sjm-ic">＋</span><span class="sjm-label">Send Song</span></button>';
+  const arg = v => escHtml(String(v == null ? '' : v)).replace(/"/g, '&quot;');
+  const row = (scope, id, label, name, sub) =>
+    `<button class="sjm-item" onclick="sjmSendToMyJukebox('${scope}','${id}','${arg(label)}')">` +
+      `<span class="sjm-ic">＋</span><span class="sjm-label">${name}</span>` +
+      (sub ? `<span class="sjm-sub">${escHtml(sub)}</span>` : '') +
+    `</button>`;
+  menu.innerHTML = _sjmHeader('Add to My Library', 'sjmRenderRoot()') +
+    row('track', tid, title, 'Add Song to my library', '') +
+    (track.album_id ? row('album', track.album_id, meta.album || 'this album', 'Add Album to my library', '') : '') +
+    (navArtist && navArtist.id ? row('artist', navArtist.id, navArtist.name || 'this artist', 'Add Artist to my library', '') : '') +
+    '<div class="sjm-empty" style="padding:7px 9px;line-height:1.5">Anything you add turns up under My Artists. Whoever imported it keeps the credit.</div>';
   sjmPosition();
 }
 
@@ -21167,8 +21175,18 @@ async function oaToggleAlbum(albumId, show, artistId) {
 // added_by is never selected), so "mine" matches on the signed-in name.
 function oaIsMine(a) {
   if (!googleUser) return false;
+  // Two ways an artist is mine: I imported them, or I hold their music.
+  // in_my_library comes from landing_stats, which is the only catalog read
+  // sent with my own access token - the browser never says who it is.
+  if (a && a.in_my_library) return true;
   const me = (googleUser.name || '').trim().toLowerCase();
   return !!me && (a.added_by_name || '').trim().toLowerCase() === me;
+}
+
+// The landing_stats row for an artist, which is where in_my_library lives.
+function sjLandingRowFor(artistId) {
+  if (!artistId || !Array.isArray(landingStats)) return null;
+  return landingStats.find(r => r.artist_id === artistId) || null;
 }
 
 // Filters run over the rendered rows so typing never rebuilds the dropdown
@@ -22698,6 +22716,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'The song menu behind the three dots now has Add to My Library, with Add Song, Add Album and Add Artist inside it. Use it on music somebody else brought to the Jukebox and that artist starts showing under My Artists, so you can filter down to your own listening without having imported any of it yourself. Whoever imported the music keeps the credit for it. The option only appears on music you did not import - on your own, the artist is already there.',
     'The docked player now shows what is coming up beside the artwork. Drag the dock taller and the current playlist fills the space that opens up, between the cover and the song title, with whatever is playing marked. It used to sit in the top right corner and vanished at exactly the dock sizes that had room for it.',
     'The full player and the docked player now read the same way round. The rating and heart buttons sit under the song title rather than off to the right, and Shuffle, Repeat, Previous, Play and Next are a row of square buttons on the right hand side, under Minimize and Close, in the same shapes the dock uses.',
     'Signed out, the All / My Artists / Public and All / My Playlists / Public buttons are gone. There is only public content to look at when nobody is signed in, so the pages simply show it - including a browser that was signed in last visit and had been left on My Playlists.',
@@ -29992,8 +30011,14 @@ async function sjmSendToMyJukebox(scope, id, label) {
   try {
     const data = await mjRequest('/api/my-jukebox', 'POST', { action: 'add_catalog', scope, id });
     sjmClose();
-    showToast((data.added || 0) ? 'Added ' + (data.added || 0) + ' song' + (data.added === 1 ? '' : 's') + ' from ' + label + ' to My Jukebox.' : label + ' is already in My Jukebox.');
-  } catch (e) { showToast(e.message || 'Could not add to My Jukebox.'); }
+    showToast((data.added || 0)
+      ? 'Added ' + (data.added || 0) + ' song' + (data.added === 1 ? '' : 's') + ' from ' + label + ' to My Library. It is under My Artists now.'
+      : label + ' is already in My Library.');
+    // in_my_library is computed by landing_stats, so the snapshot has to be
+    // re-read before the artist can turn up under My Artists.
+    if (isLandingMode) refreshLandingStats();
+    else { landingStats = []; ensureOAStats(); }
+  } catch (e) { showToast(e.message || 'Could not add to My Library.'); }
 }
 
 async function mjPlayItem(itemId) {
