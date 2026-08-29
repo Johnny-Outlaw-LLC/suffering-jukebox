@@ -13513,6 +13513,38 @@ function closeYTPlaylistDD() {
   plselTipHide();
 }
 
+// Shuffle All while Explore Playlists is open. Not the catalogue and not one
+// playlist: every song across the playlists on screen, each one once.
+async function playlistsShuffleAll() {
+  const btn = document.getElementById('landing-shuffle-all-btn');
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.textContent = 'Loading\u2026'; btn.disabled = true; }
+  try {
+    if (homeJukeboxBgFilterOn() && !_homeLibLoaded) await ensureHomeLibrary();
+    const ids = playlistExploreTrackIds();
+    if (!ids.length) { alert('No songs in the playlists shown.'); return; }
+    const info = await resolvePlaylistTracks(ids);
+    let q = ids.map(id => info[id] && info[id].videoId
+      ? { videoId: info[id].videoId, title: info[id].name || 'Track', trackId: id }
+      : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
+    q = filterQueueForHomeBg(q);
+    if (!q.length) {
+      alert(homeJukeboxBgFilterOn()
+        ? 'No background-play songs in the playlists shown.'
+        : 'No playable songs in the playlists shown.');
+      return;
+    }
+    shuffleInPlace(q);
+    landingPlayQueue(q);
+    await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
+    taSyncAudioBtn();
+  } catch (e) {
+    console.warn('playlistsShuffleAll error', e);
+  } finally {
+    if (btn) { btn.textContent = orig; btn.disabled = false; }
+  }
+}
+
 async function playPlaylist(playlistId) {
   try {
     if (homeJukeboxBgFilterOn() && !_homeLibLoaded) await ensureHomeLibrary();
@@ -15252,6 +15284,35 @@ function playlistExploreRows() {
   // Now for rooms they can join and mark their own Now Playing card instead.
   const live = liveRoomPlaylists.filter(p => !p._roomIsOwner && (!q || playlistMatchesSearch(p, q)));
   return live.concat(dynamic.filter(p => !q || playlistMatchesSearch(p, q)), sorted);
+}
+
+// Every song in the playlists currently listed, deduped, in the order the
+// cards are in. One song on four playlists is one song, which is the whole
+// point of the count - and it is the same list Shuffle All plays, so the
+// summary can never promise something the button does not deliver.
+function playlistExploreTrackIds() {
+  const seen = new Set();
+  playlistExploreRows().forEach(p => (p._tracks || []).forEach(r => {
+    if (r.track_id) seen.add(r.track_id);
+  }));
+  return [...seen];
+}
+
+// Artist comes from whatever we already hold: SJ_TRACK_META once a track has
+// been played or resolved, otherwise the lowercase copy the playlist search
+// index keeps. Both are compared folded, so one artist counts once however
+// the two spell them.
+function playlistExploreStats() {
+  const ids = playlistExploreTrackIds();
+  const artists = new Set();
+  ids.forEach(id => {
+    const name = (SJ_TRACK_META[id] && SJ_TRACK_META[id].artist)
+      || (playlistSearchMetaByTrack[id] && playlistSearchMetaByTrack[id].artist)
+      || '';
+    const key = name.trim().toLowerCase();
+    if (key) artists.add(key);
+  });
+  return { songs: ids.length, artists: artists.size };
 }
 
 function dynamicPlaylistTracks(trackIds) {
@@ -18163,7 +18224,7 @@ function filterQueueForHomeBg(q) {
 }
 
 function homePlayArtistRows() {
-  return getVisibleLandingStats();
+  return landingTab === 'songs' ? esVisibleStats() : getVisibleLandingStats();
 }
 
 // Artists I added, plus artists where I have uploaded background-play audio.
@@ -20036,7 +20097,9 @@ function renderLWYTBHTML(landing) {
   const _myPls  = _savedPlaylists.filter(p => p.user_email === (googleUser && googleUser.email));
   const _pubPls = _savedPlaylists.filter(p => p.is_public);
   // The landing page uses the same bar but its own catalogue-wide shuffles.
-  const _shufAll = landing ? 'landingShuffleAll()' : 'shuffleAllVisible()';
+  const _shufAll = landing
+    ? (landingTab === 'playlists' ? 'playlistsShuffleAll()' : 'landingShuffleAll()')
+    : 'shuffleAllVisible()';
   const _shufFav = landing ? 'landingShuffleFavorites()' : 'shuffleFavorites()';
   const _idAll   = landing ? ' id="landing-shuffle-all-btn"' : '';
   const _idFav   = landing ? ' id="landing-shuffle-favs-btn"' : '';
@@ -20074,6 +20137,17 @@ function updateLWYTBHeader() {
 function landingTotalsHTML() {
   const all = landingStats || [];
   if (!all.length) return '';
+  // Explore Playlists counts what is inside the playlists on screen instead of
+  // the catalogue behind them. The three tabs are looking at different things,
+  // so they are expected to report different numbers.
+  if (landingTab === 'playlists') {
+    const st = playlistExploreStats();
+    if (!st.songs) return '';
+    return '<div class="landing-totals">' +
+      st.artists.toLocaleString() + ' artist' + (st.artists === 1 ? '' : 's') + ' \u00b7 ' +
+      st.songs.toLocaleString() + ' song' + (st.songs === 1 ? '' : 's') +
+      ' in these playlists</div>';
+  }
   const vis = landingTab === 'songs' ? esVisibleStats() : getVisibleLandingStats();
   const songsOf = rows => rows.reduce((n, r) => n + (r.track_count || 0), 0);
   const aAll = all.length, aVis = vis.length;
@@ -22575,6 +22649,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'On Explore Playlists the count under the tabs now describes the playlists themselves: every different song and every different artist across the playlists on screen, each counted once however many playlists it appears on. Narrow the list with search, contributor or All / My Playlists / Public and the count follows.',
+    'Shuffle All on Explore Playlists now plays exactly those songs - every song across the playlists you are looking at, once each, in a random order - instead of shuffling the whole catalogue.',
     'Explore Songs carries the same Artists and Submitted By menus as Explore Artists, so you can narrow the song list the same way you narrow the artist grid.',
     'Explore Songs lists every song, including the ones by artists who are here for a single track. Include Singles Only Artists stays an Explore Artists setting - it decides which cards get a tile on that grid, not which songs exist - so the two pages will show different counts, which is what the line under the tabs is there to say.',
     'Under the Explore Artists / Explore Playlists / Explore Songs buttons there is now a running count of how many artists and songs you are looking at, and how many there are altogether when a filter is holding some back.',
