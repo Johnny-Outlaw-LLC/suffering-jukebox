@@ -18780,11 +18780,8 @@ function esVisibleArtistIds() {
 // oaIsMine(); esSongRows() applies the actual per-song library test below.
 function esVisibleStats() { return getVisibleLandingStats({ singlesAlways: true, skipArtistMineScope: true }); }
 
-// Explore Artists answers "is this artist mine" - one song of theirs in my
-// library makes the whole card mine, which is right for a grid of cards and
-// wrong for a list of songs. So the chip reads My Songs here and the filter
-// runs a level down: a song is mine when it sits in my library, or when I
-// imported the artist, in which case the whole discography is mine.
+// The Explore Songs scope follows the same ownership set as Explore Artists.
+// A song held in a listener's library is not ownership of that artist.
 let _esLibTrackIds = null;   // Set of catalogue track ids in my library; null until read
 let _esLibLoading  = false;
 let _esCatalogAuthUserId = null;
@@ -18806,19 +18803,9 @@ async function esEnsureLibrary() {
   }
 }
 
-// Artists I imported myself. added_by_name is the credit landing_stats
-// carries; in_my_library is deliberately not consulted here, because holding
-// one song by somebody does not make their back catalogue mine.
 function esMineArtistIds() {
-  const out = new Set();
-  if (!googleUser) return out;
-  const me = (googleUser.name || '').trim().toLowerCase();
-  if (!me) return out;
-  (landingStats || []).forEach(r => {
-    if ((r.added_by_name || '').trim().toLowerCase() !== me) return;
-    ((r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id]).forEach(id => { if (id) out.add(id); });
-  });
-  return out;
+  if (!_myArtistIds) ensureMyArtistIds();
+  return _myArtistIds || new Set();
 }
 
 function esAlbumIndex() {
@@ -18828,7 +18815,6 @@ function esAlbumIndex() {
 }
 
 function esIsMineTrack(t, mineArtists, albById) {
-  if (_esLibTrackIds && _esLibTrackIds.has(t.id)) return true;
   const alb = albById[t.album_id];
   return !!(alb && mineArtists.has(alb.artist_id));
 }
@@ -21461,9 +21447,8 @@ async function ensureMyArtistIds() {
   if (!googleUser || _myArtistIdsLoading || _myArtistIds) return;
   _myArtistIdsLoading = true;
   try {
-    const res = await fetch(sjApiUrl('/api/my-jukebox/artists'));
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load your artists.');
+    const data = await mjRequest('/api/my-jukebox/artists', 'GET');
+    if (!data.ok) throw new Error(data.error || 'Could not load your artists.');
     _myArtistIds = new Set((data.artistIds || []).filter(Boolean));
   } catch (e) {
     console.warn('ensureMyArtistIds', e);

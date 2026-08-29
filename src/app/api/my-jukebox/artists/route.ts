@@ -3,9 +3,9 @@ import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-adm
 
 export const dynamic = "force-dynamic";
 
-// The Explore Artists "My Artists" scope is an ownership filter.  Keep that
-// decision on the server, where the authenticated email is authoritative;
-// display names are neither stable nor unique.
+// The Explore Artists "My Artists" scope is an ownership filter. Legacy
+// imports were credited by display name while newer ones carry added_by email,
+// so resolve both server-side and return their union.
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req).catch(() => null);
   if (!user?.email) {
@@ -13,16 +13,25 @@ export async function GET(req: NextRequest) {
   }
 
   const sb = createSjServiceClient();
-  const { data, error } = await sb
+  const displayNames = [
+    user.user_metadata?.full_name,
+    user.user_metadata?.name,
+  ].filter((name): name is string => typeof name === "string" && !!name.trim());
+  const byEmail = sb
     .schema(JUKEBOX_SCHEMA)
     .from("artists")
     .select("id")
     .ilike("added_by", user.email.trim());
+  const byName = displayNames.length
+    ? sb.schema(JUKEBOX_SCHEMA).from("artists").select("id").in("added_by_name", displayNames)
+    : Promise.resolve({ data: [], error: null });
+  const [{ data: emailRows, error: emailError }, { data: nameRows, error: nameError }] = await Promise.all([byEmail, byName]);
 
-  if (error) {
-    console.error("[my-jukebox:artists]", error);
+  if (emailError || nameError) {
+    console.error("[my-jukebox:artists]", emailError || nameError);
     return NextResponse.json({ ok: false, error: "Could not load your artists." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, artistIds: (data ?? []).map((artist) => artist.id) });
+  const artistIds = [...new Set([...(emailRows ?? []), ...(nameRows ?? [])].map((artist) => artist.id))];
+  return NextResponse.json({ ok: true, artistIds });
 }
