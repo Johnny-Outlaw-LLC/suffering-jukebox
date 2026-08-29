@@ -3440,7 +3440,8 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .es-head { display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:.5rem; }
 .es-head h2 { font-size:1rem; font-weight:700; letter-spacing:-.02em; }
 .es-head span { font-family:var(--mono); font-size:.48rem; color:var(--text-muted); letter-spacing:.06em; }
-.es-controls { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+.es-controls { display:flex; align-items:center; gap:.9rem; flex-wrap:wrap; }
+.landing-totals { font-family:var(--mono); font-size:.5rem; letter-spacing:.09em; text-transform:uppercase; color:var(--text-muted); margin:.4rem 0 0 .1rem; }
 .es-controls .landing-search-wrap { min-width:min(280px,100%); }
 .es-sorts { display:flex; align-items:center; gap:.35rem; flex-wrap:wrap; }
 .es-page .tt-scroll { max-height:calc(100vh - 320px); min-height:340px; overflow:auto; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); }
@@ -18562,12 +18563,53 @@ const _ES_SORTS = [
   { col: 'plays',  lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
 ];
 
+// Artists and Submitted By are the same two menus Explore Artists carries,
+// driving the same landingStats rows - a song list is that artist list
+// flattened, so a second set of controls would only be able to disagree with
+// the first. The ids match too, because one tab renders at a time and the
+// existing toggle helpers look them up by id.
+function esFiltersHTML() {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const subOpts = landingSubmitterOptions();
+  const subNone = landingSubmitterFilter.has(LANDING_SUBMITTER_NONE);
+  const subAllOn = landingSubmitterFilter.size === 0;
+  const subAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${subAllOn ? ' checked' : ''} onchange="selectAllSubmitters()"><span class="lsm-name">All</span></label>`;
+  const subItems = subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${!subNone && (subAllOn || landingSubmitterFilter.has(o[0])) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
+  const artOpts = landingArtistOptions();
+  const artAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${artOpts.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists()"><span class="lsm-name">All</span></label>`;
+  const artItems = artOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
+  return `<div class="landing-control-group">
+      <span class="landing-control-lbl">Artists</span>
+      <div class="landing-artists-dd">
+        <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
+        <div class="landing-submitter-menu" id="landing-artists-menu" style="display:${_artistsMenuOpen ? 'block' : 'none'}">
+          ${artOpts.length ? artAllRow : ''}
+          ${artItems || '<div class="lsm-empty">No artists yet</div>'}
+        </div>
+      </div>
+    </div>` +
+    (artistExploreFilter === 'mine' ? '' : `<div class="landing-control-group">
+      <span class="landing-control-lbl">Submitted By</span>
+      <div class="landing-submitter-dd">
+        <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
+        <div class="landing-submitter-menu" id="landing-submitter-menu" style="display:${_submitterMenuOpen ? 'block' : 'none'}">
+          ${subOpts.length ? subAllRow : ''}
+          ${subItems || '<div class="lsm-empty">No submitters yet</div>'}
+        </div>
+      </div>
+    </div>`) +
+    `<label class="landing-control-group" style="gap:.45rem;cursor:pointer">
+      <span class="landing-control-lbl">Include</span>
+      <span style="display:flex;align-items:center;gap:.38rem;font-size:.52rem;color:var(--text-muted);white-space:nowrap"><input type="checkbox" ${landingIncludeSinglesOnly ? 'checked' : ''} onchange="setLandingIncludeSinglesOnly(this.checked)"> Singles Only Artists</span>
+    </label>`;
+}
+
 function esSongsPageHTML() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const sorts = _ES_SORTS.concat(googleUser ? [{ col: 'myplays', lbl: 'My Plays', tip: 'The songs you have played here most' }] : []);
   return '<div class="es-page">' +
     '<div class="es-head"><h2>All Songs</h2><span id="es-count">' + esCountLabel() + '</span></div>' +
-    '<div class="es-controls">' +
+    '<div class="es-controls">' + esFiltersHTML() +
       '<div class="landing-search-wrap">' +
         '<input type="text" class="landing-search-input" id="es-search" placeholder="Song, artist, or album…" autocomplete="off" value="' +
           esc(_esSearchQ).replace(/"/g, '&quot;') + '" oninput="esSetSearch(this.value)" onkeydown="if(event.key===\'Escape\')esSetSearch(\'\')">' +
@@ -20022,6 +20064,25 @@ function updateLWYTBHeader() {
 // Landing navigation belongs in the header row, not in the page body. Playlist
 // Controls stay beside it (catalogue-wide shuffles). Show Toolbar restores both
 // rather than a stale artist-page Jukebox Controls group.
+// What the three tabs are actually looking at. Song counts come from
+// landingStats.track_count rather than the loaded catalogue, so the line is
+// right on every tab and before Explore Songs has fetched anything.
+function landingTotalsHTML() {
+  const all = landingStats || [];
+  if (!all.length) return '';
+  const vis = getVisibleLandingStats();
+  const songsOf = rows => rows.reduce((n, r) => n + (r.track_count || 0), 0);
+  const aAll = all.length, aVis = vis.length;
+  const sAll = songsOf(all), sVis = songsOf(vis);
+  const artistBit = aVis === aAll
+    ? aAll.toLocaleString() + ' artist' + (aAll === 1 ? '' : 's')
+    : aVis.toLocaleString() + ' of ' + aAll.toLocaleString() + ' artists';
+  const songBit = sVis === sAll
+    ? sAll.toLocaleString() + ' song' + (sAll === 1 ? '' : 's')
+    : sVis.toLocaleString() + ' of ' + sAll.toLocaleString() + ' songs';
+  return '<div class="landing-totals">' + artistBit + ' · ' + songBit + '</div>';
+}
+
 function updateLandingActionsHeader() {
   const nav = document.getElementById('landing-nav-header');
   const views = document.getElementById('view-controls-header');
@@ -20060,7 +20121,7 @@ function updateLandingActionsHeader() {
     <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
     <button type="button" class="landing-tab${landingTab === 'songs' ? ' active' : ''}" onclick="setLandingTab('songs')">Explore Songs</button>
     ${scopeChips}
-  </nav>`;
+  </nav>${landingTotalsHTML()}`;
   nav.dataset.armed = '1';
   updateToolbarToggle();
   sjFitLwytbRow();
@@ -22510,6 +22571,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'Explore Songs carries the same Artists and Submitted By menus as Explore Artists, plus the Singles Only Artists switch, so you can narrow the song list the same way you narrow the artist grid.',
+    'Under the Explore Artists / Explore Playlists / Explore Songs buttons there is now a running count of how many artists and songs you are looking at, and how many there are altogether when a filter is holding some back.',
     'A new Explore Songs tab sits beside Explore Artists and Explore Playlists: every song in the Jukebox in one sortable table, with the artist on each row. Sort by YouTube views, song, artist or total plays, search by song, artist or album, and click a row for the lyrics, the buttons and the ratings, exactly as All Tracks does inside an artist jukebox. It follows the artist filters, so an artist you have hidden takes their songs with them.',
     'Add Songs to Playlist now opens straight on the Jukebox search instead of asking first where the songs should come from. The two YouTube doors - Add a Song from YouTube, and Add a Playlist from YouTube - sit as buttons across the top of that same screen, so you can search the Jukebox and reach either one without going back a step.',
   ] },
