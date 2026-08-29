@@ -378,6 +378,17 @@ body:not(.light) .tt-num { color: var(--text); }
 .artist-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; vertical-align: middle; margin-right: 4px; }
 .td-yt a { color: var(--accent); font-size: .62rem; text-decoration: none; opacity: .4; transition: opacity .12s; }
 .tt-row:hover .td-yt a { opacity: 1; }
+/* The row's ⋯, same popup the album track lines and the player open. */
+.td-more { width: 24px; text-align: right; }
+.tt-row td.td-more { padding: 0 .5rem 0 0; }
+.tt-more {
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--text-muted); font-family: var(--mono); font-size: .72rem; line-height: 1;
+  padding: 9px 6px; cursor: pointer; opacity: .45; transition: opacity .12s, color .12s;
+}
+.tt-row:hover .tt-more, .tt-more[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .tt-more { opacity: .8; padding: 4px 8px; } }
+.tt-more:hover, .tt-more[aria-expanded="true"] { color: var(--accent); border-color: var(--border); }
 /* ── Track hover tooltip ── */
 #tt-global-tip { display: none; position: fixed; z-index: 9000;
   background: var(--bg-card); border: 1px solid var(--border);
@@ -3409,6 +3420,17 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .lsm-empty { padding: .5rem; font-family: var(--mono); font-size: .54rem; color: var(--text-muted); }
 .lsm-name { flex: 1 1 auto; }
 .lsm-count { flex: 0 0 auto; color: var(--text-muted); font-size: .52rem; padding-left: 10px; }
+/* Search at the top of the Artists menu. The menu itself is the scroll
+   container, so the box sticks to its top rather than sitting in a second one. */
+.lsm-search { position: sticky; top: -6px; z-index: 2; background: var(--bg-card); padding: 2px 2px 6px; margin: -2px -2px 0; }
+.lsm-search input {
+  width: 100%; box-sizing: border-box; background: var(--bg-elevated);
+  border: 1px solid var(--border); color: var(--text); font-family: var(--mono);
+  font-size: .56rem; padding: .38rem .5rem; border-radius: 6px; outline: none;
+}
+.lsm-search input:focus { border-color: var(--accent); }
+.lsm-search input::placeholder { color: var(--text-muted); }
+.lsm-nomatch { padding: .5rem; font-family: var(--mono); font-size: .54rem; color: var(--text-muted); }
 .landing-add-artist-btn {
   margin-left: auto; background: none; border: 1px solid var(--accent); color: var(--accent);
   font-family: var(--mono); font-size: .54rem; letter-spacing: .03em; padding: .42rem .8rem;
@@ -12518,7 +12540,7 @@ function sjmRenderRoot() {
           '<span class="sjm-ic">+</span><span class="sjm-label">Add to My Library</span>' +
           '<span class="sjm-sub">›</span></button>'
       : '') +
-    (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id)
+    (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id) && sjmArtistHasDiscography(navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore ' + escHtml(navArtist.name || 'Artist') + ' Jukebox</span></button>'
       : '') +
@@ -12546,6 +12568,25 @@ function sjmRenderRoot() {
   sjmPosition();
 }
 
+// landing_stats carries a name and a slug for every artist on the home page,
+// which is enough to open their jukebox even when the catalogue arrays never
+// loaded (a track reached from a playlist, say).
+function _sjmArtistFromLanding(aid) {
+  if (!aid || typeof landingStats === 'undefined' || !Array.isArray(landingStats)) return null;
+  const r = landingStats.find(x => x.artist_id === aid);
+  return (r && r.slug) ? { id: r.artist_id, name: r.name || 'Artist', slug: r.slug } : null;
+}
+
+// Explore Artist Jukebox is only worth offering where there is a jukebox to
+// explore. A singles-only artist (discography_complete false) is a handful of
+// loose uploads, and their page would be the row already on screen. An artist
+// landing_stats has nothing to say about is left alone rather than hidden.
+function sjmArtistHasDiscography(artistId) {
+  const row = sjLandingRowFor(artistId);
+  if (!row) return true;
+  return row.discography_complete !== false;
+}
+
 function _sjmArtistFor(tid) {
   if (!tid) return null;
   for (const aid of Object.keys(tracks)) {
@@ -12553,6 +12594,8 @@ function _sjmArtistFor(tid) {
       return allArtists.find(a => a.id === aid)
         || ((typeof communityArtists !== 'undefined' && communityArtists) ? communityArtists.find(a => a.id === aid) : null)
         || ((typeof mainCatalogArtists !== 'undefined' && mainCatalogArtists) ? mainCatalogArtists.find(a => a.id === aid) : null)
+        || ((typeof _esArtistById !== 'undefined' && _esArtistById) ? (_esArtistById[aid] || null) : null)
+        || _sjmArtistFromLanding(aid)
         || null;
     }
   }
@@ -15513,6 +15556,7 @@ function setArtistExploreFilter(mode) {
   }
   artistExploreFilter = ['mine', 'public', 'all'].includes(mode) ? mode : 'all';
   try { localStorage.setItem('sj_artist_explore_filter', artistExploreFilter); } catch (_) {}
+  if (landingTab === 'songs') esEnsureLibrary();
   if (isLandingMode && (landingTab === 'explore' || landingTab === 'songs')) renderLanding();
 }
 
@@ -18184,10 +18228,65 @@ function clearSubmitterFilter(e) {
 // artist's box automatically unchecks here.
 function landingArtistOptions() {
   let opts = landingStats;
+  // A name the All / My / Public chip has already ruled out has no business
+  // being a checkbox here: ticking it would appear to do nothing.
+  if (artistScope() === 'mine') opts = opts.filter(r => oaIsMine(r));
+  else if (artistScope() === 'public') opts = opts.filter(r => r.visibility !== 'private');
   if (landingSubmitterFilter.size) {
     opts = opts.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
   }
   return [...opts].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+// The Artists menu, built in one place so its checkbox indexes and
+// _landingArtistKeys can never come from two different lists. The search box
+// hides rows rather than re-rendering them - a rebuild would take the caret
+// out of the box mid-word, the lesson spiRefreshList() already learned.
+let _landingArtistSearchQ = '';
+let _landingArtistFocus   = false;
+
+function landingArtistsMenuHTML() {
+  const esc = x => (x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const attr = x => esc(x).replace(/"/g, '&quot;');
+  const opts = landingArtistOptions();
+  _landingArtistKeys = opts.map(o => o.artist_id);
+  const q = _landingArtistSearchQ.trim().toLowerCase();
+  const search = '<div class="lsm-search"><input type="text" id="landing-artists-search" placeholder="Search artists..." ' +
+    'autocomplete="off" value="' + attr(_landingArtistSearchQ) + '" oninput="landingArtistSearch(this.value)" ' +
+    'onclick="event.stopPropagation()" onkeydown="if(event.key===&quot;Escape&quot;){this.value=&quot;&quot;;landingArtistSearch(&quot;&quot;);}"></div>';
+  if (!opts.length) return search + '<div class="lsm-empty">No artists yet</div>';
+  const allRow = '<label class="lsm-item lsm-all"><input type="checkbox"' + (opts.some(r => r.hidden) ? '' : ' checked') +
+    ' onchange="selectAllArtists()"><span class="lsm-name">All</span></label>';
+  let shown = 0;
+  const items = opts.map((o, i) => {
+    const hit = !q || (o.name || '').toLowerCase().includes(q);
+    if (hit) shown++;
+    return '<label class="lsm-item" data-art-name="' + attr(o.name || '') + '"' + (hit ? '' : ' style="display:none"') + '>' +
+      '<input type="checkbox"' + (o.hidden ? '' : ' checked') + ' onchange="toggleArtistInclude(' + i + ')">' +
+      '<span class="lsm-name"' + (o.hidden ? ' style="color:var(--text-muted)"' : '') + '>' + esc(o.name) + '</span></label>';
+  }).join('');
+  const none = '<div class="lsm-nomatch" id="landing-artists-nomatch" style="display:' + (shown ? 'none' : 'block') +
+    '">No artists match that search.</div>';
+  return search + allRow + items + none;
+}
+
+function landingArtistSearch(v) {
+  _landingArtistSearchQ = v || '';
+  landingApplyArtistSearch();
+}
+
+function landingApplyArtistSearch() {
+  const menu = document.getElementById('landing-artists-menu');
+  if (!menu) return;
+  const q = _landingArtistSearchQ.trim().toLowerCase();
+  let shown = 0;
+  menu.querySelectorAll('.lsm-item[data-art-name]').forEach(el => {
+    const ok = !q || (el.dataset.artName || '').toLowerCase().includes(q);
+    el.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  const none = document.getElementById('landing-artists-nomatch');
+  if (none) none.style.display = shown ? 'none' : 'block';
 }
 
 function artistsBtnLabel() {
@@ -18229,6 +18328,7 @@ function toggleArtistInclude(idx) {
   row.hidden = !row.hidden;
   if (row.hidden) landingExpandedIds.delete(id);
   saveArtistFeedback(id, { hidden: row.hidden });
+  _landingArtistFocus = !!_landingArtistSearchQ;
   renderLanding();
 }
 
@@ -18602,14 +18702,81 @@ function esVisibleArtistIds() {
 
 function esVisibleStats() { return getVisibleLandingStats({ singlesAlways: true }); }
 
+// Explore Artists answers "is this artist mine" - one song of theirs in my
+// library makes the whole card mine, which is right for a grid of cards and
+// wrong for a list of songs. So the chip reads My Songs here and the filter
+// runs a level down: a song is mine when it sits in my library, or when I
+// imported the artist, in which case the whole discography is mine.
+let _esLibTrackIds = null;   // Set of catalogue track ids in my library; null until read
+let _esLibLoading  = false;
+
+async function esEnsureLibrary() {
+  if (!googleUser || _esLibLoading || _esLibTrackIds) return;
+  _esLibLoading = true;
+  try {
+    const data = _mjState || await mjRequest('/api/my-jukebox', 'GET');
+    if (!_mjState) _mjState = data;
+    _esLibTrackIds = new Set((data.items || []).map(i => i.catalogTrackId).filter(Boolean));
+  } catch (_) {
+    // A failed read must not hide every song forever - fall back to the
+    // artists I imported, which is what My Artists already showed.
+    _esLibTrackIds = new Set();
+  } finally {
+    _esLibLoading = false;
+    if (isLandingMode && landingTab === 'songs') { esRepaint(); updateLandingActionsHeader(); }
+  }
+}
+
+// Artists I imported myself. added_by_name is the credit landing_stats
+// carries; in_my_library is deliberately not consulted here, because holding
+// one song by somebody does not make their back catalogue mine.
+function esMineArtistIds() {
+  const out = new Set();
+  if (!googleUser) return out;
+  const me = (googleUser.name || '').trim().toLowerCase();
+  if (!me) return out;
+  (landingStats || []).forEach(r => {
+    if ((r.added_by_name || '').trim().toLowerCase() !== me) return;
+    ((r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id]).forEach(id => { if (id) out.add(id); });
+  });
+  return out;
+}
+
+function esAlbumIndex() {
+  const albById = {};
+  Object.keys(albums).forEach(aid => (albums[aid] || []).forEach(a => { albById[a.id] = a; }));
+  return albById;
+}
+
+function esIsMineTrack(t, mineArtists, albById) {
+  if (_esLibTrackIds && _esLibTrackIds.has(t.id)) return true;
+  const alb = albById[t.album_id];
+  return !!(alb && mineArtists.has(alb.artist_id));
+}
+
+function esMineSongCount() {
+  if (!googleUser || !_esLoaded) return 0;
+  const mineArtists = esMineArtistIds();
+  const albById = esAlbumIndex();
+  let n = 0;
+  Object.keys(tracks).forEach(aid => (tracks[aid] || []).forEach(t => {
+    if (esIsMineTrack(t, mineArtists, albById)) n++;
+  }));
+  return n;
+}
+
 function esSongRows() {
   const ids = esVisibleArtistIds();
-  const rows = [];
+  let rows = [];
   ids.forEach(id => { (tracks[id] || []).forEach(t => rows.push(t)); });
-  const q = _esSearchQ.trim().toLowerCase();
-  if (!q) return rows;
   const albById = {};
   ids.forEach(id => (albums[id] || []).forEach(a => { albById[a.id] = a; }));
+  if (artistScope() === 'mine') {
+    const mineArtists = esMineArtistIds();
+    rows = rows.filter(t => esIsMineTrack(t, mineArtists, albById));
+  }
+  const q = _esSearchQ.trim().toLowerCase();
+  if (!q) return rows;
   return rows.filter(t => {
     const alb = albById[t.album_id];
     return (t.name || '').toLowerCase().includes(q)
@@ -18706,16 +18873,12 @@ function esFiltersHTML() {
   const subAllOn = landingSubmitterFilter.size === 0;
   const subAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${subAllOn ? ' checked' : ''} onchange="selectAllSubmitters()"><span class="lsm-name">All</span></label>`;
   const subItems = subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${!subNone && (subAllOn || landingSubmitterFilter.has(o[0])) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
-  const artOpts = landingArtistOptions();
-  const artAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${artOpts.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists()"><span class="lsm-name">All</span></label>`;
-  const artItems = artOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   return `<div class="landing-control-group">
       <span class="landing-control-lbl">Artists</span>
       <div class="landing-artists-dd">
         <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
         <div class="landing-submitter-menu" id="landing-artists-menu" style="display:${_artistsMenuOpen ? 'block' : 'none'}">
-          ${artOpts.length ? artAllRow : ''}
-          ${artItems || '<div class="lsm-empty">No artists yet</div>'}
+          ${landingArtistsMenuHTML()}
         </div>
       </div>
     </div>` +
@@ -18839,10 +19002,6 @@ function renderLanding() {
   const _subAllOn = landingSubmitterFilter.size === 0;
   const _subAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_subAllOn ? ' checked' : ''} onchange="selectAllSubmitters()"><span class="lsm-name">All</span></label>`;
   const _subMenuItems = _subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${!_subNone && (_subAllOn || landingSubmitterFilter.has(o[0])) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
-  const _artistOpts = landingArtistOptions();
-  _landingArtistKeys = _artistOpts.map(o => o.artist_id);
-  const _artistAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${_artistOpts.some(r => r.hidden) ? '' : ' checked'} onchange="selectAllArtists()"><span class="lsm-name">All</span></label>`;
-  const _artistMenuItems = _artistOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${o.hidden ? '' : ' checked'} onchange="toggleArtistInclude(${i})"><span class="lsm-name"${o.hidden ? ' style="color:var(--text-muted)"' : ''}>${esc(o.name)}</span></label>`).join('');
   const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
   const plSortOpt = (v, lbl) => `<option value="${v}"${playlistExploreSort === v ? ' selected' : ''}>${lbl}</option>`;
   main.innerHTML = `
@@ -18908,8 +19067,7 @@ function renderLanding() {
           <div class="landing-artists-dd">
             <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
             <div class="landing-submitter-menu" id="landing-artists-menu" style="display:${_artistsMenuOpen ? 'block' : 'none'}">
-              ${_artistOpts.length ? _artistAllRow : ''}
-              ${_artistMenuItems || '<div class="lsm-empty">No artists yet</div>'}
+              ${landingArtistsMenuHTML()}
             </div>
           </div>
         </div>
@@ -18999,7 +19157,12 @@ function renderLanding() {
     const si = document.getElementById('playlist-explore-search');
     if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
   }
-  if (landingTab === 'songs') esEnsureCatalog();
+  if (_artistsMenuOpen && _landingArtistFocus) {
+    _landingArtistFocus = false;
+    const ai = document.getElementById('landing-artists-search');
+    if (ai) { ai.focus(); ai.setSelectionRange(ai.value.length, ai.value.length); }
+  }
+  if (landingTab === 'songs') { esEnsureCatalog(); esEnsureLibrary(); }
   if (landingTab === 'explore') landingExpandedIds.forEach(id => laPopulateAlbums(id));
   if (landingTab === 'playlists') {
     Promise.all([ensureMyReactionTracks(), ensurePlaylistArtwork(), ensurePlaylistSearchMeta()]).then(changed => {
@@ -20214,7 +20377,9 @@ function landingTotalsHTML() {
   const vis = landingTab === 'songs' ? esVisibleStats() : getVisibleLandingStats();
   const songsOf = rows => rows.reduce((n, r) => n + (r.track_count || 0), 0);
   const aAll = all.length, aVis = vis.length;
-  const sAll = songsOf(all), sVis = songsOf(vis);
+  const sAll = songsOf(all);
+  const sVis = (landingTab === 'songs' && artistScope() === 'mine' && _esLoaded)
+    ? esMineSongCount() : songsOf(vis);
   const artistBit = aVis === aAll
     ? aAll.toLocaleString() + ' artist' + (aAll === 1 ? '' : 's')
     : aVis.toLocaleString() + ' of ' + aAll.toLocaleString() + ' artists';
@@ -20243,12 +20408,17 @@ function updateLandingActionsHeader() {
   }
   nav.style.display = 'block';
   const mineArtistCount = googleUser ? (landingStats || []).filter(r => !r.hidden && oaIsMine(r)).length : 0;
+  // Explore Songs is a list of songs, so its chip counts songs.
+  const mineSongCount = (googleUser && landingTab === 'songs') ? esMineSongCount() : 0;
+  const mineScopeLbl = landingTab === 'songs'
+    ? 'My Songs' + (mineSongCount ? ' (' + mineSongCount.toLocaleString() + ')' : '')
+    : 'My Artists' + (mineArtistCount ? ' (' + mineArtistCount + ')' : '');
   const minePlCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
   const scopeChips = !googleUser ? ''
     : (landingTab === 'explore' || landingTab === 'songs')
     ? `<span class="landing-nav-scope" role="group" aria-label="Artist scope">
         <button type="button" class="playlist-explore-filter${artistScope() === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
-        <button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">My Artists${mineArtistCount ? ' (' + mineArtistCount + ')' : ''}</button>
+        <button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">${mineScopeLbl}</button>
         <button type="button" class="playlist-explore-filter${artistScope() === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
       </span>`
     : landingTab === 'playlists'
@@ -20738,6 +20908,7 @@ function renderTopTracks(trackList, opts) {
       ${googleUser ? `<th onclick="ttSort('myplays')" ${thCls('myplays')} style="min-width:65px;cursor:pointer;user-select:none;text-align:right${ttSortCol==='myplays'?';color:var(--text)':''}" title="My plays">My Plays${sortArrow('myplays')}</th>` : ''}
       <th onclick="ttSort('plays')" ${thCls('plays')} style="min-width:65px;cursor:pointer;user-select:none;text-align:right${ttSortCol==='plays'?';color:var(--text)':''}" title="Total plays">Total Plays${sortArrow('plays')}</th>
       <th style="width:24px"></th>
+      <th style="width:24px"></th>
     </tr></thead>
     <tbody>
     ${(opts.limit ? rows.slice(0, opts.limit) : rows).map((t, i) => {
@@ -20768,6 +20939,7 @@ function renderTopTracks(trackList, opts) {
         ${googleUser ? `<td data-myplays="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._myPlays/maxMyPlays*100).toFixed(1)}%;background:${color}88"></div></div><div class="tt-num" style="${t._myPlays?'color:var(--accent)':''}">${t._myPlays ? fmtV(t._myPlays) : '-'}</div></div></td>` : ''}
         <td data-inapp="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._plays/maxTotalPlays*100).toFixed(1)}%;background:${color}66"></div></div><div class="tt-num" style="${t._plays?'color:var(--accent)':''}">${t._plays ? fmtV(t._plays) : '-'}</div></div></td>
         <td class="td-yt">${vid ? `<a href="#" title="Play YouTube Video" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${(t.name||'').replace(/'/g,"\\'")}',null,event)">▶</a>` : ''}</td>
+        <td class="td-more" onclick="event.stopPropagation()"><button class="tt-more" onclick="event.stopPropagation();sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button></td>
       </tr>`;
     }).join('')}
     </tbody>
@@ -22723,6 +22895,12 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'Hovering a song on Explore Songs now draws the same trend line the artist jukebox pages draw, so you can see how a song has been picking up views over the last month without leaving the list.',
+    'Every row on Explore Songs has a three dots button at the end, with the same menu the album track lines carry: add to a playlist, play it next, find another version, take a break from it, report a problem, open it on YouTube.',
+    'That menu now offers Explore <Artist> Jukebox on songs whose artist has a full discography here, so you can jump from one song to everything else that artist has in the Jukebox. Artists who are here for a single track do not get the option, since their page would be the row you are already looking at.',
+    'The Artists menu has a search box at the top. It has grown to hundreds of names and scrolling to find one had stopped being reasonable.',
+    'The Artists menu now lists only the artists the All / My / Public buttons are actually showing, instead of every artist in the Jukebox regardless of which of the three you are on.',
+    'On Explore Songs the My Artists button is now My Songs, and it means it: it shows the songs you added or hold in your library, rather than every song by an artist you happen to have one track from. The count beside it, and the count under the tabs, follow.',
     'In the full player, Lyrics, the volume slider, the rating buttons and the three dots menu now sit together on one row, in that order, instead of the ratings being off on their own line. The buttons on the right hand side of the player no longer sit hard against the edge of the window.',
     'Maximizing a song from the bar at the bottom to the full player now brings the playlist up with it. It used to appear a while later, often not until the next song started.',
     'The song menu behind the three dots now has Add to My Library, with Add Song, Add Album and Add Artist inside it. Use it on music somebody else brought to the Jukebox and that artist starts showing under My Artists, so you can filter down to your own listening without having imported any of it yourself. Whoever imported the music keeps the credit for it. The option only appears on music you did not import - on your own, the artist is already there.',
@@ -25506,6 +25684,59 @@ async function loadDailyMetrics() {
   } catch (e) { console.warn('loadDailyMetrics ratings error', e); }
 }
 
+// loadDailyMetrics() pulls a 30 day window for every track on the page, which
+// is right for one jukebox and hopeless for Explore Songs - the whole
+// catalogue is tens of thousands of rows nobody is going to hover. So the
+// landing tables fetch the one song being pointed at instead, once, and
+// remember the miss as well as the hit so a song with no history is not
+// re-asked on every pass of the mouse.
+const _dailyOnePending = {};
+const _dailyOneAsked   = new Set();
+
+async function ensureDailyForTrack(trackId) {
+  if (!trackId) return false;
+  const key = barChartMode + ':' + trackId;
+  if (_dailyOneAsked.has(key)) return false;
+  if (_dailyOnePending[key]) return _dailyOnePending[key];
+  _dailyOnePending[key] = (async () => {
+    const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
+    const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    let got = false;
+    try {
+      if (barChartMode === 'yt' && !dailyYtData[trackId]) {
+        const rows = await dbGetAllPages(
+          `${REST}/yt_daily_snapshots?select=snapshot_date,view_count,video_id&track_id=eq.${trackId}&snapshot_date=gte.${since}&order=snapshot_date.asc`,
+          hdrs);
+        if (Array.isArray(rows) && rows.length > 1) {
+          dailyYtData[trackId] = rows.map(r => ({ date: r.snapshot_date, views: Number(r.view_count) || 0, videoId: r.video_id || null }));
+          got = true;
+        }
+      } else if (barChartMode === 'total' && !dailyPlaysData[trackId]) {
+        const rows = await dbGetAllPages(
+          `${REST}/play_events?select=played_at,source&track_id=eq.${trackId}&played_at=gte.${since}T00:00:00Z&album_id=not.is.null&or=(source.is.null,source.in.(video,audio))`,
+          hdrs);
+        if (Array.isArray(rows) && rows.length) {
+          const byDay = {};
+          rows.forEach(r => {
+            if (!r.played_at || r.source === 'spotify') return;
+            const day = r.played_at.slice(0, 10);
+            byDay[day] = (byDay[day] || 0) + 1;
+          });
+          const days = Object.keys(byDay).sort();
+          if (days.length) {
+            dailyPlaysData[trackId] = days.map(d => ({ date: d, count: byDay[d] }));
+            got = true;
+          }
+        }
+      }
+    } catch (_) { /* the tooltip is still useful without its trend line */ }
+    _dailyOneAsked.add(key);
+    delete _dailyOnePending[key];
+    return got;
+  })();
+  return _dailyOnePending[key];
+}
+
 function renderSparkSVG(points, color, secondary) {
   if (!points || points.length < 2) return '';
   const sec = (secondary && secondary.length >= 2) ? secondary : null;
@@ -26994,6 +27225,7 @@ _initPromise.then(scheduleViewControlsGuard).catch(() => {});
   const tipStats = document.getElementById('tt-tip-stats');
   const tipSpark = document.getElementById('tt-tip-spark');
   let _cur = null;
+  let _lastEvt = null;
 
   function showTipForRow(row, e) {
     if (row === _cur) return;
@@ -27035,6 +27267,13 @@ _initPromise.then(scheduleViewControlsGuard).catch(() => {});
         (sparkData.legend ? sparkData.legend + ' · ' : '') + last + '</span></div>';
     } else {
       tipSpark.innerHTML = '';
+      // Nothing cached for this song. Ask for its history and, if the pointer
+      // has not moved on by the time it arrives, draw the tooltip again.
+      if (trackId) ensureDailyForTrack(trackId).then(got => {
+        if (!got || _cur !== row) return;
+        _cur = null;
+        showTipForRow(row, _lastEvt || e);
+      });
     }
     tip.classList.add('visible');
     positionTip(e);
@@ -27042,6 +27281,7 @@ _initPromise.then(scheduleViewControlsGuard).catch(() => {});
 
   document.addEventListener('mouseover', function(e) {
     if (window.innerWidth <= 640) return;
+    _lastEvt = e;
     const trkRow = e.target.closest('.tt-row');
     if (trkRow && trkRow.dataset.tipName) { showTipForRow(trkRow, e); return; }
     const trkLine = e.target.closest('.trk-line');
@@ -27055,6 +27295,7 @@ _initPromise.then(scheduleViewControlsGuard).catch(() => {});
 
   document.addEventListener('mousemove', function(e) {
     if (window.innerWidth <= 640) return;
+    _lastEvt = e;
     if (!tip.classList.contains('visible')) return;
     positionTip(e);
   });
