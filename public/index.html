@@ -1725,6 +1725,17 @@ textarea.report-input { resize:vertical; }
     max-width: none;
     transform: none;
   }
+  /* Once the horizontal lane between the title / queue and transport is too
+     narrow for a readable lyric, put the words above the button stack instead
+     of letting the centred strip run underneath either column.  The measured
+     bottom value deliberately leaves a gap above the topmost button. */
+  #ytp-mini-footer.dock-lyr-over-controls .ytp-mf-lyr.show {
+    left: var(--mf-lyr-left);
+    width: var(--mf-lyr-w);
+    max-width: none;
+    transform: none;
+    bottom: var(--mf-lyr-bottom);
+  }
   #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: var(--mf-body); }
 }
 .ytp-mf-scrub-time {
@@ -8195,7 +8206,7 @@ function ytpMfPlaceLyrics() {
   const dock = document.getElementById('ytp-mini-footer');
   const pane = document.getElementById('ytp-mf-lyrics-pane');
   if (!dock || !pane) return;
-  dock.classList.remove('dock-lyr-fit');
+  dock.classList.remove('dock-lyr-fit', 'dock-lyr-over-controls');
   // Small dock and phones keep the plain centred rule: there is no second
   // column to avoid, and the handle is the thing to sit under.
   if (!pane.classList.contains('show') || ytpIsMob()) return;
@@ -8226,7 +8237,28 @@ function ytpMfPlaceLyrics() {
   const bandStart = leftEdge - dockRect.left + YTP_MF_LYR_GAP;
   const bandEnd = rightEdge - dockRect.left - YTP_MF_LYR_GAP;
   const band = bandEnd - bandStart;
-  if (band < YTP_MF_LYR_MIN_W) return;   // too cramped to improve on centring
+  if (band < YTP_MF_LYR_MIN_W) {
+    // The middle lane has collapsed (usually because the queue is open), but
+    // the space directly above the transport is still useful.  Put the lyric
+    // strip there and leave a measured 12px of breathing room above the
+    // topmost control, rather than falling back to a centred strip that runs
+    // behind the title, queue, or buttons.
+    const controls = dock.querySelector('.ytp-mf-right');
+    const controlsRect = controls?.getBoundingClientRect();
+    const overStart = bandStart;
+    const overEnd = dockRect.width - 16;
+    const overBand = overEnd - overStart;
+    if (controlsRect && controlsRect.height && overBand >= YTP_MF_LYR_MIN_W) {
+      const width = Math.min(YTP_MF_LYR_IDEAL_W, overBand);
+      const left = Math.max(overStart, overEnd - width);
+      const bottom = Math.max(30, dockRect.bottom - controlsRect.top + 12);
+      dock.style.setProperty('--mf-lyr-left', Math.round(left) + 'px');
+      dock.style.setProperty('--mf-lyr-w', Math.round(width) + 'px');
+      dock.style.setProperty('--mf-lyr-bottom', Math.round(bottom) + 'px');
+      dock.classList.add('dock-lyr-over-controls');
+    }
+    return;
+  }
 
   const width = Math.min(YTP_MF_LYR_IDEAL_W, band);
   // Under the handle first, then pushed just far enough to clear the columns.
@@ -18059,7 +18091,7 @@ function defaultLandingCompare(a, b) {
 function getVisibleLandingStats(opts) {
   opts = opts || {};
   let visible = landingStats.filter(r => !r.hidden);
-  if (artistScope() === 'mine') {
+  if (artistScope() === 'mine' && !opts.skipArtistMineScope) {
     visible = visible.filter(r => oaIsMine(r));
   } else if (artistScope() === 'public') {
     visible = visible.filter(r => r.visibility !== 'private');
@@ -18230,7 +18262,11 @@ function landingArtistOptions() {
   let opts = landingStats;
   // A name the All / My / Public chip has already ruled out has no business
   // being a checkbox here: ticking it would appear to do nothing.
-  if (artistScope() === 'mine') opts = opts.filter(r => oaIsMine(r));
+  // Explore Songs owns the My Songs rule at track level.  Applying the older
+  // artist-level My Artists test here would erase the artist that a library
+  // song belongs to before the song-level test gets a chance to include it.
+  const songLevelMine = isLandingMode && landingTab === 'songs' && artistScope() === 'mine';
+  if (artistScope() === 'mine' && !songLevelMine) opts = opts.filter(r => oaIsMine(r));
   else if (artistScope() === 'public') opts = opts.filter(r => r.visibility !== 'private');
   if (landingSubmitterFilter.size) {
     opts = opts.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -18700,7 +18736,10 @@ function esVisibleArtistIds() {
   return out;
 }
 
-function esVisibleStats() { return getVisibleLandingStats({ singlesAlways: true }); }
+// My Songs is deliberately not My Artists.  Keep the artist filters, hidden
+// rows and submitter choice, but do not pre-filter the source rows with
+// oaIsMine(); esSongRows() applies the actual per-song library test below.
+function esVisibleStats() { return getVisibleLandingStats({ singlesAlways: true, skipArtistMineScope: true }); }
 
 // Explore Artists answers "is this artist mine" - one song of theirs in my
 // library makes the whole card mine, which is right for a grid of cards and
@@ -18709,6 +18748,7 @@ function esVisibleStats() { return getVisibleLandingStats({ singlesAlways: true 
 // imported the artist, in which case the whole discography is mine.
 let _esLibTrackIds = null;   // Set of catalogue track ids in my library; null until read
 let _esLibLoading  = false;
+let _esCatalogAuthUserId = null;
 
 async function esEnsureLibrary() {
   if (!googleUser || _esLibLoading || _esLibTrackIds) return;
@@ -18786,11 +18826,17 @@ function esSongRows() {
 }
 
 async function esEnsureCatalog(force) {
-  if (_esLoading || (_esLoaded && !force)) return;
+  const session = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+  const authUserId = session?.user?.id || null;
+  // The anonymous catalogue read is not enough after sign-in: landing_stats
+  // may legitimately include private artists the listener can access. Reload
+  // once with that listener's token rather than retaining the anonymous cache.
+  if (_esLoading || (_esLoaded && !force && _esCatalogAuthUserId === authUserId)) return;
   _esLoading = true;
   _esError = '';
   esRepaint();
-  const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
+  const authToken = session?.access_token || ANON;
+  const hdrs = { apikey: ANON, Authorization: `Bearer ${authToken}`, 'Accept-Profile': 'jukebox' };
   try {
     const [artistRows, albRows, trackRows, videoRows, playRows] = await Promise.all([
       dbGetAllPages(REST + '/artists?select=id,name,slug&order=name.asc', hdrs),
@@ -18845,6 +18891,7 @@ async function esEnsureCatalog(force) {
       if (top) { cur.views = Number(top.view_count) || 0; cur.likes = Number(top.like_count) || 0; }
     });
     _esLoaded = true;
+    _esCatalogAuthUserId = authUserId;
   } catch (e) {
     console.warn('esEnsureCatalog', e);
     _esError = (e && e.message) ? e.message : 'Could not load the songs.';
@@ -22895,6 +22942,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'My Songs now really starts with your songs, instead of first requiring the artist to be one you imported. A song you put in My Jukebox is there even when somebody else added its artist, and private artists you can access load with your signed-in catalogue too.',
+    'When the docked player gets too narrow for lyrics between the song details and transport controls, the lyrics move above the controls with a clear gap, instead of running behind the queue or buttons.',
     'Hovering a song on Explore Songs now draws the same trend line the artist jukebox pages draw, so you can see how a song has been picking up views over the last month without leaving the list.',
     'Every row on Explore Songs has a three dots button at the end, with the same menu the album track lines carry: add to a playlist, play it next, find another version, take a break from it, report a problem, open it on YouTube.',
     'That menu now offers Explore <Artist> Jukebox on songs whose artist has a full discography here, so you can jump from one song to everything else that artist has in the Jukebox. Artists who are here for a single track do not get the option, since their page would be the row you are already looking at.',
