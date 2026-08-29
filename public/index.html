@@ -15208,8 +15208,29 @@ function playlistChartQueue() {
   return ytQueue === playlistChartBaseQueue ? ytQueue : playlistChartBaseQueue;
 }
 
+/**
+ * trackId -> row, rebuilt whenever the playlist changes.
+ *
+ * This was a linear .find() per cell, which is fine at a couple of hundred
+ * songs and quietly ruinous past a thousand: a 5,000 song wall spent about a
+ * second per redraw inside two of these, enough for the browser to offer to
+ * kill the page. Rebuild it after anything that adds, removes or reorders
+ * rows - plWallIndexRows() is cheap and idempotent.
+ */
+let _plRowById = new Map();
+
+function plWallIndexRows() {
+  _plRowById = new Map(playlistChartRows.map(r => [r.trackId, r]));
+}
+
 function playlistChartRowFor(item, fallbackIndex) {
-  return playlistChartRows.find(r => r.trackId === item.trackId) || {
+  const hit = _plRowById.get(item.trackId);
+  if (hit) return hit;
+  // The index can lag a mutation by a tick; falling back keeps the wall right
+  // rather than fast-and-wrong.
+  const found = playlistChartRows.find(r => r.trackId === item.trackId);
+  if (found) { _plRowById.set(item.trackId, found); return found; }
+  return {
     trackId: item.trackId, title: item.title || 'Track', artist: item.artist || '',
     artwork: item.artwork || '', index: fallbackIndex, color: DEFAULT_BAR_COLOR
   };
@@ -15260,7 +15281,7 @@ function plWallPlayTip(trackId) {
     if (plays) bits.push(plays + (plays === 1 ? ' play' : ' plays'));
     if (last) bits.push('Last played ' + last);
   }
-  const row = playlistChartRows.find(r => r.trackId === trackId);
+  const row = _plRowById.get(trackId);
   if (row?.addedByName) bits.push('Added by ' + row.addedByName);
   return bits.join(' · ');
 }
@@ -15530,6 +15551,8 @@ async function plWallLoadReactionCounts(ids) {
       console.warn('plWallLoadReactionCounts error', e);
     }
   }));
+  // Once, after every chunk has landed. Sweeping per chunk meant fifty walks
+  // of a five thousand cell wall for one screen's worth of hearts.
   plWallSyncBadges();
 }
 
@@ -15957,6 +15980,7 @@ async function openPlaylistChart(playlistId) {
     }).filter(Boolean);
     if (playlistChartId !== playlistId) return;
     playlistChartRows = rows;
+    plWallIndexRows();
     playlistChartBaseQueue = rows.filter(r => chartYT[r.trackId]?.video_id).map(r =>
       ytQueueItem(chartYT[r.trackId].video_id, r.title, r.trackId, r.artist));
     // Prefetched so the track card opens with words already in hand. It used
@@ -15980,6 +16004,7 @@ async function openPlaylistChart(playlistId) {
   } catch (e) {
     playlistChartRows = [];
     playlistChartBaseQueue = [];
+    plWallIndexRows();
     renderPlaylistChart(e.message || 'Could not load this playlist.');
   }
 }
@@ -16016,21 +16041,61 @@ function plWallGridCells(grid) {
   return [...grid.querySelectorAll('.pl-wall-cell')];
 }
 
-/** Which slot the pointer is currently over, counting gaps not cells. */
+/**
+ * Measure the grid once, at the start of a drag.
+ *
+ * The wall is a uniform grid of squares, so where a point falls can be worked
+ * out with arithmetic instead of asking the DOM. Two earlier versions of this
+ * were wrong in ways worth recording: calling getBoundingClientRect() on every
+ * cell forced a layout on every pointermove and was unusable past a thousand
+ * songs, and elementFromPoint() returns nothing at all when the pointer is
+ * over a gutter or a gap - which silently sent the song to the end of the
+ * playlist, the worst possible answer to a near miss.
+ */
+function plWallDragGeometry(grid) {
+  const first = grid.querySelector('.pl-wall-cell');
+  if (!first) return null;
+  const cs = getComputedStyle(grid);
+  const cols = (cs.gridTemplateColumns || '').split(/\s+/).filter(Boolean).length || 1;
+  const b = first.getBoundingClientRect();
+  const gapX = parseFloat(cs.columnGap) || 0;
+  const gapY = parseFloat(cs.rowGap) || 0;
+  return {
+    cols,
+    stepX: b.width + gapX,
+    stepY: b.height + gapY,
+    width: b.width,
+    left: b.left,
+    top: b.top,
+  };
+}
+
+/** Which slot the pointer is over. Pure arithmetic - no layout, no hit test. */
 function plWallDropIndex(grid, x, y) {
-  const cells = plWallGridCells(grid).filter(c => c !== _plDrag?.cell);
-  for (let i = 0; i < cells.length; i++) {
-    const b = cells[i].getBoundingClientRect();
-    // A grid reads left to right, top to bottom, so a point is "before" a cell
-    // when it is above its row or left of its middle within that row.
-    if (y < b.top) return i;
-    if (y <= b.bottom && x < b.left + b.width / 2) return i;
-  }
-  return cells.length;
+  const st = _plDrag;
+  const g = st && st.geom;
+  const cells = plWallGridCells(grid);
+  if (!g) return 0;
+  // The grid scrolls under the pointer, so the first cell's position is
+  // re-read rather than trusted from the start of the drag.
+  const first = grid.querySelector('.pl-wall-cell');
+  const originTop = first ? first.getBoundingClientRect().top : g.top;
+  let col = Math.floor((x - g.left) / g.stepX);
+  let row = Math.floor((y - originTop) / g.stepY);
+  col = Math.max(0, Math.min(col, g.cols - 1));
+  row = Math.max(0, row);
+  // Past the middle of a cover means "after this one".
+  const withinX = (x - g.left) - col * g.stepX;
+  let at = row * g.cols + col + (withinX >= g.width / 2 ? 1 : 0);
+  at = Math.max(0, Math.min(at, cells.length));
+  // The dragged cell is still in the list but is not a slot of its own.
+  const fromIdx = cells.indexOf(st.cell);
+  if (fromIdx >= 0 && at > fromIdx) at -= 1;
+  return Math.max(0, Math.min(at, cells.length - 1));
 }
 
 function plWallDragBegin(cell, ev) {
-  _plDrag = { cell, startX: ev.clientX, startY: ev.clientY, active: false, from: -1, marker: null };
+  _plDrag = { cell, startX: ev.clientX, startY: ev.clientY, active: false, from: -1, marker: null, lastIndex: -1 };
 }
 
 function plWallDragMove(grid, ev) {
@@ -16040,6 +16105,7 @@ function plWallDragMove(grid, ev) {
       && Math.abs(ev.clientY - _plDrag.startY) < PL_DRAG_SLOP) return;
     _plDrag.active = true;
     _plDrag.from = plWallGridCells(grid).indexOf(_plDrag.cell);
+    _plDrag.geom = plWallDragGeometry(grid);
     _plDrag.cell.classList.add('pl-wall-dragging');
     // A single placeholder moved around the grid, rather than re-rendering the
     // wall on every pointermove.
@@ -16050,7 +16116,9 @@ function plWallDragMove(grid, ev) {
     plWallClosePop();
   }
   const at = plWallDropIndex(grid, ev.clientX, ev.clientY);
-  const cells = plWallGridCells(grid).filter(c => c !== _plDrag.cell && c !== _plDrag.marker);
+  if (at === _plDrag.lastIndex) return;   // nothing to move, no layout to force
+  _plDrag.lastIndex = at;
+  const cells = plWallGridCells(grid).filter(c => c !== _plDrag.cell);
   const ref = cells[at] || null;
   if (ref) grid.insertBefore(_plDrag.marker, ref);
   else grid.appendChild(_plDrag.marker);
@@ -16063,15 +16131,10 @@ async function plWallDragEnd(grid, ev) {
   drag.cell.classList.remove('pl-wall-dragging');
   if (!drag.active) return false;
 
-  const marker = drag.marker;
-  // Where the placeholder ended up, measured with the dragged cell taken out
-  // of the reckoning - a cell moved downwards would otherwise count itself.
-  const order = plWallGridCells(grid).filter(c => c !== drag.cell);
-  let to = order.length;
-  for (let i = 0; i < order.length; i++) {
-    if (order[i] === marker || (marker && marker.compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING)) { to = i; break; }
-  }
-  if (marker) marker.remove();
+  // The slot the marker is sitting in, which pointermove already worked out.
+  // Walking the wall again to find it was another full pass per drop.
+  const to = drag.lastIndex >= 0 ? drag.lastIndex : drag.from;
+  if (drag.marker) drag.marker.remove();
   if (drag.from < 0 || to === drag.from) return true;
   await plWallMoveTrack(drag.from, to);
   return true;
@@ -16269,6 +16332,7 @@ async function plWallRemoveMyTrack(index) {
   const rowIdx = playlistChartRows.findIndex(r => r.ptId === row.ptId);
   if (rowIdx >= 0) playlistChartRows.splice(rowIdx, 1);
   playlistChartRows.forEach((r, n) => { r.index = n; });
+  plWallIndexRows();
   // Splice in place. Reassigning would break the ytQueue === base identity
   // that keeps the wall following the live queue.
   playlistChartBaseQueue.splice(index, 1);
@@ -16301,6 +16365,9 @@ function plWallDropCell(index) {
   cell.style.transition = 'opacity .16s ease, transform .16s ease';
   cell.style.opacity = '0';
   cell.style.transform = 'scale(.86)';
+  // The window shrinks with it: st.q is the same array that was just spliced,
+  // so leaving `at` where it was would claim a song is drawn that is not.
+  if (_plFillState && _plFillState.at > 0) _plFillState.at--;
   setTimeout(() => {
     cell.remove();
     // The song on screen may have shifted; nothing else on the wall changed.
@@ -16493,6 +16560,92 @@ function plWallSummaryHTML() {
 // card. The list is rebuilt whole rather than patched because each cell
 // carries its own index in its handlers, and everything after a removal
 // shifts up by one.
+/**
+ * Put the songs into the wall without freezing the tab.
+ *
+ * The wall is grown as it is scrolled rather than built whole. Laying out a
+ * five thousand item grid costs about a second of blocked main thread however
+ * the markup gets there - one write, twelve writes or a document fragment all
+ * measured the same, because the cost is the grid layout and not the parsing.
+ * Chrome offers to kill a page that does that on open, which is what a five
+ * thousand song Now Playing was doing.
+ *
+ * So only the first few hundred covers exist to begin with, and more are added
+ * as the listener approaches the end of them. Almost nobody scrolls five
+ * thousand covers, and the ones who do pay for it a screen at a time.
+ *
+ * Only the DOM is windowed. playlistChartQueue() still holds every song, so
+ * Start Playlist, shuffle, the queue and the counts are all unaffected by how
+ * much of the wall has been drawn.
+ */
+const PL_FILL_FIRST = 400;
+const PL_FILL_MORE = 400;
+/** Start adding more once the scroll is within this much of the end. */
+const PL_FILL_TRIGGER_PX = 1200;
+let _plFillToken = 0;
+let _plFillState = null;
+
+function plWallFillList(host, q, curIdx, isDetail, scrollToCurrent, keepDrawn) {
+  const token = ++_plFillToken;
+  _plFillState = { token, host, q, curIdx, isDetail, at: 0 };
+  host.innerHTML = '';
+  // A repaint redraws at least what was already on screen, or a listener who
+  // had scrolled a long way down would watch the wall collapse back to its
+  // first few hundred covers under them.
+  plWallFillMore(Math.max(PL_FILL_FIRST, curIdx + 1, keepDrawn || 0));
+  plWallAfterFill(scrollToCurrent);
+  plWallWatchFillScroll();
+}
+
+/** Append the next slice, or up to `upTo` songs if that is further on. */
+function plWallFillMore(upTo) {
+  const st = _plFillState;
+  if (!st || st.token !== _plFillToken || !st.host.isConnected) return false;
+  if (st.at >= st.q.length) return false;
+  const end = Math.min(st.q.length, Math.max(upTo || 0, st.at + PL_FILL_MORE));
+  let html = '';
+  for (let i = st.at; i < end; i++) {
+    html += st.isDetail
+      ? plWallDetailRowHTML(st.q[i], i, st.curIdx)
+      : plWallCellHTML(st.q[i], i, st.curIdx);
+  }
+  st.host.insertAdjacentHTML('beforeend', html);
+  st.at = end;
+  plWallSyncBadges();
+  return true;
+}
+
+/**
+ * Grow the wall as it is scrolled. One listener on the scroller, replaced
+ * whenever the page is rebuilt, and it stops asking once everything is drawn.
+ */
+function plWallWatchFillScroll() {
+  const scroll = document.getElementById('playlist-chart-scroll');
+  if (!scroll || scroll._plFillBound) return;
+  scroll._plFillBound = true;
+  scroll.addEventListener('scroll', () => {
+    const st = _plFillState;
+    if (!st || st.at >= st.q.length) return;
+    if (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > PL_FILL_TRIGGER_PX) return;
+    plWallFillMore();
+  }, { passive: true });
+}
+
+/** How many songs are actually drawn right now. */
+function plWallDrawnCount() {
+  return _plFillState ? _plFillState.at : 0;
+}
+
+/** The bits that need the drawn cells present. */
+function plWallAfterFill(scrollToCurrent) {
+  // Only on a fresh render. A repaint has just restored the scroll position
+  // the listener was at, and yanking them back to the playing song would undo
+  // the whole point of repainting in place.
+  if (scrollToCurrent) playlistChartSyncToCurrent();
+  if (playlistWallMode !== 'detail') plWallBindBadgeHovers();
+  plWallSyncBadges();
+}
+
 function plWallRepaintList() {
   if (viewMode !== 'playlistchart') return;
   const q = playlistChartQueue();
@@ -16510,9 +16663,8 @@ function plWallRepaintList() {
   const curIdx = playlistChartCurrentCellIndex();
   const scroll = document.getElementById('playlist-chart-scroll');
   const keepTop = scroll ? scroll.scrollTop : 0;
-  host.innerHTML = q.map((item, i) => isDetail
-    ? plWallDetailRowHTML(item, i, curIdx)
-    : plWallCellHTML(item, i, curIdx)).join('');
+  const drawn = plWallDrawnCount();
+  plWallFillList(host, q, curIdx, isDetail, false, drawn);
   if (scroll) scroll.scrollTop = keepTop;
   const sum = document.querySelector('.pl-wall-summary');
   const sumHTML = plWallSummaryHTML();
@@ -16520,9 +16672,9 @@ function plWallRepaintList() {
   else if (sum) sum.remove();
   playlistChartPaintTransport();
   // Counts are already in memory, so this only repaints the badges the fresh
-  // markup has not been told about yet.
+  // markup has not been told about yet. Binding and the badge sweep happen in
+  // plWallAfterFill(), once every cell is actually in the document.
   plWallLoadReactionCounts(q.map(it => it.trackId));
-  if (!isDetail) plWallBindBadgeHovers();
 }
 
 async function liveRoomRefreshState() {
@@ -17069,9 +17221,11 @@ function renderPlaylistChart(error) {
   const miniClass = !isDetail && playlistWallSize <= 96 ? ' pl-wall-mini' : '';
   const modeClass = isDetail ? ' pl-wall-detail-mode' : '';
 
-  const cells = !isDetail ? q.map((item, i) => plWallCellHTML(item, i, curIdx)).join('') : '';
-
-  const detailRows = isDetail ? q.map((item, i) => plWallDetailRowHTML(item, i, curIdx)).join('') : '';
+  // The songs are not built into this markup at all. plWallFillList() below
+  // writes the first screenful synchronously - same frame, so nothing flashes
+  // empty - and adds the rest a slice per frame.
+  const cells = '';
+  const detailRows = '';
 
   const manageTh = '<th class="rxn" title="Manage your songs">⚙</th>';
   const body = error
@@ -17121,10 +17275,16 @@ function renderPlaylistChart(error) {
     : '';
   const transport = liveRoomMode ? `${sizeCtrl}${modeTog}` : `${sizeCtrl}${modeTog}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)">⤨ Shuffle</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
   main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
-  playlistChartSyncToCurrent();
   playlistChartPaintTransport();
+  if (q.length) {
+    const host = isDetail
+      ? document.querySelector('#pl-detail-tbl tbody')
+      : document.getElementById('pl-wall-grid');
+    // The head is already in the markup above; this tops it up and then does
+    // the scroll-to-current, the hover binding and the badge sweep.
+    if (host) plWallFillList(host, q, curIdx, isDetail, true);
+  }
   plWallLoadReactionCounts(q.map(it => it.trackId));
-  if (!isDetail) plWallBindBadgeHovers();
 }
 
 
@@ -21599,6 +21759,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-28';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-28', items: [
+    'Very large playlists no longer hang the page. A few thousand songs used to lock the browser long enough for Chrome to offer to close the tab. The wall now draws the first few hundred covers and adds more as you scroll, so a five thousand song Now Playing opens straight away. Everything is still there - the count, the running time, Start Playlist and shuffle all cover the whole list, however much of it is on screen.',
     'Big playlists open much faster. A few hundred songs used to take four full redraws of the page and one request per song just to fetch the hearts; now it draws twice, asks once, and only builds the parts of a cover you can actually see. Scrolling a long playlist is smooth.',
     'Drag a cover to move a song. Pick it up, drop it where you want it, and the rest of the playlist closes up behind it. Works with a finger as well as a mouse, and in the Detail list there are up and down arrows instead.',
     'Anyone who can add songs to a playlist can now put them in order. It used to be that you could only move your own songs, which meant you could never move them past anybody else’s - so nothing moved. Removing a song is unchanged: your own songs, or any song if the playlist is yours.',
