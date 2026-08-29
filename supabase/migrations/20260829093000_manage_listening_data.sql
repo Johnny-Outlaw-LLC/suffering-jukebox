@@ -93,7 +93,7 @@ begin
       (value ->> 'year')::int as year
     from jsonb_array_elements(p_batches)
     where lower(coalesce(value ->> 'source', '')) in ('spotify', 'jukebox')
-      and coalesce(value ->> 'year', '') ~ '^\\d{4}$'
+      and coalesce(value ->> 'year', '') ~ '^[0-9]{4}$'
   )
   select
     array_agg(year) filter (where source = 'spotify'),
