@@ -47,7 +47,10 @@ export async function GET(req: NextRequest) {
       const ids = [...new Set((grants || []).map(x => x.playlist_id))];
       const { data: shared } = ids.length ? await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("*").in("id", ids) : { data: [] };
       const rows = [...(publicRows || []), ...(mine || []), ...(shared || [])].filter((row, i, all) => all.findIndex(x => x.id === row.id) === i);
-      const { data: tracks } = rows.length ? await sb.schema(JUKEBOX_SCHEMA).from("playlist_tracks").select("playlist_id,track_id,position").in("playlist_id", rows.map(x => x.id)).order("position") : { data: [] };
+      // `id` is required for cover/detail reorder (plWallMoveTrack patches by
+      // playlist_tracks.id). Omitting it made every Explore Playlist arrow a
+      // silent no-op while Now Playing still worked.
+      const { data: tracks } = rows.length ? await sb.schema(JUKEBOX_SCHEMA).from("playlist_tracks").select("id,playlist_id,track_id,position,added_by_email,added_by_name").in("playlist_id", rows.map(x => x.id)).order("position") : { data: [] };
       return NextResponse.json({ ok:true, playlists: rows.map(row => ({ ...row, _tracks:(tracks || []).filter(track => track.playlist_id === row.id) })) });
     }
     return bad("Playlist link sharing is no longer available.", 404);
