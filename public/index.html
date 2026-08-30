@@ -294,14 +294,15 @@ main > * { min-width: 0; }
 .trk-unblock { display: none; }
 .trk-line.trk-blocked .trk-unblock { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 4px; font-size: .48rem; line-height: 1; padding: 3px 5px; cursor: pointer; font-family: var(--mono); white-space: nowrap; }
 .trk-line.trk-blocked .trk-unblock:hover { color: var(--accent); border-color: var(--accent); }
-/* Inline per-track play - only where the row has room (wide list layouts);
-   tight layouts (timeline panels, mobile) keep Play inside the accordion */
-.trk-play-inline { display: none; flex: 0 0 auto; align-items: center; justify-content: center; gap: 3px; width: 54px; background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 5px; font-size: .48rem; line-height: 1; padding: 3px 0; cursor: pointer; font-family: var(--mono); white-space: nowrap; transition: color .12s, border-color .12s; }
+/* Inline per-track play sits next to ⋯ on every album track row */
+.trk-play-inline { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 3px; width: 54px; background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 5px; font-size: .48rem; line-height: 1; padding: 3px 0; cursor: pointer; font-family: var(--mono); white-space: nowrap; transition: color .12s, border-color .12s; }
 .trk-play-inline:hover { color: var(--accent); border-color: var(--accent); }
-.trk-play-spacer { display: none; flex: 0 0 auto; width: 54px; }
-.list-tracks .trk-play-inline { display: inline-flex; }
-.list-tracks .trk-play-spacer { display: inline-flex; }
-@media (max-width: 700px) { .trk-play-inline, .trk-play-spacer { display: none !important; } }
+.trk-play-spacer { display: inline-flex; flex: 0 0 auto; width: 54px; }
+@media (max-width: 700px) {
+  .trk-play-inline { width: 28px; padding: 4px 0; font-size: .55rem; letter-spacing: 0; }
+  .trk-play-inline .trk-play-lbl { display: none; }
+  .trk-play-spacer { width: 28px; }
+}
 /* metrics: always fills remaining space; when wrapping, fills 100% of its row */
 .trk-metrics { display: flex; align-items: center; gap: 4px; flex: 1 0 80px; min-width: 0; }
 .trk-bar-group { display: flex; align-items: center; flex: 1; min-width: 0; }
@@ -1703,7 +1704,8 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-live-badge.on { display:inline-flex; }
 .ytp-mf-live-badge .dot { width:.32rem; height:.32rem; border-radius:50%; background:#0a0a0a; animation:sjjPulse 1.6s ease-in-out infinite; }
 .ytp-mf-reactions { display: flex; flex-direction: row; gap: 5px; flex-shrink: 0; }
-.ytp-mf-reactions .ytp-mf-btn { width: var(--mf-btn); height: var(--mf-btn); border-radius: 8px; }
+.ytp-mf-reactions .ytp-mf-btn { position: relative; width: var(--mf-btn); height: var(--mf-btn); border-radius: 8px; }
+.ytp-mf-reactions .sj-reaction-count { right: -2px; bottom: -2px; z-index: 1; pointer-events: none; }
 .ytp-mf-font-row {
   display: none; align-items: center; margin-top: 6px; min-height: 22px;
 }
@@ -1883,10 +1885,16 @@ textarea.report-input { resize:vertical; }
 }
 .ytp-mini-footer.dock-show-playlist .ytp-mf-playlist { display:block; }
 .ytp-mf-playlist-head { position:sticky; top:-4px; z-index:1; padding:5px 0 7px; background:var(--bg-card); font-size:.48rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
-.ytp-mf-playlist-row { display:flex; gap:7px; padding:5px 0; border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent); font-size:.5rem; color:var(--text-muted); cursor:pointer; }
+.ytp-mf-playlist-row { display:flex; gap:7px; align-items:center; padding:5px 0; border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent); font-size:.5rem; color:var(--text-muted); cursor:pointer; }
 .ytp-mf-playlist-row.on { color:var(--accent); font-weight:700; }
 .ytp-mf-playlist-num { width:1.6em; flex:none; text-align:right; }
-.ytp-mf-playlist-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.ytp-mf-playlist-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; flex:1; min-width:0; }
+.ytp-mf-playlist-rm {
+  flex:none; background:none; border:none; color:var(--text-muted); cursor:pointer;
+  font-size:.62rem; line-height:1; padding:2px 4px; opacity:.45; border-radius:4px;
+}
+.ytp-mf-playlist-row:hover .ytp-mf-playlist-rm { opacity:.85; }
+.ytp-mf-playlist-rm:hover { color:#ef4444; opacity:1; }
 .ytp-mf-top, .ytp-mf-middle, .ytp-mf-bottom { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
 .ytp-mf-up-next {
   display:none; align-items:center; gap:7px; min-width:0; max-width:min(320px,42vw);
@@ -3960,8 +3968,8 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <div class="ytp-mf-feedback">
           <button class="ytp-mf-btn" data-vote-track="" onclick="event.stopPropagation();ytpCycleVote()" title="Rate" id="ytp-mf-vote">-</button>
           <span class="ytp-mf-reactions" id="ytp-mf-reactions">
-            <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('heart',this,event)" oncontextmenu="ytpOpenReactionUndo('heart',this,event)" onpointerdown="ytpReactionPressStart('heart',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heart reaction. Right-click or long-press to undo." aria-label="Send a heart reaction" id="ytp-mf-react-heart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/></svg></button>
-            <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('sad',this,event)" oncontextmenu="ytpOpenReactionUndo('sad',this,event)" onpointerdown="ytpReactionPressStart('sad',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heartbreak reaction. Right-click or long-press to undo." aria-label="Send a heartbreak reaction" id="ytp-mf-react-sad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/><path d="m12 5.67-2 4 3 2-2 4 1 5.56"/></svg></button>
+            <button class="ytp-mf-btn" data-reaction-track="" data-track-reaction="heart" onclick="ytpReact('heart',this,event)" oncontextmenu="ytpOpenReactionUndo('heart',this,event)" onpointerdown="ytpReactionPressStart('heart',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heart reaction. Right-click or long-press to undo." aria-label="Send a heart reaction" id="ytp-mf-react-heart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/></svg><span class="sj-reaction-count"></span></button>
+            <button class="ytp-mf-btn" data-reaction-track="" data-track-reaction="sad" onclick="ytpReact('sad',this,event)" oncontextmenu="ytpOpenReactionUndo('sad',this,event)" onpointerdown="ytpReactionPressStart('sad',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heartbreak reaction. Right-click or long-press to undo." aria-label="Send a heartbreak reaction" id="ytp-mf-react-sad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/><path d="m12 5.67-2 4 3 2-2 4 1 5.56"/></svg><span class="sj-reaction-count"></span></button>
           </span>
           <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
         </div>
@@ -7750,7 +7758,10 @@ function ytpPaintDockPlaylist() {
         const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
         const label = [meta?.artist || item.artist, item.title || meta?.title].filter(Boolean).join(' - ');
         return '<div class="ytp-mf-playlist-row' + (i === ytQueueIdx ? ' on' : '') + '" onclick="ytPlayQueueIdx(' + i + ')">'
-          + '<span class="ytp-mf-playlist-num">' + (i + 1) + '</span><span class="ytp-mf-playlist-name">' + escHtml(label) + '</span></div>';
+          + '<span class="ytp-mf-playlist-num">' + (i + 1) + '</span>'
+          + '<span class="ytp-mf-playlist-name">' + escHtml(label) + '</span>'
+          + '<button type="button" class="ytp-mf-playlist-rm" title="Remove from playlist" aria-label="Remove from playlist" onclick="event.stopPropagation();ytRemoveFromQueue(' + i + ')">✕</button>'
+          + '</div>';
       }).join('');
   if (_ytpMinimized) requestAnimationFrame(ytpDockSyncPlaylist);
 }
@@ -13666,8 +13677,21 @@ function sjmRenderPlaylists(newFormOpen) {
     ? myPublic.map(sjmPlaylistButton).join('')
     : '<div class="sjm-empty">None yet. Make a playlist public from Manage Playlists.</div>';
 
+  // Now Playing is the live queue, not a saved playlist. Offer it first when
+  // this song is not already in it - same job as adding to any other list.
+  const tid = _sjmTrackId;
+  const inNowPlaying = !!(tid && ytQueue.some(q => q.trackId === tid));
+  const nowPlayingRow = (!inNowPlaying && tid)
+    ? '<button class="sjm-item" onclick="sjmAddToNowPlaying()" title="Add to the queue that is playing right now">' +
+        '<span class="sjm-ic">♪</span><span class="sjm-label">NOW PLAYING</span>' +
+        (ytQueue.length ? '<span class="sjm-sub">' + ytQueue.length + '</span>' : '') +
+      '</button>'
+    : '';
+
   menu.innerHTML = _sjmHeader('Add to playlist', 'sjmRenderRoot()') +
     '<div class="sjm-scroll">' +
+      nowPlayingRow +
+      (nowPlayingRow ? '<div class="sjm-sep" style="margin:4px 0"></div>' : '') +
       '<div class="sjm-sec">Personal Playlists</div>' +
       personalRows +
       '<div class="sjm-sec">My Public Playlists</div>' +
@@ -13684,6 +13708,27 @@ function sjmRenderPlaylists(newFormOpen) {
           '<span class="sjm-ic">+</span><span class="sjm-label">New playlist…</span></button>');
   sjmPosition();
   if (newFormOpen) document.getElementById('sjm-new-name')?.focus();
+}
+
+function sjmAddToNowPlaying() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (!tid) return;
+  if (ytQueue.some(q => q.trackId === tid)) {
+    showToast('Already in Now Playing.');
+    return;
+  }
+  const vid = ytData[tid]?.video_id || tvPrimary(tid)?.youtube_video_id;
+  if (!vid) { showToast('That song has no playable video.'); return; }
+  const meta = ytpTrackMeta(tid, null);
+  const title = (meta.title && meta.title !== 'Unknown') ? meta.title : (findTrackById(tid)?.name || 'Track');
+  if (!ytPlayerEl || !ytQueue.length) {
+    ytPlayNow(vid, title, tid);
+    showToast('Playing now.');
+    return;
+  }
+  ytAddToQueue(vid, title, tid);
+  showToast('Added to Now Playing.');
 }
 
 // Adds if the track is not on the playlist, removes if it is - the tick in the
@@ -22314,7 +22359,7 @@ function renderTrackLines(alb, mode = 'inline') {
       <span class="trk-name">${t.name}</span>
       <button class="trk-unblock" onclick="toggleBlockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
-      ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ Play</button>` : `<span class="trk-play-spacer"></span>`}
+      ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ <span class="trk-play-lbl">Play</span></button>` : `<span class="trk-play-spacer"></span>`}
       <button class="trk-more" onclick="sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button>
     </div>
     <div class="trk-accordion" data-acc="${t.id}"></div>`;
@@ -25084,6 +25129,11 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
+    'The Help page uses the same Suffering Jukebox logo as the main site, instead of plain text in the top bar.',
+    'The heart and heartbreak buttons in the docked player show their counts on the icons, the same way the full player does.',
+    'In the docked player\'s Current Playlist list, each song has a ✕ so you can take it out of the queue without opening the full player.',
+    'On every album track row in an artist jukebox, Play sits next to the ⋯ button, including in the timeline album panel where it used to be missing.',
+    'Add to playlist from the ⋯ menu now offers NOW PLAYING at the top when that song is not already in the queue. Tap it to append the song (or start playing it if nothing is on yet).',
     'Saving your queue as a playlist is now near instant. It used to send one song at a time and wait for each one, so a 558 song queue sat on Saving… for over a minute. It now goes in two or three goes however long the queue is. The same fix applies to saving changes to a playlist and to saving a live jukebox as a playlist.',
     'The Now Playing wall no longer locks the page up. On a long queue it was checking every cover against the whole page over and over as your ratings and hearts arrived, which was enough for the browser to offer to close the tab. Opening a few hundred songs should feel like an ordinary page now.',
     'Reordering a playlist is done with arrows on the covers instead of by dragging. Hover a cover (or just look at it, on a phone) and there is a ‹ in the bottom left and a › in the bottom right: one press moves that song one place earlier or later. Dragging a cover is gone.',
@@ -27656,6 +27706,15 @@ function ytpReactionBurst(icon, anchor) {
   }
 }
 
+function ytpPaintDockReactionCounts(trackId) {
+  const counts = trackId ? (trackReactionCounts[trackId] || {}) : {};
+  document.querySelectorAll('#ytp-mf-reactions [data-track-reaction]').forEach(btn => {
+    const key = btn.getAttribute('data-track-reaction');
+    const count = btn.querySelector('.sj-reaction-count');
+    if (count) count.textContent = trackId ? ytpReactionCountLabel(counts[key]) : '';
+  });
+}
+
 function refreshTrackReactionUI(trackId) {
   const counts = trackReactionCounts[trackId] || {};
   document.querySelectorAll('[data-reaction-rail]').forEach(rail => {
@@ -27666,6 +27725,7 @@ function refreshTrackReactionUI(trackId) {
       if (count) count.textContent = ytpReactionCountLabel(counts[key]);
     });
   });
+  if (trackId && trackId === _ytpReactionTrackId) ytpPaintDockReactionCounts(trackId);
   document.querySelectorAll(`.pl-wall-rxn[data-reaction-track="${trackId}"]`).forEach(btn => {
     const key = btn.getAttribute('data-track-reaction');
     const n = Number(counts[key]) || 0;
@@ -27737,6 +27797,7 @@ function ytpSyncReactions(trackId) {
     quick.style.visibility = trackId ? '' : 'hidden';
     quick.setAttribute('data-reaction-track', trackId || '');
   });
+  ytpPaintDockReactionCounts(trackId);
   if (trackId) {
     loadTrackReactionCounts(trackId, false);
     loadTrackReactionTimeline(trackId, false);
