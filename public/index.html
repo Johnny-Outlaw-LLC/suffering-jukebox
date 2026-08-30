@@ -3875,10 +3875,9 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
           <button type="button" class="user-menu-item cta" id="user-menu-import" onclick="openAddMusic()">＋ Import Music</button>
           <button type="button" class="user-menu-item" id="user-menu-bgunlock" onclick="userMenuAction('bgunlock')">Audio storage</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
-          <button type="button" class="user-menu-item" id="user-menu-jukebox" onclick="userMenuAction('jukebox')">Online Jukebox</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
-          <button type="button" class="user-menu-item" id="user-menu-playback" onclick="userMenuAction('playback')">Playback preferences</button>
+          <button type="button" class="user-menu-item" id="user-menu-settings" onclick="userMenuAction('settings')">Settings</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">Help &amp; How-To Guide</button>
           <button type="button" class="user-menu-item" id="user-menu-updates" style="display:none" onclick="userMenuAction('updates')">What's New</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
@@ -3911,26 +3910,90 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 </main>
 
 <!-- PLAYBACK PREFERENCES -->
-<div class="modal-overlay" id="playbackPrefsOverlay" onclick="if(event.target===this)closePlaybackPreferences()">
-  <div class="modal" style="max-width:440px">
-    <div class="modal-header">
-      <span class="modal-title">Playback preferences</span>
-      <button class="modal-close" onclick="closePlaybackPreferences()">✕</button>
+<!-- SETTINGS - profile, privacy, playback and the Online Jukebox console -->
+<div class="pl-modal-overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
+  <div class="pl-modal">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title">&#9881; Settings</span>
+      <button class="modal-close" onclick="closeSettings()">&#10005;</button>
     </div>
-    <div class="modal-body" style="display:flex;flex-direction:column;gap:.65rem">
-      <p style="margin:0;color:var(--text-muted);font-size:.58rem;line-height:1.55">Choose how Suffering Jukebox selects the next song when Shuffle is on.</p>
-      <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="discovery" style="margin-top:2px;accent-color:var(--accent)"><span><b>Discovery</b><span class="bgs-row-sub" style="display:block">Gives less-listened-to tracks more weight in your personal shuffle.</span></span></label>
-      <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="favorites" style="margin-top:2px;accent-color:var(--accent)"><span><b>Favorites First</b><span class="bgs-row-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
-      <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="less_repeats" style="margin-top:2px;accent-color:var(--accent)"><span><b>Less Repeats</b><span class="bgs-row-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
-      <label class="pls-chk-row" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:.62rem;color:var(--text);padding:.35rem 0"><input type="radio" name="sj-shuffle-preference" value="none" style="margin-top:2px;accent-color:var(--accent)"><span><b>No Preferences</b><span class="bgs-row-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
-      <div style="border-top:1px solid var(--border);padding-top:.65rem;margin-top:.1rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem">
-        <span style="font-size:.62rem;color:var(--text)"><b>Crossfade tracks</b><span class="bgs-row-sub" style="display:block">Fade one song down and the next one in when the queue advances.</span></span>
-        <select id="sj-crossfade-seconds" class="ctrl-select" aria-label="Crossfade duration" style="flex:0 0 auto"><option value="0">Off</option><option value="3">3 sec</option><option value="6">6 sec</option></select>
+    <div class="set-shell">
+      <nav class="set-nav" id="set-nav" aria-label="Settings sections">
+        <button type="button" class="set-nav-btn" data-set-nav="profile" onclick="settingsShow('profile')">Profile</button>
+        <button type="button" class="set-nav-btn" data-set-nav="privacy" onclick="settingsShow('privacy')">Privacy</button>
+        <button type="button" class="set-nav-btn" data-set-nav="playback" onclick="settingsShow('playback')">Playback</button>
+        <button type="button" class="set-nav-btn" data-set-nav="jukebox" onclick="settingsShow('jukebox')">Online Jukebox</button>
+      </nav>
+      <div class="set-pane">
+
+        <section class="set-sec" data-set-pane="profile">
+          <div class="set-body">
+            <div class="set-block">
+              <div class="set-h">Public profile name</div>
+              <p class="set-sub">The name people see beside music you add, playlists you share, and songs you queue in an Online Jukebox. Changing it renames you everywhere you have already been credited. Leave it empty to go back to the name on your Google account.</p>
+              <input id="set-name" class="set-input" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+              <span class="set-status" id="set-name-note"></span>
+            </div>
+            <div class="set-block">
+              <div class="set-h">Profile picture</div>
+              <p class="set-sub">Takes the place of the picture on your Google account. Square pictures look best; anything else is cropped to the middle and shrunk before it is saved.</p>
+              <div class="set-row">
+                <img class="set-avatar" id="set-avatar" alt="" src="/favicon.png">
+                <div style="display:flex;flex-direction:column;gap:.5rem;min-width:0">
+                  <button type="button" class="pl-btn ghost" onclick="document.getElementById('set-avatar-file').click()">Choose a picture</button>
+                  <button type="button" class="pl-btn ghost" onclick="settingsClearAvatar()">Use my Google picture</button>
+                  <span class="set-status" id="set-avatar-note"></span>
+                </div>
+              </div>
+              <input type="file" id="set-avatar-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="settingsPickAvatar(this)">
+            </div>
+          </div>
+        </section>
+
+        <section class="set-sec" data-set-pane="privacy">
+          <div class="set-body">
+            <div class="set-block">
+              <div class="set-h">Default for music you import</div>
+              <p class="set-sub">Which way the Visible to All / In My Private Jukebox choice starts on every import screen. Every import still shows the choice, so you can go the other way on any one of them.</p>
+              <label class="set-opt"><input type="radio" name="set-import-vis" value="public"><span><b>Visible to All</b><span class="set-sub" style="display:block">What you add joins the public catalogue, credited to you.</span></span></label>
+              <label class="set-opt"><input type="radio" name="set-import-vis" value="private"><span><b>In My Private Jukebox</b><span class="set-sub" style="display:block">Only you see it. Nobody else can find the artist, the albums or the songs.</span></span></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="set-sec" data-set-pane="playback">
+          <div class="set-body">
+            <div class="set-block">
+      <div class="set-h">Shuffle</div>
+      <p class="set-sub">Choose how Suffering Jukebox selects the next song when Shuffle is on.</p>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="discovery"><span><b>Discovery</b><span class="set-sub" style="display:block">Gives less-listened-to tracks more weight in your personal shuffle.</span></span></label>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="favorites"><span><b>Favorites First</b><span class="set-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
+            </div>
+            <div class="set-block">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:.8rem">
+                <span style="font-size:.62rem;color:var(--text)"><b>Crossfade tracks</b><span class="set-sub" style="display:block">Fade one song down and the next one in when the queue advances.</span></span>
+                <select id="sj-crossfade-seconds" class="ctrl-select" aria-label="Crossfade duration" style="flex:0 0 auto"><option value="0">Off</option><option value="3">3 sec</option><option value="6">6 sec</option></select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- The console renders itself into #sjj-body, which lives here now
+             rather than in a window of its own. -->
+        <section class="set-sec" data-set-pane="jukebox">
+          <div class="pl-modal-body" id="sjj-body" style="padding-top:1.1rem">
+            <div class="sjj-empty">Loading your jukebox&hellip;</div>
+          </div>
+        </section>
+
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="m-btn ghost" onclick="closePlaybackPreferences()">Cancel</button>
-      <button class="m-btn" onclick="savePlaybackPreferences()">Save preference</button>
+    <div class="pl-modal-footer" id="set-footer">
+      <button class="pl-btn ghost" onclick="closeSettings()">Close</button>
+      <button class="pl-btn" id="set-save" onclick="settingsSave()">Save settings</button>
+      <span class="set-status" id="set-status"></span>
     </div>
   </div>
 </div>
@@ -4556,7 +4619,52 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
   /* The host console is a control room, not a phone panel. On a laptop it
      lays out as cards across two columns; below 900px it falls back to the
      single scroll it has always been. */
-  #sjjOverlay .pl-modal { width: min(1180px, 96vw); max-width: none; }
+  /* The Online Jukebox console is a section of Settings now, and it is what
+   decides how wide the panel has to be. */
+#settingsOverlay .pl-modal { width: min(1180px, 96vw); max-width: none; height: min(760px, 88vh); }
+.set-shell { display: flex; flex: 1 1 auto; min-height: 0; }
+.set-nav { flex: 0 0 190px; min-width: 0; border-right: 1px solid var(--border);
+  padding: .8rem .6rem; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; }
+.set-nav-btn { text-align: left; background: none; border: 0; border-radius: 8px;
+  padding: .6rem .7rem; color: var(--text-muted); font-family: var(--mono);
+  font-size: .58rem; letter-spacing: .04em; cursor: pointer; transition: background .12s, color .12s; }
+.set-nav-btn:hover { color: var(--text); background: var(--bg-elevated); }
+.set-nav-btn.on { background: var(--accent); color: #fff; }
+.set-pane { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* Every section is built once and shown by class, so switching back to one
+   does not lose what was typed into it. */
+.set-sec { display: none; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.set-sec.on { display: flex; }
+.set-body { overflow-y: auto; padding: 1.1rem 1.3rem; display: flex; flex-direction: column; gap: 1.1rem; }
+.set-block { display: flex; flex-direction: column; gap: .45rem; }
+.set-block + .set-block { border-top: 1px solid var(--border); padding-top: 1.1rem; }
+.set-h { font-size: .62rem; font-weight: 700; color: var(--text); letter-spacing: .04em; }
+.set-sub { margin: 0; color: var(--text-muted); font-size: .56rem; line-height: 1.6; }
+.set-row { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.set-avatar { width: 88px; height: 88px; border-radius: 50%; object-fit: cover;
+  background: var(--bg-elevated); border: 1px solid var(--border); flex: 0 0 auto; display: block; }
+.set-input { width: 100%; box-sizing: border-box; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  font-family: var(--mono); font-size: .62rem; padding: .6rem .7rem; }
+.set-input:focus { outline: none; border-color: var(--accent); }
+.set-status { font-size: .55rem; color: var(--text-muted); line-height: 1.5; }
+.set-opt { display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
+  font-size: .62rem; color: var(--text); padding: .35rem 0; }
+.set-opt input { margin-top: 3px; accent-color: var(--accent); }
+.set-opt .set-sub { margin-top: 2px; }
+@media (max-width: 760px) {
+  #settingsOverlay { padding: 0; }
+  #settingsOverlay .pl-modal { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; }
+  .set-shell { flex-direction: column; }
+  /* A rail down the side of a phone is most of the screen, so the sections
+     become a strip that scrolls sideways. */
+  .set-nav { flex: 0 0 auto; flex-direction: row; overflow-x: auto; overflow-y: hidden;
+    border-right: 0; border-bottom: 1px solid var(--border); padding: .5rem .6rem;
+    scrollbar-width: none; }
+  .set-nav::-webkit-scrollbar { display: none; }
+  .set-nav-btn { white-space: nowrap; flex: 0 0 auto; }
+  .set-body { padding: 1rem; }
+}
   #sjj-body { display:block; }
   .sjj-grid { display:grid; gap:1rem; grid-template-columns:minmax(0,1fr); align-items:start; }
   .sjj-card { border:1px solid var(--border); border-radius:10px; padding:.7rem .85rem; background:var(--bg-elevated,#151515); min-width:0; }
@@ -4754,21 +4862,6 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
   .sjj-ow-opt b { display:block; font-size:.78rem; font-weight:700; }
   .sjj-ow-opt span { display:block; font-size:.66rem; color:var(--text-muted); margin-top:.15rem; line-height:1.45; }
 </style>
-<div class="pl-modal-overlay" id="sjjOverlay" onclick="if(event.target===this)closeJukeboxHost()">
-  <div class="pl-modal">
-    <div class="pl-modal-header">
-      <span class="pl-modal-title">&#127903; Online Jukebox</span>
-      <button class="modal-close" onclick="closeJukeboxHost()">&#10005;</button>
-    </div>
-    <div class="pl-modal-body" id="sjj-body">
-      <div class="sjj-empty">Loading your jukebox&hellip;</div>
-    </div>
-    <div class="pl-modal-footer">
-      <button class="pl-btn ghost" onclick="closeJukeboxHost()">Close</button>
-    </div>
-  </div>
-</div>
-
 <!-- MY JUKEBOX LIBRARY + PUBLIC EXPLORER -->
 <div class="pl-modal-overlay" id="myJukeboxOverlay" onclick="if(event.target===this)closeMyJukebox()">
   <div class="pl-modal" style="width:min(74rem,100%);max-width:74rem">
@@ -13348,7 +13441,7 @@ async function sjmCreatePlaylist() {
       name,
       is_public:  false,
       user_email: googleUser.email,
-      user_name:  googleUser.displayName || googleUser.name || '',
+      user_name:  sjDisplayName(),
       context:    _playlistContext(),
     });
     await dbPost('/playlist_tracks', { playlist_id: pl.id, track_id: tid, position: PL_POS_STEP });
@@ -14009,7 +14102,7 @@ async function doSavePlaylist() {
   const btn = document.getElementById('spl-save-btn');
   if (btn) { btn.disabled=true; btn.textContent='Saving…'; }
   try {
-    const [pl] = await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:googleUser.displayName||googleUser.name||'', context:_playlistContext() });
+    const [pl] = await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:sjDisplayName(), context:_playlistContext() });
     for (let i=0; i<ytQueue.length; i++) {
       if (ytQueue[i].trackId) await dbPost('/playlist_tracks', { playlist_id:pl.id, track_id:ytQueue[i].trackId, position:(i + 1) * PL_POS_STEP });
     }
@@ -15379,11 +15472,11 @@ async function plbSave() {
         name,
         is_public: isPublic,
         user_email: googleUser.email,
-        user_name: googleUser.displayName || googleUser.name || '',
+        user_name: sjDisplayName(),
         context: _playlistContext(),
       });
       const addedByEmail = googleUser.email;
-      const addedByName = googleUser.displayName || googleUser.name || '';
+      const addedByName = sjDisplayName();
       const rows = _plbDraft.map((d, i) => ({ playlist_id: pl.id, track_id: d.trackId, position: (i + 1) * PL_POS_STEP, added_by_email: addedByEmail, added_by_name: addedByName }));
       for (let i = 0; i < rows.length; i += 80) {
         await dbPost('/playlist_tracks', rows.slice(i, i + 80));
@@ -15424,7 +15517,7 @@ async function plbSave() {
       let pos = plAppendPosition(p._tracks);
       const fresh = _plbDraft.filter(d => !have.has(d.trackId));
       const addedByEmail = googleUser.email;
-      const addedByName = googleUser.displayName || googleUser.name || '';
+      const addedByName = sjDisplayName();
       const rows = fresh.map(d => ({ playlist_id: p.id, track_id: d.trackId, position: (pos += PL_POS_STEP), added_by_email: addedByEmail, added_by_name: addedByName }));
       for (let i = 0; i < rows.length; i += 80) {
         await dbPost('/playlist_tracks', rows.slice(i, i + 80));
@@ -18156,7 +18249,7 @@ async function saveLiveRoomAsPlaylist() {
     const [playlist] = await dbPost('/playlists', {
       name: name.trim().slice(0, 120), is_public: false,
       user_email: googleUser.email,
-      user_name: googleUser.displayName || googleUser.name || '',
+      user_name: sjDisplayName(),
       context: _playlistContext(),
     });
     for (let i = 0; i < trackIds.length; i++) {
@@ -19789,7 +19882,7 @@ async function esSelCreatePlaylist() {
       name,
       is_public:  false,
       user_email: googleUser.email,
-      user_name:  googleUser.displayName || googleUser.name || '',
+      user_name:  sjDisplayName(),
       context:    _playlistContext(),
     });
     const rows = await esSelWriteTracks(pl.id, [], ids);
@@ -22085,6 +22178,8 @@ let amImportOk = false; // import + lyric discovery finished
 // 'public' puts the artist in the shared catalogue, 'private' keeps it listed
 // for the importer only.  Either way the import writes the same rows to the
 // same tables - visibility is data on those rows, not a second storage path.
+// Seeded from the account's Privacy setting each time the wizard opens, not
+// once at load: the profile arrives after sign-in, later than this line runs.
 let amVisibility = 'public';
 function amSetVisibility(v) { amVisibility = v === 'private' ? 'private' : 'public'; }
 let amFt       = null;  // fine-tune data from the edge function
@@ -22867,8 +22962,8 @@ function amSetFooter(backVisible, nextLabel, nextDisabled, cancelVisible = true)
 function amResetWizard() {
   amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
   amArtistId = null; amImportOk = false; amFt = null;
-  amVisibility = 'public';
-  const _vr = document.querySelector('input[name="amVisibility"][value="public"]');
+  amVisibility = sjDefaultImportVisibility();
+  const _vr = document.querySelector('input[name="amVisibility"][value="' + amVisibility + '"]');
   if (_vr) _vr.checked = true;
   amMinimized = false; _amLastStatus = '';
   _amWizardDone = false; _amAudioUploaded = false; _amBgStatus = '';
@@ -23838,6 +23933,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'The account menu has a Settings item, and it holds four things in one place: Profile, Privacy, Playback and the Online Jukebox. Playback preferences and Online Jukebox are no longer separate entries in that menu - both are sections of Settings now, and everything that used to open them still lands in the right place.',
+    'New: a Public profile name. Set one and it is the name people see beside music you add, playlists you share and songs you queue in an Online Jukebox. It is retroactive: your artists, albums, playlists, comments and ratings are all renamed at once, so you are never credited under two names. Leave it empty to go back to the name on your Google account.',
+    'New: a profile picture of your own, in place of the one from your Google account. Pick any image and it is cropped to the middle and shrunk here on your device before it is saved.',
+    'New: a default privacy setting for music you import. Choose whether Visible to All or In My Private Jukebox is the way every import screen starts. Every import still asks, so you can go the other way on any one of them - and this is now the same answer for a whole discography, a single song and a Spotify import, which each used to start differently.',
     'On a phone the player is one thing you can drag between three sizes. Pull the handle at the top of the docked bar up past halfway and it opens into the full screen player. Pull the handle at the top of the full screen player down and it becomes the half screen dock. From there the same handle scales it down to a quarter of the screen.',
     'The small dock keeps everything you actually reach for - artwork, title, ratings, reactions, the timeline and every transport button - and drops the lyric strip and the up next line, which need the room it no longer has.',
     'The docked player and the full screen player now carry the same five buttons in the same order: shuffle, previous, play, next, repeat. Repeat is new to the dock. Play is the filled circle in both, and the full screen and close buttons have stepped back so the transport reads first.',
@@ -24442,6 +24541,39 @@ function closeChangelog() {
 
 let googleUser = null;
 let sjIsAdmin = false;
+
+// ── Who you are, as YOU set it ─────────────────────────────────────────────
+// Google tells us a name and a picture at sign-in; jukebox.app_users holds the
+// ones you chose instead. Read through these three helpers rather than off
+// googleUser, or half the app credits you under one name and half the other.
+// Null until the profile has loaded, which is why each helper falls back.
+let sjProfile = null;
+
+function sjDisplayName() {
+  const chosen = (sjProfile?.displayName || '').trim();
+  if (chosen) return chosen;
+  return googleUser?.displayName || googleUser?.name || '';
+}
+
+function sjAvatarUrl() {
+  return sjProfile?.avatarUrl || googleUser?.picture || '';
+}
+
+// Which way every import screen's Visible to All / In My Private Jukebox
+// choice starts. It is only the starting position - each screen still asks.
+function sjDefaultImportVisibility() {
+  return sjProfile?.defaultImportVisibility === 'private' ? 'private' : 'public';
+}
+
+async function loadSjProfile() {
+  if (!googleUser) { sjProfile = null; return null; }
+  try {
+    sjProfile = await dbRpcAuth('/rpc/my_settings', {});
+  } catch (_) {
+    sjProfile = null;   // signed in but unreachable: fall back to Google's word
+  }
+  return sjProfile;
+}
 let sjLastUpdated = SJ_APP_UPDATED_FALLBACK;
 const SJ_PROTECTED_ADMIN_EMAIL = 'johnnyoutlawllc@gmail.com';
 
@@ -24463,9 +24595,14 @@ async function sjAuthHeaders() {
 async function refreshSjAdminState() {
   if (!googleUser) {
     sjIsAdmin = false;
+    sjProfile = null;
     sjLastUpdated = SJ_APP_UPDATED_FALLBACK;
     return;
   }
+  // Only repaint when there is actually something of your own to show.
+  // updateAuthBtn reloads the playlists, so calling it for every sign-in
+  // would buy a second fetch to draw the same button.
+  loadSjProfile().then(p => { if (p?.publicName || p?.avatarUrl) updateAuthBtn(); });
   try {
     const res = await fetch(sjApiUrl('/api/sj-admin-check'), {
       method: 'POST',
@@ -24555,8 +24692,10 @@ async function userMenuAction(action) {
     openManagePlaylists();
     return;
   }
-  if (action === 'jukebox') {
-    openJukeboxHost();
+  if (action === 'jukebox' || action === 'settings' || action === 'playback') {
+    // Three names for one panel: the menu says Settings, and the two entries
+    // it replaced still work from wherever else they are called.
+    openSettings(action === 'settings' ? 'profile' : action === 'jukebox' ? 'jukebox' : 'playback');
     return;
   }
   if (action === 'myartists') {
@@ -24569,10 +24708,6 @@ async function userMenuAction(action) {
   }
   if (action === 'mystats') {
     openAnalyticsInNewTab();
-    return;
-  }
-  if (action === 'playback') {
-    openPlaybackPreferences();
     return;
   }
   if (action === 'updates') {
@@ -24605,38 +24740,193 @@ async function userMenuAction(action) {
   }
 }
 
-function openPlaybackPreferences() {
-  const overlay = document.getElementById('playbackPrefsOverlay');
+// ── Settings ───────────────────────────────────────────────────────────────
+// One panel, four sections. Profile, Privacy and Playback are a form with a
+// Save at the bottom; the Online Jukebox section is the live host console,
+// which acts as you press things and so hides that footer.
+let _setSection = 'profile';
+const SET_SECTIONS = ['profile', 'privacy', 'playback', 'jukebox'];
+// Held here rather than read back off the <img>, which carries the Google
+// picture when nothing has been chosen. Undefined means "not touched".
+let _setPendingAvatar;
+
+async function openSettings(section) {
+  const overlay = document.getElementById('settingsOverlay');
   if (!overlay) return;
-  const selected = overlay.querySelector('input[name="sj-shuffle-preference"][value="' + sjShufflePreference + '"]');
-  if (selected) selected.checked = true;
-  const crossfade = overlay.querySelector('#sj-crossfade-seconds');
-  if (crossfade) crossfade.value = String(sjCrossfadeSeconds);
+  if (!googleUser) { showToast('Sign in to change your settings.'); return; }
+  if (!sjProfile) await loadSjProfile();
+  _setPendingAvatar = undefined;
+  settingsFillForm();
   overlay.classList.add('open');
+  settingsShow(SET_SECTIONS.includes(section) ? section : 'profile');
 }
 
-function closePlaybackPreferences() {
-  document.getElementById('playbackPrefsOverlay')?.classList.remove('open');
+function closeSettings() {
+  document.getElementById('settingsOverlay')?.classList.remove('open');
+  settingsStopJukeboxPoll();
+  _setPendingAvatar = undefined;
+  settingsSay('');
 }
 
-function savePlaybackPreferences() {
-  const selected = document.querySelector('input[name="sj-shuffle-preference"]:checked');
-  const preference = selected?.value;
-  if (!['discovery', 'favorites', 'less_repeats', 'none'].includes(preference)) return;
-  const crossfadeValue = Number(document.getElementById('sj-crossfade-seconds')?.value);
-  const crossfade = [0, 3, 6].includes(crossfadeValue) ? crossfadeValue : 0;
-  sjShufflePreference = preference;
-  sjCrossfadeSeconds = crossfade;
+function settingsIsOpen(section) {
+  const open = !!document.getElementById('settingsOverlay')?.classList.contains('open');
+  return open && (!section || _setSection === section);
+}
+
+function settingsShow(section) {
+  if (!SET_SECTIONS.includes(section)) section = 'profile';
+  _setSection = section;
+  document.querySelectorAll('#settingsOverlay [data-set-nav]').forEach(b => {
+    b.classList.toggle('on', b.dataset.setNav === section);
+  });
+  document.querySelectorAll('#settingsOverlay [data-set-pane]').forEach(p => {
+    p.classList.toggle('on', p.dataset.setPane === section);
+  });
+  // The console has no Save: everything on it takes effect as it is pressed.
+  const save = document.getElementById('set-save');
+  if (save) save.style.display = section === 'jukebox' ? 'none' : '';
+  settingsSay('');
+  if (section === 'jukebox') settingsStartJukeboxPoll();
+  else settingsStopJukeboxPoll();
+}
+
+function settingsSay(msg) {
+  const el = document.getElementById('set-status');
+  if (el) el.textContent = msg || '';
+}
+
+function settingsFillForm() {
+  const name = document.getElementById('set-name');
+  if (name) {
+    name.value = sjProfile?.publicName || '';
+    name.placeholder = sjProfile?.googleName || googleUser?.name || 'Your name';
+  }
+  const note = document.getElementById('set-name-note');
+  if (note) {
+    note.textContent = sjProfile?.publicName
+      ? 'People see this name.'
+      : 'People see ' + (sjProfile?.googleName || googleUser?.name || 'the name on your Google account') + '.';
+  }
+  settingsPaintAvatar(sjProfile?.avatarUrl || '');
+  const vis = sjDefaultImportVisibility();
+  const radio = document.querySelector('input[name="set-import-vis"][value="' + vis + '"]');
+  if (radio) radio.checked = true;
+  const pref = document.querySelector('input[name="sj-shuffle-preference"][value="' + sjShufflePreference + '"]');
+  if (pref) pref.checked = true;
+  const cross = document.getElementById('sj-crossfade-seconds');
+  if (cross) cross.value = String(sjCrossfadeSeconds);
+}
+
+function settingsPaintAvatar(chosen) {
+  const img = document.getElementById('set-avatar');
+  const note = document.getElementById('set-avatar-note');
+  const src = chosen || googleUser?.picture || '/favicon.png';
+  if (img) { img.src = src; img.referrerPolicy = 'no-referrer'; }
+  if (note) note.textContent = chosen ? 'Your own picture.' : 'Using the picture from your Google account.';
+}
+
+// Resized here rather than on the way out of the database: a phone camera
+// picture is several megabytes, and what gets stored is a 160px circle.
+const SET_AVATAR_PX = 160;
+function settingsPickAvatar(input) {
+  const file = input?.files?.[0];
+  input.value = '';
+  if (!file) return;
+  const note = document.getElementById('set-avatar-note');
+  if (note) note.textContent = 'Reading the picture\u2026';
+  const reader = new FileReader();
+  reader.onerror = () => { if (note) note.textContent = 'That file could not be read.'; };
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => { if (note) note.textContent = 'That file is not a picture we can read.'; };
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      if (!side) { if (note) note.textContent = 'That picture is empty.'; return; }
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = SET_AVATAR_PX;
+      const cx = cv.getContext('2d');
+      // Crop to the middle square first, so a wide photo is not squashed.
+      cx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2,
+        side, side, 0, 0, SET_AVATAR_PX, SET_AVATAR_PX);
+      let data = '';
+      try { data = cv.toDataURL('image/jpeg', 0.82); } catch (_) {}
+      if (!data || data.length > 80000) {
+        if (note) note.textContent = 'That picture could not be shrunk small enough.';
+        return;
+      }
+      _setPendingAvatar = data;
+      settingsPaintAvatar(data);
+      if (note) note.textContent = 'Ready to save.';
+    };
+    img.src = String(reader.result || '');
+  };
+  reader.readAsDataURL(file);
+}
+
+function settingsClearAvatar() {
+  _setPendingAvatar = '';
+  settingsPaintAvatar('');
+}
+
+async function settingsSave() {
+  const btn = document.getElementById('set-save');
+  if (btn?.disabled) return;
+
+  // Playback is a device preference and never leaves this browser, so it is
+  // saved whether or not the account write below succeeds.
+  const pref = document.querySelector('input[name="sj-shuffle-preference"]:checked')?.value;
+  if (['discovery', 'favorites', 'less_repeats', 'none'].includes(pref)) sjShufflePreference = pref;
+  const crossValue = Number(document.getElementById('sj-crossfade-seconds')?.value);
+  sjCrossfadeSeconds = [0, 3, 6].includes(crossValue) ? crossValue : 0;
   if (!sjCrossfadeSeconds) ytpCancelCrossfade(true);
   try {
     localStorage.setItem('sj_shuffle_preference', sjShufflePreference);
     localStorage.setItem('sj_crossfade_seconds', String(sjCrossfadeSeconds));
   } catch (_) {}
   _ytShufflePreviewIdx = null;
-  closePlaybackPreferences();
   if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
-  const labels = { discovery: 'Discovery', favorites: 'Favorites First', less_repeats: 'Less Repeats', none: 'No Preferences' };
-  showToast('Playback settings: ' + labels[sjShufflePreference] + ' · Crossfade ' + (sjCrossfadeSeconds ? (sjCrossfadeSeconds + ' sec') : 'off'));
+
+  const name = (document.getElementById('set-name')?.value || '').trim();
+  if (name && name.length < 2) {
+    settingsShow('profile');
+    settingsSay('A public name is at least two characters.');
+    return;
+  }
+  const avatar = _setPendingAvatar === undefined ? (sjProfile?.avatarUrl || '') : _setPendingAvatar;
+  const vis = document.querySelector('input[name="set-import-vis"]:checked')?.value === 'private' ? 'private' : 'public';
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
+  settingsSay('');
+  try {
+    sjProfile = await dbRpcAuth('/rpc/set_my_settings', {
+      p_public_name: name || null,
+      p_avatar_url: avatar || null,
+      p_default_visibility: vis,
+    });
+    _setPendingAvatar = undefined;
+    settingsFillForm();
+    updateAuthBtn();
+    // The name is stamped onto rows already on screen, so anything showing a
+    // credit has to be drawn again to pick the new one up.
+    if (typeof render === 'function') render();
+    if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
+    showToast('Settings saved.');
+    settingsSay('Saved.');
+  } catch (e) {
+    settingsSay(sjCleanDbError(e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save settings'; }
+  }
+}
+
+// PostgREST wraps a raise exception in JSON. Show the sentence, not the shape.
+function sjCleanDbError(e) {
+  const raw = String(e?.message || e || '');
+  try {
+    const j = JSON.parse(raw);
+    if (j?.message) return j.message;
+  } catch (_) {}
+  return raw.slice(0, 200) || 'That could not be saved.';
 }
 
 async function handleLogout() {
@@ -24820,6 +25110,7 @@ function initGoogleAuth() {
       _myReactionTracksLoaded = false;
       try { sjjStopBroadcast(); } catch (_) {}
       sjIsAdmin = false;
+      sjProfile = null;
       sjBgUnlock = null;
       _homeLibLoaded = false;
       _homeBgArtistIds = new Set();
@@ -24927,13 +25218,15 @@ function updateAuthBtn() {
     btn.style.display = 'none';
     if (menuWrap) menuWrap.style.display = '';
     { const _um = document.getElementById('user-menu-updates'); if (_um) _um.style.display = ''; }
-    const displayName = googleUser.name ? googleUser.name.split(' ')[0] : 'Account';
+    const full = sjDisplayName() || googleUser.name || '';
+    const displayName = full ? full.split(' ')[0] : 'Account';
+    const avatar = sjAvatarUrl();
     if (menuBtn) {
       menuBtn.className = 'auth-btn signed-in';
       menuBtn.title = 'Account menu';
-      menuBtn.innerHTML = googleUser.picture
-        ? `<img class="auth-avatar" src="${googleUser.picture}" referrerpolicy="no-referrer"> ${displayName} <span class="filter-dd-caret">▾</span>`
-        : `${displayName} <span class="filter-dd-caret">▾</span>`;
+      menuBtn.innerHTML = avatar
+        ? `<img class="auth-avatar" src="${escHtml(avatar).replace(/"/g, '&quot;')}" referrerpolicy="no-referrer"> ${escHtml(displayName)} <span class="filter-dd-caret">▾</span>`
+        : `${escHtml(displayName)} <span class="filter-dd-caret">▾</span>`;
     }
     _playlistsLoaded = false; _savedPlaylists = []; playlists = []; pubPlaylists = [];
     loadPlaylists().then(() => {
@@ -28058,7 +28351,7 @@ async function consumeGuestImport() {
   if (!_guestImportKey || !/^[A-Za-z0-9-]{3,40}$/.test(_guestImportKey) || !googleUser) return;
   try { localStorage.removeItem('auth_return_path'); } catch (_) {}
   try { history.replaceState(null, '', location.pathname); } catch (_) {}
-  _mjVisibility = 'public';
+  _mjVisibility = sjDefaultImportVisibility();
   await openMyJukebox('import');
   setTimeout(() => document.getElementById('mj-search-input')?.focus(), 150);
 }
@@ -29505,18 +29798,26 @@ function sjjJoinUrl(room) {
   return location.origin + (j.slug ? '/' + j.slug : '/j/' + j.code);
 }
 
+// Kept under its old name: several places already ask for the host console by
+// it, and it is still the thing they get - now as a section of Settings.
 async function openJukeboxHost() {
   if (!googleUser) { alert('Sign in to run a jukebox.'); return; }
-  const overlay = document.getElementById('sjjOverlay');
-  if (!overlay) return;
-  overlay.classList.add('open');
-  await sjjRefresh();
+  await openSettings('jukebox');
+}
+
+function closeJukeboxHost() { closeSettings(); }
+
+// The console polls only while it is the section on screen. Leaving it for
+// another section stops the poll, which is the whole reason the two live
+// together: one panel, one timer.
+function settingsStartJukeboxPoll() {
+  if (!googleUser) return;
+  sjjRefresh().catch(() => {});
   if (_sjjPoll) clearInterval(_sjjPoll);
   _sjjPoll = setInterval(() => { sjjRefresh().catch(() => {}); }, 5000);
 }
 
-function closeJukeboxHost() {
-  document.getElementById('sjjOverlay')?.classList.remove('open');
+function settingsStopJukeboxPoll() {
   if (_sjjPoll) { clearInterval(_sjjPoll); _sjjPoll = null; }
 }
 
@@ -30246,7 +30547,7 @@ async function sjjAdopt(items, announceNew = true) {
   // Only songs that are genuinely new to this device are announced; a
   // reclaimed row is not somebody walking up to the jukebox.
   if (announceNew) announce.forEach(sjjAddToast);
-  if (document.getElementById('sjjOverlay')?.classList.contains('open')) {
+  if (settingsIsOpen('jukebox')) {
     sjjRefresh().catch(() => {});
   }
 }
@@ -30746,7 +31047,7 @@ let _spiHideKnown = true;
 let _spiKnown = new Set();      // indexes into _spiTracks the Jukebox already has
 let _spiSel = new Set();
 let _spiMatches = [];
-let _spiVisibility = 'private';
+let _spiVisibility = 'private';   // reseeded from the account default on open
 let _spiBusy = false;
 let _spiDone = null;
 let _spiCallbackChecked = false;
@@ -30755,6 +31056,7 @@ let _spiCallbackChecked = false;
 async function openSpotifyImport(step) {
   if (!googleUser) { showToast('Sign in to import from Spotify.'); return; }
   _spiOpen = true; _spiMinimized = false;
+  _spiVisibility = sjDefaultImportVisibility();
   document.getElementById('sp-minibar').style.display = 'none';
   document.getElementById('spImportOverlay')?.classList.add('open');
   // Reopening after a finished run should offer the next import, not the log
