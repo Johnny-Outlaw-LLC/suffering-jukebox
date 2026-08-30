@@ -16573,6 +16573,10 @@ function playlistChartPaintTransport() {
   if (startBtn) {
     startBtn.disabled = !playlistChartBaseQueue.length;
     const playingThisPlaylist = playlistChartIsLive();
+    // Restart is not an invitation the way Start is, and this is exactly the
+    // moment the Now Playing tab is already orange - two oranges saying the
+    // same thing. .on is the standard look Shuffle All steps back to too.
+    startBtn.classList.toggle('on', playingThisPlaylist);
     startBtn.innerHTML = `<span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>${playingThisPlaylist ? 'Restart' : 'Start'} Playlist`;
   }
 }
@@ -20203,10 +20207,6 @@ function esSongsPageHTML() {
         sorts.map(o => '<button type="button" class="sort-btn' + (ttSortCol === o.col ? ' active' : '') + '" data-col="' + o.col +
           '" onclick="setAllTracksSort(\'' + o.col + '\')" title="' + o.tip + '">' + o.lbl + '</button>').join('') +
       '</span>' +
-      '<div class="playlist-explore-actions">' +
-        '<button type="button" class="playlist-explore-action-btn primary" onclick="openImportMusic()">＋ Import Music</button>' +
-        '<button type="button" class="playlist-explore-action-btn" onclick="userMenuAction(\'myartists\')">Manage My Artists</button>' +
-      '</div>' +
     '</div>' +
     '<div class="es-selbar" id="es-selbar">' + esSelBarHTML() + '</div>' +
     '<div id="es-body">' + esBodyHTML() + '</div>' +
@@ -20717,13 +20717,6 @@ function renderLanding() {
               <span class="landing-control-lbl">Card Size</span>
               ${sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize))}
             </div>
-            <div class="playlist-explore-actions">
-              ${playlistHiddenIds.size ? `<button type="button" class="playlist-explore-action-btn" onclick="showAllPlaylists(event)" title="Bring every hidden playlist back">Show All (${playlistHiddenIds.size} hidden)</button>` : ''}
-              <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
-              ${googleUser
-                ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>`
-                : ''}
-            </div>
           </div>
           ${rows.length ? `${plScope() !== 'live' && rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid pl-size-${playlistCardSize}">${rows.map(p => {
             const mine = googleUser && p.user_email === googleUser.email;
@@ -20791,9 +20784,6 @@ function renderLanding() {
         <div class="landing-control-group">
           <span class="landing-control-lbl">Card Size</span>
           ${sjSizeSliderHTML('landing', SJ_LANDING_SIZES.indexOf(landingDetailLevel))}
-        </div>
-        <div class="playlist-explore-actions">
-          <button type="button" class="playlist-explore-action-btn primary" onclick="openImportMusic()">＋ Import Music</button>
         </div>
       </div>
       ${rows.length ? '' : `<div class="landing-no-results">No artists match ${landingSearchQ ? '“' + esc(landingSearchQ) + '”' : 'the current filters'}.</div>`}
@@ -22157,8 +22147,23 @@ function updateLandingActionsHeader() {
   const shuffle = totals
     ? `<button type="button" class="landing-shuffle-btn${_npRow ? ' standard' : ''}" id="landing-shuffle-all-btn" onclick="${landingTab === 'playlists' ? 'playlistsShuffleAll()' : 'landingShuffleAll()'}">▶ Shuffle All</button>`
     : '';
-  const row2 = (scopeChips || totals)
-    ? `<div class="landing-nav-row2">${scopeChips}${totals}${shuffle}</div>` : '';
+  // Import / Manage sit on this row now, beside Shuffle All, instead of down
+  // in each tab's own filter row - one action cluster in one place across
+  // all three tabs.
+  const actions = landingTab === 'playlists'
+    ? `<div class="playlist-explore-actions">
+        ${playlistHiddenIds.size ? `<button type="button" class="playlist-explore-action-btn" onclick="showAllPlaylists(event)" title="Bring every hidden playlist back">Show All (${playlistHiddenIds.size} hidden)</button>` : ''}
+        <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
+        ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : ''}
+      </div>`
+    : (landingTab === 'explore' || landingTab === 'songs')
+    ? `<div class="playlist-explore-actions">
+        <button type="button" class="playlist-explore-action-btn primary" onclick="openImportMusic()">＋ Import Music</button>
+        <button type="button" class="playlist-explore-action-btn" onclick="userMenuAction('myartists')">Manage My Artists</button>
+      </div>`
+    : '';
+  const row2 = (scopeChips || totals || actions)
+    ? `<div class="landing-nav-row2">${scopeChips}${totals}${shuffle}${actions}</div>` : '';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
     <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
     <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
@@ -24706,6 +24711,9 @@ const SJ_CHANGELOG = [
     'Play this song next no longer shows up in the menu for whatever is already playing.',
     'The Live filter on Explore Playlists is hidden when nothing is playing live, instead of always showing and then telling you nothing is there.',
     'Shuffle All now turns a plain color the moment something starts or stops playing, instead of waiting for the next time the page refreshes itself.',
+    'Explore Artists has a Manage My Artists button now, matching Explore Songs.',
+    'Import Music, Import Playlist, and Manage buttons moved up to sit beside Shuffle All on all three Explore tabs, instead of living down in the filter row.',
+    'Restart Playlist is a plain gray button instead of orange, since it shows up at the same time as the orange Now Playing button and the two were competing.',
   ] },
   { date: '2026-08-29', items: [
     'Dragging covers to reorder a playlist is now a computer-only thing. On a phone or tablet the wall simply scrolls, a cover opens when you tap it, and the cross removes it from the playlist. Two goes at a thumb-friendly reorder were both worse than leaving the scrolling alone, so the long press and its wobbling edit mode are gone.',
