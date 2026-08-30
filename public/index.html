@@ -2986,6 +2986,37 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 /* Playlist discovery keeps the artist explorer's card language, but turns a
    playlist into a little jukebox sleeve of album covers that grow with the set. */
 .playlist-explore-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:20px; }
+/* Three stops on one slider. Only the track width and the type scale move -
+   the mosaic keeps its aspect ratio, so a small card is the same picture. */
+.playlist-explore-grid.pl-size-sm { grid-template-columns:repeat(auto-fill,minmax(158px,1fr)); gap:13px; }
+.playlist-explore-grid.pl-size-lg { grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:26px; }
+.playlist-explore-grid.pl-size-sm .playlist-explore-body { padding:9px 10px 10px; gap:4px; }
+.playlist-explore-grid.pl-size-sm .playlist-explore-name { font-size:.62rem; }
+.playlist-explore-grid.pl-size-sm .playlist-explore-meta { font-size:.42rem; }
+.playlist-explore-grid.pl-size-sm .playlist-explore-action { font-size:.42rem; margin-top:1px; }
+.playlist-explore-grid.pl-size-sm .playlist-explore-x { width:20px; height:20px; font-size:.6rem; top:5px; right:5px; }
+.playlist-explore-grid.pl-size-lg .playlist-explore-body { padding:18px 20px 19px; gap:8px; }
+.playlist-explore-grid.pl-size-lg .playlist-explore-name { font-size:1rem; }
+.playlist-explore-grid.pl-size-lg .playlist-explore-meta { font-size:.56rem; }
+/* The lift moves to the wrap so the ✕ travels with the card it belongs to. */
+.playlist-explore-cardwrap { position:relative; display:flex; min-width:0; transition:transform .15s; }
+.playlist-explore-cardwrap:hover { transform:translateY(-2px); }
+.playlist-explore-cardwrap:hover > .playlist-explore-card { border-color:var(--accent); transform:none; }
+.playlist-explore-cardwrap > .playlist-explore-card:hover { transform:none; }
+.playlist-explore-cardwrap > .playlist-explore-card { flex:1; min-width:0; }
+.playlist-explore-x {
+  position:absolute; top:8px; right:8px; z-index:4;
+  width:24px; height:24px; border-radius:50%;
+  background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.28);
+  color:#fff; font-size:.7rem; line-height:1; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0;
+  opacity:0; transition:opacity .15s, background .15s, border-color .15s, transform .12s;
+}
+.playlist-explore-cardwrap:hover .playlist-explore-x,
+.playlist-explore-cardwrap:focus-within .playlist-explore-x { opacity:1; }
+.playlist-explore-x:hover { background:var(--accent); border-color:var(--accent); transform:scale(1.12); }
+@media (hover:none) { .playlist-explore-x { opacity:.85; } }
+.playlist-explore-dd { position:relative; }
 .playlist-explore-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; transition:border-color .15s,transform .15s; text-align:left; color:var(--text); font-family:var(--mono); padding:0; }
 .playlist-explore-card:hover { border-color:var(--accent); transform:translateY(-2px); }
 .playlist-explore-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 16px; }
@@ -3447,7 +3478,11 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   .pl-wall-transport { flex-wrap:wrap; width:100%; }
   .pl-wall-size { flex:1; width:auto; min-width:120px; }
 }
-@media (max-width:640px) { .playlist-explore-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .pl-wall-transport { width:100%; } .pl-wall-tog,.pl-wall-play { flex:1; text-align:center; } .pl-wall-scroll { max-height:calc(100vh - 230px); } }
+@media (max-width:640px) { .playlist-explore-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .playlist-explore-grid.pl-size-sm { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .playlist-explore-grid.pl-size-lg { grid-template-columns:repeat(1,minmax(0,1fr)); gap:14px; }
+  .sj-slider-wrap { width:100%; }
+  .sj-size-slider { flex:1; width:auto; min-width:0; } .pl-wall-transport { width:100%; } .pl-wall-tog,.pl-wall-play { flex:1; text-align:center; } .pl-wall-scroll { max-height:calc(100vh - 230px); } }
 .home-wrap { display: flex; flex-direction: column; gap: 22px; max-width: 920px; }
 .home-hero-title-row { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
 .home-hero-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -.01em; margin: 0; }
@@ -3521,6 +3556,26 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
   font-family: var(--mono); font-size: .56rem; padding: .42rem .6rem; border-radius: 8px; cursor: pointer;
 }
+/* Card size is a three-stop slider on both sheets. The value is applied on
+   `change` rather than `input`, because applying it re-renders the controls
+   out from under a drag - see sjSizeSliderHTML(). */
+.sj-slider-wrap { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.sj-size-slider {
+  -webkit-appearance: none; appearance: none; width: 78px; height: 4px; padding: 0; margin: 0;
+  border: none; border-radius: 999px; background: var(--border); cursor: pointer; outline: none;
+}
+.sj-size-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--accent); border: none; cursor: pointer;
+}
+.sj-size-slider::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: none; cursor: pointer;
+}
+.sj-size-slider:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.sj-size-val {
+  font-family: var(--mono); font-size: .5rem; color: var(--text-muted);
+  white-space: nowrap; min-width: 6.4rem;
+}
 .landing-size-btns { display: flex; gap: 6px; }
 .landing-size-btn {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
@@ -3593,6 +3648,9 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   .landing-control-group { flex-direction: column; align-items: stretch; gap: 5px; min-width: 0; }
   .landing-control-lbl { font-size: .46rem; }
   .landing-sort-select, .landing-submitter-btn { width: 100%; font-size: .58rem; padding: .55rem .55rem; }
+  .sj-slider-wrap { width: 100%; }
+  .sj-size-slider { flex: 1; width: auto; min-width: 0; }
+  .sj-size-val { font-size: .48rem; min-width: 0; flex: 0 0 auto; }
   .landing-search-wrap { width: 100%; }
   .landing-search-input { width: 100%; font-size: .58rem; padding: .55rem 1.6rem .55rem .55rem; }
   .landing-sort-select { -webkit-appearance: none; appearance: none; text-overflow: ellipsis;
@@ -15620,6 +15678,16 @@ let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all
 let playlistExploreSearchQ = '';
 let playlistExploreSort = localStorage.getItem('sj_pl_explore_sort') || 'date_desc';
 let playlistExploreContributor = localStorage.getItem('sj_pl_explore_contributor') || '';
+// Playlists hidden from the Explore Playlists result set. Deliberately a
+// browser preference rather than an account one: unlike hiding an artist,
+// this is a view filter on one sheet and it has to work signed out.
+let playlistHiddenIds = new Set((() => {
+  try { return JSON.parse(localStorage.getItem('sj_pl_hidden') || '[]'); } catch (_) { return []; }
+})());
+let _playlistMenuKeys = [];
+let _plMenuOpen = false;
+let _plMenuSearchQ = '';
+let _plMenuFocus = false;
 let myReactionTrackIds = [];
 let _myReactionTracksLoaded = false;
 let _myReactionTracksLoading = null;
@@ -15633,6 +15701,17 @@ const playlistSearchMetaByTrack = {}; // trackId -> { title, artist, lyrics }
 let _playlistSearchMetaLoading = null;
 let landingSortMode     = localStorage.getItem('sj_landing_sort') || '';
 let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
+// The two card-size sliders. Three stops each, ordered small to large, so the
+// slider's index IS the position in these arrays - the label and the applied
+// value can never drift apart.
+const SJ_LANDING_SIZES = ['name', 'yt', 'full'];
+const SJ_PL_SIZES = ['sm', 'md', 'lg'];
+const SJ_SIZE_LABELS = {
+  landing: ['Artist Name Only', 'Total YT Plays', 'Full Details'],
+  playlist: ['Small', 'Medium', 'Large'],
+};
+let playlistCardSize = localStorage.getItem('sj_pl_card_size') || 'md';
+if (SJ_PL_SIZES.indexOf(playlistCardSize) < 0) playlistCardSize = 'md';
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
 let _sjQuota90Logged    = false;
 const LANDING_SUBMITTER_NONE = '__none__'; // persisted sentinel: empty grid, all boxes unchecked
@@ -15802,7 +15881,10 @@ function landingThumb(row) {
   return ALBUM_ART[row.top_album_name] || row.top_album_art_url || row.top_album_thumb || null;
 }
 
-function playlistExploreRows() {
+// Everything the scope, contributor and search filters allow, BEFORE the
+// hidden set is applied. The Playlists menu builds its checkboxes from this,
+// or a playlist that had been hidden would have no box left to un-hide it.
+function playlistExploreRowsAll() {
   const all = _savedPlaylists || [];
   const email = googleUser?.email || '';
   const scope = plScope();
@@ -15848,6 +15930,14 @@ function playlistExploreRows() {
     ? liveRoomPlaylists.filter(p => !p._roomIsOwner && (!q || playlistMatchesSearch(p, q)))
     : [];
   return live.concat(dynamic.filter(p => !q || playlistMatchesSearch(p, q)), sorted);
+}
+
+// What actually gets drawn: the above, minus anything the listener has taken
+// off the shelf. Every count and Shuffle All read from here, so the summary
+// line can never promise a playlist the grid is not showing.
+function playlistExploreRows() {
+  if (!playlistHiddenIds.size) return playlistExploreRowsAll();
+  return playlistExploreRowsAll().filter(p => !playlistHiddenIds.has(String(p.id)));
 }
 
 // Every song in the playlists currently listed, deduped, in the order the
@@ -16006,6 +16096,158 @@ function playlistContributorOptions() {
 function setPlaylistExploreContributor(v) {
   playlistExploreContributor = v || '';
   try { localStorage.setItem('sj_pl_explore_contributor', playlistExploreContributor); } catch (_) {}
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+// ── Playlists include/exclude multi-select (Explore Playlists) ─────
+// Modelled on the Artists menu on Explore Artists: a checkbox per playlist,
+// unticking one takes it off the shelf, and the ✕ on a card does the same
+// thing from the other end. The search box hides rows rather than rebuilding
+// them - a rebuild would take the caret out of the box mid-word.
+function playlistsBtnLabel() {
+  const total = playlistExploreRowsAll().length;
+  const shown = playlistExploreRows().length;
+  if (!total || shown === total) return 'All playlists';
+  return shown + ' of ' + total + ' shown';
+}
+
+function playlistsMenuHTML() {
+  const esc = x => (x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const attr = x => esc(x).replace(/"/g, '&quot;');
+  const opts = playlistExploreRowsAll();
+  _playlistMenuKeys = opts.map(o => String(o.id));
+  const q = _plMenuSearchQ.trim().toLowerCase();
+  const search = '<div class="lsm-search"><input type="text" id="playlist-menu-search" placeholder="Search playlists..." ' +
+    'autocomplete="off" value="' + attr(_plMenuSearchQ) + '" oninput="playlistMenuSearch(this.value)" ' +
+    'onclick="event.stopPropagation()" onkeydown="if(event.key===&quot;Escape&quot;){this.value=&quot;&quot;;playlistMenuSearch(&quot;&quot;);}"></div>';
+  if (!opts.length) return search + '<div class="lsm-empty">No playlists yet</div>';
+  const anyHidden = opts.some(o => playlistHiddenIds.has(String(o.id)));
+  const allRow = '<label class="lsm-item lsm-all"><input type="checkbox"' + (anyHidden ? '' : ' checked') +
+    ' onchange="selectAllPlaylists()"><span class="lsm-name">All</span></label>';
+  let shown = 0;
+  const items = opts.map((o, i) => {
+    const name = o.name || 'Untitled Playlist';
+    const hit = !q || name.toLowerCase().includes(q);
+    if (hit) shown++;
+    const off = playlistHiddenIds.has(String(o.id));
+    return '<label class="lsm-item" data-pl-name="' + attr(name) + '"' + (hit ? '' : ' style="display:none"') + '>' +
+      '<input type="checkbox"' + (off ? '' : ' checked') + ' onchange="togglePlaylistInclude(' + i + ')">' +
+      '<span class="lsm-name"' + (off ? ' style="color:var(--text-muted)"' : '') + '>' + esc(name) + '</span>' +
+      '<span class="lsm-count">' + (o._tracks ? o._tracks.length : 0) + '</span></label>';
+  }).join('');
+  const none = '<div class="lsm-nomatch" id="playlist-menu-nomatch" style="display:' + (shown ? 'none' : 'block') +
+    '">No playlists match that search.</div>';
+  return search + allRow + items + none;
+}
+
+function playlistMenuSearch(v) {
+  _plMenuSearchQ = v || '';
+  const menu = document.getElementById('playlist-explore-menu');
+  if (!menu) return;
+  const q = _plMenuSearchQ.trim().toLowerCase();
+  let shown = 0;
+  menu.querySelectorAll('.lsm-item[data-pl-name]').forEach(el => {
+    const ok = !q || (el.dataset.plName || '').toLowerCase().includes(q);
+    el.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  const none = document.getElementById('playlist-menu-nomatch');
+  if (none) none.style.display = shown ? 'none' : 'block';
+}
+
+function togglePlaylistsDD(e) {
+  if (e) e.stopPropagation();
+  closeSubmitterDD();
+  closeArtistsDD();
+  closeLyricsDD();   // never leave two menus open at once
+  _plMenuOpen = !_plMenuOpen;
+  const menu = document.getElementById('playlist-explore-menu');
+  if (menu) menu.style.display = _plMenuOpen ? 'block' : 'none';
+  document.removeEventListener('click', _plOutside);
+  if (_plMenuOpen) setTimeout(() => document.addEventListener('click', _plOutside), 0);
+}
+
+function _plOutside(e) {
+  if (e.target.closest && e.target.closest('.playlist-explore-dd')) return;
+  closePlaylistsDD();
+}
+
+function closePlaylistsDD() {
+  _plMenuOpen = false;
+  const menu = document.getElementById('playlist-explore-menu');
+  if (menu) menu.style.display = 'none';
+  document.removeEventListener('click', _plOutside);
+}
+
+function savePlaylistHidden() {
+  try { localStorage.setItem('sj_pl_hidden', JSON.stringify([...playlistHiddenIds])); } catch (_) {}
+}
+
+function togglePlaylistInclude(idx) {
+  const id = _playlistMenuKeys[idx];
+  if (!id) return;
+  if (playlistHiddenIds.has(id)) playlistHiddenIds.delete(id);
+  else playlistHiddenIds.add(id);
+  savePlaylistHidden();
+  _plMenuFocus = !!_plMenuSearchQ;
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+// "All" toggles every box: ticked = show them all, unticked = show none.
+function selectAllPlaylists() {
+  const opts = playlistExploreRowsAll();
+  const anyHidden = opts.some(o => playlistHiddenIds.has(String(o.id)));
+  if (anyHidden) opts.forEach(o => playlistHiddenIds.delete(String(o.id)));
+  else opts.forEach(o => playlistHiddenIds.add(String(o.id)));
+  savePlaylistHidden();
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+// The ✕ on a card. Same effect as unticking its box, reached from the grid.
+function hidePlaylistFromCard(id) {
+  if (!id) return;
+  playlistHiddenIds.add(String(id));
+  savePlaylistHidden();
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+  showToast('Removed from this list. Bring it back from the Playlists menu.');
+}
+
+function showAllPlaylists(e) {
+  if (e) e.stopPropagation();
+  playlistHiddenIds.clear();
+  savePlaylistHidden();
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+// ── Card size sliders ───────────────────────────────────────
+// The label follows the thumb on `input`; the value is only applied on
+// `change`, because applying it re-renders the page out from under the drag.
+function sjSizeSliderPreview(el, kind) {
+  const names = SJ_SIZE_LABELS[kind] || [];
+  const lbl = document.getElementById('sj-size-lbl-' + kind);
+  if (lbl) lbl.textContent = names[+el.value] || '';
+}
+
+function sjSizeSliderHTML(kind, idx) {
+  const names = SJ_SIZE_LABELS[kind] || [];
+  const i = Math.max(0, Math.min(names.length - 1, idx));
+  const apply = kind === 'landing' ? 'setLandingDetailIdx' : 'setPlaylistCardSizeIdx';
+  return '<span class="sj-slider-wrap">' +
+    '<input type="range" class="sj-size-slider" min="0" max="' + (names.length - 1) + '" step="1" value="' + i +
+      '" aria-label="Card size" title="Card size" ' +
+      'oninput="sjSizeSliderPreview(this,&quot;' + kind + '&quot;)" onchange="' + apply + '(this.value)">' +
+    '<span class="sj-size-val" id="sj-size-lbl-' + kind + '">' + names[i] + '</span></span>';
+}
+
+function setLandingDetailIdx(i) {
+  const n = Math.max(0, Math.min(SJ_LANDING_SIZES.length - 1, parseInt(i, 10) || 0));
+  setLandingDetailLevel(SJ_LANDING_SIZES[n]);
+}
+
+function setPlaylistCardSizeIdx(i) {
+  const n = Math.max(0, Math.min(SJ_PL_SIZES.length - 1, parseInt(i, 10) || 0));
+  playlistCardSize = SJ_PL_SIZES[n];
+  try { localStorage.setItem('sj_pl_card_size', playlistCardSize); } catch (_) {}
   if (isLandingMode && landingTab === 'playlists') renderLanding();
 }
 
@@ -19015,6 +19257,8 @@ function resetLandingSheetFilters() {
   playlistExploreSearchQ = '';
   playlistExploreContributor = '';
   _landingArtistSearchQ = '';
+  _plMenuSearchQ = '';
+  _plMenuOpen = false;
   _artistsMenuOpen = false;
   _submitterMenuOpen = false;
   try {
@@ -20197,7 +20441,6 @@ function renderLanding() {
   main.classList.add('main-landing');
   const rows = getVisibleLandingStats();
   const sortOpt = (v, lbl) => `<option value="${v}"${landingSortMode === v ? ' selected' : ''}>${lbl}</option>`;
-  const sizeOpt = (v, lbl) => `<option value="${v}"${landingDetailLevel === v ? ' selected' : ''}>${lbl}</option>`;
   const _subOpts = landingSubmitterOptions();
   _landingSubmitterKeys = _subOpts.map(o => o[0]);
   const _subNone = landingSubmitterFilter.has(LANDING_SUBMITTER_NONE);
@@ -20212,7 +20455,9 @@ function renderLanding() {
         const rows = playlistExploreRows();
         const emptyMsg = !_playlistsLoaded
           ? 'Loading playlists…'
-          : (playlistExploreSearchQ.trim()
+          : (playlistExploreRowsAll().length
+            ? 'Every playlist here is hidden. Use the Playlists menu, or Show All, to bring them back.'
+            : playlistExploreSearchQ.trim()
             ? 'No playlists match “' + esc(playlistExploreSearchQ.trim()) + '”.'
             : (plScope() === 'live'
               ? 'No jukeboxes are playing right now.'
@@ -20228,6 +20473,15 @@ function renderLanding() {
                   autocomplete="off" value="${esc(playlistExploreSearchQ).replace(/"/g, '&quot;')}" oninput="setPlaylistExploreSearch(this.value)"
                   onkeydown="if(event.key==='Escape')clearPlaylistExploreSearch()">
                 ${playlistExploreSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="clearPlaylistExploreSearch()">✕</button>` : ''}
+              </div>
+            </div>
+            <div class="landing-control-group" style="margin:0">
+              <span class="landing-control-lbl">Playlists</span>
+              <div class="playlist-explore-dd">
+                <button type="button" class="landing-submitter-btn" onclick="togglePlaylistsDD(event)">${esc(playlistsBtnLabel())} <span class="lsb-caret">▾</span></button>
+                <div class="landing-submitter-menu" id="playlist-explore-menu" style="display:${_plMenuOpen ? 'block' : 'none'}">
+                  ${playlistsMenuHTML()}
+                </div>
               </div>
             </div>
             ${plScope() === 'mine' || plScope() === 'live' ? '' : `<div class="landing-control-group" style="margin:0">
@@ -20248,21 +20502,29 @@ function renderLanding() {
                 ${plSortOpt('tracks_asc', 'Fewest Tracks')}
               </select>
             </div>`}
+            <div class="landing-control-group" style="margin:0">
+              <span class="landing-control-lbl">Card Size</span>
+              ${sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize))}
+            </div>
             <div class="playlist-explore-actions">
+              ${playlistHiddenIds.size ? `<button type="button" class="playlist-explore-action-btn" onclick="showAllPlaylists(event)" title="Bring every hidden playlist back">Show All (${playlistHiddenIds.size} hidden)</button>` : ''}
               <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
               ${googleUser
                 ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>`
                 : ''}
             </div>
           </div>
-          ${rows.length ? `${plScope() !== 'live' && rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid">${rows.map(p => {
+          ${rows.length ? `${plScope() !== 'live' && rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid pl-size-${playlistCardSize}">${rows.map(p => {
             const mine = googleUser && p.user_email === googleUser.email;
             const by = p._liveRoom
               ? ' · LIVE NOW · ' + (p._listenerCount || 0) + ' listening · ' + (p._queuedSongCount || 0) + ' waiting'
               : (p._dynamic ? ' · dynamic' : (p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : ''));
             const vis = mine && !p.is_public ? ' · private' : '';
             const tip = p._description ? ` title="${p._description}" aria-description="${p._description}"` : '';
-            return `<button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}${p._description ? ' ⓘ' : ''}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button>`;
+            // The card itself is a <button>, so the ✕ cannot live inside it -
+            // a nested button is invalid and the browser breaks it back out.
+            // It is a sibling in a positioned wrap instead.
+            return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}${p._description ? ' ⓘ' : ''}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button></div>`;
           }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
       })() : landingTab === 'songs' ? esSongsPageHTML() : `
       <div class="landing-controls">
@@ -20308,11 +20570,7 @@ function renderLanding() {
         </div>
         <div class="landing-control-group">
           <span class="landing-control-lbl">Card Size</span>
-          <select class="landing-sort-select" id="landing-size-select" onchange="setLandingDetailLevel(this.value)">
-            ${sizeOpt('name', 'Artist Name Only')}
-            ${sizeOpt('yt', 'Total YT Plays')}
-            ${sizeOpt('full', 'Full Details')}
-          </select>
+          ${sjSizeSliderHTML('landing', SJ_LANDING_SIZES.indexOf(landingDetailLevel))}
         </div>
         <label class="landing-control-group" style="justify-content:flex-end;gap:.45rem;cursor:pointer">
           <span class="landing-control-lbl">Artists</span>
@@ -20360,6 +20618,11 @@ function renderLanding() {
     _playlistSearchFocus = false;
     const si = document.getElementById('playlist-explore-search');
     if (si) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
+  }
+  if (_plMenuOpen && _plMenuFocus) {
+    _plMenuFocus = false;
+    const pi = document.getElementById('playlist-menu-search');
+    if (pi) { pi.focus(); pi.setSelectionRange(pi.value.length, pi.value.length); }
   }
   if (_artistsMenuOpen && _landingArtistFocus) {
     _landingArtistFocus = false;
@@ -24185,6 +24448,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
+    'Explore Playlists has a Playlists menu, the same one Explore Artists has for artists. Tick and untick playlists to decide which ones are on the wall, search it by name, and use All to clear the lot or bring them all back. The song and artist counts above the wall, and Shuffle All, follow whatever is left showing.',
+    'Every playlist card now carries a cross in its corner. Press it and that playlist comes off the wall, without touching the playlist itself. A Show All button appears next to Import Playlist while anything is hidden, and the Playlists menu is the other way back.',
+    'New Card Size slider above the playlist wall: three sizes, small, medium and large. It is remembered for next time.',
+    'Card Size on Explore Artists is a slider now instead of a drop down menu, with the same three sizes it always had.',
     'A jukebox only shows as live while it is actually playing music. Opening a room used to leave it on the Explore Playlists wall labelled LIVE NOW for hours after the host stopped playing, and it took a Broadcasting Now badge with it. Now a room appears while the host is playing, stays put through a pause or a gap between songs, and drops off the wall a few minutes after the music stops or the host closes the tab.',
     'Skip, on the Up next banner, is gone while you are following somebody\'s live jukebox. What plays next is the host\'s to choose, the same as previous, next, shuffle and repeat already were; the banner still tells you what is coming.',
     'Requesting a song in someone else\'s live jukebox now means joining it. Browsing a live set used to offer Add Songs beside Join Now, so you could put a song in a room you were not in and never hear it play. Press Join Now and Add Songs and My Requests are there; leave the room and they go with it.',
