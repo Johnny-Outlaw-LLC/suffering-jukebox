@@ -98,7 +98,9 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 #filter-header { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
 #filter-header-mobile { display: none; }
 #view-controls-header { flex: 0 1 auto; min-width: 0; }
-#landing-nav-header { display: none; flex: 0 1 auto; min-width: 0; }
+/* Full width so .playlist-explore-actions { margin-left: auto } can pin
+   Manage / Import to the right edge of the header, not the end of the chips. */
+#landing-nav-header { display: none; flex: 1 1 100%; min-width: 0; width: 100%; }
 .hdr-brand-mobile { display: none; }
 .hdr-r1-filters { display: none; }
 .brand-block { flex-shrink: 0; }
@@ -2973,7 +2975,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 /* Second landing row: scope chips on the left, the running totals to their
    right. The chips used to sit inline after the three tabs, which pushed the
    tabs off the side of a phone. */
-.landing-nav-row2 { display: flex; gap: 14px; row-gap: 6px; flex-wrap: wrap; align-items: center; margin-top: .5rem; }
+.landing-nav-row2 { display: flex; gap: 14px; row-gap: 6px; flex-wrap: wrap; align-items: center; margin-top: .5rem; width: 100%; }
 .landing-nav-row2.now-playing-controls { gap: 8px; }
 .landing-shuffle-btn {
   background: var(--accent); border: 1px solid var(--accent); color: #0a0a0a;
@@ -3148,7 +3150,9 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-back { background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.52rem; padding:.45rem .75rem; border-radius:8px; cursor:pointer; transition:all .15s; }
 .pl-wall-back:hover { border-color:var(--text-muted); color:var(--text); }
 .pl-wall-back.on { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
-.pl-wall-header { margin-bottom:12px; display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
+.pl-wall-header { margin-bottom:12px; display:flex; flex-direction:row; align-items:flex-start; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; }
+.pl-wall-header-main { display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; }
+.pl-wall-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
 .pl-wall-title { font-size:1.3rem; font-weight:700; margin:0; letter-spacing:-.01em; }
 .pl-wall-summary { display:flex; align-items:center; gap:7px; font-size:.56rem; color:var(--text-muted); }
 .pl-wall-summary b { color:var(--text); font-weight:700; }
@@ -3520,6 +3524,8 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-detail-row.editable:active { cursor:grabbing; }
 @media (max-width:900px) {
   .pl-wall-toolbar-right { width:100%; margin-left:0; flex-wrap:wrap; }
+  .pl-wall-header-actions { width:100%; margin-left:0; }
+  .pl-wall-header-actions .pl-wall-transport { width:100%; }
   .pl-wall-transport { flex-wrap:wrap; width:100%; }
   .pl-wall-size { flex:1; width:auto; min-width:120px; }
 }
@@ -19175,7 +19181,9 @@ function renderPlaylistChart(error) {
     : '';
   const manageBtns = liveRoomMode ? roomBtns :
     (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>` : '') +
-    (canAddSongs ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
+    // Now Playing puts Add Songs on the title row with the transport controls;
+    // saved playlists keep it on the toolbar under the back button.
+    ((!isNowPlayingPage && canAddSongs) ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
   const modeTog =
     `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
     `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
@@ -19194,6 +19202,11 @@ function renderPlaylistChart(error) {
     : '';
   const pageModeTog = isNowPlayingPage ? '' : modeTog;
   const transport = liveRoomMode ? `${sizeCtrl}${pageModeTog}` : `${sizeCtrl}${pageModeTog}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
+  // Same chrome as Mix Order / Shuffle / Repeat - last on the title row so
+  // the primary action for the queue is always on the right.
+  const nowPlayingAddSongs = (isNowPlayingPage && canAddSongs)
+    ? `<button type="button" class="pl-wall-tog" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>`
+    : '';
   // The search box only makes sense next to the columns it searches.
   const searchHTML = isDetail
     ? `<div class="landing-search-wrap pl-wall-search-wrap"><input type="text" class="landing-search-input" id="pl-wall-search" placeholder="Search this playlist…" autocomplete="off" value="${esc(plSearchQ).replace(/"/g, '&quot;')}" oninput="plWallSetSearch(this.value)" onkeydown="if(event.key==='Escape')plWallClearSearch()">${plSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="plWallClearSearch()">✕</button>` : ''}</div>`
@@ -19209,9 +19222,17 @@ function renderPlaylistChart(error) {
     (_npNav ? `<button type="button" class="landing-tab landing-tab-now" onclick="openNowPlayingChart()" title="Open the queue that is playing right now">♪ Now Playing${_npNav._tracks && _npNav._tracks.length > 1 ? ' (' + _npNav._tracks.length.toLocaleString() + ')' : ''}</button>` : '') +
   `</nav>`;
   const pageActions = isNowPlayingPage
-    ? (manageBtns ? `<div class="pl-wall-toolbar">${manageBtns}</div>` : '')
+    ? ''
     : `<div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer('playlists')">← Explore Playlists</button>${manageBtns}</div>`;
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}">${wallNav}<div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div>${pageActions}<div class="pl-wall-toolbar">${searchHTML}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
+  // Now Playing: size / mix / shuffle / repeat / restart + Add Songs ride the
+  // title row. Saved playlists keep transport on the toolbar under the header.
+  const headerActions = isNowPlayingPage
+    ? `<div class="pl-wall-header-actions"><div class="pl-wall-transport">${transport}</div>${nowPlayingAddSongs}</div>`
+    : '';
+  const transportToolbar = isNowPlayingPage
+    ? (searchHTML ? `<div class="pl-wall-toolbar">${searchHTML}</div>` : '')
+    : `<div class="pl-wall-toolbar">${searchHTML}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}">${wallNav}<div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div>${headerActions}</div>${pageActions}${transportToolbar}${roomNotice}${body}</section>`;
   playlistChartPaintTransport();
   if (q.length) {
     const host = isDetail
@@ -24903,7 +24924,9 @@ const SJ_CHANGELOG = [
     'Explore Artists has a Manage My Artists button now, matching Explore Songs.',
     'Import Music, Import Playlist, and Manage buttons moved up to sit beside Shuffle All on all three Explore tabs, instead of living down in the filter row.',
     'On every Explore tab, Import sits furthest to the right, after Manage, so the main action is always in the same place.',
+    'On Explore Artists, Explore Songs and Explore Playlists, Manage and Import sit at the right edge of the header row on a computer, instead of stopping after Shuffle All.',
     'On Now Playing, Explore Artists / Playlists / Songs sit in the shared top header above the divider, and Covers / Details sit on the second row in the same style as All / My Artists on Explore Artists, not down in the page body.',
+    'On Now Playing, Size, Mix Order, Shuffle Playback, Repeat and Restart Playlist sit on the same row as the Now Playing title, and Add Songs is the last button on that row, matching the look of the others.',
     'Restart Playlist is a plain gray button instead of orange, since it shows up at the same time as the orange Now Playing button and the two were competing.',
   ] },
   { date: '2026-08-29', items: [
