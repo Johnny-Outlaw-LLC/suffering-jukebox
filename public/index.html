@@ -3126,6 +3126,16 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .playlist-explore-body { padding:14px 16px 15px; display:flex; flex-direction:column; gap:7px; }
 .playlist-explore-name { font-size:.82rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .playlist-explore-meta { color:var(--text-muted); font-size:.5rem; }
+/* Small says what it is and how big it is; medium adds who put it there;
+   large adds who is on it. Every card writes all three - the size class is
+   what hides them, which is what lets the slider resize the wall live. */
+.playlist-explore-artists {
+  color:var(--text-muted); font-size:.48rem; opacity:.85;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.playlist-explore-grid.pl-size-sm .pl-meta-by,
+.playlist-explore-grid.pl-size-sm .playlist-explore-artists,
+.playlist-explore-grid.pl-size-md .playlist-explore-artists { display:none; }
 .playlist-explore-action { color:var(--accent); font-size:.5rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; margin-top:3px; }
 /* Explore Playlist cover wall — dense Shutterfield-style grid of album art. */
 .pl-wall-page { padding:16px clamp(12px,3vw,32px) 80px; }
@@ -3591,10 +3601,6 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: none; cursor: pointer;
 }
 .sj-size-slider:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-.sj-size-val {
-  font-family: var(--mono); font-size: .5rem; color: var(--text-muted);
-  white-space: nowrap; min-width: 6.4rem;
-}
 .landing-size-btns { display: flex; gap: 6px; }
 .landing-size-btn {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
@@ -3669,7 +3675,6 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   .landing-sort-select, .landing-submitter-btn { width: 100%; font-size: .58rem; padding: .55rem .55rem; }
   .sj-slider-wrap { width: 100%; }
   .sj-size-slider { flex: 1; width: auto; min-width: 0; }
-  .sj-size-val { font-size: .48rem; min-width: 0; flex: 0 0 auto; }
   .landing-search-wrap { width: 100%; }
   .landing-search-input { width: 100%; font-size: .58rem; padding: .55rem 1.6rem .55rem .55rem; }
   .landing-sort-select { -webkit-appearance: none; appearance: none; text-overflow: ellipsis;
@@ -16010,6 +16015,32 @@ function playlistExploreStats() {
   return { songs: ids.length, artists: artists.size };
 }
 
+// The line the largest playlist card carries: who is actually on this
+// playlist. Reads whatever we already hold - SJ_TRACK_META once a song has
+// been played or resolved, otherwise the search index's copy - so it costs no
+// request and simply comes up short before that index has loaded.
+// It walks the playlist in order and stops at PL_ARTIST_SAMPLE distinct names,
+// so it is the front of the record rather than a survey of all two thousand.
+const PL_ARTIST_SAMPLE = 3;
+function playlistArtistSample(p) {
+  const seen = new Set();
+  const out = [];
+  for (const row of (p._tracks || [])) {
+    const id = row.track_id;
+    if (!id) continue;
+    const name = (SJ_TRACK_META[id] && SJ_TRACK_META[id].artist)
+      || (playlistSearchMetaByTrack[id] && playlistSearchMetaByTrack[id].artistName)
+      || '';
+    const key = name.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name.trim());
+    if (out.length >= PL_ARTIST_SAMPLE) break;
+  }
+  if (!out.length) return '';
+  return out.join(' \u00b7 ') + (seen.size >= PL_ARTIST_SAMPLE ? ' \u2026' : '');
+}
+
 function dynamicPlaylistTracks(trackIds) {
   return [...new Set((trackIds || []).filter(Boolean))].map((track_id, position) => ({ track_id, position }));
 }
@@ -16291,35 +16322,49 @@ function showAllPlaylists(e) {
 }
 
 // ── Card size sliders ───────────────────────────────────────
-// The label follows the thumb on `input`; the value is only applied on
-// `change`, because applying it re-renders the page out from under the drag.
-function sjSizeSliderPreview(el, kind) {
-  const names = SJ_SIZE_LABELS[kind] || [];
-  const lbl = document.getElementById('sj-size-lbl-' + kind);
-  if (lbl) lbl.textContent = names[+el.value] || '';
-}
-
+// The cards follow the thumb: `input`, not `change`. That is only affordable
+// because a size is nothing but a class on the grid - every card already
+// carries all three levels of detail and the CSS decides what shows - so the
+// applying functions below swap that class instead of re-rendering. A
+// re-render would replace the slider under the pointer and end the drag.
+// The written level ("Small", "Full Details") was dropped from beside the
+// track: the cards themselves are the readout, and the words were stealing a
+// control's worth of width from a phone.
 function sjSizeSliderHTML(kind, idx) {
   const names = SJ_SIZE_LABELS[kind] || [];
   const i = Math.max(0, Math.min(names.length - 1, idx));
   const apply = kind === 'landing' ? 'setLandingDetailIdx' : 'setPlaylistCardSizeIdx';
   return '<span class="sj-slider-wrap">' +
-    '<input type="range" class="sj-size-slider" min="0" max="' + (names.length - 1) + '" step="1" value="' + i +
-      '" aria-label="Card size" title="Card size" ' +
-      'oninput="sjSizeSliderPreview(this,&quot;' + kind + '&quot;)" onchange="' + apply + '(this.value)">' +
-    '<span class="sj-size-val" id="sj-size-lbl-' + kind + '">' + names[i] + '</span></span>';
+    '<input type="range" class="sj-size-slider" id="sj-size-' + kind + '" min="0" max="' + (names.length - 1) +
+      '" step="1" value="' + i + '" aria-label="Card size" title="Card size: ' + names[i] + '" ' +
+      'oninput="' + apply + '(this.value)" onchange="' + apply + '(this.value)"></span>';
+}
+
+// The level still has to be readable somewhere, and the tooltip is the one
+// place that costs no layout.
+function sjSizeSliderTitle(kind, name) {
+  const el = document.getElementById('sj-size-' + kind);
+  if (el) el.title = 'Card size: ' + name;
 }
 
 function setLandingDetailIdx(i) {
   const n = Math.max(0, Math.min(SJ_LANDING_SIZES.length - 1, parseInt(i, 10) || 0));
-  setLandingDetailLevel(SJ_LANDING_SIZES[n]);
+  landingDetailLevel = SJ_LANDING_SIZES[n];
+  try { localStorage.setItem('sj_landing_detail', landingDetailLevel); } catch (_) {}
+  sjSizeSliderTitle('landing', SJ_SIZE_LABELS.landing[n]);
+  const grid = document.querySelector('.landing-grid');
+  if (grid) SJ_LANDING_SIZES.forEach(k => grid.classList.toggle('detail-' + k, k === landingDetailLevel));
+  else if (isLandingMode) renderLanding();
 }
 
 function setPlaylistCardSizeIdx(i) {
   const n = Math.max(0, Math.min(SJ_PL_SIZES.length - 1, parseInt(i, 10) || 0));
   playlistCardSize = SJ_PL_SIZES[n];
   try { localStorage.setItem('sj_pl_card_size', playlistCardSize); } catch (_) {}
-  if (isLandingMode && landingTab === 'playlists') renderLanding();
+  sjSizeSliderTitle('playlist', SJ_SIZE_LABELS.playlist[n]);
+  const grid = document.querySelector('.playlist-explore-grid');
+  if (grid) SJ_PL_SIZES.forEach(k => grid.classList.toggle('pl-size-' + k, k === playlistCardSize));
+  else if (isLandingMode && landingTab === 'playlists') renderLanding();
 }
 
 // Signed out there is only public content, so the All / My / Public chips come
@@ -16370,6 +16415,8 @@ async function ensurePlaylistSearchMeta() {
       playlistSearchMetaByTrack[t.id] = {
         title: (t.name || '').toLowerCase(),
         artist: (art?.name || '').toLowerCase(),
+        // Folded for searching, and kept as written for the large cards.
+        artistName: art?.name || '',
         lyrics: (lyricsCache[t.id] || '').toLowerCase(),
       };
       if (playlistArtworkByTrack[t.id] === undefined) {
@@ -19059,12 +19106,6 @@ function setLandingSort(v) {
   renderLanding();
 }
 
-function setLandingDetailLevel(level) {
-  landingDetailLevel = level;
-  try { localStorage.setItem('sj_landing_detail', level); } catch (e) {}
-  renderLanding();
-}
-
 function setLandingIncludeSinglesOnly(on) {
   landingIncludeSinglesOnly = !!on;
   try { localStorage.setItem('sj_landing_include_singles_only', landingIncludeSinglesOnly ? '1' : '0'); } catch (_) {}
@@ -20587,15 +20628,23 @@ function renderLanding() {
           </div>
           ${rows.length ? `${plScope() !== 'live' && rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid pl-size-${playlistCardSize}">${rows.map(p => {
             const mine = googleUser && p.user_email === googleUser.email;
-            const by = p._liveRoom
+            // Three levels of detail, all three always written and the size
+            // class deciding which show - that is what lets the slider resize
+            // the wall live without a re-render. A room that is on air counts
+            // as the headline, not as a credit, so it stays at every size.
+            const live = p._liveRoom
               ? ' · LIVE NOW · ' + (p._listenerCount || 0) + ' listening · ' + (p._queuedSongCount || 0) + ' waiting'
+              : '';
+            const by = p._liveRoom
+              ? ''
               : (p._dynamic ? ' · dynamic' : (p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : ''));
             const vis = mine && !p.is_public ? ' · private' : '';
+            const artists = playlistArtistSample(p);
             const tip = p._description ? ` title="${p._description}" aria-description="${p._description}"` : '';
             // The card itself is a <button>, so the ✕ cannot live inside it -
             // a nested button is invalid and the browser breaks it back out.
             // It is a sibling in a positioned wrap instead.
-            return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}${p._description ? ' ⓘ' : ''}</span><span class="playlist-explore-meta">${p._tracks?.length || 0} tracks${by}${vis}</span><span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button></div>`;
+            return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}${p._description ? ' ⓘ' : ''}</span><span class="playlist-explore-meta"><span class="pl-meta-n">${p._tracks?.length || 0} tracks${live}</span><span class="pl-meta-by">${by}${vis}</span></span>${artists ? `<span class="playlist-explore-artists">${esc(artists)}</span>` : ''}<span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button></div>`;
           }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
       })() : landingTab === 'songs' ? esSongsPageHTML() : `
       <div class="landing-controls">
@@ -24523,6 +24572,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
+    'Both Card Size sliders resize the cards as you drag them, instead of waiting until you let go.',
+    'The words beside the Card Size sliders are gone. The cards are the readout, and on a phone the label was taking up a control’s worth of the row. Hover the slider if you want the level named.',
+    'Playlist cards say more as they get bigger. Small is the playlist name and how many songs are in it. Medium adds who put it there. Large adds a few of the artists on it.',
     'Now Playing is a button at the top of the page, next to Explore Artists, Explore Playlists and Explore Songs. It is orange, it says how many songs are in the queue, and it only appears while something is playing. It opens the same wall of covers it always did.',
     'Now Playing is no longer a card on the playlist wall. It was the only card there that was not a playlist, it was different for every visitor, and it moved every time a song changed. The button is a better door to it, and the playlist counts above the wall now only count actual playlists.',
     'In the player bar at the bottom of the screen, the rating, heart, heartbreak and \u22ef buttons are the same size as the play and skip buttons beside them. They were noticeably smaller, which made the bar look like two different toolbars stuck together. Phones already had this and have not changed.',
