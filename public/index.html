@@ -7101,7 +7101,10 @@ function ytpPaintTogs() {
   const rp = document.getElementById('ytp-repeat-tog');
   if (rp) rp.classList.toggle('on', !!ytRepeat);
   const plSh = document.getElementById('pl-wall-shuffle');
-  if (plSh) plSh.classList.toggle('on', !!ytShuffle);
+  if (plSh) {
+    plSh.classList.toggle('on', !!ytShuffle);
+    if (plSh.classList.contains('playlist-explore-action-btn')) plSh.classList.toggle('primary', !!ytShuffle);
+  }
   const plRp = document.getElementById('pl-wall-repeat');
   if (plRp) plRp.classList.toggle('on', !!ytRepeat);
 }
@@ -16012,6 +16015,7 @@ function setPlAutoScroll(on) {
   const btn = document.getElementById('pl-wall-autoscroll');
   if (btn) {
     btn.classList.toggle('on', plAutoScroll);
+    btn.classList.toggle('primary', plAutoScroll);
     btn.setAttribute('aria-pressed', plAutoScroll ? 'true' : 'false');
   }
   if (plAutoScroll) playlistChartSyncToCurrent();
@@ -16267,8 +16271,23 @@ function sjSyncNowPlayingTab() {
 
 // Now Playing is a peer of the three Explore destinations, not a saved
 // playlist nested under Explore Playlists. Give it the shared two-row header:
-// destinations on row one, view choices on row two, both above the divider.
-// Opened saved playlists deliberately keep the ordinary playlist-page header.
+// destinations on row one; Covers/Details plus the queue actions on row two,
+// both above the divider. The actions use the same pill chrome as Manage /
+// Import on Explore so the two pages read as one system.
+function nowPlayingHeaderActionsHTML() {
+  const canAdd = !!googleUser;
+  const playing = typeof playlistChartIsLive === 'function' && playlistChartIsLive();
+  const startLbl = playing ? 'Restart Playlist' : 'Start Playlist';
+  const disabled = (playlistChartBaseQueue && playlistChartBaseQueue.length) ? '' : ' disabled';
+  return `<div class="playlist-explore-actions" id="np-header-actions">
+    <button type="button" class="playlist-explore-action-btn${plAutoScroll ? ' primary' : ''}" id="pl-wall-autoscroll" aria-pressed="${plAutoScroll ? 'true' : 'false'}" onclick="togglePlAutoScroll()" title="When on, the list follows whatever is playing">Auto Scroll</button>
+    ${plWallCanArrange() ? `<button type="button" class="playlist-explore-action-btn" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">Mix Order</button>` : ''}
+    <button type="button" class="playlist-explore-action-btn${ytShuffle ? ' primary' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">Shuffle Playback</button>
+    <button type="button" class="playlist-explore-action-btn" id="pl-wall-start-btn"${disabled} onclick="playlistChartPlay()">${startLbl}</button>
+    ${canAdd ? `<button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistBuilder('add','__dynamic_now_playing')">＋ Add Songs</button>` : ''}
+  </div>`;
+}
+
 function renderNowPlayingHeader() {
   const nav = document.getElementById('landing-nav-header');
   if (!nav || playlistChartId !== '__dynamic_now_playing') return;
@@ -16284,10 +16303,12 @@ function renderNowPlayingHeader() {
   <div class="landing-nav-row2 now-playing-controls" role="group" aria-label="Now Playing view">
     <button type="button" class="playlist-explore-filter${playlistWallMode === 'detail' ? '' : ' active'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')">Covers</button>
     <button type="button" class="playlist-explore-filter${playlistWallMode === 'detail' ? ' active' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')">Details</button>
+    ${nowPlayingHeaderActionsHTML()}
   </div>`;
   nav.dataset.armed = '1';
   updateToolbarToggle();
   sjFitLwytbRow();
+  playlistChartPaintTransport();
 }
 
 async function ensureMyReactionTracks(force) {
@@ -16714,11 +16735,21 @@ function playlistChartPaintTransport() {
   if (startBtn) {
     startBtn.disabled = !playlistChartBaseQueue.length;
     const playingThisPlaylist = playlistChartIsLive();
-    // Restart is not an invitation the way Start is, and this is exactly the
-    // moment the Now Playing tab is already orange - two oranges saying the
-    // same thing. .on is the standard look Shuffle All steps back to too.
+    // Restart stays a quiet secondary pill (same as Manage). Add Songs is the
+    // orange CTA on the right, the same job Import has on Explore.
     startBtn.classList.toggle('on', playingThisPlaylist);
-    startBtn.innerHTML = `<span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>${playingThisPlaylist ? 'Restart' : 'Start'} Playlist`;
+    if (startBtn.classList.contains('playlist-explore-action-btn')) startBtn.classList.remove('primary');
+    startBtn.textContent = (playingThisPlaylist ? 'Restart' : 'Start') + ' Playlist';
+  }
+  const sh = document.getElementById('pl-wall-shuffle');
+  if (sh) {
+    sh.classList.toggle('on', !!ytShuffle);
+    if (sh.classList.contains('playlist-explore-action-btn')) sh.classList.toggle('primary', !!ytShuffle);
+  }
+  const as = document.getElementById('pl-wall-autoscroll');
+  if (as) {
+    as.classList.toggle('on', !!plAutoScroll);
+    if (as.classList.contains('playlist-explore-action-btn')) as.classList.toggle('primary', !!plAutoScroll);
   }
 }
 
@@ -19335,15 +19366,13 @@ function renderPlaylistChart(error) {
       : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player and to request songs.</div>`)
     : '';
   const pageModeTog = isNowPlayingPage ? '' : modeTog;
+  // Repeat lives in the player. Putting it on the wall next to Restart and
+  // Shuffle fought the Now Playing tab for orange and duplicated a control
+  // the listener already has under their thumb.
   const autoScrollBtn = `<button type="button" class="pl-wall-tog${plAutoScroll ? ' on' : ''}" id="pl-wall-autoscroll" aria-pressed="${plAutoScroll ? 'true' : 'false'}" onclick="togglePlAutoScroll()" title="When on, the list follows whatever is playing">◉ Auto Scroll</button>`;
   const transport = liveRoomMode
     ? `${sizeCtrl}${pageModeTog}${autoScrollBtn}`
-    : `${sizeCtrl}${pageModeTog}${autoScrollBtn}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
-  // Same chrome as Mix Order / Shuffle / Repeat - last on the title row so
-  // the primary action for the queue is always on the right.
-  const nowPlayingAddSongs = (isNowPlayingPage && canAddSongs)
-    ? `<button type="button" class="pl-wall-tog" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>`
-    : '';
+    : `${sizeCtrl}${pageModeTog}${autoScrollBtn}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
   // The search box only makes sense next to the columns it searches.
   const searchHTML = isDetail
     ? `<div class="landing-search-wrap pl-wall-search-wrap"><input type="text" class="landing-search-input" id="pl-wall-search" placeholder="Search this playlist…" autocomplete="off" value="${esc(plSearchQ).replace(/"/g, '&quot;')}" oninput="plWallSetSearch(this.value)" onkeydown="if(event.key==='Escape')plWallClearSearch()">${plSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="plWallClearSearch()">✕</button>` : ''}</div>`
@@ -19361,15 +19390,15 @@ function renderPlaylistChart(error) {
   const pageActions = isNowPlayingPage
     ? ''
     : `<div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer('playlists')">← Explore Playlists</button>${manageBtns}</div>`;
-  // Now Playing: size / mix / shuffle / repeat / restart + Add Songs ride the
-  // title row. Saved playlists keep transport on the toolbar under the header.
-  const headerActions = isNowPlayingPage
-    ? `<div class="pl-wall-header-actions"><div class="pl-wall-transport">${transport}</div>${nowPlayingAddSongs}</div>`
-    : '';
+  // Now Playing actions live in the shared header above the divider (same
+  // row as Covers / Details), styled like Manage / Import. The page body
+  // only keeps search (Details) and the cover-size slider (Covers).
   const transportToolbar = isNowPlayingPage
-    ? (searchHTML ? `<div class="pl-wall-toolbar">${searchHTML}</div>` : '')
+    ? ((searchHTML || !isDetail)
+      ? `<div class="pl-wall-toolbar">${searchHTML}${!isDetail ? `<div class="pl-wall-toolbar-right">${sizeCtrl}</div>` : ''}</div>`
+      : '')
     : `<div class="pl-wall-toolbar">${searchHTML}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>`;
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}">${wallNav}<div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div>${headerActions}</div>${pageActions}${transportToolbar}${roomNotice}${body}</section>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}">${wallNav}<div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div></div>${pageActions}${transportToolbar}${roomNotice}${body}</section>`;
   playlistChartPaintTransport();
   if (q.length) {
     const host = isDetail
@@ -25064,6 +25093,7 @@ const SJ_CHANGELOG = [
     'On Explore Artists, Explore Songs and Explore Playlists, Manage and Import sit at the right edge of the header row on a computer, instead of stopping after Shuffle All.',
     'On Now Playing, Explore Artists / Playlists / Songs sit in the shared top header above the divider, and Covers / Details sit on the second row in the same style as All / My Artists on Explore Artists, not down in the page body.',
     'On Now Playing, Size, Mix Order, Shuffle Playback, Repeat and Restart Playlist sit on the same row as the Now Playing title, and Add Songs is the last button on that row, matching the look of the others.',
+    'On Now Playing, Auto Scroll, Mix Order, Shuffle Playback, Restart Playlist and Add Songs sit above the divider next to Covers / Details, right-aligned, and use the same pill buttons as Manage and Import on Explore. Repeat is gone from that row - it still lives in the player.',
     'Now Playing\'s Detail table has a Heartbreak column next to Hearts, and both columns show the reaction count on every row. The heart icon in the header is the same size as the thumbs-up icon.',
     'Thumbs-up ratings in the Detail table stay fully visible instead of fading into the row, and they update when your ratings finish loading so sorting by rating actually moves the songs you have liked.',
     'Auto Scroll sits next to Mix Order on a playlist wall. Turn it off and the list stays put when the song changes; turn it on and it follows whatever is playing. Details starts with it off on a long queue, because chasing song 1,500 used to freeze the page.',
