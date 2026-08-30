@@ -3491,7 +3491,8 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-detail-tbl { width:100%; border-collapse:collapse; min-width:860px; table-layout:auto; }
 .pl-detail-tbl th { font-size:.48rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); padding:.45rem .65rem; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:500; position:sticky; top:0; background:var(--bg); z-index:2; }
 .pl-detail-tbl th.num { text-align:right; }
-.pl-detail-tbl th.rxn { text-align:center; width:44px; }
+.pl-detail-tbl th.rxn { text-align:center; width:52px; }
+.pl-detail-tbl th.rxn svg { width:13px; height:13px; display:inline-block; vertical-align:middle; }
 .pl-detail-row { border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; }
 .pl-detail-row:hover { background:var(--bg-elevated); }
 .pl-detail-row.current { background:color-mix(in srgb, var(--accent) 14%, transparent); box-shadow:inset 3px 0 0 var(--accent); }
@@ -3506,13 +3507,19 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-detail-title { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pl-detail-muted { color:var(--text-muted); font-size:.58rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; }
 .pl-detail-tbl .tt-acc-row .tt-acc-td { padding:0 !important; border-bottom:2px solid var(--border) !important; }
-.pl-detail-rxn { display:inline-flex; align-items:center; justify-content:center; gap:3px; background:none; border:1px solid transparent; color:var(--text-muted); cursor:pointer; padding:4px; border-radius:6px; min-width:28px; min-height:28px; }
+/* Detail votes must not inherit .tvb-cycle's .45 opacity - on a long light
+   table that made every thumb look missing, rated or not. */
+.pl-detail-rxn { display:inline-flex; align-items:center; justify-content:center; gap:4px; background:none; border:1px solid transparent; color:var(--text-muted); cursor:pointer; padding:4px 6px; border-radius:6px; min-width:28px; min-height:28px; opacity:1; }
+.pl-detail-rxn.tvb-cycle { opacity:1; }
 .pl-detail-rxn:hover { border-color:var(--border); color:var(--text); }
-.pl-detail-rxn.tvb-up { color:#22c55e; }
-.pl-detail-rxn.tvb-down { color:#ef4444; }
+.pl-detail-rxn.tvb-up, .pl-detail-rxn.tvb-cycle.tvb-up { color:#22c55e; opacity:1; }
+.pl-detail-rxn.tvb-down, .pl-detail-rxn.tvb-cycle.tvb-down { color:#ef4444; opacity:1; }
 .pl-detail-rxn.on, .pl-detail-rxn[data-track-reaction="heart"].on { color:var(--accent); }
-.pl-detail-rxn svg { width:14px; height:14px; display:block; }
-.pl-detail-rxn .pl-wall-rxn-n { font-size:.4rem; font-weight:700; font-family:var(--mono); min-width:.7em; }
+.pl-detail-rxn[data-track-reaction="sad"].on { color:#a78bfa; }
+.pl-detail-rxn svg { width:13px; height:13px; display:block; flex-shrink:0; }
+.pl-detail-rxn .tvb-dbl { display:inline-flex; align-items:center; }
+.pl-detail-rxn .tvb-dbl svg { display:block; }
+.pl-detail-rxn .pl-wall-rxn-n { font-size:.55rem; font-weight:700; font-family:var(--mono); min-width:.9em; line-height:1; }
 .pl-detail-mine-actions { display:flex; align-items:center; justify-content:center; gap:2px; }
 .pl-detail-move, .pl-detail-rm { display:inline-flex; align-items:center; justify-content:center; background:none; border:1px solid transparent; color:var(--text-muted); cursor:pointer; padding:2px; border-radius:5px; min-width:20px; min-height:20px; font-size:.5rem; line-height:1; }
 .pl-detail-move:hover { border-color:var(--border); color:var(--text); }
@@ -15989,6 +15996,30 @@ try {
 let plSortCol = 'order';
 let plSortDir = 1;
 let plSearchQ = '';
+// Follow the playing song as it advances. Off by default in Details on a
+// long queue - jumping to song 1,500 used to force-draw every row above it
+// in one frame and freeze the tab. Covers still default on.
+let plAutoScroll = true;
+try {
+  const _pas = localStorage.getItem('sj_pl_auto_scroll');
+  if (_pas === '0' || _pas === '1') plAutoScroll = _pas === '1';
+  else if (playlistWallMode === 'detail') plAutoScroll = false;
+} catch (_) {}
+
+function setPlAutoScroll(on) {
+  plAutoScroll = !!on;
+  try { localStorage.setItem('sj_pl_auto_scroll', plAutoScroll ? '1' : '0'); } catch (_) {}
+  const btn = document.getElementById('pl-wall-autoscroll');
+  if (btn) {
+    btn.classList.toggle('on', plAutoScroll);
+    btn.setAttribute('aria-pressed', plAutoScroll ? 'true' : 'false');
+  }
+  if (plAutoScroll) playlistChartSyncToCurrent();
+}
+
+function togglePlAutoScroll() {
+  setPlAutoScroll(!plAutoScroll);
+}
 
 /* persist is false while a pinch is still moving: the size is applied on every
    frame but only written down once the fingers come off. */
@@ -16010,6 +16041,11 @@ function setPlaylistWallSize(px, persist = true) {
 function setPlaylistWallMode(mode) {
   playlistWallMode = mode === 'detail' ? 'detail' : 'thumbs';
   try { localStorage.setItem('sj_pl_wall_mode', playlistWallMode); } catch (_) {}
+  // Details on a long queue should not chase the playing song unless the
+  // listener asks - that chase is what used to freeze the page.
+  if (playlistWallMode === 'detail' && localStorage.getItem('sj_pl_auto_scroll') == null) {
+    plAutoScroll = false;
+  }
   if (viewMode === 'playlistchart') renderPlaylistChart();
 }
 
@@ -16721,8 +16757,26 @@ function playlistChartRowFor(item, fallbackIndex) {
 }
 
 function playlistChartSyncToCurrent() {
+  if (!plAutoScroll) return;
   const idx = playlistChartCurrentCellIndex();
   if (viewMode !== 'playlistchart' || idx < 0) return;
+  // Detail rows past the drawn window are not in the DOM yet. Grow far
+  // enough for the playing song, a chunk per frame, then scroll - never
+  // build a thousand rows in one go.
+  const st = _plFillState;
+  if (st && st.order) {
+    const pos = st.order.indexOf(idx);
+    if (pos >= 0 && st.at <= pos) {
+      plWallFillToward(pos + 1, () => {
+        requestAnimationFrame(() => {
+          const scroll = document.getElementById('playlist-chart-scroll');
+          const cell = scroll?.querySelector(`[data-pc-index="${idx}"]`);
+          if (scroll && cell) cell.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        });
+      });
+      return;
+    }
+  }
   requestAnimationFrame(() => {
     const scroll = document.getElementById('playlist-chart-scroll');
     const cell = scroll?.querySelector(`[data-pc-index="${idx}"]`);
@@ -16818,18 +16872,42 @@ function plWallPaintCellBadges(cell, tid) {
 function plWallSyncBadges() {
   if (viewMode !== 'playlistchart') return;
   const grid = document.getElementById('pl-wall-grid');
-  if (!grid) return;
-  grid.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
-    const tid = cell.getAttribute('data-pc-track');
-    if (!tid) return;
-    const counts = trackReactionCounts[tid] || {};
-    if (!(getMyVote(tid) || Number(counts.heart) || Number(counts.sad))) return;
-    // A cluster built just now is built FROM the counts, so only one that was
-    // already on screen before they landed needs repainting.
-    const had = !!cell.querySelector('.pl-wall-badges');
-    plWallEnsureBadges(cell);
-    if (had) plWallPaintCellBadges(cell, tid);
-  });
+  if (grid) {
+    grid.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
+      const tid = cell.getAttribute('data-pc-track');
+      if (!tid) return;
+      const counts = trackReactionCounts[tid] || {};
+      if (!(getMyVote(tid) || Number(counts.heart) || Number(counts.sad))) return;
+      // A cluster built just now is built FROM the counts, so only one that was
+      // already on screen before they landed needs repainting.
+      const had = !!cell.querySelector('.pl-wall-badges');
+      plWallEnsureBadges(cell);
+      if (had) plWallPaintCellBadges(cell, tid);
+    });
+  }
+  // Detail rows ship their buttons in the markup. Counts often land after the
+  // first paint, and without this the heart / heartbreak columns stay on 0
+  // until something else redraws the table.
+  const detail = document.getElementById('pl-detail-tbl');
+  if (detail) {
+    detail.querySelectorAll('.pl-detail-rxn[data-track-reaction]').forEach(btn => {
+      const tid = btn.getAttribute('data-reaction-track');
+      if (!tid) return;
+      const key = btn.getAttribute('data-track-reaction');
+      const num = Number((trackReactionCounts[tid] || {})[key]) || 0;
+      btn.classList.toggle('on', num > 0);
+      const label = btn.querySelector('.pl-wall-rxn-n');
+      if (label) label.textContent = num > 0 ? ytpReactionCountLabel(num) : '0';
+    });
+    detail.querySelectorAll('.pl-detail-rxn[data-vote-track]').forEach(btn => {
+      const tid = btn.getAttribute('data-vote-track');
+      if (!tid) return;
+      const v = getMyVote(tid);
+      btn.innerHTML = VOTE_LABELS[String(v)] || VOTE_LABELS['0'] || '-';
+      btn.classList.toggle('tvb-up', v > 0);
+      btn.classList.toggle('tvb-down', v < 0);
+    });
+  }
 }
 
 function plWallCellOverlays(trackId, title) {
@@ -18176,6 +18254,7 @@ function plDetailSortValue(col, item, i) {
     case 'yt': return Number(ytData[row.trackId]?.views || row.views) || 0;
     case 'rating': return Number(getMyVote(row.trackId)) || 0;
     case 'heart': return Number((trackReactionCounts[row.trackId] || {}).heart) || 0;
+    case 'sad': return Number((trackReactionCounts[row.trackId] || {}).sad) || 0;
     default: return i;
   }
 }
@@ -18324,6 +18403,7 @@ function plWallDetailRowHTML(item, i, curIdx) {
   const blocked = isTrackBlocked(row.trackId);
   const vote = getMyVote(row.trackId);
   const heartN = Number((trackReactionCounts[row.trackId] || {}).heart) || 0;
+  const sadN = Number((trackReactionCounts[row.trackId] || {}).sad) || 0;
   const last = plWallFmtLastPlay(myLastPlayed[row.trackId]) || '—';
   const tot = Number(inAppPlays[row.trackId]) || 0;
   const yt = Number(ytData[row.trackId]?.views || row.views) || 0;
@@ -18369,7 +18449,8 @@ function plWallDetailRowHTML(item, i, curIdx) {
     `<td class="num" data-pl-total>${tot ? fmtV(tot) : '—'}</td>` +
     `<td class="num" data-pl-yt>${yt ? fmtV(yt) : '—'}</td>` +
     `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="tvb-cycle pl-detail-rxn${voteClass(vote)}" data-vote-track="${row.trackId}" onclick="cycleVote('${row.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button></td>` +
-    `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button></td>` +
+    `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${ytpReactionCountLabel(heartN) || '0'}</span></button></td>` +
+    `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${sadN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="sad" onclick="event.stopPropagation();ytpReact('sad',this,event)" title="Heartbreak">${SJ_REACTION_ICONS.sad}<span class="pl-wall-rxn-n">${ytpReactionCountLabel(sadN) || '0'}</span></button></td>` +
     manageCell +
   `</tr>`;
 }
@@ -18411,14 +18492,28 @@ function plWallSummaryHTML() {
 const PL_LYRIC_PREFETCH = 150;
 const PL_FILL_FIRST = 400;
 const PL_FILL_MORE = 400;
+/** Detail rows are ~10× heavier than a cover cell. Smaller chunks keep the
+ *  main thread free on a 2,000 song Now Playing. */
+const PL_DETAIL_FILL_FIRST = 80;
+const PL_DETAIL_FILL_MORE = 60;
 /** Start adding more once the scroll is within this much of the end. */
 const PL_FILL_TRIGGER_PX = 1200;
 let _plFillToken = 0;
 let _plFillState = null;
+let _plFillTowardRaf = 0;
+
+function plWallFillChunkSize(isDetail) {
+  return isDetail ? PL_DETAIL_FILL_MORE : PL_FILL_MORE;
+}
+
+function plWallFillFirstSize(isDetail) {
+  return isDetail ? PL_DETAIL_FILL_FIRST : PL_FILL_FIRST;
+}
 
 function plWallFillList(host, q, curIdx, isDetail, scrollToCurrent, keepDrawn) {
   const startedAt = performance.now();
   const token = ++_plFillToken;
+  if (_plFillTowardRaf) { cancelAnimationFrame(_plFillTowardRaf); _plFillTowardRaf = 0; }
   const order = plWallVisibleOrder(q, isDetail);
   _plFillState = { token, host, q, order, curIdx, isDetail, at: 0 };
   host.innerHTML = '';
@@ -18428,27 +18523,52 @@ function plWallFillList(host, q, curIdx, isDetail, scrollToCurrent, keepDrawn) {
   // playing song may not be near the front of `order` any more - find where
   // it actually landed rather than assuming curIdx is a position in it.
   const curPos = order.indexOf(curIdx);
-  plWallFillMore(Math.max(PL_FILL_FIRST, curPos + 1, keepDrawn || 0));
-  plWallAfterFill(scrollToCurrent);
-  plWallWatchFillScroll();
-  sjPerf('playlist-wall.fill-initial', {
-    run: sjPerformanceRun,
-    mode: isDetail ? 'details' : 'covers',
-    totalTracks: order.length,
-    drawnTracks: _plFillState?.at || 0,
-    scrollToCurrent: !!scrollToCurrent,
-    durationMs: sjPerfDuration(startedAt),
-  });
+  const first = plWallFillFirstSize(isDetail);
+  const scroll = document.getElementById('playlist-chart-scroll');
+  // Capture before we grow async - plWallRepaintList used to restore this
+  // the moment fillList returned, which was before the rows existed again.
+  const keepTop = (!scrollToCurrent && scroll) ? scroll.scrollTop : null;
+  // Never force-draw every row up to the playing song in one frame - that is
+  // what froze Details on a 1,900 song Now Playing. Draw a first screen,
+  // then grow toward the target a chunk per frame if auto-scroll or a
+  // repaint needs more of the list back on screen.
+  plWallFillMore(first);
+  const wantEventually = Math.max(
+    first,
+    (scrollToCurrent && plAutoScroll && curPos >= 0) ? curPos + 1 : 0,
+    keepDrawn || 0
+  );
+  const after = () => {
+    plWallAfterFill(scrollToCurrent);
+    plWallWatchFillScroll();
+    if (keepTop != null && scroll && scroll.isConnected) scroll.scrollTop = keepTop;
+    sjPerf('playlist-wall.fill-initial', {
+      run: sjPerformanceRun,
+      mode: isDetail ? 'details' : 'covers',
+      totalTracks: order.length,
+      drawnTracks: _plFillState?.at || 0,
+      scrollToCurrent: !!scrollToCurrent,
+      durationMs: sjPerfDuration(startedAt),
+    });
+  };
+  if (wantEventually > (_plFillState?.at || 0)) {
+    plWallFillToward(wantEventually, after);
+  } else {
+    after();
+  }
 }
 
-/** Append the next slice, or up to `upTo` songs if that is further on. */
+/** Append at most one chunk. Never more - callers that need further reach
+ *  use plWallFillToward so the tab stays responsive. */
 function plWallFillMore(upTo) {
   const st = _plFillState;
   if (!st || st.token !== _plFillToken || !st.host.isConnected) return false;
   if (st.at >= st.order.length) return false;
   const startedAt = performance.now();
   const from = st.at;
-  const end = Math.min(st.order.length, Math.max(upTo || 0, st.at + PL_FILL_MORE));
+  const chunk = plWallFillChunkSize(st.isDetail);
+  const target = Math.max(upTo || 0, st.at + chunk);
+  const end = Math.min(st.order.length, Math.min(target, st.at + chunk));
   let html = '';
   for (let pos = st.at; pos < end; pos++) {
     const idx = st.order[pos];
@@ -18472,6 +18592,22 @@ function plWallFillMore(upTo) {
     totalMs: sjPerfDuration(startedAt),
   });
   return true;
+}
+
+/** Grow the drawn window up to `upTo` one chunk per animation frame. */
+function plWallFillToward(upTo, done) {
+  const token = _plFillToken;
+  const step = () => {
+    _plFillTowardRaf = 0;
+    const st = _plFillState;
+    if (!st || st.token !== token) { if (done) done(); return; }
+    if (st.at >= upTo || st.at >= st.order.length) { if (done) done(); return; }
+    plWallFillMore(upTo);
+    if (st.at >= upTo || st.at >= st.order.length) { if (done) done(); return; }
+    _plFillTowardRaf = requestAnimationFrame(step);
+  };
+  if (_plFillTowardRaf) cancelAnimationFrame(_plFillTowardRaf);
+  _plFillTowardRaf = requestAnimationFrame(step);
 }
 
 /**
@@ -18526,11 +18662,8 @@ function plWallRepaintList() {
     if (thead) thead.innerHTML = plDetailTheadHTML();
   }
   const curIdx = playlistChartCurrentCellIndex();
-  const scroll = document.getElementById('playlist-chart-scroll');
-  const keepTop = scroll ? scroll.scrollTop : 0;
   const drawn = plWallDrawnCount();
   plWallFillList(host, q, curIdx, isDetail, false, drawn);
-  if (scroll) scroll.scrollTop = keepTop;
   const sum = document.querySelector('.pl-wall-summary');
   const sumHTML = plWallSummaryHTML();
   if (sum && sumHTML) sum.outerHTML = sumHTML;
@@ -19122,8 +19255,9 @@ function plDetailTheadHTML() {
     plTh('last', 'Last Played', { cls: 'num' }) +
     plTh('total', 'Total Plays', { cls: 'num' }) +
     plTh('yt', 'YT Plays', { cls: 'num' }) +
-    plTh('rating', `<span style="color:#22c55e">${_SVG_TH_UP}</span>`, { cls: 'rxn', title: 'Your rating' }) +
-    plTh('heart', `<span style="color:#ef4444">${SJ_REACTION_ICONS.heart}</span>`, { cls: 'rxn', title: 'Hearts' }) +
+    plTh('rating', `<span style="color:#22c55e;display:inline-flex;width:13px;height:13px">${_SVG_TH_UP}</span>`, { cls: 'rxn', title: 'Your rating' }) +
+    plTh('heart', `<span style="color:#ef4444;display:inline-flex;width:13px;height:13px">${SJ_REACTION_ICONS.heart}</span>`, { cls: 'rxn', title: 'Hearts' }) +
+    plTh('sad', `<span style="color:#a78bfa;display:inline-flex;width:13px;height:13px">${SJ_REACTION_ICONS.sad}</span>`, { cls: 'rxn', title: 'Heartbreaks' }) +
     '<th class="rxn" title="Manage your songs">Controls</th>' +
   '</tr>';
 }
@@ -19201,7 +19335,10 @@ function renderPlaylistChart(error) {
       : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player and to request songs.</div>`)
     : '';
   const pageModeTog = isNowPlayingPage ? '' : modeTog;
-  const transport = liveRoomMode ? `${sizeCtrl}${pageModeTog}` : `${sizeCtrl}${pageModeTog}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
+  const autoScrollBtn = `<button type="button" class="pl-wall-tog${plAutoScroll ? ' on' : ''}" id="pl-wall-autoscroll" aria-pressed="${plAutoScroll ? 'true' : 'false'}" onclick="togglePlAutoScroll()" title="When on, the list follows whatever is playing">◉ Auto Scroll</button>`;
+  const transport = liveRoomMode
+    ? `${sizeCtrl}${pageModeTog}${autoScrollBtn}`
+    : `${sizeCtrl}${pageModeTog}${autoScrollBtn}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
   // Same chrome as Mix Order / Shuffle / Repeat - last on the title row so
   // the primary action for the queue is always on the right.
   const nowPlayingAddSongs = (isNowPlayingPage && canAddSongs)
@@ -24927,6 +25064,10 @@ const SJ_CHANGELOG = [
     'On Explore Artists, Explore Songs and Explore Playlists, Manage and Import sit at the right edge of the header row on a computer, instead of stopping after Shuffle All.',
     'On Now Playing, Explore Artists / Playlists / Songs sit in the shared top header above the divider, and Covers / Details sit on the second row in the same style as All / My Artists on Explore Artists, not down in the page body.',
     'On Now Playing, Size, Mix Order, Shuffle Playback, Repeat and Restart Playlist sit on the same row as the Now Playing title, and Add Songs is the last button on that row, matching the look of the others.',
+    'Now Playing\'s Detail table has a Heartbreak column next to Hearts, and both columns show the reaction count on every row. The heart icon in the header is the same size as the thumbs-up icon.',
+    'Thumbs-up ratings in the Detail table stay fully visible instead of fading into the row, and they update when your ratings finish loading so sorting by rating actually moves the songs you have liked.',
+    'Auto Scroll sits next to Mix Order on a playlist wall. Turn it off and the list stays put when the song changes; turn it on and it follows whatever is playing. Details starts with it off on a long queue, because chasing song 1,500 used to freeze the page.',
+    'Opening Details on a very long Now Playing no longer locks the browser. The table draws a screenful first and adds more as you scroll, instead of trying to build every row above the playing song in one go.',
     'Restart Playlist is a plain gray button instead of orange, since it shows up at the same time as the orange Now Playing button and the two were competing.',
   ] },
   { date: '2026-08-29', items: [
@@ -28128,6 +28269,9 @@ async function loadMyVotes() {
     _myVotesLoaded = true;
     affected.forEach(refreshVoteUI);
     if (isLandingMode && landingTab === 'playlists') renderLanding();
+    // Detail rows are built with whatever votes were known at paint time.
+    // Re-sync so a late load turns grey thumbs green and rating-sort works.
+    if (viewMode === 'playlistchart') plWallSyncBadges();
   } catch (e) {
     _myVotesLoaded = false;
     console.warn('loadMyVotes error', e);
