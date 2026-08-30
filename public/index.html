@@ -1658,6 +1658,11 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-feedback { display: flex; align-items: center; gap: 4px; min-height: 24px; margin-top: 4px; flex-wrap: wrap; }
 .ytp-mf-feedback #ytp-mf-vote,
 .ytp-mf-feedback #ytp-mf-more { width: 24px; height: 24px; border-radius: 6px; font-size: .7rem; flex-shrink: 0; }
+.ytp-mf-live-badge { display:none; align-items:center; gap:4px; padding:3px 7px; border:0; border-radius:999px;
+  background:var(--accent); color:#0a0a0a; font:800 .46rem var(--mono); letter-spacing:.08em; text-transform:uppercase;
+  cursor:pointer; white-space:nowrap; }
+.ytp-mf-live-badge.on { display:inline-flex; }
+.ytp-mf-live-badge .dot { width:.32rem; height:.32rem; border-radius:50%; background:#0a0a0a; animation:sjjPulse 1.6s ease-in-out infinite; }
 .ytp-mf-reactions { display: flex; flex-direction: row; gap: 4px; flex-shrink: 0; }
 .ytp-mf-reactions .ytp-mf-btn { width: 24px; height: 24px; border-radius: 6px; }
 .ytp-mf-font-row {
@@ -1725,10 +1730,10 @@ textarea.report-input { resize:vertical; }
     max-width: none;
     transform: none;
   }
-  /* Once the horizontal lane between the title / queue and transport is too
-     narrow for a readable lyric, put the words above the button stack instead
-     of letting the centred strip run underneath either column.  The measured
-     bottom value deliberately leaves a gap above the topmost button. */
+  /* Once the horizontal lane between the title / queue and transport is truly
+     tight, put the words above the button stack instead of letting the centred
+     strip run underneath either column. The measured bottom value deliberately
+     leaves a gap above the topmost button. */
   #ytp-mini-footer.dock-lyr-over-controls .ytp-mf-lyr.show {
     left: var(--mf-lyr-left);
     width: var(--mf-lyr-w);
@@ -3730,6 +3735,7 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
             <button class="ytp-mf-btn" data-reaction-track="" onclick="ytpReact('sad',this,event)" oncontextmenu="ytpOpenReactionUndo('sad',this,event)" onpointerdown="ytpReactionPressStart('sad',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heartbreak reaction. Right-click or long-press to undo." aria-label="Send a heartbreak reaction" id="ytp-mf-react-sad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/><path d="m12 5.67-2 4 3 2-2 4 1 5.56"/></svg></button>
           </span>
           <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
+          <button type="button" class="ytp-mf-live-badge" id="ytp-mf-live-badge" title="This player is broadcasting live. Click to see who is listening." onclick="event.stopPropagation();sjjToggleListeners()"><span class="dot"></span>Broadcasting Live</button>
         </div>
         <div class="ytp-mf-font-row" id="ytp-mf-font-row">
           <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
@@ -8219,6 +8225,8 @@ const YTP_MF_LYR_MIN_W = 150;
 const YTP_MF_LYR_GAP = 16;
 /** What the lyrics take when there is room for everything. */
 const YTP_MF_LYR_IDEAL_W = 576;   // 36rem
+/** Below this measured lyric lane, align the words over the controls instead. */
+const YTP_MF_LYR_OVER_CONTROLS_AT_W = 420;
 
 /**
  * Put the lyrics in the space the dock actually has for them.
@@ -8269,11 +8277,11 @@ function ytpMfPlaceLyrics() {
   const bandStart = leftEdge - dockRect.left + YTP_MF_LYR_GAP;
   const bandEnd = rightEdge - dockRect.left - YTP_MF_LYR_GAP;
   const band = bandEnd - bandStart;
-  // The queue owns the middle lane the moment it is shown; do not wait for it
-  // to become impossibly narrow before moving the lyrics out of its way.
-  // Without a queue, retain the centred layout until that lane really is too
-  // cramped to read.
-  const useControlsAbove = dock.classList.contains('dock-show-playlist') || band < YTP_MF_LYR_MIN_W;
+  // Keep lyrics centred even when the playlist is open. The queue may make
+  // the left side visually heavier, but it does not need the lyric strip to
+  // abandon the centre while there is still a comfortable reading lane. Only
+  // move it over the controls once that measured lane falls below 420px.
+  const useControlsAbove = band < YTP_MF_LYR_OVER_CONTROLS_AT_W;
   if (useControlsAbove) {
     // The space directly above the transport is still useful. Put the lyric
     // strip there and leave a measured 12px of breathing room above the
@@ -15773,7 +15781,11 @@ function playlistChartPaintTransport() {
   // own the same queue. The wall only needs the one thing the player cannot
   // do: start this playlist.
   const startBtn = document.getElementById('pl-wall-start-btn');
-  if (startBtn) startBtn.disabled = !playlistChartBaseQueue.length;
+  if (startBtn) {
+    startBtn.disabled = !playlistChartBaseQueue.length;
+    const playingThisPlaylist = playlistChartIsLive();
+    startBtn.innerHTML = `<span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>${playingThisPlaylist ? 'Restart' : 'Start'} Playlist`;
+  }
 }
 
 function playlistChartQueue() {
@@ -18795,6 +18807,7 @@ let _esSel        = new Set();
 let _esDrawn      = [];
 let _esSelAllOn   = false;
 let _esSelAnchorId = null;   // last row ticked by hand, for shift-click
+let _esLyricsChecking = false;
 
 // Lyric status. Two id-only reads rather than the words themselves: a track
 // carries its LRC in tracks.lyrics_synced and its plain words in a jukebox.lyrics
@@ -19291,6 +19304,9 @@ function esSelBarHTML() {
     '<button type="button" class="es-selbtn primary" onclick="esSelPlayNow()" title="Replace the queue with these songs and start playing">&#9654; Play now</button>' +
     '<button type="button" class="es-selbtn" onclick="esSelAddQueue()" title="Add these songs to the end of the queue">+ Add to queue</button>' +
     '<button type="button" class="es-selbtn" onclick="esSelOpenPlaylists(this,event)" title="Add these songs to one of your playlists">&#9776; Add to playlist</button>' +
+    '<button type="button" class="es-selbtn"' + (_esLyricsChecking ? ' disabled' : '') +
+      ' onclick="esSelCheckLyrics()" title="Look up the selected songs in LRCLIB">' +
+      (_esLyricsChecking ? 'Checking lyrics\u2026' : 'Check for Lyrics') + '</button>' +
     '<button type="button" class="es-selbtn ghost" onclick="esSelClear()">Clear</button>' +
   '</div>';
 }
@@ -19340,6 +19356,49 @@ function esSelAddQueue() {
   ytAppendQueueItems(q);
   updateYTQueueUI();
   showToast('Added ' + q.length + ' song' + (q.length === 1 ? '' : 's') + ' to the queue.');
+}
+
+// LRCLIB limits one lookup batch to forty songs. Keep the batch control free
+// to work across a larger selection, while making one bounded request at a
+// time so a slow provider does not cause the whole action to be abandoned.
+async function esSelCheckLyrics() {
+  if (_esLyricsChecking || !_esSel.size) return;
+  if (!googleUser) {
+    showToast('Sign in to check lyrics.');
+    handleAuthClick();
+    return;
+  }
+  const ids = esSelOrderedIds();
+  if (!ids.length) return;
+  _esLyricsChecking = true;
+  esSyncSelBar();
+  let found = 0, synced = 0;
+  try {
+    const headers = { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) };
+    for (let i = 0; i < ids.length; i += 40) {
+      const res = await fetch(sjApiUrl('/api/my-jukebox/lyrics'), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ trackIds: ids.slice(i, i + 40) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Could not check lyrics.');
+      found += Number(data.found) || 0;
+      synced += Number(data.synced) || 0;
+    }
+    // Reload the two small lyric-status indexes so the visible badges and
+    // lyric filter immediately reflect what the batch found.
+    await esEnsureCatalog(true);
+    const added = found ? ' Added lyrics to ' + found + ' song' + (found === 1 ? '' : 's') + '.' : '';
+    const timed = synced ? ' Added timing to ' + synced + '.' : '';
+    showToast('Checked ' + ids.length + ' song' + (ids.length === 1 ? '' : 's') + '.' + added + timed);
+  } catch (e) {
+    console.warn('esSelCheckLyrics', e);
+    showToast((e && e.message) || 'Could not check lyrics.');
+  } finally {
+    _esLyricsChecking = false;
+    esSyncSelBar();
+  }
 }
 
 // -- Add to playlist -----------------------------------------------------
@@ -19921,6 +19980,11 @@ const _laReduceMotion  = !!(window.matchMedia && window.matchMedia('(prefers-red
 
 function toggleLandingCard(artistId) {
   const opening = !landingExpandedIds.has(artistId);
+  const artist = opening && landingStats.find(r => r.artist_id === artistId);
+  // A singles-only import is already a song list. Open its useful view first
+  // instead of making the listener drill into the one Singles album just to
+  // reach the track they came for. They can still switch to Albums normally.
+  if (artist?.discography_complete === false) laSongViewIds.add(artistId);
   laFlipRender(() => {
     if (opening) landingExpandedIds.add(artistId); else landingExpandedIds.delete(artistId);
     renderLanding();
@@ -20409,7 +20473,19 @@ async function enterArtistJukebox(artist, opts) {
 
 async function goHome(opts) {
   opts = opts || {};
-  if (!IS_COMMUNITY) return; // already home
+  // The playlist wall is an in-place landing-page view. Its own back button
+  // returns to Explore Playlists, so the logo should do the same.
+  if (viewMode === 'playlistchart') {
+    returnToPlaylistExplorer();
+    return;
+  }
+  if (!IS_COMMUNITY) {
+    // The logo is Home from every landing sheet too. Explore Playlists and
+    // Explore Songs share the root URL, so restore the artist landing sheet
+    // in place rather than attempting a no-op navigation to that same URL.
+    if (isLandingMode && landingTab !== 'explore') setLandingTab('explore');
+    return;
+  }
   if (_routeTransitionBusy) return;
   _routeTransitionBusy = true;
   try {
@@ -23542,6 +23618,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'When your Online Jukebox is broadcasting, the docked player now carries the same Broadcasting Live badge as the full player. Tap it to see who is listening.',
+    'From an opened playlist, the Suffering Jukebox logo now returns you to Explore Playlists, just like the back button on the page.',
+    'The Start Playlist button now reads Restart Playlist whenever that playlist is already playing, including Now Playing.',
     'Explore Songs lets you pick several songs at once. There is a tick box at the start of every row, and one in the column heading that takes everything currently on screen. Hold Shift while ticking to take the whole run between the last song you picked and this one.',
     'With songs picked, a bar appears above the list: play them all now, add them to the end of the queue, or add them to one of your playlists. Songs already on that playlist are skipped rather than added twice, and you can make a new playlist out of the selection without leaving the list.',
     'The picks are counted in the bar and survive searching, sorting and Show more, so you can gather songs from several searches before doing anything with them. They play in the order the table is sorted in. Clear empties the selection, and switching to another Explore page does too.',
@@ -29648,9 +29727,9 @@ async function sjjRefreshListeners() {
 // The badge in the player. It follows the mirror, not the room: "on air" with
 // the music coming from another laptop is not this player broadcasting.
 function sjjSyncLiveBadge() {
-  const badge = document.getElementById('ytp-live-badge');
-  if (!badge) return;
-  badge.classList.toggle('on', !!_sjjLive);
+  document.querySelectorAll('.ytp-live-badge, .ytp-mf-live-badge').forEach(badge => {
+    badge.classList.toggle('on', !!_sjjLive);
+  });
 }
 
 function sjjSetting(label, control) {
