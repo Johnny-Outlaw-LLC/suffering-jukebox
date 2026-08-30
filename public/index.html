@@ -17985,6 +17985,27 @@ function liveRoomListeningHere() {
   return !!(liveRoomMode && _liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode);
 }
 
+/**
+ * Requesting a song is for people in the room.
+ *
+ * Browsing a live set used to offer Add Songs beside Join Now, so a stranger
+ * could put a song in somebody's party from the wall and never hear it. The
+ * host is the one who has to live with the request, so asking costs you the
+ * same thing it costs everybody else in the room: you are following the set.
+ * The host's own device is in the room by definition.
+ */
+function liveRoomCanRequest() {
+  return !!(liveRoomMode && (liveRoomListeningHere() || liveRoomMode._roomIsOwner || _sjjLive));
+}
+
+/** Send somebody who is not in the room to the door rather than refusing. */
+function liveRoomRequireJoin() {
+  if (liveRoomCanRequest()) return true;
+  showToast('Join the jukebox to request a song.');
+  liveRoomOpenJoinModal();
+  return false;
+}
+
 function liveRoomPermLines(settings) {
   const s = settings || liveRoomMode?._settings || {};
   const max = Number(s.maxPendingPerGuest);
@@ -18384,6 +18405,7 @@ function liveRoomCloseAddSongs() { document.getElementById('live-room-add-overla
 
 async function openLiveRoomAddSongs() {
   if (!liveRoomMode) return;
+  if (!liveRoomRequireJoin()) return;
   try { if (!(await liveRoomEnsureGuest())) return; }
   catch (e) { showToast(e.message || 'Could not join this jukebox.'); return; }
   const old = document.getElementById('live-room-add-overlay'); if (old) old.remove();
@@ -18425,6 +18447,7 @@ async function liveRoomAddTrack(trackId, name) {
 
 function liveRoomRequests() {
   if (!liveRoomMode) return;
+  if (!liveRoomRequireJoin()) return;
   (async () => {
     try {
       if (!(await liveRoomEnsureGuest())) return;
@@ -18507,9 +18530,12 @@ function renderPlaylistChart(error) {
     playlistChartId === '__dynamic_now_playing' || (_plObj && (minePl || _plObj.is_public))
   ));
   const listeningHere = liveRoomListeningHere();
+  const canRequest = liveRoomCanRequest();
   const roomBtns = liveRoomMode
-    ? `<button type="button" class="pl-wall-back" onclick="openLiveRoomAddSongs()">Add Songs</button>` +
-      `<button type="button" class="pl-wall-back" onclick="liveRoomRequests()">My Requests</button>` +
+    ? (canRequest
+      ? `<button type="button" class="pl-wall-back" onclick="openLiveRoomAddSongs()">Add Songs</button>` +
+        `<button type="button" class="pl-wall-back" onclick="liveRoomRequests()">My Requests</button>`
+      : '') +
       (!listeningHere && !liveRoomMode._roomIsOwner && !_sjjLive
         ? `<button type="button" class="pl-wall-join-now" onclick="liveRoomOpenJoinModal()">Join Now</button>`
         : '') +
@@ -18536,7 +18562,7 @@ function renderPlaylistChart(error) {
   const roomNotice = liveRoomMode
     ? (listeningHere
       ? `<div class="landing-no-results" style="margin:0 0 12px">You are following the host. Playback and order stay with them until you Leave Room. You can still add songs and remove only your own waiting requests.</div>`
-      : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player, or Add Songs to request without joining the playlist.</div>`)
+      : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player and to request songs.</div>`)
     : '';
   const transport = liveRoomMode ? `${sizeCtrl}${modeTog}` : `${sizeCtrl}${modeTog}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
   main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer()">← Explore Playlists</button>${manageBtns}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
@@ -24153,6 +24179,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
     'A jukebox only shows as live while it is actually playing music. Opening a room used to leave it on the Explore Playlists wall labelled LIVE NOW for hours after the host stopped playing, and it took a Broadcasting Now badge with it. Now a room appears while the host is playing, stays put through a pause or a gap between songs, and drops off the wall a few minutes after the music stops or the host closes the tab.',
+    'Requesting a song in someone else\'s live jukebox now means joining it. Browsing a live set used to offer Add Songs beside Join Now, so you could put a song in a room you were not in and never hear it play. Press Join Now and Add Songs and My Requests are there; leave the room and they go with it.',
     'Live jukeboxes have their own category. Live sits beside All, My Playlists and Public above the playlist grid, with a count of how many rooms are on air, and shows nothing but rooms you can join. All still lists them first, and My Playlists and Public are now only about saved playlists.',
   ] },
   { date: '2026-08-29', items: [
