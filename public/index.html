@@ -3203,9 +3203,72 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
   .pl-wall-exp-title { font-size:1rem; }
   .pl-wall-exp-actions { margin-top:8px; }
 }
+
+/* A wall of covers should be a wall. Three levels of padding nest here - the
+   page shell, the wall page and the scroller - and on a 375px phone they took
+   96px, a quarter of the screen, to frame nine thumbnails. The covers now run
+   edge to edge and only the words above them keep a margin. */
+@media (max-width: 720px) {
+  /* The shell sets these with !important for every mobile page, so the one
+     page that wants none has to say so just as loudly. */
+  main:has(> .pl-wall-page) { padding-left:0 !important; padding-right:0 !important; }
+  .pl-wall-page { padding-left:0; padding-right:0; }
+  .pl-wall-page > .pl-wall-header,
+  .pl-wall-page > .pl-wall-toolbar,
+  .pl-wall-page > .landing-no-results,
+  .pl-wall-page > .pl-wall-editbar { margin-left:12px; margin-right:12px; }
+  .pl-wall-scroll { padding-left:0; padding-right:0; }
+  /* The detail table keeps its gutter - a table read to the screen edge is
+     harder to read, and it is words rather than pictures. */
+  .pl-wall-page.pl-wall-detail-mode .pl-wall-scroll { padding-left:12px; padding-right:12px; }
+}
 /* Drag to reorder. touch-action:none is what stops the browser scrolling the
-   wall out from under a finger that meant to move a cover. */
-.pl-wall-draggable { touch-action:none; }
+   wall out from under a finger that meant to move a cover - but it also stops
+   the wall scrolling at all, which on a phone is most of what a finger on a
+   cover is for. So the wall only claims the gesture in edit mode; the rest of
+   the time a finger pans and only a mouse drags. */
+.pl-wall-draggable { touch-action:pan-y; }
+.pl-wall-grid.pl-wall-editing .pl-wall-draggable { touch-action:none; }
+
+/* ── Edit mode ────────────────────────────────────────────────────────
+   A long press puts the wall here and the covers wobble, the way an iPhone
+   home screen does: drag to reorder, tap the cross to remove, tap anything
+   else to finish. Nothing else on the wall changes meaning. */
+.pl-wall-grid.pl-wall-editing .pl-wall-cell { animation:plWallJiggle .34s linear infinite; }
+/* The cover mid-drag and an opened card hold still - one is already moving
+   and the other is a page of text. */
+.pl-wall-grid.pl-wall-editing .pl-wall-cell.pl-wall-dragging,
+.pl-wall-grid.pl-wall-editing .pl-wall-cell.pl-wall-expanded { animation:none; }
+/* The song playing keeps the size that says so; only the wobble is added. */
+.pl-wall-grid.pl-wall-editing .pl-wall-cell.current { animation:plWallJiggleCur .34s linear infinite; }
+.pl-wall-grid.pl-wall-editing .pl-wall-cell.editable .pl-wall-cell-x { opacity:1; }
+@keyframes plWallJiggle {
+  0% { transform:rotate(-.75deg) } 50% { transform:rotate(.75deg) } 100% { transform:rotate(-.75deg) }
+}
+@keyframes plWallJiggleCur {
+  0% { transform:scale(1.12) rotate(-.75deg) } 50% { transform:scale(1.12) rotate(.75deg) } 100% { transform:scale(1.12) rotate(-.75deg) }
+}
+/* A wobbling grid is unusable for anyone who has asked for stillness; the
+   outline says the same thing without moving. */
+@media (prefers-reduced-motion: reduce) {
+  .pl-wall-grid.pl-wall-editing .pl-wall-cell,
+  .pl-wall-grid.pl-wall-editing .pl-wall-cell.current { animation:none; }
+  .pl-wall-grid.pl-wall-editing .pl-wall-cell.editable { outline:2px solid var(--accent); outline-offset:-2px; }
+}
+.pl-wall-editbar {
+  position:sticky; top:0; z-index:12;
+  display:flex; align-items:center; gap:10px;
+  margin:0 0 8px; padding:9px 12px;
+  border:1px solid var(--accent); border-radius:9px;
+  background:#1a1210; color:var(--text);
+  font-family:var(--mono); font-size:.52rem; letter-spacing:.04em;
+}
+.pl-wall-editbar span { flex:1; min-width:0; color:var(--text-muted); }
+.pl-wall-editdone {
+  flex:none; min-height:36px; padding:.4rem 1rem;
+  background:var(--accent); border:1px solid var(--accent); border-radius:8px;
+  color:#0a0a0a; font-family:var(--mono); font-size:.58rem; font-weight:700; cursor:pointer;
+}
 .pl-wall-cell.pl-wall-dragging { opacity:.35; transform:scale(.94); z-index:20; }
 .pl-wall-drop-marker {
   aspect-ratio:1; border:2px dashed var(--accent); border-radius:2px;
@@ -3351,7 +3414,15 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
 .pl-wall-cell:hover .pl-wall-cell-x,
 .pl-wall-cell:focus-within .pl-wall-cell-x { opacity: 1; }
 .pl-wall-cell-x:hover { background: var(--accent); border-color: var(--accent); transform: scale(1.12); }
-@media (hover: none) { .pl-wall-cell-x { opacity: .85; } }
+/* No hover to reveal it, but showing it on every cover all the time means a
+   remove button under the thumb on a wall being scrolled. It appears when the
+   wall is in edit mode, and it is thumb-sized when it does. */
+@media (hover: none) {
+  .pl-wall-cell-x { opacity: 0; }
+  .pl-wall-grid.pl-wall-editing .pl-wall-cell.editable .pl-wall-cell-x {
+    opacity: 1; width: 30px; height: 30px; top: 5px; right: 5px; font-size: .8rem;
+  }
+}
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
 .pl-wall-exp .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
 .pl-wall-page.pl-wall-detail-mode .pl-wall-size { display:none; }
@@ -16332,6 +16403,14 @@ function plWallBindBadgeHovers() {
       plWallRemoveMyTrack(i);
       return;
     }
+    // The press that opened edit mode is still going to produce a click when
+    // the finger lifts. Without this it would land here and close edit mode
+    // in the same gesture that asked for it.
+    if (_plWallEditing && Date.now() - _plWallEditEnteredAt < 500) { ev.stopPropagation(); return; }
+    // In edit mode a plain tap means done, the same as tapping the wallpaper
+    // behind a screen of wobbling apps. Opening a song is what a tap does the
+    // rest of the time.
+    if (_plWallEditing) { ev.stopPropagation(); plWallSetEditing(false); return; }
     plWallToggleExpand(i, ev);
   });
 
@@ -16346,14 +16425,27 @@ function plWallBindBadgeHovers() {
 
   grid.addEventListener('pointerdown', (ev) => {
     if (ev.button != null && ev.button !== 0) return;
-    const cell = ev.target.closest('.pl-wall-cell.pl-wall-draggable');
-    if (!cell) return;
     // The rate/heart buttons and the X are controls, so a press on them is
     // not a drag. The invisible hover corner is NOT a control - it is 42% by
     // 42% of the cover, so excluding it made most of the top right of every
     // card refuse to start a drag while still showing the grab cursor.
     if (ev.target.closest('.pl-wall-badges, .pl-wall-cell-x')) return;
-    plWallDragBegin(cell, ev);
+    const dragCell = ev.target.closest('.pl-wall-cell.pl-wall-draggable');
+    // A playlist can be one you may take songs out of but not reorder, and a
+    // long press has to reach edit mode there too or the cross never appears
+    // on a phone.
+    const editCell = dragCell || ev.target.closest('.pl-wall-cell.editable');
+    if (!editCell) return;
+    if (ev.pointerType === 'touch' && !_plWallEditing) {
+      plWallCancelPress();
+      _plWallPressAt = { x: ev.clientX, y: ev.clientY };
+      _plWallPressTimer = setTimeout(() => {
+        _plWallPressTimer = null;
+        plWallSetEditing(true);
+      }, PL_LONGPRESS_MS);
+      return;
+    }
+    if (dragCell) plWallDragBegin(dragCell, ev);
   });
 
   // A cover is an <img> and a title is text, and the browser wants to drag
@@ -16363,6 +16455,11 @@ function plWallBindBadgeHovers() {
   grid.addEventListener('dragstart', (ev) => { ev.preventDefault(); });
 
   grid.addEventListener('pointermove', (ev) => {
+    // Moving off the spot means the finger was going somewhere - scrolling -
+    // so it was never a long press.
+    if (_plWallPressAt
+      && (Math.abs(ev.clientX - _plWallPressAt.x) > PL_DRAG_SLOP
+        || Math.abs(ev.clientY - _plWallPressAt.y) > PL_DRAG_SLOP)) plWallCancelPress();
     if (!_plDrag) return;
     ev.preventDefault();
     plWallDragMove(grid, ev);
@@ -16371,6 +16468,7 @@ function plWallBindBadgeHovers() {
   // A pointer released outside the grid never reaches the handler below, which
   // used to leave the drag half open and the next one refusing to start.
   grid.addEventListener('pointercancel', () => {
+    plWallCancelPress();
     if (_plDrag) {
       _plDrag.cell.classList.remove('pl-wall-dragging');
       if (_plDrag.marker) _plDrag.marker.remove();
@@ -16379,6 +16477,7 @@ function plWallBindBadgeHovers() {
   });
 
   const finish = async (ev) => {
+    plWallCancelPress();
     if (!_plDrag) return;
     const wasDrag = _plDrag.active;
     // Stamped before the await: the click lands as soon as the pointer is up,
@@ -16961,6 +17060,51 @@ function plWallDropIndex(grid, x, y) {
   const fromIdx = cells.indexOf(st.cell);
   if (fromIdx >= 0 && at > fromIdx) at -= 1;
   return Math.max(0, Math.min(at, cells.length - 1));
+}
+
+/* ── Edit mode ────────────────────────────────────────────────────────
+   Rearranging a wall with a finger is the same problem an iPhone home screen
+   solves: the gesture that moves a thing is the gesture that scrolls past it,
+   so one of them has to be asked for. A long press asks. Until then a finger
+   scrolls and a tap opens the song, which is what a tap meant before. */
+let _plWallEditing = false;
+let _plWallPressTimer = null;
+let _plWallPressAt = null;
+let _plWallEditEnteredAt = 0;
+const PL_LONGPRESS_MS = 450;
+
+function plWallCancelPress() {
+  if (_plWallPressTimer) clearTimeout(_plWallPressTimer);
+  _plWallPressTimer = null;
+  _plWallPressAt = null;
+}
+
+function plWallSetEditing(on) {
+  on = !!on;
+  plWallCancelPress();
+  if (_plWallEditing === on) return;
+  _plWallEditing = on;
+  if (on) _plWallEditEnteredAt = Date.now();
+  const grid = document.getElementById('pl-wall-grid');
+  if (grid) grid.classList.toggle('pl-wall-editing', on);
+  plWallRenderEditBar();
+  // The press has been held long enough to mean something; say so if the
+  // device can. Wrapped because Safari does not have it and iOS ignores it.
+  if (on && navigator.vibrate) { try { navigator.vibrate(12); } catch (_) {} }
+}
+
+function plWallRenderEditBar() {
+  const existing = document.getElementById('pl-wall-editbar');
+  const page = document.querySelector('.pl-wall-page');
+  if (!_plWallEditing || !page) { if (existing) existing.remove(); return; }
+  if (existing) return;
+  const bar = document.createElement('div');
+  bar.id = 'pl-wall-editbar';
+  bar.className = 'pl-wall-editbar';
+  bar.innerHTML = '<span>Drag to reorder. Tap \u2715 to remove.</span>'
+    + '<button type="button" class="pl-wall-editdone" onclick="plWallSetEditing(false)">Done</button>';
+  const scroll = page.querySelector('.pl-wall-scroll');
+  if (scroll) page.insertBefore(bar, scroll); else page.appendChild(bar);
 }
 
 function plWallDragBegin(cell, ev) {
@@ -18262,6 +18406,11 @@ async function saveLiveRoomAsPlaylist() {
 
 function renderPlaylistChart(error) {
   plWallClosePop();
+  // A repaint builds a fresh grid with no edit class on it, so the flag has
+  // to come down with it or the wall would claim to be editing while looking
+  // like it is not. Removing one song does not come through here.
+  _plWallEditing = false;
+  plWallRenderEditBar();
   const main = document.getElementById('main');
   if (!main) return;
   main.classList.remove('main-landing');
@@ -23933,6 +24082,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'On a phone, a playlist\'s covers now run the full width of the screen. They were framed by three nested margins that took about a quarter of the width to show nine thumbnails.',
+    'Rearranging a playlist on a phone works the way rearranging apps does. Press and hold any cover: the covers start to wobble, a remove cross appears on each one you are allowed to take out, and a bar at the top says Done. Drag to reorder, tap the cross to remove, and tap any cover or Done to finish.',
+    'Until you hold one, a finger on the covers just scrolls the page. It used to try to pick a cover up, which is why scrolling a long playlist on a phone kept snagging. Tapping a cover still opens it, and on a computer a cover still drags straight away with the mouse.',
     'Songs in your listening history that the Jukebox does not have yet can now be added right there on the My Data & Analytics page. Add to Jukebox no longer opens a second tab: it searches YouTube for the song, shows you what it found so you can correct the artist and song name before anything is stored, and adds it while you stay where you are.',
     'New: an Import missing button above the songs chart, with a count of how many songs your history has that the Jukebox does not. Tick the ones you want, check the matches, choose whether they go into My Jukebox only or the public catalogue, and they are added in one pass, with lyrics looked up for each. Up to twenty at a time, because every song costs a YouTube search.',
     'The charts refresh themselves once an import finishes, so songs you have just added stop offering to add themselves. Whole artists still open Import Music, which is where a full discography belongs.',
