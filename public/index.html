@@ -3071,7 +3071,8 @@ body.live-room-listening #ytp-mf-repeat,
 body.live-room-listening #ytp-md-prev,
 body.live-room-listening #ytp-md-next,
 body.live-room-listening #ytp-md-shuffle,
-body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
+body.live-room-listening #ytp-md-repeat,
+body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:none; }
 .playlist-explore-body { padding:14px 16px 15px; display:flex; flex-direction:column; gap:7px; }
 .playlist-explore-name { font-size:.82rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .playlist-explore-meta { color:var(--text-muted); font-size:.5rem; }
@@ -6826,6 +6827,10 @@ function ytUpNextIndex() {
 }
 
 function ytSkipUpNext() {
+  if (_liveRoomListen) {
+    showToast('The host controls what plays next in a live jukebox.');
+    return;
+  }
   // Skip means "not that one", including when that one was pinned by hand.
   _ytPlayNext = null;
   const current = ytUpNextIndex();
@@ -6859,7 +6864,7 @@ function ytpUpNextQueueHTML() {
   const label = (artist ? artist + ' - ' : '') + (item.title || 'Track');
   const safeLabel = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   return '<div class="yt-queue-up-next"><span class="yt-queue-up-next-lbl">Up next</span>' +
-    (ytQueue.length > 2 ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another queued song to play next">Skip</button>' : '') +
+    (ytQueue.length > 2 && !_liveRoomListen ? '<button class="yt-queue-up-next-skip" onclick="event.stopPropagation();ytSkipUpNext()" title="Choose another queued song to play next">Skip</button>' : '') +
     '<span class="yt-queue-up-next-title" title="' + safeLabel + '">' + safeLabel + '</span></div>';
 }
 
@@ -18366,6 +18371,7 @@ async function liveRoomStartListening() {
   ytRepeat = false;
   try { ytpPaintTogs(); } catch (_) {}
   try { ytpMobSyncDeck(); } catch (_) {}
+  try { ytpPaintUpNext(); } catch (_) {}
   liveRoomPaintOverlay();
 
   await liveRoomPollTick(true);
@@ -18393,6 +18399,7 @@ function liveRoomStopListening(toastMsg) {
     } catch (_) {}
   }
   liveRoomCloseJoinModal();
+  try { ytpPaintUpNext(); } catch (_) {}
   liveRoomPaintOverlay();
   if (viewMode === 'playlistchart' && liveRoomMode) {
     renderPlaylistChart();
@@ -24179,6 +24186,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
     'A jukebox only shows as live while it is actually playing music. Opening a room used to leave it on the Explore Playlists wall labelled LIVE NOW for hours after the host stopped playing, and it took a Broadcasting Now badge with it. Now a room appears while the host is playing, stays put through a pause or a gap between songs, and drops off the wall a few minutes after the music stops or the host closes the tab.',
+    'Skip, on the Up next banner, is gone while you are following somebody\'s live jukebox. What plays next is the host\'s to choose, the same as previous, next, shuffle and repeat already were; the banner still tells you what is coming.',
     'Requesting a song in someone else\'s live jukebox now means joining it. Browsing a live set used to offer Add Songs beside Join Now, so you could put a song in a room you were not in and never hear it play. Press Join Now and Add Songs and My Requests are there; leave the room and they go with it.',
     'Live jukeboxes have their own category. Live sits beside All, My Playlists and Public above the playlist grid, with a count of how many rooms are on air, and shows nothing but rooms you can join. All still lists them first, and My Playlists and Public are now only about saved playlists.',
   ] },
