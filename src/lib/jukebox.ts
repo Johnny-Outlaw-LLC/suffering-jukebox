@@ -207,6 +207,12 @@ export type Playback = {
   lyricOffsetMs: number;
   /** Server clock when this was written. The only time base guests trust. */
   updatedAt: string | null;
+  /**
+   * Server clock when the music was last actually running. Stamped by
+   * setPlayback and carried across a pause, because `isPlaying` alone cannot
+   * tell a host who paused for a moment from one who paused and went home.
+   */
+  playingAt: string | null;
 };
 
 export const EMPTY_PLAYBACK: Playback = {
@@ -220,6 +226,7 @@ export const EMPTY_PLAYBACK: Playback = {
   isPlaying: false,
   lyricOffsetMs: 0,
   updatedAt: null,
+  playingAt: null,
 };
 
 export function normalizePlayback(raw: unknown): Playback {
@@ -243,6 +250,7 @@ export function normalizePlayback(raw: unknown): Playback {
     isPlaying: p.isPlaying === true,
     lyricOffsetMs: ms(p.lyricOffsetMs, 30 * 60 * 1000),
     updatedAt: str(p.updatedAt, 40),
+    playingAt: str(p.playingAt, 40),
   };
 }
 
@@ -295,6 +303,49 @@ export function broadcastExpired(opts: {
   // rather than switching off something we cannot date.
   if (!candidates.length) return false;
   return opts.nowMs - Math.max(...candidates) > BROADCAST_EXPIRY_MS;
+}
+
+/**
+ * How long a room may go without a push from the host's player before it stops
+ * counting as on air.
+ *
+ * The host pushes every five seconds, so two minutes is a couple of dozen
+ * missed pushes: the tab is closed, the laptop is shut, or the browser has
+ * suspended it. This is a different question from BROADCAST_EXPIRY_MS below,
+ * which is about switching the room off; this one is only about whether to
+ * advertise it as playing right now.
+ */
+export const BROADCAST_ACTIVE_MS = 2 * 60 * 1000;
+
+/**
+ * A pause is not the end of the night. The gap between songs, a phone call,
+ * somebody changing the record: the room stays on the wall through a short
+ * pause and drops off a long one.
+ */
+export const BROADCAST_PAUSE_GRACE_MS = 5 * 60 * 1000;
+
+/**
+ * True when a room is genuinely playing music right now, which is the only
+ * thing that should be advertised as live.
+ *
+ * `jukeboxes.is_live` says the room is OPEN, and it stays true for hours after
+ * a host wanders off — which is how a station with silent speakers ended up
+ * on the wall all afternoon labelled LIVE NOW. Being open is a fact about the
+ * room; this is a fact about the music, and the wall asks the second question.
+ */
+export function broadcastingNow(opts: {
+  playback: Playback | null;
+  nowMs: number;
+}): boolean {
+  const pb = opts.playback;
+  if (!pb || !pb.videoId) return false;
+  const stamped = pb.updatedAt ? Date.parse(pb.updatedAt) : NaN;
+  // No stamp, or a stale one, means nothing is feeding the room whatever the
+  // last thing it said was.
+  if (!Number.isFinite(stamped) || opts.nowMs - stamped > BROADCAST_ACTIVE_MS) return false;
+  if (pb.isPlaying) return true;
+  const played = pb.playingAt ? Date.parse(pb.playingAt) : NaN;
+  return Number.isFinite(played) && opts.nowMs - played <= BROADCAST_PAUSE_GRACE_MS;
 }
 
 export function normalizeCode(input: string): string | null {

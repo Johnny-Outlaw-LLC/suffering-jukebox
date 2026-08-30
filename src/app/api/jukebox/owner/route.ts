@@ -241,7 +241,12 @@ export async function POST(req: NextRequest) {
           lastQueue: jukebox.last_queue,
         });
 
-        const playback = await setPlayback(sb, jukebox.id, normalizePlayback(body.playback));
+        const playback = await setPlayback(
+          sb,
+          jukebox.id,
+          normalizePlayback(body.playback),
+          jukebox.playback,
+        );
 
         // The listeners panel runs off this, so it keeps working with the
         // console closed - which is the normal case for a host watching the

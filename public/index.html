@@ -15611,7 +15611,7 @@ if (landingTab === 'home') {
     if (!localStorage.getItem('sj_artist_explore_filter')) localStorage.setItem('sj_artist_explore_filter', 'mine');
   } catch (_) {}
 }
-let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all'; // all | mine | public
+let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all'; // all | mine | public | live
 let playlistExploreSearchQ = '';
 let playlistExploreSort = localStorage.getItem('sj_pl_explore_sort') || 'date_desc';
 let playlistExploreContributor = localStorage.getItem('sj_pl_explore_contributor') || '';
@@ -15800,19 +15800,24 @@ function landingThumb(row) {
 function playlistExploreRows() {
   const all = _savedPlaylists || [];
   const email = googleUser?.email || '';
+  const scope = plScope();
   let rows;
-  if (plScope() === 'mine') {
+  if (scope === 'live') {
+    // Live is a category of its own now: rooms playing right now and nothing
+    // else. A saved playlist has no business on that shelf.
+    rows = [];
+  } else if (scope === 'mine') {
     rows = email ? all.filter(p => p.user_email === email) : [];
-  } else if (plScope() === 'public') {
+  } else if (scope === 'public') {
     rows = all.filter(p => p.is_public);
   } else {
     rows = all.filter(p => p.is_public || (email && p.user_email === email));
   }
-  if (playlistExploreContributor && plScope() !== 'mine') {
+  if (playlistExploreContributor && scope !== 'mine' && scope !== 'live') {
     rows = rows.filter(p => (p.user_email || '') === playlistExploreContributor);
   }
-  const dynamic = plScope() === 'public'
-      || (plScope() !== 'mine' && playlistExploreContributor)
+  const dynamic = scope === 'public' || scope === 'live'
+      || (scope !== 'mine' && playlistExploreContributor)
     ? []
     : dynamicPlaylistRows();
   const q = playlistExploreSearchQ.trim().toLowerCase();
@@ -15829,7 +15834,14 @@ function playlistExploreRows() {
   // A host already has this running order as their own Now Playing playlist.
   // Showing it again as a separate room card is confusing, so reserve Live
   // Now for rooms they can join and mark their own Now Playing card instead.
-  const live = liveRoomPlaylists.filter(p => !p._roomIsOwner && (!q || playlistMatchesSearch(p, q)));
+  // All keeps them at the top, where a room that is on air belongs; Live is
+  // nothing but them; My Playlists and Public are about saved playlists, and
+  // somebody else's room is neither.
+  // Signed out there is one shelf and no chips to change it with, so a room
+  // on air has to be on it.
+  const live = (scope === 'all' || scope === 'live' || !googleUser)
+    ? liveRoomPlaylists.filter(p => !p._roomIsOwner && (!q || playlistMatchesSearch(p, q)))
+    : [];
   return live.concat(dynamic.filter(p => !q || playlistMatchesSearch(p, q)), sorted);
 }
 
@@ -15949,8 +15961,10 @@ function setPlaylistExploreFilter(mode) {
     showToast('Sign in to see your playlists.');
     return;
   }
-  playlistExploreFilter = ['mine', 'public', 'all'].includes(mode) ? mode : 'all';
+  playlistExploreFilter = ['mine', 'public', 'all', 'live'].includes(mode) ? mode : 'all';
   try { localStorage.setItem('sj_pl_explore_filter', playlistExploreFilter); } catch (_) {}
+  // On this shelf the live rooms are the whole shelf, so refresh them first.
+  if (playlistExploreFilter === 'live') loadLiveRoomPlaylists();
   if (isLandingMode && landingTab === 'playlists') renderLanding();
 }
 
@@ -20167,7 +20181,9 @@ function renderLanding() {
           ? 'Loading playlists…'
           : (playlistExploreSearchQ.trim()
             ? 'No playlists match “' + esc(playlistExploreSearchQ.trim()) + '”.'
-            : (plScope() === 'mine'
+            : (plScope() === 'live'
+              ? 'No jukeboxes are playing right now.'
+              : plScope() === 'mine'
               ? (googleUser ? 'You have not saved a playlist yet.' : 'Sign in to see your playlists.')
               : (plScope() === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.')));
         const _contribOpts = playlistContributorOptions();
@@ -20181,14 +20197,14 @@ function renderLanding() {
                 ${playlistExploreSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="clearPlaylistExploreSearch()">✕</button>` : ''}
               </div>
             </div>
-            ${plScope() === 'mine' ? '' : `<div class="landing-control-group" style="margin:0">
+            ${plScope() === 'mine' || plScope() === 'live' ? '' : `<div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Contributor</span>
               <select class="landing-sort-select" id="playlist-explore-contributor" onchange="setPlaylistExploreContributor(this.value)">
                 <option value="">All Contributors</option>
                 ${_contribOpts.map(([email, label, n]) => `<option value="${esc(email)}"${playlistExploreContributor === email ? ' selected' : ''}>${esc(label)} (${n})</option>`).join('')}
               </select>
             </div>`}
-            <div class="landing-control-group" style="margin:0">
+            ${plScope() === 'live' ? '' : `<div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Sort</span>
               <select class="landing-sort-select" id="playlist-explore-sort" onchange="setPlaylistExploreSort(this.value)">
                 ${plSortOpt('date_desc', 'Newest First')}
@@ -20198,7 +20214,7 @@ function renderLanding() {
                 ${plSortOpt('tracks_desc', 'Most Tracks')}
                 ${plSortOpt('tracks_asc', 'Fewest Tracks')}
               </select>
-            </div>
+            </div>`}
             <div class="playlist-explore-actions">
               <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
               ${googleUser
@@ -20206,7 +20222,7 @@ function renderLanding() {
                 : ''}
             </div>
           </div>
-          ${rows.length ? `${rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid">${rows.map(p => {
+          ${rows.length ? `${plScope() !== 'live' && rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid">${rows.map(p => {
             const mine = googleUser && p.user_email === googleUser.email;
             const by = p._liveRoom
               ? ' · LIVE NOW · ' + (p._listenerCount || 0) + ' listening · ' + (p._queuedSongCount || 0) + ' waiting'
@@ -21596,6 +21612,9 @@ function updateLandingActionsHeader() {
     ? 'My Songs' + (mineSongCount ? ' (' + mineSongCount.toLocaleString() + ')' : '')
     : 'My Artists' + (mineArtistCount ? ' (' + mineArtistCount + ')' : '');
   const minePlCount = googleUser ? (_savedPlaylists || []).filter(p => p.user_email === googleUser.email).length : 0;
+  // A host's own room is not a room they can join, so it is left out of the
+  // count for the same reason it is left off the wall.
+  const liveScopeCount = liveRoomPlaylists.filter(p => !p._roomIsOwner).length;
   const scopeChips = !googleUser ? ''
     : (landingTab === 'explore' || landingTab === 'songs')
     ? `<span class="landing-nav-scope" role="group" aria-label="Artist scope">
@@ -21608,6 +21627,7 @@ function updateLandingActionsHeader() {
         <button type="button" class="playlist-explore-filter${plScope() === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
         <button type="button" class="playlist-explore-filter${plScope() === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
         <button type="button" class="playlist-explore-filter${plScope() === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
+        <button type="button" class="playlist-explore-filter${plScope() === 'live' ? ' active' : ''}" onclick="setPlaylistExploreFilter('live')">Live${liveScopeCount ? ' (' + liveScopeCount + ')' : ''}</button>
       </span>`
     : '';
   // Chips and totals share one row under the tabs, so the tab buttons keep the
@@ -24126,11 +24146,15 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
-const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
+const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-08-30', items: [
+    'A jukebox only shows as live while it is actually playing music. Opening a room used to leave it on the Explore Playlists wall labelled LIVE NOW for hours after the host stopped playing, and it took a Broadcasting Now badge with it. Now a room appears while the host is playing, stays put through a pause or a gap between songs, and drops off the wall a few minutes after the music stops or the host closes the tab.',
+    'Live jukeboxes have their own category. Live sits beside All, My Playlists and Public above the playlist grid, with a count of how many rooms are on air, and shows nothing but rooms you can join. All still lists them first, and My Playlists and Public are now only about saved playlists.',
+  ] },
   { date: '2026-08-29', items: [
     'Dragging covers to reorder a playlist is now a computer-only thing. On a phone or tablet the wall simply scrolls, a cover opens when you tap it, and the cross removes it from the playlist. Two goes at a thumb-friendly reorder were both worse than leaving the scrolling alone, so the long press and its wobbling edit mode are gone.',
     'New on a phone: pinch the covers to make them bigger or smaller. It is the same setting as the Size slider, so whichever you use the other follows, and it is remembered for next time.',

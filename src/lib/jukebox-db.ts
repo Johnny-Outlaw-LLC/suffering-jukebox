@@ -17,6 +17,7 @@ import {
   normalizeSettings,
   LISTENER_SESSION_GAP_MS,
   broadcastExpired,
+  broadcastingNow,
   reconcileHostQueue,
   shapeListeners,
   type HostQueueItem,
@@ -341,6 +342,13 @@ export async function setGuestBanned(
 }
 
 /** Public live rooms, shaped for the Explore Playlists Live Now collection. */
+/**
+ * The rooms worth putting on the wall: open, public, and actually playing
+ * music. `is_live` alone is not enough — it stays true until the host takes
+ * the room off air or BROADCAST_EXPIRY_MS runs out six hours later, so a
+ * station whose speakers went quiet at lunchtime was still advertising itself
+ * as LIVE NOW at teatime. broadcastingNow() is the second half of the test.
+ */
 export async function listLiveJukeboxes(sb: ServiceClient): Promise<JukeboxRow[]> {
   const { data, error } = await T(sb, "jukeboxes")
     .select(JUKEBOX_SELECT)
@@ -349,7 +357,10 @@ export async function listLiveJukeboxes(sb: ServiceClient): Promise<JukeboxRow[]
     .order("last_live_at", { ascending: false })
     .limit(100);
   if (error) throw error;
-  return (data ?? []).map(hydrate);
+  const nowMs = Date.now();
+  return (data ?? [])
+    .map(hydrate)
+    .filter((room) => broadcastingNow({ playback: room.playback, nowMs }));
 }
 
 export async function setIpBanned(
@@ -950,8 +961,17 @@ export async function setPlayback(
   sb: ServiceClient,
   jukeboxId: string,
   playback: Playback,
+  /** What the room last held, so a pause keeps the moment music last ran. */
+  previous?: Playback | null,
 ): Promise<Playback> {
-  const stamped = normalizePlayback({ ...playback, updatedAt: new Date().toISOString() });
+  const now = new Date().toISOString();
+  const stamped = normalizePlayback({
+    ...playback,
+    updatedAt: now,
+    // Stamped here rather than taken from the host for the same reason
+    // updatedAt is: the server's clock is the only one every guest shares.
+    playingAt: playback.isPlaying ? now : (previous?.playingAt ?? null),
+  });
   const { error } = await T(sb, "jukeboxes").update({ playback: stamped }).eq("id", jukeboxId);
   if (error) throw error;
   return stamped;
