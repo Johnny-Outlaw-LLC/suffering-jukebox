@@ -2974,6 +2974,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
    right. The chips used to sit inline after the three tabs, which pushed the
    tabs off the side of a phone. */
 .landing-nav-row2 { display: flex; gap: 14px; row-gap: 6px; flex-wrap: wrap; align-items: center; margin-top: .5rem; }
+.landing-nav-row2.now-playing-controls { gap: 8px; }
 .landing-shuffle-btn {
   background: var(--accent); border: 1px solid var(--accent); color: #0a0a0a;
   font-family: var(--mono); font-size: .5rem; font-weight: 700; letter-spacing: .07em;
@@ -5168,6 +5169,79 @@ const ALBUM_COLORS = {
   'Purple Mountains':              '#7040a8',  // purple - the whole vibe
   'All My Happiness is Gone':      '#7844c0',  // violet
 };
+
+// ── Performance diagnostics ───────────────────────────────────────────────
+// Kept in memory as well as printed so a reproduction can be copied from the
+// console after the page recovers. Entries contain timings and counts only —
+// never song names, account details or request credentials.
+const SJ_PERF_LOG_LIMIT = 1000;
+const sjPerformanceEntries = [];
+let sjPerformanceRun = 0;
+
+function sjPerfMemory() {
+  const mem = performance && performance.memory;
+  return mem ? {
+    heapUsedMB: Math.round(mem.usedJSHeapSize / 1048576),
+    heapTotalMB: Math.round(mem.totalJSHeapSize / 1048576),
+  } : {};
+}
+
+function sjPerf(event, detail) {
+  const entry = {
+    at: new Date().toISOString(),
+    pageMs: Math.round(performance.now()),
+    event,
+    ...(detail || {}),
+    ...sjPerfMemory(),
+  };
+  sjPerformanceEntries.push(entry);
+  if (sjPerformanceEntries.length > SJ_PERF_LOG_LIMIT) sjPerformanceEntries.shift();
+  console.info('[SJ performance]', event, entry);
+  return entry;
+}
+
+function sjPerfDuration(startedAt) {
+  return Math.round((performance.now() - startedAt) * 10) / 10;
+}
+
+// Run `sjPerformanceReport()` in DevTools after reproducing a slowdown. The
+// returned JSON is ready to copy into a bug report.
+window.sjPerformanceReport = () => JSON.stringify({
+  userAgent: navigator.userAgent,
+  viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+  entries: sjPerformanceEntries,
+}, null, 2);
+window.sjClearPerformanceLog = () => { sjPerformanceEntries.length = 0; };
+
+try {
+  if (typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
+    new PerformanceObserver(list => list.getEntries().forEach(task => {
+      sjPerf('browser.long-task', {
+        startMs: Math.round(task.startTime * 10) / 10,
+        durationMs: Math.round(task.duration * 10) / 10,
+      });
+    })).observe({ type: 'longtask', buffered: true });
+  }
+} catch (e) {
+  console.warn('[SJ performance] Long-task observer unavailable', e);
+}
+
+// Long tasks are not exposed in every browser. This watchdog still records a
+// conspicuous main-thread stall when a one-second heartbeat arrives late.
+let _sjPerfHeartbeatAt = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  const lag = now - _sjPerfHeartbeatAt - 1000;
+  _sjPerfHeartbeatAt = now;
+  if (lag >= 200) sjPerf('browser.event-loop-stall', { durationMs: Math.round(lag * 10) / 10 });
+}, 1000);
+
+window.addEventListener('error', event => {
+  sjPerf('browser.error', { message: String(event.message || 'Unknown error').slice(0, 300) });
+});
+window.addEventListener('unhandledrejection', event => {
+  sjPerf('browser.unhandled-rejection', { message: String(event.reason?.message || event.reason || 'Unknown rejection').slice(0, 300) });
+});
 
 const dbGet = async (path) => {
   const r = await fetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } });
@@ -16149,6 +16223,31 @@ function sjSyncNowPlayingTab() {
   }
 }
 
+// Now Playing is a peer of the three Explore destinations, not a saved
+// playlist nested under Explore Playlists. Give it the shared two-row header:
+// destinations on row one, view choices on row two, both above the divider.
+// Opened saved playlists deliberately keep the ordinary playlist-page header.
+function renderNowPlayingHeader() {
+  const nav = document.getElementById('landing-nav-header');
+  if (!nav || playlistChartId !== '__dynamic_now_playing') return;
+  const row = nowPlayingDynamicRow();
+  const count = row?._tracks?.length || playlistChartRows.length || 0;
+  nav.style.display = 'block';
+  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
+    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>
+    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>
+    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>
+    <button type="button" class="landing-tab landing-tab-now active" id="landing-now-playing-tab" onclick="openNowPlayingChart()" title="Open the queue that is playing right now">♪ Now Playing${count > 1 ? ' (' + count.toLocaleString() + ')' : ''}</button>
+  </nav>
+  <div class="landing-nav-row2 now-playing-controls" role="group" aria-label="Now Playing view">
+    <button type="button" class="playlist-explore-filter${playlistWallMode === 'detail' ? '' : ' active'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')">Covers</button>
+    <button type="button" class="playlist-explore-filter${playlistWallMode === 'detail' ? ' active' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')">Details</button>
+  </div>`;
+  nav.dataset.armed = '1';
+  updateToolbarToggle();
+  sjFitLwytbRow();
+}
+
 async function ensureMyReactionTracks(force) {
   if (!googleUser) {
     const changed = myReactionTrackIds.length > 0;
@@ -16965,17 +17064,25 @@ const _plWallRxnAsked = new Set();
 const PL_RXN_CHUNK = 100;
 
 async function plWallLoadReactionCounts(ids) {
+  const startedAt = performance.now();
   const need = [...new Set((ids || []).filter(Boolean))]
     .filter(id => !trackReactionCounts[id] && !_plWallRxnAsked.has(id))
     .slice(0, 600);
-  if (!need.length) { plWallSyncBadges(); return; }
+  if (!need.length) {
+    const syncAt = performance.now();
+    plWallSyncBadges();
+    sjPerf('now-playing.reactions.cached', { requested: (ids || []).length, syncMs: sjPerfDuration(syncAt) });
+    return;
+  }
   need.forEach(id => _plWallRxnAsked.add(id));
   // Chunked because a uuid is 37 characters in a query string: a 300 song wall
   // in one request is an 11KB URL, and 8KB is where proxies start refusing.
   // Three requests instead of one is still forty times better than 120.
   const chunks = [];
   for (let i = 0; i < need.length; i += PL_RXN_CHUNK) chunks.push(need.slice(i, i + PL_RXN_CHUNK));
+  sjPerf('now-playing.reactions.start', { tracks: need.length, chunks: chunks.length });
   await Promise.all(chunks.map(async chunk => {
+    const chunkAt = performance.now();
     try {
       const res = await fetch(sjApiUrl('/api/sj-reaction?track_ids=' + chunk.join(',')), { cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
@@ -16983,16 +17090,25 @@ async function plWallLoadReactionCounts(ids) {
       Object.entries(body.by_track || {}).forEach(([id, counts]) => {
         trackReactionCounts[id] = counts || {};
       });
+      sjPerf('now-playing.reactions.chunk', { tracks: chunk.length, status: res.status, durationMs: sjPerfDuration(chunkAt) });
     } catch (e) {
       // An empty answer is still an answer: without this the wall would ask
       // for the same ids again on every repaint.
       chunk.forEach(id => { if (!trackReactionCounts[id]) trackReactionCounts[id] = {}; });
       console.warn('plWallLoadReactionCounts error', e);
+      sjPerf('now-playing.reactions.chunk-error', { tracks: chunk.length, durationMs: sjPerfDuration(chunkAt), message: String(e?.message || e).slice(0, 200) });
     }
   }));
   // Once, after every chunk has landed. Sweeping per chunk meant fifty walks
   // of a five thousand cell wall for one screen's worth of hearts.
+  const syncAt = performance.now();
   plWallSyncBadges();
+  sjPerf('now-playing.reactions.complete', {
+    tracks: need.length,
+    requestAndParseMs: Math.max(0, Math.round((syncAt - startedAt) * 10) / 10),
+    badgeSyncMs: sjPerfDuration(syncAt),
+    totalMs: sjPerfDuration(startedAt),
+  });
 }
 
 function playlistChartTipMeta(row, i, isCurrent, played, skipped) {
@@ -17314,8 +17430,18 @@ async function playlistChartPlay(startIndex) {
 }
 
 async function openPlaylistChart(playlistId) {
+  const perfRun = ++sjPerformanceRun;
+  const perfStartedAt = performance.now();
   const p = liveRoomPlaylists.find(x => x.id === playlistId) || dynamicPlaylistById(playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
-  if (!p) return;
+  if (!p) {
+    sjPerf('playlist-wall.open-missing', { run: perfRun, kind: playlistId === '__dynamic_now_playing' ? 'now-playing' : 'playlist' });
+    return;
+  }
+  sjPerf('playlist-wall.open-start', {
+    run: perfRun,
+    kind: playlistId === '__dynamic_now_playing' ? 'now-playing' : p._liveRoom ? 'live-room' : 'playlist',
+    sourceTracks: p._tracks?.length || 0,
+  });
   if (_liveRoomListen && p._liveRoom && p._roomCode !== _liveRoomListen.code) {
     liveRoomStopListening();
   }
@@ -17333,24 +17459,34 @@ async function openPlaylistChart(playlistId) {
     const el = document.getElementById(id); if (el) { el.innerHTML = ''; el.style.display = id === 'landing-nav-header' ? 'none' : ''; el.dataset.armed = '0'; }
   });
   updateToolbarToggle();
+  const skeletonAt = performance.now();
   renderPlaylistChart();
+  sjPerf('playlist-wall.skeleton-rendered', { run: perfRun, durationMs: sjPerfDuration(skeletonAt), elapsedMs: sjPerfDuration(perfStartedAt) });
   try {
     const ordered = (p._tracks || []).slice().sort((a, b) => a.position - b.position);
     const ids = [...new Set(ordered.map(r => r.track_id).filter(Boolean))];
     if (!ids.length) throw new Error('This playlist has no tracks.');
     const chunks = [];
     for (let i = 0; i < ids.length; i += 70) chunks.push(ids.slice(i, i + 70));
+    let stageAt = performance.now();
     const tRows = (await Promise.all(chunks.map(c => dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,track_number,duration_ms`)))).flat();
+    sjPerf('playlist-wall.data-tracks', { run: perfRun, requested: ids.length, rows: tRows.length, chunks: chunks.length, durationMs: sjPerfDuration(stageAt) });
     const tById = Object.fromEntries(tRows.map(t => [t.id, t]));
     const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
     const aChunks = []; for (let i = 0; i < albumIds.length; i += 70) aChunks.push(albumIds.slice(i, i + 70));
+    stageAt = performance.now();
     const albRows = albumIds.length ? (await Promise.all(aChunks.map(c => dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,artist_id,release_date,art_url`)))).flat() : [];
+    sjPerf('playlist-wall.data-albums', { run: perfRun, requested: albumIds.length, rows: albRows.length, chunks: aChunks.length, durationMs: sjPerfDuration(stageAt) });
     const albById = Object.fromEntries(albRows.map(a => [a.id, a]));
     const artistIds = [...new Set(albRows.map(a => a.artist_id).filter(Boolean))];
     const arChunks = []; for (let i = 0; i < artistIds.length; i += 70) arChunks.push(artistIds.slice(i, i + 70));
+    stageAt = performance.now();
     const artistsRows = artistIds.length ? (await Promise.all(arChunks.map(c => dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat() : [];
+    sjPerf('playlist-wall.data-artists', { run: perfRun, requested: artistIds.length, rows: artistsRows.length, chunks: arChunks.length, durationMs: sjPerfDuration(stageAt) });
     const artistById = Object.fromEntries(artistsRows.map(a => [a.id, a]));
+    stageAt = performance.now();
     const chartYT = await loadYT(ids);
+    sjPerf('playlist-wall.data-media', { run: perfRun, requested: ids.length, rows: Object.keys(chartYT).length, durationMs: sjPerfDuration(stageAt) });
     Object.assign(ytData, chartYT);
     // extractArtColors() used to run here over every album on the playlist:
     // one CORS <img> plus a canvas scan each, on a different cache key from
@@ -17360,6 +17496,7 @@ async function openPlaylistChart(playlistId) {
     // album is now measured when the card opens instead. See plWallToggleExpand().
     loadPlayCounts(ids);
     if (googleUser) loadMyPlayCounts().then(() => { if (viewMode === 'playlistchart') plWallRefreshStats(); });
+    stageAt = performance.now();
     const rows = ordered.map((pt, index) => {
       const t = tById[pt.track_id], alb = t && albById[t.album_id], artist = alb && artistById[alb.artist_id];
       if (!t) return null;
@@ -17368,7 +17505,11 @@ async function openPlaylistChart(playlistId) {
       SJ_TRACK_META[t.id] = { title:t.name || '', artist:artist?.name || '', album:alb?.name || '', year:(alb?.release_date || '').slice(0,4), artwork };
       return { trackId:t.id, title:t.name || 'Track', artist:artist?.name || '', album:alb?.name || '', albumId: alb?.id || null, _alb: alb || null, color, artwork, index, duration:t.duration_ms || 0, views:chartYT[t.id]?.views || 0, ptId: pt.id, position: pt.position, addedByEmail: pt.added_by_email || null, addedByName: pt.added_by_name || '' };
     }).filter(Boolean);
-    if (playlistChartId !== playlistId) return;
+    sjPerf('playlist-wall.rows-built', { run: perfRun, rows: rows.length, durationMs: sjPerfDuration(stageAt) });
+    if (playlistChartId !== playlistId) {
+      sjPerf('playlist-wall.open-cancelled', { run: perfRun, elapsedMs: sjPerfDuration(perfStartedAt) });
+      return;
+    }
     playlistChartRows = rows;
     plWallIndexRows();
     playlistChartBaseQueue = rows.filter(r => chartYT[r.trackId]?.video_id).map(r =>
@@ -17383,7 +17524,15 @@ async function openPlaylistChart(playlistId) {
     // lyric anyway (plWallToggleExpand), so past the cap the only cost is
     // that one card waits its own moment.
     _fetchLyricsForTracks(rows.slice(0, PL_LYRIC_PREFETCH).map(r => r.trackId));
+    stageAt = performance.now();
     renderPlaylistChart();
+    sjPerf('playlist-wall.open-complete', {
+      run: perfRun,
+      rows: rows.length,
+      playableRows: playlistChartBaseQueue.length,
+      finalRenderMs: sjPerfDuration(stageAt),
+      totalMs: sjPerfDuration(perfStartedAt),
+    });
     // Browse first — do not auto-join. Watch the host's now-playing so the
     // wall can highlight it; JOIN NOW is what starts the mirror.
     if (liveRoomMode && !liveRoomMode._roomIsOwner && !_sjjLive) {
@@ -17402,6 +17551,7 @@ async function openPlaylistChart(playlistId) {
     playlistChartBaseQueue = [];
     plWallIndexRows();
     renderPlaylistChart(e.message || 'Could not load this playlist.');
+    sjPerf('playlist-wall.open-error', { run: perfRun, totalMs: sjPerfDuration(perfStartedAt), message: String(e?.message || e).slice(0, 200) });
   }
 }
 
@@ -18261,6 +18411,7 @@ let _plFillToken = 0;
 let _plFillState = null;
 
 function plWallFillList(host, q, curIdx, isDetail, scrollToCurrent, keepDrawn) {
+  const startedAt = performance.now();
   const token = ++_plFillToken;
   const order = plWallVisibleOrder(q, isDetail);
   _plFillState = { token, host, q, order, curIdx, isDetail, at: 0 };
@@ -18274,6 +18425,14 @@ function plWallFillList(host, q, curIdx, isDetail, scrollToCurrent, keepDrawn) {
   plWallFillMore(Math.max(PL_FILL_FIRST, curPos + 1, keepDrawn || 0));
   plWallAfterFill(scrollToCurrent);
   plWallWatchFillScroll();
+  sjPerf('playlist-wall.fill-initial', {
+    run: sjPerformanceRun,
+    mode: isDetail ? 'details' : 'covers',
+    totalTracks: order.length,
+    drawnTracks: _plFillState?.at || 0,
+    scrollToCurrent: !!scrollToCurrent,
+    durationMs: sjPerfDuration(startedAt),
+  });
 }
 
 /** Append the next slice, or up to `upTo` songs if that is further on. */
@@ -18281,6 +18440,8 @@ function plWallFillMore(upTo) {
   const st = _plFillState;
   if (!st || st.token !== _plFillToken || !st.host.isConnected) return false;
   if (st.at >= st.order.length) return false;
+  const startedAt = performance.now();
+  const from = st.at;
   const end = Math.min(st.order.length, Math.max(upTo || 0, st.at + PL_FILL_MORE));
   let html = '';
   for (let pos = st.at; pos < end; pos++) {
@@ -18291,7 +18452,19 @@ function plWallFillMore(upTo) {
   }
   st.host.insertAdjacentHTML('beforeend', html);
   st.at = end;
+  const badgesAt = performance.now();
   plWallSyncBadges();
+  sjPerf('playlist-wall.fill-slice', {
+    run: sjPerformanceRun,
+    mode: st.isDetail ? 'details' : 'covers',
+    from,
+    to: end,
+    inserted: end - from,
+    htmlKB: Math.round(html.length / 102.4) / 10,
+    domInsertMs: Math.max(0, Math.round((badgesAt - startedAt) * 10) / 10),
+    badgeSyncMs: sjPerfDuration(badgesAt),
+    totalMs: sjPerfDuration(startedAt),
+  });
   return true;
 }
 
@@ -18950,10 +19123,13 @@ function plDetailTheadHTML() {
 }
 
 function renderPlaylistChart(error) {
+  const renderAt = performance.now();
   plWallClosePop();
   const main = document.getElementById('main');
   if (!main) return;
   main.classList.remove('main-landing');
+  const isNowPlayingPage = playlistChartId === '__dynamic_now_playing';
+  if (isNowPlayingPage) renderNowPlayingHeader();
   const q = playlistChartQueue();
   const curIdx = playlistChartCurrentCellIndex();
   const esc = s => escHtml(s || '');
@@ -19016,7 +19192,8 @@ function renderPlaylistChart(error) {
       ? `<div class="landing-no-results" style="margin:0 0 12px">You are following the host. Playback and order stay with them until you Leave Room. You can still add songs and remove only your own waiting requests.</div>`
       : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player and to request songs.</div>`)
     : '';
-  const transport = liveRoomMode ? `${sizeCtrl}${modeTog}` : `${sizeCtrl}${modeTog}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
+  const pageModeTog = isNowPlayingPage ? '' : modeTog;
+  const transport = liveRoomMode ? `${sizeCtrl}${pageModeTog}` : `${sizeCtrl}${pageModeTog}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-tog${ytRepeat ? ' on' : ''}" id="pl-wall-repeat" onclick="ytpSetRepeat(!ytRepeat)">↻ Repeat</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
   // The search box only makes sense next to the columns it searches.
   const searchHTML = isDetail
     ? `<div class="landing-search-wrap pl-wall-search-wrap"><input type="text" class="landing-search-input" id="pl-wall-search" placeholder="Search this playlist…" autocomplete="off" value="${esc(plSearchQ).replace(/"/g, '&quot;')}" oninput="plWallSetSearch(this.value)" onkeydown="if(event.key==='Escape')plWallClearSearch()">${plSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="plWallClearSearch()">✕</button>` : ''}</div>`
@@ -19025,13 +19202,16 @@ function renderPlaylistChart(error) {
   // buttons on it - the only way back was the Explore Playlists link. These
   // three go straight to any tab, the same as the ones above the wall.
   const _npNav = nowPlayingDynamicRow();
-  const wallNav = `<nav class="landing-nav pl-wall-nav" aria-label="Browse Suffering Jukebox">` +
+  const wallNav = isNowPlayingPage ? '' : `<nav class="landing-nav pl-wall-nav" aria-label="Browse Suffering Jukebox">` +
     `<button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>` +
     `<button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>` +
     `<button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>` +
     (_npNav ? `<button type="button" class="landing-tab landing-tab-now" onclick="openNowPlayingChart()" title="Open the queue that is playing right now">♪ Now Playing${_npNav._tracks && _npNav._tracks.length > 1 ? ' (' + _npNav._tracks.length.toLocaleString() + ')' : ''}</button>` : '') +
   `</nav>`;
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}">${wallNav}<div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer('playlists')">← Explore Playlists</button>${manageBtns}</div><div class="pl-wall-toolbar">${searchHTML}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
+  const pageActions = isNowPlayingPage
+    ? (manageBtns ? `<div class="pl-wall-toolbar">${manageBtns}</div>` : '')
+    : `<div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer('playlists')">← Explore Playlists</button>${manageBtns}</div>`;
+  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}">${wallNav}<div class="pl-wall-header"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div>${pageActions}<div class="pl-wall-toolbar">${searchHTML}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>${roomNotice}${body}</section>`;
   playlistChartPaintTransport();
   if (q.length) {
     const host = isDetail
@@ -19042,6 +19222,15 @@ function renderPlaylistChart(error) {
     if (host) plWallFillList(host, q, curIdx, isDetail, true);
   }
   plWallLoadReactionCounts(q.map(it => it.trackId));
+  sjPerf('playlist-wall.render', {
+    run: sjPerformanceRun,
+    kind: isNowPlayingPage ? 'now-playing' : liveRoomMode ? 'live-room' : 'playlist',
+    mode: isDetail ? 'details' : 'covers',
+    rows: q.length,
+    drawnRows: plWallDrawnCount(),
+    error: !!error,
+    durationMs: sjPerfDuration(renderAt),
+  });
 }
 
 
@@ -22153,13 +22342,13 @@ function updateLandingActionsHeader() {
   const actions = landingTab === 'playlists'
     ? `<div class="playlist-explore-actions">
         ${playlistHiddenIds.size ? `<button type="button" class="playlist-explore-action-btn" onclick="showAllPlaylists(event)" title="Bring every hidden playlist back">Show All (${playlistHiddenIds.size} hidden)</button>` : ''}
-        <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
         ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : ''}
+        <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
       </div>`
     : (landingTab === 'explore' || landingTab === 'songs')
     ? `<div class="playlist-explore-actions">
-        <button type="button" class="playlist-explore-action-btn primary" onclick="openImportMusic()">＋ Import Music</button>
         <button type="button" class="playlist-explore-action-btn" onclick="userMenuAction('myartists')">Manage My Artists</button>
+        <button type="button" class="playlist-explore-action-btn primary" onclick="openImportMusic()">＋ Import Music</button>
       </div>`
     : '';
   const row2 = (scopeChips || totals || actions)
@@ -24713,6 +24902,8 @@ const SJ_CHANGELOG = [
     'Shuffle All now turns a plain color the moment something starts or stops playing, instead of waiting for the next time the page refreshes itself.',
     'Explore Artists has a Manage My Artists button now, matching Explore Songs.',
     'Import Music, Import Playlist, and Manage buttons moved up to sit beside Shuffle All on all three Explore tabs, instead of living down in the filter row.',
+    'On every Explore tab, Import sits furthest to the right, after Manage, so the main action is always in the same place.',
+    'On Now Playing, Explore Artists / Playlists / Songs sit in the shared top header above the divider, and Covers / Details sit on the second row in the same style as All / My Artists on Explore Artists, not down in the page body.',
     'Restart Playlist is a plain gray button instead of orange, since it shows up at the same time as the orange Now Playing button and the two were competing.',
   ] },
   { date: '2026-08-29', items: [
@@ -27641,9 +27832,13 @@ async function _loadPlayCountsFromEvents() {
 
 async function loadPlayCounts(trackIds) {
   if (!trackIds.length) return;
+  const startedAt = performance.now();
+  const diagnostics = viewMode === 'playlistchart';
+  if (diagnostics) sjPerf('playlist-wall.play-counts.start', { run: sjPerformanceRun, tracks: trackIds.length, chunks: Math.ceil(trackIds.length / 50) });
   const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
   try {
     for (let i = 0; i < trackIds.length; i += 50) {
+      const chunkAt = performance.now();
       const chunk = trackIds.slice(i, i + 50);
       const rows = await fetch(
         `${REST}/track_play_counts?track_id=in.(${chunk.join(',')})&select=track_id,play_count`,
@@ -27651,14 +27846,18 @@ async function loadPlayCounts(trackIds) {
       ).then(r => r.json());
       if (rows?.code === '42501' || rows?.message?.includes('permission denied')) {
         await _loadPlayCountsFromEvents();
+        if (diagnostics) sjPerf('playlist-wall.play-counts.fallback', { run: sjPerformanceRun, durationMs: sjPerfDuration(startedAt) });
         return;
       }
       if (!Array.isArray(rows)) continue;
       rows.forEach(r => { if (r.track_id) inAppPlays[r.track_id] = Number(r.play_count) || 0; });
+      if (diagnostics) sjPerf('playlist-wall.play-counts.chunk', { run: sjPerformanceRun, tracks: chunk.length, rows: rows.length, durationMs: sjPerfDuration(chunkAt) });
     }
     _afterPlayCountsLoaded();
+    if (diagnostics) sjPerf('playlist-wall.play-counts.complete', { run: sjPerformanceRun, tracks: trackIds.length, durationMs: sjPerfDuration(startedAt) });
   } catch (e) {
     try { await _loadPlayCountsFromEvents(); } catch (_) {}
+    if (diagnostics) sjPerf('playlist-wall.play-counts.error', { run: sjPerformanceRun, durationMs: sjPerfDuration(startedAt), message: String(e?.message || e).slice(0, 200) });
   }
 }
 
