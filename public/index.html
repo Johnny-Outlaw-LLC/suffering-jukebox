@@ -3176,7 +3176,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:inline-size; content-visibility:auto; contain-intrinsic-size:auto var(--pl-cell,120px); }
 /* The song on screen, the card that is open and anything mid-drag must never
    be skipped: they carry a frame or a shadow that spills outside the cell. */
-.pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-dragging, .pl-wall-cell.pl-wall-expanded { content-visibility:visible; }
+.pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-expanded { content-visibility:visible; }
 
 /* ── A cover opened in place ──────────────────────────────────────────
    The clicked square takes the whole row and everything after it moves
@@ -3205,7 +3205,8 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-expanded .pl-wall-stats,
 .pl-wall-expanded .pl-wall-badges,
 .pl-wall-expanded .pl-wall-badge-hot,
-.pl-wall-expanded .pl-wall-cell-x { display:none !important; }
+.pl-wall-expanded .pl-wall-cell-x,
+.pl-wall-expanded .pl-wall-move { display:none !important; }
 
 .pl-wall-exp {
   position:absolute; inset:0 0 0 clamp(230px, 38vh, 330px);
@@ -3282,38 +3283,17 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
      harder to read, and it is words rather than pictures. */
   .pl-wall-page.pl-wall-detail-mode .pl-wall-scroll { padding-left:12px; padding-right:12px; }
 }
-/* Reordering by dragging is a mouse gesture and only a mouse gesture. Two
-   goes at making it work with a thumb - claiming the whole cover, then asking
-   for it with a long press - were both worse than the wall simply scrolling.
-   On a touchscreen a cover is tapped to open and crossed out to remove, and
-   the running order is changed on a computer. See plWallBindBadgeHovers.
-
-   pan-y is what makes the pinch below ours to handle: it leaves the wall
-   scrolling up and down while taking the browser's own zoom off the table. */
+/* pan-y is what makes the pinch ours to handle: it leaves the wall scrolling
+   up and down while taking the browser's own zoom off the table. Nothing here
+   is dragged any more - three goes at a drag that worked with a thumb were all
+   worse than the wall simply scrolling, and the two arrows on each cover say
+   the same thing on every device. See plWallBindBadgeHovers. */
 .pl-wall-grid { touch-action:pan-y; }
 /* Stated on the cell as well as the grid. The effective gesture is meant to be
    the intersection of an element and its ancestors, but this is exactly the
    sort of thing iOS has historically read differently, and the cell is what
    the finger actually lands on. */
 .pl-wall-cell { touch-action:pan-y; }
-.pl-wall-cell.pl-wall-dragging { opacity:.35; transform:scale(.94); z-index:20; }
-.pl-wall-drop-marker {
-  aspect-ratio:1; border:2px dashed var(--accent); border-radius:2px;
-  background:#ff6b3514; pointer-events:none;
-}
-/* On a phone there is no cursor, so without a cover under the finger there is
-   nothing to say a drag is happening at all - the wall just went quiet and a
-   dashed square appeared somewhere else. This is the cover itself, lifted out
-   and carried. Fixed and transform-only, so moving it never touches layout. */
-.pl-wall-drag-ghost {
-  position:fixed; top:0; left:0; z-index:9999; pointer-events:none;
-  border-radius:3px; overflow:hidden; opacity:.94;
-  box-shadow:0 18px 44px #000d, 0 0 0 2px var(--accent);
-  transform:translate3d(-9999px,-9999px,0);
-  will-change:transform;
-}
-.pl-wall-drag-ghost img { width:100%; height:100%; object-fit:cover; display:block; }
-.pl-wall-cell.pl-wall-dragging { opacity:.22; }
 .pl-wall-cell img { width:100%; height:100%; object-fit:cover; display:block; transition:filter .3s, opacity .3s; }
 /* Soft dark wash so white title + stats stay readable — ShutterField-style. */
 .pl-wall-cell::after {
@@ -3445,8 +3425,38 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
      Safari offers the sheet for the image, so the image has to refuse it. */
   -webkit-touch-callout:none;
 }
-.pl-wall-cell.pl-wall-draggable { cursor:grab; }
-.pl-wall-cell.pl-wall-draggable:active { cursor:grabbing; }
+/* Move earlier / move later, on the two side edges. The song moves left or
+   right in the grid, so the arrows point the way it goes. It is also the one
+   pair of spots on a cover that is free: the title is inset 8% and centred,
+   the play stats are bottom left, and the rating and the remove cross are
+   both top right. */
+.pl-wall-move {
+  position:absolute; top:50%; z-index:6;
+  width:26px; height:26px; margin-top:-13px; border-radius:50%;
+  background:rgba(0,0,0,.62); border:1px solid rgba(255,255,255,.28);
+  color:#fff; font-size:.95rem; line-height:1; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; padding:0;
+  opacity:0; transition:opacity .15s, background .15s, border-color .15s, transform .12s;
+}
+.pl-wall-move.back { left:5px; }
+.pl-wall-move.fwd  { right:5px; }
+.pl-wall-cell:hover .pl-wall-move,
+.pl-wall-cell:focus-within .pl-wall-move { opacity:1; }
+.pl-wall-move:hover { background:var(--accent); border-color:var(--accent); transform:scale(1.14); }
+.pl-wall-move:active { transform:scale(.94); }
+/* A wall of small covers has no room for two more circles; the arrows come
+   back once a cover is big enough to carry them. */
+.pl-wall-mini .pl-wall-move { display:none; }
+/* The title is centred across the cover and would sit under both arrows on a
+   small one, so it pulls its shoulders in while they are showing. */
+.pl-wall-cell.pl-wall-movable:hover .pl-wall-name,
+.pl-wall-cell.pl-wall-movable:focus-within .pl-wall-name { left:38px; right:38px; }
+/* Nothing to hover with, so they are simply there - and thumb sized, the same
+   as the remove cross. Which means the title makes room for them always. */
+@media (hover: none) {
+  .pl-wall-move { opacity:.8; width:30px; height:30px; margin-top:-15px; font-size:1.05rem; }
+  .pl-wall-cell.pl-wall-movable .pl-wall-name { left:40px; right:40px; }
+}
 .pl-wall-cell-x {
   position: absolute; top: 8px; right: 8px; z-index: 6;
   width: 24px; height: 24px; border-radius: 50%;
@@ -5208,6 +5218,30 @@ const dbPost = async (path, body) => {
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+};
+
+/**
+ * Insert many rows in as few requests as possible.
+ *
+ * Every one-row-at-a-time insert loop in here used to await a fresh
+ * getSession() and a full round trip PER ROW, so saving a 558 song queue as a
+ * playlist was 558 sequential POSTs and sat on "Saving…" for over a minute.
+ * PostgREST takes an array. 200 rows is a comfortable body, and return=minimal
+ * stops the server serialising every row back at a client that ignores them.
+ */
+const DB_INSERT_CHUNK = 200;
+const dbPostRows = async (path, rows) => {
+  if (!rows || !rows.length) return;
+  const { data: { session } } = await sbAuth.auth.getSession();
+  if (!session) throw new Error('Not signed in');
+  for (let i = 0; i < rows.length; i += DB_INSERT_CHUNK) {
+    const r = await fetch(`${REST}${path}`, {
+      method: 'POST',
+      headers: { apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=minimal' },
+      body: JSON.stringify(rows.slice(i, i + DB_INSERT_CHUNK))
+    });
+    if (!r.ok) throw new Error(await r.text());
+  }
 };
 
 const dbDelete = async (path) => {
@@ -14246,9 +14280,9 @@ async function doSavePlaylist() {
   if (btn) { btn.disabled=true; btn.textContent='Saving…'; }
   try {
     const [pl] = await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:sjDisplayName(), context:_playlistContext() });
-    for (let i=0; i<ytQueue.length; i++) {
-      if (ytQueue[i].trackId) await dbPost('/playlist_tracks', { playlist_id:pl.id, track_id:ytQueue[i].trackId, position:(i + 1) * PL_POS_STEP });
-    }
+    await dbPostRows('/playlist_tracks', ytQueue
+      .map((it, i) => ({ playlist_id:pl.id, track_id:it.trackId, position:(i + 1) * PL_POS_STEP }))
+      .filter(r => r.track_id));
     closeSavePlaylistDialog();
     await loadPlaylists(); if (ytPlayerEl) updateYTQueueUI(); render();
     showToast(`✓ Saved "${name}"`);
@@ -14529,9 +14563,8 @@ async function savePlaylistChanges(id) {
   const newTracks = plDirty[id].tracks;
   try {
     await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
-    for (let i = 0; i < newTracks.length; i++) {
-      await dbPost('/playlist_tracks', { playlist_id: id, track_id: newTracks[i].track_id, position: (i + 1) * PL_POS_STEP });
-    }
+    await dbPostRows('/playlist_tracks', newTracks
+      .map((t, i) => ({ playlist_id: id, track_id: t.track_id, position: (i + 1) * PL_POS_STEP })));
     delete plDirty[id];
     await loadPlaylists(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
   } catch(e) { alert('Error saving changes: ' + e.message); }
@@ -15621,9 +15654,7 @@ async function plbSave() {
       const addedByEmail = googleUser.email;
       const addedByName = sjDisplayName();
       const rows = _plbDraft.map((d, i) => ({ playlist_id: pl.id, track_id: d.trackId, position: (i + 1) * PL_POS_STEP, added_by_email: addedByEmail, added_by_name: addedByName }));
-      for (let i = 0; i < rows.length; i += 80) {
-        await dbPost('/playlist_tracks', rows.slice(i, i + 80));
-      }
+      await dbPostRows('/playlist_tracks', rows);
       pl._tracks = rows;
       playlists.unshift(pl);
       _savedPlaylists.unshift(pl);
@@ -15662,9 +15693,7 @@ async function plbSave() {
       const addedByEmail = googleUser.email;
       const addedByName = sjDisplayName();
       const rows = fresh.map(d => ({ playlist_id: p.id, track_id: d.trackId, position: (pos += PL_POS_STEP), added_by_email: addedByEmail, added_by_name: addedByName }));
-      for (let i = 0; i < rows.length; i += 80) {
-        await dbPost('/playlist_tracks', rows.slice(i, i + 80));
-      }
+      await dbPostRows('/playlist_tracks', rows);
       p._tracks = (p._tracks || []).concat(rows);
       showToast(`Added ${fresh.length} song${fresh.length === 1 ? '' : 's'} to ${p.name || 'playlist'}.`);
       const wasOwner = p.user_email === googleUser.email;
@@ -16626,20 +16655,44 @@ function plWallEnsureBadges(cell) {
   cell.insertAdjacentHTML('beforeend', plWallBadgesHTML(tid));
 }
 
+/** Paint heart / heartbreak state onto one cell we are already holding. */
+function plWallPaintCellBadges(cell, tid) {
+  const counts = trackReactionCounts[tid] || {};
+  cell.querySelectorAll('.pl-wall-rxn[data-track-reaction]').forEach(btn => {
+    const num = Number(counts[btn.getAttribute('data-track-reaction')]) || 0;
+    btn.classList.toggle('on', num > 0);
+    btn.classList.toggle('pl-wall-badge-latent', num <= 0);
+    const label = btn.querySelector('.pl-wall-rxn-n');
+    if (label) label.textContent = num > 0 ? ytpReactionCountLabel(num) : '';
+  });
+}
+
 /**
  * After counts land, give a cluster to every cell that has something to show.
  * Cells with nothing to show stay bare until somebody hovers them.
+ *
+ * This used to call refreshTrackReactionUI() per cell, and that does two
+ * querySelectorAll over the WHOLE document to find the buttons it is about to
+ * update. On a 558 song Now Playing with a few hundred rated songs that is
+ * several hundred full scans of a one megabyte DOM, run again on every fill
+ * slice and again when each chunk of counts landed - which is what made the
+ * page freeze hard enough for Chrome to offer to kill it. The cell is right
+ * here; there is no reason to go looking for it.
  */
 function plWallSyncBadges() {
   if (viewMode !== 'playlistchart') return;
-  document.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
+  const grid = document.getElementById('pl-wall-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
     const tid = cell.getAttribute('data-pc-track');
     if (!tid) return;
     const counts = trackReactionCounts[tid] || {};
-    if (getMyVote(tid) || Number(counts.heart) || Number(counts.sad)) {
-      plWallEnsureBadges(cell);
-      refreshTrackReactionUI(tid);
-    }
+    if (!(getMyVote(tid) || Number(counts.heart) || Number(counts.sad))) return;
+    // A cluster built just now is built FROM the counts, so only one that was
+    // already on screen before they landed needs repainting.
+    const had = !!cell.querySelector('.pl-wall-badges');
+    plWallEnsureBadges(cell);
+    if (had) plWallPaintCellBadges(cell, tid);
   });
 }
 
@@ -16739,17 +16792,19 @@ function plWallBindBadgeHovers() {
   grid.addEventListener('click', (ev) => {
     const cell = ev.target.closest('.pl-wall-cell');
     if (!cell) return;
-    // The click the browser fires after a drag is not a click on the cover.
-    // Timestamped rather than a flag a later click clears: a drag that ends
-    // outside the grid, or on a touchscreen, fires no click at all, and a
-    // one-shot flag would then sit armed and swallow the next real tap.
-    if (Date.now() - (grid._plDragEndedAt || 0) < 300) { ev.stopPropagation(); return; }
-    // Same reasoning for a pinch: two fingers lifting off two covers is a
+    // A pinch is not a click: two fingers lifting off two covers is a
     // resize that has finished, not two songs being opened.
     if (Date.now() - (grid._plPinchAt || 0) < 400) { ev.stopPropagation(); return; }
     if (ev.target.closest('.pl-wall-badges')) return;
     const i = indexOf(cell);
     if (i < 0) return;
+    const mv = ev.target.closest('.pl-wall-move');
+    if (mv) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      plWallMoveTrack(i, i + (mv.classList.contains('fwd') ? 1 : -1));
+      return;
+    }
     if (ev.target.closest('.pl-wall-cell-x')) {
       ev.stopPropagation();
       plWallRemoveMyTrack(i);
@@ -16760,27 +16815,14 @@ function plWallBindBadgeHovers() {
 
   grid.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    // The arrows and the cross are buttons inside the cell and answer the
+    // keyboard themselves; the cell must not open the card underneath them.
+    if (ev.target !== ev.currentTarget && ev.target.closest('button')) return;
     const cell = ev.target.closest('.pl-wall-cell');
     if (!cell) return;
     ev.preventDefault();
     const i = indexOf(cell);
     if (i >= 0) plWallToggleExpand(i, ev);
-  });
-
-  grid.addEventListener('pointerdown', (ev) => {
-    if (ev.button != null && ev.button !== 0) return;
-    // A finger never drags. On a touchscreen the wall scrolls, a cover opens
-    // when tapped and the cross removes it; the running order is changed with
-    // a mouse. Two attempts at a thumb-driven reorder were both worse than
-    // just letting the wall scroll.
-    if (ev.pointerType === 'touch') return;
-    // The rate/heart buttons and the X are controls, so a press on them is
-    // not a drag. The invisible hover corner is NOT a control - it is 42% by
-    // 42% of the cover, so excluding it made most of the top right of every
-    // card refuse to start a drag while still showing the grab cursor.
-    if (ev.target.closest('.pl-wall-badges, .pl-wall-cell-x')) return;
-    const dragCell = ev.target.closest('.pl-wall-cell.pl-wall-draggable');
-    if (dragCell) plWallDragBegin(dragCell, ev);
   });
 
   /* ── Pinch the covers bigger or smaller ──────────────────────────────
@@ -16828,43 +16870,19 @@ function plWallBindBadgeHovers() {
   grid.addEventListener('pointercancel', pinchDone);
 
   // A cover is an <img> and a title is text, and the browser wants to drag
-  // both by itself. Its native drag fires pointercancel, which silently killed
-  // every reorder: the card was picked up and then dropped by the browser
-  // before a pointermove ever arrived.
+  // both by itself. Nothing here reorders by dragging any more, but its
+  // native drag still hijacks an ordinary press on a cover.
   grid.addEventListener('dragstart', (ev) => { ev.preventDefault(); });
-
-  grid.addEventListener('pointermove', (ev) => {
-    if (!_plDrag) return;
-    ev.preventDefault();
-    plWallDragMove(grid, ev);
-  });
-
-  // A pointer released outside the grid never reaches the handler below, which
-  // used to leave the drag half open and the next one refusing to start.
-  grid.addEventListener('pointercancel', () => {
-    if (_plDrag) {
-      // The ghost and the frame loop outlive the drag object unless they are
-      // stopped here; a stranded ghost sits over the page forever.
-      plWallDragCleanup(_plDrag);
-      _plDrag = null;
-    }
-  });
-
-  const finish = async (ev) => {
-    if (!_plDrag) return;
-    const wasDrag = _plDrag.active;
-    // Stamped before the await: the click lands as soon as the pointer is up,
-    // well before an await on the network has come back.
-    if (wasDrag) grid._plDragEndedAt = Date.now();
-    await plWallDragEnd(grid, ev);
-  };
-  grid.addEventListener('pointerup', finish);
-  grid.addEventListener('pointercancel', finish);
 }
 
 function plWallRefreshStats() {
   if (viewMode !== 'playlistchart') return;
-  document.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(el => {
+  // Scoped to the two hosts rather than swept out of `document`. Both of these
+  // run over every drawn row, and asking the whole page for them costs a scan
+  // of the entire dashboard each time.
+  const grid = document.getElementById('pl-wall-grid');
+  const detailTbl = document.getElementById('pl-detail-tbl');
+  (grid ? grid.querySelectorAll('.pl-wall-cell[data-pc-track]') : []).forEach(el => {
     const tid = el.getAttribute('data-pc-track');
     const old = el.querySelector('.pl-wall-stats');
     if (old) old.remove();
@@ -16884,7 +16902,7 @@ function plWallRefreshStats() {
     span.innerHTML = lines.join('<br>');
     el.appendChild(span);
   });
-  document.querySelectorAll('.pl-detail-row[data-pc-track]').forEach(el => {
+  (detailTbl ? detailTbl.querySelectorAll('.pl-detail-row[data-pc-track]') : []).forEach(el => {
     const tid = el.getAttribute('data-pc-track');
     if (!tid) return;
     const lastEl = el.querySelector('[data-pl-last]');
@@ -17327,7 +17345,13 @@ async function openPlaylistChart(playlistId) {
     // Prefetched so the track card opens with words already in hand. It used
     // to redraw the whole wall when it landed, which was pure waste: no cell
     // and no detail row shows a lyric.
-    _fetchLyricsForTracks(rows.map(r => r.trackId));
+    //
+    // Capped, because the requests are sequential and a 558 song Now Playing
+    // was twelve of them queued behind everything else the page still wants -
+    // for words nothing on screen shows. Opening a card fetches its own
+    // lyric anyway (plWallToggleExpand), so past the cap the only cost is
+    // that one card waits its own moment.
+    _fetchLyricsForTracks(rows.slice(0, PL_LYRIC_PREFETCH).map(r => r.trackId));
     renderPlaylistChart();
     // Browse first — do not auto-join. Watch the host's now-playing so the
     // wall can highlight it; JOIN NOW is what starts the mirror.
@@ -17369,204 +17393,8 @@ function returnToPlaylistExplorer() {
   renderLanding();
 }
 
-// ── Drag a cover to a new place in the playlist ──────────────────────────
-//
-// Pointer events rather than HTML5 drag-and-drop, because dragstart never
-// fires on a touchscreen and the wall is mostly looked at on a phone. A press
-// only becomes a drag after DRAG_SLOP pixels, so an ordinary tap still opens
-// the track card.
-const PL_DRAG_SLOP = 6;
-let _plDrag = null;
-
 function plWallGridCells(grid) {
   return [...grid.querySelectorAll('.pl-wall-cell')];
-}
-
-/**
- * Measure the grid once, at the start of a drag.
- *
- * The wall is a uniform grid of squares, so where a point falls can be worked
- * out with arithmetic instead of asking the DOM. Two earlier versions of this
- * were wrong in ways worth recording: calling getBoundingClientRect() on every
- * cell forced a layout on every pointermove and was unusable past a thousand
- * songs, and elementFromPoint() returns nothing at all when the pointer is
- * over a gutter or a gap - which silently sent the song to the end of the
- * playlist, the worst possible answer to a near miss.
- */
-function plWallDragGeometry(grid) {
-  const first = grid.querySelector('.pl-wall-cell');
-  if (!first) return null;
-  const cs = getComputedStyle(grid);
-  const cols = (cs.gridTemplateColumns || '').split(/\s+/).filter(Boolean).length || 1;
-  const b = first.getBoundingClientRect();
-  const gapX = parseFloat(cs.columnGap) || 0;
-  const gapY = parseFloat(cs.rowGap) || 0;
-  return {
-    cols,
-    stepX: b.width + gapX,
-    stepY: b.height + gapY,
-    width: b.width,
-    left: b.left,
-    top: b.top,
-  };
-}
-
-/** Which slot the pointer is over. Pure arithmetic - no layout, no hit test. */
-function plWallDropIndex(grid, x, y) {
-  const st = _plDrag;
-  const g = st && st.geom;
-  // The list the drag cached when it started. Re-querying the wall here was
-  // the second of the two full passes every pointermove used to cost.
-  const cells = (st && st.cells) || plWallGridCells(grid);
-  if (!g) return 0;
-  // The grid scrolls under the pointer, so the first cell's position is
-  // re-read rather than trusted from the start of the drag.
-  const first = grid.querySelector('.pl-wall-cell');
-  const originTop = first ? first.getBoundingClientRect().top : g.top;
-  let col = Math.floor((x - g.left) / g.stepX);
-  let row = Math.floor((y - originTop) / g.stepY);
-  col = Math.max(0, Math.min(col, g.cols - 1));
-  row = Math.max(0, row);
-  // Past the middle of a cover means "after this one".
-  const withinX = (x - g.left) - col * g.stepX;
-  let at = row * g.cols + col + (withinX >= g.width / 2 ? 1 : 0);
-  at = Math.max(0, Math.min(at, cells.length));
-  // The dragged cell is still in the list but is not a slot of its own.
-  const fromIdx = st.from >= 0 ? st.from : cells.indexOf(st.cell);
-  if (fromIdx >= 0 && at > fromIdx) at -= 1;
-  return Math.max(0, Math.min(at, cells.length - 1));
-}
-
-/* How far from the edge of the scroller a finger starts dragging the wall
-   along with it, and how fast at the very edge. Without this a song can only
-   ever be moved as far as one screenful. */
-const PL_DRAG_EDGE = 68;
-const PL_DRAG_EDGE_MAX = 20;
-
-function plWallDragBegin(cell, ev) {
-  _plDrag = { cell, startX: ev.clientX, startY: ev.clientY, x: ev.clientX, y: ev.clientY,
-    active: false, from: -1, marker: null, ghost: null, lastIndex: -1, markerAt: -1, raf: 0 };
-}
-
-/* Everything expensive is worked out ONCE here rather than per pointermove.
-
-   This used to call plWallGridCells() - a querySelectorAll over the whole wall
-   - twice for every single move, then insertBefore into the grid and read a
-   bounding rect straight afterwards, which forces a synchronous relayout of
-   every cell. At 1,926 songs that is most of a frame's budget spent before the
-   finger has moved a pixel, which is exactly what "janky" was.
-
-   The cell list cannot change while a drag is in flight (the marker is not a
-   .pl-wall-cell and nothing else is added), so it is safe to hold. */
-function plWallDragActivate(grid) {
-  const st = _plDrag;
-  st.active = true;
-  st.cells = plWallGridCells(grid);
-  st.others = st.cells.filter(c => c !== st.cell);
-  st.from = st.cells.indexOf(st.cell);
-  st.geom = plWallDragGeometry(grid);
-  st.scroller = grid.closest('.pl-wall-scroll');
-  st.scrollRect = st.scroller ? st.scroller.getBoundingClientRect() : null;
-
-  const rect = st.cell.getBoundingClientRect();
-  // Where inside the cover the finger took hold, so it stays under that spot.
-  st.grabX = st.startX - rect.left;
-  st.grabY = st.startY - rect.top;
-  const ghost = document.createElement('div');
-  ghost.className = 'pl-wall-drag-ghost';
-  ghost.style.width = rect.width + 'px';
-  ghost.style.height = rect.height + 'px';
-  const img = st.cell.querySelector('img');
-  if (img && img.src) {
-    const clone = new Image();
-    clone.src = img.src;
-    clone.alt = '';
-    ghost.appendChild(clone);
-  } else {
-    ghost.innerHTML = '<span class="pl-wall-fallback">\u266A</span>';
-  }
-  document.body.appendChild(ghost);
-  st.ghost = ghost;
-
-  st.cell.classList.add('pl-wall-dragging');
-  const marker = document.createElement('div');
-  marker.className = 'pl-wall-drop-marker';
-  st.marker = marker;
-  grid.appendChild(marker);
-  plWallClosePop();
-  plWallDragLoop(grid);
-}
-
-/* One frame, one pass. The loop runs itself rather than waiting on pointermove
-   so that a finger held still against the top or bottom edge keeps scrolling -
-   holding still is how you ask for that, and no more events arrive. */
-function plWallDragLoop(grid) {
-  const st = _plDrag;
-  if (!st || !st.active) return;
-  st.raf = requestAnimationFrame(() => plWallDragLoop(grid));
-
-  if (st.ghost) {
-    st.ghost.style.transform =
-      'translate3d(' + (st.x - st.grabX) + 'px,' + (st.y - st.grabY) + 'px,0)';
-  }
-
-  const box = st.scroller, r = st.scrollRect;
-  if (box && r) {
-    let dy = 0;
-    if (st.y < r.top + PL_DRAG_EDGE) dy = -PL_DRAG_EDGE_MAX * Math.min(1, (r.top + PL_DRAG_EDGE - st.y) / PL_DRAG_EDGE);
-    else if (st.y > r.bottom - PL_DRAG_EDGE) dy = PL_DRAG_EDGE_MAX * Math.min(1, (st.y - (r.bottom - PL_DRAG_EDGE)) / PL_DRAG_EDGE);
-    if (dy) box.scrollTop += dy;
-  }
-
-  // Only the DOM write is left to the frame. Which slot it would land in is
-  // worked out on the move itself - see plWallDragMove.
-  if (st.lastIndex !== st.markerAt) {
-    st.markerAt = st.lastIndex;
-    const ref = st.others[st.lastIndex] || null;
-    if (ref) grid.insertBefore(st.marker, ref);
-    else grid.appendChild(st.marker);
-  }
-}
-
-function plWallDragMove(grid, ev) {
-  if (!_plDrag) return;
-  _plDrag.x = ev.clientX;
-  _plDrag.y = ev.clientY;
-  if (!_plDrag.active) {
-    if (Math.abs(ev.clientX - _plDrag.startX) < PL_DRAG_SLOP
-      && Math.abs(ev.clientY - _plDrag.startY) < PL_DRAG_SLOP) return;
-    plWallDragActivate(grid);
-  }
-  // Where it would land is arithmetic over a list the drag already cached, so
-  // it is cheap enough to answer on every move - and it must be answered here
-  // rather than in the frame loop, because a tab that is throttling
-  // requestAnimationFrame would otherwise drop the song back where it started.
-  _plDrag.lastIndex = plWallDropIndex(grid, ev.clientX, ev.clientY);
-}
-
-function plWallDragCleanup(drag) {
-  if (!drag) return;
-  if (drag.raf) cancelAnimationFrame(drag.raf);
-  drag.raf = 0;
-  drag.active = false;
-  drag.cell.classList.remove('pl-wall-dragging');
-  if (drag.ghost) drag.ghost.remove();
-  if (drag.marker) drag.marker.remove();
-}
-
-async function plWallDragEnd(grid, ev) {
-  const drag = _plDrag;
-  _plDrag = null;
-  if (!drag) return false;
-  const wasActive = drag.active;
-  // The slot the marker is sitting in, which the loop already worked out.
-  // Walking the wall again to find it was another full pass per drop.
-  const to = drag.lastIndex >= 0 ? drag.lastIndex : drag.from;
-  plWallDragCleanup(drag);
-  if (!wasActive) return false;
-  if (drag.from < 0 || to === drag.from) return true;
-  await plWallMoveTrack(drag.from, to);
-  return true;
 }
 
 /**
@@ -17818,8 +17646,45 @@ function plWallReorderLocal(from, to) {
  * is the midpoint of its two new neighbours, so a drag is a single UPDATE
  * however long the playlist is - the same trick jukebox_queue.sort uses.
  */
+/**
+ * Swap two drawn covers in place instead of rebuilding the wall.
+ *
+ * plWallRepaintList() writes the markup for every drawn song and lets the
+ * browser lay the grid out again - about a second on a long playlist, which
+ * was fine as the tail of a drag across the page and is far too slow for an
+ * arrow somebody presses five times in a row. An adjacent move is two covers
+ * changing places, so change those two. The index each cell claims has to be
+ * swapped with it, because playlistChartRefreshPlayback() reads it.
+ */
+function plWallSwapDrawnCells(a, b) {
+  const grid = document.getElementById('pl-wall-grid');
+  if (!grid) return false;
+  const ca = grid.querySelector(`.pl-wall-cell[data-pc-index="${a}"]`);
+  const cb = grid.querySelector(`.pl-wall-cell[data-pc-index="${b}"]`);
+  if (!ca || !cb || ca === cb) return false;
+  const mark = document.createComment('');
+  grid.insertBefore(mark, ca);
+  grid.insertBefore(ca, cb);
+  grid.insertBefore(cb, mark);
+  mark.remove();
+  ca.setAttribute('data-pc-index', String(b));
+  cb.setAttribute('data-pc-index', String(a));
+  return true;
+}
+
+/** Repaint after a move: two cells if it was one step, the wall if it was not. */
+function plWallAfterMove(from, to) {
+  if (playlistWallMode !== 'detail' && Math.abs(to - from) === 1
+      && plWallSwapDrawnCells(from, to)) return;
+  plWallRepaintList();
+}
+
 async function plWallMoveTrack(from, to) {
   if (from === to || from < 0) return;
+  // The arrows are drawn on the first and last cover too - disabling them
+  // there would mean re-rendering both ends after every single move - so the
+  // ends are refused here instead.
+  if (to < 0 || to >= playlistChartQueue().length) return;
   if (!plWallCanArrange()) return;
 
   // Now Playing is this browser's own queue and has no rows behind it.
@@ -17830,7 +17695,7 @@ async function plWallMoveTrack(from, to) {
     // happens is worse than one that does not, so all three move together.
     ytMoveToIndex(from, to);
     plWallReorderLocal(from, to);
-    plWallRepaintList();
+    plWallAfterMove(from, to);
     return;
   }
 
@@ -17886,7 +17751,7 @@ async function plWallMoveTrack(from, to) {
     if (i >= 0) ytQueueIdx = i;
     updateYTQueueUI();
   }
-  plWallRepaintList();
+  plWallAfterMove(from, to);
 
   try {
     await dbPatch(`/playlist_tracks?id=eq.${moving.ptId}`, { position: pos });
@@ -18044,7 +17909,7 @@ function plWallCellHTML(item, i, curIdx) {
   const row = playlistChartRowFor(item, i);
   const isCurrent = i === curIdx;
   const blocked = isTrackBlocked(row.trackId);
-  const canDrag = plWallCanArrange();
+  const canMove = plWallCanArrange();
   const canRemove = plWallCanRemove(row);
   const art = row.artwork
     ? `<img src="${row.artwork}" loading="lazy" alt="" draggable="false">`
@@ -18054,13 +17919,22 @@ function plWallCellHTML(item, i, curIdx) {
   const xBtn = canRemove
     ? `<button type="button" class="pl-wall-cell-x" title="Remove from this playlist">✕</button>`
     : '';
+  // Left and right instead of a drag. Dragging a cover meant holding a
+  // pointer down while a five hundred cell grid recomputed where the drop
+  // would land, it never worked with a thumb at all, and the drop was a
+  // guess at a target the size of a stamp. Two arrows say the same thing
+  // exactly, work the same on a phone, and cost one DOM swap a press.
+  const moveBtns = canMove
+    ? `<button type="button" class="pl-wall-move back" title="Move earlier in the playlist">‹</button>` +
+      `<button type="button" class="pl-wall-move fwd" title="Move later in the playlist">›</button>`
+    : '';
   // No inline onclick, onkeydown or drag attributes any more. Every one of
   // them baked this cell's index into its own markup, which is why removing
   // one song used to mean rebuilding the entire wall so the ones after it
   // could be renumbered. The grid handles all of it by delegation now and
   // reads the index off the cell's position among its siblings, which is
   // still right after any removal, any drag and any repaint.
-  return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${canRemove ? ' editable' : ''}${canDrag ? ' pl-wall-draggable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}"${row.ptId ? ` data-pt-id="${row.ptId}"` : ''} role="button" tabindex="0"${tipAttr}>${art}${plWallCellOverlays(row.trackId, row.title)}${xBtn}</div>`;
+  return `<div class="pl-wall-cell${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${canRemove ? ' editable' : ''}${canMove ? ' pl-wall-movable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}"${row.ptId ? ` data-pt-id="${row.ptId}"` : ''} role="button" tabindex="0"${tipAttr}>${art}${plWallCellOverlays(row.trackId, row.title)}${xBtn}${moveBtns}</div>`;
 }
 
 /**
@@ -18190,6 +18064,8 @@ function plWallSummaryHTML() {
  * Start Playlist, shuffle, the queue and the counts are all unaffected by how
  * much of the wall has been drawn.
  */
+/** How many songs deep the wall pre-loads lyrics for. */
+const PL_LYRIC_PREFETCH = 150;
 const PL_FILL_FIRST = 400;
 const PL_FILL_MORE = 400;
 /** Start adding more once the scroll is within this much of the end. */
@@ -18837,9 +18713,8 @@ async function saveLiveRoomAsPlaylist() {
       user_name: sjDisplayName(),
       context: _playlistContext(),
     });
-    for (let i = 0; i < trackIds.length; i++) {
-      await dbPost('/playlist_tracks', { playlist_id: playlist.id, track_id: trackIds[i], position: (i + 1) * PL_POS_STEP });
-    }
+    await dbPostRows('/playlist_tracks', trackIds
+      .map((tid, i) => ({ playlist_id: playlist.id, track_id: tid, position: (i + 1) * PL_POS_STEP })));
     await loadPlaylists();
     showToast('Saved "' + name.trim() + '" to My Playlists.');
   } catch (e) { showToast(e.message || 'Could not save this playlist.'); }
@@ -24554,6 +24429,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
+    'Saving your queue as a playlist is now near instant. It used to send one song at a time and wait for each one, so a 558 song queue sat on Saving… for over a minute. It now goes in two or three goes however long the queue is. The same fix applies to saving changes to a playlist and to saving a live jukebox as a playlist.',
+    'The Now Playing wall no longer locks the page up. On a long queue it was checking every cover against the whole page over and over as your ratings and hearts arrived, which was enough for the browser to offer to close the tab. Opening a few hundred songs should feel like an ordinary page now.',
+    'Reordering a playlist is done with arrows on the covers instead of by dragging. Hover a cover (or just look at it, on a phone) and there is a ‹ in the bottom left and a › in the bottom right: one press moves that song one place earlier or later. Dragging a cover is gone.',
+    'Moving a song no longer redraws the whole wall. Two covers change places and nothing else moves, so you can press an arrow several times in a row without waiting.',
     'Both Card Size sliders resize the cards as you drag them, instead of waiting until you let go.',
     'The words beside the Card Size sliders are gone. The cards are the readout, and on a phone the label was taking up a control’s worth of the row. Hover the slider if you want the level named.',
     'Playlist cards say more as they get bigger. Small is the playlist name and how many songs are in it. Medium adds who put it there. Large adds a few of the artists on it.',
