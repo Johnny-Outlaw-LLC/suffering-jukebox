@@ -1579,6 +1579,40 @@ textarea.report-input { resize:vertical; }
   content: ''; width: 36px; height: 3px; border-radius: 2px; background: var(--border); transition: background .15s;
 }
 .ytp-mf-resize:hover::after, .ytp-mf-resize.active::after { background: var(--accent); }
+/* Dragged far enough that letting go opens the full screen player. Colouring
+   the grip is the whole announcement - a label here would cover the song. */
+.ytp-mini-footer.dock-fs-hint .ytp-mf-resize::after { background: var(--accent); width: 84px; }
+/* The phone sheet's own grab bar. It is the dock's handle seen from the other
+   side, so it is drawn the same and sits in the same place: the top edge of
+   whatever the player currently is. */
+.ytp-fs-grab { display: none; }
+@media (max-width: 640px) {
+  #yt-player-container.ytp-mob-fs .ytp-fs-grab {
+    display: flex; order: 0; flex: 0 0 auto; align-items: center; justify-content: center;
+    height: 26px; padding-top: env(safe-area-inset-top, 0px);
+    background: var(--bg-card); cursor: ns-resize; touch-action: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #yt-player-container.ytp-mob-fs .ytp-fs-grab::after {
+    content: ''; width: 52px; height: 5px; border-radius: 3px;
+    background: var(--border); transition: background .15s, width .15s;
+  }
+  #yt-player-container.ytp-mob-fs .ytp-fs-grab.active::after { background: var(--accent); width: 84px; }
+  /* Below its resting height the dock has no room for the words or the up
+     next line, so it sheds them rather than clipping them. Everything that
+     survives keeps its place, which is what makes the squeeze read as one
+     control shrinking instead of a different bar appearing. */
+  #ytp-mini-footer.dock-compact .ytp-mf-lyr,
+  #ytp-mini-footer.dock-compact .ytp-mf-up-next,
+  #ytp-mini-footer.dock-compact .ytp-mf-album,
+  #ytp-mini-footer.dock-compact .ytp-mf-font-row { display: none !important; }
+  #ytp-mini-footer.dock-compact {
+    gap: 6px;
+    padding: 24px calc(14px + env(safe-area-inset-right, 0px))
+             calc(10px + env(safe-area-inset-bottom, 0px)) calc(14px + env(safe-area-inset-left, 0px));
+  }
+  #ytp-mini-footer.dock-compact .ytp-mf-main { row-gap: 7px; }
+}
 .ytp-mf-main {
   display: grid; position: relative;
   grid-template-columns: minmax(0, 320px) minmax(0, 1fr) auto;
@@ -1887,6 +1921,7 @@ textarea.report-input { resize:vertical; }
 #ytp-mini-footer #ytp-mf-more,
 #ytp-mini-footer #ytp-mf-restore,
 #ytp-mini-footer #ytp-mf-close { display: flex !important; visibility: visible !important; }
+#ytp-mini-footer #ytp-mf-repeat { display: none; }
 /* Font-size slider lives under the thumbs / hearts on the left. */
 .ytp-mf-lyr .mf-lyr-font-ctrl { display: none; }
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-right {
@@ -1933,7 +1968,7 @@ textarea.report-input { resize:vertical; }
     --mf-body: 56px;
     /* One square for all seven, sized so they still cross a 320px phone:
        7 x 36 + 6 x 5 = 282 inside 288px of usable width. */
-    --mf-btn: clamp(36px, 10.5vw, 44px);
+    --mf-btn: clamp(36px, 10vw, 42px);
     min-height: 0;
     gap: 8px;
     padding: 26px calc(16px + env(safe-area-inset-right, 0px))
@@ -1956,6 +1991,9 @@ textarea.report-input { resize:vertical; }
   }
   .ytp-mini-footer.dock-grown .ytp-mf-main { grid-template-columns: 1fr auto; align-items: center; }
   .ytp-mini-footer.dock-grown .ytp-mf-now { align-items: center; }
+  .ytp-mini-footer.dock-grown .ytp-mf-side {
+    flex: 1 1 auto; width: auto; min-width: 0; align-self: center; padding-bottom: 0;
+  }
   .ytp-mini-footer.dock-grown .ytp-mf-meta { justify-content: center; padding-bottom: 0; }
   .ytp-mini-footer.dock-grown .ytp-mf-controls { flex-wrap: wrap; justify-content: center; }
   .ytp-mini-footer.dock-grown .ytp-mf-win { flex-direction: row; }
@@ -2006,6 +2044,34 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-seek::-moz-range-thumb { width: 16px; height: 16px; }
   /* The slider is hidden on phones (see .ytp-lyr-font-ctrl above), so the
      line count follows the phone font size instead. */
+  /* The dock carries the same five transport buttons as the full screen
+     deck, in the same order, drawn the same way - only smaller. Dragging
+     between the two states then moves the buttons rather than replacing
+     them. Repeat is phone-only: the desktop dock's wrapped grid has three
+     columns and a fixed placement for every button in it. */
+  #ytp-mini-footer #ytp-mf-repeat { display: flex !important; visibility: visible !important; }
+  #ytp-mf-repeat:active { transform: scale(.93); }
+  .ytp-mf-middle { gap: clamp(5px, 2vw, 9px) !important; }
+  /* Play/pause leads the row the way it does in the deck: filled, and a size
+     up. The window buttons step down instead, so the seven still cross a
+     320px phone. */
+  #ytp-mini-footer #ytp-mf-playpause { width: calc(var(--mf-btn) * 1.16); height: calc(var(--mf-btn) * 1.16); }
+  #ytp-mini-footer #ytp-mf-playpause svg { width: 22px; height: 22px; }
+  .ytp-mf-top .ytp-mf-btn {
+    width: calc(var(--mf-btn) * .84); height: calc(var(--mf-btn) * .84);
+    color: var(--text-muted); border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  }
+  /* Ratings and reactions were desktop-sized squares sitting in a phone
+     layout - 24px is under half of what a thumb can reliably hit. */
+  #ytp-mini-footer .ytp-mf-feedback { gap: 6px; min-height: 0; margin-top: 6px; }
+  #ytp-mini-footer .ytp-mf-reactions { gap: 6px; }
+  #ytp-mini-footer .ytp-mf-feedback #ytp-mf-vote,
+  #ytp-mini-footer .ytp-mf-feedback #ytp-mf-more,
+  #ytp-mini-footer .ytp-mf-reactions .ytp-mf-btn {
+    width: var(--mf-btn); height: var(--mf-btn); border-radius: 12px; font-size: 1rem;
+  }
+  #ytp-mf-reactions svg { width: 19px; height: 19px; }
+  #ytp-mf-vote svg { width: 21px; height: 21px; }
   /* No Maximize on mobile — only fullscreen ↔ minimized. */
   .ytp-fs-btn { display: none !important; }
   #yt-player-container.ytp-fs .ytp-win-btn,
@@ -2036,7 +2102,7 @@ textarea.report-input { resize:vertical; }
 /* Sized off the viewport so five buttons still fit across a 320px phone. */
 .ytp-md-btn { display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   width: clamp(44px, 14vw, 54px); height: clamp(44px, 14vw, 54px);
-  border-radius: 16px; background: none; border: 1px solid var(--border);
+  border-radius: 14px; background: none; border: 1px solid var(--border);
   color: var(--text); cursor: pointer; transition: transform .1s, color .12s, border-color .12s;
   -webkit-tap-highlight-color: transparent; }
 .ytp-md-btn svg { width: 23px; height: 23px; display: block; pointer-events: none; }
@@ -3001,6 +3067,7 @@ body.live-room-listening #ytp-repeat-tog,
 body.live-room-listening #ytp-mf-prev,
 body.live-room-listening #ytp-mf-next,
 body.live-room-listening #ytp-mf-shuffle,
+body.live-room-listening #ytp-mf-repeat,
 body.live-room-listening #ytp-md-prev,
 body.live-room-listening #ytp-md-next,
 body.live-room-listening #ytp-md-shuffle,
@@ -3753,6 +3820,7 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytBackTrack()" title="Previous" id="ytp-mf-prev">⏮</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMobToggleRepeat()" title="Repeat" id="ytp-mf-repeat">↻</button>
       </div>
       <div class="ytp-mf-up-next" id="ytp-mf-up-next"></div>
       <span class="ytp-mf-sep" aria-hidden="true"></span>
@@ -6032,6 +6100,20 @@ function openYTPlayer(videoId, title, trackId, ev) {
   _ytpContainerEl.id = 'yt-player-container';
   _ytpContainerEl.style.cssText = `left:${cx}px;top:20px;z-index:${++scZCounter}`;
 
+  // ── Phone full screen: the bar that pulls the sheet back down to the dock.
+  // CSS hides it on every other layout, and order:0 floats it to the top of
+  // the flex column so it sits on the screen's edge - where the dock's own
+  // handle is. Touch is bound with passive:false so the drag can cancel the
+  // page scroll underneath it.
+  const fsGrab = document.createElement('div');
+  fsGrab.className = 'ytp-fs-grab';
+  fsGrab.id = 'ytp-fs-grab';
+  fsGrab.setAttribute('role', 'separator');
+  fsGrab.setAttribute('aria-label', 'Drag down to shrink the player back to the dock');
+  fsGrab.onmousedown = ytpFsDragStart;
+  fsGrab.addEventListener('touchstart', ytpFsDragStart, { passive: false });
+  _ytpContainerEl.appendChild(fsGrab);
+
   // ── Integrated lyrics pane (left, hidden until checkbox checked)
   _ytpLyricsPaneEl = document.createElement('div');
   _ytpLyricsPaneEl.id = 'ytp-lyrics-pane';
@@ -7515,6 +7597,10 @@ function ytpMobSyncDeck() {
   if (sh) { sh.classList.toggle('on', !!ytShuffle); sh.title = ytShuffle ? 'Shuffle on' : 'Shuffle off'; }
   const rp = document.getElementById('ytp-md-repeat');
   if (rp) { rp.classList.toggle('on', !!ytRepeat); rp.title = ytRepeat ? 'Repeat on' : 'Repeat off'; }
+  // The dock carries the same button on a phone, so it is painted here too
+  // rather than from a second place that could disagree with this one.
+  const mfRp = document.getElementById('ytp-mf-repeat');
+  if (mfRp) { mfRp.classList.toggle('on', !!ytRepeat); mfRp.title = ytRepeat ? 'Repeat on' : 'Repeat off'; }
   // Background Play and Versions keep their own show/hide rules - read them
   // off the toolbar buttons rather than duplicating the conditions.
   const bg = document.getElementById('ytp-md-bg'), bgSrc = document.getElementById('ytp-audio-btn');
@@ -7688,6 +7774,11 @@ let _ytpDockMinHCache = null;
 let _ytpLayoutRestore = null;     // playhead/state carried across dock/fullscreen iframe moves
 const YTP_DOCK_VIDEO_EXTRA = 80;  // px past the resting height before video kicks in
 const YTP_DOCK_BODY_MAX_VW = 0.5; // video/art may grow to half the viewport width
+// A phone has no room to give half its width to the artwork AND still show a
+// title and a row of reactions beside it.
+// Measured, not guessed: at 0.46 the rating, the two reactions and the More
+// button no longer fit on one line beside a 375px phone's artwork.
+const YTP_DOCK_BODY_MAX_VW_MOB = 0.42;
 const YTP_DOCK_PLAYLIST_GAP = 20;  // clear space between the queue and dock buttons
 const YTP_DOCK_PLAYLIST_MIN_H = 112;
 // Resting geometry follows the button stack, not the artwork: 14px of top
@@ -7697,6 +7788,22 @@ const YTP_DOCK_PLAYLIST_MIN_H = 112;
 const YTP_DOCK_DESKTOP_MIN_H = 152;   // floor, for the two-row stack
 const YTP_DOCK_DESKTOP_CHROME = 50;   // 14 top pad + 30 stack offset + 6 clear
 const YTP_DOCK_DESKTOP_BODY_H = 100;
+// The dock never takes more than half the screen. Past that it is not a dock
+// any more, which is what the phone's drag-to-full-screen leans on.
+const YTP_DOCK_MAX_FRAC = 0.5;
+// A phone dock is a sheet with a range rather than a resting size with a
+// floor: a quarter of the screen at its smallest, half at its largest. The
+// absolute floor stops a short phone from producing an unusable sliver.
+const YTP_DOCK_MOB_MIN_FRAC = 0.25;
+const YTP_DOCK_MOB_ABS_MIN = 132;
+// How far past half the screen the handle has to be pulled before letting go
+// opens the full screen player. Without the overshoot the dock could never
+// rest at its own maximum.
+const YTP_DOCK_FS_PULL = 56;
+// How far the full screen sheet has to be pulled down before it becomes the
+// dock, and how fast a shorter flick has to be to mean the same thing.
+const YTP_FS_DISMISS_PX = 104;
+const YTP_FS_DISMISS_SPEED = 0.55;
 let _ytpDockPlaylistObserver = null;
 let _ytpDockPlaylistFrame = 0;
 let _ytpDockVideoRevealTimer = 0;
@@ -7780,9 +7887,15 @@ function ytpDockMinH() {
   if (!el) return fallback;
   const hadHeight = el.style.height;
   const hadBody = el.style.getPropertyValue('--mf-body');
+  // Measure the dock with its full content, never through the compact rules.
+  // Those rules exist BECAUSE the dock is below this number, so measuring
+  // while they apply would have the floor chase its own tail.
+  const wasCompact = el.classList.contains('dock-compact');
+  if (wasCompact) el.classList.remove('dock-compact');
   el.style.height = '';
   el.style.setProperty('--mf-body', '56px');
   const h = Math.max(fallback, Math.round(el.getBoundingClientRect().height) || 0);
+  if (wasCompact) el.classList.add('dock-compact');
   el.style.height = hadHeight;
   if (hadBody) el.style.setProperty('--mf-body', hadBody);
   else el.style.removeProperty('--mf-body');
@@ -7926,7 +8039,11 @@ function ytpArrangeDockControls() {
   ['ytp-mf-restore', 'ytp-mf-close'].forEach(id => {
     const el = document.getElementById(id); if (el) top.appendChild(el);
   });
-  ['ytp-mf-playpause', 'ytp-mf-prev', 'ytp-mf-next', 'ytp-mf-shuffle'].forEach(id => {
+  // The same five buttons, in the same order, as the phone's full screen
+  // deck and the desktop toolbar. Dragging between the two states then moves
+  // the transport rather than rearranging it. Repeat is hidden by CSS on the
+  // desktop, whose wrapped dock grid places each button by hand.
+  ['ytp-mf-shuffle', 'ytp-mf-prev', 'ytp-mf-playpause', 'ytp-mf-next', 'ytp-mf-repeat'].forEach(id => {
     const el = document.getElementById(id); if (el) middle.appendChild(el);
   });
   const upNext = document.getElementById('ytp-mf-up-next');
@@ -7944,7 +8061,12 @@ function ytpArrangeDockControls() {
   glyph('ytp-mf-prev', YTP_DECK_ICONS.prev);
   glyph('ytp-mf-next', YTP_DECK_ICONS.next);
   glyph('ytp-mf-shuffle', YTP_DECK_ICONS.shuffle);
+  glyph('ytp-mf-repeat', YTP_DECK_ICONS.repeat);
   glyph('ytp-mf-playpause', ytpIsPlaying() ? YTP_DECK_ICONS.pause : YTP_DECK_ICONS.play);
+  // The buttons are created before shuffle or repeat can have been set, so
+  // pick up whatever state is already in force the first time they appear.
+  document.getElementById('ytp-mf-shuffle')?.classList.toggle('on', !!ytShuffle);
+  document.getElementById('ytp-mf-repeat')?.classList.toggle('on', !!ytRepeat);
   right.classList.add('arranged');
 }
 
@@ -8013,20 +8135,35 @@ function ytpDockObservePlaylistLayout() {
 function ytpApplyDockHeight() {
   const el = document.getElementById('ytp-mini-footer');
   if (!el || !ytPlayerEl || !_ytpMinimized) return;
-  const min = ytpDockMinH();
-  // The dock may use at most half of the live browser viewport. The minimum
-  // remains the floor on exceptionally short windows so its controls cannot
-  // be crushed below their resting layout.
-  const max = Math.max(min, Math.floor(ytpDockViewportH() * 0.5));
-  const h = _ytpDockH == null ? min : Math.min(Math.max(_ytpDockH, min), max);
+  const mob = ytpIsMob();
+  const vh = ytpDockViewportH();
+  // What the content wants: the two-row desktop stack, or the whole phone bar.
+  const rest = ytpDockMinH();
+  // The dock may use at most half of the live browser viewport. On the desktop
+  // the resting height is also the floor, so its controls cannot be crushed
+  // below their own layout. On a phone the floor is a quarter of the screen
+  // and the bar sheds content to reach it - see .dock-compact.
+  const min = mob ? Math.max(YTP_DOCK_MOB_ABS_MIN, Math.round(vh * YTP_DOCK_MOB_MIN_FRAC)) : rest;
+  const max = Math.max(min, Math.floor(vh * YTP_DOCK_MAX_FRAC));
+  // Opening still lands on the height the content wants, so widening the range
+  // did not change what the dock looks like when it appears.
+  const open = Math.min(Math.max(rest, min), max);
+  const h = _ytpDockH == null ? open : Math.min(Math.max(_ytpDockH, min), max);
   _ytpDockH = h;
   el.style.height = h + 'px';
   ytpDockSetPageInset(h);
-  const extra = Math.max(0, h - min);
-  const bodyBase = ytpIsMob() ? 56 : YTP_DOCK_DESKTOP_BODY_H;
-  const mfBody = Math.min(Math.round(window.innerWidth * YTP_DOCK_BODY_MAX_VW), bodyBase + extra);
+  // Growth is measured from the resting height, never from the phone's floor:
+  // otherwise a dock that opens at its natural size would open with the
+  // artwork already blown up.
+  const extra = Math.max(0, h - open);
+  const bodyBase = mob ? 56 : YTP_DOCK_DESKTOP_BODY_H;
+  const bodyMaxVw = mob ? YTP_DOCK_BODY_MAX_VW_MOB : YTP_DOCK_BODY_MAX_VW;
+  const mfBody = Math.min(Math.round(window.innerWidth * bodyMaxVw), bodyBase + extra);
   el.style.setProperty('--mf-body', mfBody + 'px');
   el.classList.toggle('dock-grown', extra > 16);
+  // Under its resting height there is no room for the lyric strip or the up
+  // next line, so the phone dock drops them rather than clipping them.
+  el.classList.toggle('dock-compact', mob && h < open - 8);
   ytpDockPlaceLyricBtn();
   // Placed here as well as in the frame callback below. It is only a few
   // measurements, and it means the words follow the drag rather than waiting
@@ -8085,24 +8222,107 @@ function ytpDockResizeStart(e) {
     overlay.style.cssText = 'position:fixed;inset:0;z-index:5000;cursor:ns-resize;background:transparent';
     document.body.appendChild(overlay);
   }
-  const onMove = (ev) => {
-    const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
-    _ytpDockH = startH + (startY - y);
-    ytpApplyDockHeight();
-  };
-  const onUp = () => {
+  // Half the screen is the dock's ceiling, so on a phone the handle keeps
+  // going: pulled far enough past it, letting go opens the full screen
+  // player. The overshoot is what still lets the dock rest at its maximum.
+  const mob = ytpIsMob();
+  const fsAt = Math.floor(ytpDockViewportH() * YTP_DOCK_MAX_FRAC) + YTP_DOCK_FS_PULL;
+  let wantFs = false;
+  const detach = () => {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     document.removeEventListener('touchmove', onMove);
     document.removeEventListener('touchend', onUp);
     if (handle) handle.classList.remove('active');
     if (overlay) overlay.remove();
+    el.classList.remove('dock-fs-hint');
+  };
+  const onMove = (ev) => {
+    const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
+    const want = startH + (startY - y);
+    if (mob) {
+      wantFs = want >= fsAt;
+      el.classList.toggle('dock-fs-hint', wantFs);
+    }
+    _ytpDockH = want;
+    ytpApplyDockHeight();
+    if (ev.cancelable && ev.type === 'touchmove') ev.preventDefault();
+  };
+  const onUp = () => {
+    detach();
+    // Whatever happens next, the dock's remembered size is the clamped one.
+    // Storing the raw drag would have it come back at a height it never had.
     try { localStorage.setItem('sj_dock_h', String(Math.round(_ytpDockH))); } catch (_) {}
+    if (wantFs) ytpEnterFullscreen();
   };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
   document.addEventListener('touchmove', onMove, { passive: false });
   document.addEventListener('touchend', onUp);
+}
+
+// ── The other half of the same gesture ────────────────────────────────────
+// The full screen player on a phone carries the same grab bar on its top
+// edge. Pulled down it drags the sheet with the thumb, and past the commit
+// point it lands on the half-height dock - the size the drag was heading
+// for. From there the dock's own handle scales it the rest of the way down.
+function ytpFsDragStart(e) {
+  if (!_ytpFs || !ytpIsMob() || !_ytpContainerEl) return;
+  if (e.type === 'mousedown' && e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const el = _ytpContainerEl;
+  const grab = document.getElementById('ytp-fs-grab');
+  const startY = e.touches ? e.touches[0].clientY : e.clientY;
+  const startedAt = Date.now();
+  let dy = 0;
+  if (grab) grab.classList.add('active');
+  el.style.transition = 'none';
+  const detach = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onUp);
+    if (grab) grab.classList.remove('active');
+  };
+  const onMove = (ev) => {
+    const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
+    dy = Math.max(0, y - startY);
+    // Follow the thumb one to one until the commit point, then ease off, so
+    // the sheet says by feel that it has already given all it is going to.
+    const shown = dy <= YTP_FS_DISMISS_PX ? dy : YTP_FS_DISMISS_PX + (dy - YTP_FS_DISMISS_PX) * .42;
+    el.style.transform = 'translateY(' + Math.round(shown) + 'px)';
+    if (ev.cancelable && ev.type === 'touchmove') ev.preventDefault();
+  };
+  const onUp = () => {
+    detach();
+    const speed = dy / Math.max(1, Date.now() - startedAt);
+    const commit = dy >= YTP_FS_DISMISS_PX || (dy > 30 && speed >= YTP_FS_DISMISS_SPEED);
+    // Both states clear the transform themselves, but the snap back needs it
+    // animated and the commit needs it gone before the dock measures anything.
+    el.style.transition = commit ? '' : 'transform .2s ease';
+    el.style.transform = '';
+    if (commit) {
+      el.style.transition = '';
+      ytpDockFromFullscreen();
+    } else {
+      setTimeout(() => { if (_ytpFs) el.style.transition = ''; }, 240);
+    }
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onUp);
+}
+
+// Leaving full screen by the handle always lands on the half-height dock,
+// whatever size the dock was last left at. The gesture was a request for
+// "smaller, but still the big one", and dropping straight to a quarter-screen
+// sliver would overshoot what was asked for.
+function ytpDockFromFullscreen() {
+  _ytpDockH = Math.floor(ytpDockViewportH() * YTP_DOCK_MAX_FRAC);
+  try { localStorage.setItem('sj_dock_h', String(_ytpDockH)); } catch (_) {}
+  ytpEnterDocked();
 }
 
 function showYtpMiniFooter() {
@@ -23618,6 +23838,11 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'On a phone the player is one thing you can drag between three sizes. Pull the handle at the top of the docked bar up past halfway and it opens into the full screen player. Pull the handle at the top of the full screen player down and it becomes the half screen dock. From there the same handle scales it down to a quarter of the screen.',
+    'The small dock keeps everything you actually reach for - artwork, title, ratings, reactions, the timeline and every transport button - and drops the lyric strip and the up next line, which need the room it no longer has.',
+    'The docked player and the full screen player now carry the same five buttons in the same order: shuffle, previous, play, next, repeat. Repeat is new to the dock. Play is the filled circle in both, and the full screen and close buttons have stepped back so the transport reads first.',
+    'The rating, heart and heartbreak buttons and the three dots menu in the docked player are roughly half again as large on a phone. They were sized for a mouse and were hard to hit with a thumb.',
+    'The title and the reaction buttons in the docked player no longer run off the right hand edge of a phone when the artwork is enlarged.',
     'When your Online Jukebox is broadcasting, the docked player now carries the same Broadcasting Live badge as the full player. Tap it to see who is listening.',
     'From an opened playlist, the Suffering Jukebox logo now returns you to Explore Playlists, just like the back button on the page.',
     'The Start Playlist button now reads Restart Playlist whenever that playlist is already playing, including Now Playing.',
