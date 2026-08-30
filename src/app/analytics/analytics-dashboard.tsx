@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./dashboard.module.css";
+import ImportMissing, { type MissingSong } from "./import-missing";
 
 /* One screen. Everything answers to the same filter rail, and every measure is
    split by where the listen came from, so Suffering Jukebox and Spotify are
@@ -383,6 +384,10 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const [bucketMode, setBucketMode] = useState<BucketMode>("auto");
   const [hover, setHover] = useState<number | null>(null);
   const [calendarYear, setCalendarYear] = useState<number | null>(null);
+  // The keys the import panel opens with, or null when it is closed. An empty
+  // array is still open - that is "the whole missing list, nothing ticked".
+  const [importing, setImporting] = useState<string[] | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   // Local calendar days, not instants: the range the picker shows has to be
   // the range the headline reads back.
@@ -443,7 +448,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     const timer = setTimeout(() => void load(requestKey, controller.signal), data ? 220 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestKey, load]);
+  }, [requestKey, load, reloadTick]);
 
   const totals = data?.totals;
   const available = data?.available || {};
@@ -491,6 +496,17 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const topTracks = data?.topTracks || [];
   const artistMax = Math.max(1, ...topArtists.map((row) => metricValue(row, metric)));
   const trackMax = Math.max(1, ...topTracks.map((row) => metricValue(row, metric)));
+
+  /* Everything on this chart the catalogue does not have yet, in the order the
+     chart already put them - so the panel opens on the songs you play most,
+     not on an alphabet. Filters carry through, because the missing list is
+     drawn from the same rows as the bars above it. */
+  const missingSongs: MissingSong[] = useMemo(
+    () => (data?.topTracks || [])
+      .filter((row) => row.in_jukebox === false)
+      .map((row) => ({ key: row.key, title: row.title, artist: row.artist })),
+    [data],
+  );
 
   const heat = useMemo(() => {
     const map = new Map((data?.byHourDow || []).map((row) => [`${row.dow}:${row.hour}`, row]));
@@ -559,7 +575,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     nameOf: (row: T) => React.ReactNode,
     selection: Selection,
     onClick: (key: string) => void,
-    hrefOf: (row: T) => string,
+    actionOf: (row: T) => React.ReactNode,
   ) {
     return rows.map((row) => {
       const key = keyOf(row);
@@ -577,9 +593,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
             </span>
           </button>
           <span className={styles.rankVal}>{fmtMetric(row, metric)}</span>
-          {row.in_jukebox === false
-            ? <a className={styles.rankAdd} href={hrefOf(row)} target="_blank" rel="noopener" title="Open Import Music with this filled in">Add to Jukebox</a>
-            : <span />}
+          {row.in_jukebox === false ? actionOf(row) : <span />}
         </div>
       );
     });
@@ -829,13 +843,27 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                   (row) => <>{row.artist} <small>· {count(row.tracks)} songs</small></>,
                   artistSel,
                   (key) => setArtistSel((current) => selectionAfterBarClick(current, key)),
-                  (row) => importHref(row.artist),
+                  // A whole artist is the Add Music discography wizard, which
+                  // lives in the player itself, so this one still hops over.
+                  // Songs do not - see the song chart below.
+                  (row) => (
+                    <a className={styles.rankAdd} href={importHref(row.artist)} target="_blank" rel="noopener" title="Open Import Music with this artist filled in">
+                      Import artist
+                    </a>
+                  ),
                 )}
               </div>
             </section>
 
             <section className={styles.card}>
-              <div className={styles.cardHead}><h2>{metric === "hours" ? "Hours by song" : "Plays by song"}</h2></div>
+              <div className={styles.cardHead}>
+                <h2>{metric === "hours" ? "Hours by song" : "Plays by song"}</h2>
+                {missingSongs.length > 0 && (
+                  <button type="button" className={styles.headAction} onClick={() => setImporting([])}>
+                    Import {missingSongs.length} missing
+                  </button>
+                )}
+              </div>
               <p className={styles.cardNote}>Click any bar to filter the page by it; click more to add them. This chart never filters itself.</p>
               <div className={styles.rankScroll}>
                 {rankRows(
@@ -845,7 +873,16 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                   (row) => <>{row.title} <small>· {row.artist}</small></>,
                   trackSel,
                   (key) => setTrackSel((current) => selectionAfterBarClick(current, key)),
-                  (row) => importHref(row.artist, row.title),
+                  (row) => (
+                    <button
+                      type="button"
+                      className={styles.rankAdd}
+                      onClick={() => setImporting([row.key])}
+                      title="Find this on YouTube and add it, without leaving this page"
+                    >
+                      Add to Jukebox
+                    </button>
+                  ),
                 )}
               </div>
             </section>
@@ -858,8 +895,20 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
         the song&apos;s own running time, so the two sources can be added together.
         {bothSources ? " Orange is listening inside Suffering Jukebox, green is imported Spotify history." : ""}
         {Number(totals?.skipped || 0) > 0 ? ` ${count(totals?.skipped)} of these plays were skipped early.` : ""}
-        {" "}<b>Add to Jukebox</b> appears beside anything the catalogue does not already hold, and opens Import Music with the name filled in.
+        {" "}<b>Add to Jukebox</b> appears beside any song the catalogue does not already hold, and imports it here without leaving the page.
       </p>
+
+      {importing && (
+        <ImportMissing
+          accessToken={accessToken}
+          songs={missingSongs}
+          initialSelected={importing}
+          onClose={() => setImporting(null)}
+          // Re-read the page so the songs we just imported stop offering to
+          // import themselves. in_jukebox is computed fresh on every call.
+          onImported={() => setReloadTick((tick) => tick + 1)}
+        />
+      )}
     </div>
   );
 }
