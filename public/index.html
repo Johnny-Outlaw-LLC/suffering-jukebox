@@ -12903,7 +12903,6 @@ function sjmPlayNext() {
   const title = (meta.title && meta.title !== 'Unknown') ? meta.title : 'Track';
 
   if (!ytPlayerEl || !ytQueue.length) { ytPlayNow(vid, title, tid); return; }
-  if (ytQueue[ytQueueIdx]?.trackId === tid) { showToast('That one is playing now.'); return; }
 
   let idx = ytQueue.findIndex(q => q.trackId === tid);
   if (idx < 0) {
@@ -12932,6 +12931,27 @@ function sjmQueueRemoveSong() {
   const idx = ytQueue.findIndex(it => it && it.trackId === tid);
   if (idx < 0) { showToast('That song is not in the playlist.'); return; }
   ytRemoveFromQueue(idx);
+}
+
+// Second stage for the "Remove from Playlist" item - same shape as "Add to
+// playlist": one header with a back arrow, then the level to remove at.
+function sjmOpenRemoveFromPlaylist() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_sjmTrackId) return;
+  const tid = _sjmTrackId;
+  if (!ytQueue.some(item => item && item.trackId === tid)) { sjmRenderRoot(); return; }
+  const meta = ytpTrackMeta(tid, null);
+  let html = _sjmHeader('Remove from Playlist', 'sjmRenderRoot()') +
+    '<button class="sjm-item" onclick="sjmQueueRemoveSong()">' +
+      '<span class="sjm-ic">✕</span><span class="sjm-label">Song</span></button>';
+  if (ytQueue.length > 1 && meta.artist) html +=
+    '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'artist\')">' +
+      '<span class="sjm-ic">✕</span><span class="sjm-label">Everything by this artist</span></button>';
+  if (ytQueue.length > 1 && meta.album) html +=
+    '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'album\')">' +
+      '<span class="sjm-ic">✕</span><span class="sjm-label">This whole album</span></button>';
+  menu.innerHTML = html;
+  sjmPosition();
 }
 
 // Drop every queued song by the same artist or album as the menu track.
@@ -13079,28 +13099,20 @@ function sjmRenderRoot() {
         '<div class="sjm-sep"></div>'
       : '') +
     (function () {
-      // Player ⋯ and queue ⋯ both offer these while the track is in the playlist.
+      // Player ⋯ and queue ⋯ both offer this while the track is in the playlist.
       if (!tid || !ytQueue.length) return '';
       if (!ytQueue.some(item => item && item.trackId === tid)) return '';
-      const meta = ytpTrackMeta(tid, null);
-      let html =
-        '<button class="sjm-item" onclick="sjmQueueRemoveSong()">' +
-          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Song from Playlist</span></button>';
-      if (ytQueue.length > 1 && meta.artist) html +=
-        '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'artist\')">' +
-          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Artist from Playlist</span></button>';
-      if (ytQueue.length > 1 && meta.album) html +=
-        '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'album\')">' +
-          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove Album from Playlist</span></button>';
-      html += '<div class="sjm-sep"></div>';
-      return html;
+      return '<button class="sjm-item" onclick="sjmOpenRemoveFromPlaylist()">' +
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from Playlist</span><span class="sjm-sub">›</span></button>' +
+        '<div class="sjm-sep"></div>';
     })() +
     '<button class="sjm-item" onclick="sjmOpenPlaylists()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
       (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
     '</button>' +
-    '<button class="sjm-item" onclick="sjmPlayNext()">' +
-      '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play this song next</span></button>' +
+    (ytQueue[ytQueueIdx]?.trackId === tid ? '' :
+      '<button class="sjm-item" onclick="sjmPlayNext()">' +
+        '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play this song next</span></button>') +
     // Only offered on music somebody else put here. On my own imports the
     // artist is already under My Artists, so the section would be a button
     // that changes nothing.
@@ -13111,7 +13123,7 @@ function sjmRenderRoot() {
       : '') +
     (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id) && sjmArtistHasDiscography(navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
-          '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore ' + escHtml(navArtist.name || 'Artist') + ' Jukebox</span></button>'
+          '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Jukebox</span></button>'
       : '') +
     '<button class="sjm-item" onclick="sjmDiscover()">' +
       '<span class="sjm-ic">⇄</span><span class="sjm-label">Discover alternative version</span>' +
@@ -16124,8 +16136,12 @@ function openNowPlayingChart() {
 // header - which updateYTQueueUI does often enough for that to matter.
 function sjSyncNowPlayingTab() {
   const btn = document.getElementById('landing-now-playing-tab');
-  if (!btn) return;
   const row = nowPlayingDynamicRow();
+  // Shuffle All is orange the same way the Now Playing tab is; the two must
+  // not both be orange at once, and a queue starting or ending is exactly
+  // the moment that can go stale without this.
+  document.getElementById('landing-shuffle-all-btn')?.classList.toggle('standard', !!row);
+  if (!btn) return;
   btn.hidden = !row;
   if (row) {
     const n = row._tracks.length;
@@ -22125,7 +22141,7 @@ function updateLandingActionsHeader() {
         <button type="button" class="playlist-explore-filter${plScope() === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
         <button type="button" class="playlist-explore-filter${plScope() === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
         <button type="button" class="playlist-explore-filter${plScope() === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
-        <button type="button" class="playlist-explore-filter${plScope() === 'live' ? ' active' : ''}" onclick="setPlaylistExploreFilter('live')">Live${liveScopeCount ? ' (' + liveScopeCount + ')' : ''}</button>
+        ${liveScopeCount ? `<button type="button" class="playlist-explore-filter${plScope() === 'live' ? ' active' : ''}" onclick="setPlaylistExploreFilter('live')">Live (${liveScopeCount})</button>` : ''}
       </span>`
     : '';
   // Chips and totals share one row under the tabs, so the tab buttons keep the
@@ -24685,6 +24701,11 @@ const SJ_CHANGELOG = [
     'Now Playing\'s Detail view has a search box, so you can find one song in a long queue without scrolling for it.',
     'Sorting Now Playing by anything other than Order turns off the up and down arrows, since moving a song only means something when you are looking at the order it actually plays in. Sort back to Order to get them back.',
     'Removing a song or moving one up or down in Now Playing\'s Detail view no longer rebuilds the whole list - just that one row changes.',
+    'The song menu has one Remove from Playlist button now. Press it and pick the song, the artist, or the album, instead of three separate remove buttons cluttering the menu.',
+    'Explore Artist Jukebox in the song menu no longer repeats the artist\'s name - you\'re already looking at their song.',
+    'Play this song next no longer shows up in the menu for whatever is already playing.',
+    'The Live filter on Explore Playlists is hidden when nothing is playing live, instead of always showing and then telling you nothing is there.',
+    'Shuffle All now turns a plain color the moment something starts or stops playing, instead of waiting for the next time the page refreshes itself.',
   ] },
   { date: '2026-08-29', items: [
     'Dragging covers to reorder a playlist is now a computer-only thing. On a phone or tablet the wall simply scrolls, a cover opens when you tap it, and the cross removes it from the playlist. Two goes at a thumb-friendly reorder were both worse than leaving the scrolling alone, so the long press and its wobbling edit mode are gone.',
