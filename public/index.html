@@ -16739,7 +16739,13 @@ function playlistChartPaintTransport() {
     // orange CTA on the right, the same job Import has on Explore.
     startBtn.classList.toggle('on', playingThisPlaylist);
     if (startBtn.classList.contains('playlist-explore-action-btn')) startBtn.classList.remove('primary');
-    startBtn.textContent = (playingThisPlaylist ? 'Restart' : 'Start') + ' Playlist';
+    // Saved playlists use the Settings-style pill; Now Playing uses the same
+    // wording without the play icon so both pages stay readable.
+    if (startBtn.classList.contains('pl-wall-back') || startBtn.classList.contains('playlist-explore-action-btn')) {
+      startBtn.textContent = (playingThisPlaylist ? 'Restart' : 'Start') + ' Playlist';
+    } else {
+      startBtn.innerHTML = `<span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>${playingThisPlaylist ? 'Restart' : 'Start'} Playlist`;
+    }
   }
   const sh = document.getElementById('pl-wall-shuffle');
   if (sh) {
@@ -16787,8 +16793,30 @@ function playlistChartRowFor(item, fallbackIndex) {
   };
 }
 
+function renderPlaylistExploreHeader() {
+  // Saved playlists (and live rooms) get the same Explore / Now Playing tabs
+  // above the divider that Now Playing and the landing pages use. Covers /
+  // Details stay on the page itself - this header is navigation only.
+  const nav = document.getElementById('landing-nav-header');
+  if (!nav || playlistChartId === '__dynamic_now_playing') return;
+  const _np = nowPlayingDynamicRow();
+  nav.style.display = 'block';
+  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
+    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>
+    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>
+    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>
+    <button type="button" class="landing-tab landing-tab-now" id="landing-now-playing-tab" onclick="openNowPlayingChart()" title="Open the queue that is playing right now"${_np ? '' : ' hidden'}>♪ Now Playing${_np && _np._tracks.length > 1 ? ' (' + _np._tracks.length.toLocaleString() + ')' : ''}</button>
+  </nav>`;
+  nav.dataset.armed = '1';
+  updateToolbarToggle();
+  sjFitLwytbRow();
+}
+
 function playlistChartSyncToCurrent() {
-  if (!plAutoScroll) return;
+  // Follow-the-playing-song is a Now Playing behaviour. A saved playlist is
+  // for browsing and starting - chasing the queue mid-browse was noise, and
+  // the Auto Scroll control does not exist on that page.
+  if (!plAutoScroll || playlistChartId !== '__dynamic_now_playing') return;
   const idx = playlistChartCurrentCellIndex();
   if (viewMode !== 'playlistchart' || idx < 0) return;
   // Detail rows past the drawn window are not in the DOM yet. Grow far
@@ -19300,7 +19328,11 @@ function renderPlaylistChart(error) {
   if (!main) return;
   main.classList.remove('main-landing');
   const isNowPlayingPage = playlistChartId === '__dynamic_now_playing';
+  // Two pages, deliberately. Now Playing is the live queue (auto-scroll,
+  // shuffle playback, follow-the-song). A saved playlist is for browsing,
+  // reordering and starting - not for driving playback mid-browse.
   if (isNowPlayingPage) renderNowPlayingHeader();
+  else renderPlaylistExploreHeader();
   const q = playlistChartQueue();
   const curIdx = playlistChartCurrentCellIndex();
   const esc = s => escHtml(s || '');
@@ -19344,15 +19376,13 @@ function renderPlaylistChart(error) {
       `<button type="button" class="pl-wall-back" onclick="saveLiveRoomAsPlaylist()">Save as Playlist</button>` +
       (liveRoomMode._roomIsOwner ? `<button type="button" class="pl-wall-back" onclick="openJukeboxHost()">Live Jukebox Settings</button>` : '')
     : '';
-  const manageBtns = liveRoomMode ? roomBtns :
-    (minePl ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>` : '') +
-    // Now Playing puts Add Songs on the title row with the transport controls;
-    // saved playlists keep it on the toolbar under the back button.
-    ((!isNowPlayingPage && canAddSongs) ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>` : '');
-  const modeTog =
-    `<button type="button" class="pl-wall-tog${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
-    `<button type="button" class="pl-wall-tog${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
+  const settingsBtn = (!isNowPlayingPage && !liveRoomMode && minePl)
+    ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>`
+    : '';
   const sizeCtrl = `<div class="pl-wall-size"><span class="pl-wall-size-lbl">Size</span><input type="range" class="pl-wall-size-slider" min="72" max="260" value="${playlistWallSize}" oninput="setPlaylistWallSize(this.value)"></div>`;
+  const modeTog =
+    `<button type="button" class="pl-wall-back${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
+    `<button type="button" class="pl-wall-back${isDetail ? ' on' : ''}" id="pl-wall-mode-detail" onclick="setPlaylistWallMode('detail')" title="Track list with stats">Detail</button>`;
   const statsHTML = liveRoomMode
     ? `<div class="pl-wall-summary"><span>LIVE NOW</span><span>${liveRoomMode._listenerCount} listening</span><span>${liveRoomMode._queuedSongCount} requests waiting</span></div>`
     : plWallSummaryHTML();
@@ -19365,40 +19395,40 @@ function renderPlaylistChart(error) {
       ? `<div class="landing-no-results" style="margin:0 0 12px">You are following the host. Playback and order stay with them until you Leave Room. You can still add songs and remove only your own waiting requests.</div>`
       : `<div class="landing-no-results" style="margin:0 0 12px">Browsing this live set. The orange cover is what is playing now. Press Join Now to follow along in your player and to request songs.</div>`)
     : '';
-  const pageModeTog = isNowPlayingPage ? '' : modeTog;
-  // Repeat lives in the player. Putting it on the wall next to Restart and
-  // Shuffle fought the Now Playing tab for orange and duplicated a control
-  // the listener already has under their thumb.
-  const autoScrollBtn = `<button type="button" class="pl-wall-tog${plAutoScroll ? ' on' : ''}" id="pl-wall-autoscroll" aria-pressed="${plAutoScroll ? 'true' : 'false'}" onclick="togglePlAutoScroll()" title="When on, the list follows whatever is playing">◉ Auto Scroll</button>`;
-  const transport = liveRoomMode
-    ? `${sizeCtrl}${pageModeTog}${autoScrollBtn}`
-    : `${sizeCtrl}${pageModeTog}${autoScrollBtn}${plWallCanArrange() ? `<button type="button" class="pl-wall-tog" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">⤮ Mix Order</button>` : ''}<button type="button" class="pl-wall-tog${ytShuffle ? ' on' : ''}" id="pl-wall-shuffle" onclick="setYtShuffleEnabled(!ytShuffle)" title="Play these songs in a random order without changing the playlist">⤨ Shuffle Playback</button><button type="button" class="pl-wall-play sj-tr-btn" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()"><span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>Start Playlist</button>`;
   // The search box only makes sense next to the columns it searches.
   const searchHTML = isDetail
     ? `<div class="landing-search-wrap pl-wall-search-wrap"><input type="text" class="landing-search-input" id="pl-wall-search" placeholder="Search this playlist…" autocomplete="off" value="${esc(plSearchQ).replace(/"/g, '&quot;')}" oninput="plWallSetSearch(this.value)" onkeydown="if(event.key==='Escape')plWallClearSearch()">${plSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="plWallClearSearch()">✕</button>` : ''}</div>`
     : '';
-  // Now Playing used to be its own page with none of the usual browsing
-  // buttons on it - the only way back was the Explore Playlists link. These
-  // three go straight to any tab, the same as the ones above the wall.
-  const _npNav = nowPlayingDynamicRow();
-  const wallNav = isNowPlayingPage ? '' : `<nav class="landing-nav pl-wall-nav" aria-label="Browse Suffering Jukebox">` +
-    `<button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>` +
-    `<button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>` +
-    `<button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>` +
-    (_npNav ? `<button type="button" class="landing-tab landing-tab-now" onclick="openNowPlayingChart()" title="Open the queue that is playing right now">♪ Now Playing${_npNav._tracks && _npNav._tracks.length > 1 ? ' (' + _npNav._tracks.length.toLocaleString() + ')' : ''}</button>` : '') +
-  `</nav>`;
-  const pageActions = isNowPlayingPage
-    ? ''
-    : `<div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer('playlists')">← Explore Playlists</button>${manageBtns}</div>`;
-  // Now Playing actions live in the shared header above the divider (same
-  // row as Covers / Details), styled like Manage / Import. The page body
-  // only keeps search (Details) and the cover-size slider (Covers).
-  const transportToolbar = isNowPlayingPage
-    ? ((searchHTML || !isDetail)
+
+  let pageHTML;
+  if (isNowPlayingPage) {
+    // Actions already live in the shared header above the divider. Body keeps
+    // the title, search (Details) and cover-size slider (Covers).
+    const transportToolbar = (searchHTML || !isDetail)
       ? `<div class="pl-wall-toolbar">${searchHTML}${!isDetail ? `<div class="pl-wall-toolbar-right">${sizeCtrl}</div>` : ''}</div>`
-      : '')
-    : `<div class="pl-wall-toolbar">${searchHTML}<div class="pl-wall-toolbar-right"><div class="pl-wall-transport">${transport}</div></div></div>`;
-  main.innerHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}">${wallNav}<div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div></div>${pageActions}${transportToolbar}${roomNotice}${body}</section>`;
+      : '';
+    pageHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div></div>${transportToolbar}${body}</section>`;
+  } else if (liveRoomMode) {
+    // Live rooms keep join / request controls on a toolbar under the title.
+    const liveActions = `${!isDetail ? sizeCtrl : ''}${modeTog}`;
+    pageHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingHTML}${statsHTML}</div><div class="pl-wall-header-actions"><div class="pl-wall-transport">${liveActions}</div></div></div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer('playlists')">← Explore Playlists</button>${roomBtns}</div>${searchHTML ? `<div class="pl-wall-toolbar">${searchHTML}</div>` : ''}${roomNotice}${body}</section>`;
+  } else {
+    // Saved playlist: browse, reorder, add, start. No Auto Scroll / Shuffle
+    // Playback / Repeat - those belong on Now Playing. Title row carries the
+    // view controls and the actions; back + settings sit underneath.
+    const addBtn = canAddSongs
+      ? `<button type="button" class="pl-wall-back" onclick="openPlaylistBuilder('add','${playlistChartId}')">Add Songs</button>`
+      : '';
+    const mixBtn = plWallCanArrange()
+      ? `<button type="button" class="pl-wall-back" id="pl-wall-mix" onclick="plWallMixOrder()" title="Shuffle the playlist itself into a new order">Mix Order</button>`
+      : '';
+    const startBtn = `<button type="button" class="pl-wall-back" id="pl-wall-start-btn" ${q.length ? '' : 'disabled'} onclick="playlistChartPlay()">Start Playlist</button>`;
+    // Size · Covers · Detail · Mix Order · Add Songs · Start Playlist
+    const titleActions = `<div class="pl-wall-header-actions">${!isDetail ? sizeCtrl : ''}${modeTog}${mixBtn}${addBtn}${startBtn}</div>`;
+    pageHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div>${titleActions}</div><div class="pl-wall-toolbar"><button type="button" class="pl-wall-back" onclick="returnToPlaylistExplorer('playlists')">← Explore Playlists</button>${settingsBtn}</div>${searchHTML ? `<div class="pl-wall-toolbar">${searchHTML}</div>` : ''}${body}</section>`;
+  }
+
+  main.innerHTML = pageHTML;
   playlistChartPaintTransport();
   if (q.length) {
     const host = isDetail
@@ -19406,7 +19436,8 @@ function renderPlaylistChart(error) {
       : document.getElementById('pl-wall-grid');
     // The head is already in the markup above; this tops it up and then does
     // the scroll-to-current, the hover binding and the badge sweep.
-    if (host) plWallFillList(host, q, curIdx, isDetail, true);
+    // Only Now Playing asks the list to follow the playing song.
+    if (host) plWallFillList(host, q, curIdx, isDetail, isNowPlayingPage && plAutoScroll);
   }
   plWallLoadReactionCounts(q.map(it => it.trackId));
   sjPerf('playlist-wall.render', {
@@ -25094,6 +25125,7 @@ const SJ_CHANGELOG = [
     'On Now Playing, Explore Artists / Playlists / Songs sit in the shared top header above the divider, and Covers / Details sit on the second row in the same style as All / My Artists on Explore Artists, not down in the page body.',
     'On Now Playing, Size, Mix Order, Shuffle Playback, Repeat and Restart Playlist sit on the same row as the Now Playing title, and Add Songs is the last button on that row, matching the look of the others.',
     'On Now Playing, Auto Scroll, Mix Order, Shuffle Playback, Restart Playlist and Add Songs sit above the divider next to Covers / Details, right-aligned, and use the same pill buttons as Manage and Import on Explore. Repeat is gone from that row - it still lives in the player.',
+    'Opening a saved playlist is its own page from Now Playing. Explore Artists / Playlists / Songs and Now Playing sit above the divider. On the title row: Size, Covers, Detail, Mix Order, Add Songs and Start Playlist, all in the same style as Playlist Settings. Auto Scroll, Shuffle Playback and Repeat are not there - those only belong on Now Playing.',
     'Now Playing\'s Detail table has a Heartbreak column next to Hearts, and both columns show the reaction count on every row. The heart icon in the header is the same size as the thumbs-up icon.',
     'Thumbs-up ratings in the Detail table stay fully visible instead of fading into the row, and they update when your ratings finish loading so sorting by rating actually moves the songs you have liked.',
     'Auto Scroll sits next to Mix Order on a playlist wall. Turn it off and the list stays put when the song changes; turn it on and it follows whatever is playing. Details starts with it off on a long queue, because chasing song 1,500 used to freeze the page.',
