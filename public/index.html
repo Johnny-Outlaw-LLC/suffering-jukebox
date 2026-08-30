@@ -197,7 +197,9 @@ main > * { min-width: 0; }
 .vdd-item.on { color: var(--accent); }
 .vdd-item.on .vdd-tick { color: var(--accent); }
 .ctrl-row-sub { padding-top: .55rem !important; }
-.ctrl-row-meta { font-family: var(--mono); font-size: .46rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+.ctrl-row-meta { font-family: var(--mono); font-size: .46rem; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.sj-score-help { background: none; border: 1px solid var(--border); color: var(--text-muted); width: 16px; height: 16px; border-radius: 50%; font-family: var(--mono); font-size: .55rem; line-height: 1; cursor: help; display: inline-flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; text-transform: none; letter-spacing: 0; }
+.sj-score-help:hover { border-color: var(--accent); color: var(--accent); }
 /* The sort buttons share a row with expand/collapse, so they match those
    rather than the smaller sort buttons used inside section headers. */
 .ctrl-row-sub .sort-btn { font-size: .5rem; padding: .26rem .58rem; border-radius: 5px; }
@@ -2330,8 +2332,11 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .filter-dd-footer {
   position: sticky; bottom: 0; padding: 8px 10px;
   border-top: 1px solid var(--border); background: var(--bg-card);
-  display: flex; justify-content: flex-end; border-radius: 0 0 10px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  border-radius: 0 0 10px 10px;
 }
+.filter-dd-footer .landing-singles-only-lbl { flex: 1; min-width: 0; white-space: normal; }
+.filter-dd-footer .ctrl-btn { margin-left: auto; flex-shrink: 0; }
 .filter-pm-btn { display: inline-flex; align-items: center; gap: 5px; }
 .filter-pm-btn:hover { border-color: #7040a844; background: #7040a812; color: #7040a8; }
 
@@ -3155,6 +3160,9 @@ body.live-room-listening #ytp-md-repeat,
 body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:none; }
 .playlist-explore-body { padding:14px 44px 15px 16px; display:flex; flex-direction:column; gap:7px; }
 .playlist-explore-name { font-size:.82rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.playlist-explore-name .pl-name-lg { display:none; }
+.playlist-explore-grid.pl-size-lg .playlist-explore-name .pl-name-lg { display:inline; }
+.playlist-explore-grid.pl-size-lg .playlist-explore-name .pl-name-sm { display:none; }
 .playlist-explore-meta { color:var(--text-muted); font-size:.5rem; }
 /* Small says what it is and how big it is; medium adds who put it there;
    large adds who is on it. Every card writes all three - the size class is
@@ -16409,6 +16417,43 @@ function dynamicPlaylistTracks(trackIds) {
   return [...new Set((trackIds || []).filter(Boolean))].map((track_id, position) => ({ track_id, position }));
 }
 
+/** Artists on the heart/sad-only songs that Favorites Plus adds beyond thumbs-up. */
+function favoritesPlusArtistSample(trackIds) {
+  const seen = new Set();
+  const out = [];
+  let more = false;
+  for (const id of trackIds || []) {
+    if (!id) continue;
+    const name = (SJ_TRACK_META[id] && SJ_TRACK_META[id].artist)
+      || (playlistSearchMetaByTrack[id] && playlistSearchMetaByTrack[id].artistName)
+      || '';
+    const key = name.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    if (out.length >= PL_ARTIST_SAMPLE) { more = true; break; }
+    seen.add(key);
+    out.push(name.trim());
+  }
+  if (!out.length) return '';
+  return out.join(', ') + (more ? ', \u2026' : '');
+}
+
+function playlistExploreCardName(p) {
+  return (p && p.name) || 'Untitled Playlist';
+}
+
+function playlistExploreNameHTML(p, esc) {
+  const base = esc(playlistExploreCardName(p));
+  const tip = p._description ? ' ⓘ' : '';
+  // Large cards spell out who Favorites Plus adds beyond thumbs-up. Both
+  // strings ride in the markup so the Card Size slider can flip them with
+  // CSS instead of rebuilding the wall mid-drag.
+  if (p && p.id === '__dynamic_favorites_plus' && p._plusArtistSample) {
+    const plus = esc('Favorites + ' + p._plusArtistSample);
+    return `<span class="playlist-explore-name"><span class="pl-name-sm">${base}${tip}</span><span class="pl-name-lg">${plus}${tip}</span></span>`;
+  }
+  return `<span class="playlist-explore-name">${base}${tip}</span>`;
+}
+
 // What is playing right now, shaped like a playlist. It is NOT on the
 // Explore Playlists wall any more - it is the Now Playing button beside the
 // three Explore tabs, which only appears while something is playing. The row
@@ -16434,19 +16479,23 @@ function dynamicPlaylistRows() {
   if (!googleUser || !_myVotesLoaded) return rows;
   const favoriteIds = Object.keys(localVotes).filter(trackId => getMyVote(trackId) > 0);
   if (!favoriteIds.length) return rows;
-  const plusIds = [...new Set(favoriteIds.concat(myReactionTrackIds))];
-  rows.push(
-    {
-      id:'__dynamic_favorites', name:'Favorites', _dynamic:true,
-      _description:'Includes every song you have liked with one or two thumbs up.',
-      _tracks:dynamicPlaylistTracks(favoriteIds),
-    },
-    {
+  const favSet = new Set(favoriteIds);
+  // Hearts/heartbreaks that are not already thumbs-up. No extras = no Plus card.
+  const extraIds = (myReactionTrackIds || []).filter(id => id && !favSet.has(id));
+  rows.push({
+    id:'__dynamic_favorites', name:'Favorites', _dynamic:true,
+    _description:'Includes every song you have liked with one or two thumbs up.',
+    _tracks:dynamicPlaylistTracks(favoriteIds),
+  });
+  if (extraIds.length) {
+    const plusIds = [...new Set(favoriteIds.concat(extraIds))];
+    rows.push({
       id:'__dynamic_favorites_plus', name:'Favorites Plus', _dynamic:true,
-      _description:'Includes every song you have liked, plus songs where you left a heart or heartbreak reaction.',
+      _description:'Your thumbs-up songs, plus songs where you left a heart or heartbreak but have not thumbs-up\'d them.',
+      _plusArtistSample: favoritesPlusArtistSample(extraIds),
       _tracks:dynamicPlaylistTracks(plusIds),
-    },
-  );
+    });
+  }
   return rows;
 }
 
@@ -21450,7 +21499,7 @@ function renderLanding() {
             // The card itself is a <button>, so the ✕ cannot live inside it -
             // a nested button is invalid and the browser breaks it back out.
             // It is a sibling in a positioned wrap instead.
-            return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body"><span class="playlist-explore-name">${esc(p.name || 'Untitled Playlist')}${p._description ? ' ⓘ' : ''}</span><span class="playlist-explore-meta"><span class="pl-meta-n">${p._tracks?.length || 0} tracks${live}</span><span class="pl-meta-by">${by}${vis}</span></span>${artists ? `<span class="playlist-explore-artists">${esc(artists)}</span>` : ''}<span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button>${(p._liveRoom || p._dynamic) ? '' : `<button type="button" class="playlist-explore-more" title="More" aria-label="Playlist options" onclick="event.stopPropagation();plmOpen('${p.id}',this,event)">⋯</button>`}</div>`;
+            return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body">${playlistExploreNameHTML(p, esc)}<span class="playlist-explore-meta"><span class="pl-meta-n">${p._tracks?.length || 0} tracks${live}</span><span class="pl-meta-by">${by}${vis}</span></span>${artists ? `<span class="playlist-explore-artists">${esc(artists)}</span>` : ''}<span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button>${(p._liveRoom || p._dynamic) ? '' : `<button type="button" class="playlist-explore-more" title="More" aria-label="Playlist options" onclick="event.stopPropagation();plmOpen('${p.id}',this,event)">⋯</button>`}</div>`;
           }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
       })() : landingTab === 'songs' ? esSongsPageHTML() : `
       <div class="landing-controls">
@@ -22959,9 +23008,10 @@ function renderViewToggle() {
       <span class="ctrl-row-meta"${_shareR2 ? '' : ' style="margin-left:auto"'}>Sort</span>
       <button class="sort-btn ${listSort==='views'?'active':''}" onclick="setListSort('views')">Views</button>
       <button class="sort-btn ${listSort==='date'?'active':''}" onclick="setListSort('date')">Date</button>` : '';
+  const SJ_SCORE_HELP = 'Jukebox Score: +5 thumbs up · +12 double thumbs up · −3 thumbs down · +1 each heart or heartbreak';
   const _metricOpts = [
     { val: 'yt',     lbl: 'Total YouTube Views', tip: 'Bar height shows each album\'s total YouTube views' },
-    { val: 'score',  lbl: 'Jukebox Score', tip: 'Bar height shows the jukebox score from thumbs-up votes' },
+    { val: 'score',  lbl: 'Jukebox Score', tip: SJ_SCORE_HELP },
     { val: 'total',  lbl: 'Jukebox Plays', tip: 'Bar height shows how many times each album has been played in this app' },
     ...(googleUser ? [{ val: 'mine', lbl: 'My Jukebox Plays', tip: 'Bar height shows how many times you have played each album here' }] : []),
     { val: 'hidden', lbl: 'Hide Bars', tip: 'Hide the chart bars and just show album covers' },
@@ -22983,9 +23033,12 @@ function renderViewToggle() {
   const _chartView = viewMode !== 'alltracks' && viewMode !== 'playlists';
   const _metricNow = _metricOpts.find(o => o.val === barChartMode);
   const _barsLbl = barChartMode === 'hidden' ? 'Bars hidden' : 'Bars: ' + (_metricNow ? _metricNow.lbl : '');
+  const _scoreHelpBtn = barChartMode === 'score'
+    ? `<button type="button" class="sj-score-help" title="${SJ_SCORE_HELP}" aria-label="How Jukebox Score is calculated" onclick="event.stopPropagation()">?</button>`
+    : '';
   const ctrlRow = _chartView ? `
     <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
-      <span class="ctrl-row-meta" title="Change this from the view button above">${_barsLbl}</span>
+      <span class="ctrl-row-meta" title="Change this from the view button above">${_barsLbl}${_scoreHelpBtn}</span>
       <button class="expand-collapse-btn" onclick="expandAllTracks()" title="Open the track list under every album" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊕ Expand All Tracks</button>
       <button class="expand-collapse-btn" onclick="collapseAllTracks()" title="Close every album's track list" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer;letter-spacing:.04em;transition:all .15s;opacity:.82" onmouseover="this.style.borderColor='var(--text-muted)';this.style.opacity='1'" onmouseout="this.style.borderColor='var(--border)';this.style.opacity='.82'">⊖ Collapse All Tracks</button>${listSort_}${_shareR2 ? _shareBtn : ''}
     </div>` : '';
@@ -23661,6 +23714,10 @@ const addedCommunityIds = new Set();
 let oaSearchQ  = '';
 let oaMineOnly = false;
 let oaUploader = '';   // '' = anyone, otherwise an added_by_name (or '__official__')
+// Singles-only artists stay off the Other Artists list until asked for -
+// separate from Explore Artists' Include Singles Only Artists toggle.
+let oaIncludeSinglesOnly = false;
+try { oaIncludeSinglesOnly = localStorage.getItem('sj_oa_include_singles_only') === '1'; } catch (_) {}
 // Sort order for the Other Artists list. Default is alphabetical by name.
 let oaSort = (() => { try { return localStorage.getItem('sj_oa_sort') || 'name'; } catch (e) { return 'name'; } })();
 
@@ -23945,6 +24002,20 @@ function oaSetSort(v) {
   oaRerenderOpen();
 }
 
+function oaIsSinglesOnly(a) {
+  if (!a) return false;
+  const row = oaStatRow(a.id) || sjLandingRowFor(a.id);
+  if (row && row.discography_complete === false) return true;
+  if (a.discography_complete === false) return true;
+  return false;
+}
+
+function oaSetIncludeSinglesOnly(on) {
+  oaIncludeSinglesOnly = !!on;
+  try { localStorage.setItem('sj_oa_include_singles_only', oaIncludeSinglesOnly ? '1' : '0'); } catch (_) {}
+  oaRerenderOpen();
+}
+
 function renderOtherArtistsBtn() {
   const esc = s => (s || '').replace(/</g, '&lt;');
   // On an artist jukebox page, list every community artist except the featured one
@@ -23953,7 +24024,8 @@ function renderOtherArtistsBtn() {
   const _commSorted = oaSortList(_commList);
   // Community pages also list the main-jukebox artists (Silver Jews / Purple Mountains) up top
   const _mainSorted = [...mainCatalogArtists].sort((a, b) => /silver jews/i.test(b.name || '') - /silver jews/i.test(a.name || ''));
-  const _oaList = IS_COMMUNITY ? [..._mainSorted, ..._commSorted] : _commSorted;
+  let _oaList = IS_COMMUNITY ? [..._mainSorted, ..._commSorted] : _commSorted;
+  if (!oaIncludeSinglesOnly) _oaList = _oaList.filter(a => !oaIsSinglesOnly(a));
   const activeN = [...addedCommunityIds].filter(id => oaFindArtist(id)).length;
   const escA = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   // "Uploaded by" options are built from whatever this menu is listing
@@ -23966,7 +24038,7 @@ function renderOtherArtistsBtn() {
   const _byOpts = [..._byCounts.entries()].sort((x, y) =>
     x[0] === '__official__' ? -1 : y[0] === '__official__' ? 1 : x[1].label.localeCompare(y[1].label));
   const _mineN = _oaList.filter(a => oaIsMine(a)).length;
-  const _oaFilters = _oaList.length ? `<div class="oa-filters" onclick="event.stopPropagation()">
+  const _oaFilters = _oaList.length || oaIncludeSinglesOnly || communityArtists.length ? `<div class="oa-filters" onclick="event.stopPropagation()">
         <div class="oa-search-wrap">
           <span class="oa-search-ico">🔍</span>
           <input type="text" class="oa-search-input" placeholder="Search artists…" autocomplete="off"
@@ -24035,6 +24107,10 @@ function renderOtherArtistsBtn() {
         <div class="oa-albs-note" data-oa-noresults style="display:none">No artists match those filters.</div>
       </div>
       <div class="filter-dd-footer">
+        <label class="landing-singles-only-lbl" onclick="event.stopPropagation()" title="Artists imported as a single song rather than a full discography">
+          <input type="checkbox" ${oaIncludeSinglesOnly ? 'checked' : ''} onchange="oaSetIncludeSinglesOnly(this.checked)">
+          Include Singles Only Artists
+        </label>
         <button type="button" class="ctrl-btn" onclick="event.stopPropagation();closeSJDropdown();openImportMusic()">＋ Import Music</button>
       </div>
     </div>
@@ -25391,6 +25467,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
+    'Jukebox Score on artist charts now counts hearts and heartbreaks: +5 for a thumbs up, +12 for a double thumbs up, −3 for a thumbs down, and +1 for every heart or heartbreak. When Bars show Jukebox Score, a ? next to the label explains the formula.',
+    'Favorites Plus only shows when you have heart or heartbreak songs that are not already thumbs-up. On the largest playlist card size its title becomes Favorites + a few of those artists.',
+    'Other Artists on an artist jukebox has Include Singles Only Artists at the bottom of the menu, off by default, the same idea as the Explore Artists filter.',
     'Now Playing and a saved playlist share one title row: Size, Covers and Details sit next to the name the same way on both pages. On a saved playlist, Explore Playlists and Playlist Settings moved up onto that row too.',
     'Now Playing has an Auto Size checkbox next to the Size slider. Turn it on and the covers grow to fill the width of the page, without going past wherever you left the slider.',
     'Reordering songs in a saved playlist works again. The up and down arrows in Details (and the arrows on the covers) were quietly doing nothing because the playlist was loaded without the ids those moves need.',
@@ -27459,6 +27538,19 @@ function normalizeVote(v) {
   if (n <= -1) return -1;
   return 0;
 }
+/** Points one rating contributes to Jukebox Score (must match get_track_vote_scores). */
+function sjVoteScorePoints(v) {
+  const n = normalizeVote(v);
+  if (n >= 2) return 12;
+  if (n === 1) return 5;
+  if (n <= -1) return -3;
+  return 0;
+}
+function sjBumpTrackVoteScore(trackId, delta) {
+  if (!trackId || !delta) return;
+  trackVoteScores[trackId] = (trackVoteScores[trackId] || 0) + delta;
+  if (barChartMode === 'score') refreshTrackAggregates(trackId);
+}
 function getMyVote(trackId) { return normalizeVote(localVotes[trackId]); }
 function voteClass(v) {
   const n = normalizeVote(v);
@@ -27918,8 +28010,11 @@ async function ytpUndoSessionReactions(trackId, reaction, all) {
   if (!ids.length) { ytpCloseReactionUndo(); return; }
   const counts = trackReactionCounts[trackId] || (trackReactionCounts[trackId] = {});
   const before = Number(counts[reaction]) || 0;
+  const undoN = Math.min(ids.length, before);
   counts[reaction] = Math.max(0, before - ids.length);
   refreshTrackReactionUI(trackId);
+  const _scoreRxn = (reaction === 'heart' || reaction === 'sad');
+  if (_scoreRxn && undoN) sjBumpTrackVoteScore(trackId, -undoN);
   ytpCloseReactionUndo();
   try {
     const headers = Object.assign({ 'Content-Type': 'application/json' }, await sjAuthHeaders());
@@ -27932,6 +28027,8 @@ async function ytpUndoSessionReactions(trackId, reaction, all) {
     const deleted = new Set(body.deleted || []);
     sessionTrackReactions[trackId][reaction] = bucket.filter(id => !deleted.has(id));
     trackReactionCounts[trackId] = body.counts || counts;
+    const actuallyRemoved = deleted.size || ids.length;
+    if (_scoreRxn && actuallyRemoved !== undoN) sjBumpTrackVoteScore(trackId, undoN - actuallyRemoved);
     refreshTrackReactionUI(trackId);
     loadTrackReactionTimeline(trackId, true);
     ensureMyReactionTracks(true).then(changed => {
@@ -27940,6 +28037,7 @@ async function ytpUndoSessionReactions(trackId, reaction, all) {
     showToast(`${deleted.size || ids.length} ${reaction === 'sad' ? 'heartbreak' : 'heart'} reaction${(deleted.size || ids.length) === 1 ? '' : 's'} undone.`);
   } catch (e) {
     counts[reaction] = before;
+    if (_scoreRxn && undoN) sjBumpTrackVoteScore(trackId, undoN);
     refreshTrackReactionUI(trackId);
     showToast(e.message || 'Could not undo reaction.');
   }
@@ -28077,6 +28175,8 @@ async function ytpSendReaction(trackId, reaction, positionMs, anchor) {
   const counts = trackReactionCounts[trackId] || (trackReactionCounts[trackId] = {});
   counts[reaction] = (Number(counts[reaction]) || 0) + 1;
   refreshTrackReactionUI(trackId);
+  const _scoreRxn = (reaction === 'heart' || reaction === 'sad');
+  if (_scoreRxn) sjBumpTrackVoteScore(trackId, 1);
   if (anchor) {
     anchor.classList.add('sent');
     setTimeout(() => anchor.classList.remove('sent'), 140);
@@ -28109,6 +28209,7 @@ async function ytpSendReaction(trackId, reaction, positionMs, anchor) {
     return true;
   } catch (e) {
     counts[reaction] = Math.max(0, (Number(counts[reaction]) || 1) - 1);
+    if (_scoreRxn) sjBumpTrackVoteScore(trackId, -1);
     refreshTrackReactionUI(trackId);
     showToast(e.message || 'Could not save reaction.');
     return false;
@@ -28143,12 +28244,8 @@ async function instantVote(trackId, vote) {
   refreshVoteUI(trackId);
   if (googleUser && _myVotesLoaded && isLandingMode && landingTab === 'playlists') renderLanding();
   logRatingChange(trackId, cur, next);  // track all rating changes
-  // Optimistic real-time bar update
-  const _voteDelta = next - cur;
-  if (_voteDelta !== 0) {
-    trackVoteScores[trackId] = (trackVoteScores[trackId] || 0) + _voteDelta;
-    refreshTrackAggregates(trackId);
-  }
+  // Optimistic real-time bar update (weighted Jukebox Score points)
+  sjBumpTrackVoteScore(trackId, sjVoteScorePoints(next) - sjVoteScorePoints(cur));
   if (!googleUser) return;
   try {
     const key     = 'track:' + trackId;
