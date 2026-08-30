@@ -3274,6 +3274,19 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
   aspect-ratio:1; border:2px dashed var(--accent); border-radius:2px;
   background:#ff6b3514; pointer-events:none;
 }
+/* On a phone there is no cursor, so without a cover under the finger there is
+   nothing to say a drag is happening at all - the wall just went quiet and a
+   dashed square appeared somewhere else. This is the cover itself, lifted out
+   and carried. Fixed and transform-only, so moving it never touches layout. */
+.pl-wall-drag-ghost {
+  position:fixed; top:0; left:0; z-index:9999; pointer-events:none;
+  border-radius:3px; overflow:hidden; opacity:.94;
+  box-shadow:0 18px 44px #000d, 0 0 0 2px var(--accent);
+  transform:translate3d(-9999px,-9999px,0);
+  will-change:transform;
+}
+.pl-wall-drag-ghost img { width:100%; height:100%; object-fit:cover; display:block; }
+.pl-wall-cell.pl-wall-dragging { opacity:.22; }
 .pl-wall-cell img { width:100%; height:100%; object-fit:cover; display:block; transition:filter .3s, opacity .3s; }
 /* Soft dark wash so white title + stats stay readable — ShutterField-style. */
 .pl-wall-cell::after {
@@ -3400,6 +3413,10 @@ body.live-room-listening #ytp-md-repeat { opacity:.35; pointer-events:none; }
    image drag pre-empts the reorder entirely. */
 .pl-wall-cell, .pl-wall-cell img, .pl-wall-name {
   -webkit-user-drag:none; user-select:none; -webkit-user-select:none;
+  /* Without this iOS answers a long press on a cover with its own Share /
+     Save to Photos / Copy sheet, which is the whole gesture edit mode needs.
+     Safari offers the sheet for the image, so the image has to refuse it. */
+  -webkit-touch-callout:none;
 }
 .pl-wall-cell.pl-wall-draggable { cursor:grab; }
 .pl-wall-cell.pl-wall-draggable:active { cursor:grabbing; }
@@ -16470,8 +16487,9 @@ function plWallBindBadgeHovers() {
   grid.addEventListener('pointercancel', () => {
     plWallCancelPress();
     if (_plDrag) {
-      _plDrag.cell.classList.remove('pl-wall-dragging');
-      if (_plDrag.marker) _plDrag.marker.remove();
+      // The ghost and the frame loop outlive the drag object unless they are
+      // stopped here; a stranded ghost sits over the page forever.
+      plWallDragCleanup(_plDrag);
       _plDrag = null;
     }
   });
@@ -17042,7 +17060,9 @@ function plWallDragGeometry(grid) {
 function plWallDropIndex(grid, x, y) {
   const st = _plDrag;
   const g = st && st.geom;
-  const cells = plWallGridCells(grid);
+  // The list the drag cached when it started. Re-querying the wall here was
+  // the second of the two full passes every pointermove used to cost.
+  const cells = (st && st.cells) || plWallGridCells(grid);
   if (!g) return 0;
   // The grid scrolls under the pointer, so the first cell's position is
   // re-read rather than trusted from the start of the drag.
@@ -17057,7 +17077,7 @@ function plWallDropIndex(grid, x, y) {
   let at = row * g.cols + col + (withinX >= g.width / 2 ? 1 : 0);
   at = Math.max(0, Math.min(at, cells.length));
   // The dragged cell is still in the list but is not a slot of its own.
-  const fromIdx = cells.indexOf(st.cell);
+  const fromIdx = st.from >= 0 ? st.from : cells.indexOf(st.cell);
   if (fromIdx >= 0 && at > fromIdx) at -= 1;
   return Math.max(0, Math.min(at, cells.length - 1));
 }
@@ -17107,47 +17127,133 @@ function plWallRenderEditBar() {
   if (scroll) page.insertBefore(bar, scroll); else page.appendChild(bar);
 }
 
+/* How far from the edge of the scroller a finger starts dragging the wall
+   along with it, and how fast at the very edge. Without this a song can only
+   ever be moved as far as one screenful. */
+const PL_DRAG_EDGE = 68;
+const PL_DRAG_EDGE_MAX = 20;
+
 function plWallDragBegin(cell, ev) {
-  _plDrag = { cell, startX: ev.clientX, startY: ev.clientY, active: false, from: -1, marker: null, lastIndex: -1 };
+  _plDrag = { cell, startX: ev.clientX, startY: ev.clientY, x: ev.clientX, y: ev.clientY,
+    active: false, from: -1, marker: null, ghost: null, lastIndex: -1, markerAt: -1, raf: 0 };
+}
+
+/* Everything expensive is worked out ONCE here rather than per pointermove.
+
+   This used to call plWallGridCells() - a querySelectorAll over the whole wall
+   - twice for every single move, then insertBefore into the grid and read a
+   bounding rect straight afterwards, which forces a synchronous relayout of
+   every cell. At 1,926 songs that is most of a frame's budget spent before the
+   finger has moved a pixel, which is exactly what "janky" was.
+
+   The cell list cannot change while a drag is in flight (the marker is not a
+   .pl-wall-cell and nothing else is added), so it is safe to hold. */
+function plWallDragActivate(grid) {
+  const st = _plDrag;
+  st.active = true;
+  st.cells = plWallGridCells(grid);
+  st.others = st.cells.filter(c => c !== st.cell);
+  st.from = st.cells.indexOf(st.cell);
+  st.geom = plWallDragGeometry(grid);
+  st.scroller = grid.closest('.pl-wall-scroll');
+  st.scrollRect = st.scroller ? st.scroller.getBoundingClientRect() : null;
+
+  const rect = st.cell.getBoundingClientRect();
+  // Where inside the cover the finger took hold, so it stays under that spot.
+  st.grabX = st.startX - rect.left;
+  st.grabY = st.startY - rect.top;
+  const ghost = document.createElement('div');
+  ghost.className = 'pl-wall-drag-ghost';
+  ghost.style.width = rect.width + 'px';
+  ghost.style.height = rect.height + 'px';
+  const img = st.cell.querySelector('img');
+  if (img && img.src) {
+    const clone = new Image();
+    clone.src = img.src;
+    clone.alt = '';
+    ghost.appendChild(clone);
+  } else {
+    ghost.innerHTML = '<span class="pl-wall-fallback">\u266A</span>';
+  }
+  document.body.appendChild(ghost);
+  st.ghost = ghost;
+
+  st.cell.classList.add('pl-wall-dragging');
+  const marker = document.createElement('div');
+  marker.className = 'pl-wall-drop-marker';
+  st.marker = marker;
+  grid.appendChild(marker);
+  plWallClosePop();
+  plWallDragLoop(grid);
+}
+
+/* One frame, one pass. The loop runs itself rather than waiting on pointermove
+   so that a finger held still against the top or bottom edge keeps scrolling -
+   holding still is how you ask for that, and no more events arrive. */
+function plWallDragLoop(grid) {
+  const st = _plDrag;
+  if (!st || !st.active) return;
+  st.raf = requestAnimationFrame(() => plWallDragLoop(grid));
+
+  if (st.ghost) {
+    st.ghost.style.transform =
+      'translate3d(' + (st.x - st.grabX) + 'px,' + (st.y - st.grabY) + 'px,0)';
+  }
+
+  const box = st.scroller, r = st.scrollRect;
+  if (box && r) {
+    let dy = 0;
+    if (st.y < r.top + PL_DRAG_EDGE) dy = -PL_DRAG_EDGE_MAX * Math.min(1, (r.top + PL_DRAG_EDGE - st.y) / PL_DRAG_EDGE);
+    else if (st.y > r.bottom - PL_DRAG_EDGE) dy = PL_DRAG_EDGE_MAX * Math.min(1, (st.y - (r.bottom - PL_DRAG_EDGE)) / PL_DRAG_EDGE);
+    if (dy) box.scrollTop += dy;
+  }
+
+  // Only the DOM write is left to the frame. Which slot it would land in is
+  // worked out on the move itself - see plWallDragMove.
+  if (st.lastIndex !== st.markerAt) {
+    st.markerAt = st.lastIndex;
+    const ref = st.others[st.lastIndex] || null;
+    if (ref) grid.insertBefore(st.marker, ref);
+    else grid.appendChild(st.marker);
+  }
 }
 
 function plWallDragMove(grid, ev) {
   if (!_plDrag) return;
+  _plDrag.x = ev.clientX;
+  _plDrag.y = ev.clientY;
   if (!_plDrag.active) {
     if (Math.abs(ev.clientX - _plDrag.startX) < PL_DRAG_SLOP
       && Math.abs(ev.clientY - _plDrag.startY) < PL_DRAG_SLOP) return;
-    _plDrag.active = true;
-    _plDrag.from = plWallGridCells(grid).indexOf(_plDrag.cell);
-    _plDrag.geom = plWallDragGeometry(grid);
-    _plDrag.cell.classList.add('pl-wall-dragging');
-    // A single placeholder moved around the grid, rather than re-rendering the
-    // wall on every pointermove.
-    const marker = document.createElement('div');
-    marker.className = 'pl-wall-drop-marker';
-    _plDrag.marker = marker;
-    grid.appendChild(marker);
-    plWallClosePop();
+    plWallDragActivate(grid);
   }
-  const at = plWallDropIndex(grid, ev.clientX, ev.clientY);
-  if (at === _plDrag.lastIndex) return;   // nothing to move, no layout to force
-  _plDrag.lastIndex = at;
-  const cells = plWallGridCells(grid).filter(c => c !== _plDrag.cell);
-  const ref = cells[at] || null;
-  if (ref) grid.insertBefore(_plDrag.marker, ref);
-  else grid.appendChild(_plDrag.marker);
+  // Where it would land is arithmetic over a list the drag already cached, so
+  // it is cheap enough to answer on every move - and it must be answered here
+  // rather than in the frame loop, because a tab that is throttling
+  // requestAnimationFrame would otherwise drop the song back where it started.
+  _plDrag.lastIndex = plWallDropIndex(grid, ev.clientX, ev.clientY);
+}
+
+function plWallDragCleanup(drag) {
+  if (!drag) return;
+  if (drag.raf) cancelAnimationFrame(drag.raf);
+  drag.raf = 0;
+  drag.active = false;
+  drag.cell.classList.remove('pl-wall-dragging');
+  if (drag.ghost) drag.ghost.remove();
+  if (drag.marker) drag.marker.remove();
 }
 
 async function plWallDragEnd(grid, ev) {
   const drag = _plDrag;
   _plDrag = null;
   if (!drag) return false;
-  drag.cell.classList.remove('pl-wall-dragging');
-  if (!drag.active) return false;
-
-  // The slot the marker is sitting in, which pointermove already worked out.
+  const wasActive = drag.active;
+  // The slot the marker is sitting in, which the loop already worked out.
   // Walking the wall again to find it was another full pass per drop.
   const to = drag.lastIndex >= 0 ? drag.lastIndex : drag.from;
-  if (drag.marker) drag.marker.remove();
+  plWallDragCleanup(drag);
+  if (!wasActive) return false;
   if (drag.from < 0 || to === drag.from) return true;
   await plWallMoveTrack(drag.from, to);
   return true;
@@ -24082,6 +24188,12 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-29';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-29', items: [
+    'Holding a cover on an iPhone no longer brings up Share / Save to Photos over the top of the playlist. That menu is what iOS offers for a picture, and it was arriving instead of edit mode.',
+    'Dragging a cover on a phone now picks the cover up and carries it under your finger, instead of leaving it in place and showing a dashed outline somewhere else.',
+    'Dragging near the top or bottom of the wall scrolls it, so a song can be moved further than one screenful. Hold still at the edge and it keeps going.',
+    'Reordering a long playlist is much smoother. Every small movement of a finger was measuring all of the covers twice and re-laying out the whole wall; on a playlist of a couple of thousand songs that was most of a frame\'s work before anything moved.',
+    'Importing from Spotify no longer says a song was not found when it never looked for it. A pass now takes up to twenty songs instead of a hundred, which is what fits inside the limit on how many YouTube searches can go out in a minute. Past that limit the old wizard quietly counted every remaining song as nothing playable found, so a hundred song import came back claiming eighty of your songs were not on YouTube. Run another pass a minute later for the next twenty.',
+    'If the search does get busy part way through a pass, it now waits and tries that song again instead of giving up on it, and anything it still could not reach is counted separately from the songs that genuinely have no match, with a line telling you to come back for them in a minute.',
     'On a phone, a playlist\'s covers now run the full width of the screen. They were framed by three nested margins that took about a quarter of the width to show nine thumbnails.',
     'Rearranging a playlist on a phone works the way rearranging apps does. Press and hold any cover: the covers start to wobble, a remove cross appears on each one you are allowed to take out, and a bar at the top says Done. Drag to reorder, tap the cross to remove, and tap any cover or Done to finish.',
     'Until you hold one, a finger on the covers just scrolls the page. It used to try to pick a cover up, which is why scrolling a long playlist on a phone kept snagging. Tapping a cover still opens it, and on a computer a cover still drags straight away with the mouse.',
@@ -30906,7 +31018,7 @@ async function mjRequest(path, method, body) {
     body: body ? JSON.stringify(body) : undefined
   });
   const data = await res.json().catch(() => ({}));
-  if (!data.ok) { const err = new Error(data.error || 'Request failed.'); err.data = data; throw err; }
+  if (!data.ok) { const err = new Error(data.error || 'Request failed.'); err.data = data; err.status = res.status; throw err; }
   return data;
 }
 
@@ -31179,10 +31291,16 @@ async function mjRemoveAlbum(albumName) {
 // Import music) now only has a button.
 // ═══════════════════════════════════════════════════════════════════════
 
-// Every match is one YouTube search, and a YouTube search costs 100 quota
-// units. A hundred at a time is the cap, and the wizard says so rather than
-// silently dropping the rest of a selection.
-const SPI_MAX = 100;
+// Every match is one YouTube search, and a search costs 100 quota units of a
+// 10,000 a day budget. It is ALSO rate limited to 20 a minute per IP by
+// /api/my-jukebox/search. One pass is therefore twenty songs: it fits inside
+// that window exactly, and spends a fifth of the day rather than all of it.
+//
+// This was 100, which meant a pass ran out of window at about song 21 and
+// reported the remaining eighty as not found. Do not raise it without raising
+// the server side limit in src/app/api/my-jukebox/search/route.ts as well -
+// and note that at 100 a single pass is the whole day's YouTube quota.
+const SPI_MAX = 20;
 
 let _spiStep = 1;
 let _spiOpen = false;
@@ -31197,6 +31315,11 @@ let _spiLoading = false;
 let _spiLoaded = false;
 // Set when Spotify refuses a list for a reason connecting again cannot fix.
 let _spiBlocked = '';
+// Songs the last pass never got to search for, because the search route was
+// rate limited. Kept apart from "not found" on purpose: a throttle is us, and
+// telling somebody their music is not on YouTube when we never looked is the
+// worst thing this wizard can say.
+let _spiThrottled = 0;
 let _spiQuery = '';
 let _spiHideKnown = true;
 let _spiKnown = new Set();      // indexes into _spiTracks the Jukebox already has
@@ -31477,7 +31600,9 @@ function spiCountHTML() {
     (_spiTruncated ? ' of ' + _spiTotal : '') +
     (hidden ? ' · ' + hidden + ' hidden' : '') +
     (_spiSel.size ? ' · <b>' + _spiSel.size + ' picked</b>' : '') +
-    ' · up to ' + SPI_MAX + ' at a time.';
+    (_spiSel.size > SPI_MAX
+      ? ' · only the first ' + SPI_MAX + ' get searched for.'
+      : ' · up to ' + SPI_MAX + ' at a time.');
 }
 
 function spiRowsHTML() {
@@ -31524,10 +31649,29 @@ function spiPickAll(on) {
 }
 
 // ── Step 3: what we found, and what you are about to add ──────────────────
+// One search, with the rate limiter respected rather than fought. A 429 from
+// /api/my-jukebox/search means we are inside somebody else's window on this
+// IP, so wait it out instead of dropping the song on the floor. After the last
+// retry it throws on, so the caller can count it as throttled and never as
+// "nothing playable found".
+async function spiSearchOne(track, retries) {
+  if (retries == null) retries = 2;
+  try {
+    return await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(track.artistName + ' ' + track.title), 'GET');
+  } catch (e) {
+    if (e.status === 429 && retries > 0) {
+      spiLog('  · busy, waiting a moment');
+      await new Promise(r => setTimeout(r, 6000));
+      return spiSearchOne(track, retries - 1);
+    }
+    throw e;
+  }
+}
+
 async function spiFindMatches() {
   const chosen = Array.from(_spiSel).sort((a, b) => a - b).map(n => _spiTracks[n]).filter(Boolean).slice(0, SPI_MAX);
   if (!chosen.length) return;
-  _spiBusy = true; _spiMatches = [];
+  _spiBusy = true; _spiMatches = []; _spiThrottled = 0;
   spiGo(3, 'Searching YouTube for ' + chosen.length + ' song' + (chosen.length === 1 ? '' : 's') + '…');
   const pane = document.getElementById('spiPane3');
   pane.innerHTML = '<div class="m-log open" id="spiLog"></div>';
@@ -31536,16 +31680,23 @@ async function spiFindMatches() {
     const track = chosen[i];
     spiLog(track.artistName + ' — ' + track.title + '…');
     try {
-      const found = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(track.artistName + ' ' + track.title), 'GET');
+      const found = await spiSearchOne(track);
       const video = (found.results || [])[0];
       if (video) {
         _spiMatches.push({ ...video, _keep: true, _artist: track.artistName, _track: track.title, _albumName: track.albumName, _sourceUri: track.uri, _durationMs: track.durationMs || null });
         spiLog('  ✓ ' + (video.title || '').slice(0, 70), 'ok');
       } else { missing.push(track); spiLog('  × nothing playable found', 'err'); }
-    } catch (e) { missing.push(track); spiLog('  × ' + (e.message || 'search failed'), 'err'); }
+    } catch (e) {
+      if (e.status === 429) {
+        _spiThrottled += 1;
+        spiLog('  × not searched for — too many searches just now', 'err');
+      } else { missing.push(track); spiLog('  × ' + (e.message || 'search failed'), 'err'); }
+    }
   }
   _spiBusy = false;
-  spiStatusLine(_spiMatches.length + ' of ' + chosen.length + ' matched' + (missing.length ? ' · ' + missing.length + ' not found' : ''),
+  spiStatusLine(_spiMatches.length + ' of ' + chosen.length + ' matched' +
+    (missing.length ? ' · ' + missing.length + ' not found' : '') +
+    (_spiThrottled ? ' · ' + _spiThrottled + ' not searched for yet' : ''),
     _spiMatches.length ? 'ok' : 'err');
   spiRenderStep();
 }
@@ -31563,7 +31714,9 @@ function spiLog(text, cls) {
 function spiPane3HTML() {
   if (_spiBusy) return document.getElementById('spiPane3').innerHTML;
   if (!_spiMatches.length) {
-    return '<div class="sjj-empty">Nothing playable was found for those songs. Go back and try a different selection.</div>';
+    return '<div class="sjj-empty">' + (_spiThrottled
+      ? 'Those songs were not searched for. Too many YouTube searches went out in the last minute, so the search is resting. Wait a minute, then go Back and Find Matches again — nothing is wrong with your music.'
+      : 'Nothing playable was found for those songs. Go back and try a different selection.') + '</div>';
   }
   const rows = _spiMatches.map((m, n) => {
     const thumb = m.thumbnail || ('https://i.ytimg.com/vi/' + m.videoId + '/mqdefault.jpg');
@@ -31578,7 +31731,11 @@ function spiPane3HTML() {
       '<input type="text" value="' + escHtml(m._track || '') + '" onclick="event.preventDefault();event.stopPropagation()" oninput="spiSetField(' + n + ',\'_track\',this.value)">' +
       '</span></label>';
   }).join('');
-  return '<div class="am-vis" style="margin-top:0">' +
+  const throttleNote = _spiThrottled
+    ? '<div class="am-step-status err" style="margin:0 0 .7rem;line-height:1.6">' + _spiThrottled + ' song' + (_spiThrottled === 1 ? ' was' : 's were') +
+      ' not searched for — too many YouTube searches went out in the last minute. Add these, then wait a minute and run another pass for the rest.</div>'
+    : '';
+  return throttleNote + '<div class="am-vis" style="margin-top:0">' +
       '<div class="m-fl">Who should see this music?</div>' +
       '<label class="am-vis-opt"><input type="radio" name="spiVis" value="private"' + (_spiVisibility === 'private' ? ' checked' : '') + ' onchange="_spiVisibility=\'private\'">' +
         '<span><b>Import into My Jukebox only</b><em>Only you see it listed. It stays out of Explore Artists and the public grids.</em></span></label>' +
