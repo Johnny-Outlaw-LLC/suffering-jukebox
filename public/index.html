@@ -1705,6 +1705,10 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-font-row {
   display: none; align-items: center; margin-top: 6px; min-height: 22px;
 }
+/* Last line of the left column, under the lyric size slider. .ytp-mf-meta is
+   a flex column, so without align-self the pill would stretch the full width
+   of the track details. */
+.ytp-mf-meta > .ytp-mf-live-badge { align-self: flex-start; margin-top: 6px; flex-shrink: 0; }
 .ytp-mf-font-row.show { display: flex; }
 .ytp-mf-font-row .mf-lyr-font-ctrl {
   display: flex; align-items: center; gap: 4px; line-height: 1;
@@ -1886,10 +1890,6 @@ textarea.report-input { resize:vertical; }
   display:none; align-items:center; gap:7px; min-width:0; max-width:min(320px,42vw);
   padding:4px 0 0; align-self:stretch;
 }
-/* On the bottom row beside Up Next. align-items:center on that row would
-   float it in the middle of a 40px row; end puts it on the same bottom line
-   as the UP NEXT label and Skip. */
-.ytp-mf-bottom .ytp-mf-live-badge { align-self:flex-end; margin-bottom:4px; flex-shrink:0; }
 .ytp-mf-up-next:not(:empty) { display:flex; }
 .ytp-mf-up-next .yt-queue-up-next {
   flex:1; min-width:0; padding:4px 0; background:transparent; border:none;
@@ -3941,6 +3941,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <div class="ytp-mf-font-row" id="ytp-mf-font-row">
           <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
         </div>
+        <button type="button" class="ytp-mf-live-badge" id="ytp-mf-live-badge" title="This player is broadcasting live. Click to see who is listening." onclick="event.stopPropagation();sjjToggleListeners()"><span class="dot"></span>Broadcasting Live</button>
       </div>
       </div>
     </div>
@@ -3956,7 +3957,6 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMobToggleRepeat()" title="Repeat" id="ytp-mf-repeat">↻</button>
       </div>
-      <button type="button" class="ytp-mf-live-badge" id="ytp-mf-live-badge" title="This player is broadcasting live. Click to see who is listening." onclick="event.stopPropagation();sjjToggleListeners()"><span class="dot"></span>Broadcasting Live</button>
       <div class="ytp-mf-up-next" id="ytp-mf-up-next"></div>
       <span class="ytp-mf-sep" aria-hidden="true"></span>
       <div class="ytp-mf-win">
@@ -7992,7 +7992,6 @@ function ytpToggleMinimize() {
 // count has to be recomputed when the viewport crosses it.
 window.addEventListener('resize', () => {
   if (document.getElementById('ytp-mf-lyrics-pane')?.classList.contains('show')) ytpMfLayoutLyrics();
-  try { ytpPlaceLiveBadge(); } catch (_) {}
 });
 
 // ── Docked bar: resizable, the thumbnail growing into the real video ────────
@@ -8261,22 +8260,6 @@ function ytpDockPlaceLyricBtn() {
   /* no-op: the ♫ toggle was removed from the dock */
 }
 
-// Broadcasting Live has two homes and the CSS breakpoint decides which.
-// On a desktop it shares the dock's bottom row with Up Next, so the two status
-// lines sit on one baseline instead of the badge wrapping onto a line of its
-// own halfway up the left column. On a phone .ytp-mf-bottom is
-// display:contents, so a badge left in it becomes a stray grid item with no
-// area of its own - it goes back beside the hearts, where it already was.
-// Re-run on resize: a window dragged across 640px has to re-home it.
-function ytpPlaceLiveBadge() {
-  const badge = document.getElementById('ytp-mf-live-badge');
-  if (!badge) return;
-  const phone = window.matchMedia('(max-width: 640px)').matches;
-  const home = document.querySelector(
-    phone ? '#ytp-mini-footer .ytp-mf-feedback' : '#ytp-mini-footer .ytp-mf-bottom');
-  if (home && badge.parentNode !== home) home.appendChild(badge);
-}
-
 function ytpArrangeDockControls() {
   const right = document.querySelector('#ytp-mini-footer .ytp-mf-right');
   if (!right || right.classList.contains('arranged')) return;
@@ -8299,7 +8282,6 @@ function ytpArrangeDockControls() {
   ['ytp-mf-shuffle', 'ytp-mf-prev', 'ytp-mf-playpause', 'ytp-mf-next', 'ytp-mf-repeat'].forEach(id => {
     const el = document.getElementById(id); if (el) middle.appendChild(el);
   });
-  ytpPlaceLiveBadge();
   const upNext = document.getElementById('ytp-mf-up-next');
   if (upNext) bottom.appendChild(upNext);
   const more = document.getElementById('ytp-mf-more');
@@ -24578,7 +24560,7 @@ const SJ_CHANGELOG = [
     'Now Playing is a button at the top of the page, next to Explore Artists, Explore Playlists and Explore Songs. It is orange, it says how many songs are in the queue, and it only appears while something is playing. It opens the same wall of covers it always did.',
     'Now Playing is no longer a card on the playlist wall. It was the only card there that was not a playlist, it was different for every visitor, and it moved every time a song changed. The button is a better door to it, and the playlist counts above the wall now only count actual playlists.',
     'In the player bar at the bottom of the screen, the rating, heart, heartbreak and \u22ef buttons are the same size as the play and skip buttons beside them. They were noticeably smaller, which made the bar look like two different toolbars stuck together. Phones already had this and have not changed.',
-    'Broadcasting Live has moved in the player bar. It used to wrap onto a line of its own in the middle of the track details; it now sits on the bottom line, level with Up Next and Skip.',
+    'Broadcasting Live has moved in the player bar. It used to wrap onto a line of its own in the middle of the track details; it now sits at the bottom of the track details, under the lyric size slider.',
     'Explore Playlists has a Playlists menu, the same one Explore Artists has for artists. Tick and untick playlists to decide which ones are on the wall, search it by name, and use All to clear the lot or bring them all back. The song and artist counts above the wall, and Shuffle All, follow whatever is left showing.',
     'Every playlist card now carries a cross in its corner. Press it and that playlist comes off the wall, without touching the playlist itself. A Show All button appears next to Import Playlist while anything is hidden, and the Playlists menu is the other way back.',
     'New Card Size slider above the playlist wall: three sizes, small, medium and large. It is remembered for next time.',
