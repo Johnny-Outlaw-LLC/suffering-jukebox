@@ -1,29 +1,22 @@
-// Johnny Outlaw, LLC — Suffering Jukebox — share-friendly artist pages (/pavement)
-// Looks up the artist by slug, serves the app HTML with artist-specific meta tags
-// and window.__SLUG_ARTIST__ injected so the client renders that artist's jukebox.
+// Johnny Outlaw, LLC — Suffering Jukebox — indexable artist jukebox pages (/pavement)
+// Serves the SPA shell with artist-specific meta, MusicGroup JSON-LD, and a
+// crawlable HTML catalog (song titles + lyrics as real text) so search engines
+// and AI crawlers can find the artist and the words — not only a Loading… div.
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { getOgImage, shareImageUrl } from "@/lib/share-images";
+import {
+  artistPageDescription,
+  buildArtistCatalogHtml,
+  buildArtistJsonLd,
+  esc,
+  fetchArtistCatalog,
+  fetchPublicArtistBySlug,
+} from "@/lib/artist-seo";
 
 export const dynamic = "force-dynamic";
-
-const REST = "https://ntyvtpimesfoesuykuyi.supabase.co/rest/v1";
-const ANON =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMTc0NjIsImV4cCI6MjA4OTU5MzQ2Mn0.S6hw0xc4PVKZy_OBj7eu8eRpGHEqZMJ6_6p_Lut1BpQ";
-
-const esc = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-async function sb(path: string): Promise<any[]> {
-  const r = await fetch(`${REST}${path}`, {
-    headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, "Accept-Profile": "jukebox" },
-    cache: "no-store",
-  });
-  if (!r.ok) return [];
-  return r.json();
-}
 
 export async function GET(
   req: NextRequest,
@@ -38,9 +31,7 @@ export async function GET(
     return NextResponse.redirect(home, 302);
   }
 
-  const [artist] = await sb(
-    `/artists?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug,is_community,added_by_name`
-  );
+  const artist = await fetchPublicArtistBySlug(slug);
   if (!artist) {
     return NextResponse.redirect(home, 302);
   }
@@ -57,19 +48,35 @@ export async function GET(
   }
   if (!art) {
     try {
-      const albs = await sb(
-        `/albums?artist_id=eq.${artist.id}&select=art_url&order=release_date.asc&limit=8`
+      const r = await fetch(
+        `https://ntyvtpimesfoesuykuyi.supabase.co/rest/v1/albums?artist_id=eq.${artist.id}&select=art_url&order=release_date.asc&limit=8`,
+        {
+          headers: {
+            apikey:
+              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMTc0NjIsImV4cCI6MjA4OTU5MzQ2Mn0.S6hw0xc4PVKZy_OBj7eu8eRpGHEqZMJ6_6p_Lut1BpQ",
+            Authorization:
+              "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMTc0NjIsImV4cCI6MjA4OTU5MzQ2Mn0.S6hw0xc4PVKZy_OBj7eu8eRpGHEqZMJ6_6p_Lut1BpQ",
+            "Accept-Profile": "jukebox",
+          },
+          next: { revalidate: 3600 },
+        }
       );
-      art = albs.map((a: any) => a.art_url).find(Boolean) || "";
+      if (r.ok) {
+        const albs = await r.json();
+        art = (albs || []).map((a: { art_url?: string }) => a.art_url).find(Boolean) || "";
+      }
     } catch {
       /* generic og:image below */
     }
   }
 
+  const catalog = await fetchArtistCatalog(artist.id);
   const name = (artist.name || "").trim();
-  const title = `${name} Jukebox | ${SITE_NAME}`;
-  const desc = `An interactive ${name} jukebox — every album ranked by YouTube views. Stream the catalog, explore play history, press play.`;
+  const title = `${name} Jukebox — Free Online Music Player | ${SITE_NAME}`;
+  const desc = artistPageDescription(name, catalog.tracks.length, catalog.albums.length);
   const pageUrl = `${SITE_URL}/${artist.slug}`;
+  const jsonLd = buildArtistJsonLd(artist, catalog, pageUrl);
+  const catalogHtml = buildArtistCatalogHtml(artist, catalog, pageUrl);
 
   let html = readFileSync(join(process.cwd(), "public", "index.html"), "utf-8");
   html = html
@@ -77,6 +84,12 @@ export async function GET(
     .replace(
       /<meta name="description" content="[^"]*">/,
       `<meta name="description" content="${esc(desc)}">`
+    )
+    .replace(
+      /<meta name="keywords" content="[^"]*">/,
+      `<meta name="keywords" content="${esc(
+        `${name}, ${name} jukebox, ${name} lyrics, ${name} songs, free online music player, free jukebox, stream ${name}, ${SITE_NAME}`
+      )}">`
     )
     .replace(
       /<meta property="og:url" content="[^"]*">/,
@@ -98,6 +111,13 @@ export async function GET(
       /<meta name="twitter:description" content="[^"]*">/,
       `<meta name="twitter:description" content="${esc(desc)}">`
     );
+
+  // Drop the homepage Silver Jews WebApplication block; artist graph replaces it.
+  html = html.replace(
+    /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+    `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`
+  );
+
   if (art) {
     html = html
       .replace(
@@ -109,8 +129,10 @@ export async function GET(
         `<meta name="twitter:image" content="${esc(art)}">`
       );
   }
+
   const inject =
     `<link rel="canonical" href="${esc(pageUrl)}">\n` +
+    `<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">\n` +
     `<script>window.__SLUG_ARTIST__=${JSON.stringify({
       id: artist.id,
       name: artist.name,
@@ -118,10 +140,19 @@ export async function GET(
     })}</script>\n`;
   html = html.replace("</head>", `${inject}</head>`);
 
+  // Catalog text after </main> so crawlers see titles + lyrics; the SPA hides
+  // #sj-seo-catalog once the interactive jukebox is up.
+  if (html.includes("</main>")) {
+    html = html.replace("</main>", `</main>\n${catalogHtml}\n`);
+  } else {
+    html = html.replace("</body>", `${catalogHtml}\n</body>`);
+  }
+
   return new NextResponse(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store",
+      // Hourly edge cache — catalog text does not need to be live every request.
+      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
     },
   });
 }
