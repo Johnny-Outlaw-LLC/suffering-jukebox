@@ -3859,9 +3859,40 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
    320px-wide Full Details card. */
 .landing-card-actions { flex-wrap: nowrap; gap: 8px; }
 .landing-card-actions > .landing-play-btn { flex: 0 0 auto; }
-.landing-card-actions > .landing-explore-btn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.landing-card-actions > .landing-explore-btn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .landing-card-actions > .landing-play-btn,
 .landing-card-actions > .landing-explore-btn { font-size: .5rem; letter-spacing: .02em; padding: .5rem .6rem; white-space: nowrap; }
+.landing-card-more {
+  flex: 0 0 auto; width: 32px; height: 32px; padding: 0; border-radius: 8px;
+  border: 1px solid var(--border); background: none; color: var(--text-muted);
+  font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.landing-card-more:hover, .landing-card-more[aria-expanded="true"] {
+  border-color: var(--accent); color: var(--accent);
+}
+.la-hero-actions > .landing-card-more { align-self: center; }
+.ma-summary {
+  display:flex; flex-wrap:wrap; gap:14px 22px; padding:10px 12px; margin:0 0 12px;
+  border:1px solid var(--border); border-radius:8px; background:var(--bg-elevated);
+  font-family:var(--mono); font-size:.55rem; color:var(--text-muted);
+}
+.ma-summary b { color:var(--text); font-size:.85rem; font-weight:700; display:block; }
+.ma-artist-tools {
+  display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; padding-bottom:10px;
+  border-bottom:1px solid var(--border);
+}
+.ma-back {
+  background:none; border:none; color:var(--accent); font-family:var(--mono);
+  font-size:.55rem; cursor:pointer; padding:0 0 10px; letter-spacing:.04em;
+}
+.ma-back:hover { text-decoration:underline; }
+.ma-list-row {
+  display:flex; align-items:center; gap:10px; padding:10px 8px;
+  border-bottom:1px solid var(--border); cursor:pointer;
+}
+.ma-list-row:hover { background:var(--bg-elevated); }
+.ma-list-row .oa-info { flex:1; min-width:0; }
+.ma-list-go { color:var(--text-muted); font-size:.7rem; flex-shrink:0; }
 .landing-grid.detail-full .landing-card-stats { gap: 12px; flex-wrap: nowrap; }
 .landing-grid.detail-full .landing-card-stats .landing-stat { min-width: 0; }
 .landing-grid.detail-full .landing-card-stats .landing-stat-val { font-size: .85rem; }
@@ -4388,12 +4419,12 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 <div class="modal-overlay" id="myArtistsOverlay" onclick="if(event.target===this)closeMyArtists()">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title">Manage My Artists</span>
+      <span class="modal-title" id="maTitle">Manage My Artists</span>
       <button class="modal-close" onclick="closeMyArtists()">✕</button>
     </div>
     <div class="modal-body">
       <div class="ma-search-row">
-        <input type="text" class="m-input" id="maSearchInput" placeholder="Search artist, album, or song…" autocomplete="off" oninput="maFilterArtists(this.value)">
+        <input type="text" class="m-input" id="maSearchInput" placeholder="Search artists…" autocomplete="off" oninput="maFilterArtists(this.value)">
       </div>
       <div id="myArtistsBody"><div class="oa-albs-note">Loading…</div></div>
     </div>
@@ -11430,7 +11461,11 @@ async function bgsFolderUpload() {
   const want = artist.trim().toLowerCase();
   const hit  = want ? _maData.find(a => (a.name || '').trim().toLowerCase() === want) : null;
   closeBgSetup();
-  if (hit) { taBatchOpen(hit.id, null); return; }
+  if (hit) {
+    openMyArtists(hit.id);
+    taBatchOpen(hit.id, null);
+    return;
+  }
   // Not one of their artists (or nothing imported yet) - land them on the
   // artist page filtered to it rather than dead-ending.
   const inp = document.getElementById('maSearchInput');
@@ -12050,10 +12085,19 @@ async function taBatchOpen(artistId, albumId) {
     taBatchRestore();
     return;
   }
-  let artist = _maData.find(a => a.id === artistId);
-  if (!artist) {
-    await loadMyArtists();
-    artist = _maData.find(a => a.id === artistId);
+  let artist = _maData.find(a => a.id === artistId)
+    || (_maCurrent && _maCurrent.id === artistId ? _maCurrent : null);
+  if (!artist || !Array.isArray(artist.albums) || !artist.albums.length) {
+    try {
+      const rows = await dbGet('/artists?id=eq.' + artistId + '&select=id,name');
+      const albums = await dbGet('/albums?artist_id=eq.' + artistId + '&select=id,name,release_date,art_url&order=release_date.asc');
+      if (rows[0]) {
+        artist = { id: rows[0].id, name: rows[0].name, albums: albums || [], track_count: 0 };
+        const i = _maData.findIndex(a => a.id === artistId);
+        if (i >= 0) _maData[i] = { ..._maData[i], ...artist };
+        else _maData.push(artist);
+      }
+    } catch (_) {}
   }
   if (!artist) {
     showToast('Could not load the imported artist for audio matching.');
@@ -12929,6 +12973,7 @@ function sjmClose() {
   window.removeEventListener('scroll', _sjmScroll, true);
   window.removeEventListener('resize', sjmClose);
   if (typeof plmClose === 'function') plmClose();
+  if (typeof lamClose === 'function') lamClose();
 }
 
 // Scrolling closes the menu, except while we are the ones causing the scroll -
@@ -13179,9 +13224,13 @@ function sjmOpenForPlayer(anchorEl, ev) {
 }
 
 function sjmPosition() {
-  const menu = document.getElementById('sjm-menu') || document.getElementById('plm-menu');
+  const menu = document.getElementById('sjm-menu')
+    || document.getElementById('plm-menu')
+    || document.getElementById('lam-menu');
   if (!menu) return;
-  const anchor = menu.id === 'plm-menu' ? _plmAnchor : _sjmAnchor;
+  const anchor = menu.id === 'plm-menu' ? _plmAnchor
+    : menu.id === 'lam-menu' ? _lamAnchor
+    : _sjmAnchor;
   if (!anchor) {
     menu.style.left = Math.max(8, (window.innerWidth - menu.offsetWidth) / 2) + 'px';
     menu.style.top  = '20vh';
@@ -13292,6 +13341,151 @@ async function plmRemove() {
   if (!id || !p) return;
   await confirmDeletePlaylist(id, p.name || 'this playlist');
   if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+// ── Landing artist card ⋯ (lam*) ─────────────────────────────────────────────
+let _lamArtistId = null;
+let _lamAnchor = null;
+let _lamFavIds = null; // null = still checking; [] = none
+
+function lamClose() {
+  const m = document.getElementById('lam-menu');
+  if (m) m.remove();
+  if (_lamAnchor) { _lamAnchor.removeAttribute('aria-expanded'); _lamAnchor = null; }
+  _lamArtistId = null;
+  _lamFavIds = null;
+  document.removeEventListener('mousedown', _lamOutside, true);
+  window.removeEventListener('scroll', lamClose, true);
+  window.removeEventListener('resize', lamClose);
+}
+
+function _lamOutside(e) {
+  const m = document.getElementById('lam-menu');
+  if (m && !m.contains(e.target) && e.target !== _lamAnchor && !_lamAnchor?.contains(e.target)) lamClose();
+}
+
+function lamOpen(artistId, anchorEl, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  sjmClose(); plmClose();
+  const already = _lamArtistId === artistId && document.getElementById('lam-menu');
+  lamClose();
+  if (already) return;
+  const row = (landingStats || []).find(r => r.artist_id === artistId);
+  if (!row) return;
+  _lamArtistId = artistId;
+  _lamAnchor = anchorEl || null;
+  _lamFavIds = null;
+  const menu = document.createElement('div');
+  menu.id = 'lam-menu';
+  menu.className = 'sjm-menu';
+  menu.onmousedown = e => e.stopPropagation();
+  menu.onclick = e => e.stopPropagation();
+  document.body.appendChild(menu);
+  lamRender(row);
+  sjmPosition();
+  if (anchorEl) anchorEl.setAttribute('aria-expanded', 'true');
+  setTimeout(() => {
+    document.addEventListener('mousedown', _lamOutside, true);
+    window.addEventListener('scroll', lamClose, true);
+    window.addEventListener('resize', lamClose);
+  }, 0);
+  lamLoadFavorites(artistId).then(ids => {
+    if (_lamArtistId !== artistId || !document.getElementById('lam-menu')) return;
+    _lamFavIds = ids;
+    lamRender(row);
+    sjmPosition();
+  });
+}
+
+function lamCanManage(row) {
+  return !!(row && (row.can_manage || oaIsMine(row)));
+}
+
+function lamRender(row) {
+  const menu = document.getElementById('lam-menu');
+  if (!menu || !row) return;
+  const n = Number(row.track_count) || 0;
+  const fav = _lamFavIds;
+  const favBtn = fav === null
+    ? '<div class="sjm-empty" style="padding:6px 10px">Checking favorites…</div>'
+    : (fav.length
+        ? '<button class="sjm-item" onclick="lamAddFavorites()">' +
+            '<span class="sjm-ic">★</span><span class="sjm-label">Add favorites to playlist</span>' +
+            '<span class="sjm-sub">' + fav.length + '</span></button>'
+        : '');
+  menu.innerHTML =
+    _sjmHeader(row.name || 'Artist') +
+    '<button class="sjm-item" onclick="lamAddAll()"' + (n ? '' : ' disabled') + '>' +
+      '<span class="sjm-ic">+</span><span class="sjm-label">Add all to playlist</span>' +
+      (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
+    '</button>' +
+    favBtn +
+    (lamCanManage(row)
+      ? '<div class="sjm-sep"></div>' +
+        '<button class="sjm-item" onclick="lamManage()">' +
+          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>'
+      : '');
+}
+
+async function lamLoadFavorites(artistId) {
+  const favIds = Object.keys(localVotes || {}).filter(id => getMyVote(id) > 0);
+  if (!favIds.length) return [];
+  const out = [];
+  for (let i = 0; i < favIds.length; i += 80) {
+    const chunk = favIds.slice(i, i + 80);
+    try {
+      const rows = await dbGet(
+        '/tracks?id=in.(' + chunk.join(',') + ')&select=id&albums!inner(artist_id)&albums.artist_id=eq.' + artistId
+      );
+      rows.forEach(r => out.push(r.id));
+    } catch (_) {}
+  }
+  return out;
+}
+
+async function lamAllTrackIds(artistId) {
+  try {
+    const albs = await dbGet('/albums?artist_id=eq.' + artistId + '&select=id');
+    const albumIds = (albs || []).map(a => a.id);
+    if (!albumIds.length) return [];
+    const ids = [];
+    for (let i = 0; i < albumIds.length; i += 40) {
+      const chunk = albumIds.slice(i, i + 40);
+      const rows = await dbGet('/tracks?album_id=in.(' + chunk.join(',') + ')&select=id');
+      (rows || []).forEach(r => { if (r.id) ids.push(r.id); });
+    }
+    return ids;
+  } catch (e) {
+    showToast('Could not load this artist\'s songs.');
+    return [];
+  }
+}
+
+async function lamAddAll() {
+  const id = _lamArtistId;
+  const row = (landingStats || []).find(r => r.artist_id === id);
+  const anchor = _lamAnchor;
+  lamClose();
+  if (!id) return;
+  showToast('Gathering songs…');
+  const ids = await lamAllTrackIds(id);
+  if (!ids.length) { showToast('No songs to add.'); return; }
+  openAddTracksToPlaylist(ids, (row && row.name) || (ids.length + ' songs'), anchor, null);
+}
+
+async function lamAddFavorites() {
+  const ids = (_lamFavIds || []).slice();
+  const row = (landingStats || []).find(r => r.artist_id === _lamArtistId);
+  const anchor = _lamAnchor;
+  lamClose();
+  if (!ids.length) { showToast('No favorites for this artist yet.'); return; }
+  openAddTracksToPlaylist(ids, 'favorites', anchor, null);
+}
+
+function lamManage() {
+  const id = _lamArtistId;
+  lamClose();
+  if (id) openMyArtists(id);
 }
 
 function _sjmHeader(title, backFn) {
@@ -21342,10 +21536,28 @@ function esSelBarHTML() {
 // way the table is sorted. Anything picked and then filtered out is still in
 // the selection and goes on the end - it was chosen deliberately.
 function esSelOrderedIds() {
+  if (_bulkPlIds && _bulkPlIds.length) return _bulkPlIds.slice();
   const seen = new Set(), out = [];
   _esDrawn.forEach(id => { if (_esSel.has(id) && !seen.has(id)) { seen.add(id); out.push(id); } });
   _esSel.forEach(id => { if (!seen.has(id)) { seen.add(id); out.push(id); } });
   return out;
+}
+
+// Track ids waiting to go into a playlist from somewhere other than the
+// Explore Songs checkboxes (artist card ⋯, Manage Artist, …). While set,
+// esSelOrderedIds and the playlist picker head prefer these over _esSel.
+let _bulkPlIds = null;
+let _bulkPlLabel = '';
+
+function bulkPlClear() { _bulkPlIds = null; _bulkPlLabel = ''; }
+
+async function openAddTracksToPlaylist(ids, label, anchorEl, ev) {
+  const list = (ids || []).filter(Boolean);
+  if (!list.length) { showToast('No songs to add.'); return; }
+  bulkPlClear();
+  _bulkPlIds = list;
+  _bulkPlLabel = label || (list.length + ' song' + (list.length === 1 ? '' : 's'));
+  await esSelOpenPlaylists(anchorEl, ev);
 }
 
 // Explore Songs has already loaded every video id into ytData, so a queue is
@@ -21439,8 +21651,19 @@ function esSelMenuClose() {
   const m = document.getElementById('es-sel-menu');
   if (m) m.remove();
   _esSelMenuAnchor = null;
+  bulkPlClear();
   document.removeEventListener('mousedown', _esSelMenuOutside, true);
   window.removeEventListener('resize', esSelMenuClose);
+}
+
+function esSelPickCount() {
+  return (_bulkPlIds && _bulkPlIds.length) || _esSel.size;
+}
+
+function esSelPickHead() {
+  const n = esSelPickCount();
+  const what = _bulkPlLabel || (n + ' song' + (n === 1 ? '' : 's'));
+  return '<div class="sjm-hd"><span class="sjm-hd-name">Add ' + escHtml(String(what)) + ' to' + String.fromCharCode(8230) + '</span></div>';
 }
 
 function _esSelMenuOutside(e) {
@@ -21469,9 +21692,13 @@ function esSelMenuPosition() {
 async function esSelOpenPlaylists(anchorEl, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   const already = document.getElementById('es-sel-menu');
+  const pendingBulk = _bulkPlIds;
+  const pendingLabel = _bulkPlLabel;
   esSelMenuClose();
   if (already) return;
-  if (!_esSel.size) return;
+  _bulkPlIds = pendingBulk;
+  _bulkPlLabel = pendingLabel;
+  if (!esSelPickCount()) return;
   _esSelMenuAnchor = anchorEl || null;
   const menu = document.createElement('div');
   menu.id = 'es-sel-menu';
@@ -21484,8 +21711,7 @@ async function esSelOpenPlaylists(anchorEl, ev) {
     window.addEventListener('resize', esSelMenuClose);
   }, 0);
 
-  const head = '<div class="sjm-hd"><span class="sjm-hd-name">Add ' + _esSel.size +
-    ' song' + (_esSel.size === 1 ? '' : 's') + ' to' + String.fromCharCode(8230) + '</span></div>';
+  const head = esSelPickHead();
 
   if (!googleUser) {
     menu.innerHTML = head +
@@ -21527,8 +21753,7 @@ function esSelRenderPlaylists(newFormOpen) {
   const mine = playlists.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const personal = mine.filter(p => !p.is_public);
   const myPublic = mine.filter(p => !!p.is_public);
-  const head = '<div class="sjm-hd"><span class="sjm-hd-name">Add ' + _esSel.size +
-    ' song' + (_esSel.size === 1 ? '' : 's') + ' to' + String.fromCharCode(8230) + '</span></div>';
+  const head = esSelPickHead();
 
   menu.innerHTML = head +
     '<div class="sjm-scroll">' +
@@ -21588,7 +21813,7 @@ async function esSelCreatePlaylist() {
   const inp = document.getElementById('es-sel-new-name');
   const go  = document.getElementById('es-sel-new-go');
   const name = ((inp && inp.value) || '').trim();
-  if (!name || !googleUser || !_esSel.size) return;
+  if (!name || !googleUser || !esSelPickCount()) return;
   if (go) { go.disabled = true; go.textContent = String.fromCharCode(8230); }
   const ids = esSelOrderedIds();
   try {
@@ -21830,6 +22055,7 @@ function renderLanding() {
               ${r.discography_complete === false
                 ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
                 : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>`}
+              <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
             </div>
             </div>
           </div>
@@ -22118,6 +22344,7 @@ function laExpandedCardHTML(r, i) {
                 ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
                 : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>`}
             <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();laToggleSongView('${r.artist_id}')">${laSongViewIds.has(r.artist_id) ? 'View Albums' : 'View Songs'}</button>
+            <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
           </div>
         </div>
         <button type="button" class="la-close" onclick="event.stopPropagation();toggleLandingCard('${r.artist_id}')" title="Collapse" aria-label="Collapse artist card">×</button>
@@ -25080,61 +25307,242 @@ function renderAmAlbums() {
 // (Wikipedia/MusicBrainz discography matching now happens in the edge function)
 
 // ── MANAGE MY ARTISTS ────────────────────────────────────────────────────────
-let _maData = [];
-let _maTrkCache = {};   // albumId -> [{id,name,track_number,duration_ms,has_lyrics}]
-let _maExpanded = new Set();          // artist ids the user has manually expanded
-let _maTrackHitAlbumIds = new Set();  // album ids matching the current song-title search
+// List first (from landingStats — already on the page), then load albums for
+// one artist. Tracks stay on-demand per album. Never call my_artists for the
+// full library; that edge path pulled every album for every artist at once.
+let _maData = [];           // list rows: {id,name,album_count,track_count,added_by_name,mine}
+let _maCurrent = null;      // detail: {id,name,albums:[],track_count,...}
+let _maView = 'list';       // 'list' | 'artist'
+let _maTrkCache = {};       // albumId -> tracks
+let _maExpanded = new Set();
+let _maTrackHitAlbumIds = new Set();
 let _maSearchSeq = 0;
-function openMyArtists() {
+let _maOpenArtistId = null; // optional deep-link from card ⋯
+
+function openMyArtists(artistId) {
   if (!googleUser) {
     if (confirm('Sign in with Google to manage your artists. Sign in now?')) handleAuthClick();
     return;
   }
+  _maOpenArtistId = artistId || null;
   document.getElementById('myArtistsOverlay').classList.add('open');
-  loadMyArtists();
+  if (artistId) maOpenArtist(artistId);
+  else { _maView = 'list'; _maCurrent = null; loadMyArtists(); }
 }
-function closeMyArtists() { document.getElementById('myArtistsOverlay').classList.remove('open'); }
+function closeMyArtists() {
+  document.getElementById('myArtistsOverlay').classList.remove('open');
+  _maOpenArtistId = null;
+  _maView = 'list';
+  _maCurrent = null;
+  const t = document.getElementById('maTitle');
+  if (t) t.textContent = 'Manage My Artists';
+}
+
+function maMineRows() {
+  const rows = (landingStats || []).filter(r => r && !r.hidden && (r.can_manage || oaIsMine(r)));
+  // Prefer landing row; fall back to bare ids from the library index.
+  if (_myArtistIds && _myArtistIds.size) {
+    const have = new Set(rows.map(r => r.artist_id));
+    _myArtistIds.forEach(id => {
+      if (have.has(id)) return;
+      const r = (landingStats || []).find(x => x.artist_id === id);
+      if (r) rows.push(r);
+    });
+  }
+  rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return rows;
+}
+
+function maSummaryHTML() {
+  const rows = _maData.length ? _maData : maMineRows().map(maRowFromLanding);
+  const artists = rows.length;
+  const tracks = rows.reduce((s, a) => s + (Number(a.track_count) || 0), 0);
+  return '<div class="ma-summary">' +
+    '<div><b>' + artists.toLocaleString() + '</b>Artist' + (artists === 1 ? '' : 's') + ' imported</div>' +
+    '<div><b>' + tracks.toLocaleString() + '</b>Track' + (tracks === 1 ? '' : 's') + ' imported</div>' +
+  '</div>';
+}
+
+function maRowFromLanding(r) {
+  return {
+    id: r.artist_id,
+    name: r.name || '',
+    album_count: Number(r.album_count) || 0,
+    track_count: Number(r.track_count) || 0,
+    added_by_name: r.added_by_name || '',
+    mine: !!(r.can_manage || oaIsMine(r)),
+  };
+}
 
 async function loadMyArtists() {
   const body = document.getElementById('myArtistsBody');
+  const title = document.getElementById('maTitle');
+  if (title) title.textContent = 'Manage My Artists';
+  _maView = 'list';
+  _maCurrent = null;
   body.innerHTML = '<div class="oa-albs-note">Loading…</div>';
   try {
-    const d = await amFetch('?action=my_artists');
-    _maData = d.artists || [];
-    renderMyArtists(!!d.is_admin);
+    await ensureMyArtistIds();
+    if (!(landingStats || []).length) {
+      try { await refreshLandingStats(); } catch (_) {}
+    }
+    _maData = maMineRows().map(maRowFromLanding);
+    renderMyArtistsList();
+    const q = document.getElementById('maSearchInput');
+    if (q) {
+      q.placeholder = 'Search artists…';
+      if (q.value.trim()) maFilterArtists(q.value);
+    }
   } catch (e) {
-    body.innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${e.message}</div>`;
+    body.innerHTML = '<div class="oa-albs-note" style="color:#ef4444">' + escHtml(e.message || 'Could not load') + '</div>';
   }
 }
 
-function renderMyArtists(isAdmin) {
+function renderMyArtistsList() {
   const esc = s => (s || '').replace(/</g, '&lt;');
   const body = document.getElementById('myArtistsBody');
   if (!_maData.length) {
-    body.innerHTML = '<div class="oa-albs-note">You haven\u2019t added any artists yet, use ＋ Add Music to import one from YouTube.</div>';
+    body.innerHTML = maSummaryHTML() +
+      '<div class="oa-albs-note">You haven\u2019t added any artists yet. Use Import Music to bring one in from YouTube.</div>';
     return;
   }
-  body.innerHTML = _maData.map(a => `
-    <div class="oa-artist" data-ma-artist="${a.id}">
-      <div class="oa-artist-row">
-        <span class="ma-caret" id="ma-caret-${a.id}" onclick="maToggleArtist('${a.id}')" title="Expand / collapse">▸</span>
-        <div class="oa-info" onclick="maToggleArtist('${a.id}')" style="cursor:pointer">
+  body.innerHTML = maSummaryHTML() + _maData.map(a => `
+    <div class="ma-list-row" data-ma-artist="${a.id}" onclick="maOpenArtist('${a.id}')">
+      <div class="oa-info">
+        <div class="oa-name">${esc(a.name)}</div>
+        <div class="oa-meta">${a.album_count} album${a.album_count===1?'':'s'} · ${a.track_count} track${a.track_count===1?'':'s'}${a.added_by_name ? ' · added by ' + esc(a.added_by_name) : ''}</div>
+      </div>
+      <span class="ma-list-go" aria-hidden="true">›</span>
+    </div>`).join('');
+}
+
+async function maOpenArtist(artistId) {
+  const body = document.getElementById('myArtistsBody');
+  const title = document.getElementById('maTitle');
+  _maView = 'artist';
+  body.innerHTML = maSummaryHTML() + '<div class="oa-albs-note">Loading albums…</div>';
+  try {
+    await ensureMyArtistIds();
+    if (!(landingStats || []).length) {
+      try { await refreshLandingStats(); } catch (_) {}
+    }
+    if (!_maData.length) _maData = maMineRows().map(maRowFromLanding);
+    let meta = _maData.find(a => a.id === artistId);
+    const land = (landingStats || []).find(r => r.artist_id === artistId);
+    if (!meta && land) { meta = maRowFromLanding(land); _maData.push(meta); }
+    if (!meta) {
+      const rows = await dbGet('/artists?id=eq.' + artistId + '&select=id,name,added_by_name');
+      if (!rows.length) throw new Error('Artist not found.');
+      meta = { id: rows[0].id, name: rows[0].name, album_count: 0, track_count: 0, added_by_name: rows[0].added_by_name || '', mine: true };
+    }
+    const albums = await dbGet(
+      '/albums?artist_id=eq.' + artistId + '&select=id,name,release_date,art_url&order=release_date.asc'
+    );
+    _maCurrent = {
+      id: meta.id,
+      name: meta.name,
+      track_count: land ? (Number(land.track_count) || meta.track_count) : meta.track_count,
+      album_count: albums.length,
+      added_by_name: meta.added_by_name,
+      albums: albums || [],
+    };
+    meta.album_count = albums.length;
+    if (title) title.textContent = meta.name || 'Manage Artist';
+    const q = document.getElementById('maSearchInput');
+    if (q) { q.placeholder = 'Search albums…'; q.value = ''; }
+    renderMyArtistDetail();
+  } catch (e) {
+    body.innerHTML = '<button type="button" class="ma-back" onclick="maBackToList()">← All my artists</button>' +
+      '<div class="oa-albs-note" style="color:#ef4444">' + escHtml(e.message || 'Could not load') + '</div>';
+  }
+}
+
+function maBackToList() {
+  _maCurrent = null;
+  _maView = 'list';
+  _maOpenArtistId = null;
+  const q = document.getElementById('maSearchInput');
+  if (q) { q.placeholder = 'Search artists…'; q.value = ''; }
+  loadMyArtists();
+}
+
+function renderMyArtistDetail() {
+  const a = _maCurrent;
+  const body = document.getElementById('myArtistsBody');
+  if (!a) { loadMyArtists(); return; }
+  const esc = s => (s || '').replace(/</g, '&lt;');
+  const nameJs = (a.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  body.innerHTML = `
+    <button type="button" class="ma-back" onclick="maBackToList()">← All my artists</button>
+    ${maSummaryHTML()}
+    <div class="oa-artist" data-ma-artist="${a.id}" style="border:none;padding:0">
+      <div class="oa-artist-row" style="cursor:default">
+        <div class="oa-info">
           <div class="oa-name">${esc(a.name)}</div>
-          <div class="oa-meta">${a.albums.length} album${a.albums.length===1?'':'s'} · ${a.track_count} track${a.track_count===1?'':'s'}${isAdmin && !a.mine ? ' · added by ' + esc(a.added_by_name || '?') : ''}</div>
+          <div class="oa-meta">${a.albums.length} album${a.albums.length===1?'':'s'} · ${a.track_count} track${a.track_count===1?'':'s'}</div>
         </div>
-        <button type="button" class="oa-act" title="Batch-upload background-play audio for this artist (rights holders only)" onclick="taBatchOpen('${a.id}', null)">🎧 Audio</button>
+        <button type="button" class="oa-act" title="Batch-upload background-play audio" onclick="taBatchOpen('${a.id}', null)">🎧 Audio</button>
         <button type="button" class="oa-act" onclick="maRename('${a.id}')">✎ Rename</button>
         <button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444" onclick="maDeleteArtist('${a.id}')">✕ Remove</button>
       </div>
-      <div class="oa-albs" id="ma-albs-${a.id}" style="display:none">
-        ${a.albums.map(al => `<div class="oa-alb" id="ma-albrow-${al.id}">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio for this album (rights holders only)" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Edit name & year" onclick="maToggleAlbumEdit('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div><div class="ma-albedit-box" id="ma-albedit-${al.id}" style="display:none"></div>`).join('')}
+      <div class="ma-artist-tools">
+        <button type="button" class="oa-act" onclick="maRerunImport('${nameJs}')">↻ Re-run import wizard</button>
+        <button type="button" class="oa-act" onclick="maRerunImport('${nameJs}')">＋ Add albums</button>
+        <button type="button" class="oa-act" onclick="maShowAddTrack()">＋ Add a track</button>
       </div>
-    </div>`).join('');
-  const activeQ = document.getElementById('maSearchInput')?.value || '';
-  if (activeQ.trim()) maFilterArtists(activeQ);
+      <div id="ma-addtrk-panel" style="display:none;margin:0 0 12px"></div>
+      <div class="oa-albs" id="ma-albs-${a.id}">
+        ${a.albums.length ? a.albums.map(al => `<div class="oa-alb" id="ma-albrow-${al.id}" data-ma-alb-name="${esc((al.name||'').toLowerCase())}">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Edit name & year" onclick="maToggleAlbumEdit('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div><div class="ma-albedit-box" id="ma-albedit-${al.id}" style="display:none"></div>`).join('')
+          : '<div class="oa-albs-note">No albums yet. Use Add albums to run the import wizard.</div>'}
+      </div>
+    </div>`;
+}
+
+function maRerunImport(artistName) {
+  closeMyArtists();
+  openImportDiscography(artistName);
+}
+
+function maShowAddTrack() {
+  const a = _maCurrent;
+  const panel = document.getElementById('ma-addtrk-panel');
+  if (!a || !panel) return;
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  if (!a.albums.length) {
+    maBusy('Add an album first (Re-run import wizard), then you can add a track.', true);
+    return;
+  }
+  const esc = s => (s || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  panel.style.display = '';
+  panel.innerHTML = `
+    <div class="ma-trk-add" style="flex-wrap:wrap">
+      <select class="m-input" id="ma-addtrk-album" style="flex:1;min-width:140px">
+        ${a.albums.map(al => `<option value="${al.id}">${esc(al.name)}</option>`).join('')}
+      </select>
+      <input type="text" class="m-input" id="ma-addtrk-url" placeholder="Paste a YouTube video link…" style="flex:2;min-width:160px" autocomplete="off">
+      <button type="button" class="oa-act" style="flex-shrink:0" onclick="maAddTrackFromPanel()">＋ Add Track</button>
+    </div>`;
+}
+
+async function maAddTrackFromPanel() {
+  const a = _maCurrent;
+  if (!a) return;
+  const albumId = document.getElementById('ma-addtrk-album')?.value;
+  const v = (document.getElementById('ma-addtrk-url')?.value || '').trim();
+  if (!albumId) { maBusy('Pick an album.', true); return; }
+  if (!v) { maBusy('Paste a YouTube video link first.', true); return; }
+  // Seed the per-album input path so maAddTrack can run unchanged.
+  let box = document.getElementById('ma-trks-' + albumId);
+  if (!box || box.style.display === 'none') await maToggleTracks(a.id, albumId);
+  const inp = document.getElementById('ma-addtrk-' + albumId);
+  if (inp) inp.value = v;
+  await maAddTrack(a.id, albumId);
+  const panelInp = document.getElementById('ma-addtrk-url');
+  if (panelInp) panelInp.value = '';
 }
 
 function maToggleArtist(artistId) {
+  // Kept for any leftover callers; detail view shows albums always open.
   const box = document.getElementById('ma-albs-' + artistId);
   const caret = document.getElementById('ma-caret-' + artistId);
   if (!box) return;
@@ -25146,52 +25554,24 @@ function maToggleArtist(artistId) {
 
 function maFilterArtists(raw) {
   const q = (raw || '').trim().toLowerCase();
-  if (!q) {
-    _maTrackHitAlbumIds = new Set();
-    maApplyFilter('');
+  if (_maView === 'artist' && _maCurrent) {
+    const body = document.getElementById('myArtistsBody');
+    if (!body) return;
+    body.querySelectorAll('.oa-alb').forEach(row => {
+      const name = row.getAttribute('data-ma-alb-name') || '';
+      row.style.display = !q || name.includes(q) ? '' : 'none';
+    });
     return;
   }
-  const seq = ++_maSearchSeq;
-  dbGet(`/tracks?name=ilike.*${encodeURIComponent(q)}*&select=id,album_id&limit=200`)
-    .then(rows => {
-      if (seq !== _maSearchSeq) return; // a newer keystroke superseded this search
-      _maTrackHitAlbumIds = new Set(rows.map(r => r.album_id));
-      maApplyFilter(q);
-    })
-    .catch(() => {});
-  maApplyFilter(q);
-}
-
-function maApplyFilter(q) {
   const body = document.getElementById('myArtistsBody');
   if (!body) return;
-  for (const a of _maData) {
-    const el = body.querySelector(`[data-ma-artist="${a.id}"]`);
-    if (!el) continue;
-    const box = document.getElementById('ma-albs-' + a.id);
-    const caret = document.getElementById('ma-caret-' + a.id);
-    if (!q) {
-      el.style.display = '';
-      el.querySelectorAll('.oa-alb').forEach(row => { row.style.display = ''; });
-      const expanded = _maExpanded.has(a.id);
-      if (box) box.style.display = expanded ? '' : 'none';
-      if (caret) caret.textContent = expanded ? '▾' : '▸';
-      continue;
-    }
-    const artistHit = a.name.toLowerCase().includes(q);
-    let anyAlbumHit = false;
-    el.querySelectorAll('.oa-alb').forEach((row, idx) => {
-      const al = a.albums[idx];
-      const albHit = artistHit || (al && al.name.toLowerCase().includes(q)) || (al && _maTrackHitAlbumIds.has(al.id));
-      row.style.display = albHit ? '' : 'none';
-      if (albHit) anyAlbumHit = true;
-    });
-    const show = artistHit || anyAlbumHit;
-    el.style.display = show ? '' : 'none';
-    if (box) box.style.display = show ? '' : 'none';
-    if (caret) caret.textContent = show ? '▾' : '▸';
-  }
+  body.querySelectorAll('.ma-list-row').forEach(el => {
+    const name = (el.querySelector('.oa-name')?.textContent || '').toLowerCase();
+    el.style.display = !q || name.includes(q) ? '' : 'none';
+  });
 }
+
+function maApplyFilter(q) { maFilterArtists(q); }
 
 async function maToggleTracks(artistId, albumId) {
   const box = document.getElementById('ma-trks-' + albumId);
@@ -25209,7 +25589,7 @@ async function maToggleTracks(artistId, albumId) {
         lr.forEach(r => have.add(r.track_id));
       }
       rows.forEach(t => { t.has_lyrics = have.has(t.id); });
-      await loadTrackAudio(ids);   // background-play audio availability -> taData
+      await loadTrackAudio(ids);
       _maTrkCache[albumId] = rows;
     } catch (e) {
       box.innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${e.message}</div>`;
@@ -25253,6 +25633,9 @@ async function maDeleteTrack(artistId, albumId, trackId) {
       .map(x => (t.track_number != null && x.track_number > t.track_number) ? { ...x, track_number: x.track_number - 1 } : x);
     const a = _maData.find(x => x.id === artistId);
     if (a) a.track_count = Math.max(0, (a.track_count || 1) - 1);
+    if (_maCurrent && _maCurrent.id === artistId) {
+      _maCurrent.track_count = Math.max(0, (_maCurrent.track_count || 1) - 1);
+    }
     maRenderTracks(artistId, albumId);
     maBusy('✓ Track removed');
     try { loadData(); } catch (_) {}
@@ -25286,6 +25669,9 @@ async function maAddTrack(artistId, albumId) {
     _maTrkCache[albumId] = [...(_maTrkCache[albumId] || []), { id: t.id, name: t.name, track_number: t.track_number, duration_ms: null, has_lyrics: !!d.lyrics_found }];
     const a = _maData.find(x => x.id === artistId);
     if (a) a.track_count = (a.track_count || 0) + 1;
+    if (_maCurrent && _maCurrent.id === artistId) {
+      _maCurrent.track_count = (_maCurrent.track_count || 0) + 1;
+    }
     maRenderTracks(artistId, albumId);
     maBusy(`✓ Added “${t.name || 'track'}”${d.lyrics_found ? ' · lyrics found' : ''}`);
     try { loadData(); } catch (_) {}
@@ -25331,15 +25717,26 @@ function maBusy(msg, err) {
   if (st) { st.textContent = msg || ''; st.style.color = err ? '#ef4444' : 'var(--text-muted)'; }
 }
 
+function maFindArtist(artistId) {
+  if (_maCurrent && _maCurrent.id === artistId) return _maCurrent;
+  return _maData.find(x => x.id === artistId);
+}
+
 async function maRename(artistId) {
-  const a = _maData.find(x => x.id === artistId); if (!a) return;
+  const a = maFindArtist(artistId); if (!a) return;
   const name = prompt('New artist name:', a.name);
   if (!name || !name.trim() || name.trim() === a.name) return;
   maBusy('Renaming…');
   try {
     await amFetch('?action=rename_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId, name: name.trim() }) });
+    a.name = name.trim();
+    const listRow = _maData.find(x => x.id === artistId);
+    if (listRow) listRow.name = a.name;
     maBusy('✓ Renamed');
-    await maAfterChange();
+    const title = document.getElementById('maTitle');
+    if (title && _maView === 'artist') title.textContent = a.name;
+    if (_maView === 'artist') renderMyArtistDetail();
+    else await maAfterChange();
   } catch (e) { maBusy('✗ ' + e.message, true); }
 }
 
@@ -25347,8 +25744,8 @@ function maToggleAlbumEdit(artistId, albumId) {
   const box = document.getElementById('ma-albedit-' + albumId);
   if (!box) return;
   if (box.style.display !== 'none') { box.style.display = 'none'; box.innerHTML = ''; return; }
-  const a = _maData.find(x => x.id === artistId);
-  const al = a && a.albums.find(x => x.id === albumId);
+  const a = maFindArtist(artistId);
+  const al = a && a.albums && a.albums.find(x => x.id === albumId);
   if (!al) return;
   const nameAttr = (al.name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const yr = (al.release_date || '').slice(0, 4);
@@ -25364,8 +25761,8 @@ function maToggleAlbumEdit(artistId, albumId) {
 }
 
 async function maSaveAlbumEdit(artistId, albumId) {
-  const a = _maData.find(x => x.id === artistId);
-  const al = a && a.albums.find(x => x.id === albumId);
+  const a = maFindArtist(artistId);
+  const al = a && a.albums && a.albums.find(x => x.id === albumId);
   if (!al) return;
   const name = (document.getElementById('ma-albedit-name-' + albumId)?.value || '').trim();
   const yearStr = (document.getElementById('ma-albedit-year-' + albumId)?.value || '').trim();
@@ -25384,6 +25781,7 @@ async function maSaveAlbumEdit(artistId, albumId) {
       const yrSpan = row.querySelector('.oa-alb-yr');
       if (nameSpan) nameSpan.textContent = name;
       if (yrSpan) yrSpan.textContent = yearStr || (al.release_date || '').slice(0, 4);
+      row.setAttribute('data-ma-alb-name', (name || '').toLowerCase());
     }
     maToggleAlbumEdit(artistId, albumId);
     maBusy('✓ Album updated');
@@ -25392,21 +25790,24 @@ async function maSaveAlbumEdit(artistId, albumId) {
 }
 
 async function maDeleteAlbum(artistId, albumId) {
-  const a = _maData.find(x => x.id === artistId);
-  const al = a && a.albums.find(x => x.id === albumId);
+  const a = maFindArtist(artistId);
+  const al = a && a.albums && a.albums.find(x => x.id === albumId);
   if (!al) return;
   if (!confirm(`Remove "${al.name}" and all its tracks? This cannot be undone.`)) return;
   maBusy('Removing album…');
   try {
     await amFetch('?action=delete_album', { method: 'POST', body: JSON.stringify({ album_id: albumId }) });
     maBusy('✓ Album removed');
-    await maAfterChange();
+    delete _maTrkCache[albumId];
+    if (_maCurrent && _maCurrent.id === artistId) await maOpenArtist(artistId);
+    else await maAfterChange();
   } catch (e) { maBusy('✗ ' + e.message, true); }
 }
 
 async function maDeleteArtist(artistId) {
-  const a = _maData.find(x => x.id === artistId); if (!a) return;
-  if (!confirm(`Remove "${a.name}" (${a.albums.length} album${a.albums.length===1?'':'s'}, ${a.track_count} tracks)? This cannot be undone.`)) return;
+  const a = maFindArtist(artistId); if (!a) return;
+  const albN = (a.albums && a.albums.length) || a.album_count || 0;
+  if (!confirm(`Remove "${a.name}" (${albN} album${albN===1?'':'s'}, ${a.track_count || 0} tracks)? This cannot be undone.`)) return;
   maBusy('Removing artist…');
   try {
     await amFetch('?action=delete_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId }) });
@@ -25418,6 +25819,7 @@ async function maDeleteArtist(artistId) {
 // Refresh app state after a manage action, then re-render the modal list
 async function maAfterChange() {
   _maTrkCache = {};
+  _maCurrent = null;
   try {
     const rows = await dbGet('/artists?select=id,name,slug,last_sync_id,is_community,added_by_name,color&order=name.asc');
     communityArtists = rows.filter(a => a.is_community);
@@ -25429,8 +25831,12 @@ async function maAfterChange() {
     await loadData();
     updateFilterHeader();
   } catch (_) {}
+  try { await refreshLandingStats(); } catch (_) {}
+  _myArtistIds = null;
+  await ensureMyArtistIds();
   await loadMyArtists();
 }
+
 
 function amToggleAlbum(i) {
   const a = amAlbums[i];
@@ -25726,6 +26132,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
+    'Every Explore Artists card has a ⋯ menu: Add all to playlist, Add favorites to playlist when you have thumbs-up songs by that artist, and Manage artist when the artist is yours.',
+    'Manage My Artists opens as a fast list of the artists you imported, with your total artist and track counts at the top. Pick an artist to open Manage Artist; albums load then, and tracks only when you open an album. From Manage Artist you can re-run the import wizard, add albums, or paste a YouTube link to add a track.',
     'On a playlist wall of covers (Explore Playlists or Now Playing), tapping a cover keeps that cover and its neighbours in place and opens a detail row underneath: title, stats and buttons on top, lyrics below, with an ✕ to close. Opening a cover on the bottom row grows the page so the new row has room. Edit lyrics and lyrics history moved to the ⋯ menu.',
     'Playlist Settings now covers who can listen, who can add songs, and who can reorder. Public playlists pick Anyone can listen, Anyone can add, or Anyone can add and reorder, and you can give named people their own View / Add / Reorder checkboxes.',
     'On a playlist page, a short line under the title tells you what you can do there. You can always remove songs you added yourself when you can see the playlist.',
