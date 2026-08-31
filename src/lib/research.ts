@@ -10,7 +10,6 @@ import {
 export const RESEARCH_MEDIA_TYPES = [
   "youtube_video",
   "audio_podcast",
-  "article",
   "interview",
   "documentary",
   "other",
@@ -21,7 +20,6 @@ export type ResearchMediaType = (typeof RESEARCH_MEDIA_TYPES)[number];
 export const RESEARCH_MEDIA_LABELS: Record<ResearchMediaType, string> = {
   youtube_video: "YouTube Video",
   audio_podcast: "Audio Only Podcast",
-  article: "Article",
   interview: "Interview",
   documentary: "Documentary",
   other: "Other",
@@ -93,7 +91,14 @@ export function isResearchMediaType(v: unknown): v is ResearchMediaType {
 }
 
 export function shapeResearchItem(row: any): ResearchItem {
-  const mediaType = (isResearchMediaType(row.media_type) ? row.media_type : "other") as ResearchMediaType;
+  const rawType = row.media_type;
+  const mediaType = (
+    isResearchMediaType(rawType)
+      ? rawType
+      : rawType === "article"
+        ? "other"
+        : "other"
+  ) as ResearchMediaType;
   return {
     id: row.id,
     artistId: row.artist_id,
@@ -159,77 +164,8 @@ function ytCandidate(v: YouTubeSearchResult, mediaType?: ResearchMediaType): Res
   };
 }
 
-/** Free, no-paywall Wikipedia page about the artist when one exists. */
-export async function searchWikipediaArticle(artistName: string): Promise<ResearchCandidate | null> {
-  const q = artistName.trim();
-  if (q.length < 2) return null;
-  try {
-    const searchUrl = new URL("https://en.wikipedia.org/w/api.php");
-    searchUrl.searchParams.set("action", "query");
-    searchUrl.searchParams.set("list", "search");
-    searchUrl.searchParams.set("srsearch", q);
-    searchUrl.searchParams.set("srlimit", "5");
-    searchUrl.searchParams.set("format", "json");
-    searchUrl.searchParams.set("origin", "*");
-    const searchRes = await fetch(searchUrl.toString(), {
-      headers: { "User-Agent": "SufferingJukebox/1.0 (research; contact@sufferingjukebox.stream)" },
-      cache: "no-store",
-    });
-    if (!searchRes.ok) return null;
-    const searchJson = (await searchRes.json()) as {
-      query?: { search?: Array<{ title: string; pageid: number; snippet: string }> };
-    };
-    const hits = searchJson.query?.search ?? [];
-    if (!hits.length) return null;
-
-    const pick =
-      hits.find((h) => h.title.toLowerCase() === q.toLowerCase()) ||
-      hits.find((h) => h.title.toLowerCase().startsWith(q.toLowerCase())) ||
-      hits[0];
-
-    const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pick.title)}`;
-    const sumRes = await fetch(summaryUrl, {
-      headers: { "User-Agent": "SufferingJukebox/1.0 (research; contact@sufferingjukebox.stream)" },
-      cache: "no-store",
-    });
-    if (!sumRes.ok) return null;
-    const sum = (await sumRes.json()) as {
-      title?: string;
-      extract?: string;
-      content_urls?: { desktop?: { page?: string } };
-      thumbnail?: { source?: string };
-      timestamp?: string;
-      type?: string;
-    };
-    if (sum.type === "disambiguation") return null;
-    const pageUrl = sum.content_urls?.desktop?.page;
-    if (!pageUrl) return null;
-    return {
-      key: `wiki:${pick.pageid}`,
-      mediaType: "article",
-      title: sum.title || pick.title,
-      description: sum.extract || pick.snippet?.replace(/<[^>]+>/g, "") || null,
-      sourceUrl: pageUrl,
-      sourceName: "Wikipedia",
-      creatorName: "Wikipedia contributors",
-      creatorUrl: pageUrl,
-      channelId: null,
-      externalId: `wiki:${pick.pageid}`,
-      thumbnailUrl: sum.thumbnail?.source ?? null,
-      embedUrl: null,
-      durationMs: null,
-      viewCount: null,
-      publishedAt: sum.timestamp ?? null,
-      alreadyAdded: false,
-    };
-  } catch (e) {
-    console.warn("[research] wikipedia", e);
-    return null;
-  }
-}
-
 /**
- * Run a multi-query YouTube sweep + Wikipedia for an artist.
+ * Run a multi-query YouTube sweep for an artist.
  * Caps results to keep inside YouTube quota and the Vercel time budget.
  */
 export async function runArtistResearch(artistName: string): Promise<ResearchCandidate[]> {
@@ -259,9 +195,6 @@ export async function runArtistResearch(artistName: string): Promise<ResearchCan
     }
   }
 
-  const wiki = await searchWikipediaArticle(name);
-  if (wiki) out.push(wiki);
-
   return out;
 }
 
@@ -273,68 +206,12 @@ export async function fetchYouTubeTranscript(videoId: string): Promise<{
   const id = parseYouTubeId(videoId);
   if (!id) return null;
   try {
-    const watchRes = await fetch(`https://www.youtube.com/watch?v=${id}&hl=en`, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; SufferingJukebox/1.0; +https://sufferingjukebox.stream)",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      cache: "no-store",
-    });
-    if (!watchRes.ok) return null;
-    const html = await watchRes.text();
-    // Avoid /s flag (project target is ES2017). Find the assignment, then brace-match.
-    const marker = "ytInitialPlayerResponse";
-    const at = html.indexOf(marker);
-    if (at < 0) return null;
-    const eq = html.indexOf("=", at + marker.length);
-    if (eq < 0) return null;
-    const start = html.indexOf("{", eq);
-    if (start < 0) return null;
-    let depth = 0;
-    let end = -1;
-    for (let i = start; i < html.length && i < start + 2_000_000; i++) {
-      const ch = html[i];
-      if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0) { end = i; break; }
-      }
-    }
-    if (end < 0) return null;
-    let player: any;
-    try {
-      player = JSON.parse(html.slice(start, end + 1));
-    } catch {
-      return null;
-    }
-    const tracks: any[] =
-      player?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
-    if (!tracks.length) return null;
-    const prefer =
-      tracks.find((t) => t.languageCode === "en" && !t.kind) ||
-      tracks.find((t) => String(t.languageCode || "").startsWith("en")) ||
-      tracks[0];
-    if (!prefer?.baseUrl) return null;
-    const capRes = await fetch(prefer.baseUrl + "&fmt=json3", {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (compatible; SufferingJukebox/1.0; +https://sufferingjukebox.stream)",
-      },
-      cache: "no-store",
-    });
-    if (!capRes.ok) return null;
-    const cap = (await capRes.json()) as {
-      events?: Array<{ segs?: Array<{ utf8?: string }> }>;
-    };
-    const lines = (cap.events ?? [])
-      .map((ev) => (ev.segs ?? []).map((s) => s.utf8 || "").join(""))
-      .map((l) => l.replace(/\n/g, " ").trim())
-      .filter(Boolean);
+    const { YoutubeTranscript } = await import("youtube-transcript");
+    const cues = await YoutubeTranscript.fetchTranscript(id, { lang: "en" });
+    const lines = cues.map((c) => String(c.text || "").replace(/\s+/g, " ").trim()).filter(Boolean);
     const text = lines.join("\n").trim();
     if (!text) return null;
-    const source = prefer.kind === "asr" ? "youtube_auto" : "youtube_manual";
-    return { text, source };
+    return { text, source: "youtube_auto" };
   } catch (e) {
     console.warn("[research] transcript", id, e);
     return null;
@@ -376,11 +253,10 @@ export function guessMediaTypeFromUrl(url: string): ResearchMediaType {
   if (parseYouTubeId(url)) return "youtube_video";
   try {
     const host = new URL(url).hostname.toLowerCase();
-    if (host.includes("wikipedia.org")) return "article";
     if (host.includes("podcast") || host.includes("soundcloud") || host.includes("anchor.fm")) {
       return "audio_podcast";
     }
     if (/\.(mp3|m4a|ogg|opus|wav)(\?|$)/i.test(url)) return "audio_podcast";
   } catch { /* ignore */ }
-  return "article";
+  return "other";
 }

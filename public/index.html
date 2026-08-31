@@ -1362,7 +1362,7 @@ body.light .sc-link:hover { background: #e8e8e8; }
 }
 .sjm-newform button:disabled { opacity: .5; cursor: default; }
 
-/* ── Artist Research Library (dd*) ───────────────────────────────────── */
+.filter-dd-item--sub { padding-left: 1.35rem; }
 .dd-mode-btn.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .dd-stage { padding: 1rem 1.1rem 2.5rem; }
 .dd-toolbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin-bottom:.85rem; }
@@ -5204,7 +5204,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 <div class="pl-modal-overlay" id="ddResearchOverlay" onclick="if(event.target===this)ddCloseResearch()">
   <div class="pl-modal" style="width:min(52rem,100%);max-width:52rem">
     <div class="pl-modal-header">
-      <span class="pl-modal-title" id="dd-research-title">Research</span>
+      <span class="pl-modal-title" id="dd-research-title">Other Content</span>
       <button class="modal-close" onclick="ddCloseResearch()">&#10005;</button>
     </div>
     <div class="pl-modal-body" id="dd-research-body"></div>
@@ -5657,12 +5657,11 @@ function extractArtColors(albs) {
 // ── State ─────────────────────────────────────────────────────
 let allArtists          = [];
 let syncRuns            = {};
-let _ddActive = false;
 let _ddItems = [];
 let _ddMenuAnchor = null;
-let _ddSavedAlbums = null;
-let _ddSavedTracks = null;
-let _ddSavedViewMode = null;
+let _ddLoadedFor = null;
+let excludedOtherContentIds = new Set();
+let otherContentFilterPending = null;
 let selectedIds         = new Set();
 let albums              = {};
 let tracks              = {};
@@ -5770,6 +5769,46 @@ function isSJAlbumShown(albumId) {
   return !getSJExcludedSet().has(albumId);
 }
 
+function getOtherContentExcludedSet() {
+  return otherContentFilterPending !== null ? otherContentFilterPending : excludedOtherContentIds;
+}
+
+function filterBarOtherContent() {
+  const id = ddPrimaryArtistId();
+  if (!id) return [];
+  return (_ddItems || []).filter(i => i.artistId === id && i.mediaType !== 'article' && !String(i.externalId || '').startsWith('wiki:'));
+}
+
+function isOtherContentShown(itemId) {
+  return !getOtherContentExcludedSet().has(itemId);
+}
+
+function syncOtherContentFilterMenu() {
+  const ex = getOtherContentExcludedSet();
+  document.querySelectorAll('[data-oc-cb]').forEach(cb => {
+    cb.checked = !ex.has(cb.getAttribute('data-oc-cb'));
+  });
+  const allCb = document.getElementById('oc-filter-all-cb');
+  const items = filterBarOtherContent();
+  if (allCb) {
+    allCb.checked = items.length > 0 && items.every(i => !ex.has(i.id));
+    allCb.indeterminate = !allCb.checked && items.some(i => !ex.has(i.id));
+  }
+}
+
+function toggleOtherContentPending(itemId, show) {
+  if (otherContentFilterPending === null) otherContentFilterPending = new Set(excludedOtherContentIds);
+  if (show) otherContentFilterPending.delete(itemId);
+  else otherContentFilterPending.add(itemId);
+  syncOtherContentFilterMenu();
+}
+
+function toggleAllOtherContentPending(show) {
+  if (otherContentFilterPending === null) otherContentFilterPending = new Set(excludedOtherContentIds);
+  filterBarOtherContent().forEach(i => show ? otherContentFilterPending.delete(i.id) : otherContentFilterPending.add(i.id));
+  syncOtherContentFilterMenu();
+}
+
 function ensureSJFilterPending() {
   if (sjFilterPending === null) sjFilterPending = new Set(excludedAlbumIds);
 }
@@ -5785,6 +5824,7 @@ function syncSJFilterMenu() {
     allCb.checked = sjAlbs.length > 0 && sjAlbs.every(a => !ex.has(a.id));
     allCb.indeterminate = !allCb.checked && sjAlbs.some(a => !ex.has(a.id));
   }
+  syncOtherContentFilterMenu();
 }
 
 function toggleSJAlbumPending(albumId, show) {
@@ -5804,12 +5844,21 @@ function toggleAllSJAlbumsPending(show) {
 
 function applySJFilter() {
   if (sjFilterPending !== null) excludedAlbumIds = new Set(sjFilterPending);
+  if (otherContentFilterPending !== null) excludedOtherContentIds = new Set(otherContentFilterPending);
   sjFilterPending = null;
+  otherContentFilterPending = null;
   closeSJDropdown();
   render();
 }
 
-function resetAlbumFilter() { excludedAlbumIds.clear(); sjFilterPending = null; closeSJDropdown(); render(); }
+function resetAlbumFilter() {
+  excludedAlbumIds.clear();
+  excludedOtherContentIds.clear();
+  sjFilterPending = null;
+  otherContentFilterPending = null;
+  closeSJDropdown();
+  render();
+}
 
 // ── Filter dropdown helpers ────────────────────────────────────
 function toggleSJDropdown(e) {
@@ -5818,17 +5867,26 @@ function toggleSJDropdown(e) {
   const menu = wrap?.querySelector('.filter-dd-menu');
   if (!menu) return;
   const opening = !menu.classList.contains('open');
-  document.querySelectorAll('.filter-dd-menu.open').forEach(m => { if (m !== menu) { m.classList.remove('open'); sjFilterPending = null; } });
+  document.querySelectorAll('.filter-dd-menu.open').forEach(m => {
+    if (m !== menu) {
+      m.classList.remove('open');
+      sjFilterPending = null;
+      otherContentFilterPending = null;
+    }
+  });
   if (opening) {
     sjFilterPending = new Set(excludedAlbumIds);
+    otherContentFilterPending = new Set(excludedOtherContentIds);
     menu.classList.add('open');
   } else {
     sjFilterPending = null;
+    otherContentFilterPending = null;
     menu.classList.remove('open');
   }
 }
 function closeSJDropdown() {
   sjFilterPending = null;
+  otherContentFilterPending = null;
   document.querySelectorAll('.filter-dd-menu.open').forEach(m => m.classList.remove('open'));
 }
 function togglePMFilter() {
@@ -6372,19 +6430,15 @@ function toggleAlbumExpand(albumId) {
       setTimeout(() => requestAnimationFrame(() => patchPanels(visAlbList)), 260);
     } else {
       expandedAlbumIds.delete(albumId);
-      const ids = [...selectedIds];
-      const allAlbList = ids.flatMap(aid=>(albums[aid]||[])).sort((a,b)=>(a.release_date||'').localeCompare(b.release_date||''));
-      patchPanels(allAlbList.filter(a => isAlbumVisible(a.id)));
+      patchPanels(buildVisibleAlbumList());
     }
   } else {
     expandedAlbumIds.add(albumId);
     const ids = [...selectedIds];
     const allAlbList = ids.flatMap(aid=>(albums[aid]||[])).sort((a,b)=>(a.release_date||'').localeCompare(b.release_date||''));
-    patchPanels(allAlbList.filter(a => isAlbumVisible(a.id)));
-    if (_ddActive) {
-      const item = ddItemById(albumId);
-      if (item) ddMaybeFetchTranscript(item);
-    }
+    patchPanels(buildVisibleAlbumList());
+    const item = ddItemById(albumId);
+    if (item) ddMaybeFetchTranscript(item);
   }
 }
 
@@ -7750,16 +7804,16 @@ function attachYTAPIPlayer() {
 // ── Play entire album ──────────────────────────────────────────
 function playAlbum(albumId, e) {
   if (e) { e.stopPropagation(); e.preventDefault(); }
+  const ddItem = ddItemById(albumId);
+  if (ddItem) {
+    if (ddItem.externalId) openYTPlayer(ddItem.externalId, ddItem.title, '', e);
+    else if (ddItem.audioUrl) ddPlayAudio(ddItem.id, e);
+    else if (ddItem.sourceUrl) window.open(ddItem.sourceUrl, '_blank', 'noopener');
+    return;
+  }
   let alb = null;
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { if (a.id === albumId) alb = a; }));
   if (!alb) return;
-  if (alb._ddResearch) {
-    const item = ddItemById(albumId);
-    if (item?.externalId) openYTPlayer(item.externalId, item.title, '', e);
-    else if (item?.audioUrl) ddPlayAudio(item.id, e);
-    else if (item?.sourceUrl) window.open(item.sourceUrl, '_blank', 'noopener');
-    return;
-  }
   const albTracks = (tracks[alb.artist_id] || [])
     .filter(t => t.album_id === albumId && ytData[t.id]?.video_id)
     .sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
@@ -13606,8 +13660,8 @@ function lamRender(row) {
     favBtn +
     '<div class="sjm-sep"></div>' +
     '<button class="sjm-item" onclick="lamDeepDive()">' +
-      '<span class="sjm-ic">◈</span><span class="sjm-label">Research Library</span>' +
-      '<span class="sjm-sub">Research</span></button>' +
+      '<span class="sjm-ic">◈</span><span class="sjm-label">Add other content</span>' +
+      '<span class="sjm-sub">YouTube</span></button>' +
     (lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamManage()">' +
@@ -13681,11 +13735,11 @@ function lamDeepDive() {
   const row = (landingStats || []).find(r => r.artist_id === id);
   lamClose();
   if (!id) return;
-  const after = () => setTimeout(() => ddEnter(id), 350);
+  const after = () => setTimeout(() => ddOpenResearch(), 350);
   if (isLandingMode && row && row.slug) {
     Promise.resolve(landingExploreArtist(row.slug, id)).then(after).catch(after);
   } else {
-    ddEnter(id);
+    ddOpenResearch();
   }
 }
 
@@ -22877,6 +22931,7 @@ async function loadArtistPageData() {
   allArtists.forEach(a => selectedIds.add(a.id));
   if (!allArtists.length) { renderCommunityEmpty(); return; }
   await loadData();
+  await ddEnsureLoaded();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -22908,10 +22963,10 @@ function fadeMainIn() {
 }
 
 function resetDashboardState() {
-  _ddActive = false;
   _ddItems = [];
-  _ddSavedAlbums = null;
-  _ddSavedTracks = null;
+  _ddLoadedFor = null;
+  excludedOtherContentIds.clear();
+  otherContentFilterPending = null;
   expandedAlbumIds.clear();
   selectedIds = new Set();
   excludedAlbumIds = new Set();
@@ -23386,12 +23441,10 @@ function render() {
   if (viewMode === 'playlistchart') { renderPlaylistChart(); return; }
   if (isLandingMode) { renderLanding(); return; }
   if (!selectedIds.size) { renderEmpty('No artist data loaded.'); return; }
-  if (_ddActive) { ddRender(); return; }
 
   const ids          = [...selectedIds];
-  const allAlbList   = ids.flatMap(aid => (albums[aid] || [])).sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
   const allTrackList = ids.flatMap(aid => (tracks[aid] || []).map(t => ({ ...t, _aid: aid })));
-  const visAlbList   = allAlbList.filter(a => isAlbumVisible(a.id));
+  const visAlbList   = buildVisibleAlbumList();
   const visTrackList = allTrackList.filter(t => isAlbumVisible(t.album_id));
 
   document.getElementById('main').innerHTML = `
@@ -23694,7 +23747,6 @@ function pickViewMetric(view, metric) {
 }
 
 function renderViewToggle() {
-  if (_ddActive) return ddRenderViewToggle();
   const _mobNav = window.innerWidth <= 640;
   // Row 2: expand/collapse, plus the Albums List sort. What the bars measure
   // now lives in a dropdown on the view button itself.
@@ -23817,17 +23869,44 @@ function renderCommunityFilterBar() {
           </label>
           <div class="filter-dd-divider"></div>
           ${items}
+          ${renderOtherContentFilterSection()}
         </div>
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
+          ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add other content</button>` : ''}
         </div>
       </div>
     </div>
     ${renderSJPMSpecialButtons()}
     ${SJ_COMMENTS_ENABLED ? `<button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>` : ''}
-    <button type="button" class="ctrl-btn dd-mode-btn ${_ddActive ? 'on' : ''}" onclick="ddToggleMode()" title="Podcasts, interviews, articles and research about this artist">Research</button>
     ${renderOtherArtistsBtn()}
   </div>`;
+}
+
+function renderOtherContentFilterSection() {
+  const items = filterBarOtherContent();
+  if (!items.length) return '';
+  const esc = s => (s || '').replace(/</g, '&lt;');
+  const ex = getOtherContentExcludedSet();
+  const allShown = items.every(i => !ex.has(i.id));
+  const rows = items.map(item => {
+    const yr = item.publishedAt ? item.publishedAt.slice(0, 4) : '?';
+    const color = ddColorForItem(item);
+    const typeLbl = item.mediaTypeLabel || DD_TYPE_LABEL[item.mediaType] || 'Other';
+    const checked = isOtherContentShown(item.id);
+    return `<label class="filter-dd-item filter-dd-item--sub" onclick="event.stopPropagation()">
+      <input type="checkbox" data-oc-cb="${item.id}" ${checked ? 'checked' : ''} onchange="toggleOtherContentPending('${item.id}', this.checked)">
+      <span class="pill-dot" style="background:${color}"></span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(item.title)}</span>
+      <span style="opacity:.45;font-size:.57rem;flex-shrink:0;margin-left:4px">${yr} · ${esc(typeLbl)}</span>
+    </label>`;
+  }).join('');
+  return `<div class="filter-dd-divider"></div>
+    <label class="filter-dd-item" onclick="event.stopPropagation()">
+      <input type="checkbox" id="oc-filter-all-cb" ${allShown ? 'checked' : ''} onchange="toggleAllOtherContentPending(this.checked)">
+      <span style="font-weight:600">Other Content</span>
+    </label>
+    ${rows}`;
 }
 
 function renderFilterBar(allAlbs) {
@@ -23874,9 +23953,11 @@ function renderFilterBar(allAlbs) {
           </label>
           <div class="filter-dd-divider"></div>
           ${sjItems}
+          ${renderOtherContentFilterSection()}
         </div>
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
+          ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add other content</button>` : ''}
         </div>
       </div>
     </div>
@@ -23886,7 +23967,6 @@ function renderFilterBar(allAlbs) {
       Purple Mountains
     </button>
     ${SJ_COMMENTS_ENABLED ? `<button class="ctrl-btn" onclick="openArtistComments()" title="Comments on this artist">Artist Comments</button>` : ''}
-    <button type="button" class="ctrl-btn dd-mode-btn ${_ddActive ? 'on' : ''}" onclick="ddToggleMode()" title="Podcasts, interviews, articles and research about this artist">Research</button>
     ${renderOtherArtistsBtn()}
   </div>`;
 }
@@ -24014,7 +24094,7 @@ function renderListView(albList, sortOverride) {
         <div class="list-info">
           <div class="list-name">${alb.name}</div>
           <div class="list-meta">${alb._ddResearch
-            ? ((ddItem?.publishedAt ? ddItem.publishedAt.slice(0, 4) : '?') + ' · ' + (ddItem?.mediaTypeLabel || DD_TYPE_LABEL[ddItem?.mediaType] || 'Research'))
+            ? ((ddItem?.publishedAt ? ddItem.publishedAt.slice(0, 4) : '?') + ' · ' + (ddItem?.mediaTypeLabel || DD_TYPE_LABEL[ddItem?.mediaType] || 'Other'))
             : (yr + ' · ' + albTracks.length + ' tracks' + (alb.added_by_name ? ' · added by ' + (alb.added_by_name || '').replace(/</g, '&lt;') : ''))}</div>
         </div>
         ${_showListMetric ? `<div class="list-views-block">
@@ -26329,9 +26409,7 @@ window.addEventListener('resize', () => {
     // Surgical resize for desktop timeline views - patch stage/panels without nuking DOM
     const tlViews = viewMode === 'byyear' || viewMode === 'timeline' || viewMode === 'byviews';
     if (tlViews && !isMob && !wasMob && document.getElementById('tl-stage')) {
-      const ids = [...selectedIds];
-      const visAlbList = ids.flatMap(aid => (albums[aid] || [])).filter(a => isAlbumVisible(a.id));
-      patchPanels(visAlbList);
+      patchPanels(buildVisibleAlbumList());
     } else {
       render();
     }
@@ -26348,11 +26426,8 @@ const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
   auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
 });
 ﻿// ══════════════════════════════════════════════════════════════
-// ARTIST RESEARCH LIBRARY (dd*)
-// Supplemental podcasts, interviews, articles, documentaries.
+// OTHER CONTENT (dd*) — YouTube podcasts, interviews, supplemental video.
 // ══════════════════════════════════════════════════════════════
-let _ddView = 'byyear'; // byyear | timeline | byviews | list
-let _ddBarMode = (function(){ try { return localStorage.getItem('sj_dd_bar') || 'views'; } catch(_) { return 'views'; } })(); // views | hidden
 let _ddLoading = false;
 let _ddArtistId = null;
 let _ddCandidates = [];
@@ -26362,7 +26437,6 @@ let _ddTranscriptPoll = null;
 const DD_TYPE_LABEL = {
   youtube_video: 'YouTube Video',
   audio_podcast: 'Audio Only Podcast',
-  article: 'Article',
   interview: 'Interview',
   documentary: 'Documentary',
   other: 'Other'
@@ -26370,10 +26444,16 @@ const DD_TYPE_LABEL = {
 const DD_TYPE_ICON = {
   youtube_video: '▶',
   audio_podcast: '🎧',
-  article: '📄',
   interview: '🎙',
   documentary: '🎬',
   other: '◈'
+};
+const DD_ADD_TYPE_LABEL = {
+  youtube_video: 'YouTube Video',
+  audio_podcast: 'Audio Only Podcast',
+  interview: 'Interview',
+  documentary: 'Documentary',
+  other: 'Other'
 };
 
 function ddPrimaryArtistId() {
@@ -26413,67 +26493,64 @@ async function ddLoad(artistId) {
     const data = await fetch(sjApiUrl('/api/research?artistId=' + encodeURIComponent(id)), { cache: 'no-store' })
       .then(r => r.json());
     if (!data.ok) throw new Error(data.error || 'Could not load.');
-    _ddItems = data.items || [];
+    _ddItems = (data.items || []).filter(i => i.mediaType !== 'article' && !String(i.externalId || '').startsWith('wiki:'));
+    if (_ddLoadedFor !== id) {
+      _ddItems.forEach(i => excludedOtherContentIds.add(i.id));
+      _ddLoadedFor = id;
+    }
   } catch (e) {
     _ddItems = [];
-    showToast(e.message || 'Could not load Research.');
+    showToast(e.message || 'Could not load other content.');
   } finally {
     _ddLoading = false;
   }
 }
 
-async function ddEnter(artistId) {
+async function ddEnsureLoaded(artistId) {
   const id = artistId || ddPrimaryArtistId();
-  if (!id) { showToast('Open an artist jukebox first.'); return; }
-  _ddActive = true;
-  _ddArtistId = id;
-  _ddSavedAlbums = null;
-  _ddSavedTracks = null;
-  _ddSavedViewMode = viewMode;
-  expandedAlbumIds.clear();
-  if (!_ddView) _ddView = 'byyear';
-  viewMode = ddViewToMode(_ddView);
-  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
+  if (!id || _ddLoadedFor === id) return;
   await ddLoad(id);
-  try { updateFilterHeader && updateFilterHeader(); } catch (_) {}
-  try { updateViewControlsHeader(); } catch (_) {}
-  render();
 }
 
-function ddExit() {
-  const aid = _ddArtistId;
-  if (aid && _ddSavedAlbums) albums[aid] = _ddSavedAlbums;
-  if (aid && _ddSavedTracks) tracks[aid] = _ddSavedTracks;
-  if (_ddSavedViewMode) viewMode = _ddSavedViewMode;
-  _ddSavedAlbums = null;
-  _ddSavedTracks = null;
-  _ddSavedViewMode = null;
-  _ddActive = false;
-  expandedAlbumIds.clear();
-  ddStopTranscriptPoll();
-  try { updateFilterHeader && updateFilterHeader(); } catch (_) {}
-  try { updateViewControlsHeader(); } catch (_) {}
-  render();
+function ddBuildPseudoAlbum(item) {
+  const aid = item.artistId || _ddLoadedFor || ddPrimaryArtistId();
+  return {
+    id: item.id,
+    artist_id: aid,
+    name: item.title,
+    release_date: item.publishedAt ? item.publishedAt.slice(0, 10) : '0000-01-01',
+    art_url: item.thumbnailUrl || null,
+    color: ddColorForItem(item),
+    _ddResearch: true,
+  };
 }
 
-function ddToggleMode() {
-  if (_ddActive) ddExit();
-  else ddEnter();
+function ddVisiblePseudoAlbums() {
+  return ddSortedItems()
+    .filter(i => isOtherContentShown(i.id))
+    .map(ddBuildPseudoAlbum);
 }
 
-function ddSetView(v) {
-  _ddView = v;
-  viewMode = ddViewToMode(v);
-  expandedAlbumIds.clear();
-  ddStopTranscriptPoll();
-  ddSyncAlbumCache();
-  try { updateViewControlsHeader(); } catch (_) {}
-  ddRender();
+function buildVisibleAlbumList() {
+  const ids = [...selectedIds];
+  const albumPart = ids.flatMap(aid => (albums[aid] || [])).filter(a => isAlbumVisible(a.id));
+  const otherPart = ddVisiblePseudoAlbums();
+  return [...albumPart, ...otherPart].sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
+}
+
+function ddRepaintTimeline() {
+  const wrap = document.getElementById('tl-wrap');
+  if (!wrap) { render(); return; }
+  const list = buildVisibleAlbumList();
+  if (viewMode === 'list') wrap.innerHTML = renderListView(list);
+  else if (window.innerWidth <= 640) wrap.innerHTML = renderMobileChart(list, viewMode);
+  else wrap.innerHTML = renderTimeline(list, viewMode);
+  requestAnimationFrame(redrawAllSCLines);
 }
 
 function ddSortedItems() {
   const items = (_ddItems || []).slice();
-  if (_ddView === 'byviews') {
+  if (viewMode === 'byviews') {
     return items.sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0) || (b.addedAt || '').localeCompare(a.addedAt || ''));
   }
   // byyear / timeline / list: publish date first; undated items sort by added date at the end
@@ -26523,55 +26600,6 @@ function ddColorForItem(item) {
   for (let i = 0; i < (item.id || '').length; i++) h = (h * 31 + item.id.charCodeAt(i)) | 0;
   const hues = ['#e06b35', '#7c9a52', '#c4477a', '#5a8fc4', '#b8923a', '#8b6bb7', '#4a9e8e'];
   return hues[Math.abs(h) % hues.length];
-}
-
-function ddViewToMode(v) {
-  if (v === 'timeline') return 'timeline';
-  if (v === 'byviews') return 'byviews';
-  if (v === 'list') return 'list';
-  return 'byyear';
-}
-
-function ddSyncAlbumCache() {
-  const aid = _ddArtistId || ddPrimaryArtistId();
-  if (!aid) return [];
-  const items = ddSortedItems();
-  const pseudo = items.map(item => ({
-    id: item.id,
-    artist_id: aid,
-    name: item.title,
-    release_date: item.publishedAt ? item.publishedAt.slice(0, 10) : '0000-01-01',
-    art_url: item.thumbnailUrl || null,
-    color: ddColorForItem(item),
-    _ddResearch: true,
-  }));
-  if (_ddActive && _ddSavedAlbums === null) {
-    _ddSavedAlbums = albums[aid];
-    _ddSavedTracks = tracks[aid];
-  }
-  albums[aid] = pseudo;
-  tracks[aid] = pseudo.map(a => ({
-    id: a.id,
-    album_id: a.id,
-    artist_id: aid,
-    name: a.name,
-    track_number: 1,
-    _ddResearch: true,
-  }));
-  return pseudo;
-}
-
-function ddRenderTimelineOnly() {
-  const wrap = document.getElementById('tl-wrap');
-  if (!wrap) { ddRender(); return; }
-  const pseudo = ddSyncAlbumCache();
-  const mode = ddViewToMode(_ddView);
-  const savedBar = barChartMode;
-  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
-  if (_ddView === 'list') wrap.innerHTML = renderListView(pseudo);
-  else if (window.innerWidth <= 640) wrap.innerHTML = renderMobileChart(pseudo, mode);
-  else wrap.innerHTML = renderTimeline(pseudo, mode);
-  barChartMode = savedBar;
 }
 
 function buildDDResearchPanelHTML(alb, L) {
@@ -26637,15 +26665,6 @@ function ddResearchPanelBody(item) {
   </div>`;
 }
 
-function ddPickBarMetric(view, mode) {
-  _viewDDOpen = null;
-  _ddBarMode = mode === 'hidden' ? 'hidden' : 'views';
-  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
-  try { localStorage.setItem('sj_dd_bar', _ddBarMode); } catch (_) {}
-  if (_ddView !== view) ddSetView(view);
-  else { try { updateViewControlsHeader(); } catch (_) {} ddRenderTimelineOnly(); }
-}
-
 async function ddSavePublishedDate(id, val) {
   if (!googleUser) return;
   const publishedAt = val ? val + 'T12:00:00.000Z' : null;
@@ -26655,7 +26674,7 @@ async function ddSavePublishedDate(id, val) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
       showToast(val ? 'Date saved.' : 'Date cleared.');
-      ddSyncAlbumCache(); ddRenderTimelineOnly();
+      ddRepaintTimeline();
     }
   } catch (e) {
     showToast(e.message || 'Could not save date.');
@@ -26669,8 +26688,8 @@ async function ddRefreshMeta(id) {
     if (data.item) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
-      showToast('Updated from YouTube.');
-      ddSyncAlbumCache(); ddRenderTimelineOnly();
+      showToast(data.item.transcript ? 'Updated from YouTube, transcript pulled.' : 'Updated from YouTube.');
+      ddRepaintTimeline();
     }
   } catch (e) {
     showToast(e.message || 'Could not refresh.');
@@ -26679,50 +26698,6 @@ async function ddRefreshMeta(id) {
 
 function ddEsc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
-}
-
-function ddRenderViewToggle() {
-  const views = [
-    { id: 'byyear', lbl: 'By Date', tip: 'Order by publish date' },
-    { id: 'timeline', lbl: 'Timeline', tip: 'Space items by year on a timeline' },
-    { id: 'byviews', lbl: 'By Views', tip: 'Most viewed first' },
-    { id: 'list', lbl: 'List', tip: 'Scrollable list with details' },
-  ];
-  const _ddMetricOpts = [
-    { val: 'views', lbl: 'Number of Views', tip: 'Bar height shows YouTube view count' },
-    { val: 'hidden', lbl: 'Hide Bars', tip: 'Hide the chart bars and just show covers' },
-  ];
-  const _barsLbl = _ddBarMode === 'hidden' ? 'Bars hidden' : 'Bars: Number of Views';
-  const segBtn = v => {
-    const on = _ddView === v.id;
-    const menu = `<div class="vdd-menu${_viewDDOpen === v.id ? ' open' : ''}" data-vdd="${v.id}">
-          <div class="vdd-sec">Chart bars show</div>
-          ${_ddMetricOpts.map(o => `<button type="button" class="vdd-item${_ddBarMode === o.val ? ' on' : ''}" onclick="ddPickBarMetric('${v.id}','${o.val}')" title="${o.tip}"><span class="vdd-tick">✓</span>${o.lbl}</button>`).join('')}
-        </div>`;
-    const caret = `<button class="vseg-caret-btn" onclick="toggleViewDD(event,'${v.id}')" title="Choose what the chart bars show" aria-label="Chart options for ${v.lbl}" aria-haspopup="true">▾</button>`;
-    return `<div class="vdd-wrap${on ? ' on' : ''}">
-        <button class="vseg-btn ${on ? 'active' : ''}" onclick="ddSetView('${v.id}')" title="${v.tip}">${v.lbl}</button>${caret}${menu}
-      </div>`;
-  };
-  const extrasEl = document.getElementById('view-extras-header');
-  if (extrasEl) extrasEl.innerHTML = `
-    <div class="ctrl-row-sub" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
-      <span class="ctrl-row-meta" title="Change this from the view button above">${_barsLbl}</span>
-      <button class="expand-collapse-btn" onclick="ddExpandAll()" title="Open every research item" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer">⊕ Expand All</button>
-      <button class="expand-collapse-btn" onclick="ddCollapseAll()" title="Close every open item" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer">⊖ Collapse All</button>
-      <button class="expand-collapse-btn" onclick="ddOpenResearch()" title="Search YouTube and public sources, or upload your own" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer">＋ Research &amp; Add</button>
-      <button class="expand-collapse-btn" onclick="ddExit()" title="Back to the music jukebox" style="background:none;border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:.46rem;padding:.23rem .53rem;border-radius:5px;cursor:pointer">← Music Jukebox</button>
-      <span class="ctrl-row-meta" style="margin-left:auto">${_ddItems.length} item${_ddItems.length === 1 ? '' : 's'}</span>
-    </div>`;
-  return `<div class="ctrl-group">${ctrlGroupHdHTML('Research Library')}
-  <div class="view-toggle-row" style="display:flex;flex-direction:column;gap:.65rem;align-items:stretch;flex:0 1 auto;min-width:0;position:relative">
-    <div class="view-toggle-row1" style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
-      <div class="view-seg">
-        ${views.map(segBtn).join('')}
-      </div>
-    </div>
-  </div>
-  </div>`;
 }
 
 function ddThumbHTML(item, cls) {
@@ -26753,17 +26728,16 @@ function ddMaybeFetchTranscript(item) {
 
 function ddExpandAll() {
   ddCloseMenu();
-  ddSyncAlbumCache();
-  ddSortedItems().forEach(i => expandedAlbumIds.add(i.id));
-  ddRenderTimelineOnly();
-  ddSortedItems().forEach(i => ddMaybeFetchTranscript(i));
+  ddVisiblePseudoAlbums().forEach(a => expandedAlbumIds.add(a.id));
+  ddRepaintTimeline();
+  ddSortedItems().filter(i => isOtherContentShown(i.id)).forEach(i => ddMaybeFetchTranscript(i));
 }
 
 function ddCollapseAll() {
   ddCloseMenu();
-  expandedAlbumIds.clear();
+  filterBarOtherContent().forEach(i => expandedAlbumIds.delete(i.id));
   ddStopTranscriptPoll();
-  ddRenderTimelineOnly();
+  ddRepaintTimeline();
 }
 
 function ddCloseMenu() {
@@ -26851,7 +26825,7 @@ async function ddFetchTranscript(id, opts) {
     if (data.item) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
-      if (expandedAlbumIds.has(id)) ddRenderTimelineOnly();
+      if (expandedAlbumIds.has(id)) ddRepaintTimeline();
       if (data.item.transcriptSource === 'deepgram_pending') ddStartTranscriptPoll(id);
       else ddStopTranscriptPoll();
     }
@@ -26869,7 +26843,7 @@ function ddStartTranscriptPoll(id) {
       if (data.item) {
         const i = _ddItems.findIndex(x => x.id === id);
         if (i >= 0) _ddItems[i] = data.item;
-        if (expandedAlbumIds.has(id)) ddRenderTimelineOnly();
+        if (expandedAlbumIds.has(id)) ddRepaintTimeline();
         if (data.item.transcript || data.item.transcriptSource === 'deepgram_failed') {
           ddStopTranscriptPoll();
         }
@@ -26878,60 +26852,16 @@ function ddStartTranscriptPoll(id) {
   }, 4000);
 }
 
-async function ddRender() {
-  const main = document.getElementById('main');
-  if (!main) return;
-  try { updateViewControlsHeader(); } catch (_) {}
-  try { updateFilterHeader && updateFilterHeader(); } catch (_) {}
-  const name = ddArtistName(_ddArtistId || ddPrimaryArtistId());
-  if (_ddLoading && !_ddItems.length) {
-    main.innerHTML = `<div class="dd-stage"><div class="dd-empty">Loading Research Library for ${ddEsc(name)}…</div></div>`;
-    return;
-  }
-  const items = ddSortedItems();
-  if (!items.length) {
-    main.innerHTML = `<div class="dd-stage">
-      <div class="dd-toolbar">
-        <strong style="font-size:.72rem">${ddEsc(name)} · Research Library</strong>
-        <span class="ctrl-row-meta">Supplemental research — separate from the album charts</span>
-      </div>
-      <div class="dd-empty">
-        <div class="big-glyph">◈</div>
-        <p>No research yet for ${ddEsc(name)}.</p>
-        <p>Add podcasts, interviews, articles and more — or let us search public sources for you.</p>
-        <p style="margin-top:1rem"><button type="button" class="ctrl-btn ctrl-btn--accent" onclick="ddOpenResearch()">＋ Research &amp; Add</button></p>
-      </div>
-    </div>`;
-    return;
-  }
-  ddSyncAlbumCache();
-  const pseudo = albums[_ddArtistId] || [];
-  const mode = ddViewToMode(_ddView);
-  viewMode = mode;
-  const savedBar = barChartMode;
-  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
-  let tlContent;
-  if (_ddView === 'list') tlContent = renderListView(pseudo);
-  else if (window.innerWidth <= 640) tlContent = renderMobileChart(pseudo, mode);
-  else tlContent = renderTimeline(pseudo, mode);
-  barChartMode = savedBar;
-  main.innerHTML = `<div class="dd-stage">
-    <div class="dd-toolbar">
-      <strong style="font-size:.72rem">${ddEsc(name)} · Research Library</strong>
-      <span class="ctrl-row-meta">Supplemental research — separate from the album charts</span>
-    </div>
-    <div id="tl-wrap">${tlContent}</div>
-  </div>`;
-}
-
 async function ddRemoveItem(id) {
-  if (!confirm('Remove this from the Research library?')) return;
+  if (!confirm('Remove this other content item?')) return;
   try {
     await ddRequest({ action: 'remove', id });
     _ddItems = _ddItems.filter(i => i.id !== id);
+    excludedOtherContentIds.delete(id);
     expandedAlbumIds.delete(id);
     showToast('Removed.');
-    ddRender();
+    try { updateFilterHeader(); } catch (_) {}
+    render();
   } catch (e) {
     showToast(e.message || 'Could not remove.');
   }
@@ -26944,11 +26874,11 @@ function ddCloseResearch() {
 }
 
 function ddOpenResearch(tab) {
-  if (!googleUser) { alert('Sign in to research and add Research content.'); return; }
+  if (!googleUser) { alert('Sign in to add other content.'); return; }
   _ddResearchTab = tab === 'upload' ? 'upload' : 'research';
   document.getElementById('ddResearchOverlay')?.classList.add('open');
   const title = document.getElementById('dd-research-title');
-  if (title) title.textContent = 'Research · ' + ddArtistName(ddPrimaryArtistId());
+  if (title) title.textContent = 'Other Content · ' + ddArtistName(ddPrimaryArtistId());
   ddRenderResearch();
 }
 
@@ -26956,37 +26886,37 @@ function ddRenderResearch() {
   const body = document.getElementById('dd-research-body');
   if (!body) return;
   const tabs = `<div class="dd-tabs">
-    <button type="button" class="dd-tab ${_ddResearchTab==='research'?'on':''}" onclick="_ddResearchTab='research';ddRenderResearch()">Research for me</button>
+    <button type="button" class="dd-tab ${_ddResearchTab==='research'?'on':''}" onclick="_ddResearchTab='research';ddRenderResearch()">Search YouTube</button>
     <button type="button" class="dd-tab ${_ddResearchTab==='upload'?'on':''}" onclick="_ddResearchTab='upload';ddRenderResearch()">Add your own</button>
   </div>`;
   if (_ddResearchTab === 'upload') {
     body.innerHTML = tabs + `
       <div class="dd-form-grid">
-        <label>Title<input id="dd-up-title" placeholder="Interview title, article headline…"></label>
-        <label>Source URL<input id="dd-up-url" placeholder="https://… YouTube, article, or audio link"></label>
+        <label>Title<input id="dd-up-title" placeholder="Interview title, podcast episode…"></label>
+        <label>YouTube or audio URL<input id="dd-up-url" placeholder="https://… YouTube link or direct audio"></label>
         <label>Media type
           <select id="dd-up-type">
-            ${Object.keys(DD_TYPE_LABEL).map(k => `<option value="${k}">${DD_TYPE_LABEL[k]}</option>`).join('')}
+            ${Object.keys(DD_ADD_TYPE_LABEL).map(k => `<option value="${k}">${DD_ADD_TYPE_LABEL[k]}</option>`).join('')}
           </select>
         </label>
-        <label>Creator / author / channel<input id="dd-up-creator" placeholder="Who made this?"></label>
+        <label>Creator / channel<input id="dd-up-creator" placeholder="Who made this?"></label>
         <label>Published date<input id="dd-up-pub" type="date"></label>
         <label>Transcript (optional)<textarea id="dd-up-transcript" placeholder="Paste a transcript for podcasts and interviews"></textarea></label>
         <label>Or upload an audio file<input id="dd-up-file" type="file" accept="audio/*"></label>
       </div>
       <div style="margin-top:.85rem;display:flex;gap:.4rem;flex-wrap:wrap">
-        <button type="button" class="pl-btn" onclick="ddSubmitManual()">Add to Research</button>
+        <button type="button" class="pl-btn" onclick="ddSubmitManual()">Add other content</button>
       </div>
       <p style="font-family:var(--mono);font-size:.45rem;color:var(--text-muted);margin-top:.7rem;line-height:1.5">
-        Articles must be freely readable (no paywall). YouTube captions are pulled when available; uploaded audio is sent to Deepgram for a transcript.
+        YouTube uploads pull captions when available. Uploaded audio is sent to Deepgram for a transcript. Turn new items on from the Albums menu under Other Content.
       </p>`;
     return;
   }
   body.innerHTML = tabs + `
     <p style="font-size:.58rem;line-height:1.5;color:var(--text-muted);margin:0 0 .75rem">
-      Searches YouTube for interviews, podcasts and documentaries, and looks up a free Wikipedia article when one exists.
+      Searches YouTube for interviews, podcasts, documentaries and other supplemental video about this artist.
     </p>
-    <button type="button" class="pl-btn" id="dd-run-btn" onclick="ddRunResearch()">Run research</button>
+    <button type="button" class="pl-btn" id="dd-run-btn" onclick="ddRunResearch()">Search YouTube</button>
     <div id="dd-cand-list" style="margin-top:1rem"></div>`;
   if (_ddCandidates.length) ddPaintCandidates();
 }
@@ -26995,7 +26925,7 @@ async function ddRunResearch() {
   const btn = document.getElementById('dd-run-btn');
   const list = document.getElementById('dd-cand-list');
   if (btn) { btn.disabled = true; btn.textContent = 'Searching…'; }
-  if (list) list.innerHTML = '<div class="dd-empty" style="padding:1rem">Searching YouTube and public sources…</div>';
+  if (list) list.innerHTML = '<div class="dd-empty" style="padding:1rem">Searching YouTube…</div>';
   try {
     const data = await ddRequest({ action: 'research', artistId: ddPrimaryArtistId() });
     _ddCandidates = data.candidates || [];
@@ -27004,7 +26934,7 @@ async function ddRunResearch() {
   } catch (e) {
     if (list) list.innerHTML = `<div class="dd-empty" style="padding:1rem">${ddEsc(e.message)}</div>`;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Run research again'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Search again'; }
   }
 }
 
@@ -27048,11 +26978,14 @@ async function ddAddSelected() {
     showToast('Adding…');
     const data = await ddRequest({ action: 'add_many', artistId: ddPrimaryArtistId(), candidates: picks });
     const n = (data.added || []).length;
-    showToast(n ? ('Added ' + n + ' item' + (n === 1 ? '' : 's') + '.') : 'Nothing new to add.');
+    showToast(n ? ('Added ' + n + ' item' + (n === 1 ? '' : 's') + '. Turn them on under Other Content in the Albums menu.') : 'Nothing new to add.');
     await ddLoad();
+    (data.added || []).forEach(item => {
+      if (item && item.id) excludedOtherContentIds.add(item.id);
+    });
     ddCloseResearch();
-    if (!_ddActive) await ddEnter();
-    else ddRender();
+    try { updateFilterHeader(); } catch (_) {}
+    render();
   } catch (e) {
     showToast(e.message || 'Could not add.');
   }
@@ -27105,11 +27038,13 @@ async function ddSubmitManual() {
         addedVia: 'manual'
       });
     }
-    showToast('Added to Research.');
+    showToast('Added to other content. Turn it on in the Albums menu when you are ready.');
     await ddLoad();
+    const added = _ddItems[_ddItems.length - 1];
+    if (added && added.id) excludedOtherContentIds.add(added.id);
     ddCloseResearch();
-    if (!_ddActive) await ddEnter();
-    else ddRender();
+    try { updateFilterHeader(); } catch (_) {}
+    render();
   } catch (e) {
     showToast(e.message || 'Could not add.');
   }
@@ -27121,13 +27056,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
-    'Research Library is a new mode on every artist jukebox. It looks like the album charts, but the covers are podcasts, interviews, documentaries and free articles about the artist instead of albums. Sort by Date, Timeline, By Views or List - same idea as Jukebox Controls.',
-    'Each view button has a Chart bars show menu like the main jukebox: Number of Views or Hide Bars.',
-    'Timeline and list views show YouTube view counts on bars when Number of Views is selected. Publish dates come from YouTube when we have them; open an item and set the Published date yourself, or tap Pull from YouTube.',
-    'Research Library now uses the same timeline, bars, thumbnails and drop-down panels as the album jukebox — research items replace album covers, and opening one shows a panel like an expanded album with Play, ⋯ and a transcript block with the lyrics size slider.',
-    'Open it from the Research button on an artist jukebox, or from Research Library on an Explore Artists card ⋯ menu. Research & Add can search YouTube and Wikipedia for you, or you can paste a link / upload your own audio. Podcasts pull a transcript into the detail card when captions exist.',
-    'Research Library items are stored as supplemental research (not album tracks), with media type, original creator credit, publish date and the date they were added to the library.',
-    'Uploaded podcasts and other direct audio in the Research Library are transcribed with Deepgram (the same service used elsewhere), and the words show in the detail card when they are ready. YouTube items still use captions when the upload has them.',
+    'Other Content now lives in the main jukebox instead of a separate Research screen. Podcasts, interviews, documentaries and other YouTube supplemental video sit on the same timeline as the albums when you turn them on.',
+    'Open the Albums menu to find an Other Content section (off by default). Check the section or individual videos, then Apply — each one opens like an expanded album with Play, a transcript, and Pull from YouTube.',
+    'YouTube transcripts now pull correctly when captions exist. Pull from YouTube on an open item refreshes the metadata and tries the transcript again.',
+    'Adding other content is still sign-in only: Search YouTube or paste your own link from the Albums menu. Articles and Wikipedia results are no longer part of this feature.',
     'Every public artist jukebox page (/silver-jews, /pavement, and the rest) is now written for search engines and AI: song titles and lyrics are real text in the page, not only loaded after the player starts, and each page says it is a free online music player for that artist.',
     'The home page describes Suffering Jukebox as a free online music player and jukebox for the whole catalog, not only Silver Jews and Purple Mountains. There is also an llms.txt file so AI tools can see what the site is for.',
     'The sitemap lists every public artist jukebox, not only community imports.',

@@ -250,8 +250,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (sourceUrl && looksPaywalled(sourceUrl) && mediaType === "article") {
-        return bad("That article looks like it sits behind a paywall. Pick an open source instead.");
+      if (sourceUrl && looksPaywalled(sourceUrl)) {
+        return bad("That link looks like it sits behind a paywall. Pick an open YouTube upload instead.");
       }
 
       if (!title) {
@@ -334,8 +334,12 @@ export async function POST(req: NextRequest) {
               transcriptSource = cap.source;
             }
           }
-          if (c.sourceUrl && looksPaywalled(String(c.sourceUrl)) && c.mediaType === "article") {
+          if (c.sourceUrl && looksPaywalled(String(c.sourceUrl))) {
             skipped.push({ key: c.key, reason: "paywall" });
+            continue;
+          }
+          if (c.mediaType === "article" || String(c.externalId || "").startsWith("wiki:")) {
+            skipped.push({ key: c.key, reason: "unsupported" });
             continue;
           }
           const item = await insertItem(sb, {
@@ -423,6 +427,11 @@ export async function POST(req: NextRequest) {
       };
       if (detail.thumbnail) patch.thumbnail_url = detail.thumbnail;
       if (detail.title) patch.title = detail.title.slice(0, 500);
+      const cap = await fetchYouTubeTranscript(shaped.externalId);
+      if (cap) {
+        patch.transcript = cap.text;
+        patch.transcript_source = cap.source;
+      }
       const { data, error } = await T(sb, "research_items")
         .update(patch)
         .eq("id", id)
