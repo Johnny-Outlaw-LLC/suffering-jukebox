@@ -1603,6 +1603,51 @@ body.light .sc-link:hover { background: #e8e8e8; }
 .dj-lyr .lyr-line { justify-content: center; }
 .dj-lyr .lyr-line-inner { justify-content: center; }
 .dj-lyr-ph { font-size: .55rem; color: var(--text-muted); padding: 1rem .5rem; }
+.dj-mid.mode-pl .dj-lyr-size { display: none; }
+.dj-mid.mode-lyr #dj-playlist { display: none; }
+.dj-mid.mode-pl #dj-lyr { display: none; }
+.dj-mid-tabs {
+  display: none; align-items: center; justify-content: center; gap: .35rem; width: 100%;
+}
+.dj-mid.mode-pl .dj-mid-tabs { display: flex; }
+.dj-mid-tab {
+  background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px;
+  font: inherit; font-size: .5rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: .3rem .55rem; cursor: default;
+}
+.dj-mid-tab.on { border-color: var(--accent); color: var(--accent); }
+.dj-playlist {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); overflow: hidden;
+}
+.dj-playlist-head {
+  flex-shrink: 0; display: flex; flex-direction: column; gap: .2rem;
+  padding: .45rem .65rem; border-bottom: 1px solid var(--border);
+  font-size: .48rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+.dj-playlist-hint { text-transform: none; letter-spacing: 0; font-weight: 400; opacity: .85; line-height: 1.35; }
+.dj-playlist-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+.dj-pl-row {
+  display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem;
+  border-bottom: 1px solid var(--border); font-size: .55rem;
+}
+.dj-pl-row:last-child { border-bottom: 0; }
+.dj-pl-row:hover { background: var(--bg-elevated); }
+.dj-pl-row.side-l { border-left: 3px solid var(--accent); }
+.dj-pl-row.side-r { border-right: 3px solid var(--accent); }
+.dj-pl-arrow {
+  flex-shrink: 0; width: 1.6rem; height: 1.6rem; display: flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid var(--border); border-radius: 5px; color: var(--text-muted);
+  font: inherit; font-size: .7rem; font-weight: 700; cursor: pointer; line-height: 1; padding: 0;
+}
+.dj-pl-arrow:hover { border-color: var(--accent); color: var(--accent); }
+.dj-pl-arrow.on { border-color: var(--accent); color: var(--accent); background: rgba(255,107,53,.12); }
+.dj-pl-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.dj-pl-side-lbl {
+  flex-shrink: 0; font-size: .42rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; min-width: 2.2rem; text-align: center;
+}
+.dj-pl-empty { padding: .9rem .6rem; text-align: center; color: var(--text-muted); font-size: .55rem; line-height: 1.4; }
 @media (max-width: 640px) { #djOverlay { display: none !important; } }
 .tv-menu-act:hover { background: rgba(255,255,255,.07); }
 
@@ -4362,11 +4407,14 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
           <span class="dj-nudge-st" id="dj-save-st-l"></span>
         </div>
       </div>
-      <div class="dj-mid">
+      <div class="dj-mid mode-lyr" id="dj-mid">
         <div class="dj-mid-top">
           <div class="dj-transport">
             <button type="button" id="dj-play-btn" onclick="djTogglePlay()" title="Play/Pause">⏸</button>
             <button type="button" class="dj-sync-btn on" id="dj-sync-btn" onclick="djToggleSync()">Sync playback</button>
+          </div>
+          <div class="dj-mid-tabs" aria-hidden="true">
+            <span class="dj-mid-tab on">Playlist</span>
           </div>
           <div class="dj-lyr-size" title="Lyric size">
             <span class="dj-lyr-size-lbl">A</span>
@@ -4377,6 +4425,13 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         </div>
         <div class="dj-lyr" id="dj-lyr" onscroll="djLyrScrollHold()">
           <div class="dj-lyr-ph">No lyrics for this song.</div>
+        </div>
+        <div class="dj-playlist" id="dj-playlist">
+          <div class="dj-playlist-head">
+            <span id="dj-pl-head">Playlist</span>
+            <span class="dj-playlist-hint">← left deck · right deck → — songs move up when that side ends</span>
+          </div>
+          <div class="dj-playlist-list" id="dj-pl-list"></div>
         </div>
       </div>
       <div class="dj-deck" id="dj-deck-r">
@@ -13413,12 +13468,12 @@ function ytpPlayVersion(videoId) {
 }
 
 // ── Side by Side (desktop/tablet only) ────────────────────────────────────
-// Two versions of the same song, one crossfader, lyrics in the middle.
-// Only opens when the playing track has multiple YouTube versions. Exit
-// restores tvPrimary on the main player.
+// Two decks, one crossfader. Same song on both → lyrics in the middle.
+// Different songs → middle shows the playlist with ← / → for which deck
+// each waiting song will rise into when that side ends.
 let _djLeft = null;   // { trackId, videoId, title, artist, album, player, ready, seek }
 let _djRight = null;
-let _djTrackId = null;
+let _djTrackId = null; // left deck's track (lyrics / now-playing)
 let _djBalance = 50;
 try {
   const b = Number(localStorage.getItem('sj_dj_balance'));
@@ -13433,9 +13488,14 @@ let _djSeeking = null; // 'l' | 'r' while scrubbing
 let _djSavedLayout = null;
 let _djLyrActiveIdx = -1;
 let _djLyrScrollHold = 0;
-let _djCanSave = false;   // signed-in editor for this track
-let _djAdvancing = false; // prevent double-fire on ENDED
+let _djCanSave = false;   // signed-in editor for the left (lyric) track
+let _djAdvancing = { l: false, r: false };
 let _djSaving = { l: false, r: false };
+// Waiting songs per deck — each entry is a shallow clone of a ytQueue item
+// plus _djId (stable key) and optional queueIdx for bookkeeping.
+let _djUpcoming = { l: [], r: [] };
+let _djIdSeq = 1;
+let _djLyrLoadedFor = null;
 
 function djPlayableVersions(trackId) {
   return tvList(trackId).filter(v => v?.video_id && v.is_playable !== false);
@@ -13450,7 +13510,166 @@ function djCanEnter() {
   if (_djActive) return false;
   const trackId = ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId;
   if (!trackId) return false;
-  return djPlayableVersions(trackId).length >= 2;
+  // Prefer two versions of the current song; otherwise need at least one
+  // more song in the queue so the other deck has something to play.
+  if (djPlayableVersions(trackId).length >= 2) return true;
+  return ytQueue.length >= 2;
+}
+
+function djSameSong() {
+  return !!( _djLeft?.trackId && _djRight?.trackId && _djLeft.trackId === _djRight.trackId );
+}
+
+function djCloneItem(item, queueIdx) {
+  return {
+    trackId: item.trackId || null,
+    videoId: item.videoId || null,
+    title: item.title || '',
+    artist: item.artist || '',
+    album: item.album || '',
+    jbItemId: item.jbItemId || null,
+    addedBy: item.addedBy || null,
+    addedByOwner: !!item.addedByOwner,
+    queueIdx: Number.isFinite(queueIdx) ? queueIdx : -1,
+    _djId: 'dj' + (_djIdSeq++),
+  };
+}
+
+function djItemLabel(item) {
+  const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title, item.videoId) : null;
+  const artist = (meta && meta.artist) || item.artist || '';
+  const title = item.title || (meta && meta.title) || 'Track';
+  return artist ? (artist + ' — ' + title) : title;
+}
+
+function djOccupiedKeys() {
+  const keys = new Set();
+  const add = (it) => {
+    if (!it) return;
+    if (it.trackId) keys.add('t:' + it.trackId);
+    else if (it.videoId) keys.add('v:' + it.videoId);
+  };
+  add(_djLeft);
+  add(_djRight);
+  _djUpcoming.l.forEach(add);
+  _djUpcoming.r.forEach(add);
+  return keys;
+}
+
+function djPoolIndices() {
+  const occ = djOccupiedKeys();
+  const out = [];
+  for (let i = 0; i < ytQueue.length; i++) {
+    const it = ytQueue[i];
+    if (!it) continue;
+    const key = it.trackId ? ('t:' + it.trackId) : (it.videoId ? ('v:' + it.videoId) : null);
+    if (key && occ.has(key)) continue;
+    out.push(i);
+  }
+  return out;
+}
+
+function djSyncMidMode() {
+  const mid = document.getElementById('dj-mid');
+  if (!mid) return;
+  const same = djSameSong();
+  const wasLyr = mid.classList.contains('mode-lyr');
+  mid.classList.toggle('mode-lyr', same);
+  mid.classList.toggle('mode-pl', !same);
+  const syncBtn = document.getElementById('dj-sync-btn');
+  if (syncBtn) {
+    syncBtn.style.display = same ? '' : 'none';
+    if (!same) _djSync = false;
+  }
+  if (same) {
+    if (!wasLyr || _djLyrLoadedFor !== _djTrackId) {
+      _djLyrLoadedFor = _djTrackId;
+      djLoadLyrics();
+    }
+  } else {
+    _djLyrLoadedFor = null;
+    djRenderPlaylist();
+  }
+}
+
+function djRenderPlaylist() {
+  const list = document.getElementById('dj-pl-list');
+  const head = document.getElementById('dj-pl-head');
+  if (!list) return;
+  const rows = [];
+  const pushUpcoming = (side) => {
+    _djUpcoming[side].forEach((item, i) => {
+      const arrowL = side === 'l' ? ' on' : '';
+      const arrowR = side === 'r' ? ' on' : '';
+      rows.push(
+        '<div class="dj-pl-row side-' + side + '" data-dj-id="' + escHtml(item._djId) + '">' +
+          '<button type="button" class="dj-pl-arrow' + arrowL + '" title="Play on left when left ends" onclick="djSetUpcomingSide(\'' + item._djId + '\',\'l\')">←</button>' +
+          '<span class="dj-pl-title" title="' + escHtml(djItemLabel(item)) + '">' + escHtml(djItemLabel(item)) + '</span>' +
+          '<span class="dj-pl-side-lbl">' + (side === 'l' ? 'Left' : 'Right') + (i === 0 ? ' · next' : '') + '</span>' +
+          '<button type="button" class="dj-pl-arrow' + arrowR + '" title="Play on right when right ends" onclick="djSetUpcomingSide(\'' + item._djId + '\',\'r\')">→</button>' +
+        '</div>'
+      );
+    });
+  };
+  pushUpcoming('l');
+  pushUpcoming('r');
+  const pool = djPoolIndices();
+  pool.forEach((qi) => {
+    const item = ytQueue[qi];
+    if (!item) return;
+    const label = djItemLabel(item);
+    rows.push(
+      '<div class="dj-pl-row" data-qi="' + qi + '">' +
+        '<button type="button" class="dj-pl-arrow" title="Queue for left" onclick="djSendToSide(\'' + 'l' + '\',' + qi + ')">←</button>' +
+        '<span class="dj-pl-title" title="' + escHtml(label) + '">' + escHtml(label) + '</span>' +
+        '<span class="dj-pl-side-lbl" style="color:var(--text-muted)">—</span>' +
+        '<button type="button" class="dj-pl-arrow" title="Queue for right" onclick="djSendToSide(\'' + 'r' + '\',' + qi + ')">→</button>' +
+      '</div>'
+    );
+  });
+  if (head) {
+    const waiting = _djUpcoming.l.length + _djUpcoming.r.length + pool.length;
+    head.textContent = 'Playlist' + (waiting ? ' · ' + waiting : '');
+  }
+  list.innerHTML = rows.length
+    ? rows.join('')
+    : '<div class="dj-pl-empty">No more songs waiting.<br>Add to the player queue, then send them ← left or right →.</div>';
+}
+
+function djFindUpcoming(djId) {
+  for (const side of ['l', 'r']) {
+    const i = _djUpcoming[side].findIndex(x => x._djId === djId);
+    if (i >= 0) return { side, i, item: _djUpcoming[side][i] };
+  }
+  return null;
+}
+
+function djSetUpcomingSide(djId, side) {
+  const found = djFindUpcoming(djId);
+  if (!found || (side !== 'l' && side !== 'r')) return;
+  if (found.side === side) return;
+  _djUpcoming[found.side].splice(found.i, 1);
+  _djUpcoming[side].push(found.item);
+  djRenderPlaylist();
+}
+
+async function djSendToSide(side, queueIdx) {
+  if (side !== 'l' && side !== 'r') return;
+  const item = ytQueue[queueIdx];
+  if (!item) return;
+  const clone = djCloneItem(item, queueIdx);
+  const deck = side === 'l' ? _djLeft : _djRight;
+  // Empty or ended deck → load now; otherwise wait in that side's queue.
+  let ended = false;
+  try {
+    ended = deck?.player && deck.player.getPlayerState?.() === 0;
+  } catch (_) {}
+  if (!deck?.trackId || ended) {
+    await djLoadOntoDeck(side, clone);
+  } else {
+    _djUpcoming[side].push(clone);
+    djRenderPlaylist();
+  }
 }
 
 function djSyncBtn() {
@@ -13558,12 +13777,19 @@ function djRowFromVersion(trackId, v, meta) {
 }
 
 function djRenderVersionSelects() {
-  const trackId = _djTrackId;
-  const vs = djPlayableVersions(trackId);
   ['l', 'r'].forEach(side => {
     const sel = document.getElementById('dj-ver-' + side);
     if (!sel) return;
-    const cur = side === 'l' ? _djLeft?.videoId : _djRight?.videoId;
+    const deck = side === 'l' ? _djLeft : _djRight;
+    const trackId = deck?.trackId;
+    const vs = trackId ? djPlayableVersions(trackId) : [];
+    const cur = deck?.videoId;
+    if (!vs.length) {
+      sel.innerHTML = '<option value="">No versions</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
     sel.innerHTML = vs.map(v => {
       const bits = [tvLabel(v)];
       if (v.is_primary) bits.push('default');
@@ -13581,13 +13807,17 @@ function djRenderMeta() {
   if (ml) ml.innerHTML = djDeckMetaHTML(_djLeft);
   if (mr) mr.innerHTML = djDeckMetaHTML(_djRight);
   const syncBtn = document.getElementById('dj-sync-btn');
-  if (syncBtn) syncBtn.classList.toggle('on', !!_djSync);
+  if (syncBtn) {
+    syncBtn.classList.toggle('on', !!_djSync);
+    syncBtn.style.display = djSameSong() ? '' : 'none';
+  }
   const playBtn = document.getElementById('dj-play-btn');
   if (playBtn) playBtn.textContent = _djWantPlay ? '⏸' : '▶';
   const xf = document.getElementById('dj-xf');
   if (xf && Number(xf.value) !== _djBalance) xf.value = String(_djBalance);
   djPaintAdj();
   djRenderVersionSelects();
+  djSyncMidMode();
 }
 
 function djFmtClock(sec) {
@@ -13780,9 +14010,8 @@ function djAttachDeck(side, row, startSec) {
               const other = side === 'l' ? _djRight : _djLeft;
               try { other?.player?.playVideo?.(); } catch (_) {}
             }
-          } else if (ev.data === 0 && side === 'l') {
-            // Left deck is the master clock — when it ends, advance the queue.
-            djOnTrackEnded();
+          } else if (ev.data === 0) {
+            djOnDeckEnded(side);
           }
         }
       }
@@ -13793,43 +14022,43 @@ function djAttachDeck(side, row, startSec) {
 }
 
 function djPickVersion(side, videoId) {
-  if (!videoId || !_djTrackId) return;
   const cur = side === 'l' ? _djLeft : _djRight;
+  const trackId = cur?.trackId;
+  if (!videoId || !trackId) return;
   if (cur?.videoId === videoId) {
     djRenderVersionSelects();
     return;
   }
   const otherSide = side === 'l' ? 'r' : 'l';
   const other = otherSide === 'l' ? _djLeft : _djRight;
-  const item = ytQueue[ytQueueIdx];
-  const meta = ytpTrackMeta(_djTrackId, item?.title, videoId) || {
-    title: item?.title || 'Track',
-    artist: item?.artist || '',
-    album: item?.album || '',
+  const meta = ytpTrackMeta(trackId, cur.title, videoId) || {
+    title: cur.title || 'Track',
+    artist: cur.artist || '',
+    album: cur.album || '',
   };
 
-  // Keep both sides different when possible — swap instead of duplicating.
-  if (other?.videoId === videoId && cur?.videoId) {
+  // Same song on both decks: keep versions different — swap instead of duplicating.
+  if (other?.trackId === trackId && other?.videoId === videoId && cur?.videoId) {
     const swapVid = cur.videoId;
-    const vOther = tvFor(_djTrackId, swapVid);
-    const vThis = tvFor(_djTrackId, videoId);
+    const vOther = tvFor(trackId, swapVid);
+    const vThis = tvFor(trackId, videoId);
     if (!vThis || vThis.is_playable === false) return;
     let thisSeek = 0, otherSeek = 0;
     try { thisSeek = other.player?.getCurrentTime?.() || 0; } catch (_) {}
     try { otherSeek = cur.player?.getCurrentTime?.() || 0; } catch (_) {}
-    djAttachDeck(side, djRowFromVersion(_djTrackId, vThis, meta), thisSeek);
+    djAttachDeck(side, djRowFromVersion(trackId, vThis, meta), thisSeek);
     if (vOther && vOther.is_playable !== false) {
-      djAttachDeck(otherSide, djRowFromVersion(_djTrackId, vOther, meta), otherSeek);
+      djAttachDeck(otherSide, djRowFromVersion(trackId, vOther, meta), otherSeek);
     }
     djRenderMeta();
     return;
   }
 
-  const v = tvFor(_djTrackId, videoId);
+  const v = tvFor(trackId, videoId);
   if (!v || v.is_playable === false) return;
-  const row = djRowFromVersion(_djTrackId, v, meta);
+  const row = djRowFromVersion(trackId, v, meta);
   let seek = 0;
-  if (_djSync && other?.trackId === _djTrackId) {
+  if (_djSync && other?.trackId === trackId) {
     try {
       const mt = other.player?.getCurrentTime?.() || 0;
       seek = djSyncedWant(otherSide, side, mt);
@@ -13837,10 +14066,14 @@ function djPickVersion(side, videoId) {
   } else if (cur?.player) {
     try {
       const at = cur.player.getCurrentTime() || 0;
-      seek = Math.max(0, at - tvOffset(_djTrackId, cur.videoId) + tvOffset(_djTrackId, videoId));
+      seek = Math.max(0, at - tvOffset(trackId, cur.videoId) + tvOffset(trackId, videoId));
     } catch (_) {}
   }
   djAttachDeck(side, row, seek);
+  if (side === 'l') {
+    _djTrackId = trackId;
+    ytVideoId = videoId;
+  }
   djRenderMeta();
 }
 
@@ -13908,60 +14141,41 @@ async function djSaveSync(side) {
   }
 }
 
-function djNextQueueIdx() {
-  let next = ytPlayNextIndex();
-  if (next < 0 && ytShuffle && ytQueue.length > 1) next = _ytShuffleNextIdx();
-  else if (next < 0 && ytQueueIdx < ytQueue.length - 1) next = ytQueueIdx + 1;
-  else if (next < 0 && ytRepeat && ytQueue.length > 0) next = 0;
-  if (next < 0) return -1;
-  if (viewMode === 'playlistchart' && isTrackSkipped(ytQueue[next]?.trackId)) {
-    next = playlistChartNextPlayable(next, 1);
-  }
-  return next;
-}
-
-async function djOnTrackEnded() {
-  if (!_djActive || _djAdvancing) return;
-  _djAdvancing = true;
+async function djOnDeckEnded(side) {
+  if (!_djActive || _djAdvancing[side]) return;
+  _djAdvancing[side] = true;
   try {
-    if (viewMode === 'playlistchart' && playlistChartIsLive() && ytQueueIdx >= 0) {
+    if (side === 'l' && viewMode === 'playlistchart' && playlistChartIsLive() && ytQueueIdx >= 0) {
       try { playlistChartMarkPlayed(ytQueueIdx); } catch (_) {}
     }
-    const next = djNextQueueIdx();
-    if (next < 0) {
-      _djWantPlay = false;
-      djRenderMeta();
+    const next = _djUpcoming[side].shift();
+    if (next) {
+      await djLoadOntoDeck(side, next);
       return;
     }
-    if (ytPlayNextIndex() === next) _ytPlayNext = null;
-    const item = ytQueue[next];
-    const tid = item?.trackId;
-    if (tid) await loadTrackVideos([tid]);
-    if (tid && djPlayableVersions(tid).length >= 2) {
-      await djLoadQueueTrack(next);
-    } else {
-      djExit({ playIdx: next });
+    // Nothing waiting — stop this deck only; stay in Side by Side.
+    try {
+      const deck = side === 'l' ? _djLeft : _djRight;
+      deck?.player?.pauseVideo?.();
+    } catch (_) {}
+    if (!_djUpcoming.l.length && !_djUpcoming.r.length && !djPoolIndices().length) {
+      const other = side === 'l' ? _djRight : _djLeft;
+      let otherPlaying = false;
+      try { otherPlaying = other?.player && other.player.getPlayerState?.() === 1; } catch (_) {}
+      if (!otherPlaying) {
+        _djWantPlay = false;
+        djRenderMeta();
+      }
     }
+    djRenderPlaylist();
   } finally {
-    _djAdvancing = false;
+    _djAdvancing[side] = false;
   }
 }
 
-async function djLoadQueueTrack(idx) {
-  const item = ytQueue[idx];
-  if (!item?.trackId || !_djActive) return;
-  if (idx !== ytQueueIdx) _ytCaptureLastPlayed();
-  ytQueueIdx = idx;
-  nowPlayingTrackId = item.trackId;
-  _djTrackId = item.trackId;
-  _djSyncAdj = { l: 0, r: 0 };
-  _djLyrActiveIdx = -1;
-  _djWantPlay = true;
-  ['l', 'r'].forEach(s => {
-    const st = document.getElementById('dj-save-st-' + s);
-    if (st) { st.textContent = ''; st.style.color = ''; }
-  });
-
+async function djLoadOntoDeck(side, item) {
+  if (!_djActive || !item?.trackId) return;
+  if (item.trackId) await loadTrackVideos([item.trackId]);
   const vs = djPlayableVersions(item.trackId);
   const meta = ytpTrackMeta(item.trackId, item.title, item.videoId) || {
     title: item.title || 'Track',
@@ -13969,31 +14183,49 @@ async function djLoadQueueTrack(idx) {
     album: item.album || '',
   };
   const playingVid = item.videoId || tvPrimary(item.trackId)?.video_id || vs[0]?.video_id;
-  const leftV = tvFor(item.trackId, playingVid) || vs.find(v => v.video_id === playingVid) || vs[0];
-  const rightV = vs.find(v => v.video_id !== leftV?.video_id) || null;
-  if (!leftV) return;
+  const v = tvFor(item.trackId, playingVid) || vs.find(x => x.video_id === playingVid) || vs[0];
+  if (!v) return;
 
-  ytVideoId = leftV.video_id;
-  item.videoId = leftV.video_id;
-  _djSync = !!(leftV && rightV);
-  _djCanSave = !!(googleUser && await tvCanEdit(item.trackId));
+  _djSyncAdj[side] = 0;
+  const st = document.getElementById('dj-save-st-' + side);
+  if (st) { st.textContent = ''; st.style.color = ''; delete st.dataset.fromDb; }
 
-  const leftRow = djRowFromVersion(item.trackId, leftV, meta);
-  const rightRow = rightV ? djRowFromVersion(item.trackId, rightV, meta) : null;
-  djAttachDeck('l', leftRow, 0);
-  if (rightRow) djAttachDeck('r', rightRow, 0);
-  else {
-    try { _djRight?.player?.destroy?.(); } catch (_) {}
-    _djRight = null;
-    const fr = document.getElementById('dj-frame-r');
-    if (fr) fr.innerHTML = '';
+  const row = djRowFromVersion(item.trackId, v, meta);
+  _djWantPlay = true;
+  djAttachDeck(side, row, 0);
+
+  if (side === 'l') {
+    _djTrackId = item.trackId;
+    _djLyrActiveIdx = -1;
+    ytVideoId = v.video_id;
+    nowPlayingTrackId = item.trackId;
+    if (Number.isFinite(item.queueIdx) && item.queueIdx >= 0 && ytQueue[item.queueIdx]?.trackId === item.trackId) {
+      if (item.queueIdx !== ytQueueIdx) _ytCaptureLastPlayed();
+      ytQueueIdx = item.queueIdx;
+    } else {
+      const found = ytQueue.findIndex(q => q && q.trackId === item.trackId);
+      if (found >= 0) {
+        if (found !== ytQueueIdx) _ytCaptureLastPlayed();
+        ytQueueIdx = found;
+      }
+    }
+    _djCanSave = !!(googleUser && await tvCanEdit(item.trackId));
+    try { ytpOnTrackChange(v.video_id, item.trackId, item.title); } catch (_) {}
+    try { logPlayStart(item.trackId, getMyVote(item.trackId)); } catch (_) {}
+    try { updateYTQueueUI(); } catch (_) {}
   }
+
+  // Sync only makes sense when both decks share a song.
+  if (djSameSong()) {
+    if (_djSync === false && _djLeft && _djRight) {
+      // leave user's last choice, but default on when entering same-song
+    }
+  } else {
+    _djSync = false;
+  }
+
   djRenderMeta();
   djSyncSaveUI();
-  djLoadLyrics();
-  try { updateYTQueueUI(); } catch (_) {}
-  try { ytpOnTrackChange(leftV.video_id, item.trackId, item.title); } catch (_) {}
-  try { logPlayStart(item.trackId, getMyVote(item.trackId)); } catch (_) {}
 }
 
 function djToggleSync() {
@@ -14054,8 +14286,8 @@ async function djEnter(opts) {
   if ((ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId) !== trackId) return;
 
   const vs = djPlayableVersions(trackId);
-  if (vs.length < 2) {
-    showToast('Side by Side needs at least two versions of this song.');
+  if (vs.length < 2 && ytQueue.length < 2) {
+    showToast('Side by Side needs another version of this song, or another song in the queue.');
     djSyncBtn();
     return;
   }
@@ -14065,6 +14297,8 @@ async function djEnter(opts) {
   _djSyncAdj = { l: 0, r: 0 };
   _djLyrActiveIdx = -1;
   _djTrackId = trackId;
+  _djUpcoming = { l: [], r: [] };
+  _djAdvancing = { l: false, r: false };
   _djCanSave = !!(googleUser && await tvCanEdit(trackId));
   let leftSeek = 0;
   try { leftSeek = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
@@ -14093,9 +14327,34 @@ async function djEnter(opts) {
     const alt = vs.find(v => v.video_id !== leftV.video_id && v.counts_for_charts === false) || rightV;
     if (alt) rightV = alt;
   }
-  const leftRow = djRowFromVersion(trackId, leftV, meta);
-  const rightRow = rightV ? djRowFromVersion(trackId, rightV, meta) : null;
-  _djSync = !!(leftRow && rightRow);
+
+  // No second version of this song — put the next queue song on the right.
+  let rightFromQueue = null;
+  if (!rightV) {
+    for (let i = ytQueueIdx + 1; i < ytQueue.length; i++) {
+      if (ytQueue[i]?.trackId && ytQueue[i].trackId !== trackId) {
+        rightFromQueue = djCloneItem(ytQueue[i], i);
+        break;
+      }
+    }
+  }
+
+  const leftRow = leftV ? djRowFromVersion(trackId, leftV, meta) : null;
+  let rightRow = rightV ? djRowFromVersion(trackId, rightV, meta) : null;
+  _djSync = !!(leftRow && rightRow && leftRow.trackId === rightRow.trackId);
+
+  // Seed each deck's waiting list from the rest of the playlist, alternating
+  // ← left / right → so every song already has a side before anyone clicks.
+  let flip = 0;
+  for (let i = 0; i < ytQueue.length; i++) {
+    if (i === ytQueueIdx) continue;
+    const it = ytQueue[i];
+    if (!it?.trackId) continue;
+    if (rightFromQueue && it.trackId === rightFromQueue.trackId && i === rightFromQueue.queueIdx) continue;
+    if (it.trackId === trackId && rightV) continue; // already on both decks as versions
+    const side = (flip++ % 2 === 0) ? 'l' : 'r';
+    _djUpcoming[side].push(djCloneItem(it, i));
+  }
 
   _djActive = true;
   const overlay = document.getElementById('djOverlay');
@@ -14105,10 +14364,6 @@ async function djEnter(opts) {
   }
   const lyrSize = document.getElementById('dj-lyr-size');
   if (lyrSize) lyrSize.value = String(globalLyricSize);
-  djRenderMeta();
-  djSyncSaveUI();
-  djApplyVolumes();
-  djLoadLyrics();
 
   if (leftRow) djAttachDeck('l', leftRow, leftSeek);
   if (rightRow) {
@@ -14116,7 +14371,13 @@ async function djEnter(opts) {
       ? Math.max(0, leftSeek - tvOffset(trackId, leftRow.videoId) + tvOffset(trackId, rightRow.videoId))
       : 0;
     djAttachDeck('r', rightRow, rSeek);
+  } else if (rightFromQueue) {
+    await djLoadOntoDeck('r', rightFromQueue);
   }
+
+  djRenderMeta();
+  djSyncSaveUI();
+  djApplyVolumes();
   djStartTick();
   djSyncBtn();
 }
@@ -14138,7 +14399,9 @@ function djExit(opts) {
   _djTrackId = null;
   _djSyncAdj = { l: 0, r: 0 };
   _djCanSave = false;
-  _djAdvancing = false;
+  _djAdvancing = { l: false, r: false };
+  _djUpcoming = { l: [], r: [] };
+  _djLyrLoadedFor = null;
   const fl = document.getElementById('dj-frame-l');
   const fr = document.getElementById('dj-frame-r');
   if (fl) fl.innerHTML = '';
@@ -28634,6 +28897,7 @@ const SJ_CHANGELOG = [
     'Explore Songs and All Tracks have an Alt Video column: Alt when a song has more than one YouTube version, with a count when there are several. Sort by the column header or the Alt Video chip.',
     'Side by Side (computer and tablet): compare two YouTube versions of the same song at once, with a sound-balance crossfader, synced playback you can nudge per video, and lyrics in the middle. Open it from the player toolbar or from Versions → Open in Side by Side view — only when the song has more than one version. Exit and the normal player comes back on the default version.',
     'Side by Side polish: when a song ends it advances the queue (stays in Side by Side if the next song has versions, otherwise returns to the normal player). Editors can Save a sync nudge to that version\'s lyric timing, with who saved it shown under Sync. Lyric size sits above the lyrics; Sync playback sits beside play/pause.',
+    'Side by Side playlist: when the two decks play different songs, the middle column shows the playlist with ← and → for which deck each waiting song will rise into. Lyrics stay in the middle only while both sides are on the same song.',
     'When you expand a song in All Tracks (and the same open row on Timeline and a playlist\'s Details), you get thumbs, heart and heartbreak next to Play, the same reactions as the player.',
     'Crossfade between queued songs now blends the outgoing and incoming tracks together for the full 3 or 6 seconds you chose in Settings, instead of dipping to silence between them.',
     'Other Content expands to a Description instead of a transcript. Edit the description, year, Pull from YouTube, and grouping from the ⋯ menu — the inline year buttons are gone.',
