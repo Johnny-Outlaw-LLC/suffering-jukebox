@@ -5214,6 +5214,20 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
     </div>
   </div>
 </div>
+<!-- OTHER CONTENT GROUP MODAL -->
+<div class="pl-modal-overlay" id="ddGroupOverlay" onclick="if(event.target===this)ddCloseGroupModal()">
+  <div class="pl-modal" style="width:min(36rem,100%)">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title" id="dd-group-title">Group into album</span>
+      <button class="modal-close" onclick="ddCloseGroupModal()">&#10005;</button>
+    </div>
+    <div class="pl-modal-body" id="dd-group-body"></div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="ddCloseGroupModal()">Cancel</button>
+      <button class="pl-btn" id="dd-group-save-btn" onclick="ddSaveGroupModal()">Save group</button>
+    </div>
+  </div>
+</div>
 <!-- MANAGE PLAYLISTS MODAL -->
 <div class="pl-modal-overlay" id="plModalOverlay" onclick="if(event.target===this)closeManagePlaylists()">
   <div class="pl-modal">
@@ -5804,6 +5818,11 @@ function toggleOtherContentPending(itemId, show) {
   syncOtherContentFilterMenu();
 }
 
+function toggleOtherContentGroupPending(cb) {
+  const ids = (cb.getAttribute('data-oc-members') || '').split(',').filter(Boolean);
+  ids.forEach(id => toggleOtherContentPending(id, cb.checked));
+}
+
 function toggleAllOtherContentPending(show) {
   if (otherContentFilterPending === null) otherContentFilterPending = new Set(excludedOtherContentIds);
   filterBarOtherContent().forEach(i => show ? otherContentFilterPending.delete(i.id) : otherContentFilterPending.add(i.id));
@@ -6064,11 +6083,17 @@ function calcTLLayout(sorted, flat) {
   const PANEL_HDR_H = 48;
   const MAX_VIS_TRK = 12;
   const CONN_ZONE_H = numExp > 0 ? 40 : 0;
-  let maxTrkCount = numExp > 0
-    ? Math.max(...expandedSorted.map(alb => (tracks[alb.artist_id]||[]).filter(t => t.album_id === alb.id).length))
-    : 0;
-  if (numExp > 0 && expandedSorted.some(a => a._ddResearch)) {
-    maxTrkCount = Math.max(maxTrkCount, 8);
+  let maxTrkCount = 0;
+  if (numExp > 0) {
+    expandedSorted.forEach(alb => {
+      if (alb._ddResearchGroup) {
+        maxTrkCount = Math.max(maxTrkCount, (alb._ddGroupItems || []).length);
+      } else if (alb._ddResearch) {
+        maxTrkCount = Math.max(maxTrkCount, 3);
+      } else {
+        maxTrkCount = Math.max(maxTrkCount, (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id).length);
+      }
+    });
   }
   const PANEL_BODY_H = numExp > 0 ? PANEL_HDR_H + maxTrkCount * PANEL_TRK_H : 0;
   const TRACKS_LBL_H = 14;
@@ -6114,6 +6139,7 @@ function calcTLLayout(sorted, flat) {
 
 // ── Build HTML for a single panel (used by renderTimeline and patchPanels)
 function buildSinglePanelHTML(alb, L) {
+  if (alb._ddResearch && alb._ddResearchGroup) return buildDDResearchGroupPanelHTML(alb, L);
   if (alb._ddResearch) return buildDDResearchPanelHTML(alb, L);
   const { panelPos, panelZoneTop, AXIS_Y, ART_GAP, ART_H, LBL_TOTAL_H, LBL_GAP, PANEL_TRK_H, MAX_VIS_TRK, xOf } = L;
   const pp         = panelPos[alb.id];
@@ -6304,13 +6330,41 @@ function openMobileAlbumPanel(albId) {
   }
   _mobUserClosedPanel = false;
   // find album
-  let alb = null;
-  for (const aid of Object.keys(albums)) {
-    const found = (albums[aid] || []).find(a => a.id === albId);
-    if (found) { alb = found; break; }
+  let alb = buildVisibleAlbumList().find(a => a.id === albId);
+  if (!alb) {
+    for (const aid of Object.keys(albums)) {
+      const found = (albums[aid] || []).find(a => a.id === albId);
+      if (found) { alb = found; break; }
+    }
   }
   if (!alb) return;
   _mobOpenAlbId = albId;
+  if (alb._ddResearchGroup) {
+    const color = albumColor(alb);
+    const thumb = albumThumb(alb);
+    const year = (alb.release_date || '').slice(0, 4);
+    const views = albumViews(alb);
+    const artEl = thumb
+      ? `<img class="mob-ae-art" src="${thumb}">`
+      : `<div class="mob-ae-art-ph" style="background:${color}22;color:${color}">${alb.name.charAt(0)}</div>`;
+    expand.innerHTML = `
+    <div class="mob-ae-hdr" style="border-left:3px solid ${color}">
+      ${artEl}
+      <div style="flex:1;min-width:0">
+        <div class="mob-ae-title">${ddEsc(alb.name)}</div>
+        <div class="mob-ae-meta">${year}${views ? ' · ' + fmtV(views) + ' views' : ''} · ${(alb._ddGroupItems || []).length} items</div>
+      </div>
+      <button class="mob-ae-close" onclick="closeMobileAlbumPanel()">✕</button>
+    </div>
+    <div>${ddRenderGroupTrackLines(alb)}</div>`;
+    expand.classList.add('open');
+    setTimeout(() => expand.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+    document.querySelectorAll('.mob-chart-col').forEach(c => c.style.opacity = '');
+    const sel = [...document.querySelectorAll('.mob-chart-col')].find(c => c.getAttribute('onclick')?.includes(albId));
+    if (sel) sel.style.opacity = '1';
+    document.querySelectorAll('.mob-chart-col').forEach(c => { if (c !== sel) c.style.opacity = '0.5'; });
+    return;
+  }
   if (alb._ddResearch) {
     const item = ddItemById(albId);
     const color = albumColor(alb);
@@ -6331,7 +6385,6 @@ function openMobileAlbumPanel(albId) {
     </div>
     <div>${item ? ddResearchPanelBody(item) : ''}</div>`;
     expand.classList.add('open');
-    if (item) ddMaybeFetchTranscript(item);
     setTimeout(() => expand.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
     document.querySelectorAll('.mob-chart-col').forEach(c => c.style.opacity = '');
     const sel = [...document.querySelectorAll('.mob-chart-col')].find(c => c.getAttribute('onclick')?.includes(albId));
@@ -6438,8 +6491,6 @@ function toggleAlbumExpand(albumId) {
     const ids = [...selectedIds];
     const allAlbList = ids.flatMap(aid=>(albums[aid]||[])).sort((a,b)=>(a.release_date||'').localeCompare(b.release_date||''));
     patchPanels(buildVisibleAlbumList());
-    const item = ddItemById(albumId);
-    if (item) ddMaybeFetchTranscript(item);
   }
 }
 
@@ -7805,6 +7856,22 @@ function attachYTAPIPlayer() {
 // ── Play entire album ──────────────────────────────────────────
 function playAlbum(albumId, e) {
   if (e) { e.stopPropagation(); e.preventDefault(); }
+  const pseudo = buildVisibleAlbumList().find(a => a.id === albumId);
+  if (pseudo?._ddResearchGroup) {
+    const items = (pseudo._ddGroupItems || []).map(id => ddItemById(id)).filter(i => i?.externalId);
+    if (!items.length) return;
+    const fullQueue = items.map(i => ({ videoId: i.externalId, title: i.title, trackId: null }));
+    const first = fullQueue[0];
+    if (!ytPlayerEl) {
+      openYTPlayer(first.videoId, first.title, null, e);
+      ytQueue = fullQueue;
+      ytQueueIdx = 0;
+      updateYTQueueUI();
+    } else {
+      showAlbumQueueChoice({ name: pseudo.name, id: albumId }, fullQueue, e);
+    }
+    return;
+  }
   const ddItem = ddItemById(albumId);
   if (ddItem) {
     if (ddItem.externalId) openYTPlayer(ddItem.externalId, ddItem.title, '', e);
@@ -23344,6 +23411,9 @@ async function loadTrackAudio(trackIds) {
 // ── Album helpers ─────────────────────────────────────────────
 function albumViews(album) {
   if (barChartMode === 'hidden') return 0;
+  if (album._ddResearchGroup) {
+    return (album._ddGroupItems || []).reduce((s, id) => s + (ddItemById(id)?.viewCount || 0), 0);
+  }
   if (album._ddResearch) {
     const item = ddItemById(album.id);
     return item?.viewCount || 0;
@@ -23885,12 +23955,26 @@ function renderCommunityFilterBar() {
 }
 
 function renderOtherContentFilterSection() {
-  const items = filterBarOtherContent();
-  if (!items.length) return '';
+  const { singles, groups } = ddOtherContentFilterClusters();
+  if (!singles.length && !groups.length) return '';
   const esc = s => (s || '').replace(/</g, '&lt;');
   const ex = getOtherContentExcludedSet();
-  const allShown = items.every(i => !ex.has(i.id));
-  const rows = items.map(item => {
+  const allItems = filterBarOtherContent();
+  const allShown = allItems.length > 0 && allItems.every(i => !ex.has(i.id));
+  const groupRows = groups.map(grp => {
+    const yr = grp.items[0]?.publishedAt ? grp.items[0].publishedAt.slice(0, 4) : '?';
+    const color = ddColorForItem(grp.items[0]);
+    const memberIds = grp.items.map(i => i.id).join(',');
+    const checked = grp.items.every(i => isOtherContentShown(i.id));
+    const label = grp.title.includes(yr) ? grp.title : `${grp.title} - ${yr}`;
+    return `<label class="filter-dd-item filter-dd-item--sub" onclick="event.stopPropagation()">
+      <input type="checkbox" data-oc-group="${grp.id}" data-oc-members="${memberIds}" ${checked ? 'checked' : ''} onchange="toggleOtherContentGroupPending(this)">
+      <span class="pill-dot" style="background:${color}"></span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(label)}</span>
+      <span style="opacity:.45;font-size:.57rem;flex-shrink:0;margin-left:4px">${grp.items.length} items</span>
+    </label>`;
+  }).join('');
+  const rows = singles.map(item => {
     const yr = item.publishedAt ? item.publishedAt.slice(0, 4) : '?';
     const color = ddColorForItem(item);
     const typeLbl = item.mediaTypeLabel || DD_TYPE_LABEL[item.mediaType] || 'Other';
@@ -23907,7 +23991,7 @@ function renderOtherContentFilterSection() {
       <input type="checkbox" id="oc-filter-all-cb" ${allShown ? 'checked' : ''} onchange="toggleAllOtherContentPending(this.checked)">
       <span style="font-weight:600">Other Content</span>
     </label>
-    ${rows}`;
+    ${groupRows}${rows}`;
 }
 
 function renderFilterBar(allAlbs) {
@@ -24031,7 +24115,7 @@ function renderTimeline(albList, tlMode) {
     html += `<div data-tl-item="${alb.id}" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${lblLeft}px;top:${titleTop}px;width:${LBL_W}px;text-align:center;cursor:pointer;z-index:2">
       <div style="font-size:.67rem;font-weight:700;color:var(--text);line-height:1.3;word-break:break-word">${name}</div>
     </div>`;
-    html += `<div data-label-album="${alb.id}" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${lblLeft}px;top:${AXIS_Y + ART_GAP + LBL_TOTAL_H + LBL_GAP + ART_H + 4}px;width:${LBL_W}px;text-align:center;cursor:pointer;z-index:2;font-size:.5rem;color:${isExp ? color : 'var(--text-muted)'};letter-spacing:.06em">${isExp ? '' : (alb._ddResearch ? '▼ open' : '▼ tracks')}</div>`;
+    html += `<div data-label-album="${alb.id}" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${lblLeft}px;top:${AXIS_Y + ART_GAP + LBL_TOTAL_H + LBL_GAP + ART_H + 4}px;width:${LBL_W}px;text-align:center;cursor:pointer;z-index:2;font-size:.5rem;color:${isExp ? color : 'var(--text-muted)'};letter-spacing:.06em">${isExp ? '' : (alb._ddResearchGroup ? '▼ tracks' : alb._ddResearch ? '▼ open' : '▼ tracks')}</div>`;
 
     // Art: below the labels
     const artLeft   = x - ART_H / 2;
@@ -24074,8 +24158,10 @@ function renderListView(albList, sortOverride) {
     const yr         = (alb.release_date || '').slice(0, 4);
     const isExp      = expandedAlbumIds.has(alb.id);
     const albTracks  = (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id);
-    const ddItem     = alb._ddResearch ? ddItemById(alb.id) : null;
-    const hasVids    = alb._ddResearch
+    const ddItem     = alb._ddResearch && !alb._ddResearchGroup ? ddItemById(alb.id) : null;
+    const hasVids    = alb._ddResearchGroup
+      ? (alb._ddGroupItems || []).some(id => { const i = ddItemById(id); return i && (i.externalId || i.audioUrl); })
+      : alb._ddResearch
       ? !!(ddItem?.externalId || ddItem?.audioUrl)
       : albTracks.some(t => ytData[t.id]?.video_id);
     const _listMetricVal = albumViews(alb);
@@ -24094,7 +24180,9 @@ function renderListView(albList, sortOverride) {
         ${thumb ? `<img src="${thumb}" loading="lazy" class="list-art">` : `<div class="list-art-ph" style="background:${color}22;color:${color}">${alb.name.charAt(0)}</div>`}
         <div class="list-info">
           <div class="list-name">${alb.name}</div>
-          <div class="list-meta">${alb._ddResearch
+          <div class="list-meta">${alb._ddResearchGroup
+            ? ((alb.release_date || '').slice(0, 4) + ' · ' + (alb._ddGroupItems || []).length + ' items')
+            : alb._ddResearch
             ? ((ddItem?.publishedAt ? ddItem.publishedAt.slice(0, 4) : '?') + ' · ' + (ddItem?.mediaTypeLabel || DD_TYPE_LABEL[ddItem?.mediaType] || 'Other'))
             : (yr + ' · ' + albTracks.length + ' tracks' + (alb.added_by_name ? ' · added by ' + (alb.added_by_name || '').replace(/</g, '&lt;') : ''))}</div>
         </div>
@@ -24106,7 +24194,7 @@ function renderListView(albList, sortOverride) {
           title="Play album">▶ Play</button>` : ''}
         <div class="list-chevron">${isExp ? '▲' : '▼'}</div>
       </div>
-      ${isExp ? `<div class="list-tracks">${alb._ddResearch ? ddResearchPanelBody(ddItem) : renderTrackLines(alb, 'inline')}</div>` : ''}
+      ${isExp ? `<div class="list-tracks">${alb._ddResearchGroup ? ddRenderGroupTrackLines(alb) : alb._ddResearch ? ddResearchPanelBody(ddItem) : renderTrackLines(alb, 'inline')}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -26526,10 +26614,73 @@ function ddBuildPseudoAlbum(item) {
   };
 }
 
+const DD_GROUP_PREFIX = 'ddg:';
+
+function ddContentGroup(item) {
+  const g = item?.metadata?.content_group;
+  if (!g || typeof g !== 'object') return null;
+  const id = String(g.id || '').trim();
+  const title = String(g.title || '').trim();
+  if (!id || !title) return null;
+  return { id, title };
+}
+
+function ddGroupAlbumId(groupId) {
+  return DD_GROUP_PREFIX + groupId;
+}
+
+function ddIsGroupAlbumId(albId) {
+  return String(albId || '').startsWith(DD_GROUP_PREFIX);
+}
+
+function ddClusterOtherContentItems(items) {
+  const groups = new Map();
+  const singles = [];
+  items.forEach(item => {
+    const g = ddContentGroup(item);
+    if (g) {
+      if (!groups.has(g.id)) groups.set(g.id, { id: g.id, title: g.title, items: [] });
+      groups.get(g.id).items.push(item);
+    } else singles.push(item);
+  });
+  return { singles, groups: [...groups.values()] };
+}
+
+function ddOtherContentFilterClusters() {
+  return ddClusterOtherContentItems(filterBarOtherContent());
+}
+
+function ddBuildGroupPseudoAlbum(groupId, title, items) {
+  const sorted = items.slice().sort((a, b) =>
+    (a.publishedAt || '').localeCompare(b.publishedAt || '') || (a.title || '').localeCompare(b.title || ''));
+  const first = sorted[0];
+  const aid = first.artistId || _ddLoadedFor || ddPrimaryArtistId();
+  const yr = first.publishedAt ? first.publishedAt.slice(0, 4) : '0000';
+  const displayName = title.includes(yr) ? title : `${title} - ${yr}`;
+  return {
+    id: ddGroupAlbumId(groupId),
+    artist_id: aid,
+    name: displayName,
+    release_date: yr + '-01-01',
+    art_url: first.thumbnailUrl || null,
+    color: ddColorForItem(first),
+    _ddResearch: true,
+    _ddResearchGroup: true,
+    _ddGroupId: groupId,
+    _ddGroupTitle: title,
+    _ddGroupItems: sorted.map(i => i.id),
+  };
+}
+
 function ddVisiblePseudoAlbums() {
-  return ddSortedItems()
-    .filter(i => isOtherContentShown(i.id))
-    .map(ddBuildPseudoAlbum);
+  const shown = ddSortedItems().filter(i => isOtherContentShown(i.id));
+  const { singles, groups } = ddClusterOtherContentItems(shown);
+  const out = singles.map(ddBuildPseudoAlbum);
+  groups.forEach(grp => {
+    if (grp.items.length >= 2) out.push(ddBuildGroupPseudoAlbum(grp.id, grp.title, grp.items));
+    else if (grp.items.length === 1) out.push(ddBuildPseudoAlbum(grp.items[0]));
+  });
+  return out;
 }
 
 function buildVisibleAlbumList() {
@@ -26643,36 +26794,84 @@ function buildDDResearchPanelHTML(alb, L) {
   </div>`;
 }
 
+function buildDDResearchGroupPanelHTML(alb, L) {
+  const { panelPos, panelZoneTop, AXIS_Y, ART_GAP, ART_H, LBL_TOTAL_H, LBL_GAP, xOf } = L;
+  const pp = panelPos[alb.id];
+  const color = albumColor(alb);
+  const thumb = albumThumb(alb);
+  const yr = (alb.release_date || '').slice(0, 4);
+  const views = albumViews(alb);
+  const itemCount = (alb._ddGroupItems || []).length;
+  const hasPlay = (alb._ddGroupItems || []).some(id => {
+    const i = ddItemById(id);
+    return i && (i.externalId || i.audioUrl);
+  });
+  const name = alb.name;
+  const albX = xOf(parseInt((alb.release_date || '2000-01-01').slice(0, 4)), alb.id);
+  const panelCX = pp.left + pp.w / 2;
+  const albDx = Math.round(albX - panelCX);
+  const albDy = Math.round((AXIS_Y + ART_GAP + LBL_TOTAL_H + LBL_GAP + ART_H) - panelZoneTop);
+  return `<div class="tl-panel" data-panel-album="${alb.id}" data-alb-dx="${albDx}" data-alb-dy="${albDy}"
+    style="--alb-dx:${albDx}px;--alb-dy:${albDy}px;left:${pp.left}px;top:${panelZoneTop}px;width:${pp.w}px;
+    background:var(--bg-card);border:1px solid var(--border);border-top:2px solid ${color};z-index:3">
+    <div class="tl-panel-hdr" style="background:${color}10">
+      <div class="tl-panel-hdr-top">
+        <div class="tl-panel-art">
+          ${thumb ? `<img src="${thumb}" loading="lazy">` : `<div style="width:100%;height:100%;background:${color}22;display:flex;align-items:center;justify-content:center;color:${color};font-weight:700">${name.charAt(0)}</div>`}
+        </div>
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:700;font-size:.63rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2">${ddEsc(name)}</div>
+          <div style="font-size:.645rem;margin-top:1px"><span style="color:var(--accent);font-weight:600">${views ? fmtV(views) : '—'}</span><span style="color:var(--text-muted)"> views · ${yr} · ${itemCount} items</span></div>
+        </div>
+        <button class="tl-panel-close" onclick="event.stopPropagation();toggleAlbumExpand('${alb.id}')">✕</button>
+      </div>
+      <div class="tl-panel-hdr-actions">
+        ${hasPlay ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)" title="Play all items">▶ Play</button>` : ''}
+        ${googleUser ? `<button type="button" class="trk-more" onclick="ddOpenGroupAlbumMenu('${alb._ddGroupId}',this,event)" title="Group actions" aria-label="Group actions">⋯</button>` : ''}
+      </div>
+    </div>
+    <div style="height:auto;overflow:visible;padding-bottom:8px;">
+      ${ddRenderGroupTrackLines(alb)}
+    </div>
+  </div>`;
+}
+
+function ddRenderGroupTrackLines(alb) {
+  const items = (alb._ddGroupItems || []).map(id => ddItemById(id)).filter(Boolean);
+  const color = albumColor(alb);
+  const maxViews = Math.max(...items.map(i => i.viewCount || 0), 1);
+  const showBar = barChartMode !== 'hidden' && barChartMode !== 'mine' && barChartMode !== 'total' && barChartMode !== 'score';
+  return items.map((item, idx) => {
+    const views = item.viewCount || 0;
+    const safeN = (item.title || '').replace(/'/g, "\\'");
+    const vid = item.externalId;
+    const barPct = (views / maxViews * 100).toFixed(1);
+    const barHTML = showBar
+      ? `<div class="trk-bar-group"><div class="trk-bar-wrap"><div class="trk-bar-bg"><div class="trk-bar-fill" style="width:${barPct}%;background:${color}"></div></div></div><span class="trk-v">${fmtV(views)}</span></div>`
+      : '';
+    const playBtn = vid
+      ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}',null,event)" title="Play this item">▶ <span class="trk-play-lbl">Play</span></button>`
+      : (item.audioUrl
+        ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();ddPlayAudio('${item.id}',event)" title="Play this item">▶ <span class="trk-play-lbl">Play</span></button>`
+        : `<span class="trk-play-spacer"></span>`);
+    return `<div class="trk-line" data-dd-item="${item.id}">
+      <span class="trk-n">${idx + 1}</span>
+      <span class="trk-name">${ddEsc(item.title)}</span>
+      <div class="trk-metrics"${!showBar ? ' style="flex:0 0 auto;min-width:0"' : ''}>${barHTML}</div>
+      ${playBtn}
+      <button class="trk-more" onclick="ddOpenMenu('${item.id}',this,event)" title="More actions" aria-label="More actions">⋯</button>
+    </div>`;
+  }).join('');
+}
+
 function ddResearchPanelBody(item) {
   if (!item) return '';
-  const sliderId = 'dd-ts-' + item.id;
-  const yrVal = item.publishedAt ? item.publishedAt.slice(0, 4) : '';
-  const yrHint = item.metadata?.published_at_manual
-    ? 'Your year is saved. Pull from YouTube will not change it.'
-    : 'When this was recorded or originally published — not necessarily the YouTube upload date.';
-  const dateEdit = googleUser ? `<div class="dd-year-edit" data-dd-year-wrap="${item.id}">
-      <label>Content year
-        <input type="text" class="dd-year-input" inputmode="numeric" maxlength="4" autocomplete="off"
-          value="${yrVal}" placeholder="1995"
-          onblur="ddYearInputBlur('${item.id}', this)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();ddCommitPublishedYear('${item.id}', this.value,this)}">
-      </label>
-      <button type="button" class="ctrl-btn" onclick="ddCommitPublishedYear('${item.id}', document.querySelector('[data-dd-year-wrap=&quot;${item.id}&quot;] .dd-year-input').value)">Save year</button>
-      <button type="button" class="ctrl-btn" onclick="ddClearPublishedYear('${item.id}')">Clear year</button>
-      ${item.externalId ? `<button type="button" class="ctrl-btn" onclick="ddRefreshMeta('${item.id}')">Pull from YouTube</button>` : ''}
-      <div class="dd-year-edit-hint">${ddEsc(yrHint)}</div>
-    </div>` : '';
+  const desc = item.description
+    ? `<div class="dd-desc-text">${ddEsc(item.description)}</div>`
+    : '<div class="sc-lyrics-ph">No description yet. Use ⋯ to add one.</div>';
   return `<div class="trk-acc-body" style="padding-top:4px">
-    ${dateEdit}
-    <div class="acc-lyric-ctrl">
-      <span class="acc-lyric-size-lbl">A</span>
-      <input type="range" class="acc-lyric-slider" id="${sliderId}" min="9" max="28" value="${globalLyricSize}"
-        oninput="applyGlobalLyricSize(this.value)">
-      <span class="acc-lyric-size-lbl" style="font-size:.56rem">A</span>
-      <span class="acc-lyric-size-val" id="${sliderId}-val">${globalLyricSize}px</span>
-    </div>
-    <div class="trk-acc-lbl">Transcript</div>
-    ${ddTranscriptBodyHTML(item)}
+    <div class="trk-acc-lbl">Description</div>
+    ${desc}
   </div>`;
 }
 
@@ -26745,18 +26944,185 @@ async function ddClearPublishedYear(id) {
 
 function ddFocusYearEditor(id) {
   ddCloseMenu();
-  const wrap = document.querySelector('[data-dd-year-wrap="' + id + '"]');
-  const inp = wrap?.querySelector('.dd-year-input');
-  if (inp) {
-    inp.focus();
-    inp.select();
-    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    return;
-  }
   const cur = ddYearSavedValue(id);
   const val = prompt('Content year (when this was recorded or originally published):', cur);
   if (val === null) return;
   ddCommitPublishedYear(id, val);
+}
+
+async function ddEditDescription(id) {
+  if (!googleUser) return;
+  const item = ddItemById(id);
+  if (!item) return;
+  const val = prompt('Description for this item:', item.description || '');
+  if (val === null) return;
+  try {
+    const data = await ddRequest({ action: 'update', id, description: val });
+    if (data.item) {
+      const i = _ddItems.findIndex(x => x.id === id);
+      if (i >= 0) _ddItems[i] = data.item;
+      showToast('Description saved.');
+      ddRepaintTimeline();
+    }
+  } catch (e) {
+    showToast(e.message || 'Could not save description.');
+  }
+}
+
+function ddMergeResearchItems(items) {
+  (items || []).forEach(item => {
+    if (!item?.id) return;
+    const i = _ddItems.findIndex(x => x.id === item.id);
+    if (i >= 0) _ddItems[i] = item;
+    else _ddItems.push(item);
+  });
+}
+
+let _ddGroupSeedId = null;
+
+function ddGuessGroupTitle(seedItem, picks) {
+  const titles = [seedItem, ...(picks || [])].map(i => i?.title || '').filter(Boolean);
+  const juan = titles.some(t => /juan'?s basement/i.test(t));
+  if (juan) return "Juan's Basement Interviews";
+  const interview = titles.some(t => /interview/i.test(t));
+  if (interview) return 'Interviews';
+  const podcast = titles.some(t => /podcast|episode/i.test(t));
+  if (podcast) return 'Podcast episodes';
+  return 'Other content collection';
+}
+
+function ddOpenGroupModal(seedItemId) {
+  if (!googleUser) return;
+  const seed = ddItemById(seedItemId);
+  if (!seed) return;
+  _ddGroupSeedId = seedItemId;
+  const seedYear = ddItemYearNum(seed);
+  const candidates = ddSortedItems().filter(i => {
+    if (i.id === seedItemId) return false;
+    if (ddContentGroup(i)) return false;
+    if (!Number.isFinite(seedYear)) return true;
+    return ddItemYearNum(i) === seedYear;
+  });
+  const defaultTitle = ddGuessGroupTitle(seed, [seed]);
+  const safeTitle = defaultTitle.replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const body = document.getElementById('dd-group-body');
+  if (!body) return;
+  body.innerHTML = `<p style="font-size:.62rem;color:var(--text-muted);margin:0 0 .75rem">Pick other items from the same year to show as one album on the timeline.</p>
+    <label style="display:block;margin-bottom:.75rem">Album title
+      <input id="dd-group-name" style="width:100%;margin-top:.35rem;padding:.45rem .55rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)" value="${safeTitle}">
+    </label>
+    <div style="font-size:.58rem;font-weight:600;margin-bottom:.35rem;color:var(--text-muted)">Include</div>
+    <label class="filter-dd-item" style="margin-bottom:.25rem">
+      <input type="checkbox" data-dd-group-pick="${seed.id}" checked disabled>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${ddEsc(seed.title)}</span>
+    </label>
+    ${candidates.length ? candidates.map(i => `<label class="filter-dd-item" style="margin-bottom:.25rem">
+      <input type="checkbox" data-dd-group-pick="${i.id}" checked>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${ddEsc(i.title)}</span>
+    </label>`).join('') : '<div class="sc-lyrics-ph">No other ungrouped items from this year.</div>'}`;
+  document.getElementById('ddGroupOverlay')?.classList.add('open');
+}
+
+function ddCloseGroupModal() {
+  _ddGroupSeedId = null;
+  document.getElementById('ddGroupOverlay')?.classList.remove('open');
+}
+
+async function ddSaveGroupModal() {
+  if (!googleUser || !_ddGroupSeedId) return;
+  const title = String(document.getElementById('dd-group-name')?.value || '').trim();
+  if (!title) { showToast('Enter an album title.'); return; }
+  const ids = [...document.querySelectorAll('[data-dd-group-pick]')]
+    .filter(cb => cb.checked)
+    .map(cb => cb.getAttribute('data-dd-group-pick'))
+    .filter(Boolean);
+  if (ids.length < 2) { showToast('Pick at least two items to group.'); return; }
+  try {
+    const data = await ddRequest({ action: 'set_content_group', itemIds: ids, groupTitle: title });
+    ddMergeResearchItems(data.items);
+    showToast('Grouped on the timeline.');
+    ddCloseGroupModal();
+    ddRepaintTimeline();
+  } catch (e) {
+    showToast(e.message || 'Could not save group.');
+  }
+}
+
+async function ddRemoveFromGroup(id) {
+  if (!googleUser) return;
+  try {
+    const data = await ddRequest({ action: 'clear_content_group', id });
+    if (data.item) {
+      const i = _ddItems.findIndex(x => x.id === id);
+      if (i >= 0) _ddItems[i] = data.item;
+      showToast('Removed from group.');
+      ddRepaintTimeline();
+    }
+  } catch (e) {
+    showToast(e.message || 'Could not ungroup.');
+  }
+}
+
+async function ddRenameGroup(groupId) {
+  if (!googleUser) return;
+  const sample = _ddItems.find(i => ddContentGroup(i)?.id === groupId);
+  const cur = sample ? ddContentGroup(sample).title : '';
+  const val = prompt('Group album title:', cur);
+  if (val === null) return;
+  const title = String(val || '').trim();
+  if (!title) return;
+  try {
+    const data = await ddRequest({ action: 'rename_content_group', groupId, groupTitle: title });
+    ddMergeResearchItems(data.items);
+    showToast('Group renamed.');
+    ddRepaintTimeline();
+  } catch (e) {
+    showToast(e.message || 'Could not rename group.');
+  }
+}
+
+function ddOpenGroupAlbumMenu(groupId, anchorEl, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const already = _ddMenuAnchor === anchorEl && document.getElementById('dd-more-menu');
+  ddCloseMenu();
+  if (already) return;
+  _ddMenuAnchor = anchorEl || null;
+  const menu = document.createElement('div');
+  menu.id = 'dd-more-menu';
+  menu.className = 'sjm-menu';
+  menu.onmousedown = (e) => e.stopPropagation();
+  menu.innerHTML = [
+    `<button type="button" class="sjm-item" onclick="ddCloseMenu();ddRenameGroup('${groupId}')"><span class="sjm-label">Rename group…</span></button>`,
+    `<button type="button" class="sjm-item" onclick="ddCloseMenu();ddUngroupAll('${groupId}')"><span class="sjm-label">Ungroup all</span></button>`,
+  ].join('');
+  document.body.appendChild(menu);
+  if (anchorEl) anchorEl.setAttribute('aria-expanded', 'true');
+  const r = anchorEl.getBoundingClientRect();
+  const left = Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8);
+  menu.style.left = Math.max(8, left) + 'px';
+  const below = window.innerHeight - r.bottom;
+  menu.style.top = (below < menu.offsetHeight + 12 && r.top > menu.offsetHeight + 12)
+    ? Math.max(8, r.top - menu.offsetHeight - 6) + 'px'
+    : Math.min(r.bottom + 6, window.innerHeight - menu.offsetHeight - 8) + 'px';
+  setTimeout(() => document.addEventListener('mousedown', _ddMenuOutside, true), 0);
+}
+
+async function ddUngroupAll(groupId) {
+  if (!googleUser) return;
+  const members = _ddItems.filter(i => ddContentGroup(i)?.id === groupId);
+  try {
+    for (const m of members) {
+      const data = await ddRequest({ action: 'clear_content_group', id: m.id });
+      if (data.item) {
+        const i = _ddItems.findIndex(x => x.id === m.id);
+        if (i >= 0) _ddItems[i] = data.item;
+      }
+    }
+    showToast('Group removed.');
+    ddRepaintTimeline();
+  } catch (e) {
+    showToast(e.message || 'Could not ungroup.');
+  }
 }
 
 async function ddRefreshMeta(id) {
@@ -26766,7 +27132,7 @@ async function ddRefreshMeta(id) {
     if (data.item) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
-      showToast(data.item.transcript ? 'Updated from YouTube, transcript pulled.' : 'Updated from YouTube. No captions found on this upload.');
+      showToast('Updated from YouTube.');
       ddRepaintTimeline();
     }
   } catch (e) {
@@ -26808,12 +27174,11 @@ function ddExpandAll() {
   ddCloseMenu();
   ddVisiblePseudoAlbums().forEach(a => expandedAlbumIds.add(a.id));
   ddRepaintTimeline();
-  ddSortedItems().filter(i => isOtherContentShown(i.id)).forEach(i => ddMaybeFetchTranscript(i));
 }
 
 function ddCollapseAll() {
   ddCloseMenu();
-  filterBarOtherContent().forEach(i => expandedAlbumIds.delete(i.id));
+  ddVisiblePseudoAlbums().forEach(a => expandedAlbumIds.delete(a.id));
   ddStopTranscriptPoll();
   ddRepaintTimeline();
 }
@@ -26844,12 +27209,17 @@ function ddOpenMenu(itemId, anchorEl, ev) {
   menu.onmousedown = (e) => e.stopPropagation();
   const rows = [];
   if (item.sourceUrl) rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();window.open('${ddEsc(item.sourceUrl).replace(/'/g, "\\'")}','_blank','noopener')"><span class="sjm-label">Open original ↗</span></button>`);
-  if (item.externalId) rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddRefreshMeta('${item.id}')"><span class="sjm-label">Pull from YouTube</span></button>`);
-  if (!item.transcript && (item.storagePath || item.audioUrl || item.externalId)) {
-    rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddFetchTranscript('${item.id}',{forceDeepgram:true})"><span class="sjm-label">Fetch transcript</span></button>`);
-  }
   if (googleUser) {
+    rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddEditDescription('${item.id}')"><span class="sjm-label">Edit description…</span></button>`);
     rows.push(`<button type="button" class="sjm-item" onclick="ddFocusYearEditor('${item.id}')"><span class="sjm-label">Edit year…</span></button>`);
+    if (item.externalId) rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddRefreshMeta('${item.id}')"><span class="sjm-label">Pull from YouTube</span></button>`);
+    const grp = ddContentGroup(item);
+    if (grp) {
+      rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddRenameGroup('${grp.id}')"><span class="sjm-label">Rename group…</span></button>`);
+      rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddRemoveFromGroup('${item.id}')"><span class="sjm-label">Remove from group</span></button>`);
+    } else {
+      rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddOpenGroupModal('${item.id}')"><span class="sjm-label">Group into album…</span></button>`);
+    }
     rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddRemoveItem('${item.id}')"><span class="sjm-label">Remove</span></button>`);
   }
   menu.innerHTML = rows.join('') || '<div class="sjm-item" style="cursor:default;color:var(--text-muted)"><span class="sjm-label">No actions</span></div>';
@@ -27139,8 +27509,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-31';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-31', items: [
-    'Other Content items now have a Content year field when you expand them (signed in). Set the year the interview or video was recorded — not the YouTube upload date — then press Save year or Enter. Pull from YouTube will not overwrite a year you set yourself.',
-    'YouTube transcripts for Other Content now pull reliably again on Pull from YouTube and when you expand an item — including auto-captioned interviews that used to stay stuck on No transcript yet.',
+    'Other Content expands to a Description instead of a transcript. Edit the description, year, Pull from YouTube, and grouping from the ⋯ menu — the inline year buttons are gone.',
+    'Group interviews and podcasts from the same year into one timeline album — for example Juan\'s Basement Interviews - 2013. Use ⋯ → Group into album on any item, pick the others, and save.',
   ]},
   { date: '2026-08-30', items: [
     'Other Content now lives in the main jukebox instead of a separate Research screen. Podcasts, interviews, documentaries and other YouTube supplemental video sit on the same timeline as the albums when you turn them on.',

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createB2DownloadUrl, createB2UploadUrl } from "@/lib/b2-audio";
 import { bad, clientIp, rateLimited, tooMany } from "@/lib/jukebox-request";
@@ -406,9 +407,109 @@ export async function POST(req: NextRequest) {
         const t = String(body.title || "").trim();
         if (t) patch.title = t.slice(0, 500);
       }
+      if (body.description !== undefined) {
+        const d = String(body.description || "").trim();
+        patch.description = d ? d.slice(0, 10000) : null;
+      }
       if (!Object.keys(patch).length) return bad("Nothing to update.");
       const { data, error } = await T(sb, "research_items")
         .update(patch)
+        .eq("id", id)
+        .select(RESEARCH_ITEM_SELECT)
+        .single();
+      if (error) throw error;
+      return NextResponse.json({ ok: true, item: shapeResearchItem(data) });
+    }
+
+    if (action === "set_content_group") {
+      const user = await authEmail(req);
+      if (!user) return bad("Sign in to group other content.", 401);
+      const itemIds = Array.isArray(body.itemIds)
+        ? body.itemIds.map((x: unknown) => String(x || "").trim()).filter(isUuid)
+        : [];
+      const groupTitle = String(body.groupTitle || "").trim().slice(0, 200);
+      if (!itemIds.length || !groupTitle) return bad("Pick at least one item and a group title.");
+      const groupId = String(body.groupId || "").trim() || randomUUID();
+      const { data: rows, error: loadErr } = await T(sb, "research_items")
+        .select("id,artist_id,metadata")
+        .in("id", itemIds);
+      if (loadErr) throw loadErr;
+      if (!rows?.length) return bad("Items not found.", 404);
+      const artistIds = new Set(rows.map((r) => r.artist_id));
+      if (artistIds.size > 1) return bad("All items must belong to the same artist.");
+      const updated: unknown[] = [];
+      for (const row of rows) {
+        const meta =
+          row.metadata && typeof row.metadata === "object"
+            ? { ...(row.metadata as Record<string, unknown>) }
+            : {};
+        meta.content_group = { id: groupId, title: groupTitle };
+        const { data, error } = await T(sb, "research_items")
+          .update({ metadata: meta })
+          .eq("id", row.id)
+          .select(RESEARCH_ITEM_SELECT)
+          .single();
+        if (error) throw error;
+        updated.push(data);
+      }
+      return NextResponse.json({
+        ok: true,
+        groupId,
+        items: updated.map((r) => shapeResearchItem(r)),
+      });
+    }
+
+    if (action === "rename_content_group") {
+      const user = await authEmail(req);
+      if (!user) return bad("Sign in to rename a group.", 401);
+      const groupId = String(body.groupId || "").trim();
+      const groupTitle = String(body.groupTitle || "").trim().slice(0, 200);
+      if (!groupId || !groupTitle) return bad("groupId and groupTitle are required.");
+      const { data: rows, error: loadErr } = await T(sb, "research_items")
+        .select("id,metadata")
+        .filter("metadata->content_group->>id", "eq", groupId);
+      if (loadErr) throw loadErr;
+      if (!rows?.length) return bad("Group not found.", 404);
+      const updated: unknown[] = [];
+      for (const row of rows) {
+        const meta =
+          row.metadata && typeof row.metadata === "object"
+            ? { ...(row.metadata as Record<string, unknown>) }
+            : {};
+        const g = meta.content_group;
+        if (!g || typeof g !== "object") continue;
+        meta.content_group = { ...(g as Record<string, unknown>), id: groupId, title: groupTitle };
+        const { data, error } = await T(sb, "research_items")
+          .update({ metadata: meta })
+          .eq("id", row.id)
+          .select(RESEARCH_ITEM_SELECT)
+          .single();
+        if (error) throw error;
+        updated.push(data);
+      }
+      return NextResponse.json({
+        ok: true,
+        items: updated.map((r) => shapeResearchItem(r)),
+      });
+    }
+
+    if (action === "clear_content_group") {
+      const user = await authEmail(req);
+      if (!user) return bad("Sign in to ungroup other content.", 401);
+      const id = String(body.id || "").trim();
+      if (!isUuid(id)) return bad("id is required.");
+      const { data: existing } = await T(sb, "research_items")
+        .select("metadata")
+        .eq("id", id)
+        .maybeSingle();
+      if (!existing) return bad("Item not found.", 404);
+      const meta =
+        existing.metadata && typeof existing.metadata === "object"
+          ? { ...(existing.metadata as Record<string, unknown>) }
+          : {};
+      delete meta.content_group;
+      const { data, error } = await T(sb, "research_items")
+        .update({ metadata: meta })
         .eq("id", id)
         .select(RESEARCH_ITEM_SELECT)
         .single();
