@@ -18910,12 +18910,16 @@ async function openLiveRoomFromUrl() {
   openPlaylistChart(room.id);
 }
 let playlistWallSize = 120;
-let playlistWallMode = 'thumbs'; // 'thumbs' | 'detail'
+// Details first: a saved playlist / Explore open lands on the list, then
+// plWallPrepCovers() warms artwork so flipping to Covers does not hitch.
+// Key v2 so an old Covers preference from the thumbs-default era does not
+// override the new product default once.
+let playlistWallMode = 'detail'; // 'thumbs' | 'detail'
 let playlistWallAutoSize = false;
 try {
   const _pws = parseInt(localStorage.getItem('sj_pl_wall_size'), 10);
   if (Number.isFinite(_pws) && _pws >= 72 && _pws <= 260) playlistWallSize = _pws;
-  const _pwm = localStorage.getItem('sj_pl_wall_mode');
+  const _pwm = localStorage.getItem('sj_pl_wall_mode_v2');
   if (_pwm === 'detail' || _pwm === 'thumbs') playlistWallMode = _pwm;
   playlistWallAutoSize = localStorage.getItem('sj_pl_wall_autosize') === '1';
 } catch (_) {}
@@ -18985,7 +18989,7 @@ function setPlaylistWallSize(px, persist = true) {
 
 function setPlaylistWallMode(mode) {
   playlistWallMode = mode === 'detail' ? 'detail' : 'thumbs';
-  try { localStorage.setItem('sj_pl_wall_mode', playlistWallMode); } catch (_) {}
+  try { localStorage.setItem('sj_pl_wall_mode_v2', playlistWallMode); } catch (_) {}
   plWallClosePop();
   // Details on a long queue should not chase the playing song unless the
   // listener asks - that chase is what used to freeze the page.
@@ -18993,6 +18997,44 @@ function setPlaylistWallMode(mode) {
     plAutoScroll = false;
   }
   if (viewMode === 'playlistchart') renderPlaylistChart();
+}
+
+/** Quietly decode cover URLs while Details is on screen so Covers is cached. */
+let _plCoverPrepToken = 0;
+function plWallPrepCovers() {
+  if (playlistWallMode !== 'detail' || viewMode !== 'playlistchart') return;
+  const token = ++_plCoverPrepToken;
+  const seen = new Set();
+  const urls = [];
+  for (const r of (playlistChartRows || [])) {
+    const u = r && r.artwork;
+    if (!u || u === '/favicon.png' || seen.has(u)) continue;
+    seen.add(u);
+    urls.push(u);
+  }
+  if (!urls.length) return;
+  let i = 0;
+  const step = () => {
+    if (token !== _plCoverPrepToken) return;
+    if (playlistWallMode !== 'detail' || viewMode !== 'playlistchart') return;
+    const end = Math.min(i + 20, urls.length);
+    for (; i < end; i++) {
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = urls[i];
+    }
+    if (i >= urls.length) return;
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(step, { timeout: 900 });
+    } else {
+      setTimeout(step, 32);
+    }
+  };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(step, { timeout: 1400 });
+  } else {
+    setTimeout(step, 80);
+  }
 }
 
 // Now Playing's Detail table only: which column it is sorted by ('order' is
@@ -21913,6 +21955,9 @@ function plWallFillList(host, q, curIdx, isDetail, scrollToCurrent, keepDrawn) {
     plWallAfterFill(scrollToCurrent);
     plWallWatchFillScroll();
     if (keepTop != null && scroll && scroll.isConnected) scroll.scrollTop = keepTop;
+    // Details is the open default: warm cover art in idle time so Covers
+    // does not wait on a cold image cache the first time somebody flips.
+    if (isDetail) plWallPrepCovers();
     sjPerf('playlist-wall.fill-initial', {
       run: sjPerformanceRun,
       mode: isDetail ? 'details' : 'covers',
@@ -29861,6 +29906,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-31';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-31', items: [
+    'Opening a playlist (Explore Playlists or Now Playing) starts on Details. Cover art still loads quietly in the background so switching to Covers stays smooth.',
     'Playlists get a custom web address like /p/my-mix as soon as you open the playlist (not only after Share). Share still offers Copy Link, Text, Email, X, Facebook and Reddit — no Export Image step. The Share panel follows light and dark mode.',
     'Other Content is now called Supplemental Content — same Albums menu section and Add button, clearer name.',
     'Add Supplemental Content is a narrower panel. Search results hide videos you already imported, and each result has Preview that opens a small player under the row (same idea as adding a song to a playlist).',
