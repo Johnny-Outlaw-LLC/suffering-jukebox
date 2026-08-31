@@ -129,13 +129,18 @@ export async function catalogIndex(sb: Sb): Promise<CatalogIndex> {
  * The private artists this listener imported. Their songs are in their jukebox
  * as surely as a public artist's are, but nobody else's picker should hide
  * music they cannot see, so this is looked up per person and never cached.
+ * Ownership is artists.added_by — the same rule Explore uses — not a stale
+ * content_access grant.
  */
 export async function privateIndexFor(sb: Sb, userEmail: string): Promise<CatalogIndex> {
   const index = emptyIndex();
   if (!userEmail) return index;
-  const { data: access, error } = await T(sb, "content_access").select("artist_id").eq("user_email", userEmail);
+  const { data: owned, error } = await T(sb, "artists")
+    .select("id")
+    .eq("visibility", "private")
+    .ilike("added_by", userEmail);
   if (error) throw error;
-  const artistIds = (access ?? []).map((row: any) => row.artist_id as string).filter(Boolean);
+  const artistIds = (owned ?? []).map((row: any) => row.id as string).filter(Boolean);
   if (!artistIds.length) return index;
   const { data, error: trackError } = await T(sb, "tracks")
     .select("name,albums!inner(artist_id,artists!inner(name))")

@@ -56,8 +56,11 @@ async function loadResolveIndex(sb: Sb, userEmail: string): Promise<Map<string, 
   }
 
   if (userEmail) {
-    const { data: access } = await T(sb, "content_access").select("artist_id").eq("user_email", userEmail);
-    const artistIds = (access ?? []).map((r: any) => r.artist_id).filter(Boolean);
+    const { data: owned } = await T(sb, "artists")
+      .select("id")
+      .eq("visibility", "private")
+      .ilike("added_by", userEmail);
+    const artistIds = (owned ?? []).map((r: any) => r.id).filter(Boolean);
     if (artistIds.length) {
       const { data } = await T(sb, "tracks")
         .select("id,name,album_id,albums!inner(id,name,artist_id,artists!inner(id,name))")
