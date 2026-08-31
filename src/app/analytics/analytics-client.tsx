@@ -5,6 +5,7 @@ import type { Session } from "@supabase/supabase-js";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
 import AnalyticsDashboard from "./analytics-dashboard";
 import DataManager from "./data-manager";
+import ImportMissing, { type MissingSong } from "./import-missing";
 import styles from "./analytics.module.css";
 import { parseYouTubeTakeoutHtml, type YouTubeMusicConfidence } from "@/lib/youtube-history";
 
@@ -90,7 +91,7 @@ function eventIdentity(event: HistoryEvent) {
   return [event.source, event.contentType, event.uri || event.videoId || "", event.playedAt, event.durationMs, event.title, event.artist, event.album].join("\0");
 }
 
-function Wizard({ onComplete }: { onComplete: () => void }) {
+function Wizard({ accessToken, onComplete }: { accessToken: string; onComplete: () => void }) {
   const [importSource, setImportSource] = useState<"spotify" | "youtube">("spotify");
   const [step, setStep] = useState(1);
   const [events, setEvents] = useState<HistoryEvent[]>([]);
@@ -102,6 +103,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
   const [saveProgress, setSaveProgress] = useState({ done: 0, total: 0 });
   const [saved, setSaved] = useState<{ inserted: number; skipped: number } | null>(null);
   const [artistSearch, setArtistSearch] = useState("");
+  const [addingToJukebox, setAddingToJukebox] = useState(false);
   const IMPORT_BATCH = 1000;
 
   const summary = useMemo(() => {
@@ -126,6 +128,15 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
 
   const selectedEvents = useMemo(() => events.filter((_, index) => includedEventIndexes.has(index)), [events, includedEventIndexes]);
   const selectedDurationMs = useMemo(() => selectedEvents.reduce((total, event) => total + event.durationMs, 0), [selectedEvents]);
+  const youtubeSongs = useMemo<MissingSong[]>(() => {
+    const unique = new Map<string, MissingSong>();
+    for (const item of selectedEvents) {
+      if (item.source !== "youtube" || !item.videoId) continue;
+      const key = `${item.artist}\0${item.title}\0${item.videoId}`;
+      if (!unique.has(key)) unique.set(key, { key, artist: item.artist, title: item.title, videoId: item.videoId, videoTitle: item.title, channelTitle: item.channel });
+    }
+    return [...unique.values()];
+  }, [selectedEvents]);
   const indexesForType = useMemo(() => {
     const indexes: Record<ContentType, number[]> = { music: [], podcast: [], audiobook: [], other: [] };
     events.forEach((event, index) => indexes[event.contentType].push(index));
@@ -322,6 +333,8 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     {step === 4 && <div className={styles.stepBody}>
       {saved ? <div className={styles.success}><h2>{importSource === "spotify" ? "Spotify" : "YouTube"} history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} already on file and skipped` : ""}.</p><p className={styles.muted}>Re-importing the same export is safe — only missing listens are added.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><p className={styles.muted}>Safe to re-run the same files: listens you already imported are skipped, and only what is still missing gets saved.</p>{importSource === "spotify" && <label className={styles.insightsConsent}><input type="checkbox" checked={contributeInsights} onChange={event => setContributeInsights(event.target.checked)} /><span><strong>Contribute de-identified music insights</strong><small>Optional. We may use music listening patterns from this import to create aggregated, de-identified research and commercial insights. We do not include raw files, account details, IP addresses, device data, podcasts, audiobooks, or other non-music activity. Your private Analytics work either way. You can withdraw this choice through a privacy request.</small></span></label>}<div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>{importSource === "spotify" ? "Music, podcasts, audiobooks, and other listening events — never IP addresses" : "Selected music candidates, YouTube provenance, and confidence — never the raw file"}</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
     </div>}
+    {saved && importSource === "youtube" && youtubeSongs.length > 0 && <div className={styles.actions}><button className={styles.primaryButton} onClick={() => setAddingToJukebox(true)}>Add selected songs to My Jukebox</button></div>}
+    {addingToJukebox && <ImportMissing accessToken={accessToken} songs={youtubeSongs} source="youtube" initialSelected={youtubeSongs.slice(0, 20).map(song => song.key)} onClose={() => setAddingToJukebox(false)} onImported={() => onComplete()} />}
   </section>;
 }
 
@@ -395,7 +408,7 @@ export default function AnalyticsClient() {
         <>
           {error && <div className={styles.error}>{error}</div>}
           {view === "import" ? (
-            <Wizard onComplete={() => { setDashKey((k) => k + 1); setView("dashboard"); setError(""); }} />
+            <Wizard accessToken={accessToken} onComplete={() => { setDashKey((k) => k + 1); setError(""); }} />
           ) : view === "manage" && accessToken ? (
             <DataManager accessToken={accessToken} onChange={() => setDashKey((k) => k + 1)} />
           ) : accessToken ? (

@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./import-missing.module.css";
 
-export type MissingSong = { key: string; title: string; artist: string };
+export type MissingSong = { key: string; title: string; artist: string; videoId?: string; videoTitle?: string; channelTitle?: string };
 
 /* A YouTube search costs 100 quota units AND /api/my-jukebox/search is rate
    limited to 20 requests a minute per IP. One pass is therefore 20 songs: it
@@ -41,6 +41,7 @@ type Summary = { added: number; duplicate: number; failed: number; lyrics: numbe
 type Props = {
   accessToken: string;
   songs: MissingSong[];
+  source?: "spotify" | "youtube";
   initialSelected?: string[];
   onClose: () => void;
   onImported: (added: number) => void;
@@ -58,7 +59,7 @@ function fmtViews(views: number | null) {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export default function ImportMissing({ accessToken, songs, initialSelected, onClose, onImported }: Props) {
+export default function ImportMissing({ accessToken, songs, source = "spotify", initialSelected, onClose, onImported }: Props) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [picked, setPicked] = useState<Set<string>>(() => new Set(initialSelected ?? []));
   const [filter, setFilter] = useState("");
@@ -157,6 +158,14 @@ export default function ImportMissing({ accessToken, songs, initialSelected, onC
       if (cancelled.current) break;
       say(song.artist + " — " + song.title + "…");
       try {
+        if (song.videoId) {
+          found.push({ videoId: song.videoId, title: song.videoTitle || song.title,
+            channelTitle: song.channelTitle || song.artist,
+            thumbnail: `https://i.ytimg.com/vi/${song.videoId}/mqdefault.jpg`, views: null,
+            keep: true, artist: song.artist, track: song.title });
+          say("  ✓ original video from Google Takeout", "ok");
+          continue;
+        }
         const query = encodeURIComponent(song.artist + " " + song.title);
         const result = await call("/api/my-jukebox/search?q=" + query, { method: "GET" });
         const video = (result.results || [])[0];
@@ -217,7 +226,7 @@ export default function ImportMissing({ accessToken, songs, initialSelected, onC
             // is, so there is no running time to hand over here. YouTube's own
             // contentDetails fills it in, and LRCLIB matches on that.
             durationMs: null,
-            source: "spotify",
+            source,
             visibility,
           }),
         });
