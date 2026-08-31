@@ -200,12 +200,21 @@ export async function runArtistResearch(artistName: string): Promise<ResearchCan
 
 const INNERTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 const INNERTUBE_PLAYER_URL = `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}&prettyPrint=false`;
+const INNERTUBE_PLAYER_URL_NO_KEY = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
 const INNERTUBE_IOS_CLIENT = {
   clientName: "IOS",
   clientVersion: "20.10.38",
   clientId: "5",
   userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 17_4 like Mac OS X)",
 } as const;
+const INNERTUBE_ANDROID_CLIENT = {
+  clientName: "ANDROID",
+  clientVersion: "20.10.38",
+  clientId: "3",
+  userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
+} as const;
+
+type InnertubeClient = typeof INNERTUBE_IOS_CLIENT | typeof INNERTUBE_ANDROID_CLIENT;
 
 type CaptionTrack = {
   languageCode?: string;
@@ -230,7 +239,7 @@ function pickCaptionTrack(tracks: CaptionTrack[], lang?: string): CaptionTrack |
   );
 }
 
-function innertubeHeaders(client = INNERTUBE_IOS_CLIENT): Record<string, string> {
+function innertubeHeaders(client: InnertubeClient): Record<string, string> {
   return {
     "Content-Type": "application/json",
     "User-Agent": client.userAgent,
@@ -239,31 +248,17 @@ function innertubeHeaders(client = INNERTUBE_IOS_CLIENT): Record<string, string>
   };
 }
 
-async function fetchCaptionTracks(videoId: string): Promise<CaptionTrack[]> {
+async function fetchCaptionTracksForClient(
+  videoId: string,
+  client: InnertubeClient,
+  playerUrl: string,
+  body: Record<string, unknown>,
+): Promise<CaptionTrack[]> {
   try {
-    const resp = await fetch(INNERTUBE_PLAYER_URL, {
+    const resp = await fetch(playerUrl, {
       method: "POST",
-      headers: innertubeHeaders(),
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: INNERTUBE_IOS_CLIENT.clientName,
-            clientVersion: INNERTUBE_IOS_CLIENT.clientVersion,
-            hl: "en",
-            gl: "US",
-            deviceMake: "Apple",
-            deviceModel: "iPhone16,2",
-            osName: "iPhone",
-            osVersion: "17_4.0",
-            clientFormFactor: "SMALL_FORM_FACTOR",
-          },
-          user: { lockedSafetyMode: false },
-          request: { useSsl: true },
-        },
-        videoId,
-        contentCheckOk: true,
-        racyCheckOk: true,
-      }),
+      headers: innertubeHeaders(client),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) return [];
     const data = await resp.json();
@@ -273,6 +268,53 @@ async function fetchCaptionTracks(videoId: string): Promise<CaptionTrack[]> {
   } catch {
     return [];
   }
+}
+
+async function fetchCaptionTracks(videoId: string): Promise<Array<{ track: CaptionTrack; client: InnertubeClient }>> {
+  const out: Array<{ track: CaptionTrack; client: InnertubeClient }> = [];
+  const iosTracks = await fetchCaptionTracksForClient(
+    videoId,
+    INNERTUBE_IOS_CLIENT,
+    INNERTUBE_PLAYER_URL,
+    {
+      context: {
+        client: {
+          clientName: INNERTUBE_IOS_CLIENT.clientName,
+          clientVersion: INNERTUBE_IOS_CLIENT.clientVersion,
+          hl: "en",
+          gl: "US",
+          deviceMake: "Apple",
+          deviceModel: "iPhone16,2",
+          osName: "iPhone",
+          osVersion: "17_4.0",
+          clientFormFactor: "SMALL_FORM_FACTOR",
+        },
+        user: { lockedSafetyMode: false },
+        request: { useSsl: true },
+      },
+      videoId,
+      contentCheckOk: true,
+      racyCheckOk: true,
+    },
+  );
+  iosTracks.forEach((track) => out.push({ track, client: INNERTUBE_IOS_CLIENT }));
+
+  const androidTracks = await fetchCaptionTracksForClient(
+    videoId,
+    INNERTUBE_ANDROID_CLIENT,
+    INNERTUBE_PLAYER_URL_NO_KEY,
+    {
+      context: {
+        client: {
+          clientName: INNERTUBE_ANDROID_CLIENT.clientName,
+          clientVersion: INNERTUBE_ANDROID_CLIENT.clientVersion,
+        },
+      },
+      videoId,
+    },
+  );
+  androidTracks.forEach((track) => out.push({ track, client: INNERTUBE_ANDROID_CLIENT }));
+  return out;
 }
 
 function transcriptSourceForTrack(track: CaptionTrack): string {
@@ -336,15 +378,15 @@ function parseXmlTranscript(xml: string): string[] {
     .filter(Boolean);
 }
 
-async function fetchCaptionLines(baseUrl: string): Promise<string[]> {
+async function fetchCaptionLines(baseUrl: string, client: InnertubeClient): Promise<string[]> {
   const attempts = [
     `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}fmt=json3`,
     baseUrl,
   ];
   const headers = {
-    "User-Agent": INNERTUBE_IOS_CLIENT.userAgent,
-    "X-Youtube-Client-Name": INNERTUBE_IOS_CLIENT.clientId,
-    "X-Youtube-Client-Version": INNERTUBE_IOS_CLIENT.clientVersion,
+    "User-Agent": client.userAgent,
+    "X-Youtube-Client-Name": client.clientId,
+    "X-Youtube-Client-Version": client.clientVersion,
   };
   for (const url of attempts) {
     try {
@@ -377,13 +419,31 @@ export async function fetchYouTubeTranscript(videoId: string): Promise<{
   const id = parseYouTubeId(videoId);
   if (!id) return null;
   try {
-    const tracks = await fetchCaptionTracks(id);
-    const track = pickCaptionTrack(tracks, "en");
-    if (!track?.baseUrl) return null;
-    const lines = await fetchCaptionLines(track.baseUrl);
-    const text = lines.join("\n").trim();
-    if (!text) return null;
-    return { text, source: transcriptSourceForTrack(track) };
+    const trackEntries = await fetchCaptionTracks(id);
+    if (!trackEntries.length) {
+      console.warn("[research] transcript", id, "no caption tracks");
+      return null;
+    }
+    const preferred = pickCaptionTrack(trackEntries.map((entry) => entry.track), "en");
+    const ordered = preferred
+      ? [
+          ...trackEntries.filter((entry) => entry.track.baseUrl === preferred.baseUrl),
+          ...trackEntries.filter((entry) => entry.track.baseUrl !== preferred.baseUrl),
+        ]
+      : trackEntries;
+    const seen = new Set<string>();
+    for (const entry of ordered) {
+      const url = entry.track.baseUrl;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      const lines = await fetchCaptionLines(url, entry.client);
+      const text = lines.join("\n").trim();
+      if (text) {
+        return { text, source: transcriptSourceForTrack(entry.track) };
+      }
+    }
+    console.warn("[research] transcript", id, "empty caption body");
+    return null;
   } catch (e) {
     console.warn("[research] transcript", id, e);
     return null;
