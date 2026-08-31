@@ -387,9 +387,20 @@ export async function POST(req: NextRequest) {
       if (!isUuid(id)) return bad("id is required.");
       const { data: row } = await T(sb, "research_items").select("id").eq("id", id).maybeSingle();
       if (!row) return bad("Item not found.", 404);
+      const { data: existing } = await T(sb, "research_items")
+        .select("metadata")
+        .eq("id", id)
+        .maybeSingle();
+      const meta =
+        existing?.metadata && typeof existing.metadata === "object"
+          ? { ...(existing.metadata as Record<string, unknown>) }
+          : {};
       const patch: Record<string, unknown> = {};
       if (body.publishedAt !== undefined) {
         patch.published_at = body.publishedAt ? String(body.publishedAt) : null;
+        if (body.publishedAt) meta.published_at_manual = true;
+        else delete meta.published_at_manual;
+        patch.metadata = meta;
       }
       if (body.title !== undefined) {
         const t = String(body.title || "").trim();
@@ -421,10 +432,11 @@ export async function POST(req: NextRequest) {
       const info = await fetchYouTubeVideoInfo([shaped.externalId]);
       const detail = info[shaped.externalId];
       if (!detail) return bad("Could not read YouTube metadata.");
+      const manualYear = !!(shaped.metadata as Record<string, unknown>)?.published_at_manual;
       const patch: Record<string, unknown> = {
         view_count: detail.views,
-        published_at: detail.publishedAt,
       };
+      if (!manualYear) patch.published_at = detail.publishedAt;
       if (detail.thumbnail) patch.thumbnail_url = detail.thumbnail;
       if (detail.title) patch.title = detail.title.slice(0, 500);
       const cap = await fetchYouTubeTranscript(shaped.externalId);

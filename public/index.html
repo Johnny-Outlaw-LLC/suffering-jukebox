@@ -1425,9 +1425,10 @@ body.light .sc-link:hover { background: #e8e8e8; }
 .dd-list-item { display:flex; flex-direction:column; }
 .dd-list-row.open { border-color:var(--accent); }
 .dd-transcript-text { white-space:pre-wrap; line-height:1.55; font-family:var(--mono); color:var(--text); }
-.dd-date-edit { display:flex; flex-wrap:wrap; gap:.35rem; align-items:center; margin-top:.45rem; }
-.dd-date-edit label { font-family:var(--mono); font-size:.42rem; color:var(--text-muted); display:flex; flex-direction:column; gap:.2rem; }
-.dd-date-edit input[type=date] { background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font:inherit; font-size:.55rem; padding:.3rem .4rem; }
+.dd-year-edit { display:flex; flex-wrap:wrap; gap:.45rem; align-items:flex-end; margin:.45rem 0 .35rem; padding:.5rem .55rem; background:var(--bg); border:1px solid var(--border); border-radius:8px; }
+.dd-year-edit label { font-size:.58rem; color:var(--text-muted); display:flex; flex-direction:column; gap:.25rem; flex:1; min-width:6.5rem; }
+.dd-year-edit input.dd-year-input { background:var(--bg-card); border:1px solid var(--border); border-radius:6px; color:var(--text); font:inherit; font-size:.72rem; padding:.35rem .45rem; width:100%; max-width:7rem; font-variant-numeric:tabular-nums; letter-spacing:.04em; }
+.dd-year-edit-hint { flex:1 1 100%; font-size:.52rem; color:var(--text-muted); line-height:1.35; margin-top:.1rem; }
 .dd-cand { display:flex; gap:.65rem; align-items:flex-start; padding:.55rem 0; border-bottom:1px solid var(--border); }
 .dd-cand:last-child { border-bottom:none; }
 .dd-cand img { width:72px; height:72px; object-fit:cover; border-radius:6px; flex:0 0 72px; background:var(--bg); }
@@ -26645,11 +26646,21 @@ function buildDDResearchPanelHTML(alb, L) {
 function ddResearchPanelBody(item) {
   if (!item) return '';
   const sliderId = 'dd-ts-' + item.id;
-  const dateEdit = googleUser ? `<div class="dd-date-edit">
-      <label>Published date
-        <input type="date" value="${ddDateInputValue(item.publishedAt)}" onchange="ddSavePublishedDate('${item.id}', this.value)">
+  const yrVal = item.publishedAt ? item.publishedAt.slice(0, 4) : '';
+  const yrHint = item.metadata?.published_at_manual
+    ? 'Your year is saved. Pull from YouTube will not change it.'
+    : 'When this was recorded or originally published — not necessarily the YouTube upload date.';
+  const dateEdit = googleUser ? `<div class="dd-year-edit" data-dd-year-wrap="${item.id}">
+      <label>Content year
+        <input type="text" class="dd-year-input" inputmode="numeric" maxlength="4" autocomplete="off"
+          value="${yrVal}" placeholder="1995"
+          onblur="ddYearInputBlur('${item.id}', this)"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();ddCommitPublishedYear('${item.id}', this.value,this)}">
       </label>
+      <button type="button" class="ctrl-btn" onclick="ddCommitPublishedYear('${item.id}', document.querySelector('[data-dd-year-wrap=&quot;${item.id}&quot;] .dd-year-input').value)">Save year</button>
+      <button type="button" class="ctrl-btn" onclick="ddClearPublishedYear('${item.id}')">Clear year</button>
       ${item.externalId ? `<button type="button" class="ctrl-btn" onclick="ddRefreshMeta('${item.id}')">Pull from YouTube</button>` : ''}
+      <div class="dd-year-edit-hint">${ddEsc(yrHint)}</div>
     </div>` : '';
   return `<div class="trk-acc-body" style="padding-top:4px">
     ${dateEdit}
@@ -26665,20 +26676,87 @@ function ddResearchPanelBody(item) {
   </div>`;
 }
 
-async function ddSavePublishedDate(id, val) {
+function ddYearSavedValue(id) {
+  const item = ddItemById(id);
+  return item?.publishedAt ? item.publishedAt.slice(0, 4) : '';
+}
+
+function ddYearInputBlur(id, el) {
+  const raw = String(el?.value || '').trim();
+  if (!raw || !/^\d{4}$/.test(raw)) {
+    el.value = ddYearSavedValue(id);
+    return;
+  }
+  ddCommitPublishedYear(id, raw, el);
+}
+
+async function ddCommitPublishedYear(id, val, el) {
   if (!googleUser) return;
-  const publishedAt = val ? val + 'T12:00:00.000Z' : null;
+  const raw = String(val || '').trim();
+  if (!/^\d{4}$/.test(raw)) {
+    if (el) el.value = ddYearSavedValue(id);
+    showToast('Enter a four-digit year (1900–2100).');
+    return;
+  }
+  const y = parseInt(raw, 10);
+  if (y < 1900 || y > 2100) {
+    if (el) el.value = ddYearSavedValue(id);
+    showToast('Enter a year between 1900 and 2100.');
+    return;
+  }
+  const saved = ddYearSavedValue(id);
+  if (raw === saved) return;
+  await ddSavePublishedYear(id, raw);
+}
+
+async function ddSavePublishedYear(id, val) {
+  if (!googleUser) return;
+  const raw = String(val || '').trim();
+  const y = parseInt(raw, 10);
+  if (!/^\d{4}$/.test(raw) || y < 1900 || y > 2100) return;
+  const publishedAt = y + '-01-01T12:00:00.000Z';
   try {
     const data = await ddRequest({ action: 'update', id, publishedAt });
     if (data.item) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
-      showToast(val ? 'Date saved.' : 'Date cleared.');
+      showToast('Year saved.');
       ddRepaintTimeline();
     }
   } catch (e) {
-    showToast(e.message || 'Could not save date.');
+    showToast(e.message || 'Could not save year.');
   }
+}
+
+async function ddClearPublishedYear(id) {
+  if (!googleUser) return;
+  try {
+    const data = await ddRequest({ action: 'update', id, publishedAt: null });
+    if (data.item) {
+      const i = _ddItems.findIndex(x => x.id === id);
+      if (i >= 0) _ddItems[i] = data.item;
+      showToast('Year cleared.');
+      ddRepaintTimeline();
+    }
+  } catch (e) {
+    showToast(e.message || 'Could not clear year.');
+  }
+}
+
+function ddFocusYearEditor(id) {
+  ddCloseMenu();
+  const wrap = document.querySelector('[data-dd-year-wrap="' + id + '"]');
+  const inp = wrap?.querySelector('.dd-year-input');
+  if (inp) {
+    inp.focus();
+    inp.select();
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  const cur = ddYearSavedValue(id);
+  const val = prompt('Content year (when this was recorded or originally published):', cur);
+  if (val === null) return;
+  ddCommitPublishedYear(id, val);
 }
 
 async function ddRefreshMeta(id) {
@@ -26771,6 +26849,7 @@ function ddOpenMenu(itemId, anchorEl, ev) {
     rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddFetchTranscript('${item.id}',{forceDeepgram:true})"><span class="sjm-label">Fetch transcript</span></button>`);
   }
   if (googleUser) {
+    rows.push(`<button type="button" class="sjm-item" onclick="ddFocusYearEditor('${item.id}')"><span class="sjm-label">Edit year…</span></button>`);
     rows.push(`<button type="button" class="sjm-item" onclick="ddCloseMenu();ddRemoveItem('${item.id}')"><span class="sjm-label">Remove</span></button>`);
   }
   menu.innerHTML = rows.join('') || '<div class="sjm-item" style="cursor:default;color:var(--text-muted)"><span class="sjm-label">No actions</span></div>';
@@ -27059,6 +27138,7 @@ const SJ_CHANGELOG = [
     'Other Content now lives in the main jukebox instead of a separate Research screen. Podcasts, interviews, documentaries and other YouTube supplemental video sit on the same timeline as the albums when you turn them on.',
     'Open the Albums menu to find an Other Content section (off by default). Check the section or individual videos, then Apply — each one opens like an expanded album with Play, a transcript, and Pull from YouTube.',
     'YouTube transcripts now pull correctly when captions exist. Pull from YouTube on an open item refreshes the metadata and tries the transcript again.',
+    'Signed-in users can set the content year on any Other Content item — useful when a 1995 interview was uploaded to YouTube in 2022. Type all four digits, then press Enter, Save year, or click away. Pull from YouTube will not overwrite a year you set yourself.',
     'Adding other content is still sign-in only: Search YouTube or paste your own link from the Albums menu. Articles and Wikipedia results are no longer part of this feature.',
     'Every public artist jukebox page (/silver-jews, /pavement, and the rest) is now written for search engines and AI: song titles and lyrics are real text in the page, not only loaded after the player starts, and each page says it is a free online music player for that artist.',
     'The home page describes Suffering Jukebox as a free online music player and jukebox for the whole catalog, not only Silver Jews and Purple Mountains. There is also an llms.txt file so AI tools can see what the site is for.',
