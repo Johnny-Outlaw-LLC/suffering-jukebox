@@ -2772,6 +2772,17 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .pl-toggle::after { content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; transition:transform .15s; }
 .pl-toggle.on::after { transform:translateX(14px); }
 .pl-modal-footer { padding:.9rem 1.3rem; border-top:1px solid var(--border); display:flex; align-items:center; gap:.75rem; flex-shrink:0; }
+.pl-modal-footer .pls-del { margin-right:auto; }
+.pls-grant-table { width:100%; border-collapse:collapse; font-size:.52rem; margin-top:.45rem; }
+.pls-grant-table th { text-align:left; color:var(--text-muted); font-weight:600; padding:.3rem .25rem; border-bottom:1px solid var(--border); }
+.pls-grant-table td { padding:.4rem .25rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+.pls-grant-table .pls-grant-name { font-size:.55rem; color:var(--text); word-break:break-all; }
+.pls-grant-table input[type=checkbox] { width:14px; height:14px; accent-color:var(--accent); }
+.pls-public-block { display:flex; flex-direction:column; gap:.45rem; margin-top:.35rem; }
+.pl-caps-banner { margin:0 0 12px; padding:.55rem .75rem; border:1px solid var(--border); border-radius:8px; background:color-mix(in srgb,var(--accent) 8%,var(--bg)); font-family:var(--mono); font-size:.55rem; color:var(--text); line-height:1.45; }
+.pl-shared-badge { font-size:.42rem; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 45%,transparent); border-radius:4px; padding:1px 5px; margin-left:.35rem; vertical-align:middle; }
+.playlist-explore-hide-shared { display:inline-flex; align-items:center; gap:.35rem; font-family:var(--mono); font-size:.5rem; color:var(--text-muted); margin:0; cursor:pointer; user-select:none; }
+.playlist-explore-hide-shared input { accent-color:var(--accent); }
 .plb-modal { width:min(920px,96vw); max-height:92vh; }
 .plb-body { gap:.75rem; min-height:0; }
 .plb-top { display:flex; flex-direction:column; gap:.55rem; }
@@ -3222,46 +3233,37 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:inline-size; content-visibility:auto; contain-intrinsic-size:auto var(--pl-cell,120px); }
 /* The song on screen, the card that is open and anything mid-drag must never
    be skipped: they carry a frame or a shadow that spills outside the cell. */
-.pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-expanded { content-visibility:visible; }
+.pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-open { content-visibility:visible; }
 
-/* ── A cover opened in place ──────────────────────────────────────────
-   The clicked square takes the whole row and everything after it moves
-   down, the way the artist rows on the home page open. It is still the
-   same grid cell, so it keeps its place in the running order. */
-.pl-wall-cell.pl-wall-expanded {
+/* ── Cover detail opens as a new row under the selected cover ─────────
+   The clicked square and its neighbours stay put. A full-width panel is
+   inserted after the last cover on that row (grid-column 1 / -1), so the
+   wall grows downward — including when the open cover is on the last row. */
+.pl-wall-cell.pl-wall-open {
+  box-shadow:inset 0 0 0 2px var(--accent), 0 8px 22px #0008;
+  z-index:4;
+}
+.pl-wall-exp-row {
   grid-column:1 / -1;
-  aspect-ratio:auto;
-  height:clamp(272px, 38vh, 340px);
-  cursor:default;
-  overflow:hidden;
-  transition:height .28s cubic-bezier(.2,.7,.3,1);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:14px 16px 16px;
+  text-align:left;
+  background:linear-gradient(180deg, #171410f5, var(--bg-card));
+  border:1px solid var(--border);
   box-shadow:0 0 0 2px var(--accent), 0 18px 44px #000a;
-  z-index:6;
+  z-index:5;
+  animation:plExpRowIn .28s cubic-bezier(.2,.7,.3,1) both;
+  min-height:0;
 }
-/* The artwork becomes a square panel on the left instead of the backdrop.
-   Qualified with .pl-wall-cell so it outranks `.pl-wall-cell img`, which
-   otherwise ties on specificity and stretches the art across the whole card. */
-.pl-wall-cell.pl-wall-expanded > img {
-  position:absolute; left:0; top:0;
-  width:clamp(230px, 38vh, 330px); height:100%;
-  object-fit:cover;
+@keyframes plExpRowIn {
+  from { opacity:0; transform:translateY(-10px); }
+  to { opacity:1; transform:none; }
 }
-.pl-wall-expanded::after { opacity:0; }
-.pl-wall-expanded .pl-wall-name,
-.pl-wall-expanded .pl-wall-stats,
-.pl-wall-expanded .pl-wall-badges,
-.pl-wall-expanded .pl-wall-badge-hot,
-.pl-wall-expanded .pl-wall-cell-x,
-.pl-wall-expanded .pl-wall-move { display:none !important; }
-
-.pl-wall-exp {
-  position:absolute; inset:0 0 0 clamp(230px, 38vh, 330px);
-  display:flex; gap:18px; padding:16px 18px; text-align:left;
-  background:linear-gradient(90deg, #12100ef2, var(--bg-card));
-  animation:plExpIn .26s ease both;
+.pl-wall-exp-row-top {
+  display:flex; flex-direction:column; gap:8px; min-width:0;
 }
-@keyframes plExpIn { from { opacity:0; transform:translateX(8px); } to { opacity:1; transform:none; } }
-.pl-wall-exp-main { flex:1 1 52%; min-width:0; display:flex; flex-direction:column; gap:7px; }
 .pl-wall-exp-head { display:flex; align-items:flex-start; gap:10px; }
 .pl-wall-exp-titles { min-width:0; flex:1; }
 .pl-wall-exp-title {
@@ -3271,7 +3273,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-exp-sub { font-size:.62rem; color:var(--text-muted); margin-top:3px; }
 .pl-wall-exp-meta { font-size:.5rem; color:var(--accent); letter-spacing:.04em; }
 .pl-wall-exp-stats { font-size:.55rem; color:var(--text-muted); }
-.pl-wall-exp-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; align-items:center; }
+.pl-wall-exp-actions { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .pl-wall-exp-actions .sc-link { min-height:34px; }
 
 .pl-wall-exp-x {
@@ -3280,36 +3282,20 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   font-size:.7rem; line-height:1;
 }
 .pl-wall-exp-x:hover { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
-.pl-wall-exp-lyrics { flex:1 1 48%; min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+.pl-wall-exp-lyrics {
+  display:flex; flex-direction:column; gap:6px; min-width:0;
+  max-height:min(42vh, 380px); overflow:hidden;
+  border-top:1px solid var(--border); padding-top:10px;
+}
 .pl-wall-exp-lyrics .sc-section-lbl { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .pl-wall-exp-lyrics .sc-lyric-font-ctrl { display:flex; align-items:center; gap:3px; margin-left:auto; }
-.pl-wall-exp-lyrics > div:nth-child(2) { flex:1; overflow:auto; min-height:0; }
+.pl-wall-exp-lyrics > div:nth-child(2) { flex:1; overflow:auto; min-height:0; -webkit-overflow-scrolling:touch; }
 .pl-wall-exp-src { font-size:.36rem; opacity:.35; margin-top:5px; font-family:var(--mono); letter-spacing:.04em; text-align:right; }
 
-/* Between a phone and a roomy desktop the artwork is the first thing to go.
-   It is decorative here - the same cover is on the wall a row above - and at
-   820px it was taking a third of the card, which pushed the six controls into
-   a wrapped stack that the card then clipped. */
-@media (max-width: 1000px) {
-  .pl-wall-cell.pl-wall-expanded > img { display:none; }
-  .pl-wall-exp { inset:0; }
-}
-
-/* On a phone the artwork steps aside entirely - there is no room for a
-   square, the words are what the reader came for. */
 @media (max-width: 720px) {
-  /* Bounded, with the lyrics scrolling inside. Left to size itself the card
-     grew to whatever the longest song's words needed - 2,300px on a phone,
-     which pushes the rest of the wall off into next week. */
-  .pl-wall-cell.pl-wall-expanded { height:clamp(340px, 62vh, 520px); }
-  /* Same specificity as the desktop rule above, or that one wins and the
-     artwork stays. */
-  .pl-wall-cell.pl-wall-expanded > img { display:none; }
-  .pl-wall-exp { position:absolute; inset:0; flex-direction:column; gap:10px; }
-  .pl-wall-exp-main { flex:0 0 auto; }
-  .pl-wall-exp-lyrics { flex:1 1 auto; min-height:90px; }
+  .pl-wall-exp-row { padding:12px; gap:10px; }
   .pl-wall-exp-title { font-size:1rem; }
-  .pl-wall-exp-actions { margin-top:8px; }
+  .pl-wall-exp-lyrics { max-height:min(48vh, 420px); }
 }
 
 /* A wall of covers should be a wall. Three levels of padding nest here - the
@@ -3523,7 +3509,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   }
 }
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
-.pl-wall-exp .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
+.pl-wall-exp-actions .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
 .pl-wall-page.pl-wall-detail-mode .pl-wall-size { display:none; }
 .pl-detail-tbl { width:100%; border-collapse:collapse; min-width:860px; table-layout:auto; }
 .pl-detail-tbl th { font-size:.48rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); padding:.45rem .65rem; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:500; position:sticky; top:0; background:var(--bg); z-index:2; }
@@ -5125,16 +5111,36 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 
 <!-- PLAYLIST SETTINGS (owner only, from a playlist's own page) -->
 <div class="pl-modal-overlay" id="plSettingsOverlay" onclick="if(event.target===this)closePlaylistSettings()">
-  <div class="pl-modal" style="width:380px;max-width:94vw">
+  <div class="pl-modal" style="width:520px;max-width:96vw">
     <div class="pl-modal-header"><span class="pl-modal-title">Playlist Settings</span><button class="modal-close" onclick="closePlaylistSettings()">✕</button></div>
     <div class="pl-modal-body" style="gap:.75rem">
       <input class="pl-input" id="pls-name-input" maxlength="80" placeholder="Playlist name" autocomplete="off"
         onkeydown="if(event.key==='Enter'){event.preventDefault();savePlaylistSettings()}">
       <label class="pl-toggle-lbl" for="pls-access-mode">Who can open this playlist?</label>
-      <select class="pl-input" id="pls-access-mode" onchange="playlistShareModeChanged()"><option value="private">Only me</option><option value="shared">Specific people</option><option value="public">Public — appears in Explore</option></select>
-      <div id="pls-share-people" style="display:none"><div style="display:flex;gap:.4rem"><input class="pl-input" id="pls-share-email" type="email" placeholder="person@example.com"><button class="pl-btn" type="button" onclick="playlistInvitePerson()">Add</button></div><div id="pls-share-people-list" style="margin-top:.45rem;font-size:.55rem;color:var(--text-muted)"></div></div>
+      <select class="pl-input" id="pls-access-mode" onchange="playlistShareModeChanged()">
+        <option value="private">Only me</option>
+        <option value="shared">Specific people</option>
+        <option value="public">Public — appears in Explore</option>
+      </select>
+      <div id="pls-public-block" class="pls-public-block" style="display:none">
+        <label class="pl-toggle-lbl" for="pls-public-preset">Anyone on the internet</label>
+        <select class="pl-input" id="pls-public-preset" onchange="playlistPublicPresetChanged()">
+          <option value="listen">Anyone can listen</option>
+          <option value="add">Anyone can add</option>
+          <option value="reorder">Anyone can add and reorder</option>
+        </select>
+      </div>
+      <div id="pls-share-people" style="display:none">
+        <label class="pl-toggle-lbl">People with access</label>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          <input class="pl-input" id="pls-share-email" type="email" placeholder="person@example.com" style="flex:1 1 12rem">
+          <button class="pl-btn" type="button" onclick="playlistInvitePerson()">Add</button>
+        </div>
+        <div id="pls-share-people-list" style="margin-top:.35rem;font-size:.55rem;color:var(--text-muted)"></div>
+      </div>
     </div>
     <div class="pl-modal-footer">
+      <button class="pl-btn ghost pls-del" type="button" id="pls-delete-btn" onclick="deletePlaylistFromSettings()">Delete Playlist</button>
       <button class="pl-btn ghost" onclick="closePlaylistSettings()">Cancel</button>
       <button class="pl-btn" id="pls-save-btn" onclick="savePlaylistSettings()">Save</button>
     </div>
@@ -13358,6 +13364,12 @@ function sjmRenderRoot() {
       '<span class="sjm-ic">⇄</span><span class="sjm-label">Discover alternative version</span>' +
       '<span class="sjm-sub">›</span></button>' +
     (googleUser
+      ? '<button class="sjm-item" onclick="sjmEditLyrics()">' +
+          '<span class="sjm-ic">✎</span><span class="sjm-label">Edit lyrics</span></button>' +
+        '<button class="sjm-item" onclick="sjmLyricsHistory()">' +
+          '<span class="sjm-ic">◷</span><span class="sjm-label">Lyrics edit history</span></button>'
+      : '') +
+    (googleUser
       ? '<button class="sjm-item" onclick="sjmOpenBreak()">' +
           '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span>' +
           '<span class="sjm-label">' + (blocked ? 'Blocked · manage' : (isTrackOnBreak(tid) ? ('On break until ' + sjBreakUntilLabel(tid)) : 'Take a break from this song')) + '</span>' +
@@ -13524,6 +13536,18 @@ function sjmReport() {
   const tid = _sjmTrackId;
   sjmClose();
   openReportModal(tid);
+}
+
+function sjmEditLyrics() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) startLyricsEdit(tid, 'card');
+}
+
+function sjmLyricsHistory() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) openLyricsHistory(tid);
 }
 
 function sjmBgPlay() {
@@ -13873,8 +13897,9 @@ async function sjmTogglePlaylist(playlistId) {
       showToast('Removed from ' + (p.name || 'playlist') + '.');
     } else {
       const pos = plAppendPosition(p._tracks);
-      await dbPost('/playlist_tracks', { playlist_id: playlistId, track_id: tid, position: pos });
-      p._tracks = (p._tracks || []).concat([{ playlist_id: playlistId, track_id: tid, position: pos }]);
+      const credit = plTrackCredit();
+      await dbPost('/playlist_tracks', { playlist_id: playlistId, track_id: tid, position: pos, ...credit });
+      p._tracks = (p._tracks || []).concat([{ playlist_id: playlistId, track_id: tid, position: pos, ...credit }]);
       showToast('Added to ' + (p.name || 'playlist') + '.');
     }
     sjmRenderPlaylists();
@@ -13899,8 +13924,8 @@ async function sjmCreatePlaylist() {
       user_name:  sjDisplayName(),
       context:    _playlistContext(),
     });
-    await dbPost('/playlist_tracks', { playlist_id: pl.id, track_id: tid, position: PL_POS_STEP });
-    pl._tracks = [{ playlist_id: pl.id, track_id: tid, position: PL_POS_STEP }];
+    await dbPost('/playlist_tracks', { playlist_id: pl.id, track_id: tid, position: PL_POS_STEP, ...plTrackCredit() });
+    pl._tracks = [{ playlist_id: pl.id, track_id: tid, position: PL_POS_STEP, ...plTrackCredit() }];
     playlists.unshift(pl);
     _savedPlaylists.unshift(pl);
     showToast('Created "' + name + '" and added this song.');
@@ -14559,7 +14584,7 @@ async function doSavePlaylist() {
   try {
     const [pl] = await dbPost('/playlists', { name, is_public:isPublic, user_email:googleUser.email, user_name:sjDisplayName(), context:_playlistContext() });
     await dbPostRows('/playlist_tracks', ytQueue
-      .map((it, i) => ({ playlist_id:pl.id, track_id:it.trackId, position:(i + 1) * PL_POS_STEP }))
+      .map((it, i) => ({ playlist_id:pl.id, track_id:it.trackId, position:(i + 1) * PL_POS_STEP, ...plTrackCredit() }))
       .filter(r => r.track_id));
     closeSavePlaylistDialog();
     await loadPlaylists(); if (ytPlayerEl) updateYTQueueUI(); render();
@@ -14614,18 +14639,17 @@ function buildPlaylistCard(p) {
     : `<button class="pl-row-play" onclick="closeManagePlaylists();setTimeout(()=>playPlaylist('${p.id}'),100)">▶ Play</button>
        <button class="pl-row-action-btn" onclick="openPlaylistBuilder('add','${p.id}')">Add Songs</button>
        <button class="pl-row-action-btn" onclick="startRenamePlaylist('${p.id}')">Rename</button>
+       <button class="pl-row-action-btn" onclick="closeManagePlaylists();openPlaylistSettings('${p.id}')">Settings</button>
        <button class="pl-row-action-btn danger" onclick="confirmDeletePlaylist('${p.id}','${p.name.replace(/'/g,"\\'")}')">Delete</button>`;
 
   const tracksHtml = expanded ? buildTrackListHtml(p.id, trackList, isDirty) : '';
 
   const playMode = p.default_play_mode || 'order';
+  const visLabel = p.is_public || p.visibility === 'public' ? 'Public' : (p.visibility === 'shared' ? 'Shared' : 'Private');
   return `<div class="pl-card" id="pl-row-${p.id}">
     <div class="pl-row-hdr">
       ${nameHtml}
-      <select class="pl-vis-select${p.is_public?' pub':''}" onchange="changePlaylistVisibility('${p.id}',this.value==='public')">
-        <option value="private"${!p.is_public?' selected':''}>Private</option>
-        <option value="public"${p.is_public?' selected':''}>Public</option>
-      </select>
+      <span class="pl-vis-select${p.is_public?' pub':''}" style="pointer-events:none;opacity:.9" title="Open Settings to change who can access this">${visLabel}</span>
       <select class="pl-vis-select${playMode==='shuffle'?' pub':''}" title="Default play mode" onchange="changePlaylistPlayMode('${p.id}',this.value)">
         <option value="order"${playMode==='order'?' selected':''}>▶ In Order</option>
         <option value="shuffle"${playMode==='shuffle'?' selected':''}>⇄ Shuffle</option>
@@ -14721,19 +14745,68 @@ async function changePlaylistVisibility(id, isPublic) {
 }
 
 // A playlist's own page shows Playlist Settings to its owner instead of the
-// full Manage Playlists list - just this one playlist's name and visibility,
-// reusing the same dbPatch the Manage Playlists card uses.
+// full Manage Playlists list - name, who can open it, and per-person caps.
 let _plsPlaylistId = null;
+let _plsGrants = []; // [{principal, canView, canAdd, canReorder}] excluding owner
+
+function plNormalizeGrantFlags(g) {
+  const canReorder = !!g.canReorder;
+  const canAdd = !!g.canAdd || canReorder;
+  const canView = !!g.canView || canAdd;
+  return { canView, canAdd, canReorder };
+}
+
+function plCapsForPlaylist(pl) {
+  if (!pl) return { canView: false, canAdd: false, canReorder: false, isOwner: false };
+  if (pl._caps && typeof pl._caps === 'object') return pl._caps;
+  const email = (googleUser?.email || '').toLowerCase();
+  const owner = String(pl.user_email || '').toLowerCase();
+  const isOwner = !!(email && email === owner);
+  if (isOwner) return { canView: true, canAdd: true, canReorder: true, isOwner: true };
+  const grants = Array.isArray(pl._grants) ? pl._grants : [];
+  const named = email ? grants.find(g => g.principal === email) : null;
+  const pub = grants.find(g => g.principal === 'public');
+  let canView = !!(named?.canView || pub?.canView || pl.is_public);
+  let canAdd = !!(named?.canAdd || pub?.canAdd);
+  let canReorder = !!(named?.canReorder || pub?.canReorder);
+  // Legacy public with no grant row: keep yesterday's full write.
+  if (email && pl.is_public && !pub) { canView = true; canAdd = true; canReorder = true; }
+  if (!email) { canAdd = false; canReorder = false; }
+  return { canView, canAdd, canReorder, isOwner: false };
+}
+
+function plCapsBannerText(caps) {
+  if (!caps) return '';
+  if (caps.isOwner) return 'You own this playlist.';
+  if (!caps.canView) return 'You cannot open this playlist.';
+  if (caps.canReorder) return 'You can listen, add songs, and reorder. Songs you add, you can remove.';
+  if (caps.canAdd) return 'You can listen and add songs. Songs you add, you can remove.';
+  return 'You can listen.';
+}
+
+function plTrackCredit() {
+  return {
+    added_by_email: googleUser?.email ? String(googleUser.email).toLowerCase() : null,
+    added_by_name: sjDisplayName() || (googleUser?.email || '').split('@')[0] || '',
+  };
+}
 
 function openPlaylistSettings(playlistId) {
   const p = playlists.find(x => x.id === playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
   if (!p) { showToast('Playlist not found.'); return; }
   _plsPlaylistId = playlistId;
   const nameInp = document.getElementById('pls-name-input');
-  const pubTog = document.getElementById('pls-pub-toggle');
   if (nameInp) nameInp.value = p.name || '';
   const mode = document.getElementById('pls-access-mode');
   if (mode) mode.value = ['private','shared','public'].includes(p.visibility) ? p.visibility : (p.is_public ? 'public' : 'private');
+  const preset = document.getElementById('pls-public-preset');
+  if (preset) preset.value = p._publicPreset || (p.is_public ? 'reorder' : 'listen');
+  _plsGrants = Array.isArray(p._grants)
+    ? p._grants.filter(g => g.principal !== 'public').map(g => ({
+        principal: g.principal,
+        ...plNormalizeGrantFlags({ canView: g.canView ?? g.can_view, canAdd: g.canAdd ?? g.can_add, canReorder: g.canReorder ?? g.can_reorder }),
+      }))
+    : [];
   playlistShareModeChanged();
   document.getElementById('plSettingsOverlay')?.classList.add('open');
   void playlistLoadPeople();
@@ -14743,29 +14816,85 @@ function openPlaylistSettings(playlistId) {
 function closePlaylistSettings() {
   document.getElementById('plSettingsOverlay')?.classList.remove('open');
   _plsPlaylistId = null;
+  _plsGrants = [];
+}
+
+function plsCollectGrantsForSave() {
+  const mode = document.getElementById('pls-access-mode')?.value || 'private';
+  const named = (_plsGrants || []).map(g => ({ principal: g.principal, ...plNormalizeGrantFlags(g) }))
+    .filter(g => g.canView && g.principal && g.principal !== 'public');
+  if (mode === 'private') return [];
+  if (mode === 'shared') return named;
+  const preset = document.getElementById('pls-public-preset')?.value || 'listen';
+  const pub = preset === 'reorder'
+    ? { principal: 'public', canView: true, canAdd: true, canReorder: true }
+    : (preset === 'add'
+      ? { principal: 'public', canView: true, canAdd: true, canReorder: false }
+      : { principal: 'public', canView: true, canAdd: false, canReorder: false });
+  return [pub, ...named];
 }
 
 async function savePlaylistSettings() {
   if (!_plsPlaylistId) return;
   const id = _plsPlaylistId;
   const name = (document.getElementById('pls-name-input')?.value || '').trim();
-  const selectedVisibility = document.getElementById('pls-access-mode')?.value;
-  const visibility = ['private','shared','public'].includes(selectedVisibility) ? selectedVisibility : 'private';
-  const isPublic = visibility === 'public';
   if (!name) { document.getElementById('pls-name-input')?.focus(); showToast('Give the playlist a name.'); return; }
+  const grants = plsCollectGrantsForSave();
+  const visibility = grants.some(g => g.principal === 'public') ? 'public'
+    : (grants.length ? 'shared' : 'private');
+  const isPublic = visibility === 'public';
   const btn = document.getElementById('pls-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving\u2026'; }
   try {
     await dbPatch(`/playlists?id=eq.${id}`, { name, is_public: isPublic, visibility });
-    await playlistShareRequest({ action:'settings', playlistId:id, visibility });
-    [playlists, _savedPlaylists].forEach(arr => { const p = arr.find(p => p.id === id); if (p) { p.name = name; p.is_public = isPublic; p.visibility = visibility; } });
+    const data = await playlistShareRequest({ action: 'settings', playlistId: id, grants, visibility });
+    [playlists, _savedPlaylists].forEach(arr => {
+      const p = arr.find(p => p.id === id);
+      if (p) {
+        p.name = name;
+        p.is_public = isPublic;
+        p.visibility = data.visibility || visibility;
+        p._grants = data.grants || grants;
+        p._publicPreset = data.publicPreset || null;
+        p._caps = plCapsForPlaylist({ ...p, _grants: p._grants, _caps: null });
+        p._sharedWithMe = false;
+      }
+    });
     if (playlistChartId === id) { playlistChartName = name; renderPlaylistChart(); }
     closePlaylistSettings();
+    if (document.getElementById('plModalOverlay')?.classList.contains('open')) renderPlaylistList();
     showToast('Playlist updated.');
   } catch (e) {
-    showToast('Could not save settings.');
+    showToast(e.message || 'Could not save settings.');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+  }
+}
+
+async function deletePlaylistFromSettings() {
+  if (!_plsPlaylistId) return;
+  const id = _plsPlaylistId;
+  const p = playlists.find(x => x.id === id) || (_savedPlaylists || []).find(x => x.id === id);
+  const name = p?.name || 'this playlist';
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const wasOpen = playlistChartId === id;
+  try {
+    await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
+    await dbDelete(`/playlists?id=eq.${id}`);
+    delete plDirty[id]; plExpanded.delete(id); plRenaming.delete(id);
+    closePlaylistSettings();
+    await loadPlaylists();
+    syncManagePlaylistsBtn();
+    if (document.getElementById('plModalOverlay')?.classList.contains('open')) {
+      renderPlaylistList();
+      if (!playlists.length) closeManagePlaylists();
+    }
+    if (ytPlayerEl) updateYTQueueUI();
+    if (wasOpen) returnToPlaylistExplorer('playlists');
+    else render();
+    showToast('Playlist deleted.');
+  } catch (e) {
+    showToast(e.message || 'Could not delete that playlist.');
   }
 }
 
@@ -14774,37 +14903,119 @@ async function playlistShareRequest(body) {
   const r = await fetch('/api/playlist-share', { method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${session?.access_token || ''}`}, body:JSON.stringify(body) });
   const d = await r.json().catch(()=>({})); if (!r.ok || !d.ok) throw new Error(d.error || 'Could not update sharing.'); return d;
 }
-let _plsRecipients = [];
+
 function renderPlaylistSharePeople() {
   const el = document.getElementById('pls-share-people-list');
   if (!el) return;
-  if (!_plsRecipients.length) { el.innerHTML = '<div style="padding:.45rem 0;color:var(--text-muted)">No one else has access yet.</div>'; return; }
-  el.innerHTML = _plsRecipients.map(row => {
-    const email = String(row.recipient_email || '');
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.42rem 0;border-top:1px solid var(--border)"><span>' + escHtml(email) + '</span><button type="button" class="pl-btn ghost" style="padding:.2rem .42rem;font-size:.48rem" onclick="playlistRemovePerson(decodeURIComponent(\'' + encodeURIComponent(email) + '\'))">Remove</button></div>';
-  }).join('');
+  const rows = _plsGrants || [];
+  if (!rows.length) {
+    el.innerHTML = '<div style="padding:.45rem 0;color:var(--text-muted)">No one else has access yet. Add an email to invite them.</div>';
+    return;
+  }
+  el.innerHTML =
+    '<table class="pls-grant-table"><thead><tr>' +
+      '<th>Person</th><th title="Can view and play">View</th><th title="Can add songs">Add</th><th title="Can reorder">Reorder</th><th></th>' +
+    '</tr></thead><tbody>' +
+    rows.map((row, idx) => {
+      const email = String(row.principal || '');
+      const f = plNormalizeGrantFlags(row);
+      return '<tr>' +
+        '<td class="pls-grant-name">' + escHtml(email) + '</td>' +
+        '<td><input type="checkbox" ' + (f.canView ? 'checked ' : '') + 'onchange="playlistGrantFlag(' + idx + ',\'view\',this.checked)"></td>' +
+        '<td><input type="checkbox" ' + (f.canAdd ? 'checked ' : '') + 'onchange="playlistGrantFlag(' + idx + ',\'add\',this.checked)"></td>' +
+        '<td><input type="checkbox" ' + (f.canReorder ? 'checked ' : '') + 'onchange="playlistGrantFlag(' + idx + ',\'reorder\',this.checked)"></td>' +
+        '<td><button type="button" class="pl-btn ghost" style="padding:.2rem .42rem;font-size:.48rem" onclick="playlistRemovePerson(decodeURIComponent(\'' + encodeURIComponent(email) + '\'))">Remove</button></td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table>' +
+    '<div style="margin-top:.35rem;color:var(--text-muted);font-size:.48rem;line-height:1.4">Reorder implies Add and View. Save to apply. Public permissions are set above when the playlist is Public.</div>';
 }
+
+function playlistGrantFlag(idx, which, on) {
+  const row = _plsGrants[idx];
+  if (!row) return;
+  if (which === 'view') {
+    row.canView = !!on;
+    if (!on) { row.canAdd = false; row.canReorder = false; }
+  } else if (which === 'add') {
+    row.canAdd = !!on;
+    if (on) row.canView = true;
+    else row.canReorder = false;
+  } else if (which === 'reorder') {
+    row.canReorder = !!on;
+    if (on) { row.canView = true; row.canAdd = true; }
+  }
+  Object.assign(row, plNormalizeGrantFlags(row));
+  renderPlaylistSharePeople();
+}
+
 async function playlistLoadPeople() {
   if (!_plsPlaylistId) return;
   try {
-    const data = await playlistShareRequest({ action:'list-invites', playlistId:_plsPlaylistId });
-    _plsRecipients = Array.isArray(data.recipients) ? data.recipients : [];
+    const data = await playlistShareRequest({ action: 'list-grants', playlistId: _plsPlaylistId });
+    _plsGrants = (Array.isArray(data.grants) ? data.grants : [])
+      .filter(g => g.principal !== 'public')
+      .map(g => ({ principal: g.principal, ...plNormalizeGrantFlags(g) }));
+    const preset = document.getElementById('pls-public-preset');
+    if (preset && data.publicPreset) preset.value = data.publicPreset;
+    const mode = document.getElementById('pls-access-mode');
+    if (mode && data.visibility && ['private','shared','public'].includes(data.visibility)) mode.value = data.visibility;
+    playlistShareModeChanged();
+  } catch (e) {
     renderPlaylistSharePeople();
-  } catch(e) { _plsRecipients = []; renderPlaylistSharePeople(); }
+  }
 }
-function playlistShareModeChanged() { const m=document.getElementById('pls-access-mode')?.value; document.getElementById('pls-share-people').style.display=m==='shared'?'':'none'; if (m==='shared') renderPlaylistSharePeople(); }
+
+function playlistShareModeChanged() {
+  const m = document.getElementById('pls-access-mode')?.value;
+  const people = document.getElementById('pls-share-people');
+  const pub = document.getElementById('pls-public-block');
+  if (people) people.style.display = (m === 'shared' || m === 'public') ? '' : 'none';
+  if (pub) pub.style.display = m === 'public' ? '' : 'none';
+  if (m === 'shared' || m === 'public') renderPlaylistSharePeople();
+}
+
+function playlistPublicPresetChanged() {
+  // Preset only affects the Public principal on Save; named rows stay as edited.
+}
+
 async function playlistInvitePerson() {
-  const email=document.getElementById('pls-share-email')?.value||'';
+  const email = (document.getElementById('pls-share-email')?.value || '').trim().toLowerCase();
+  if (!email) { document.getElementById('pls-share-email')?.focus(); return; }
+  if (_plsGrants.some(g => g.principal === email)) {
+    showToast('That person is already on the list — adjust their checkboxes and Save.');
+    return;
+  }
+  _plsGrants.push({ principal: email, canView: true, canAdd: false, canReorder: false });
+  if (document.getElementById('pls-share-email')) document.getElementById('pls-share-email').value = '';
+  const mode = document.getElementById('pls-access-mode');
+  if (mode && mode.value === 'private') mode.value = 'shared';
+  playlistShareModeChanged();
+  renderPlaylistSharePeople();
+  // Persist immediately so an invite email can go out without waiting for Save.
   try {
-    const result = await playlistShareRequest({action:'invite',playlistId:_plsPlaylistId,email});
-    document.getElementById('pls-share-email').value='';
+    const result = await playlistShareRequest({
+      action: 'invite', playlistId: _plsPlaylistId, email,
+      canView: true, canAdd: false, canReorder: false,
+    });
     await playlistLoadPeople();
-    showToast(result.emailSent ? 'Playlist shared and invitation emailed to '+result.email : 'Playlist shared with '+result.email+(result.emailNotice ? '. '+result.emailNotice : ''));
-  } catch(e) { showToast(e.message); }
+    showToast(result.emailSent
+      ? 'Invitation emailed to ' + result.email
+      : 'Added ' + result.email + (result.emailNotice ? '. ' + result.emailNotice : ''));
+  } catch (e) {
+    showToast(e.message || 'Could not add that person.');
+  }
 }
+
 async function playlistRemovePerson(email) {
-  try { await playlistShareRequest({action:'remove-invite',playlistId:_plsPlaylistId,email}); await playlistLoadPeople(); showToast('Access removed for '+email); }
-  catch(e) { showToast(e.message); }
+  try {
+    await playlistShareRequest({ action: 'remove-invite', playlistId: _plsPlaylistId, email });
+    _plsGrants = (_plsGrants || []).filter(g => g.principal !== email);
+    renderPlaylistSharePeople();
+    showToast('Access removed for ' + email);
+  } catch (e) {
+    showToast(e.message || 'Could not remove access.');
+  }
 }
 
 async function changePlaylistPlayMode(id, mode) {
@@ -14842,7 +15053,13 @@ async function savePlaylistChanges(id) {
   try {
     await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
     await dbPostRows('/playlist_tracks', newTracks
-      .map((t, i) => ({ playlist_id: id, track_id: t.track_id, position: (i + 1) * PL_POS_STEP })));
+      .map((t, i) => ({
+        playlist_id: id,
+        track_id: t.track_id,
+        position: (i + 1) * PL_POS_STEP,
+        added_by_email: t.added_by_email || plTrackCredit().added_by_email,
+        added_by_name: t.added_by_name || plTrackCredit().added_by_name,
+      })));
     delete plDirty[id];
     await loadPlaylists(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
   } catch(e) { alert('Error saving changes: ' + e.message); }
@@ -14855,12 +15072,15 @@ function cancelPlaylistChanges(id) {
 
 async function confirmDeletePlaylist(id, name) {
   if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  const wasOpen = playlistChartId === id;
   try {
     await dbDelete(`/playlist_tracks?playlist_id=eq.${id}`);
     await dbDelete(`/playlists?id=eq.${id}`);
     delete plDirty[id]; plExpanded.delete(id); plRenaming.delete(id);
-    await loadPlaylists(); syncManagePlaylistsBtn(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI(); render();
+    await loadPlaylists(); syncManagePlaylistsBtn(); renderPlaylistList(); if (ytPlayerEl) updateYTQueueUI();
     if (!playlists.length) closeManagePlaylists();
+    if (wasOpen) returnToPlaylistExplorer('playlists');
+    else render();
   } catch(e) { alert('Error deleting: ' + e.message); }
 }
 
@@ -14885,10 +15105,10 @@ function openPlaylistBuilder(mode, playlistId) {
   _plbDraft = [];
   _plbExisting = new Set();
   _plbBusy = false;
-  // Add Songs has no source step - it opens on the Jukebox search, with the
-  // two YouTube doors sitting above it. Import still asks first.
-  _plbWizardStep = _plbMode === 'add' ? 2 : 1;
-  _plbImportSource = _plbMode === 'add' ? 'jukebox' : null;
+  // Add Songs and Create Playlist both open on the Jukebox search, with the
+  // YouTube doors one tap away — same pattern as add-to-playlist.
+  _plbWizardStep = (_plbMode === 'add' || _plbMode === 'import') ? 2 : 1;
+  _plbImportSource = (_plbMode === 'add' || _plbMode === 'import') ? 'jukebox' : null;
   _plbImportDest = mode === 'add' ? (playlistId || 'new') : 'new';
   _plbImportName = '';
   _plbImportPublic = false;
@@ -14936,7 +15156,7 @@ function openPlaylistBuilder(mode, playlistId) {
 
 // The first step of the wizard: Import asks where the songs come from, Add
 // Songs does not, so back must not walk it off the front of its own flow.
-function plbFirstStep() { return _plbMode === 'add' ? 2 : 1; }
+function plbFirstStep() { return (_plbMode === 'add' || _plbMode === 'import') ? 2 : 1; }
 
 function openPlaylistImporter() { openPlaylistBuilder('import'); }
 
@@ -14981,7 +15201,7 @@ function plbPaintChrome() {
   const top = document.getElementById('plb-top');
   const save = document.getElementById('plb-save-btn');
   if (plbIsWizard()) {
-    if (title) title.textContent = _plbMode === 'import' ? 'Import a Playlist' : 'Add Songs to Playlist';
+    if (title) title.textContent = _plbMode === 'import' ? 'Create a Playlist' : 'Add Songs to Playlist';
     if (top) top.innerHTML = plbWizardTopHTML();
     plbPaintImportLayout();
     return;
@@ -15001,20 +15221,20 @@ function plbPaintChrome() {
 }
 
 function plbWizardTopHTML() {
-  const addMode = _plbMode === 'add';
-  const labels = addMode ? ['Choose Songs', 'Confirm'] : ['Source', 'Choose Songs', 'Confirm'];
-  const cur = addMode ? _plbWizardStep - 1 : _plbWizardStep;
+  // Create Playlist and Add Songs skip the Source step and land on Jukebox
+  // search, with YouTube as a tab — same door as add-to-playlist.
+  const skipSource = _plbMode === 'add' || _plbMode === 'import';
+  const labels = skipSource ? ['Choose Songs', 'Confirm'] : ['Source', 'Choose Songs', 'Confirm'];
+  const cur = skipSource ? _plbWizardStep - 1 : _plbWizardStep;
   const steps = `<div class="plb-wizard-steps" style="--wz-cols:${labels.length}">${labels.map((label, i) => {
     const n = i + 1;
     const cls = n === cur ? ' on' : (n < cur ? ' done' : '');
     return `<div class="plb-wizard-step${cls}"><b>${n < cur ? '✓' : n}</b><span>${label}</span></div>`;
   }).join('')}</div>`;
-  // Add Songs carries the three sources as a row of tabs above the step bar,
-  // so the Jukebox search is what you land on and YouTube is one tap away.
-  const srcRow = addMode && _plbWizardStep === 2
+  const srcRow = skipSource && _plbWizardStep === 2
     ? `<div class="plb-src-row">` +
         `<button type="button" class="plb-src-tab${_plbImportSource === 'jukebox' ? ' on' : ''}" onclick="plbSetImportSource('jukebox')">Search the Jukebox</button>` +
-        `<button type="button" class="plb-src-tab${_plbImportSource === 'yt-song' ? ' on' : ''}" onclick="plbSetImportSource('yt-song')">+ Add a Song from YouTube</button>` +
+        `<button type="button" class="plb-src-tab${_plbImportSource === 'yt-song' ? ' on' : ''}" onclick="plbSetImportSource('yt-song')">Can’t find it? Add from YouTube</button>` +
         `<button type="button" class="plb-src-tab${_plbImportSource === 'yt-playlist' ? ' on' : ''}" onclick="plbSetImportSource('yt-playlist')">+ Add a Playlist from YouTube</button>` +
       `</div>`
     : '';
@@ -15037,7 +15257,7 @@ function plbWizardTopHTML() {
         ? 'Search YouTube for a song, check the artist name is right, and add it to your draft. A playlist link works here too.'
         : 'Search or browse the Jukebox, then add individual songs, full albums, or an artist’s catalogue to your draft.');
     const label = _plbImportSource === 'jukebox' ? 'Jukebox' : 'YouTube';
-    const target = addMode ? plbPlaylistById(_plbPlaylistId) : null;
+    const target = _plbMode === 'add' ? plbPlaylistById(_plbPlaylistId) : null;
     const lead = target
       ? `Adding to <b>${escHtml(target.name || 'playlist')}</b>${_plbExisting.size ? ` · ${_plbExisting.size} song${_plbExisting.size === 1 ? '' : 's'} already on it` : ''}. ` : '';
     return srcRow + steps + `<div class="plb-hint">${lead}<span class="plb-confirm-source">${label} source</span> · ${hint}</div>`;
@@ -15936,6 +16156,17 @@ async function plbSave() {
       pl._tracks = rows;
       playlists.unshift(pl);
       _savedPlaylists.unshift(pl);
+      if (isPublic) {
+        try {
+          const data = await playlistShareRequest({
+            action: 'settings', playlistId: pl.id, visibility: 'public', publicPreset: 'listen',
+          });
+          pl.visibility = data.visibility || 'public';
+          pl._grants = data.grants || [];
+          pl._publicPreset = data.publicPreset || 'listen';
+          pl._caps = plCapsForPlaylist(pl);
+        } catch (_) {}
+      }
       showToast(`Created “${name}” with ${_plbDraft.length} song${_plbDraft.length === 1 ? '' : 's'}.`);
       closePlaylistBuilder();
       syncManagePlaylistsBtn();
@@ -16010,6 +16241,7 @@ if (landingTab === 'home') {
   } catch (_) {}
 }
 let playlistExploreFilter = localStorage.getItem('sj_pl_explore_filter') || 'all'; // all | mine | public | live
+let playlistExploreHideShared = localStorage.getItem('sj_pl_explore_hide_shared') === '1';
 let playlistExploreSearchQ = '';
 let playlistExploreSort = localStorage.getItem('sj_pl_explore_sort') || 'date_desc';
 let playlistExploreContributor = localStorage.getItem('sj_pl_explore_contributor') || '';
@@ -16224,12 +16456,16 @@ function setPlaylistWallSize(px, persist = true) {
   if (persist) {
     try { localStorage.setItem('sj_pl_wall_size', String(playlistWallSize)); } catch (_) {}
   }
+  // Column count changes with size, so an open under-row would sit in the
+  // wrong place — close it rather than leave a stranded panel.
+  plWallClosePop();
   plWallApplyCellSize();
 }
 
 function setPlaylistWallMode(mode) {
   playlistWallMode = mode === 'detail' ? 'detail' : 'thumbs';
   try { localStorage.setItem('sj_pl_wall_mode', playlistWallMode); } catch (_) {}
+  plWallClosePop();
   // Details on a long queue should not chase the playing song unless the
   // listener asks - that chase is what used to freeze the page.
   if (playlistWallMode === 'detail' && localStorage.getItem('sj_pl_auto_scroll') == null) {
@@ -16312,11 +16548,17 @@ function playlistExploreRowsAll() {
     // else. A saved playlist has no business on that shelf.
     rows = [];
   } else if (scope === 'mine') {
-    rows = email ? all.filter(p => p.user_email === email) : [];
+    rows = email
+      ? all.filter(p => {
+          if (p.user_email === email) return true;
+          if (playlistExploreHideShared) return false;
+          return !!p._sharedWithMe;
+        })
+      : [];
   } else if (scope === 'public') {
     rows = all.filter(p => p.is_public);
   } else {
-    rows = all.filter(p => p.is_public || (email && p.user_email === email));
+    rows = all.filter(p => p.is_public || (email && p.user_email === email) || (email && p._sharedWithMe));
   }
   if (playlistExploreContributor && scope !== 'mine' && scope !== 'live') {
     rows = rows.filter(p => (p.user_email || '') === playlistExploreContributor);
@@ -16638,6 +16880,12 @@ function playlistMatchesSearch(p, q) {
       || (m.artist || '').includes(q)
       || (m.lyrics || '').includes(q);
   });
+}
+
+function setPlaylistExploreHideShared(on) {
+  playlistExploreHideShared = !!on;
+  try { localStorage.setItem('sj_pl_explore_hide_shared', playlistExploreHideShared ? '1' : '0'); } catch (_) {}
+  if (landingTab === 'playlists') render();
 }
 
 function setPlaylistExploreFilter(mode) {
@@ -17608,41 +17856,38 @@ let _plWallPopIdx = null;
 let _plWallCard = null;
 
 /**
- * A cover opens in place.
+ * A cover opens a detail row under its grid row.
  *
- * This used to be a floating card pinned beside the cover with a leader line
- * drawn to it, draggable around the screen. It was in the way of the thing it
- * was describing, it covered other songs, and on a phone it became a sheet
- * over the whole wall. Expanding the card itself is the same gesture the
- * artist rows on the home page already use: the square grows into a full width
- * panel and everything below it moves down to make room.
- *
- * The expanded card is still the same grid cell, so it keeps its place in the
- * running order, its index, and everything the delegated handlers do with it.
+ * The clicked cover and the covers on either side of it stay where they are.
+ * A full-width panel is inserted after the last cover on that row, so the
+ * wall grows downward (including when the open cover is on the bottom row).
+ * Edit lyrics / edit history live on the ⋯ menu, not on this panel.
  */
+function plWallColCount(grid) {
+  if (!grid) return 1;
+  const cols = getComputedStyle(grid).gridTemplateColumns.split(/\s+/).filter(Boolean);
+  return Math.max(1, cols.length);
+}
+
+function plWallRowEndIndex(i, grid, total) {
+  const cols = plWallColCount(grid);
+  return Math.min(Math.max(0, total - 1), Math.floor(i / cols) * cols + cols - 1);
+}
+
 function plWallCollapseExpanded(immediate) {
-  const cell = document.querySelector('.pl-wall-cell.pl-wall-expanded');
+  const cell = document.querySelector('.pl-wall-cell.pl-wall-open');
+  const panel = document.querySelector('.pl-wall-exp-row');
   _plWallPopIdx = null;
   _plWallCard = null;
   document.removeEventListener('keydown', _plWallPopEsc);
-  if (!cell) return;
-  const panel = cell.querySelector('.pl-wall-exp');
-  const done = () => {
-    cell.classList.remove('pl-wall-expanded');
-    cell.style.height = '';
-    if (panel) panel.remove();
-  };
+  if (cell) cell.classList.remove('pl-wall-open');
+  if (!panel) return;
+  const done = () => { panel.remove(); };
   if (immediate) { done(); return; }
-  // Back down to the square it came from, then put the cover back together.
-  cell.style.height = cell.offsetHeight + 'px';
-  if (panel) panel.style.opacity = '0';
-  requestAnimationFrame(() => {
-    cell.style.height = (cell.getBoundingClientRect().width) + 'px';
-    setTimeout(done, 260);
-  });
-  // A frame callback is not guaranteed to run (see plWallScheduleFill), and a
-  // card that never closes is worse than one that closes without animating.
-  setTimeout(() => { if (cell.classList.contains('pl-wall-expanded')) done(); }, 400);
+  panel.style.transition = 'opacity .18s ease, transform .18s ease';
+  panel.style.opacity = '0';
+  panel.style.transform = 'translateY(-8px)';
+  setTimeout(done, 200);
 }
 
 function _plWallPopEsc(ev) {
@@ -17675,8 +17920,8 @@ function plWallExpandedHTML(row, i) {
     row.addedByName ? 'Added by ' + esc(row.addedByName) : '',
   ].filter(Boolean).join(' &middot; ');
 
-  return `<div class="pl-wall-exp" onclick="event.stopPropagation()">
-    <div class="pl-wall-exp-main">
+  return `<div class="pl-wall-exp-row" onclick="event.stopPropagation()" role="region" aria-label="Song details">
+    <div class="pl-wall-exp-row-top">
       <div class="pl-wall-exp-head">
         <div class="pl-wall-exp-titles">
           <div class="pl-wall-exp-title">${esc(row.title)}</div>
@@ -17703,7 +17948,6 @@ function plWallExpandedHTML(row, i) {
           <input type="range" class="sc-font-slider" min="9" max="28" value="${globalLyricSize}" oninput="applyGlobalLyricSize(this.value)" style="width:44px">
           <span style="font-size:.44rem;color:var(--text-muted)">A</span>
         </span>
-        ${googleUser ? `<button class="lyr-edit-btn" onclick="startLyricsEdit('${row.trackId}','card');event.stopPropagation()">&#9998; Edit</button><button class="lyr-hist-btn" onclick="openLyricsHistory('${row.trackId}');event.stopPropagation()" title="Edit history">&#128336;</button>` : ''}
       </div>
       <div id="sc-lyrics-${row.trackId}" class="sc-lyrics-ph">Loading lyrics&hellip;</div>
       <div id="sc-lyrics-src-${row.trackId}" class="pl-wall-exp-src"></div>
@@ -17713,7 +17957,7 @@ function plWallExpandedHTML(row, i) {
 
 function plWallToggleExpand(i, ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-  const already = _plWallPopIdx === i && document.querySelector('.pl-wall-cell.pl-wall-expanded');
+  const already = _plWallPopIdx === i && document.querySelector('.pl-wall-exp-row');
   plWallCollapseExpanded(true);
   if (already) return;
 
@@ -17722,24 +17966,26 @@ function plWallToggleExpand(i, ev) {
   if (!item) return;
   const row = playlistChartRowFor(item, i);
   const grid = document.getElementById('pl-wall-grid');
-  const cell = grid ? plWallGridCells(grid)[i] : null;
-  if (!cell) return;
+  const cells = grid ? plWallGridCells(grid) : [];
+  const cell = cells[i] || null;
+  if (!grid || !cell) return;
 
   _plWallPopIdx = i;
   _plWallCard = { el: cell, idx: i };
-  // Pin the square it is now, so the growth animates from there.
-  cell.style.height = cell.getBoundingClientRect().height + 'px';
-  cell.insertAdjacentHTML('beforeend', plWallExpandedHTML(row, i));
-  cell.classList.add('pl-wall-expanded');
-  requestAnimationFrame(() => { cell.style.height = ''; });
-  setTimeout(() => { cell.style.height = ''; }, 60);
+  cell.classList.add('pl-wall-open');
+
+  const rowEnd = plWallRowEndIndex(i, grid, cells.length);
+  const anchor = cells[rowEnd] || cell;
+  anchor.insertAdjacentHTML('afterend', plWallExpandedHTML(row, i));
+  const panel = grid.querySelector('.pl-wall-exp-row');
 
   if (row.trackId) fetchLyrics(row.trackId);
-  // Bring it into view if the growth pushed it off the bottom.
+  // Bottom-row opens need the page to grow and then scroll so the new row
+  // is on screen — nearest keeps a mid-wall open from jumping the scroll.
   setTimeout(() => {
-    if (_plWallPopIdx !== i) return;
-    cell.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, 320);
+    if (_plWallPopIdx !== i || !panel) return;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 40);
   document.addEventListener('keydown', _plWallPopEsc);
 }
 
@@ -18795,7 +19041,7 @@ function plWallCanArrange() {
   const pl = (playlists || []).find(x => x.id === playlistChartId)
     || (_savedPlaylists || []).find(x => x.id === playlistChartId);
   if (!pl) return false;
-  return pl.user_email === googleUser.email || !!pl.is_public;
+  return !!plCapsForPlaylist(pl).canReorder;
 }
 
 /**
@@ -18808,10 +19054,10 @@ function plWallCanRemove(row) {
   if (liveRoomMode) return false;
   if (playlistChartId === '__dynamic_now_playing') return true;
   if (!googleUser) return false;
-  if (row.addedByEmail && row.addedByEmail === googleUser.email) return true;
+  if (row.addedByEmail && String(row.addedByEmail).toLowerCase() === String(googleUser.email || '').toLowerCase()) return true;
   const pl = (playlists || []).find(x => x.id === playlistChartId)
     || (_savedPlaylists || []).find(x => x.id === playlistChartId);
-  return !!(pl && pl.user_email === googleUser.email);
+  return !!plCapsForPlaylist(pl).isOwner;
 }
 
 function plWallDetailRowHTML(item, i, curIdx) {
@@ -19642,7 +19888,7 @@ async function saveLiveRoomAsPlaylist() {
       context: _playlistContext(),
     });
     await dbPostRows('/playlist_tracks', trackIds
-      .map((tid, i) => ({ playlist_id: playlist.id, track_id: tid, position: (i + 1) * PL_POS_STEP })));
+      .map((tid, i) => ({ playlist_id: playlist.id, track_id: tid, position: (i + 1) * PL_POS_STEP, ...plTrackCredit() })));
     await loadPlaylists();
     showToast('Saved "' + name.trim() + '" to My Playlists.');
   } catch (e) { showToast(e.message || 'Could not save this playlist.'); }
@@ -19717,9 +19963,13 @@ function renderPlaylistChart(error) {
 
   const _plObj = playlistChartId ? (playlists.find(p => p.id === playlistChartId) || (_savedPlaylists || []).find(p => p.id === playlistChartId)) : null;
   const minePl = !!(googleUser && _plObj && _plObj.user_email === googleUser.email);
+  const _plCaps = plCapsForPlaylist(_plObj);
   const canAddSongs = !!(googleUser && (
-    playlistChartId === '__dynamic_now_playing' || (_plObj && (minePl || _plObj.is_public))
+    playlistChartId === '__dynamic_now_playing' || (_plObj && _plCaps.canAdd)
   ));
+  const capsBanner = (!isNowPlayingPage && !liveRoomMode && _plObj && !_plObj._dynamic)
+    ? `<div class="pl-caps-banner">${esc(plCapsBannerText(_plCaps))}</div>`
+    : '';
   const listeningHere = liveRoomListeningHere();
   const canRequest = liveRoomCanRequest();
   const roomBtns = liveRoomMode
@@ -19780,7 +20030,7 @@ function renderPlaylistChart(error) {
     // Saved playlist: one title row carries Size, Covers/Details, Mix, Add,
     // Start, back and settings. Search (Details) sits underneath.
     const searchBar = searchHTML ? `<div class="pl-wall-toolbar">${searchHTML}</div>` : '';
-    pageHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div>${titleActions}</div>${searchBar}${body}</section>`;
+    pageHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div>${titleActions}</div>${capsBanner}${searchBar}${body}</section>`;
   }
 
   main.innerHTML = pageHTML;
@@ -21313,7 +21563,7 @@ async function esSelWriteTracks(playlistId, tracks, ids) {
   const fresh = ids.filter(id => !have.has(id));
   if (!fresh.length) return [];
   const base = plAppendPosition(tracks);
-  const rows = fresh.map((id, i) => ({ playlist_id: playlistId, track_id: id, position: base + i * PL_POS_STEP }));
+  const rows = fresh.map((id, i) => ({ playlist_id: playlistId, track_id: id, position: base + i * PL_POS_STEP, ...plTrackCredit() }));
   for (let i = 0; i < rows.length; i += 200) await dbPost('/playlist_tracks', rows.slice(i, i + 200));
   return rows;
 }
@@ -21480,27 +21730,36 @@ function renderLanding() {
               <span class="landing-control-lbl">Card Size</span>
               ${sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize))}
             </div>
+            ${plScope() === 'mine' && googleUser ? `<label class="playlist-explore-hide-shared"><input type="checkbox"${playlistExploreHideShared ? ' checked' : ''} onchange="setPlaylistExploreHideShared(this.checked)"><span>Hide shared</span></label>` : ''}
           </div>
-          ${rows.length ? `${plScope() !== 'live' && rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid pl-size-${playlistCardSize}">${rows.map(p => {
-            const mine = googleUser && p.user_email === googleUser.email;
-            // Three levels of detail, all three always written and the size
-            // class deciding which show - that is what lets the slider resize
-            // the wall live without a re-render. A room that is on air counts
-            // as the headline, not as a credit, so it stays at every size.
-            const live = p._liveRoom
-              ? ' · LIVE NOW · ' + (p._listenerCount || 0) + ' listening · ' + (p._queuedSongCount || 0) + ' waiting'
-              : '';
-            const by = p._liveRoom
-              ? ''
-              : (p._dynamic ? ' · dynamic' : (p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : ''));
-            const vis = mine && !p.is_public ? ' · private' : '';
-            const artists = playlistArtistSample(p);
-            const tip = p._description ? ` title="${p._description}" aria-description="${p._description}"` : '';
-            // The card itself is a <button>, so the ✕ cannot live inside it -
-            // a nested button is invalid and the browser breaks it back out.
-            // It is a sibling in a positioned wrap instead.
-            return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body">${playlistExploreNameHTML(p, esc)}<span class="playlist-explore-meta"><span class="pl-meta-n">${p._tracks?.length || 0} tracks${live}</span><span class="pl-meta-by">${by}${vis}</span></span>${artists ? `<span class="playlist-explore-artists">${esc(artists)}</span>` : ''}<span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button>${(p._liveRoom || p._dynamic) ? '' : `<button type="button" class="playlist-explore-more" title="More" aria-label="Playlist options" onclick="event.stopPropagation();plmOpen('${p.id}',this,event)">⋯</button>`}</div>`;
-          }).join('')}</div>` : `<div class="landing-no-results">${emptyMsg}</div>`}`;
+          ${(() => {
+            const cardHTML = (p) => {
+              const mine = googleUser && p.user_email === googleUser.email;
+              const live = p._liveRoom
+                ? ' · LIVE NOW · ' + (p._listenerCount || 0) + ' listening · ' + (p._queuedSongCount || 0) + ' waiting'
+                : '';
+              const by = p._liveRoom
+                ? ''
+                : (p._dynamic ? ' · dynamic' : (p.user_email ? ' · by ' + esc(p.user_email.split('@')[0]) : ''));
+              const vis = mine && !p.is_public ? ' · private' : '';
+              const sharedTag = p._sharedWithMe ? '<span class="pl-shared-badge">Shared</span>' : '';
+              const artists = playlistArtistSample(p);
+              const tip = p._description ? ` title="${p._description}" aria-description="${p._description}"` : '';
+              return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body">${playlistExploreNameHTML(p, esc)}${sharedTag}<span class="playlist-explore-meta"><span class="pl-meta-n">${p._tracks?.length || 0} tracks${live}</span><span class="pl-meta-by">${by}${vis}</span></span>${artists ? `<span class="playlist-explore-artists">${esc(artists)}</span>` : ''}<span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button>${(p._liveRoom || p._dynamic) ? '' : `<button type="button" class="playlist-explore-more" title="More" aria-label="Playlist options" onclick="event.stopPropagation();plmOpen('${p.id}',this,event)">⋯</button>`}</div>`;
+            };
+            if (!rows.length) return `<div class="landing-no-results">${emptyMsg}</div>`;
+            if (plScope() === 'mine') {
+              const owned = rows.filter(p => !p._sharedWithMe);
+              const shared = rows.filter(p => p._sharedWithMe);
+              return (owned.length
+                  ? `${owned.length && shared.length ? '<div class="home-section-title" style="margin:0 0 10px">My Playlists</div>' : ''}<div class="playlist-explore-grid pl-size-${playlistCardSize}">${owned.map(cardHTML).join('')}</div>`
+                  : '') +
+                (shared.length
+                  ? `<div class="home-section-title" style="margin:${owned.length ? '18px' : '0'} 0 10px">Shared with me (${shared.length})</div><div class="playlist-explore-grid pl-size-${playlistCardSize}">${shared.map(cardHTML).join('')}</div>`
+                  : (owned.length ? '' : `<div class="landing-no-results">${emptyMsg}</div>`));
+            }
+            return `${plScope() !== 'live' && rows.some(p => p._liveRoom) ? '<div class="home-section-title" style="margin:0 0 10px">Live Now</div>' : ''}<div class="playlist-explore-grid pl-size-${playlistCardSize}">${rows.map(cardHTML).join('')}</div>`;
+          })()}`;
       })() : landingTab === 'songs' ? esSongsPageHTML() : `
       <div class="landing-controls">
         <div class="landing-control-group landing-artists-group">
@@ -22917,7 +23176,7 @@ function updateLandingActionsHeader() {
     ? `<div class="playlist-explore-actions">
         ${playlistHiddenIds.size ? `<button type="button" class="playlist-explore-action-btn" onclick="showAllPlaylists(event)" title="Bring every hidden playlist back">Show All (${playlistHiddenIds.size} hidden)</button>` : ''}
         ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : ''}
-        <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Import Playlist</button>
+        <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Create Playlist</button>
       </div>`
     : (landingTab === 'explore' || landingTab === 'songs')
     ? `<div class="playlist-explore-actions">
@@ -25467,6 +25726,13 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-30';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-30', items: [
+    'On a playlist wall of covers (Explore Playlists or Now Playing), tapping a cover keeps that cover and its neighbours in place and opens a detail row underneath: title, stats and buttons on top, lyrics below, with an ✕ to close. Opening a cover on the bottom row grows the page so the new row has room. Edit lyrics and lyrics history moved to the ⋯ menu.',
+    'Playlist Settings now covers who can listen, who can add songs, and who can reorder. Public playlists pick Anyone can listen, Anyone can add, or Anyone can add and reorder, and you can give named people their own View / Add / Reorder checkboxes.',
+    'On a playlist page, a short line under the title tells you what you can do there. You can always remove songs you added yourself when you can see the playlist.',
+    'My Playlists on Explore Playlists now has a Shared with me section for lists someone invited you to. Tick Hide shared if you only want playlists you own.',
+    'Manage Playlists opens Settings for each list instead of a bare Public / Private switch. Delete Playlist is in Playlist Settings too; if you delete the playlist you are looking at, you go back to Explore Playlists.',
+    'Import Playlist on Explore Playlists is now Create Playlist. It opens on Search the Jukebox first, with Can’t find it? Add from YouTube right beside it, the same pattern as Add Songs.',
+    'Added To Playlist By on the Details view is filled in for existing songs (credited to the playlist owner when nobody was recorded) and for every new add going forward.',
     'Jukebox Score on artist charts now counts hearts and heartbreaks: +5 for a thumbs up, +12 for a double thumbs up, −3 for a thumbs down, and +1 for every heart or heartbreak. When Bars show Jukebox Score, a ? next to the label explains the formula.',
     'Favorites Plus only shows when you have heart or heartbreak songs that are not already thumbs-up. On the largest playlist card size its title becomes Favorites + a few of those artists.',
     'Other Artists on an artist jukebox has Include Singles Only Artists at the bottom of the menu, off by default, the same idea as the Explore Artists filter.',
