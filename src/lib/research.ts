@@ -198,6 +198,163 @@ export async function runArtistResearch(artistName: string): Promise<ResearchCan
   return out;
 }
 
+const INNERTUBE_PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
+const INNERTUBE_TRANSCRIPT_CLIENTS = [
+  {
+    clientName: "IOS",
+    clientVersion: "20.10.38",
+    userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 17_4 like Mac OS X)",
+  },
+  {
+    clientName: "ANDROID",
+    clientVersion: "20.10.38",
+    userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
+  },
+] as const;
+
+type CaptionTrack = {
+  languageCode?: string;
+  kind?: string;
+  baseUrl?: string;
+};
+
+function pickCaptionTrack(tracks: CaptionTrack[], lang?: string): CaptionTrack | null {
+  if (!tracks.length) return null;
+  const code = (t: CaptionTrack) => (t.languageCode || "").toLowerCase();
+  const isEn = (t: CaptionTrack) => code(t) === "en" || code(t).startsWith("en-");
+  if (lang) {
+    const exact = tracks.find((t) => t.languageCode === lang);
+    if (exact) return exact;
+    const prefix = tracks.find((t) => code(t).startsWith(lang.toLowerCase()));
+    if (prefix) return prefix;
+  }
+  return (
+    tracks.find((t) => isEn(t) && t.kind !== "asr") ||
+    tracks.find((t) => isEn(t)) ||
+    tracks[0]
+  );
+}
+
+async function fetchCaptionTracks(videoId: string): Promise<CaptionTrack[]> {
+  for (const client of INNERTUBE_TRANSCRIPT_CLIENTS) {
+    try {
+      const resp = await fetch(INNERTUBE_PLAYER_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": client.userAgent,
+        },
+        body: JSON.stringify({
+          context: {
+            client: {
+              clientName: client.clientName,
+              clientVersion: client.clientVersion,
+            },
+          },
+          videoId,
+        }),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data?.playabilityStatus?.status !== "OK") continue;
+      const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+      if (Array.isArray(tracks) && tracks.length) return tracks;
+    } catch {
+      /* try next client */
+    }
+  }
+  return [];
+}
+
+function transcriptSourceForTrack(track: CaptionTrack): string {
+  return track.kind === "asr" ? "youtube_auto" : "youtube_manual";
+}
+
+function parseJson3Transcript(raw: string): string[] {
+  try {
+    const data = JSON.parse(raw) as { events?: Array<{ segs?: Array<{ utf8?: string }> }> };
+    const lines: string[] = [];
+    for (const ev of data.events || []) {
+      if (!Array.isArray(ev.segs)) continue;
+      const text = ev.segs
+        .map((seg) => String(seg?.utf8 || ""))
+        .join("")
+        .replace(/\n/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text) lines.push(text);
+    }
+    return lines;
+  } catch {
+    return [];
+  }
+}
+
+function parseXmlTranscript(xml: string): string[] {
+  const lines: string[] = [];
+  const pRegex = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+  let match: RegExpExecArray | null;
+  while ((match = pRegex.exec(xml)) !== null) {
+    const inner = match[3];
+    let text = "";
+    const sRegex = /<s[^>]*>([^<]*)<\/s>/g;
+    let sMatch: RegExpExecArray | null;
+    while ((sMatch = sRegex.exec(inner)) !== null) text += sMatch[1];
+    if (!text) text = inner.replace(/<[^>]+>/g, "");
+    text = text
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) lines.push(text);
+  }
+  if (lines.length) return lines;
+  const classic = [...xml.matchAll(/<text start="([^"]*)" dur="([^"]*)">([^<]*)<\/text>/g)];
+  return classic
+    .map((result) =>
+      String(result[3] || "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+async function fetchCaptionLines(baseUrl: string, userAgent: string): Promise<string[]> {
+  const attempts = [
+    `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}fmt=json3`,
+    baseUrl,
+  ];
+  for (const url of attempts) {
+    try {
+      const captionUrl = new URL(url);
+      if (!captionUrl.hostname.endsWith(".youtube.com")) continue;
+    } catch {
+      continue;
+    }
+    try {
+      const resp = await fetch(url, { headers: { "User-Agent": userAgent } });
+      if (!resp.ok) continue;
+      const body = await resp.text();
+      if (!body.trim()) continue;
+      const lines = body.trimStart().startsWith("{")
+        ? parseJson3Transcript(body)
+        : parseXmlTranscript(body);
+      if (lines.length) return lines;
+    } catch {
+      /* try next format */
+    }
+  }
+  return [];
+}
+
 /** Pull public YouTube captions when available (manual or auto). */
 export async function fetchYouTubeTranscript(videoId: string): Promise<{
   text: string;
@@ -206,12 +363,14 @@ export async function fetchYouTubeTranscript(videoId: string): Promise<{
   const id = parseYouTubeId(videoId);
   if (!id) return null;
   try {
-    const { YoutubeTranscript } = await import("youtube-transcript");
-    const cues = await YoutubeTranscript.fetchTranscript(id, { lang: "en" });
-    const lines = cues.map((c) => String(c.text || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+    const tracks = await fetchCaptionTracks(id);
+    const track = pickCaptionTrack(tracks, "en");
+    if (!track?.baseUrl) return null;
+    const client = INNERTUBE_TRANSCRIPT_CLIENTS[0];
+    const lines = await fetchCaptionLines(track.baseUrl, client.userAgent);
     const text = lines.join("\n").trim();
     if (!text) return null;
-    return { text, source: "youtube_auto" };
+    return { text, source: transcriptSourceForTrack(track) };
   } catch (e) {
     console.warn("[research] transcript", id, e);
     return null;

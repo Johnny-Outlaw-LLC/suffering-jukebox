@@ -26766,7 +26766,7 @@ async function ddRefreshMeta(id) {
     if (data.item) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
-      showToast(data.item.transcript ? 'Updated from YouTube, transcript pulled.' : 'Updated from YouTube.');
+      showToast(data.item.transcript ? 'Updated from YouTube, transcript pulled.' : 'Updated from YouTube. No captions found on this upload.');
       ddRepaintTimeline();
     }
   } catch (e) {
@@ -26908,7 +26908,11 @@ async function ddFetchTranscript(id, opts) {
       if (data.item.transcriptSource === 'deepgram_pending') ddStartTranscriptPoll(id);
       else ddStopTranscriptPoll();
     }
-  } catch (_) {}
+    if (data.item?.transcript) showToast('Transcript loaded.');
+    else if (opts && opts.forceDeepgram) showToast('No transcript yet. Try again in a minute if Deepgram is still working.');
+  } catch (e) {
+    showToast(e.message || 'Could not fetch transcript.');
+  }
 }
 
 function ddStartTranscriptPoll(id) {
@@ -27136,6 +27140,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-31';
 const SJ_CHANGELOG = [
   { date: '2026-08-31', items: [
     'Other Content items now have a Content year field when you expand them (signed in). Set the year the interview or video was recorded — not the YouTube upload date — then press Save year or Enter. Pull from YouTube will not overwrite a year you set yourself.',
+    'YouTube transcripts for Other Content now pull reliably again on Pull from YouTube and when you expand an item — including auto-captioned interviews that used to stay stuck on No transcript yet.',
   ]},
   { date: '2026-08-30', items: [
     'Other Content now lives in the main jukebox instead of a separate Research screen. Podcasts, interviews, documentaries and other YouTube supplemental video sit on the same timeline as the albums when you turn them on.',
