@@ -1448,12 +1448,24 @@ body.light .sc-link:hover { background: #e8e8e8; }
 .dd-year-edit label { font-size:.58rem; color:var(--text-muted); display:flex; flex-direction:column; gap:.25rem; flex:1; min-width:6.5rem; }
 .dd-year-edit input.dd-year-input { background:var(--bg-card); border:1px solid var(--border); border-radius:6px; color:var(--text); font:inherit; font-size:.72rem; padding:.35rem .45rem; width:100%; max-width:7rem; font-variant-numeric:tabular-nums; letter-spacing:.04em; }
 .dd-year-edit-hint { flex:1 1 100%; font-size:.52rem; color:var(--text-muted); line-height:1.35; margin-top:.1rem; }
-.dd-cand { display:flex; gap:.65rem; align-items:flex-start; padding:.55rem 0; border-bottom:1px solid var(--border); }
+.dd-cand { display:flex; flex-direction:column; gap:0; padding:.55rem 0; border-bottom:1px solid var(--border); }
 .dd-cand:last-child { border-bottom:none; }
+.dd-cand.open { background:var(--bg-elevated); margin:0 -.55rem; padding:.55rem; border-radius:8px; border-bottom-color:transparent; }
+.dd-cand-row { display:flex; gap:.65rem; align-items:flex-start; }
 .dd-cand img { width:72px; height:72px; object-fit:cover; border-radius:6px; flex:0 0 72px; background:var(--bg); }
 .dd-cand-body { flex:1; min-width:0; }
 .dd-cand-title { font-size:.62rem; font-weight:600; line-height:1.3; }
 .dd-cand-meta { font-family:var(--mono); font-size:.42rem; color:var(--text-muted); margin-top:.2rem; }
+.dd-cand-acts { display:flex; flex-direction:column; gap:5px; flex-shrink:0; align-items:stretch; }
+.dd-cand-preview-btn { flex-shrink:0; background:none; border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono); font-size:.48rem; font-weight:700; padding:.35rem .65rem; border-radius:7px; cursor:pointer; }
+.dd-cand-preview-btn:hover { border-color:var(--text-muted); color:var(--text); }
+.dd-cand.open .dd-cand-preview-btn { border-color:var(--accent); color:var(--accent); }
+.dd-cand-preview-pane { display:none; padding:.55rem 0 0; }
+.dd-cand.open .dd-cand-preview-pane { display:grid; grid-template-columns:minmax(140px,42%) 1fr; gap:.75rem; align-items:start; }
+@media (max-width: 640px) {
+  .dd-cand.open .dd-cand-preview-pane { grid-template-columns:1fr; }
+  .dd-cand-acts { flex-direction:row; }
+}
 .dd-form-grid { display:grid; gap:.55rem; }
 .dd-form-grid label { display:flex; flex-direction:column; gap:.25rem; font-family:var(--mono); font-size:.48rem; color:var(--text-muted); }
 .dd-form-grid input, .dd-form-grid select, .dd-form-grid textarea {
@@ -5111,7 +5123,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 <!-- SHARE JUKEBOX MODAL (link only, no image generation - mirrors Share Song) -->
 <div class="pl-modal-overlay" id="sjShareModalOverlay" onclick="if(event.target===this)closeSjShareModal()">
   <div class="pl-modal" style="width:400px">
-    <div class="pl-modal-header"><span class="pl-modal-title">Share Jukebox</span><button class="modal-close" onclick="closeSjShareModal()">✕</button></div>
+    <div class="pl-modal-header"><span class="pl-modal-title" id="sjs-title">Share Jukebox</span><button class="modal-close" onclick="closeSjShareModal()">✕</button></div>
     <div class="pl-modal-body">
       <p id="sjs-summary" style="font-size:.54rem;color:#888;line-height:1.5;margin-bottom:.55rem"></p>
       <label style="display:block;font-size:.5rem;color:var(--text-muted);margin-bottom:.25rem">Your message <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
@@ -5491,9 +5503,9 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 </div>
 <!-- ARTIST DEEP DIVE / RESEARCH MODAL -->
 <div class="pl-modal-overlay" id="ddResearchOverlay" onclick="if(event.target===this)ddCloseResearch()">
-  <div class="pl-modal" style="width:min(52rem,100%);max-width:52rem">
+  <div class="pl-modal" style="width:min(36rem,100%);max-width:36rem">
     <div class="pl-modal-header">
-      <span class="pl-modal-title" id="dd-research-title">Other Content</span>
+      <span class="pl-modal-title" id="dd-research-title">Supplemental Content</span>
       <button class="modal-close" onclick="ddCloseResearch()">&#10005;</button>
     </div>
     <div class="pl-modal-body" id="dd-research-body"></div>
@@ -5590,6 +5602,9 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
           <option value="add">Anyone can add</option>
           <option value="reorder">Anyone can add and reorder</option>
         </select>
+        <label class="pl-toggle-lbl" for="pls-slug-url" style="margin-top:.55rem">Web address</label>
+        <input class="pl-input" id="pls-slug-url" type="text" readonly onclick="this.select()" placeholder="Saved when you Share or make this public"
+          style="font-size:.55rem;color:var(--accent)">
       </div>
       <div id="pls-share-people" style="display:none">
         <label class="pl-toggle-lbl">People with access</label>
@@ -5634,7 +5649,9 @@ let amMaxPl = 50;   // playlists the edge function will accept in one import
 let amMaxTrk = 60;  // tracks it takes from any single playlist
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
 // Artist slug pages (e.g. /pavement) are served by the Next [slug] route, which injects window.__SLUG_ARTIST__
+// Playlist vanity pages (/p/my-mix) inject window.__PLAYLIST_PAGE__.
 let _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
+let _PLAYLIST_PAGE = window.__PLAYLIST_PAGE__ || null;
 // Hide the server-rendered catalog wall for listeners; crawlers already saw it
 // in the first HTML response before this script ran.
 if (_SLUG_ARTIST) {
@@ -15028,6 +15045,7 @@ function plmRender(p) {
   if (!menu || !p) return;
   const mine = !!(googleUser && p.user_email === googleUser.email);
   const n = (p._tracks || []).length;
+  const canShare = playlistIdCanShare(p.id);
   menu.innerHTML =
     _sjmHeader(p.name || 'Playlist') +
     '<button class="sjm-item" onclick="plmStart()">' +
@@ -15036,6 +15054,10 @@ function plmRender(p) {
     '</button>' +
     '<button class="sjm-item" onclick="plmAddToQueue()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add playlist to queue</span></button>' +
+    (canShare
+      ? '<button class="sjm-item" onclick="plmShare()">' +
+          '<span class="sjm-ic">↗</span><span class="sjm-label">Share playlist</span></button>'
+      : '') +
     (mine
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="plmSettings()">' +
@@ -15055,6 +15077,12 @@ function plmAddToQueue() {
   const id = _plmPlaylistId;
   plmClose();
   if (id) loadAndAddPlaylistToQueue(id).then(() => showToast('Added to queue.'));
+}
+
+function plmShare() {
+  const id = _plmPlaylistId;
+  plmClose();
+  if (id) openPlShareModal(id);
 }
 
 function plmSettings() {
@@ -15151,7 +15179,7 @@ function lamRender(row) {
     favBtn +
     '<div class="sjm-sep"></div>' +
     '<button class="sjm-item" onclick="lamDeepDive()">' +
-      '<span class="sjm-ic">◈</span><span class="sjm-label">Add other content</span>' +
+      '<span class="sjm-ic">◈</span><span class="sjm-label">Add supplemental content</span>' +
       '<span class="sjm-sub">YouTube</span></button>' +
     (lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
@@ -17145,6 +17173,8 @@ function openPlaylistSettings(playlistId) {
   if (mode) mode.value = ['private','shared','public'].includes(p.visibility) ? p.visibility : (p.is_public ? 'public' : 'private');
   const preset = document.getElementById('pls-public-preset');
   if (preset) preset.value = p._publicPreset || (p.is_public ? 'reorder' : 'listen');
+  const slugUrl = document.getElementById('pls-slug-url');
+  if (slugUrl) slugUrl.value = p.slug ? (location.origin + '/p/' + String(p.slug).toLowerCase()) : '';
   _plsGrants = Array.isArray(p._grants)
     ? p._grants.filter(g => g.principal !== 'public').map(g => ({
         principal: g.principal,
@@ -17202,12 +17232,18 @@ async function savePlaylistSettings() {
         p._publicPreset = data.publicPreset || null;
         p._caps = plCapsForPlaylist({ ...p, _grants: p._grants, _caps: null });
         p._sharedWithMe = false;
+        if (data.slug) p.slug = data.slug;
       }
     });
-    if (playlistChartId === id) { playlistChartName = name; renderPlaylistChart(); }
+    if (playlistChartId === id) {
+      playlistChartName = name;
+      const cur = playlists.find(x => x.id === id) || (_savedPlaylists || []).find(x => x.id === id);
+      if (cur?.slug) plPushShareUrl(cur);
+      renderPlaylistChart();
+    }
     closePlaylistSettings();
     if (document.getElementById('plModalOverlay')?.classList.contains('open')) renderPlaylistList();
-    showToast('Playlist updated.');
+    showToast(data.shareUrl ? ('Playlist updated. Link: ' + data.shareUrl.replace(/^https?:\/\//, '')) : 'Playlist updated.');
   } catch (e) {
     showToast(e.message || 'Could not save settings.');
   } finally {
@@ -19322,10 +19358,13 @@ function plWallTitleActionsHTML({ isNowPlaying, isDetail, canAddSongs, canArrang
   const queueBtn = (ytPlayerEl && ytQueue.length && qLength)
     ? `<button type="button" class="pl-wall-back" onclick="playlistChartAddToQueue()">Add to Queue</button>`
     : '';
+  const shareBtn = (!isNowPlaying && playlistIdCanShare(playlistChartId))
+    ? `<button type="button" class="pl-wall-back sj-sharehub-btn" onclick="openPlShareModal('${playlistChartId}')" title="Share this playlist">${SJ_SHARE_ICON}<span>Share</span></button>`
+    : '';
   const settingsBtn = minePl
     ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>`
     : '';
-  return `<div class="pl-wall-header-actions">${sizeCtrl}${modeTog}${mixBtn}${addBtn}${startBtn}${queueBtn}${settingsBtn}</div>`;
+  return `<div class="pl-wall-header-actions">${sizeCtrl}${modeTog}${mixBtn}${addBtn}${startBtn}${queueBtn}${shareBtn}${settingsBtn}</div>`;
 }
 
 async function ensureMyReactionTracks(force) {
@@ -20615,7 +20654,10 @@ async function playlistChartPlay(startIndex) {
 async function openPlaylistChart(playlistId) {
   const perfRun = ++sjPerformanceRun;
   const perfStartedAt = performance.now();
-  const p = liveRoomPlaylists.find(x => x.id === playlistId) || dynamicPlaylistById(playlistId) || (_savedPlaylists || []).find(x => x.id === playlistId);
+  const p = liveRoomPlaylists.find(x => x.id === playlistId)
+    || dynamicPlaylistById(playlistId)
+    || (_savedPlaylists || []).find(x => x.id === playlistId)
+    || (playlists || []).find(x => x.id === playlistId);
   if (!p) {
     sjPerf('playlist-wall.open-missing', { run: perfRun, kind: playlistId === '__dynamic_now_playing' ? 'now-playing' : 'playlist' });
     return;
@@ -20768,6 +20810,7 @@ async function openPlaylistChart(playlistId) {
     _fetchLyricsForTracks(rows.slice(0, PL_LYRIC_PREFETCH).map(r => r.trackId));
     stageAt = performance.now();
     renderPlaylistChart();
+    plPushShareUrl(p);
     sjPerf('playlist-wall.open-complete', {
       run: perfRun,
       rows: rows.length,
@@ -20917,6 +20960,7 @@ function returnToPlaylistExplorer(tab) {
   // Explore Artists / Explore Songs buttons pass their own tab.
   landingTab = ['explore', 'playlists', 'songs'].includes(tab) ? tab : 'playlists';
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
+  plClearShareUrl();
   renderLanding();
 }
 
@@ -25214,7 +25258,11 @@ async function loadArtistPageData() {
   allArtists.forEach(a => selectedIds.add(a.id));
   if (!allArtists.length) { renderCommunityEmpty(); return; }
   await loadData();
-  await ddEnsureLoaded();
+  // Supplemental content is optional chrome for the Albums menu — do not block
+  // the jukebox paint on it. Refresh the filter when the list lands.
+  ddEnsureLoaded().then(() => {
+    try { updateFilterHeader(); } catch (_) {}
+  }).catch(() => {});
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -26170,7 +26218,7 @@ function renderCommunityFilterBar() {
         </div>
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
-          ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add other content</button>` : ''}
+          ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add supplemental content</button>` : ''}
         </div>
       </div>
     </div>
@@ -26182,7 +26230,16 @@ function renderCommunityFilterBar() {
 
 function renderOtherContentFilterSection() {
   const { singles, groups } = ddOtherContentFilterClusters();
-  if (!singles.length && !groups.length) return '';
+  if (!singles.length && !groups.length) {
+    if (_ddLoading) {
+      return `<div class="filter-dd-divider"></div>
+        <div class="filter-dd-item" style="opacity:.55;cursor:default" onclick="event.stopPropagation()">
+          <span style="font-weight:600">Supplemental Content</span>
+          <span style="opacity:.7;font-size:.57rem;margin-left:auto">Loading…</span>
+        </div>`;
+    }
+    return '';
+  }
   const esc = s => (s || '').replace(/</g, '&lt;');
   const ex = getOtherContentExcludedSet();
   const allItems = filterBarOtherContent();
@@ -26215,7 +26272,7 @@ function renderOtherContentFilterSection() {
   return `<div class="filter-dd-divider"></div>
     <label class="filter-dd-item" onclick="event.stopPropagation()">
       <input type="checkbox" id="oc-filter-all-cb" ${allShown ? 'checked' : ''} onchange="toggleAllOtherContentPending(this.checked)">
-      <span style="font-weight:600">Other Content</span>
+      <span style="font-weight:600">Supplemental Content</span>
     </label>
     ${groupRows}${rows}`;
 }
@@ -26268,7 +26325,7 @@ function renderFilterBar(allAlbs) {
         </div>
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
-          ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add other content</button>` : ''}
+          ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add supplemental content</button>` : ''}
         </div>
       </div>
     </div>
@@ -28763,6 +28820,7 @@ let _ddLoading = false;
 let _ddArtistId = null;
 let _ddCandidates = [];
 let _ddCandSel = new Set();
+let _ddCandPreviewKey = null;
 let _ddResearchTab = 'research'; // research | upload
 let _ddTranscriptPoll = null;
 const DD_TYPE_LABEL = {
@@ -28821,6 +28879,7 @@ async function ddLoad(artistId) {
   _ddArtistId = id;
   _ddLoading = true;
   try {
+    try { updateFilterHeader(); } catch (_) {}
     const data = await fetch(sjApiUrl('/api/research?artistId=' + encodeURIComponent(id)), { cache: 'no-store' })
       .then(r => r.json());
     if (!data.ok) throw new Error(data.error || 'Could not load.');
@@ -28831,9 +28890,10 @@ async function ddLoad(artistId) {
     }
   } catch (e) {
     _ddItems = [];
-    showToast(e.message || 'Could not load other content.');
+    showToast(e.message || 'Could not load supplemental content.');
   } finally {
     _ddLoading = false;
+    try { updateFilterHeader(); } catch (_) {}
   }
 }
 
@@ -29548,7 +29608,7 @@ function ddStartTranscriptPoll(id) {
 }
 
 async function ddRemoveItem(id) {
-  if (!confirm('Remove this other content item?')) return;
+  if (!confirm('Remove this supplemental content item?')) return;
   try {
     await ddRequest({ action: 'remove', id });
     _ddItems = _ddItems.filter(i => i.id !== id);
@@ -29566,14 +29626,16 @@ function ddCloseResearch() {
   document.getElementById('ddResearchOverlay')?.classList.remove('open');
   _ddCandidates = [];
   _ddCandSel = new Set();
+  _ddCandPreviewKey = null;
 }
 
 function ddOpenResearch(tab) {
-  if (!googleUser) { alert('Sign in to add other content.'); return; }
+  if (!googleUser) { alert('Sign in to add supplemental content.'); return; }
   _ddResearchTab = tab === 'upload' ? 'upload' : 'research';
+  _ddCandPreviewKey = null;
   document.getElementById('ddResearchOverlay')?.classList.add('open');
   const title = document.getElementById('dd-research-title');
-  if (title) title.textContent = 'Other Content · ' + ddArtistName(ddPrimaryArtistId());
+  if (title) title.textContent = 'Supplemental Content · ' + ddArtistName(ddPrimaryArtistId());
   ddRenderResearch();
 }
 
@@ -29600,10 +29662,10 @@ function ddRenderResearch() {
         <label>Or upload an audio file<input id="dd-up-file" type="file" accept="audio/*"></label>
       </div>
       <div style="margin-top:.85rem;display:flex;gap:.4rem;flex-wrap:wrap">
-        <button type="button" class="pl-btn" onclick="ddSubmitManual()">Add other content</button>
+        <button type="button" class="pl-btn" onclick="ddSubmitManual()">Add supplemental content</button>
       </div>
       <p style="font-family:var(--mono);font-size:.45rem;color:var(--text-muted);margin-top:.7rem;line-height:1.5">
-        YouTube uploads pull captions when available. Uploaded audio is sent to Deepgram for a transcript. Turn new items on from the Albums menu under Other Content.
+        YouTube uploads pull captions when available. Uploaded audio is sent to Deepgram for a transcript. Turn new items on from the Albums menu under Supplemental Content.
       </p>`;
     return;
   }
@@ -29621,10 +29683,11 @@ async function ddRunResearch() {
   const list = document.getElementById('dd-cand-list');
   if (btn) { btn.disabled = true; btn.textContent = 'Searching…'; }
   if (list) list.innerHTML = '<div class="dd-empty" style="padding:1rem">Searching YouTube…</div>';
+  _ddCandPreviewKey = null;
   try {
     const data = await ddRequest({ action: 'research', artistId: ddPrimaryArtistId() });
-    _ddCandidates = data.candidates || [];
-    _ddCandSel = new Set(_ddCandidates.filter(c => !c.alreadyAdded).map(c => c.key));
+    _ddCandidates = (data.candidates || []).filter(c => !c.alreadyAdded);
+    _ddCandSel = new Set(_ddCandidates.map(c => c.key));
     ddPaintCandidates();
   } catch (e) {
     if (list) list.innerHTML = `<div class="dd-empty" style="padding:1rem">${ddEsc(e.message)}</div>`;
@@ -29637,27 +29700,73 @@ function ddPaintCandidates() {
   const list = document.getElementById('dd-cand-list');
   if (!list) return;
   if (!_ddCandidates.length) {
-    list.innerHTML = '<div class="dd-empty" style="padding:1rem">No public results found. Try adding a link yourself.</div>';
+    list.innerHTML = '<div class="dd-empty" style="padding:1rem">No new public results found. Try adding a link yourself.</div>';
     return;
   }
   list.innerHTML = `
     <div style="display:flex;gap:.4rem;align-items:center;margin-bottom:.5rem;flex-wrap:wrap">
       <button type="button" class="pl-btn" onclick="ddAddSelected()">Add selected (${_ddCandSel.size})</button>
-      <button type="button" class="pl-btn ghost" onclick="_ddCandSel=new Set(_ddCandidates.filter(c=>!c.alreadyAdded).map(c=>c.key));ddPaintCandidates()">Select new</button>
+      <button type="button" class="pl-btn ghost" onclick="_ddCandSel=new Set(_ddCandidates.map(c=>c.key));ddPaintCandidates()">Select all</button>
       <button type="button" class="pl-btn ghost" onclick="_ddCandSel=new Set();ddPaintCandidates()">Clear</button>
     </div>
     ${_ddCandidates.map(c => {
       const on = _ddCandSel.has(c.key);
-      return `<label class="dd-cand">
-        <input type="checkbox" ${c.alreadyAdded ? 'disabled' : ''} ${on && !c.alreadyAdded ? 'checked' : ''}
-          onchange="ddToggleCand('${ddEsc(c.key)}', this.checked)">
-        ${c.thumbnailUrl ? `<img src="${ddEsc(c.thumbnailUrl)}" alt="">` : `<div style="width:72px;height:72px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center">${DD_TYPE_ICON[c.mediaType]||'◈'}</div>`}
-        <div class="dd-cand-body">
-          <div class="dd-cand-title">${ddEsc(c.title)}</div>
-          <div class="dd-cand-meta">${ddEsc(DD_TYPE_LABEL[c.mediaType]||c.mediaType)}${c.creatorName ? ' · ' + ddEsc(c.creatorName) : ''}${c.sourceName ? ' · ' + ddEsc(c.sourceName) : ''}${c.alreadyAdded ? ' · already added' : ''}${c.viewCount != null ? ' · ' + fmtV(c.viewCount) + ' views' : ''}</div>
+      const open = _ddCandPreviewKey === c.key;
+      const canPreview = !!(c.externalId || (c.sourceUrl && /youtu(\.be|be\.com)/i.test(c.sourceUrl)));
+      const keyAttr = String(c.key).replace(/"/g, '&quot;');
+      return `<div class="dd-cand${open ? ' open' : ''}" data-dd-cand="${keyAttr}">
+        <div class="dd-cand-row">
+          <input type="checkbox" ${on ? 'checked' : ''}
+            onchange="ddToggleCand('${ddEsc(c.key)}', this.checked)" style="margin-top:4px;flex-shrink:0">
+          ${c.thumbnailUrl ? `<img src="${ddEsc(c.thumbnailUrl)}" alt="">` : `<div style="width:72px;height:72px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex:0 0 72px">${DD_TYPE_ICON[c.mediaType]||'◈'}</div>`}
+          <div class="dd-cand-body">
+            <div class="dd-cand-title">${ddEsc(c.title)}</div>
+            <div class="dd-cand-meta">${ddEsc(DD_TYPE_LABEL[c.mediaType]||c.mediaType)}${c.creatorName ? ' · ' + ddEsc(c.creatorName) : ''}${c.sourceName ? ' · ' + ddEsc(c.sourceName) : ''}${c.viewCount != null ? ' · ' + fmtV(c.viewCount) + ' views' : ''}</div>
+          </div>
+          <div class="dd-cand-acts">
+            ${canPreview ? `<button type="button" class="dd-cand-preview-btn" onclick="ddToggleCandPreview('${ddEsc(c.key)}')">${open ? 'Hide' : 'Preview'}</button>` : ''}
+          </div>
         </div>
-      </label>`;
+        <div class="dd-cand-preview-pane">${open ? ddCandPreviewPaneHTML(c) : ''}</div>
+      </div>`;
     }).join('')}`;
+}
+
+function ddCandPreviewPaneHTML(c) {
+  let videoId = c.externalId;
+  if (!videoId && c.sourceUrl) {
+    const m = String(c.sourceUrl).match(/(?:youtube\.com\/(?:watch\?.*?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+    videoId = m ? m[1] : null;
+  }
+  if (!videoId) return '';
+  const origin = encodeURIComponent(location.origin);
+  const metaBits = [
+    c.creatorName || '',
+    c.viewCount != null ? (fmtV(c.viewCount) + ' views') : '',
+    c.durationMs ? fmtDur(c.durationMs) : '',
+    c.publishedAt ? new Date(c.publishedAt).toLocaleDateString() : '',
+  ].filter(Boolean);
+  const desc = (c.description || '').trim();
+  return '<div class="plby-preview-frame">' +
+      '<iframe src="https://www.youtube-nocookie.com/embed/' + encodeURIComponent(videoId) +
+        '?autoplay=1&rel=0&playsinline=1&origin=' + origin + '" allow="autoplay; encrypted-media" allowfullscreen title="Preview"></iframe>' +
+    '</div>' +
+    '<div class="plby-preview-details">' +
+      '<div class="plby-preview-title">' + ddEsc(c.title || 'Untitled') + '</div>' +
+      (metaBits.length ? '<div class="plby-preview-meta">' + ddEsc(metaBits.join(' · ')) + '</div>' : '') +
+      (desc ? '<div class="plby-preview-desc">' + ddEsc(desc) + '</div>' : '') +
+      '<a class="plby-preview-link" href="https://www.youtube.com/watch?v=' + encodeURIComponent(videoId) +
+        '" target="_blank" rel="noopener">Open on YouTube</a>' +
+    '</div>';
+}
+
+function ddToggleCandPreview(key) {
+  _ddCandPreviewKey = (_ddCandPreviewKey === key) ? null : key;
+  ddPaintCandidates();
+  if (_ddCandPreviewKey) {
+    const hit = document.querySelector('.dd-cand.open');
+    hit?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 }
 
 function ddToggleCand(key, on) {
@@ -29667,13 +29776,13 @@ function ddToggleCand(key, on) {
 }
 
 async function ddAddSelected() {
-  const picks = _ddCandidates.filter(c => _ddCandSel.has(c.key) && !c.alreadyAdded);
+  const picks = _ddCandidates.filter(c => _ddCandSel.has(c.key));
   if (!picks.length) { showToast('Pick at least one item.'); return; }
   try {
     showToast('Adding…');
     const data = await ddRequest({ action: 'add_many', artistId: ddPrimaryArtistId(), candidates: picks });
     const n = (data.added || []).length;
-    showToast(n ? ('Added ' + n + ' item' + (n === 1 ? '' : 's') + '. Turn them on under Other Content in the Albums menu.') : 'Nothing new to add.');
+    showToast(n ? ('Added ' + n + ' item' + (n === 1 ? '' : 's') + '. Turn them on under Supplemental Content in the Albums menu.') : 'Nothing new to add.');
     await ddLoad();
     (data.added || []).forEach(item => {
       if (item && item.id) excludedOtherContentIds.add(item.id);
@@ -29733,7 +29842,7 @@ async function ddSubmitManual() {
         addedVia: 'manual'
       });
     }
-    showToast('Added to other content. Turn it on in the Albums menu when you are ready.');
+    showToast('Added to supplemental content. Turn it on in the Albums menu when you are ready.');
     await ddLoad();
     const added = _ddItems[_ddItems.length - 1];
     if (added && added.id) excludedOtherContentIds.add(added.id);
@@ -29751,6 +29860,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-08-31';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-08-31', items: [
+    'Playlists get a custom web address like /p/my-mix, the same idea as an artist jukebox page. Open Share on a playlist for Copy Link, Text, Email, X, Facebook and Reddit — no Export Image step. The address bar updates while you are on the playlist.',
+    'Other Content is now called Supplemental Content — same Albums menu section and Add button, clearer name.',
+    'Add Supplemental Content is a narrower panel. Search results hide videos you already imported, and each result has Preview that opens a small player under the row (same idea as adding a song to a playlist).',
+    'Supplemental Content for artists with a lot of interviews and podcasts (Silver Jews especially) loads much faster in the Albums menu — it no longer waits on YouTube backfill or full transcripts before the list appears.',
     'Private music only shows to the person who imported it — being an admin does not open someone else\u2019s private jukebox on Explore Artists or Explore Songs.',
     'Explore Songs has a Recently Added sort, same idea as Date Added on Explore Artists: newest songs in the Jukebox first.',
     'Favorites Plus is songs you have thumbs-up\'d or given a playback reaction to. On a large card it reads Favorites PLUS and a few of those artists.',
@@ -33583,11 +33696,6 @@ let _sjExportFiles = [];
 let _sjExportSelectedScope = 'artist';
 let _sjExportPendingShare = false;
 
-function sjJukeboxShareUrl() {
-  const { slug } = sjExportArtistMeta();
-  return new URL('/' + slug, location.origin).toString();
-}
-
 function openSjExportModal() {
   if (SJ_EXPORT_SLAVE || _sjExportBusy) return;
   if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
@@ -33867,6 +33975,48 @@ async function sjExportDownloadZip() {
 // ── Share hub - the one Share button on the controls row ────────────
 const SJ_SHARE_ICON = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>';
 
+// Artist jukebox share vs playlist share — same modal, different URL/title.
+let _sjShareKind = 'artist'; // 'artist' | 'playlist'
+let _plShareId = null;
+
+function playlistIdCanShare(id) {
+  if (!id || id.startsWith('__')) return false;
+  const p = liveRoomPlaylists.find(x => x.id === id)
+    || dynamicPlaylistById(id)
+    || (_savedPlaylists || []).find(x => x.id === id)
+    || (playlists || []).find(x => x.id === id);
+  if (!p || p._liveRoom || p._dynamic) return false;
+  // Owner can always mint a link; anyone else only when the list is public
+  // (or already has a slug they can open).
+  const mine = !!(googleUser && p.user_email === googleUser.email);
+  return mine || !!(p.is_public || p.visibility === 'public' || p.slug);
+}
+
+function plShareLookup(id) {
+  return liveRoomPlaylists.find(x => x.id === id)
+    || dynamicPlaylistById(id)
+    || (_savedPlaylists || []).find(x => x.id === id)
+    || (playlists || []).find(x => x.id === id)
+    || null;
+}
+
+function plShareUrl(slug) {
+  if (!slug) return location.origin + '/';
+  return new URL('/p/' + String(slug).toLowerCase(), location.origin).toString();
+}
+
+function plPushShareUrl(p) {
+  if (!p?.slug || p._liveRoom || p._dynamic) return;
+  const path = '/p/' + String(p.slug).toLowerCase();
+  if (location.pathname.replace(/\/+$/, '') === path) return;
+  try { history.pushState({ playlistSlug: p.slug, playlistId: p.id }, '', path); } catch (_) {}
+}
+
+function plClearShareUrl() {
+  if (!/^\/p\//i.test(location.pathname)) return;
+  try { history.pushState(null, '', '/'); } catch (_) {}
+}
+
 function openSjShareHub() {
   if (SJ_EXPORT_SLAVE || _sjExportBusy) return;
   if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
@@ -33885,10 +34035,23 @@ function sjShareHubGo(which) {
   if (which === 'export') openSjExportModal(); else openSjShareModal();
 }
 
-// ── Share Jukebox (link only - no image generation, mirrors Share Song) ──
+function sjJukeboxShareUrl() {
+  if (_sjShareKind === 'playlist') {
+    const p = plShareLookup(_plShareId);
+    return plShareUrl(p?.slug);
+  }
+  const { slug } = sjExportArtistMeta();
+  return new URL('/' + slug, location.origin).toString();
+}
+
+// ── Share Jukebox / Playlist (link only - no image generation) ──
 function openSjShareModal() {
   if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
+  _sjShareKind = 'artist';
+  _plShareId = null;
   const { name } = sjExportArtistMeta();
+  const title = document.getElementById('sjs-title');
+  if (title) title.textContent = 'Share Jukebox';
   const summary = document.getElementById('sjs-summary');
   if (summary) summary.textContent = `Share the ${name} jukebox.`;
   const text = document.getElementById('sjs-text');
@@ -33904,8 +34067,62 @@ function openSjShareModal() {
   document.getElementById('sjShareModalOverlay')?.classList.add('open');
 }
 
+async function openPlShareModal(playlistId) {
+  const id = playlistId || playlistChartId;
+  const p = plShareLookup(id);
+  if (!p || !playlistIdCanShare(id)) {
+    showToast('Open a playlist to share it.');
+    return;
+  }
+  _sjShareKind = 'playlist';
+  _plShareId = id;
+  // Mint a vanity slug if the owner has never shared this list before.
+  if (!p.slug && googleUser && p.user_email === googleUser.email) {
+    try {
+      showToast('Preparing link…');
+      const data = await playlistShareRequest({ action: 'ensure_slug', playlistId: id });
+      if (data.slug) {
+        p.slug = data.slug;
+        [playlists, _savedPlaylists].forEach(arr => {
+          const row = (arr || []).find(x => x.id === id);
+          if (row) row.slug = data.slug;
+        });
+        if (playlistChartId === id) plPushShareUrl(p);
+      }
+    } catch (e) {
+      showToast(e.message || 'Could not create a share link.');
+      return;
+    }
+  }
+  if (!p.slug) {
+    showToast('This playlist does not have a share link yet.');
+    return;
+  }
+  const title = document.getElementById('sjs-title');
+  if (title) title.textContent = 'Share Playlist';
+  const summary = document.getElementById('sjs-summary');
+  if (summary) {
+    summary.textContent = (p.is_public || p.visibility === 'public')
+      ? `Share ${p.name || 'this playlist'}. Anyone with the link can open it.`
+      : `Share ${p.name || 'this playlist'}. Only people who can already open it will get in.`;
+  }
+  const text = document.getElementById('sjs-text');
+  if (text) text.value = '';
+  const link = document.getElementById('sjs-link');
+  if (link) link.value = plShareUrl(p.slug);
+  const smsOpt = document.getElementById('sjs-sms-opt');
+  if (smsOpt) smsOpt.style.display = SJ_MOB_UA ? '' : 'none';
+  const fbOpt = document.getElementById('sjs-facebook-opt');
+  if (fbOpt) fbOpt.style.display = SJ_MOB_UA ? 'none' : '';
+  const nativeBtn = document.getElementById('sjs-native-btn');
+  if (nativeBtn) nativeBtn.style.display = navigator.share ? '' : 'none';
+  document.getElementById('sjShareModalOverlay')?.classList.add('open');
+}
+
 function closeSjShareModal() {
   document.getElementById('sjShareModalOverlay')?.classList.remove('open');
+  _sjShareKind = 'artist';
+  _plShareId = null;
 }
 
 async function sjShareCopyLink() {
@@ -33914,10 +34131,12 @@ async function sjShareCopyLink() {
 }
 
 function sjShareVia(medium) {
-  const { name } = sjExportArtistMeta();
+  const name = _sjShareKind === 'playlist'
+    ? ((plShareLookup(_plShareId)?.name) || 'Playlist')
+    : sjExportArtistMeta().name;
   const url  = sjJukeboxShareUrl();
   const note = (document.getElementById('sjs-text')?.value || '').trim();
-  const text = note || `${name} Jukebox`;
+  const text = note || (_sjShareKind === 'playlist' ? name : `${name} Jukebox`);
   if (medium === 'native') { navigator.share({ title: 'Suffering Jukebox', text, url }).catch(() => {}); return; }
   if (medium === 'sms')    { window.open(`sms:?${/iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : ''}body=${encodeURIComponent(text + ' ' + url)}`, '_blank'); return; }
   if (medium === 'email')  { window.open(`mailto:?subject=${encodeURIComponent(text)}&body=${encodeURIComponent(text + '\n\n' + url)}`, '_blank'); return; }
@@ -34405,6 +34624,44 @@ async function hydratePlaylistLink() {
   } catch (e) {}
 }
 hydratePlaylistLink();
+
+async function hydratePlaylistPage() {
+  const page = _PLAYLIST_PAGE;
+  if (!page?.id) return;
+  _pbRestoreDone = true;
+  try { await _initPromise; } catch (e) {}
+  try {
+    let p = (_savedPlaylists || []).find(x => x.id === page.id)
+      || (playlists || []).find(x => x.id === page.id);
+    if (!p) {
+      let rows = [];
+      try { rows = await dbGetAuth(`/playlists?id=eq.${page.id}&limit=1`); } catch (_) {}
+      if (!rows?.length) {
+        try { rows = await dbGet(`/playlists?id=eq.${page.id}&limit=1`); } catch (_) {}
+      }
+      p = rows && rows[0];
+      if (!p) { showToast('That playlist has gone missing.'); return; }
+      try {
+        p._tracks = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${page.id}&order=position.asc`);
+      } catch (_) {
+        p._tracks = await dbGet(`/playlist_tracks?playlist_id=eq.${page.id}&order=position.asc`);
+      }
+      if (page.slug) p.slug = page.slug;
+      _savedPlaylists = _savedPlaylists || [];
+      if (!_savedPlaylists.find(x => x.id === p.id)) _savedPlaylists.push(p);
+      if (!(playlists || []).find(x => x.id === p.id)) {
+        playlists = playlists || [];
+        playlists.push(p);
+      }
+    } else if (page.slug && !p.slug) {
+      p.slug = page.slug;
+    }
+    await openPlaylistChart(p.id);
+  } catch (e) {
+    showToast(e.message || 'Could not open playlist.');
+  }
+}
+hydratePlaylistPage();
 
 async function hydratePlaylistShareLink() {
   const token = new URLSearchParams(location.search).get('playlistShare');

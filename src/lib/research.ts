@@ -134,6 +134,11 @@ export function shapeResearchItem(row: any): ResearchItem {
 export const RESEARCH_ITEM_SELECT =
   "id,artist_id,is_supplemental,media_type,title,description,source_url,source_name,creator_name,creator_url,channel_id,external_id,thumbnail_url,embed_url,audio_url,storage_path,duration_ms,view_count,published_at,added_at,transcript,transcript_source,added_by,added_by_name,added_via,visibility,metadata";
 
+// List/dropdown reads skip transcript — podcast captions can be megabytes and
+// were the main reason Silver Jews supplemental content took a minute to appear.
+export const RESEARCH_ITEM_LIST_SELECT =
+  "id,artist_id,is_supplemental,media_type,title,description,source_url,source_name,creator_name,creator_url,channel_id,external_id,thumbnail_url,embed_url,audio_url,storage_path,duration_ms,view_count,published_at,added_at,transcript_source,added_by,added_by_name,added_via,visibility,metadata";
+
 function guessMediaTypeFromTitle(title: string, fallback: ResearchMediaType = "youtube_video"): ResearchMediaType {
   const t = title.toLowerCase();
   if (/\b(documentary|doc series|full film)\b/.test(t)) return "documentary";

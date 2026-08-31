@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createB2DownloadUrl, createB2UploadUrl } from "@/lib/b2-audio";
 import { bad, clientIp, rateLimited, tooMany } from "@/lib/jukebox-request";
 import {
+  RESEARCH_ITEM_LIST_SELECT,
   RESEARCH_ITEM_SELECT,
   RESEARCH_MEDIA_LABELS,
   enrichYouTubeCandidate,
@@ -55,44 +56,29 @@ async function loadArtist(sb: ReturnType<typeof createSjServiceClient>, artistId
 }
 
 async function listItems(sb: ReturnType<typeof createSjServiceClient>, artistId: string) {
+  // Fast path for the Albums dropdown and timeline: no transcript blob, no
+  // synchronous YouTube backfill. Missing dates stay null until Pull from YouTube.
   const { data, error } = await T(sb, "research_items")
-    .select(RESEARCH_ITEM_SELECT)
+    .select(RESEARCH_ITEM_LIST_SELECT)
     .eq("artist_id", artistId)
     .eq("is_supplemental", true)
     .order("published_at", { ascending: false, nullsFirst: false })
     .limit(500);
   if (error) throw error;
-  return enrichItemsFromYouTube(sb, (data ?? []).map(shapeResearchItem));
+  return (data ?? []).map((row) => shapeResearchItem({ ...row, transcript: null }));
 }
 
-/** Backfill YouTube publish dates and view counts for rows saved before we stored them. */
-async function enrichItemsFromYouTube(
-  sb: ReturnType<typeof createSjServiceClient>,
-  items: ReturnType<typeof shapeResearchItem>[],
-) {
-  const needs = items.filter((i) => !i.publishedAt && i.externalId);
-  if (!needs.length) return items;
-  const ids = [...new Set(needs.map((i) => i.externalId!).filter(Boolean))];
-  const info = await fetchYouTubeVideoInfo(ids);
-  const updated = new Map<string, ReturnType<typeof shapeResearchItem>>();
-  for (const item of needs) {
-    const detail = info[item.externalId!];
-    if (!detail) continue;
-    const patch: Record<string, unknown> = {};
-    if (detail.publishedAt) patch.published_at = detail.publishedAt;
-    if (detail.views != null && (item.viewCount == null || item.viewCount === 0)) {
-      patch.view_count = detail.views;
-    }
-    if (detail.thumbnail && !item.thumbnailUrl) patch.thumbnail_url = detail.thumbnail;
-    if (!Object.keys(patch).length) continue;
-    const { data, error } = await T(sb, "research_items")
-      .update(patch)
-      .eq("id", item.id)
-      .select(RESEARCH_ITEM_SELECT)
-      .maybeSingle();
-    if (!error && data) updated.set(item.id, shapeResearchItem(data));
-  }
-  return items.map((i) => updated.get(i.id) || i);
+async function listExistingKeys(sb: ReturnType<typeof createSjServiceClient>, artistId: string) {
+  const { data, error } = await T(sb, "research_items")
+    .select("external_id,source_url")
+    .eq("artist_id", artistId)
+    .eq("is_supplemental", true)
+    .limit(500);
+  if (error) throw error;
+  return (data ?? []).map((r: { external_id: string | null; source_url: string | null }) => ({
+    externalId: r.external_id,
+    sourceUrl: r.source_url,
+  }));
 }
 
 function markAlreadyAdded(
@@ -178,10 +164,10 @@ export async function POST(req: NextRequest) {
       if (!isUuid(artistId)) return bad("artistId is required.");
       const artist = await loadArtist(sb, artistId);
       if (!artist) return bad("Artist not found.", 404);
-      const existing = await listItems(sb, artistId);
+      const existing = await listExistingKeys(sb, artistId);
       const candidates = markAlreadyAdded(
         await runArtistResearch(artist.name),
-        existing.map((i) => ({ externalId: i.externalId, sourceUrl: i.sourceUrl })),
+        existing,
       );
       return NextResponse.json({
         ok: true,
@@ -423,7 +409,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "set_content_group") {
       const user = await authEmail(req);
-      if (!user) return bad("Sign in to group other content.", 401);
+      if (!user) return bad("Sign in to group supplemental content.", 401);
       const itemIds = Array.isArray(body.itemIds)
         ? body.itemIds.map((x: unknown) => String(x || "").trim()).filter(isUuid)
         : [];
@@ -495,7 +481,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "clear_content_group") {
       const user = await authEmail(req);
-      if (!user) return bad("Sign in to ungroup other content.", 401);
+      if (!user) return bad("Sign in to ungroup supplemental content.", 401);
       const id = String(body.id || "").trim();
       if (!isUuid(id)) return bad("id is required.");
       const { data: existing } = await T(sb, "research_items")

@@ -12,6 +12,12 @@ import {
   visibilityFromGrants,
   type PlaylistGrant,
 } from "@/lib/playlist-grants";
+import {
+  ensurePlaylistSlug,
+  normalizePlaylistSlug,
+  playlistSlugAvailable,
+} from "@/lib/playlist-slug";
+import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
@@ -157,7 +163,7 @@ async function owner(req: NextRequest, playlistId: string) {
   if (!user?.email) return null;
   const sb = createSjServiceClient();
   const { data } = await sb.schema(JUKEBOX_SCHEMA).from("playlists")
-    .select("id,name,user_email,user_name,is_public,visibility")
+    .select("id,name,user_email,user_name,is_public,visibility,slug")
     .eq("id", playlistId)
     .eq("user_email", cleanEmail(user.email))
     .maybeSingle();
@@ -276,11 +282,47 @@ export async function POST(req: NextRequest) {
       }
 
       const result = await replaceGrants(sb, playlistId, grants, ownerEmail);
+      let slug = (playlist.slug || "").trim() || null;
+      if (result.visibility === "public") {
+        slug = await ensurePlaylistSlug(sb, { id: playlistId, name: playlist.name, slug });
+      }
       return NextResponse.json({
         ok: true,
         visibility: result.visibility,
         grants: result.grants,
         publicPreset: presetFromPublicGrant(result.grants.find(g => g.principal === PUBLIC_PRINCIPAL)),
+        slug,
+        shareUrl: slug ? `${SITE_URL.replace(/\/$/, "")}/p/${slug}` : null,
+      });
+    }
+
+    if (action === "ensure_slug") {
+      const slug = await ensurePlaylistSlug(sb, {
+        id: playlistId,
+        name: playlist.name,
+        slug: playlist.slug,
+      });
+      return NextResponse.json({
+        ok: true,
+        slug,
+        shareUrl: `${SITE_URL.replace(/\/$/, "")}/p/${slug}`,
+      });
+    }
+
+    if (action === "set_slug") {
+      const parsed = normalizePlaylistSlug(body.slug);
+      if (!parsed.ok) return bad(parsed.message);
+      if (!(await playlistSlugAvailable(sb, parsed.slug, playlistId))) {
+        return bad("That web address is already taken.");
+      }
+      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("playlists")
+        .update({ slug: parsed.slug })
+        .eq("id", playlistId);
+      if (error) throw error;
+      return NextResponse.json({
+        ok: true,
+        slug: parsed.slug,
+        shareUrl: `${SITE_URL.replace(/\/$/, "")}/p/${parsed.slug}`,
       });
     }
 
