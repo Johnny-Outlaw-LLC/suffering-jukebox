@@ -213,8 +213,16 @@ const INNERTUBE_ANDROID_CLIENT = {
   clientId: "3",
   userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
 } as const;
+const BROWSER_CAPTION_CLIENT = {
+  clientName: "WEB",
+  clientVersion: "2.20240410.00.00",
+  clientId: "1",
+  userAgent:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+} as const;
 
 type InnertubeClient = typeof INNERTUBE_IOS_CLIENT | typeof INNERTUBE_ANDROID_CLIENT;
+type CaptionFetchClient = InnertubeClient | typeof BROWSER_CAPTION_CLIENT;
 
 type CaptionTrack = {
   languageCode?: string;
@@ -239,13 +247,58 @@ function pickCaptionTrack(tracks: CaptionTrack[], lang?: string): CaptionTrack |
   );
 }
 
-function innertubeHeaders(client: InnertubeClient): Record<string, string> {
+function innertubeHeaders(client: CaptionFetchClient): Record<string, string> {
   return {
     "Content-Type": "application/json",
     "User-Agent": client.userAgent,
     "X-Youtube-Client-Name": client.clientId,
     "X-Youtube-Client-Version": client.clientVersion,
   };
+}
+
+function parseInlinePlayerJson(html: string, globalName: string): Record<string, unknown> | null {
+  const startToken = `var ${globalName} = `;
+  const startIndex = html.indexOf(startToken);
+  if (startIndex === -1) return null;
+  const jsonStart = startIndex + startToken.length;
+  let depth = 0;
+  for (let i = jsonStart; i < html.length; i++) {
+    if (html[i] === "{") depth++;
+    else if (html[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(html.slice(jsonStart, i + 1)) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+async function fetchCaptionTracksFromWatchPage(videoId: string): Promise<CaptionTrack[]> {
+  try {
+    const resp = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        "User-Agent": BROWSER_CAPTION_CLIENT.userAgent,
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      cache: "no-store",
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+    const player = parseInlinePlayerJson(html, "ytInitialPlayerResponse");
+    const status = (player?.playabilityStatus as { status?: string } | undefined)?.status;
+    if (status !== "OK") return [];
+    const tracks = (player?.captions as {
+      playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] };
+    } | undefined)?.playerCaptionsTracklistRenderer?.captionTracks;
+    return Array.isArray(tracks) ? tracks : [];
+  } catch {
+    return [];
+  }
 }
 
 async function fetchCaptionTracksForClient(
@@ -270,8 +323,8 @@ async function fetchCaptionTracksForClient(
   }
 }
 
-async function fetchCaptionTracks(videoId: string): Promise<Array<{ track: CaptionTrack; client: InnertubeClient }>> {
-  const out: Array<{ track: CaptionTrack; client: InnertubeClient }> = [];
+async function fetchCaptionTracks(videoId: string): Promise<Array<{ track: CaptionTrack; client: CaptionFetchClient }>> {
+  const out: Array<{ track: CaptionTrack; client: CaptionFetchClient }> = [];
   const iosTracks = await fetchCaptionTracksForClient(
     videoId,
     INNERTUBE_IOS_CLIENT,
@@ -314,6 +367,10 @@ async function fetchCaptionTracks(videoId: string): Promise<Array<{ track: Capti
     },
   );
   androidTracks.forEach((track) => out.push({ track, client: INNERTUBE_ANDROID_CLIENT }));
+  if (!out.length) {
+    const pageTracks = await fetchCaptionTracksFromWatchPage(videoId);
+    pageTracks.forEach((track) => out.push({ track, client: BROWSER_CAPTION_CLIENT }));
+  }
   return out;
 }
 
@@ -378,16 +435,16 @@ function parseXmlTranscript(xml: string): string[] {
     .filter(Boolean);
 }
 
-async function fetchCaptionLines(baseUrl: string, client: InnertubeClient): Promise<string[]> {
+async function fetchCaptionLines(baseUrl: string, client: CaptionFetchClient): Promise<string[]> {
   const attempts = [
     `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}fmt=json3`,
     baseUrl,
   ];
-  const headers = {
-    "User-Agent": client.userAgent,
-    "X-Youtube-Client-Name": client.clientId,
-    "X-Youtube-Client-Version": client.clientVersion,
-  };
+  const headers: Record<string, string> = { "User-Agent": client.userAgent };
+  if (client !== BROWSER_CAPTION_CLIENT) {
+    headers["X-Youtube-Client-Name"] = client.clientId;
+    headers["X-Youtube-Client-Version"] = client.clientVersion;
+  }
   for (const url of attempts) {
     try {
       const captionUrl = new URL(url);
