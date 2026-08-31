@@ -5659,8 +5659,10 @@ let allArtists          = [];
 let syncRuns            = {};
 let _ddActive = false;
 let _ddItems = [];
-let _ddOpenIds = new Set();
 let _ddMenuAnchor = null;
+let _ddSavedAlbums = null;
+let _ddSavedTracks = null;
+let _ddSavedViewMode = null;
 let selectedIds         = new Set();
 let albums              = {};
 let tracks              = {};
@@ -6003,9 +6005,12 @@ function calcTLLayout(sorted, flat) {
   const PANEL_HDR_H = 48;
   const MAX_VIS_TRK = 12;
   const CONN_ZONE_H = numExp > 0 ? 40 : 0;
-  const maxTrkCount = numExp > 0
+  let maxTrkCount = numExp > 0
     ? Math.max(...expandedSorted.map(alb => (tracks[alb.artist_id]||[]).filter(t => t.album_id === alb.id).length))
     : 0;
+  if (numExp > 0 && expandedSorted.some(a => a._ddResearch)) {
+    maxTrkCount = Math.max(maxTrkCount, 8);
+  }
   const PANEL_BODY_H = numExp > 0 ? PANEL_HDR_H + maxTrkCount * PANEL_TRK_H : 0;
   const TRACKS_LBL_H = 14;
   // Stage height: axis → year/title labels → art → optional ▼ tracks hint → optional connector+panels
@@ -6050,6 +6055,7 @@ function calcTLLayout(sorted, flat) {
 
 // ── Build HTML for a single panel (used by renderTimeline and patchPanels)
 function buildSinglePanelHTML(alb, L) {
+  if (alb._ddResearch) return buildDDResearchPanelHTML(alb, L);
   const { panelPos, panelZoneTop, AXIS_Y, ART_GAP, ART_H, LBL_TOTAL_H, LBL_GAP, PANEL_TRK_H, MAX_VIS_TRK, xOf } = L;
   const pp         = panelPos[alb.id];
   const color      = albumColor(alb);
@@ -6190,7 +6196,9 @@ function renderMobileChart(albList, tlMode) {
     const barH  = hideBars ? 0 : Math.max(2, Math.round((v / maxV) * BAR_H));
     const color = albumColor(alb);
     const thumb = albumThumb(alb);
-    const year  = (alb.release_date || '').slice(0, 4);
+    const year  = alb._ddResearch && !ddItemById(alb.id)?.publishedAt
+      ? '?'
+      : (alb.release_date || '').slice(0, 4);
     const artEl = thumb
       ? `<img class="mob-chart-art" src="${thumb}" loading="lazy">`
       : `<div class="mob-chart-art mob-chart-art-ph" style="background:${color}22;color:${color}">${alb.name.charAt(0)}</div>`;
@@ -6244,6 +6252,34 @@ function openMobileAlbumPanel(albId) {
   }
   if (!alb) return;
   _mobOpenAlbId = albId;
+  if (alb._ddResearch) {
+    const item = ddItemById(albId);
+    const color = albumColor(alb);
+    const thumb = albumThumb(alb);
+    const year = item?.publishedAt ? item.publishedAt.slice(0, 4) : '?';
+    const views = albumViews(alb);
+    const artEl = thumb
+      ? `<img class="mob-ae-art" src="${thumb}">`
+      : `<div class="mob-ae-art-ph" style="background:${color}22;color:${color}">${alb.name.charAt(0)}</div>`;
+    expand.innerHTML = `
+    <div class="mob-ae-hdr" style="border-left:3px solid ${color}">
+      ${artEl}
+      <div style="flex:1;min-width:0">
+        <div class="mob-ae-title">${ddEsc(alb.name)}</div>
+        <div class="mob-ae-meta">${year}${views ? ' · ' + fmtV(views) + ' views' : ''}</div>
+      </div>
+      <button class="mob-ae-close" onclick="closeMobileAlbumPanel()">✕</button>
+    </div>
+    <div>${item ? ddResearchPanelBody(item) : ''}</div>`;
+    expand.classList.add('open');
+    if (item) ddMaybeFetchTranscript(item);
+    setTimeout(() => expand.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+    document.querySelectorAll('.mob-chart-col').forEach(c => c.style.opacity = '');
+    const sel = [...document.querySelectorAll('.mob-chart-col')].find(c => c.getAttribute('onclick')?.includes(albId));
+    if (sel) sel.style.opacity = '1';
+    document.querySelectorAll('.mob-chart-col').forEach(c => { if (c !== sel) c.style.opacity = '0.5'; });
+    return;
+  }
   const color  = albumColor(alb);
   const thumb  = albumThumb(alb);
   const year   = (alb.release_date || '').slice(0, 4);
@@ -6345,6 +6381,10 @@ function toggleAlbumExpand(albumId) {
     const ids = [...selectedIds];
     const allAlbList = ids.flatMap(aid=>(albums[aid]||[])).sort((a,b)=>(a.release_date||'').localeCompare(b.release_date||''));
     patchPanels(allAlbList.filter(a => isAlbumVisible(a.id)));
+    if (_ddActive) {
+      const item = ddItemById(albumId);
+      if (item) ddMaybeFetchTranscript(item);
+    }
   }
 }
 
@@ -7713,6 +7753,13 @@ function playAlbum(albumId, e) {
   let alb = null;
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { if (a.id === albumId) alb = a; }));
   if (!alb) return;
+  if (alb._ddResearch) {
+    const item = ddItemById(albumId);
+    if (item?.externalId) openYTPlayer(item.externalId, item.title, '', e);
+    else if (item?.audioUrl) ddPlayAudio(item.id, e);
+    else if (item?.sourceUrl) window.open(item.sourceUrl, '_blank', 'noopener');
+    return;
+  }
   const albTracks = (tracks[alb.artist_id] || [])
     .filter(t => t.album_id === albumId && ytData[t.id]?.video_id)
     .sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
@@ -22863,7 +22910,9 @@ function fadeMainIn() {
 function resetDashboardState() {
   _ddActive = false;
   _ddItems = [];
-  _ddOpenIds.clear();
+  _ddSavedAlbums = null;
+  _ddSavedTracks = null;
+  expandedAlbumIds.clear();
   selectedIds = new Set();
   excludedAlbumIds = new Set();
   expandedAlbumIds = new Set();
@@ -23239,6 +23288,10 @@ async function loadTrackAudio(trackIds) {
 // ── Album helpers ─────────────────────────────────────────────
 function albumViews(album) {
   if (barChartMode === 'hidden') return 0;
+  if (album._ddResearch) {
+    const item = ddItemById(album.id);
+    return item?.viewCount || 0;
+  }
   const tks = (tracks[album.artist_id] || []).filter(t => t.album_id === album.id);
   if (barChartMode === 'mine')  return tks.reduce((s, t) => s + (myInAppPlays[t.id] || 0), 0);
   if (barChartMode === 'total') return tks.reduce((s, t) => s + (inAppPlays[t.id]   || 0), 0);
@@ -23246,6 +23299,7 @@ function albumViews(album) {
   return tks.reduce((s, t) => s + (ytData[t.id]?.views || 0), 0);
 }
 function albumThumb(album) {
+  if (album._ddResearch) return album.art_url || null;
   const art = ALBUM_ART[album.name];
   if (art) return art;
   if (album.art_url) return album.art_url;
@@ -23863,8 +23917,9 @@ function renderTimeline(albList, tlMode) {
 
   // Album bars, art, labels - these NEVER get redrawn on panel toggle
   sorted.forEach(alb => {
-    const yr     = parseInt((alb.release_date || '2000-01-01').slice(0, 4));
-    const x      = xOf(yr, alb.id);
+    const yrNum  = parseInt((alb.release_date || '2000-01-01').slice(0, 4));
+    const yr     = alb._ddResearch && !ddItemById(alb.id)?.publishedAt ? '?' : yrNum;
+    const x      = xOf(yrNum, alb.id);
     const views  = albumViews(alb);
     const color  = albumColor(alb);
     const thumb  = albumThumb(alb);
@@ -23895,7 +23950,7 @@ function renderTimeline(albList, tlMode) {
     html += `<div data-tl-item="${alb.id}" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${lblLeft}px;top:${titleTop}px;width:${LBL_W}px;text-align:center;cursor:pointer;z-index:2">
       <div style="font-size:.67rem;font-weight:700;color:var(--text);line-height:1.3;word-break:break-word">${name}</div>
     </div>`;
-    html += `<div data-label-album="${alb.id}" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${lblLeft}px;top:${AXIS_Y + ART_GAP + LBL_TOTAL_H + LBL_GAP + ART_H + 4}px;width:${LBL_W}px;text-align:center;cursor:pointer;z-index:2;font-size:.5rem;color:${isExp ? color : 'var(--text-muted)'};letter-spacing:.06em">${isExp ? '' : '▼ tracks'}</div>`;
+    html += `<div data-label-album="${alb.id}" onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${lblLeft}px;top:${AXIS_Y + ART_GAP + LBL_TOTAL_H + LBL_GAP + ART_H + 4}px;width:${LBL_W}px;text-align:center;cursor:pointer;z-index:2;font-size:.5rem;color:${isExp ? color : 'var(--text-muted)'};letter-spacing:.06em">${isExp ? '' : (alb._ddResearch ? '▼ open' : '▼ tracks')}</div>`;
 
     // Art: below the labels
     const artLeft   = x - ART_H / 2;
@@ -23938,7 +23993,10 @@ function renderListView(albList, sortOverride) {
     const yr         = (alb.release_date || '').slice(0, 4);
     const isExp      = expandedAlbumIds.has(alb.id);
     const albTracks  = (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id);
-    const hasVids    = albTracks.some(t => ytData[t.id]?.video_id);
+    const ddItem     = alb._ddResearch ? ddItemById(alb.id) : null;
+    const hasVids    = alb._ddResearch
+      ? !!(ddItem?.externalId || ddItem?.audioUrl)
+      : albTracks.some(t => ytData[t.id]?.video_id);
     const _listMetricVal = albumViews(alb);
     const _listMetricLbl = barChartMode === 'mine' ? 'my juke plays' : barChartMode === 'total' ? 'juke plays' : barChartMode === 'score' ? 'score' : 'yt views';
     const _listMetricFmt = barChartMode === 'score' ? (_listMetricVal > 0 ? '+' + _listMetricVal : String(_listMetricVal || 0)) : fmtV(_listMetricVal);
@@ -23955,7 +24013,9 @@ function renderListView(albList, sortOverride) {
         ${thumb ? `<img src="${thumb}" loading="lazy" class="list-art">` : `<div class="list-art-ph" style="background:${color}22;color:${color}">${alb.name.charAt(0)}</div>`}
         <div class="list-info">
           <div class="list-name">${alb.name}</div>
-          <div class="list-meta">${yr} · ${albTracks.length} tracks${alb.added_by_name ? ` · added by ${(alb.added_by_name || '').replace(/</g, '&lt;')}` : ''}</div>
+          <div class="list-meta">${alb._ddResearch
+            ? ((ddItem?.publishedAt ? ddItem.publishedAt.slice(0, 4) : '?') + ' · ' + (ddItem?.mediaTypeLabel || DD_TYPE_LABEL[ddItem?.mediaType] || 'Research'))
+            : (yr + ' · ' + albTracks.length + ' tracks' + (alb.added_by_name ? ' · added by ' + (alb.added_by_name || '').replace(/</g, '&lt;') : ''))}</div>
         </div>
         ${_showListMetric ? `<div class="list-views-block">
           <div class="list-views" style="color:var(--accent)">${_listMetricFmt}</div>
@@ -23965,7 +24025,7 @@ function renderListView(albList, sortOverride) {
           title="Play album">▶ Play</button>` : ''}
         <div class="list-chevron">${isExp ? '▲' : '▼'}</div>
       </div>
-      ${isExp ? `<div class="list-tracks">${renderTrackLines(alb, 'inline')}</div>` : ''}
+      ${isExp ? `<div class="list-tracks">${alb._ddResearch ? ddResearchPanelBody(ddItem) : renderTrackLines(alb, 'inline')}</div>` : ''}
     </div>`;
   }).join('');
 
@@ -26367,8 +26427,13 @@ async function ddEnter(artistId) {
   if (!id) { showToast('Open an artist jukebox first.'); return; }
   _ddActive = true;
   _ddArtistId = id;
-  _ddOpenIds.clear();
+  _ddSavedAlbums = null;
+  _ddSavedTracks = null;
+  _ddSavedViewMode = viewMode;
+  expandedAlbumIds.clear();
   if (!_ddView) _ddView = 'byyear';
+  viewMode = ddViewToMode(_ddView);
+  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
   await ddLoad(id);
   try { updateFilterHeader && updateFilterHeader(); } catch (_) {}
   try { updateViewControlsHeader(); } catch (_) {}
@@ -26376,8 +26441,16 @@ async function ddEnter(artistId) {
 }
 
 function ddExit() {
+  const aid = _ddArtistId;
+  if (aid && _ddSavedAlbums) albums[aid] = _ddSavedAlbums;
+  if (aid && _ddSavedTracks) tracks[aid] = _ddSavedTracks;
+  if (_ddSavedViewMode) viewMode = _ddSavedViewMode;
+  _ddSavedAlbums = null;
+  _ddSavedTracks = null;
+  _ddSavedViewMode = null;
   _ddActive = false;
-  _ddOpenIds.clear();
+  expandedAlbumIds.clear();
+  ddStopTranscriptPoll();
   try { updateFilterHeader && updateFilterHeader(); } catch (_) {}
   try { updateViewControlsHeader(); } catch (_) {}
   render();
@@ -26390,8 +26463,10 @@ function ddToggleMode() {
 
 function ddSetView(v) {
   _ddView = v;
-  _ddOpenIds.clear();
+  viewMode = ddViewToMode(v);
+  expandedAlbumIds.clear();
   ddStopTranscriptPoll();
+  ddSyncAlbumCache();
   try { updateViewControlsHeader(); } catch (_) {}
   ddRender();
 }
@@ -26438,12 +26513,137 @@ function ddDateInputValue(iso) {
   return String(iso).slice(0, 10);
 }
 
+
+function ddItemById(id) {
+  return (_ddItems || []).find(x => x.id === id);
+}
+
+function ddColorForItem(item) {
+  let h = 0;
+  for (let i = 0; i < (item.id || '').length; i++) h = (h * 31 + item.id.charCodeAt(i)) | 0;
+  const hues = ['#e06b35', '#7c9a52', '#c4477a', '#5a8fc4', '#b8923a', '#8b6bb7', '#4a9e8e'];
+  return hues[Math.abs(h) % hues.length];
+}
+
+function ddViewToMode(v) {
+  if (v === 'timeline') return 'timeline';
+  if (v === 'byviews') return 'byviews';
+  if (v === 'list') return 'list';
+  return 'byyear';
+}
+
+function ddSyncAlbumCache() {
+  const aid = _ddArtistId || ddPrimaryArtistId();
+  if (!aid) return [];
+  const items = ddSortedItems();
+  const pseudo = items.map(item => ({
+    id: item.id,
+    artist_id: aid,
+    name: item.title,
+    release_date: item.publishedAt ? item.publishedAt.slice(0, 10) : '0000-01-01',
+    art_url: item.thumbnailUrl || null,
+    color: ddColorForItem(item),
+    _ddResearch: true,
+  }));
+  if (_ddActive && _ddSavedAlbums === null) {
+    _ddSavedAlbums = albums[aid];
+    _ddSavedTracks = tracks[aid];
+  }
+  albums[aid] = pseudo;
+  tracks[aid] = pseudo.map(a => ({
+    id: a.id,
+    album_id: a.id,
+    artist_id: aid,
+    name: a.name,
+    track_number: 1,
+    _ddResearch: true,
+  }));
+  return pseudo;
+}
+
+function ddRenderTimelineOnly() {
+  const wrap = document.getElementById('tl-wrap');
+  if (!wrap) { ddRender(); return; }
+  const pseudo = ddSyncAlbumCache();
+  const mode = ddViewToMode(_ddView);
+  const savedBar = barChartMode;
+  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
+  if (_ddView === 'list') wrap.innerHTML = renderListView(pseudo);
+  else if (window.innerWidth <= 640) wrap.innerHTML = renderMobileChart(pseudo, mode);
+  else wrap.innerHTML = renderTimeline(pseudo, mode);
+  barChartMode = savedBar;
+}
+
+function buildDDResearchPanelHTML(alb, L) {
+  const item = ddItemById(alb.id);
+  if (!item) return '';
+  const { panelPos, panelZoneTop, AXIS_Y, ART_GAP, ART_H, LBL_TOTAL_H, LBL_GAP, xOf } = L;
+  const pp = panelPos[alb.id];
+  const color = albumColor(alb);
+  const thumb = albumThumb(alb);
+  const yr = item.publishedAt ? item.publishedAt.slice(0, 4) : '?';
+  const views = item.viewCount || 0;
+  const canPlay = !!(item.externalId || item.audioUrl || item.sourceUrl);
+  const name = alb.name;
+  const albX = xOf(parseInt((alb.release_date || '2000-01-01').slice(0, 4)), alb.id);
+  const panelCX = pp.left + pp.w / 2;
+  const albDx = Math.round(albX - panelCX);
+  const albDy = Math.round((AXIS_Y + ART_GAP + LBL_TOTAL_H + LBL_GAP + ART_H) - panelZoneTop);
+  return `<div class="tl-panel" data-panel-album="${alb.id}" data-alb-dx="${albDx}" data-alb-dy="${albDy}"
+    style="--alb-dx:${albDx}px;--alb-dy:${albDy}px;left:${pp.left}px;top:${panelZoneTop}px;width:${pp.w}px;
+    background:var(--bg-card);border:1px solid var(--border);border-top:2px solid ${color};z-index:3">
+    <div class="tl-panel-hdr" style="background:${color}10">
+      <div class="tl-panel-hdr-top">
+        <div class="tl-panel-art">
+          ${thumb ? `<img src="${thumb}" loading="lazy">` : `<div style="width:100%;height:100%;background:${color}22;display:flex;align-items:center;justify-content:center;color:${color};font-weight:700">${name.charAt(0)}</div>`}
+        </div>
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:700;font-size:.63rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2">${ddEsc(name)}</div>
+          <div style="font-size:.645rem;margin-top:1px"><span style="color:var(--accent);font-weight:600">${views ? fmtV(views) : '—'}</span><span style="color:var(--text-muted)"> views · ${yr}</span></div>
+        </div>
+        <button class="tl-panel-close" onclick="event.stopPropagation();toggleAlbumExpand('${alb.id}')">✕</button>
+      </div>
+      <div class="tl-panel-hdr-actions">
+        ${canPlay ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)" title="Play this item">▶ Play</button>` : ''}
+        <button type="button" class="trk-more" onclick="ddOpenMenu('${alb.id}',this,event)" title="More actions" aria-label="More actions">⋯</button>
+      </div>
+    </div>
+    <div style="height:auto;overflow:visible;padding-bottom:8px;">
+      ${ddResearchPanelBody(item)}
+    </div>
+  </div>`;
+}
+
+function ddResearchPanelBody(item) {
+  if (!item) return '';
+  const sliderId = 'dd-ts-' + item.id;
+  const dateEdit = googleUser ? `<div class="dd-date-edit">
+      <label>Published date
+        <input type="date" value="${ddDateInputValue(item.publishedAt)}" onchange="ddSavePublishedDate('${item.id}', this.value)">
+      </label>
+      ${item.externalId ? `<button type="button" class="ctrl-btn" onclick="ddRefreshMeta('${item.id}')">Pull from YouTube</button>` : ''}
+    </div>` : '';
+  return `<div class="trk-acc-body" style="padding-top:4px">
+    ${dateEdit}
+    <div class="acc-lyric-ctrl">
+      <span class="acc-lyric-size-lbl">A</span>
+      <input type="range" class="acc-lyric-slider" id="${sliderId}" min="9" max="28" value="${globalLyricSize}"
+        oninput="applyGlobalLyricSize(this.value)">
+      <span class="acc-lyric-size-lbl" style="font-size:.56rem">A</span>
+      <span class="acc-lyric-size-val" id="${sliderId}-val">${globalLyricSize}px</span>
+    </div>
+    <div class="trk-acc-lbl">Transcript</div>
+    ${ddTranscriptBodyHTML(item)}
+  </div>`;
+}
+
 function ddPickBarMetric(view, mode) {
   _viewDDOpen = null;
   _ddBarMode = mode === 'hidden' ? 'hidden' : 'views';
+  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
   try { localStorage.setItem('sj_dd_bar', _ddBarMode); } catch (_) {}
   if (_ddView !== view) ddSetView(view);
-  else { try { updateViewControlsHeader(); } catch (_) {} ddRender(); }
+  else { try { updateViewControlsHeader(); } catch (_) {} ddRenderTimelineOnly(); }
 }
 
 async function ddSavePublishedDate(id, val) {
@@ -26455,7 +26655,7 @@ async function ddSavePublishedDate(id, val) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
       showToast(val ? 'Date saved.' : 'Date cleared.');
-      ddRender();
+      ddSyncAlbumCache(); ddRenderTimelineOnly();
     }
   } catch (e) {
     showToast(e.message || 'Could not save date.');
@@ -26470,7 +26670,7 @@ async function ddRefreshMeta(id) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
       showToast('Updated from YouTube.');
-      ddRender();
+      ddSyncAlbumCache(); ddRenderTimelineOnly();
     }
   } catch (e) {
     showToast(e.message || 'Could not refresh.');
@@ -26551,27 +26751,19 @@ function ddMaybeFetchTranscript(item) {
   ddFetchTranscript(item.id);
 }
 
-function ddOpenItem(id, ev) {
-  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
-  ddCloseMenu();
-  if (_ddOpenIds.has(id)) _ddOpenIds.delete(id);
-  else _ddOpenIds.add(id);
-  ddRender();
-  if (_ddOpenIds.has(id)) ddMaybeFetchTranscript(_ddItems.find(x => x.id === id));
-}
-
 function ddExpandAll() {
   ddCloseMenu();
-  ddSortedItems().forEach(i => _ddOpenIds.add(i.id));
-  ddRender();
+  ddSyncAlbumCache();
+  ddSortedItems().forEach(i => expandedAlbumIds.add(i.id));
+  ddRenderTimelineOnly();
   ddSortedItems().forEach(i => ddMaybeFetchTranscript(i));
 }
 
 function ddCollapseAll() {
   ddCloseMenu();
-  _ddOpenIds.clear();
+  expandedAlbumIds.clear();
   ddStopTranscriptPoll();
-  ddRender();
+  ddRenderTimelineOnly();
 }
 
 function ddCloseMenu() {
@@ -26649,58 +26841,6 @@ function ddTranscriptBodyHTML(item) {
   return '<div class="sc-lyrics-ph">No transcript yet.</div>';
 }
 
-function ddAccordionHTML(item) {
-  if (!item) return '';
-  const safeTitle = (item.title || '').replace(/'/g, "\\'");
-  const sliderId = 'dd-ts-' + item.id;
-  const pub = ddFmtDate(item.publishedAt);
-  const meta = [
-    item.mediaTypeLabel || DD_TYPE_LABEL[item.mediaType],
-    item.creatorName,
-    pub ? 'Published ' + pub : null,
-    item.viewCount != null ? fmtV(item.viewCount) + ' views' : null,
-  ].filter(Boolean).join(' · ');
-  let playBtn = '';
-  if (item.externalId && item.mediaType !== 'article') {
-    playBtn = `<a class="sc-link yt" href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${ddEsc(item.externalId)}','${safeTitle}','',event)" style="margin:0">▶ Play</a>`;
-  } else if (item.audioUrl) {
-    playBtn = `<a class="sc-link yt" href="#" onclick="ddPlayAudio('${item.id}',event)" style="margin:0">▶ Play</a>`;
-  } else if (item.sourceUrl) {
-    playBtn = `<a class="sc-link" href="${ddEsc(item.sourceUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="margin:0">Open ↗</a>`;
-  }
-  const dateEdit = googleUser ? `<div class="dd-date-edit">
-      <label>Published date
-        <input type="date" value="${ddDateInputValue(item.publishedAt)}" onchange="ddSavePublishedDate('${item.id}', this.value)">
-      </label>
-    </div>` : '';
-  return `<div class="dd-acc-body" data-dd-body="${item.id}">
-    <div class="dd-acc-hd">
-      <div class="dd-acc-title">${ddEsc(item.title)}</div>
-      <div class="dd-acc-actions">
-        ${playBtn}
-        <button type="button" class="trk-more" onclick="ddOpenMenu('${item.id}',this,event)" title="More actions" aria-label="More actions">⋯</button>
-      </div>
-    </div>
-    ${meta ? `<div class="dd-acc-meta">${ddEsc(meta)}</div>` : ''}
-    ${dateEdit}
-    <div class="acc-lyric-ctrl">
-      <span class="acc-lyric-size-lbl">A</span>
-      <input type="range" class="acc-lyric-slider" id="${sliderId}" min="9" max="28" value="${globalLyricSize}"
-        oninput="applyGlobalLyricSize(this.value)">
-      <span class="acc-lyric-size-lbl" style="font-size:.56rem">A</span>
-      <span class="acc-lyric-size-val" id="${sliderId}-val">${globalLyricSize}px</span>
-    </div>
-    <div class="trk-acc-lbl">Transcript</div>
-    ${ddTranscriptBodyHTML(item)}
-  </div>`;
-}
-
-function ddAccordionStackHTML(items) {
-  const open = items.filter(i => _ddOpenIds.has(i.id));
-  if (!open.length) return '';
-  return `<div class="dd-acc-stack">${open.map(i => ddAccordionHTML(i)).join('')}</div>`;
-}
-
 async function ddFetchTranscript(id, opts) {
   try {
     const data = await ddRequest({
@@ -26711,7 +26851,7 @@ async function ddFetchTranscript(id, opts) {
     if (data.item) {
       const i = _ddItems.findIndex(x => x.id === id);
       if (i >= 0) _ddItems[i] = data.item;
-      if (_ddOpenIds.has(id)) ddRender();
+      if (expandedAlbumIds.has(id)) ddRenderTimelineOnly();
       if (data.item.transcriptSource === 'deepgram_pending') ddStartTranscriptPoll(id);
       else ddStopTranscriptPoll();
     }
@@ -26723,134 +26863,19 @@ function ddStartTranscriptPoll(id) {
   let n = 0;
   _ddTranscriptPoll = setInterval(async () => {
     n++;
-    if (n > 40 || !_ddOpenIds.has(id)) { ddStopTranscriptPoll(); return; }
+    if (n > 40 || !expandedAlbumIds.has(id)) { ddStopTranscriptPoll(); return; }
     try {
       const data = await ddRequest({ action: 'transcript', id });
       if (data.item) {
         const i = _ddItems.findIndex(x => x.id === id);
         if (i >= 0) _ddItems[i] = data.item;
-        if (_ddOpenIds.has(id)) ddRender();
+        if (expandedAlbumIds.has(id)) ddRenderTimelineOnly();
         if (data.item.transcript || data.item.transcriptSource === 'deepgram_failed') {
           ddStopTranscriptPoll();
         }
       }
     } catch (_) {}
   }, 4000);
-}
-
-function ddCardHTML(item) {
-  const pub = ddYearLabel(item);
-  const meta = [
-    item.creatorName,
-    item.viewCount != null ? fmtV(item.viewCount) + ' views' : null,
-    pub !== '—' ? pub : null
-  ].filter(Boolean).join(' · ');
-  const open = _ddOpenIds.has(item.id);
-  return `<button type="button" class="dd-card${open ? ' open' : ''}" onclick="ddOpenItem('${item.id}', event)">
-    ${ddThumbHTML(item)}
-    <div class="dd-card-body">
-      <div class="dd-card-title">${ddEsc(item.title)}</div>
-      <div class="dd-card-meta">${ddEsc(meta)}</div>
-    </div>
-  </button>`;
-}
-
-function ddListHTML(items) {
-  const maxViews = Math.max(1, ...items.map(i => i.viewCount || 0));
-  const showBars = _ddBarMode !== 'hidden';
-  return `<div class="dd-list${showBars ? '' : ' bars-hidden'}">${items.map(item => {
-    const pub = ddFmtDate(item.publishedAt);
-    const added = ddFmtDate(item.addedAt);
-    const views = item.viewCount || 0;
-    const barH = showBars && views ? Math.max(4, Math.round((views / maxViews) * 48)) : 0;
-    const barCol = showBars ? `<div class="dd-list-bar" aria-hidden="true"><div class="dd-list-bar-fill" style="height:${barH}px"></div><span style="font-family:var(--mono);font-size:.38rem;color:var(--text-muted);margin-top:2px">${views ? fmtV(views) : ''}</span></div>` : '';
-    const open = _ddOpenIds.has(item.id);
-    return `<div class="dd-list-item">
-      <button type="button" class="dd-list-row${open ? ' open' : ''}" onclick="ddOpenItem('${item.id}', event)">
-      ${barCol}
-      ${ddThumbHTML(item)}
-      <div class="dd-list-main">
-        <div class="dd-card-title">${ddEsc(item.title)}</div>
-        <div class="dd-card-meta">
-          ${ddEsc(item.mediaTypeLabel || '')}${item.creatorName ? ' · ' + ddEsc(item.creatorName) : ''}${item.sourceName ? ' · ' + ddEsc(item.sourceName) : ''}
-          ${pub ? '<br>Published ' + pub : ''}${added ? (pub ? ' · ' : '<br>') + 'Added ' + added : ''}
-          ${item.viewCount != null ? ' · ' + fmtV(item.viewCount) + ' views' : ''}
-        </div>
-      </div>
-    </button>
-    <div class="dd-accordion${open ? ' open' : ''}">${open ? ddAccordionHTML(item) : ''}</div>
-    </div>`;
-  }).join('')}</div>`;
-}
-
-function ddTimelineHTML(items, spaced) {
-  if (!items.length) return '';
-  const _isMob = window.innerWidth <= 640;
-  const showBars = _ddBarMode !== 'hidden';
-  const TOP_PAD = showBars ? (_isMob ? 20 : 44) : 0;
-  const MAX_BAR = showBars ? (_isMob ? 80 : 190) : 0;
-  const AXIS_Y = TOP_PAD + MAX_BAR;
-  const ART_H = _isMob ? 72 : 88;
-  const ART_GAP = showBars ? 10 : 4;
-  const YEAR_H = _isMob ? 16 : 22;
-  const TITLE_H = _isMob ? 28 : 40;
-  const LBL_W = 120;
-  const BAR_W = 14;
-  const stageH = AXIS_Y + ART_GAP + YEAR_H + TITLE_H + 8 + ART_H + 24;
-
-  const dated = items.filter(i => Number.isFinite(ddItemYearNum(i)));
-  const years = dated.map(i => ddItemYearNum(i));
-  const minY = years.length ? Math.min(...years) : 2000;
-  const maxY = years.length ? Math.max(...years) : minY + 1;
-  const span = Math.max(1, maxY - minY);
-  const gap = spaced ? 0 : Math.max(130, Math.min(200, Math.floor(900 / Math.max(items.length, 1))));
-  const width = spaced
-    ? Math.max(640, Math.max(...dated.map(i => 60 + ((ddItemYearNum(i) - minY) / span) * (Math.max(640, dated.length * 160) - 120)), 640))
-    : Math.max(640, items.length * gap + 80);
-  const maxViews = Math.max(1, ...items.map(i => i.viewCount || 0));
-
-  let html = `<div class="dd-tl-scroll"><div class="dd-tl" style="width:${width}px;height:${stageH}px">`;
-  html += `<div class="dd-tl-axis" style="top:${AXIS_Y}px"></div>`;
-
-  items.forEach((item, idx) => {
-    const yNum = ddItemYearNum(item);
-    let x;
-    if (spaced && Number.isFinite(yNum)) {
-      x = 60 + ((yNum - minY) / span) * (width - 120);
-    } else if (spaced && !Number.isFinite(yNum)) {
-      x = width - 60 - (items.length - idx - 1) * 40;
-    } else {
-      x = 60 + idx * gap;
-    }
-    const views = item.viewCount || 0;
-    const barH = showBars && views > 0 ? Math.max(6, (views / maxViews) * MAX_BAR) : 0;
-    const barTop = AXIS_Y - barH;
-    const yearTop = AXIS_Y + ART_GAP;
-    const titleTop = yearTop + YEAR_H;
-    const artTop = titleTop + TITLE_H + 6;
-    const lblLeft = x - LBL_W / 2;
-
-    if (barH > 0) {
-      html += `<div class="dd-tl-bar" style="left:${x - BAR_W / 2}px;top:${barTop}px;width:${BAR_W}px;height:${barH}px" onclick="ddOpenItem('${item.id}')"></div>`;
-      html += `<div class="dd-tl-bar-lbl" style="left:${x}px;top:${barTop - TOP_PAD + 3}px"><div class="dd-bar-val">${fmtV(views)}</div><div class="dd-bar-cap">Views</div></div>`;
-    }
-    html += `<div class="dd-tl-dot" style="left:${x}px;top:${AXIS_Y - 4}px"></div>`;
-    html += `<div class="dd-tl-item" style="left:${x}px;top:${yearTop}px;width:${LBL_W}px" onclick="ddOpenItem('${item.id}')">
-      <div class="dd-tl-yr">${ddYearLabel(item)}</div>
-    </div>`;
-    html += `<div class="dd-tl-item" style="left:${x}px;top:${titleTop}px;width:${LBL_W}px" onclick="ddOpenItem('${item.id}')">
-      <div class="dd-tl-title">${ddEsc(item.title)}</div>
-    </div>`;
-    html += `<div class="dd-tl-item" style="left:${x}px;top:${artTop}px;width:${ART_H}px" onclick="ddOpenItem('${item.id}')">
-      ${ddThumbHTML(item, '')}
-    </div>`;
-  });
-  html += '</div></div>';
-  return html;
-}
-
-function ddGridHTML(items) {
-  return `<div class="dd-grid">${items.map(ddCardHTML).join('')}</div>`;
 }
 
 async function ddRender() {
@@ -26860,38 +26885,42 @@ async function ddRender() {
   try { updateFilterHeader && updateFilterHeader(); } catch (_) {}
   const name = ddArtistName(_ddArtistId || ddPrimaryArtistId());
   if (_ddLoading && !_ddItems.length) {
-    main.innerHTML = `<div class="dd-stage"><div class="dd-empty">Loading Research for ${ddEsc(name)}…</div></div>`;
+    main.innerHTML = `<div class="dd-stage"><div class="dd-empty">Loading Research Library for ${ddEsc(name)}…</div></div>`;
     return;
   }
   const items = ddSortedItems();
-  let body = '';
-  let stack = '';
   if (!items.length) {
-    body = `<div class="dd-empty">
-      <div class="big-glyph">◈</div>
-      <p>No research yet for ${ddEsc(name)}.</p>
-      <p>Add podcasts, interviews, articles and more — or let us search public sources for you.</p>
-      <p style="margin-top:1rem"><button type="button" class="ctrl-btn ctrl-btn--accent" onclick="ddOpenResearch()">＋ Research &amp; Add</button></p>
+    main.innerHTML = `<div class="dd-stage">
+      <div class="dd-toolbar">
+        <strong style="font-size:.72rem">${ddEsc(name)} · Research Library</strong>
+        <span class="ctrl-row-meta">Supplemental research — separate from the album charts</span>
+      </div>
+      <div class="dd-empty">
+        <div class="big-glyph">◈</div>
+        <p>No research yet for ${ddEsc(name)}.</p>
+        <p>Add podcasts, interviews, articles and more — or let us search public sources for you.</p>
+        <p style="margin-top:1rem"><button type="button" class="ctrl-btn ctrl-btn--accent" onclick="ddOpenResearch()">＋ Research &amp; Add</button></p>
+      </div>
     </div>`;
-  } else if (_ddView === 'list') {
-    body = ddListHTML(items);
-  } else if (_ddView === 'timeline') {
-    body = ddTimelineHTML(items, true);
-    stack = ddAccordionStackHTML(items);
-  } else if (_ddView === 'byviews') {
-    if (window.innerWidth <= 640) body = ddListHTML(items);
-    else { body = ddTimelineHTML(items, false); stack = ddAccordionStackHTML(items); }
-  } else {
-    if (window.innerWidth <= 640) { body = ddGridHTML(items); stack = ddAccordionStackHTML(items); }
-    else { body = ddTimelineHTML(items, false); stack = ddAccordionStackHTML(items); }
+    return;
   }
+  ddSyncAlbumCache();
+  const pseudo = albums[_ddArtistId] || [];
+  const mode = ddViewToMode(_ddView);
+  viewMode = mode;
+  const savedBar = barChartMode;
+  barChartMode = _ddBarMode === 'hidden' ? 'hidden' : 'yt';
+  let tlContent;
+  if (_ddView === 'list') tlContent = renderListView(pseudo);
+  else if (window.innerWidth <= 640) tlContent = renderMobileChart(pseudo, mode);
+  else tlContent = renderTimeline(pseudo, mode);
+  barChartMode = savedBar;
   main.innerHTML = `<div class="dd-stage">
     <div class="dd-toolbar">
       <strong style="font-size:.72rem">${ddEsc(name)} · Research Library</strong>
       <span class="ctrl-row-meta">Supplemental research — separate from the album charts</span>
     </div>
-    ${body}
-    ${stack}
+    <div id="tl-wrap">${tlContent}</div>
   </div>`;
 }
 
@@ -26900,7 +26929,7 @@ async function ddRemoveItem(id) {
   try {
     await ddRequest({ action: 'remove', id });
     _ddItems = _ddItems.filter(i => i.id !== id);
-    _ddOpenIds.delete(id);
+    expandedAlbumIds.delete(id);
     showToast('Removed.');
     ddRender();
   } catch (e) {
@@ -27095,7 +27124,7 @@ const SJ_CHANGELOG = [
     'Research Library is a new mode on every artist jukebox. It looks like the album charts, but the covers are podcasts, interviews, documentaries and free articles about the artist instead of albums. Sort by Date, Timeline, By Views or List - same idea as Jukebox Controls.',
     'Each view button has a Chart bars show menu like the main jukebox: Number of Views or Hide Bars.',
     'Timeline and list views show YouTube view counts on bars when Number of Views is selected. Publish dates come from YouTube when we have them; open an item and set the Published date yourself, or tap Pull from YouTube.',
-    'Opening a research item shows the title, Play and ⋯ only — no big thumbnail. The transcript sits underneath with the same size slider as lyrics. Expand All and Collapse All work like the jukebox track lists.',
+    'Research Library now uses the same timeline, bars, thumbnails and drop-down panels as the album jukebox — research items replace album covers, and opening one shows a panel like an expanded album with Play, ⋯ and a transcript block with the lyrics size slider.',
     'Open it from the Research button on an artist jukebox, or from Research Library on an Explore Artists card ⋯ menu. Research & Add can search YouTube and Wikipedia for you, or you can paste a link / upload your own audio. Podcasts pull a transcript into the detail card when captions exist.',
     'Research Library items are stored as supplemental research (not album tracks), with media type, original creator credit, publish date and the date they were added to the library.',
     'Uploaded podcasts and other direct audio in the Research Library are transcribed with Deepgram (the same service used elsewhere), and the words show in the detail card when they are ready. YouTube items still use captions when the upload has them.',
