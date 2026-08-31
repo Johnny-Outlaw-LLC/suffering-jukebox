@@ -154,7 +154,7 @@ function ytCandidate(v: YouTubeSearchResult, mediaType?: ResearchMediaType): Res
     embedUrl: `https://www.youtube.com/embed/${v.videoId}`,
     durationMs: v.durationMs,
     viewCount: v.views,
-    publishedAt: null,
+    publishedAt: v.publishedAt,
     alreadyAdded: false,
   };
 }
@@ -355,6 +355,7 @@ export async function enrichYouTubeCandidate(videoIdOrUrl: string): Promise<Rese
     thumbnail: detail.thumbnail,
     durationMs: detail.durationMs,
     views: detail.views,
+    publishedAt: detail.publishedAt,
   });
 }
 

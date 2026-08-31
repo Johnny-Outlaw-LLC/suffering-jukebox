@@ -269,6 +269,8 @@ export type YtVideoInfo = {
   thumbnail: string | null;
   title: string;
   channelTitle: string;
+  /** From snippet.publishedAt (ISO-8601). Original upload date on YouTube. */
+  publishedAt: string | null;
   /** From contentDetails.duration (ISO-8601). Used for LRCLIB exact match. */
   durationMs: number | null;
 };
@@ -339,6 +341,7 @@ export async function fetchYouTubeVideoInfo(
         thumbnail: thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
         title: item.snippet?.title ?? "",
         channelTitle: item.snippet?.channelTitle ?? "",
+        publishedAt: item.snippet?.publishedAt ?? null,
         durationMs: parseYouTubeDuration(item.contentDetails?.duration),
       };
     }
@@ -378,6 +381,7 @@ export type YouTubeSearchResult = {
   thumbnail: string | null;
   durationMs: number | null;
   views: number | null;
+  publishedAt: string | null;
 };
 
 /**
@@ -415,6 +419,7 @@ export async function searchYouTubeVideos(query: string, maxResults = 12): Promi
         thumbnail: detail?.thumbnail ?? thumbs?.medium?.url ?? thumbs?.default?.url ?? null,
         durationMs: detail?.durationMs ?? null,
         views: detail?.views ?? null,
+        publishedAt: detail?.publishedAt ?? null,
       };
     });
 }

@@ -18,6 +18,7 @@ import {
 import { kickDeepgramForItem } from "@/lib/research-deepgram";
 import {
   createSjServiceClient,
+  fetchYouTubeVideoInfo,
   getAuthUser,
   JUKEBOX_SCHEMA,
 } from "@/lib/sj-admin-auth";
@@ -60,7 +61,37 @@ async function listItems(sb: ReturnType<typeof createSjServiceClient>, artistId:
     .order("published_at", { ascending: false, nullsFirst: false })
     .limit(500);
   if (error) throw error;
-  return (data ?? []).map(shapeResearchItem);
+  return enrichItemsFromYouTube(sb, (data ?? []).map(shapeResearchItem));
+}
+
+/** Backfill YouTube publish dates and view counts for rows saved before we stored them. */
+async function enrichItemsFromYouTube(
+  sb: ReturnType<typeof createSjServiceClient>,
+  items: ReturnType<typeof shapeResearchItem>[],
+) {
+  const needs = items.filter((i) => !i.publishedAt && i.externalId);
+  if (!needs.length) return items;
+  const ids = [...new Set(needs.map((i) => i.externalId!).filter(Boolean))];
+  const info = await fetchYouTubeVideoInfo(ids);
+  const updated = new Map<string, ReturnType<typeof shapeResearchItem>>();
+  for (const item of needs) {
+    const detail = info[item.externalId!];
+    if (!detail) continue;
+    const patch: Record<string, unknown> = {};
+    if (detail.publishedAt) patch.published_at = detail.publishedAt;
+    if (detail.views != null && (item.viewCount == null || item.viewCount === 0)) {
+      patch.view_count = detail.views;
+    }
+    if (detail.thumbnail && !item.thumbnailUrl) patch.thumbnail_url = detail.thumbnail;
+    if (!Object.keys(patch).length) continue;
+    const { data, error } = await T(sb, "research_items")
+      .update(patch)
+      .eq("id", item.id)
+      .select(RESEARCH_ITEM_SELECT)
+      .maybeSingle();
+    if (!error && data) updated.set(item.id, shapeResearchItem(data));
+  }
+  return items.map((i) => updated.get(i.id) || i);
 }
 
 function markAlreadyAdded(
@@ -88,7 +119,7 @@ async function insertItem(
     .single();
   if (error) {
     if ((error as any).code === "23505") {
-      const e = new Error("That item is already in this artist’s Deep Dive.");
+      const e = new Error("That item is already in this artist’s Research Library.");
       (e as any).status = 409;
       throw e;
     }
@@ -201,7 +232,7 @@ export async function POST(req: NextRequest) {
 
       // Enrich from a YouTube URL when the client only sent a link.
       const ytId = parseYouTubeId(sourceUrl) || parseYouTubeId(externalId);
-      if (ytId && (!title || !thumbnailUrl || !embedUrl)) {
+      if (ytId && (!title || !thumbnailUrl || !embedUrl || !publishedAt)) {
         const enriched = await enrichYouTubeCandidate(ytId);
         if (enriched) {
           title = title || enriched.title;
@@ -214,6 +245,7 @@ export async function POST(req: NextRequest) {
           embedUrl = embedUrl || enriched.embedUrl;
           durationMs = durationMs ?? enriched.durationMs;
           viewCount = viewCount ?? enriched.viewCount;
+          publishedAt = publishedAt || enriched.publishedAt;
           if (!isResearchMediaType(body.mediaType)) mediaType = enriched.mediaType;
         }
       }
@@ -342,6 +374,62 @@ export async function POST(req: NextRequest) {
         }
       }
       return NextResponse.json({ ok: true, added, skipped });
+    }
+
+    if (action === "update") {
+      const user = await authEmail(req);
+      if (!user) return bad("Sign in to edit research items.", 401);
+      const id = String(body.id || "").trim();
+      if (!isUuid(id)) return bad("id is required.");
+      const { data: row } = await T(sb, "research_items").select("id").eq("id", id).maybeSingle();
+      if (!row) return bad("Item not found.", 404);
+      const patch: Record<string, unknown> = {};
+      if (body.publishedAt !== undefined) {
+        patch.published_at = body.publishedAt ? String(body.publishedAt) : null;
+      }
+      if (body.title !== undefined) {
+        const t = String(body.title || "").trim();
+        if (t) patch.title = t.slice(0, 500);
+      }
+      if (!Object.keys(patch).length) return bad("Nothing to update.");
+      const { data, error } = await T(sb, "research_items")
+        .update(patch)
+        .eq("id", id)
+        .select(RESEARCH_ITEM_SELECT)
+        .single();
+      if (error) throw error;
+      return NextResponse.json({ ok: true, item: shapeResearchItem(data) });
+    }
+
+    if (action === "refresh_meta") {
+      const user = await authEmail(req);
+      if (!user) return bad("Sign in to refresh metadata.", 401);
+      const id = String(body.id || "").trim();
+      if (!isUuid(id)) return bad("id is required.");
+      const { data: row, error: loadErr } = await T(sb, "research_items")
+        .select(RESEARCH_ITEM_SELECT)
+        .eq("id", id)
+        .maybeSingle();
+      if (loadErr) throw loadErr;
+      if (!row) return bad("Item not found.", 404);
+      const shaped = shapeResearchItem(row);
+      if (!shaped.externalId) return bad("This item has no YouTube id to refresh.");
+      const info = await fetchYouTubeVideoInfo([shaped.externalId]);
+      const detail = info[shaped.externalId];
+      if (!detail) return bad("Could not read YouTube metadata.");
+      const patch: Record<string, unknown> = {
+        view_count: detail.views,
+        published_at: detail.publishedAt,
+      };
+      if (detail.thumbnail) patch.thumbnail_url = detail.thumbnail;
+      if (detail.title) patch.title = detail.title.slice(0, 500);
+      const { data, error } = await T(sb, "research_items")
+        .update(patch)
+        .eq("id", id)
+        .select(RESEARCH_ITEM_SELECT)
+        .single();
+      if (error) throw error;
+      return NextResponse.json({ ok: true, item: shapeResearchItem(data) });
     }
 
     if (action === "remove") {
