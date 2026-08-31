@@ -3534,6 +3534,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
    need the width, and size containment made the browser lay every cell out
    twice. */
 .pl-wall-cell { position:relative; aspect-ratio:1; padding:0; border:none; cursor:pointer; background:#100d0a; overflow:hidden; border-radius:0; transition:transform .12s, box-shadow .15s; box-shadow:inset 0 0 0 0 transparent; container-type:inline-size; content-visibility:auto; contain-intrinsic-size:auto var(--pl-cell,120px); }
+.pl-wall-cell.pl-wall-ph { cursor:default; pointer-events:none; background:#0c0a08; content-visibility:auto; }
 /* The song on screen, the card that is open and anything mid-drag must never
    be skipped: they carry a frame or a shadow that spills outside the cell. */
 .pl-wall-cell.current, .pl-wall-cell.pl-wall-picked, .pl-wall-cell.pl-wall-open { content-visibility:visible; }
@@ -20641,6 +20642,53 @@ async function openPlaylistChart(playlistId) {
     const el = document.getElementById(id); if (el) { el.innerHTML = ''; el.style.display = id === 'landing-nav-header' ? 'none' : ''; el.dataset.armed = '0'; }
   });
   updateToolbarToggle();
+
+  // Now Playing is already in memory as ytQueue. Painting from that skips the
+  // multi-thousand-row catalog fetch that was freezing 1,000+ song queues
+  // before the first cover appeared. Missing art / duration hydrate after.
+  if (playlistId === '__dynamic_now_playing') {
+    const rows = (ytQueue || []).map((it, index) => {
+      const tid = it && it.trackId;
+      if (!tid) return null;
+      const meta = SJ_TRACK_META[tid] || {};
+      const yt = ytData[tid] || {};
+      return {
+        trackId: tid,
+        title: it.title || meta.title || 'Track',
+        artist: it.artist || meta.artist || '',
+        album: it.album || meta.album || '',
+        albumId: null,
+        _alb: null,
+        color: DEFAULT_BAR_COLOR,
+        artwork: it.artwork || yt.thumbnail || meta.artwork || '',
+        index,
+        duration: Number(meta.duration_ms) || 0,
+        views: Number(yt.views) || 0,
+        ptId: null,
+        position: index,
+        addedByEmail: it.addedByEmail || null,
+        addedByName: it.addedBy || '',
+      };
+    }).filter(Boolean);
+    if (!rows.length) {
+      renderPlaylistChart('Nothing is playing yet.');
+      return;
+    }
+    playlistChartRows = rows;
+    plWallIndexRows();
+    playlistChartBaseQueue = ytQueue;
+    const paintAt = performance.now();
+    renderPlaylistChart();
+    sjPerf('playlist-wall.now-playing-fast', {
+      run: perfRun,
+      rows: rows.length,
+      paintMs: sjPerfDuration(paintAt),
+      totalMs: sjPerfDuration(perfStartedAt),
+    });
+    void plWallHydrateNowPlaying(perfRun);
+    return;
+  }
+
   const skeletonAt = performance.now();
   renderPlaylistChart();
   sjPerf('playlist-wall.skeleton-rendered', { run: perfRun, durationMs: sjPerfDuration(skeletonAt), elapsedMs: sjPerfDuration(perfStartedAt) });
@@ -20746,6 +20794,108 @@ async function openPlaylistChart(playlistId) {
     plWallIndexRows();
     renderPlaylistChart(e.message || 'Could not load this playlist.');
     sjPerf('playlist-wall.open-error', { run: perfRun, totalMs: sjPerfDuration(perfStartedAt), message: String(e?.message || e).slice(0, 200) });
+  }
+}
+
+/** After a fast Now Playing paint, fill in duration / art / artist for songs
+ *  that only had a queue row. Does not blank the wall — patches rows and the
+ *  summary, and refreshes covers that are already on screen. */
+async function plWallHydrateNowPlaying(perfRun) {
+  const startedAt = performance.now();
+  if (playlistChartId !== '__dynamic_now_playing') return;
+  const ids = playlistChartRows.map(r => r.trackId).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    const needMeta = ids.filter(id => {
+      const r = _plRowById.get(id);
+      return r && (!r.duration || !r.artwork || !r.artist);
+    });
+    const fetchIds = needMeta.length ? needMeta : ids.slice(0, 200);
+    const chunks = [];
+    for (let i = 0; i < fetchIds.length; i += 70) chunks.push(fetchIds.slice(i, i + 70));
+    const tRows = (await Promise.all(chunks.map(c =>
+      dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,duration_ms`)))).flat();
+    if (playlistChartId !== '__dynamic_now_playing') return;
+    const tById = Object.fromEntries(tRows.map(t => [t.id, t]));
+    const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
+    const aChunks = []; for (let i = 0; i < albumIds.length; i += 70) aChunks.push(albumIds.slice(i, i + 70));
+    const albRows = albumIds.length
+      ? (await Promise.all(aChunks.map(c => dbGet(`/albums?id=in.(${c.join(',')})&select=id,name,artist_id,art_url`)))).flat()
+      : [];
+    if (playlistChartId !== '__dynamic_now_playing') return;
+    const albById = Object.fromEntries(albRows.map(a => [a.id, a]));
+    const artistIds = [...new Set(albRows.map(a => a.artist_id).filter(Boolean))];
+    const arChunks = []; for (let i = 0; i < artistIds.length; i += 70) arChunks.push(artistIds.slice(i, i + 70));
+    const artistsRows = artistIds.length
+      ? (await Promise.all(arChunks.map(c => dbGet(`/artists?id=in.(${c.join(',')})&select=id,name`)))).flat()
+      : [];
+    if (playlistChartId !== '__dynamic_now_playing') return;
+    const artistById = Object.fromEntries(artistsRows.map(a => [a.id, a]));
+    // Thumbnails / video ids only for rows still missing art — not a full
+    // metrics sweep of the whole queue.
+    const needArt = fetchIds.filter(id => !(_plRowById.get(id)?.artwork) && !(ytData[id]?.thumbnail));
+    if (needArt.length) {
+      const chartYT = await loadYTVideoIds(needArt);
+      Object.assign(ytData, chartYT);
+      needArt.forEach(tid => {
+        const pri = tvPrimary(tid);
+        if (pri?.thumbnail && ytData[tid]) ytData[tid].thumbnail = pri.thumbnail;
+      });
+    }
+    if (playlistChartId !== '__dynamic_now_playing') return;
+    let patched = 0;
+    playlistChartRows.forEach(r => {
+      const t = tById[r.trackId];
+      if (!t) return;
+      const alb = albById[t.album_id];
+      const artist = alb && artistById[alb.artist_id];
+      if (!r.duration && t.duration_ms) { r.duration = t.duration_ms; patched++; }
+      if (!r.artist && artist?.name) { r.artist = artist.name; patched++; }
+      if (!r.album && alb?.name) { r.album = alb.name; patched++; }
+      const art = ytData[r.trackId]?.thumbnail || alb?.art_url || '';
+      if (!r.artwork && art) { r.artwork = art; patched++; }
+      SJ_TRACK_META[r.trackId] = Object.assign({}, SJ_TRACK_META[r.trackId] || {}, {
+        title: t.name || r.title,
+        artist: r.artist,
+        album: r.album,
+        artwork: r.artwork || undefined,
+        duration_ms: r.duration || undefined,
+      });
+    });
+    plWallIndexRows();
+    const sum = document.querySelector('.pl-wall-summary');
+    const sumHTML = plWallSummaryHTML();
+    if (sum && sumHTML) sum.outerHTML = sumHTML;
+    // Refresh art on drawn covers that were blank.
+    const grid = document.getElementById('pl-wall-grid');
+    if (grid) {
+      grid.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(cell => {
+        const tid = cell.getAttribute('data-pc-track');
+        const row = tid && _plRowById.get(tid);
+        if (!row?.artwork) return;
+        if (cell.querySelector('img')) return;
+        const ph = cell.querySelector('.pl-wall-fallback');
+        if (ph) ph.outerHTML = `<img src="${row.artwork}" loading="lazy" alt="" draggable="false">`;
+      });
+    }
+    loadPlayCounts(ids.slice(0, 400));
+    if (googleUser) loadMyPlayCounts().then(() => {
+      if (viewMode === 'playlistchart' && playlistChartId === '__dynamic_now_playing') plWallRefreshStats();
+    });
+    plWallLoadReactionCounts(ids.slice(0, 600));
+    sjPerf('playlist-wall.now-playing-hydrate', {
+      run: perfRun,
+      fetched: fetchIds.length,
+      patched,
+      durationMs: sjPerfDuration(startedAt),
+    });
+  } catch (e) {
+    console.warn('plWallHydrateNowPlaying', e);
+    sjPerf('playlist-wall.now-playing-hydrate-error', {
+      run: perfRun,
+      durationMs: sjPerfDuration(startedAt),
+      message: String(e?.message || e).slice(0, 200),
+    });
   }
 }
 
@@ -21629,7 +21779,7 @@ function plWallSummaryHTML() {
   const totalSongs = playlistChartRows.length;
   const totalDurMs = playlistChartRows.reduce((s, r) => s + (Number(r.duration) || 0), 0);
   return totalSongs
-    ? `<div class="pl-wall-summary"><span class="pl-wall-stat"><b>${totalSongs}</b> song${totalSongs === 1 ? '' : 's'}, <b>${plWallFmtClock(totalDurMs)}</b> total play time</span></div>`
+    ? `<div class="pl-wall-summary"><span class="pl-wall-stat"><b>${totalSongs.toLocaleString()}</b> song${totalSongs === 1 ? '' : 's'}, <b>${plWallFmtClock(totalDurMs)}</b> total play time</span></div>`
     : '';
 }
 
@@ -21660,14 +21810,20 @@ function plWallSummaryHTML() {
  */
 /** How many songs deep the wall pre-loads lyrics for. */
 const PL_LYRIC_PREFETCH = 150;
-const PL_FILL_FIRST = 400;
-const PL_FILL_MORE = 400;
+/** Covers: keep the first paint small. A 400-cell insert still freezes a
+ *  2,000 song Now Playing long enough for Chrome to offer to kill the tab. */
+const PL_FILL_FIRST = 120;
+const PL_FILL_MORE = 80;
 /** Detail rows are ~10× heavier than a cover cell. Smaller chunks keep the
  *  main thread free on a 2,000 song Now Playing. */
-const PL_DETAIL_FILL_FIRST = 80;
-const PL_DETAIL_FILL_MORE = 60;
+const PL_DETAIL_FILL_FIRST = 60;
+const PL_DETAIL_FILL_MORE = 40;
 /** Start adding more once the scroll is within this much of the end. */
 const PL_FILL_TRIGGER_PX = 1200;
+/** Past this many undrawn covers, jump with empty placeholders instead of
+ *  building full cells (images, titles, badges) all the way to the song. */
+const PL_FILL_PLACEHOLDER_GAP = 160;
+const PL_FILL_REAL_WINDOW = 48;
 let _plFillToken = 0;
 let _plFillState = null;
 let _plFillTowardRaf = 0;
@@ -21748,8 +21904,6 @@ function plWallFillMore(upTo) {
   }
   st.host.insertAdjacentHTML('beforeend', html);
   st.at = end;
-  const badgesAt = performance.now();
-  plWallSyncBadges();
   sjPerf('playlist-wall.fill-slice', {
     run: sjPerformanceRun,
     mode: st.isDetail ? 'details' : 'covers',
@@ -21757,14 +21911,36 @@ function plWallFillMore(upTo) {
     to: end,
     inserted: end - from,
     htmlKB: Math.round(html.length / 102.4) / 10,
-    domInsertMs: Math.max(0, Math.round((badgesAt - startedAt) * 10) / 10),
-    badgeSyncMs: sjPerfDuration(badgesAt),
     totalMs: sjPerfDuration(startedAt),
   });
   return true;
 }
 
-/** Grow the drawn window up to `upTo` one chunk per animation frame. */
+/** Empty cover cell used to jump far down a large wall without paying for
+ *  images and overlays on every slot between here and the playing song. */
+function plWallCellPlaceholderHTML(i) {
+  return `<div class="pl-wall-cell pl-wall-ph" data-pc-index="${i}" data-pc-ph="1" aria-hidden="true"></div>`;
+}
+
+/** Turn placeholders in [fromPos, toPos) into real cover cells. */
+function plWallUpgradePlaceholders(fromPos, toPos) {
+  const st = _plFillState;
+  if (!st || st.isDetail || !st.host.isConnected) return;
+  const cells = st.host.children;
+  const start = Math.max(0, fromPos);
+  const end = Math.min(st.at, toPos);
+  for (let pos = start; pos < end; pos++) {
+    const el = cells[pos];
+    if (!el || !el.hasAttribute('data-pc-ph')) continue;
+    const idx = st.order[pos];
+    el.outerHTML = plWallCellHTML(st.q[idx], idx, st.curIdx);
+  }
+}
+
+/** Grow the drawn window up to `upTo` one chunk per animation frame.
+ *  A long jump on the cover wall inserts cheap placeholders for the gap,
+ *  then upgrades a window around the target so Auto Scroll can land without
+ *  building two thousand full cells first. */
 function plWallFillToward(upTo, done) {
   const token = _plFillToken;
   const step = () => {
@@ -21772,6 +21948,27 @@ function plWallFillToward(upTo, done) {
     const st = _plFillState;
     if (!st || st.token !== token) { if (done) done(); return; }
     if (st.at >= upTo || st.at >= st.order.length) { if (done) done(); return; }
+    const gap = Math.min(upTo, st.order.length) - st.at;
+    if (!st.isDetail && gap > PL_FILL_PLACEHOLDER_GAP) {
+      const startedAt = performance.now();
+      const from = st.at;
+      const phEnd = Math.max(from, Math.min(upTo, st.order.length) - PL_FILL_REAL_WINDOW);
+      let html = '';
+      for (let pos = from; pos < phEnd; pos++) html += plWallCellPlaceholderHTML(st.order[pos]);
+      for (let pos = phEnd; pos < Math.min(upTo, st.order.length); pos++) {
+        const idx = st.order[pos];
+        html += plWallCellHTML(st.q[idx], idx, st.curIdx);
+      }
+      st.host.insertAdjacentHTML('beforeend', html);
+      st.at = Math.min(upTo, st.order.length);
+      sjPerf('playlist-wall.fill-jump', {
+        run: sjPerformanceRun,
+        from, to: st.at, placeholders: Math.max(0, phEnd - from),
+        durationMs: sjPerfDuration(startedAt),
+      });
+      if (done) done();
+      return;
+    }
     plWallFillMore(upTo);
     if (st.at >= upTo || st.at >= st.order.length) { if (done) done(); return; }
     _plFillTowardRaf = requestAnimationFrame(step);
@@ -21790,10 +21987,31 @@ function plWallWatchFillScroll() {
   scroll._plFillBound = true;
   scroll.addEventListener('scroll', () => {
     const st = _plFillState;
-    if (!st || st.at >= st.order.length) return;
+    if (!st) return;
+    plWallUpgradeVisiblePlaceholders();
+    if (st.at >= st.order.length) return;
     if (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > PL_FILL_TRIGGER_PX) return;
     plWallFillMore();
   }, { passive: true });
+}
+
+/** Replace placeholder covers that are on screen (or near it) with real cells. */
+function plWallUpgradeVisiblePlaceholders() {
+  const st = _plFillState;
+  if (!st || st.isDetail || !st.host?.isConnected) return;
+  const scroll = document.getElementById('playlist-chart-scroll');
+  if (!scroll) return;
+  const top = scroll.getBoundingClientRect().top - 600;
+  const bot = scroll.getBoundingClientRect().bottom + 900;
+  const ph = st.host.querySelectorAll('.pl-wall-cell[data-pc-ph]');
+  if (!ph.length) return;
+  ph.forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.bottom < top || r.top > bot) return;
+    const idx = Number(el.getAttribute('data-pc-index'));
+    if (!Number.isFinite(idx) || idx < 0 || idx >= st.q.length) return;
+    el.outerHTML = plWallCellHTML(st.q[idx], idx, st.curIdx);
+  });
 }
 
 /** How many songs are actually drawn right now. */
@@ -29537,6 +29755,7 @@ const SJ_CHANGELOG = [
     'Explore Songs has a Recently Added sort, same idea as Date Added on Explore Artists: newest songs in the Jukebox first.',
     'Favorites Plus is songs you have thumbs-up\'d or given a playback reaction to. On a large card it reads Favorites PLUS and a few of those artists.',
     'Hearts and heartbreaks are playback reactions: send them from the player while a song is playing. You can no longer heart a lyric line from the lyrics pane. Jukebox Score and Help describe them that way.',
+    'Large Now Playing queues open from the songs already in your player instead of re-fetching the whole catalogue first, so a thousand-song list no longer freezes the tab. Song counts over 1,000 show a comma (1,926 songs).',
     'When you search YouTube for a song to add to a playlist, Preview sits next to + Add. It opens a small player under that result with the video, channel, length, views and description.',
     'If you imported a song (or you are an admin), the song ⋯ menu has Manage song: rename it, move it to another album, set Visible to All or Private, manage YouTube versions and external links, or remove it from the site.',
     'When adding songs from YouTube, you can edit the song title as well as the artist before it lands in the Jukebox.',
