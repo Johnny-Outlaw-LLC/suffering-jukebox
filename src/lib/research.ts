@@ -198,19 +198,14 @@ export async function runArtistResearch(artistName: string): Promise<ResearchCan
   return out;
 }
 
-const INNERTUBE_PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
-const INNERTUBE_TRANSCRIPT_CLIENTS = [
-  {
-    clientName: "IOS",
-    clientVersion: "20.10.38",
-    userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 17_4 like Mac OS X)",
-  },
-  {
-    clientName: "ANDROID",
-    clientVersion: "20.10.38",
-    userAgent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
-  },
-] as const;
+const INNERTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+const INNERTUBE_PLAYER_URL = `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}&prettyPrint=false`;
+const INNERTUBE_IOS_CLIENT = {
+  clientName: "IOS",
+  clientVersion: "20.10.38",
+  clientId: "5",
+  userAgent: "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 17_4 like Mac OS X)",
+} as const;
 
 type CaptionTrack = {
   languageCode?: string;
@@ -235,35 +230,49 @@ function pickCaptionTrack(tracks: CaptionTrack[], lang?: string): CaptionTrack |
   );
 }
 
+function innertubeHeaders(client = INNERTUBE_IOS_CLIENT): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "User-Agent": client.userAgent,
+    "X-Youtube-Client-Name": client.clientId,
+    "X-Youtube-Client-Version": client.clientVersion,
+  };
+}
+
 async function fetchCaptionTracks(videoId: string): Promise<CaptionTrack[]> {
-  for (const client of INNERTUBE_TRANSCRIPT_CLIENTS) {
-    try {
-      const resp = await fetch(INNERTUBE_PLAYER_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": client.userAgent,
-        },
-        body: JSON.stringify({
-          context: {
-            client: {
-              clientName: client.clientName,
-              clientVersion: client.clientVersion,
-            },
+  try {
+    const resp = await fetch(INNERTUBE_PLAYER_URL, {
+      method: "POST",
+      headers: innertubeHeaders(),
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: INNERTUBE_IOS_CLIENT.clientName,
+            clientVersion: INNERTUBE_IOS_CLIENT.clientVersion,
+            hl: "en",
+            gl: "US",
+            deviceMake: "Apple",
+            deviceModel: "iPhone16,2",
+            osName: "iPhone",
+            osVersion: "17_4.0",
+            clientFormFactor: "SMALL_FORM_FACTOR",
           },
-          videoId,
-        }),
-      });
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      if (data?.playabilityStatus?.status !== "OK") continue;
-      const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-      if (Array.isArray(tracks) && tracks.length) return tracks;
-    } catch {
-      /* try next client */
-    }
+          user: { lockedSafetyMode: false },
+          request: { useSsl: true },
+        },
+        videoId,
+        contentCheckOk: true,
+        racyCheckOk: true,
+      }),
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    if (data?.playabilityStatus?.status !== "OK") return [];
+    const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    return Array.isArray(tracks) ? tracks : [];
+  } catch {
+    return [];
   }
-  return [];
 }
 
 function transcriptSourceForTrack(track: CaptionTrack): string {
@@ -327,11 +336,16 @@ function parseXmlTranscript(xml: string): string[] {
     .filter(Boolean);
 }
 
-async function fetchCaptionLines(baseUrl: string, userAgent: string): Promise<string[]> {
+async function fetchCaptionLines(baseUrl: string): Promise<string[]> {
   const attempts = [
     `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}fmt=json3`,
     baseUrl,
   ];
+  const headers = {
+    "User-Agent": INNERTUBE_IOS_CLIENT.userAgent,
+    "X-Youtube-Client-Name": INNERTUBE_IOS_CLIENT.clientId,
+    "X-Youtube-Client-Version": INNERTUBE_IOS_CLIENT.clientVersion,
+  };
   for (const url of attempts) {
     try {
       const captionUrl = new URL(url);
@@ -340,7 +354,7 @@ async function fetchCaptionLines(baseUrl: string, userAgent: string): Promise<st
       continue;
     }
     try {
-      const resp = await fetch(url, { headers: { "User-Agent": userAgent } });
+      const resp = await fetch(url, { headers });
       if (!resp.ok) continue;
       const body = await resp.text();
       if (!body.trim()) continue;
@@ -366,8 +380,7 @@ export async function fetchYouTubeTranscript(videoId: string): Promise<{
     const tracks = await fetchCaptionTracks(id);
     const track = pickCaptionTrack(tracks, "en");
     if (!track?.baseUrl) return null;
-    const client = INNERTUBE_TRANSCRIPT_CLIENTS[0];
-    const lines = await fetchCaptionLines(track.baseUrl, client.userAgent);
+    const lines = await fetchCaptionLines(track.baseUrl);
     const text = lines.join("\n").trim();
     if (!text) return null;
     return { text, source: transcriptSourceForTrack(track) };
