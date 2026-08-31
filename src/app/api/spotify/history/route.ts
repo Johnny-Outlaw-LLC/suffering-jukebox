@@ -21,15 +21,15 @@ const BUCKETS = new Set(["auto", "day", "week", "month", "year"]);
 const FILTER_MAX = 2000;
 const DATA_BATCH_MAX = 100;
 
-function cleanDataBatches(value: unknown): Array<{ source: "spotify" | "jukebox"; year: number }> {
+function cleanDataBatches(value: unknown): Array<{ source: "spotify" | "youtube" | "jukebox"; year: number }> {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
-  const batches: Array<{ source: "spotify" | "jukebox"; year: number }> = [];
+  const batches: Array<{ source: "spotify" | "youtube" | "jukebox"; year: number }> = [];
   for (const item of value) {
     const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
     const source = String(row.source || "").trim().toLowerCase();
     const year = Number(row.year);
-    if ((source !== "spotify" && source !== "jukebox") || !Number.isInteger(year) || year < 1900 || year > 2200) continue;
+    if ((source !== "spotify" && source !== "youtube" && source !== "jukebox") || !Number.isInteger(year) || year < 1900 || year > 2200) continue;
     const key = `${source}:${year}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -63,6 +63,12 @@ type CleanHistoryEvent = {
   duration_played_ms: number;
   skipped: boolean;
   source_file_name: string;
+  history_source: "spotify" | "youtube";
+  youtube_video_id: string | null;
+  youtube_url: string | null;
+  youtube_channel: string | null;
+  classification_confidence: string | null;
+  classification_reason: string | null;
 };
 
 function cleanHistoryEvent(value: unknown, userId: string): CleanHistoryEvent | null {
@@ -75,11 +81,22 @@ function cleanHistoryEvent(value: unknown, userId: string): CleanHistoryEvent | 
   if (!HISTORY_TYPES.has(contentType) || !Number.isFinite(playedAtMs) || !title || !artist) return null;
   const spotifyUri = String(item.uri || "").trim().slice(0, 256) || null;
   const album = String(item.album || "").trim().slice(0, 500) || null;
-  const sourceFileName = String(item.fileName || "Spotify export").trim().slice(0, 500) || "Spotify export";
+  const sourceFileName = String(item.fileName || (item.source === "youtube" ? "YouTube watch-history.html" : "Spotify export")).trim().slice(0, 500) || "Listening history export";
   const durationPlayedMs = Math.max(0, Math.min(Number(item.durationMs) || 0, 86_400_000));
   const skipped = item.skipped === true;
+  const historySource = item.source === "youtube" ? "youtube" : "spotify";
+  const youtubeVideoId = historySource === "youtube" ? String(item.videoId || "").trim().slice(0, 32) || null : null;
+  const youtubeUrl = youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : null;
+  const youtubeChannel = historySource === "youtube" ? String(item.channel || "").trim().slice(0, 500) || null : null;
+  const confidenceRaw = String(item.confidence || "").trim().toLowerCase();
+  const classificationConfidence = historySource === "youtube" && ["high", "likely", "uncertain"].includes(confidenceRaw) ? confidenceRaw : null;
+  const classificationReason = historySource === "youtube" ? String(item.reason || "").trim().slice(0, 500) || null : null;
+  if (historySource === "youtube" && !youtubeVideoId) return null;
+  const fingerprintParts = historySource === "youtube"
+    ? [historySource, contentType, youtubeVideoId || "", playedAt, durationPlayedMs, title, artist, album || ""]
+    : [contentType, spotifyUri || "", playedAt, durationPlayedMs, title, artist, album || ""];
   const eventFingerprint = createHash("sha256")
-    .update([contentType, spotifyUri || "", playedAt, durationPlayedMs, title, artist, album || ""].join("\0"))
+    .update(fingerprintParts.join("\0"))
     .digest("hex");
   return {
     user_id: userId,
@@ -93,6 +110,12 @@ function cleanHistoryEvent(value: unknown, userId: string): CleanHistoryEvent | 
     duration_played_ms: durationPlayedMs,
     skipped,
     source_file_name: sourceFileName,
+    history_source: historySource,
+    youtube_video_id: youtubeVideoId,
+    youtube_url: youtubeUrl,
+    youtube_channel: youtubeChannel,
+    classification_confidence: classificationConfidence,
+    classification_reason: classificationReason,
   };
 }
 
@@ -189,7 +212,7 @@ export async function POST(req: NextRequest) {
       // Signed-in GDPR imports are large and deliberate. Cap by user, not IP, and
       // allow enough batches for a multi-year Extended Streaming History dump
       // (~250k events at HISTORY_BATCH_MAX) inside a 15-minute window.
-      if (rateLimited(`spotify-history-import:${uid}`, 300, 15 * 60_000)) return tooMany();
+      if (rateLimited(`listening-history-import:${uid}`, 300, 15 * 60_000)) return tooMany();
       const events: unknown[] = Array.isArray(body.events) ? body.events.slice(0, HISTORY_BATCH_MAX) : [];
       if (!events.length) return bad("No history events to import.");
       const cleaned = events
@@ -216,6 +239,12 @@ export async function POST(req: NextRequest) {
           duration_played_ms: event.duration_played_ms,
           skipped: event.skipped,
           source_file_name: event.source_file_name,
+          history_source: event.history_source,
+          youtube_video_id: event.youtube_video_id,
+          youtube_url: event.youtube_url,
+          youtube_channel: event.youtube_channel,
+          classification_confidence: event.classification_confidence,
+          classification_reason: event.classification_reason,
         })),
       });
       if (error) throw error;

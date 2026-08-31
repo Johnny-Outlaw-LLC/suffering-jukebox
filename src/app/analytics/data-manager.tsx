@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./analytics.module.css";
 
-type Source = "spotify" | "jukebox";
+type Source = "spotify" | "youtube" | "jukebox";
 type Batch = { source: Source; year: number; activeRecords: number; pendingDeletionRecords: number };
 type Selection = { source: Source; year: number };
 
 function format(value: number) { return new Intl.NumberFormat().format(value); }
-function sourceLabel(source: Source) { return source === "spotify" ? "Spotify" : "Suffering Jukebox"; }
+function sourceLabel(source: Source) { return source === "spotify" ? "Spotify" : source === "youtube" ? "YouTube Takeout" : "Suffering Jukebox"; }
 
 export default function DataManager({ accessToken, onChange }: { accessToken: string; onChange: () => void }) {
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -82,13 +82,13 @@ export default function DataManager({ accessToken, onChange }: { accessToken: st
 
   return <section className={styles.dataManager} aria-labelledby="manage-my-data-title">
     <div className={styles.dataManagerIntro}>
-      <div><p className={styles.eyebrow}>Privacy controls</p><h2 id="manage-my-data-title">Manage my data</h2><p>Choose listening-history batches to remove from your Analytics. This affects only your Spotify history and Suffering Jukebox play records—not playlists, saved music, or your account.</p></div>
+      <div><p className={styles.eyebrow}>Privacy controls</p><h2 id="manage-my-data-title">Manage my data</h2><p>Choose listening-history batches to remove from your Analytics. This affects Spotify, YouTube Takeout, and Suffering Jukebox play records—not playlists, saved music, or your account.</p></div>
       <div className={styles.dataManagerTotal}><span>Active listening records</span><strong>{format(totalActive)}</strong></div>
     </div>
     <div className={styles.retentionNotice}><strong>30-day recovery window</strong><span>Marked records are hidden immediately and remain recoverable here for 30 days before permanent deletion.</span></div>
     {error && <div className={styles.error}>{error}</div>}
     {notice && <div className={styles.success}><p>{notice}</p></div>}
-    {loading ? <div className={styles.loading}>Loading your listening-data batches…</div> : !batches.length ? <div className={styles.emptyData}><h3>No listening records yet</h3><p>Import Spotify history or listen in the Jukebox to see your records here.</p></div> : <>
+    {loading ? <div className={styles.loading}>Loading your listening-data batches…</div> : !batches.length ? <div className={styles.emptyData}><h3>No listening records yet</h3><p>Import Spotify or YouTube history, or listen in the Jukebox, to see your records here.</p></div> : <>
       <div className={styles.dataToolbar}>
         <p>{selectedBatches.length ? `${format(selectedRecords)} records in ${selectedBatches.length} selected batch${selectedBatches.length === 1 ? "" : "es"}` : "Select one or more year-and-source batches to mark them for deletion."}</p>
         <div><button className={styles.secondaryButton} disabled={saving || !activeBatches.length} onClick={() => setSelected(new Set(activeBatches.map(batch => `${batch.source}:${batch.year}`)))}>Select all</button><button className={styles.secondaryButton} disabled={saving || !selected.size} onClick={() => setSelected(new Set())}>Clear</button></div>

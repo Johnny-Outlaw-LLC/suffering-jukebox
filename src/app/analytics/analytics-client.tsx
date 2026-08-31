@@ -6,9 +6,11 @@ import { sjBrowserAuth } from "@/lib/sj-browser-auth";
 import AnalyticsDashboard from "./analytics-dashboard";
 import DataManager from "./data-manager";
 import styles from "./analytics.module.css";
+import { parseYouTubeTakeoutHtml, type YouTubeMusicConfidence } from "@/lib/youtube-history";
 
 type ContentType = "music" | "podcast" | "audiobook" | "other";
 type HistoryEvent = {
+  source: "spotify" | "youtube";
   contentType: ContentType;
   uri: string | null;
   title: string;
@@ -18,6 +20,11 @@ type HistoryEvent = {
   durationMs: number;
   skipped: boolean;
   fileName: string;
+  videoId?: string;
+  videoUrl?: string;
+  channel?: string;
+  confidence?: YouTubeMusicConfidence;
+  reason?: string;
 };
 type FileProgress = { name: string; rows: number; accepted: number; state: "waiting" | "reading" | "done" | "error"; error?: string };
 
@@ -66,6 +73,7 @@ function normalizeRow(row: Record<string, unknown>, fileName: string): HistoryEv
     row.master_metadata_album_album_name || row.episode_show_name || row.audiobook_name || "",
   ).trim();
   return {
+    source: "spotify",
     contentType,
     uri: trackUri || episodeUri || audiobookUri || null,
     title,
@@ -79,10 +87,11 @@ function normalizeRow(row: Record<string, unknown>, fileName: string): HistoryEv
 }
 
 function eventIdentity(event: HistoryEvent) {
-  return [event.contentType, event.uri || "", event.playedAt, event.durationMs, event.title, event.artist, event.album].join("\0");
+  return [event.source, event.contentType, event.uri || event.videoId || "", event.playedAt, event.durationMs, event.title, event.artist, event.album].join("\0");
 }
 
 function Wizard({ onComplete }: { onComplete: () => void }) {
+  const [importSource, setImportSource] = useState<"spotify" | "youtube">("spotify");
   const [step, setStep] = useState(1);
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   const [includedEventIndexes, setIncludedEventIndexes] = useState<Set<number>>(new Set());
@@ -153,8 +162,8 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
   }
 
   async function onFilesChosen(event: ChangeEvent<HTMLInputElement>) {
-    const chosen = Array.from(event.target.files || []).filter(file => /\.json$/i.test(file.name));
-    if (!chosen.length) { setError("Choose one or more JSON files from your Spotify export."); return; }
+    const chosen = Array.from(event.target.files || []).filter(file => importSource === "spotify" ? /\.json$/i.test(file.name) : /\.html?$/i.test(file.name));
+    if (!chosen.length) { setError(importSource === "spotify" ? "Choose one or more JSON files from your Spotify export." : "Choose watch-history.html from your Google Takeout."); return; }
     setError(""); setSaved(null); setEvents([]); setIncludedEventIndexes(new Set()); setArtistSearch(""); setStep(2);
     let progress: FileProgress[] = chosen.map(file => ({ name: file.name, rows: 0, accepted: 0, state: "waiting" }));
     setFiles(progress);
@@ -165,11 +174,16 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
       progress = progress.map((item, itemIndex) => itemIndex === index ? { ...item, state: "reading" } : item);
       setFiles(progress);
       try {
-        const raw = JSON.parse(await file.text());
-        if (!Array.isArray(raw)) throw new Error("not a Spotify history array");
+        const text = await file.text();
+        const raw = importSource === "spotify" ? JSON.parse(text) : parseYouTubeTakeoutHtml(text);
+        if (!Array.isArray(raw)) throw new Error(importSource === "spotify" ? "not a Spotify history array" : "not a YouTube watch-history file");
         let accepted = 0;
         for (const row of raw) {
-          const event = normalizeRow(row as Record<string, unknown>, file.name);
+          const event: HistoryEvent | null = importSource === "spotify" ? normalizeRow(row as Record<string, unknown>, file.name) : {
+            source: "youtube", contentType: "music", uri: null, title: row.title, artist: row.artist, album: "",
+            playedAt: row.playedAt, durationMs: 0, skipped: false, fileName: file.name,
+            videoId: row.videoId, videoUrl: row.url, channel: row.channel, confidence: row.confidence, reason: row.reason,
+          };
           if (!event) continue;
           const key = eventIdentity(event);
           if (seen.has(key)) continue;
@@ -184,8 +198,8 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
       setFiles(progress);
     }
     setEvents(nextEvents);
-    setIncludedEventIndexes(new Set(nextEvents.map((_, index) => index)));
-    if (!nextEvents.length) { setError("None of those files contained usable Spotify history rows."); return; }
+    setIncludedEventIndexes(new Set(nextEvents.map((item, index) => item.source === "spotify" || item.confidence !== "uncertain" ? index : -1).filter(index => index >= 0)));
+    if (!nextEvents.length) { setError(importSource === "spotify" ? "None of those files contained usable Spotify history rows." : "No watched videos were found in that Takeout file."); return; }
     setStep(3);
   }
 
@@ -226,8 +240,8 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     let inserted = 0; let skipped = 0;
     try {
       const { data: { session } } = await sjBrowserAuth.auth.getSession();
-      if (!session?.access_token) throw new Error("Sign in to save your Spotify history.");
-      await saveInsightsChoice(session.access_token);
+      if (!session?.access_token) throw new Error("Sign in to save your listening history.");
+      if (importSource === "spotify") await saveInsightsChoice(session.access_token);
       for (let index = 0; index < selectedEvents.length; index += IMPORT_BATCH) {
         const batch = selectedEvents.slice(index, index + IMPORT_BATCH);
         const result = await postHistoryBatch(session.access_token, batch);
@@ -246,14 +260,15 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
   const completedFiles = files.filter(file => file.state === "done").length;
   const topYearCount = Math.max(...summary.byYear.map(([, count]) => count), 1);
 
-  return <section className={styles.wizard} aria-label="Spotify history import">
+  return <section className={styles.wizard} aria-label="Listening history import">
     <div className={styles.stepper}>{["Upload", "Process", "Review", "Confirm"].map((label, index) => <div className={`${styles.step} ${step === index + 1 ? styles.stepActive : ""} ${step > index + 1 ? styles.stepDone : ""}`} key={label}><span>{index + 1}</span>{label}</div>)}</div>
     {error && <div className={styles.error}>{error}</div>}
 
     {step === 1 && <div className={styles.stepBody}>
-      <p className={styles.lead}>Upload every JSON file from your Spotify Extended Streaming History export. We strip IP-address fields before anything can be saved.</p>
-      <label className={styles.dropZone}><input type="file" multiple accept=".json,application/json" onChange={onFilesChosen} /><strong>Choose Spotify history JSON files</strong><span>You can select or drop multiple files at once.</span></label>
-      <section className={styles.spotifyHowTo} aria-labelledby="spotify-history-how-to">
+      <div className={styles.sourceChoice}><button className={importSource === "spotify" ? styles.activeTab : styles.secondaryButton} onClick={() => setImportSource("spotify")}>Spotify</button><button className={importSource === "youtube" ? styles.activeTab : styles.secondaryButton} onClick={() => setImportSource("youtube")}>YouTube Takeout</button></div>
+      <p className={styles.lead}>{importSource === "spotify" ? "Upload every JSON file from your Spotify Extended Streaming History export. We strip IP-address fields before anything can be saved." : "Upload watch-history.html from Google Takeout. We identify likely music locally and leave uncertain videos unchecked for your review."}</p>
+      <label className={styles.dropZone}><input type="file" multiple={importSource === "spotify"} accept={importSource === "spotify" ? ".json,application/json" : ".html,text/html"} onChange={onFilesChosen} /><strong>{importSource === "spotify" ? "Choose Spotify history JSON files" : "Choose YouTube watch-history.html"}</strong><span>{importSource === "spotify" ? "You can select or drop multiple files at once." : "Google Takeout → YouTube and YouTube Music → history"}</span></label>
+      {importSource === "spotify" ? <section className={styles.spotifyHowTo} aria-labelledby="spotify-history-how-to">
         <p className={styles.eyebrow}>Need your files first?</p>
         <h2 id="spotify-history-how-to">How to get your Spotify history</h2>
         <ol>
@@ -262,7 +277,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
           <li>When Spotify emails your download, unzip it and upload every history <code>.json</code> file here.</li>
         </ol>
         <p>Spotify prepares the download separately, so it may not arrive immediately. We remove IP-address fields before saving. At confirmation, you can separately choose whether to contribute de-identified music insights.</p>
-      </section>
+      </section> : <section className={styles.youtubeHowTo}><p className={styles.eyebrow}>Music-candidate review</p><h2>What gets selected automatically</h2><p>Official Topic, VEVO, audio, lyric, and music-video uploads are high confidence. Artist–title style uploads are marked likely. Everything else stays visible but unchecked because Google records a watch—not whether it was music.</p><p>Takeout does not include listening duration, so these events count as plays but add no invented listening time.</p></section>}
     </div>}
 
     {step === 2 && <div className={styles.stepBody}>
@@ -271,7 +286,8 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     </div>}
 
     {step === 3 && <div className={styles.stepBody}>
-      <div className={styles.reviewHeader}><div><p className={styles.eyebrow}>Review and choose</p><h2>Your Spotify listening history</h2><p className={styles.muted}>{number(selectedEvents.length)} of {number(events.length)} listening events selected · {minutes(selectedDurationMs)} to import</p></div><button className={styles.secondaryButton} onClick={reset}>Start over</button></div>
+      <div className={styles.reviewHeader}><div><p className={styles.eyebrow}>Review and choose</p><h2>Your {importSource === "spotify" ? "Spotify listening history" : "YouTube music candidates"}</h2><p className={styles.muted}>{number(selectedEvents.length)} of {number(events.length)} events selected{importSource === "spotify" ? ` · ${minutes(selectedDurationMs)} to import` : " · likely music is preselected"}</p></div><button className={styles.secondaryButton} onClick={reset}>Start over</button></div>
+      {importSource === "youtube" && <div className={styles.candidateList}>{events.map((item, index) => <label className={styles.candidateRow} key={`${eventIdentity(item)}:${index}`}><input className={styles.selectionCheckbox} type="checkbox" checked={includedEventIndexes.has(index)} onChange={() => toggleIndexes([index])}/><span><strong>{item.title}</strong><small>{item.artist} · {item.confidence} confidence · {item.reason}</small></span><a href={item.videoUrl} target="_blank" rel="noopener noreferrer">View</a></label>)}</div>}
       <div className={styles.filterToolbar}><p>Uncheck anything you do not want in your private Analytics. Selections combine, so removing a year and an artist leaves both out.</p><div><button className={styles.secondaryButton} onClick={() => setIncludedEventIndexes(new Set(events.map((_, index) => index)))}>Select all</button><button className={styles.secondaryButton} onClick={() => setIncludedEventIndexes(new Set())}>Clear all</button></div></div>
       <div className={styles.typeGrid}>{(Object.keys(TYPE_LABEL) as ContentType[]).map(type => {
         const indexes = indexesForType[type];
@@ -304,7 +320,7 @@ function Wizard({ onComplete }: { onComplete: () => void }) {
     </div>}
 
     {step === 4 && <div className={styles.stepBody}>
-      {saved ? <div className={styles.success}><h2>Spotify history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} already on file and skipped` : ""}.</p><p className={styles.muted}>Re-importing the same export is safe — only missing listens are added.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><p className={styles.muted}>Safe to re-run the same files: listens you already imported are skipped, and only what is still missing gets saved.</p><label className={styles.insightsConsent}><input type="checkbox" checked={contributeInsights} onChange={event => setContributeInsights(event.target.checked)} /><span><strong>Contribute de-identified music insights</strong><small>Optional. We may use music listening patterns from this import to create aggregated, de-identified research and commercial insights. We do not include raw files, account details, IP addresses, device data, podcasts, audiobooks, or other non-music activity. Your private Analytics work either way. You can withdraw this choice through a privacy request.</small></span></label><div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>Music, podcasts, audiobooks, and other listening events — never IP addresses</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
+      {saved ? <div className={styles.success}><h2>{importSource === "spotify" ? "Spotify" : "YouTube"} history imported</h2><p>{number(saved.inserted)} new listening events saved{saved.skipped ? ` · ${number(saved.skipped)} already on file and skipped` : ""}.</p><p className={styles.muted}>Re-importing the same export is safe — only missing listens are added.</p><button className={styles.primaryButton} onClick={reset}>Import another export</button></div> : <><p className={styles.eyebrow}>Final confirmation</p><h2>Save this listening history?</h2><p className={styles.lead}>This saves {number(selectedEvents.length)} of {number(events.length)} private listening events for your Analytics. It does not add music to the public Jukebox or your My Jukebox library. You can explore missing music separately later.</p><p className={styles.muted}>Safe to re-run the same files: listens you already imported are skipped, and only what is still missing gets saved.</p>{importSource === "spotify" && <label className={styles.insightsConsent}><input type="checkbox" checked={contributeInsights} onChange={event => setContributeInsights(event.target.checked)} /><span><strong>Contribute de-identified music insights</strong><small>Optional. We may use music listening patterns from this import to create aggregated, de-identified research and commercial insights. We do not include raw files, account details, IP addresses, device data, podcasts, audiobooks, or other non-music activity. Your private Analytics work either way. You can withdraw this choice through a privacy request.</small></span></label>}<div className={styles.confirmation}><span>Files</span><strong>{files.length}</strong><span>Events to save</span><strong>{number(selectedEvents.length)}</strong><span>Data left out</span><strong>{number(events.length - selectedEvents.length)}</strong><span>Data saved</span><strong>{importSource === "spotify" ? "Music, podcasts, audiobooks, and other listening events — never IP addresses" : "Selected music candidates, YouTube provenance, and confidence — never the raw file"}</strong></div>{saving && saveProgress.total > 0 && <p className={styles.muted}>Saving {number(saveProgress.done)} of {number(saveProgress.total)} events… Large exports take a couple of minutes.</p>}<div className={styles.actions}><button className={styles.secondaryButton} disabled={saving} onClick={() => setStep(3)}>Back</button><button className={styles.primaryButton} disabled={saving} onClick={confirmImport}>{saving ? (saveProgress.total ? `Saving ${number(saveProgress.done)} / ${number(saveProgress.total)}…` : "Saving your history…") : `Import ${number(selectedEvents.length)} events`}</button></div></>}
     </div>}
   </section>;
 }
@@ -362,7 +378,7 @@ export default function AnalyticsClient() {
         {sessionReady && signedIn && (
           <nav className={styles.dataTabs} aria-label="My Data sections">
             <button className={`${styles.secondaryButton} ${view === "dashboard" ? styles.activeTab : ""}`} onClick={() => setView("dashboard")}>Analytics</button>
-            <button className={`${styles.secondaryButton} ${view === "import" ? styles.activeTab : ""}`} onClick={() => setView("import")}>Import Spotify history</button>
+            <button className={`${styles.secondaryButton} ${view === "import" ? styles.activeTab : ""}`} onClick={() => setView("import")}>Import listening history</button>
             <button className={`${styles.secondaryButton} ${view === "manage" ? styles.activeTab : ""}`} onClick={() => setView("manage")}>Manage my data</button>
           </nav>
         )}
