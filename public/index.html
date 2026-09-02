@@ -4448,7 +4448,6 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
           <div class="user-menu-date" id="user-menu-updated">-</div>
           <button type="button" class="clog-link" onclick="openChangelog(event)">Change Log</button>
           <button type="button" class="user-menu-item cta" id="user-menu-import" onclick="openAddMusic()">＋ Import Music</button>
-          <button type="button" class="user-menu-item" id="user-menu-bgunlock" onclick="userMenuAction('bgunlock')">Audio storage</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
@@ -4578,6 +4577,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <button type="button" class="set-nav-btn" data-set-nav="profile" onclick="settingsShow('profile')">Profile</button>
         <button type="button" class="set-nav-btn" data-set-nav="privacy" onclick="settingsShow('privacy')">Privacy</button>
         <button type="button" class="set-nav-btn" data-set-nav="playback" onclick="settingsShow('playback')">Playback</button>
+        <button type="button" class="set-nav-btn" data-set-nav="audio" onclick="settingsShow('audio')">Audio Storage</button>
         <button type="button" class="set-nav-btn" data-set-nav="jukebox" onclick="settingsShow('jukebox')">Online Jukebox</button>
       </nav>
       <div class="set-pane">
@@ -4627,6 +4627,21 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
             </div>
+          </div>
+        </section>
+
+        <section class="set-sec" data-set-pane="audio">
+          <div class="set-body" id="set-audio-body">
+            <div class="set-block">
+              <div class="set-h">Your audio storage</div>
+              <p class="set-sub">Private audio files you upload power Background Play on your phone. They stay on your account only — normal listening still uses YouTube. Everyone gets 500&nbsp;MB.</p>
+              <div class="set-audio-meter">
+                <div class="bgs-meter-track"><span class="bgs-meter-fill" id="setAudioMeterFill"></span></div>
+                <div class="bgs-meter-txt" id="setAudioQuotaTxt"><span>Loading…</span><span></span></div>
+              </div>
+            </div>
+            <div class="set-block" id="set-audio-artists"><div class="set-status">Loading your uploads…</div></div>
+            <div class="set-block" id="set-audio-upload"></div>
           </div>
         </section>
 
@@ -5317,6 +5332,21 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   font-size: .62rem; color: var(--text); padding: .35rem 0; }
 .set-opt input { margin-top: 3px; accent-color: var(--accent); }
 .set-opt .set-sub { margin-top: 2px; }
+.set-audio-meter { display: flex; flex-direction: column; gap: .45rem; margin-top: .25rem; }
+.set-audio-artist { border: 1px solid var(--border); border-radius: 10px; margin-bottom: .55rem; overflow: hidden; background: var(--bg-elevated); }
+.set-audio-artist-h { display: flex; align-items: center; gap: .5rem; padding: .6rem .7rem; cursor: pointer; user-select: none; }
+.set-audio-artist-h:hover { background: rgba(255,255,255,.03); }
+.set-audio-chev { width: .8rem; flex-shrink: 0; color: var(--text-muted); font-size: .55rem; }
+.set-audio-artist-name { flex: 1; min-width: 0; font-size: .6rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-audio-artist-meta { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); flex-shrink: 0; }
+.set-audio-act-top { font-size: .48rem !important; padding: .2rem .45rem !important; flex-shrink: 0; }
+.set-audio-tracks { border-top: 1px solid var(--border); }
+.set-audio-trk { display: flex; align-items: center; gap: .45rem; padding: .45rem .7rem; font-size: .54rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.set-audio-trk:first-child { border-top: 0; }
+.set-audio-trk-name { flex: 1; min-width: 6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-audio-bytes { font-family: var(--mono); font-size: .46rem; color: var(--text-muted); flex-shrink: 0; }
+.set-audio-act { font-size: .45rem !important; padding: .12rem .35rem !important; flex-shrink: 0; }
+.set-audio-upload-grid { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .35rem; }
 @media (max-width: 760px) {
   #settingsOverlay { padding: 0; }
   #settingsOverlay .pl-modal { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; }
@@ -12109,7 +12139,7 @@ function bgsRender() {
         ? bgsPickerHtml('Replace the audio file', 'Drop a file here or click to choose a different one') + bgsFolderHtml(meta) + bgsConsentHtml() + bgsMeterHtml()
         : '<div class="bgs-note">The artist approved this audio for public mobile background play. Normal listening and discovery still use YouTube.</div>');
     foot.innerHTML =
-      (googleUser ? '<button class="m-btn ghost" onclick="bgsOpenArtists()">Manage my audio</button>' : '<button class="m-btn ghost" onclick="closeBgSetup()">Not now</button>') +
+      (googleUser ? '<button class="m-btn ghost" onclick="bgsOpenArtists()">Audio storage in Settings</button>' : '<button class="m-btn ghost" onclick="closeBgSetup()">Not now</button>') +
       (mob
         ? '<button class="m-btn" style="margin-left:auto" onclick="bgsTurnOn()">Turn it on</button>'
         : '<button class="m-btn ghost" style="margin-left:auto" onclick="closeBgSetup()">Done</button>');
@@ -12125,7 +12155,7 @@ function bgsRender() {
     bgsConsentHtml() +
     bgsMeterHtml();
   foot.innerHTML =
-    '<button class="m-btn ghost" onclick="bgsOpenArtists()">Manage my audio</button>' +
+    '<button class="m-btn ghost" onclick="bgsOpenArtists()">Audio storage in Settings</button>' +
     '<button class="m-btn ghost" style="margin-left:auto" onclick="closeBgSetup()">Close</button>';
   bgsSyncQuota();
 }
@@ -12179,15 +12209,11 @@ async function bgsUpload(file) {
   bgsSyncQuota();
 }
 
-// Hand off to the artist page for a whole album's worth of files, landing on
-// the right artist by seeding the search box before the list renders.
+// Hand off to Settings → Audio Storage for uploads and deletions.
 function bgsOpenArtists() {
   if (_bgsBusy) return;
-  const meta = bgsMeta();
   closeBgSetup();
-  const inp = document.getElementById('maSearchInput');
-  if (inp) inp.value = meta.artist || '';
-  openMyArtists();
+  openSettings('audio');
 }
 
 function bgsTurnOn() {
@@ -13023,6 +13049,7 @@ async function taBatchUpload() {
       amSyncAudioUploadBtn();
     }
     await refreshHomeAudioStatus(_taBatch.artistId);
+    if (settingsIsOpen('audio')) setAudioLoad();
   }
 }
 
@@ -30123,6 +30150,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-01';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-01', items: [
+    'Audio Storage moved from the account menu into Settings, with a per-artist breakdown, upload buttons, and delete controls for each file.',
     'What\'s New no longer lists private imports, and credits use your chosen public name when you have set one in Settings.',
     'Explore Artists and Explore Playlists hide the Card Size slider in Details mode.',
     'Explore Artists and Explore Playlists Details tables show Lyric Status instead of Alt Video.',
@@ -31002,26 +31030,21 @@ function openAnalyticsInNewTab() {
 async function userMenuAction(action) {
   closeUserMenu();
   if (action === 'bgunlock') {
-    await refreshBgUnlock();
-    if (!googleUser) {
-      showToast('Sign in to see your audio storage.');
-      return;
-    }
-    const used = Number(sjBgUnlock?.used) || 0;
-    const limit = sjQuotaLimit();
-    showToast(limit > 0
-      ? `${fmtBytes(used)} used of ${fmtBytes(limit)} audio storage`
-      : 'No audio upload allocation');
+    openSettings('audio');
     return;
   }
   if (action === 'playlists') {
     openManagePlaylists();
     return;
   }
-  if (action === 'jukebox' || action === 'settings' || action === 'playback') {
+  if (action === 'jukebox' || action === 'settings' || action === 'playback' || action === 'audio') {
     // Three names for one panel: the menu says Settings, and the two entries
     // it replaced still work from wherever else they are called.
-    openSettings(action === 'settings' ? 'profile' : action === 'jukebox' ? 'jukebox' : 'playback');
+    const sec = action === 'settings' ? 'profile'
+      : action === 'jukebox' ? 'jukebox'
+      : action === 'audio' ? 'audio'
+      : 'playback';
+    openSettings(sec);
     return;
   }
   if (action === 'myartists') {
@@ -31071,7 +31094,7 @@ async function userMenuAction(action) {
 // Save at the bottom; the Online Jukebox section is the live host console,
 // which acts as you press things and so hides that footer.
 let _setSection = 'profile';
-const SET_SECTIONS = ['profile', 'privacy', 'playback', 'jukebox'];
+const SET_SECTIONS = ['profile', 'privacy', 'playback', 'audio', 'jukebox'];
 // Held here rather than read back off the <img>, which carries the Google
 // picture when nothing has been chosen. Undefined means "not touched".
 let _setPendingAvatar;
@@ -31108,12 +31131,13 @@ function settingsShow(section) {
   document.querySelectorAll('#settingsOverlay [data-set-pane]').forEach(p => {
     p.classList.toggle('on', p.dataset.setPane === section);
   });
-  // The console has no Save: everything on it takes effect as it is pressed.
+  // The console and audio storage have no Save: everything on them takes effect as it is pressed.
   const save = document.getElementById('set-save');
-  if (save) save.style.display = section === 'jukebox' ? 'none' : '';
+  if (save) save.style.display = (section === 'jukebox' || section === 'audio') ? 'none' : '';
   settingsSay('');
   if (section === 'jukebox') settingsStartJukeboxPoll();
   else settingsStopJukeboxPoll();
+  if (section === 'audio') setAudioLoad();
 }
 
 function settingsSay(msg) {
@@ -31247,6 +31271,205 @@ function sjCleanDbError(e) {
     if (j?.message) return j.message;
   } catch (_) {}
   return raw.slice(0, 200) || 'That could not be saved.';
+}
+
+// ── Settings → Audio Storage ─────────────────────────────────────────────
+let _setAudioLoading = false;
+let _setAudioGroups = [];
+let _setAudioManageArtists = [];
+const _setAudioExpanded = new Set();
+
+function setAudioSyncMeter() {
+  const txt  = document.getElementById('setAudioQuotaTxt');
+  const fill = document.getElementById('setAudioMeterFill');
+  if (!txt || !fill) return;
+  if (!googleUser) {
+    txt.innerHTML = '<span>Sign in to view audio storage</span><span></span>';
+    fill.style.width = '0%';
+    return;
+  }
+  if (!sjHasBgUnlock()) {
+    txt.innerHTML = '<span>Checking your storage…</span><span></span>';
+    return;
+  }
+  const used  = Number(sjBgUnlock?.used) || 0;
+  const limit = sjQuotaLimit();
+  if (limit <= 0) {
+    txt.innerHTML = '<span>Could not read your allocation</span><span></span>';
+    fill.style.width = '0%';
+    fill.className = 'bgs-meter-fill';
+    return;
+  }
+  const pct = Math.min(100, (used / limit) * 100);
+  fill.style.width = (used > 0 && pct < 1 ? 1 : pct) + '%';
+  fill.className = 'bgs-meter-fill' + (pct >= 95 ? ' full' : pct >= 80 ? ' warn' : '');
+  txt.innerHTML =
+    '<span>' + escHtml(fmtBytes(used) + ' of ' + fmtBytes(limit) + ' used') + '</span>' +
+    '<span>' + escHtml(fmtBytes(Math.max(0, limit - used)) + ' free · ' + (Math.round(pct * 10) / 10) + '%') + '</span>';
+}
+
+function setAudioToggle(artistId) {
+  if (_setAudioExpanded.has(artistId)) _setAudioExpanded.delete(artistId);
+  else _setAudioExpanded.add(artistId);
+  setAudioRender();
+}
+
+function setAudioUploadBatch(artistId) {
+  if (!artistId) return;
+  taBatchOpen(artistId, null);
+}
+
+async function setAudioReplace(trackId, durationMs) {
+  await taQuickUpload(trackId, durationMs);
+  if (settingsIsOpen('audio')) setAudioLoad();
+}
+
+async function setAudioDelete(trackId) {
+  if (!confirm('Delete this audio file? Background Play will not work for this song until you upload again.')) return;
+  const path = taData[trackId]?.path;
+  try {
+    await taDeleteUploaded(trackId, path);
+    await refreshBgUnlock();
+    _homeLibLoaded = false;
+    if (settingsIsOpen('audio')) await setAudioLoad();
+    else setAudioSyncMeter();
+    showToast('Audio deleted.');
+  } catch (e) {
+    showToast(e.message || 'Could not delete audio.');
+  }
+}
+
+function setAudioRender() {
+  const el = document.getElementById('set-audio-artists');
+  const uploadEl = document.getElementById('set-audio-upload');
+  if (!el) return;
+  const groups = _setAudioGroups || [];
+  if (!groups.length) {
+    el.innerHTML = '<div class="set-h">Uploaded audio</div>' +
+      '<p class="set-sub">Nothing uploaded yet. Pick an artist below to add files — they stay private to your account.</p>';
+  } else {
+    el.innerHTML = '<div class="set-h">By artist</div>' + groups.map(g => {
+      const open = _setAudioExpanded.has(g.artistId);
+      return '<div class="set-audio-artist">' +
+        '<div class="set-audio-artist-h" onclick="setAudioToggle(\'' + g.artistId + '\')">' +
+          '<span class="set-audio-chev">' + (open ? '▾' : '▸') + '</span>' +
+          '<span class="set-audio-artist-name">' + escHtml(g.name) + '</span>' +
+          '<span class="set-audio-artist-meta">' + g.tracks.length + ' song' + (g.tracks.length === 1 ? '' : 's') + ' · ' + escHtml(fmtBytes(g.bytes)) + '</span>' +
+          '<button type="button" class="pl-btn ghost set-audio-act-top" onclick="event.stopPropagation();setAudioUploadBatch(\'' + g.artistId + '\')">＋ Upload</button>' +
+        '</div>' +
+        (open ? '<div class="set-audio-tracks">' + g.tracks.map(t =>
+          '<div class="set-audio-trk">' +
+            '<span class="set-audio-trk-name" title="' + escHtml(t.name) + '">' + escHtml(t.name) + '</span>' +
+            '<span class="set-audio-bytes">' + escHtml(fmtBytes(t.bytes)) + '</span>' +
+            '<button type="button" class="oa-act set-audio-act" onclick="setAudioReplace(\'' + t.id + '\', ' + (t.durationMs || 'null') + ')">Replace</button>' +
+            '<button type="button" class="oa-act set-audio-act" style="border-color:#ef444455;color:#ef4444" onclick="setAudioDelete(\'' + t.id + '\')">Delete</button>' +
+          '</div>'
+        ).join('') + '</div>' : '') +
+      '</div>';
+    }).join('');
+  }
+  if (!uploadEl) return;
+  const have = new Set(groups.map(g => g.artistId));
+  const targets = (_setAudioManageArtists || []).filter(a => a.id && !have.has(a.id));
+  const allTargets = (_setAudioManageArtists || []).filter(a => a.id);
+  let uploadHtml = '<div class="set-h">Upload to an artist</div>' +
+    '<p class="set-sub">Batch-match a folder of files to songs, or replace one song at a time from the list above.</p>';
+  if (!allTargets.length) {
+    uploadHtml += '<p class="set-sub">Import an artist first, then come back here to upload audio for Background Play.</p>' +
+      '<button type="button" class="pl-btn" onclick="closeSettings();openAddMusic()">Import Music</button>';
+  } else {
+    uploadHtml += '<div class="set-audio-upload-grid">' +
+      allTargets.map(a =>
+        '<button type="button" class="pl-btn ghost" onclick="setAudioUploadBatch(\'' + a.id + '\')">' + escHtml(a.name) + '</button>'
+      ).join('') +
+    '</div>';
+    if (!targets.length && groups.length) {
+      uploadHtml += '<p class="set-sub" style="margin-top:.5rem">Every artist you manage already has at least one upload. Use ＋ Upload on a row above to add more.</p>';
+    }
+  }
+  uploadEl.innerHTML = uploadHtml;
+}
+
+async function setAudioLoad() {
+  if (_setAudioLoading) return;
+  if (!googleUser) {
+    setAudioSyncMeter();
+    const el = document.getElementById('set-audio-artists');
+    if (el) el.innerHTML = '<p class="set-sub">Sign in to manage audio storage.</p>';
+    return;
+  }
+  _setAudioLoading = true;
+  const artistsEl = document.getElementById('set-audio-artists');
+  if (artistsEl && !_setAudioGroups.length) {
+    artistsEl.innerHTML = '<div class="set-status">Loading your uploads…</div>';
+  }
+  setAudioSyncMeter();
+  try {
+    await refreshBgUnlock();
+    setAudioSyncMeter();
+    const audioRows = await dbGetAuth('/track_audio?select=track_id,file_bytes');
+    const trackIds = [...new Set((audioRows || []).map(r => r.track_id).filter(Boolean))];
+    const bytesByTrack = {};
+    (audioRows || []).forEach(r => { bytesByTrack[r.track_id] = Number(r.file_bytes) || 0; });
+
+    const trackMap = {};
+    for (let i = 0; i < trackIds.length; i += 50) {
+      const chunk = trackIds.slice(i, i + 50);
+      const rows = await dbGet('/tracks?id=in.(' + chunk.join(',') + ')&select=id,name,album_id,duration_ms');
+      (rows || []).forEach(t => { trackMap[t.id] = t; });
+    }
+    const albumIds = [...new Set(Object.values(trackMap).map(t => t.album_id).filter(Boolean))];
+    const albumMap = {};
+    for (let i = 0; i < albumIds.length; i += 50) {
+      const chunk = albumIds.slice(i, i + 50);
+      const rows = await dbGet('/albums?id=in.(' + chunk.join(',') + ')&select=id,name,artist_id');
+      (rows || []).forEach(a => { albumMap[a.id] = a; });
+    }
+    const artistIds = [...new Set(Object.values(albumMap).map(a => a.artist_id).filter(Boolean))];
+    const artistMap = {};
+    for (let i = 0; i < artistIds.length; i += 50) {
+      const chunk = artistIds.slice(i, i + 50);
+      const rows = await dbGet('/artists?id=in.(' + chunk.join(',') + ')&select=id,name');
+      (rows || []).forEach(a => { artistMap[a.id] = a; });
+    }
+
+    const byArtist = {};
+    trackIds.forEach(tid => {
+      const t = trackMap[tid];
+      const alb = t && albumMap[t.album_id];
+      const ar = alb && artistMap[alb.artist_id];
+      const artistId = ar?.id || 'unknown';
+      const artistName = ar?.name || 'Unknown artist';
+      if (!byArtist[artistId]) byArtist[artistId] = { artistId, name: artistName, bytes: 0, tracks: [] };
+      byArtist[artistId].bytes += bytesByTrack[tid] || 0;
+      byArtist[artistId].tracks.push({
+        id: tid,
+        name: t?.name || 'Untitled',
+        bytes: bytesByTrack[tid] || 0,
+        durationMs: t?.duration_ms || null,
+      });
+    });
+    _setAudioGroups = Object.values(byArtist).sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name));
+    _setAudioGroups.forEach(g => g.tracks.sort((a, b) => a.name.localeCompare(b.name)));
+
+    if (trackIds.length) await loadTrackAudio(trackIds);
+
+    try {
+      await ensureMyArtistIds();
+      if (!(landingStats || []).length) await refreshLandingStats().catch(() => {});
+      _setAudioManageArtists = maMineRows().map(maRowFromLanding);
+    } catch (_) {
+      _setAudioManageArtists = [];
+    }
+
+    setAudioRender();
+  } catch (e) {
+    if (artistsEl) {
+      artistsEl.innerHTML = '<div class="set-status" style="color:#ef4444">' + escHtml(e.message || 'Could not load audio storage') + '</div>';
+    }
+  } finally {
+    _setAudioLoading = false;
+  }
 }
 
 async function handleLogout() {
@@ -31504,18 +31727,6 @@ function updateAuthBtn() {
   document.querySelectorAll('.user-menu-item.admin-only').forEach(el => {
     el.classList.toggle('visible', !!sjIsAdmin);
   });
-  const bgMenu = document.getElementById('user-menu-bgunlock');
-  if (bgMenu) {
-    if (sjHasBgUnlock()) {
-      const used = Number(sjBgUnlock?.used) || 0;
-      const limit = sjQuotaLimit();
-      bgMenu.textContent = limit > 0
-        ? `Audio storage · ${fmtBytes(used)} / ${fmtBytes(limit)}`
-        : 'Audio storage';
-    } else {
-      bgMenu.textContent = 'Audio storage';
-    }
-  }
   if (updatedEl) {
     try {
       const hasTime = /\d{2}:\d{2}/.test(sjLastUpdated);
