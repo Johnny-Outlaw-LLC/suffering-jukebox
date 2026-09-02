@@ -24510,10 +24510,10 @@ function renderLanding() {
                 ${plSortOpt('tracks_asc', 'Fewest Tracks')}
               </select>
             </div>`}
-            <div class="landing-control-group" style="margin:0">
+            ${explorePlaylistsView === 'covers' ? `<div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Card Size</span>
-              ${explorePlaylistsView === 'covers' ? sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize)) : ''}
-            </div>
+              ${sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize))}
+            </div>` : ''}
             ${exploreViewToggleHTML(explorePlaylistsView, 'setExplorePlaylistsView')}
             ${explorePlaylistsView === 'detail' ? `<span class="explore-view-tog" role="group" aria-label="Track order">
               <button type="button" class="pl-wall-back${playlistExploreDetailGroup === 'order' ? ' on' : ''}" onclick="setPlaylistExploreDetailGroup('order')">Playlist order</button>
@@ -24598,10 +24598,10 @@ function renderLanding() {
             ${sortOpt('score_desc', 'Jukebox Score')}
           </select>
         </div>
-        <div class="landing-control-group">
+        ${exploreArtistsView === 'covers' ? `<div class="landing-control-group">
           <span class="landing-control-lbl">Card Size</span>
-          ${exploreArtistsView === 'covers' ? sjSizeSliderHTML('landing', SJ_LANDING_SIZES.indexOf(landingDetailLevel)) : ''}
-        </div>
+          ${sjSizeSliderHTML('landing', SJ_LANDING_SIZES.indexOf(landingDetailLevel))}
+        </div>` : ''}
         ${exploreViewToggleHTML(exploreArtistsView, 'setExploreArtistsView')}
       </div>
       ${rows.length ? '' : `<div class="landing-no-results">No artists match ${landingSearchQ ? '“' + esc(landingSearchQ) + '”' : 'the current filters'}.</div>`}
@@ -25076,6 +25076,7 @@ function laToggleAlbum(albumId, restoring) {
 // ══════════════════════════════════════════════════════════════
 // EXPLORE ARTISTS — DETAILS VIEW (Artist → Album → All Tracks table)
 // ══════════════════════════════════════════════════════════════
+const _EA_TT_OPTS = { staticSort: true, lyricCol: true, replaceAlts: true };
 const eaOpenAlbumIds = new Set();
 let _eaDetailLimit = 30;
 
@@ -25121,7 +25122,7 @@ function eaToggleAlbumDetail(albumId, artistId) {
       const albTracks = (tracks[aid] || []).filter(t => t.album_id === albumId);
       selectedIds.add(aid);
       body.innerHTML = '<div class="tt-scroll"><div class="tt-wrap">' +
-        renderTopTracks(albTracks, { staticSort: true, tableId: 'ea-tt-' + albumId }) + '</div></div>';
+        renderTopTracks(albTracks, { ..._EA_TT_OPTS, tableId: 'ea-tt-' + albumId }) + '</div></div>';
       Object.keys(localVotes).forEach(refreshVoteUI);
     }
   } else {
@@ -25176,7 +25177,7 @@ function eaRepopenAlbums() {
     selectedIds.add(aid);
     const albTracks = (tracks[aid] || []).filter(t => t.album_id === id);
     body.innerHTML = '<div class="tt-scroll"><div class="tt-wrap">' +
-      renderTopTracks(albTracks, { staticSort: true, tableId: 'ea-tt-' + id }) + '</div></div>';
+      renderTopTracks(albTracks, { ..._EA_TT_OPTS, tableId: 'ea-tt-' + id }) + '</div></div>';
     Object.keys(localVotes).forEach(refreshVoteUI);
   });
 }
@@ -25240,12 +25241,12 @@ function peDetailTracksHTML(p) {
       const list = byArtist[name];
       return `<div class="pe-detail-group-hd">${name.replace(/</g, '&lt;')} · ${list.length} track${list.length === 1 ? '' : 's'}</div>` +
         '<div class="tt-scroll"><div class="tt-wrap">' +
-        renderTopTracks(list, { staticSort: true, artistCol: true, tableId: 'pe-tt-' + p.id + '-' + name.replace(/\W/g, '').slice(0, 12) }) +
+        renderTopTracks(list, { ..._EA_TT_OPTS, artistCol: true, tableId: 'pe-tt-' + p.id + '-' + name.replace(/\W/g, '').slice(0, 12) }) +
         '</div></div>';
     }).join('');
   }
   return '<div class="tt-scroll"><div class="tt-wrap">' +
-    renderTopTracks(rows, { staticSort: true, artistCol: true, tableId: 'pe-tt-' + p.id }) + '</div></div>';
+    renderTopTracks(rows, { ..._EA_TT_OPTS, artistCol: true, tableId: 'pe-tt-' + p.id }) + '</div></div>';
 }
 
 function peTogglePlaylistDetail(playlistId) {
@@ -26748,7 +26749,8 @@ let ttTrackCache = [];     // cached for re-sort without full render
 // 700 albums means nothing. opts.limit draws only the first N sorted rows;
 // the bars still measure against the whole list. opts.lyricCol adds the Lyrics
 // column, which only Explore Songs has the status index loaded for. Alt Video
-// is always shown — both tables already have track_videos in memory.
+// is always shown unless opts.replaceAlts swaps that slot for Lyric Status
+// (Explore Artists / Playlists Details).
 let _ttLastOpts = null;
 
 function renderTopTracks(trackList, opts) {
@@ -26756,6 +26758,8 @@ function renderTopTracks(trackList, opts) {
   _ttLastOpts = opts;
   const showArtist = !!opts.artistCol;
   const showLyric  = !!opts.lyricCol;
+  const replaceAlts = showLyric && !!opts.replaceAlts;
+  const showAlts   = !replaceAlts;
   const showSel    = !!opts.selectCol;
   const staticSort = !!opts.staticSort;
   const tableId    = opts.tableId || 'all-tracks-tbl';
@@ -26782,7 +26786,7 @@ function renderTopTracks(trackList, opts) {
     // Ranked rather than alphabetical: sorting Lyrics should put the best
     // provision first, and "Static" before "Synced" would be nonsense.
     _lyric : showLyric ? esLyricStatus(t.id) : '',
-    _alts  : tvAltCount(t.id),
+    _alts  : showAlts ? tvAltCount(t.id) : 0,
   }));
 
   if (!rows.length) return '<div class="empty-state"><p>No track data - try fetching YouTube data above.</p></div>';
@@ -26852,8 +26856,9 @@ function renderTopTracks(trackList, opts) {
       <th ${thClick('name')} ${thCls('name')}>Track${sortArrow('name')}</th>
       <th ${thClick('dur')}   ${thCls('dur')}   style="width:60px;text-align:right;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='dur'?';color:var(--text)':''}">Dur${sortArrow('dur')}</th>
       <th ${thClick('album')} ${thCls('album')}>Album${sortArrow('album')}</th>
-      <th ${thClick('alts')} ${thCls('alts')} style="width:72px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='alts'?';color:var(--text)':''}" title="Alternate YouTube uploads for this song">Alt Video${sortArrow('alts')}</th>
-      ${showLyric ? `<th ${thClick('lyric')} ${thCls('lyric')} style="width:78px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyrics${sortArrow('lyric')}</th>` : ''}
+      ${showAlts ? `<th ${thClick('alts')} ${thCls('alts')} style="width:72px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='alts'?';color:var(--text)':''}" title="Alternate YouTube uploads for this song">Alt Video${sortArrow('alts')}</th>` : ''}
+      ${showLyric && !replaceAlts ? `<th ${thClick('lyric')} ${thCls('lyric')} style="width:78px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyrics${sortArrow('lyric')}</th>` : ''}
+      ${replaceAlts ? `<th ${thClick('lyric')} ${thCls('lyric')} style="width:78px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyric Status${sortArrow('lyric')}</th>` : ''}
       <th ${thClick('views')} ${thCls('views')} style="min-width:130px;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='views'?';color:var(--text)':''}">YouTube Views${sortArrow('views')}</th>
       ${googleUser ? `<th ${thClick('myplays')} ${thCls('myplays')} style="min-width:65px;${staticSort ? '' : 'cursor:pointer;user-select:none'}text-align:right${ttSortCol==='myplays'?';color:var(--text)':''}" title="My plays">My Plays${sortArrow('myplays')}</th>` : ''}
       <th ${thClick('plays')} ${thCls('plays')} style="min-width:65px;${staticSort ? '' : 'cursor:pointer;user-select:none'}text-align:right${ttSortCol==='plays'?';color:var(--text)':''}" title="Total plays">Total Plays${sortArrow('plays')}</th>
@@ -26889,8 +26894,9 @@ function renderTopTracks(trackList, opts) {
         <td style="font-weight:500"><span class="artist-dot" style="background:${color}"></span>${t.name}</td>
         <td style="text-align:right;color:var(--text-muted);font-size:.58rem;white-space:nowrap">${durStr}</td>
         <td style="color:var(--text-muted);font-size:.58rem">${t._alb?.name || '-'}</td>
-        <td style="text-align:center">${altCell}</td>
-        ${showLyric ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
+        ${showAlts ? `<td style="text-align:center">${altCell}</td>` : ''}
+        ${showLyric && !replaceAlts ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
+        ${replaceAlts ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
         <td><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${viewsPct}%;background:${color}"></div></div><div class="tt-num">${fmtV(t._views)}</div></div></td>
         ${googleUser ? `<td data-myplays="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._myPlays/maxMyPlays*100).toFixed(1)}%;background:${color}88"></div></div><div class="tt-num" style="${t._myPlays?'color:var(--accent)':''}">${t._myPlays ? fmtV(t._myPlays) : '-'}</div></div></td>` : ''}
         <td data-inapp="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._plays/maxTotalPlays*100).toFixed(1)}%;background:${color}66"></div></div><div class="tt-num" style="${t._plays?'color:var(--accent)':''}">${t._plays ? fmtV(t._plays) : '-'}</div></div></td>
@@ -30117,6 +30123,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-01';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-01', items: [
+    'What\'s New no longer lists private imports, and credits use your chosen public name when you have set one in Settings.',
+    'Explore Artists and Explore Playlists hide the Card Size slider in Details mode.',
+    'Explore Artists and Explore Playlists Details tables show Lyric Status instead of Alt Video.',
     'Explore Artists and Explore Playlists each have Covers and Details toggles. Details on Explore Artists lists every artist with their albums; open an album for the same All Tracks table used inside a jukebox. Details on Explore Playlists lists every playlist; open one for its songs in playlist order or grouped by artist.',
     'Fixed a loading-screen bug that could stop the site from starting after the Explore Details update.',
     'Songs you park with Take a break now show Blocked until [date] on the album track list, with an Unblock button beside it.',
