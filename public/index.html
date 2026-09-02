@@ -11588,28 +11588,17 @@ async function renderUpdatesFeed() {
 function _wnAdditionsHTML() {
   const rows = _wnData.additions || [];
   if (!rows.length) return '<div class="admin-metrics-loading">No artists have been added yet.</div>';
-  // An import writes the artist and its albums together, so fold the album row
-  // into the artist row when they landed at the same time.
-  const merged = [];
-  rows.forEach(r => {
-    if (r.kind === 'album') {
-      const twin = rows.find(x => x.kind === 'artist' && x.artist_name === r.artist_name &&
-        Math.abs(new Date(x.at) - new Date(r.at)) < 36e5);
-      if (twin) { twin._albums = r.n; return; }
-    }
-    merged.push(r);
-  });
-  return '<div class="ai-list">' + merged.map(r => {
+  return '<div class="ai-list">' + rows.map(r => {
     const who  = r.added_by ? _wnEsc(r.added_by) : 'The jukebox';
-    const isNew = r.kind === 'artist';
-    const n    = isNew ? (r._albums || 0) : r.n;
-    const head = isNew
+    const isFull = r.kind === 'full_artist' || !!r.full_import;
+    const n = Math.max(1, Number(r.n) || 1);
+    const head = isFull
       ? who + ' added <strong>' + _wnEsc(r.artist_name) + '</strong>' + (n ? ' with ' + n + ' album' + (n === 1 ? '' : 's') : '')
-      : who + ' added ' + n + ' album' + (n === 1 ? '' : 's') + ' to <strong>' + _wnEsc(r.artist_name) + '</strong>';
-    const sub  = (!isNew && r.album_name) ? _wnEsc(r.album_name) + (r.n > 1 ? ' and ' + (r.n - 1) + ' more' : '') : '';
+      : who + ' added ' + n + ' song' + (n === 1 ? '' : 's') + ' by <strong>' + _wnEsc(r.artist_name) + '</strong>';
+    const sub  = (!isFull && r.album_name && n === 1) ? _wnEsc(r.album_name) : '';
     const go   = r.slug ? ' onclick="wnGoArtist(\'' + _wnEsc(r.slug) + '\')" style="cursor:pointer"' : '';
     return '<div class="ai-card"' + go + '>' +
-      '<div class="ai-card-top"><span class="ai-cat">' + (isNew ? 'New Artist' : 'New Albums') + '</span>' +
+      '<div class="ai-card-top"><span class="ai-cat">' + (isFull ? 'New Artist' : 'Songs Added') + '</span>' +
       '<span class="ai-date">' + _wnDate(r.at) + '</span></div>' +
       '<div class="ai-desc">' + head + '</div>' +
       (sub ? '<div class="ai-ctx">' + sub + '</div>' : '') +
@@ -30150,6 +30139,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-01';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-01', items: [
+    'What\'s New lists song additions as "added 3 songs by Artist" instead of looking like a whole new jukebox. Full discography imports still show as New Artist with an album count.',
     'Audio Storage moved from the account menu into Settings, with a per-artist breakdown, upload buttons, and delete controls for each file.',
     'What\'s New no longer lists private imports, and credits use your chosen public name when you have set one in Settings.',
     'Explore Artists and Explore Playlists hide the Card Size slider in Details mode.',
