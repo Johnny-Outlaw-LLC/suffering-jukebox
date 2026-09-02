@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
+import { ownerMyJukebox } from "@/lib/my-jukebox";
 
 export const dynamic = "force-dynamic";
 
-// The Explore Artists "My Artists" scope is an ownership filter. Legacy
-// imports were credited by display name while newer ones carry added_by email,
-// so resolve both server-side and return their union.
+const T = (sb: ReturnType<typeof createSjServiceClient>, table: string) =>
+  sb.schema(JUKEBOX_SCHEMA).from(table);
+
+// Explore Artists "My Artists" is whoever you imported plus any artist you
+// claimed through Add to My Library (my_jukebox_items).
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req).catch(() => null);
   if (!user?.email) {
@@ -25,13 +28,35 @@ export async function GET(req: NextRequest) {
   const byName = displayNames.length
     ? sb.schema(JUKEBOX_SCHEMA).from("artists").select("id").in("added_by_name", displayNames)
     : Promise.resolve({ data: [], error: null });
-  const [{ data: emailRows, error: emailError }, { data: nameRows, error: nameError }] = await Promise.all([byEmail, byName]);
 
-  if (emailError || nameError) {
-    console.error("[my-jukebox:artists]", emailError || nameError);
+  const ownerCtx = await ownerMyJukebox(req);
+  const libraryArtists = ownerCtx
+    ? T(sb, "my_jukebox_items")
+        .select("tracks!inner(albums!inner(artist_id))")
+        .eq("jukebox_id", ownerCtx.jukebox.id)
+        .not("catalog_track_id", "is", null)
+        .limit(5000)
+    : Promise.resolve({ data: [], error: null });
+
+  const [
+    { data: emailRows, error: emailError },
+    { data: nameRows, error: nameError },
+    { data: libRows, error: libError },
+  ] = await Promise.all([byEmail, byName, libraryArtists]);
+
+  if (emailError || nameError || libError) {
+    console.error("[my-jukebox:artists]", emailError || nameError || libError);
     return NextResponse.json({ ok: false, error: "Could not load your artists." }, { status: 500 });
   }
 
-  const artistIds = [...new Set([...(emailRows ?? []), ...(nameRows ?? [])].map((artist) => artist.id))];
-  return NextResponse.json({ ok: true, artistIds });
+  const artistIds = new Set<string>();
+  for (const row of emailRows ?? []) if (row.id) artistIds.add(row.id);
+  for (const row of nameRows ?? []) if (row.id) artistIds.add(row.id);
+  for (const row of libRows ?? []) {
+    const track = row.tracks as { albums?: { artist_id?: string } | null } | null;
+    const artistId = track?.albums?.artist_id;
+    if (artistId) artistIds.add(artistId);
+  }
+
+  return NextResponse.json({ ok: true, artistIds: [...artistIds] });
 }

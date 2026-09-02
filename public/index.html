@@ -320,9 +320,11 @@ main > * { min-width: 0; }
 .trk-bar-bg { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .trk-bar-fill { height: 100%; border-radius: 2px; transition: width .45s ease; }
 .trk-v { color: var(--text-muted); flex-shrink: 0; font-size: .63rem; white-space: nowrap; min-width: 28px; text-align: right; align-self: center; }
-/* Blocked ("never play again") tracks stay listed but struck through, with an inline unblock button. */
+/* Blocked tracks stay listed but struck through, with unblock (and a date when snoozed). */
 .trk-line.trk-blocked .trk-name { text-decoration: line-through; opacity: .45; }
 .trk-line.trk-blocked .trk-metrics { opacity: .35; }
+.trk-block-until { display: none; flex: 0 0 auto; font-size: .48rem; line-height: 1.2; color: var(--text-muted); font-family: var(--mono); white-space: nowrap; padding: 0 4px; }
+.trk-line.trk-snoozed .trk-block-until { display: inline-flex; align-items: center; }
 .trk-unblock { display: none; }
 .trk-line.trk-blocked .trk-unblock { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: 4px; font-size: .48rem; line-height: 1; padding: 3px 5px; cursor: pointer; font-family: var(--mono); white-space: nowrap; }
 .trk-line.trk-blocked .trk-unblock:hover { color: var(--accent); border-color: var(--accent); }
@@ -1547,7 +1549,7 @@ body.light .sc-link:hover { background: #e8e8e8; }
   color: var(--accent); font: inherit; font-size: .55rem; padding: 7px 8px 5px;
 }
 
-/* DJ Mode — desktop/tablet only (no entry points on phone) */
+/* Side by Side — desktop/tablet only (Versions menu entry) */
 #djOverlay { position: fixed; inset: 0; z-index: 5050; background: var(--bg); display: none; flex-direction: column; }
 #djOverlay.open { display: flex; }
 .dj-head { display: flex; align-items: center; justify-content: space-between; padding: .65rem 1rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -4447,10 +4449,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   <div class="empty-state"><div class="big-glyph">♩</div><p>Loading…</p></div>
 </main>
 
-<!-- DJ Mode — desktop/tablet only; no entry points on phone -->
+<!-- Side by Side — desktop/tablet only; entry from Versions menu -->
 <div id="djOverlay" aria-hidden="true">
   <div class="dj-head">
-    <span class="dj-head-title">DJ Mode</span>
+    <span class="dj-head-title">Side by Side</span>
     <button type="button" class="dj-exit-btn" onclick="djExit()">Exit</button>
   </div>
   <div class="dj-body">
@@ -4487,7 +4489,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
             <button type="button" class="dj-sync-btn on" id="dj-sync-btn" onclick="djToggleSync()">Sync playback</button>
           </div>
           <div class="dj-mid-tabs" aria-hidden="true">
-            <span class="dj-mid-tab on">Playlist</span>
+            <span class="dj-mid-tab on">Up next</span>
           </div>
           <div class="dj-lyr-size" title="Lyric size">
             <span class="dj-lyr-size-lbl">A</span>
@@ -4498,8 +4500,8 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         </div>
         <div class="dj-playlist" id="dj-playlist">
           <div class="dj-playlist-head">
-            <span id="dj-pl-head">Playlist</span>
-            <span class="dj-playlist-hint">← left deck · right deck → — songs move up when that side ends</span>
+            <span id="dj-pl-head">Up next</span>
+            <span class="dj-playlist-hint">When this song ends, the queue advances. Side by Side stays open only if the next song also has multiple versions.</span>
           </div>
           <div class="dj-playlist-list" id="dj-pl-list"></div>
         </div>
@@ -4589,12 +4591,6 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="favorites"><span><b>Favorites First</b><span class="set-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
-            </div>
-            <div class="set-block">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:.8rem">
-                <span style="font-size:.62rem;color:var(--text)"><b>Crossfade tracks</b><span class="set-sub" style="display:block">Fade one song down and the next one in when the queue advances.</span></span>
-                <select id="sj-crossfade-seconds" class="ctrl-select" aria-label="Crossfade duration" style="flex:0 0 auto"><option value="0">Off</option><option value="3">3 sec</option><option value="6">6 sec</option></select>
-              </div>
             </div>
           </div>
         </section>
@@ -6025,7 +6021,7 @@ let ytRepeat            = false;
 let ytAPIPlayer         = null; // active-slot YT.Player (see _ytActiveSlot)
 let _ytActiveSlot       = 'a';  // 'a' | 'b' — ping-pong embeds for overlap crossfade
 let _ytSlotPlayers      = { a: null, b: null };
-let _djActive           = false; // DJ Mode overlay is open
+let _djActive           = false; // Side by Side overlay is open
 let _ytPlayTimer        = null; // 10-second play-log timer
 let _ytPendingPlay      = null; // {videoId, trackId} waiting for 10s threshold
 let _ytMobPlayPending   = false; // mobile: playVideo() after API ready (autoplay blocked)
@@ -6037,12 +6033,9 @@ let _ytShuffleRecent     = [];   // short history prevents weighted modes cluste
 let _ytQueueMetaPromise  = null; // one bulk artist-name lookup for the current queue at a time
 let _ytQueueMetaQueue    = null;
 let sjShufflePreference  = 'none'; // 'discovery' | 'favorites' | 'less_repeats' | 'none'
-let sjCrossfadeSeconds   = 0;      // 0 | 3 | 6, saved with playback preferences
 try {
   const savedShufflePreference = localStorage.getItem('sj_shuffle_preference');
   if (['discovery', 'favorites', 'less_repeats', 'none'].includes(savedShufflePreference)) sjShufflePreference = savedShufflePreference;
-  const savedCrossfadeSeconds = Number(localStorage.getItem('sj_crossfade_seconds'));
-  if ([0, 3, 6].includes(savedCrossfadeSeconds)) sjCrossfadeSeconds = savedCrossfadeSeconds;
 } catch (_) {}
 let _ytUserWantsPlay    = false; // user intent - not paused by user
 let _ytBgAudio          = null;  // silent keepalive for mobile background playback
@@ -7196,7 +7189,6 @@ function openYTPlayer(videoId, title, trackId, ev) {
           <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
           <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen, {user:true});event.stopPropagation()">Lyrics</button>
           <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">&#8644; Versions &#9662;</button>
-          <button class="ytp-btn" id="ytp-dj-btn" style="display:none" onclick="djEnter();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Enter DJ Mode">Enter DJ Mode</button>
           <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
           <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
             <span style="font-size:.5rem;letter-spacing:.02em">Vol</span>
@@ -7246,7 +7238,6 @@ function openYTPlayer(videoId, title, trackId, ev) {
   setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
   ytpOnTrackChange(videoId, trackId, title);
   showYtpMiniFooter();
-  djSyncBtn();
   // Mobile still opens straight to Full Screen; Docked is what it falls back
   // to when minimized from there.
   if (_isMobPlayer) requestAnimationFrame(() => ytpEnterFullscreen());
@@ -7326,7 +7317,6 @@ function ytpPlayInline() {
 // available from the X on the minimized bar (closeYTPlayer).
 function ytpCloseToMini() {
   if (!ytPlayerEl) return;
-  ytpCancelCrossfade(true);
   _ytUserWantsPlay = false;
   try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
   try { _taAudioEl?.pause(); } catch (_) {}
@@ -7340,7 +7330,6 @@ function closeYTPlayer() {
   if (!ytPlayerEl) return;
   if (_djActive) try { djExit({ skipRestore: true }); } catch (_) {}
   if (_liveRoomListen) liveRoomStopListening();
-  ytpCancelCrossfade(false);
   ytpClearPlaybackWatchdog();
   markPlayerClosed();
   hideYtpMiniFooter();
@@ -7489,7 +7478,6 @@ function ytNormalizeQueue(items) {
 
 function ytPlayNow(videoId, title, trackId) {
   if (_djActive) djExit();
-  ytpCancelCrossfade(true);
   clearQueueSourcePlaylist();
   ytMarkMobPlayIntent();
   ytQueue = [ytQueueItem(videoId, title, trackId)];
@@ -7550,7 +7538,6 @@ function _ytCaptureLastPlayed() {
 function ytPlayQueueIdx(idx, opts) {
   if (idx < 0 || idx >= ytQueue.length || !ytPlayerEl) return;
   if (_djActive && !opts?.fromDj) { djExit(); return; }
-  if (!opts?.crossfade && !opts?.skipLoad) ytpCancelCrossfade(true);
   if (idx !== ytQueueIdx) _ytCaptureLastPlayed();
   ytMarkMobPlayIntent();
   // Cancel pending play timer for previous track
@@ -7812,8 +7799,7 @@ function ytNextTrack() {
     next = playlistChartNextPlayable(next, 1);
     if (next < 0) return;
   }
-  if (next !== ytQueueIdx && ytpCrossfadeAvailable()) ytpCrossfadeToQueueIdx(next);
-  else ytPlayQueueIdx(next);
+  ytPlayQueueIdx(next);
 }
 
 function ytPrevTrack() {
@@ -7847,7 +7833,6 @@ function ytBackTrack() {
 
 // ── Mini-player play/pause toggle ──────────────────────────────
 function ytTogglePlayPause() {
-  ytpCancelCrossfade(true);
   if (_taBgActive && _taAudioEl) {
     // Audio-only mode: toggle the audio element, not the embed
     if (_taAudioEl.paused) { _ytUserWantsPlay = true; _taAudioEl.play().catch(() => {}); ytpSetPlayPauseIcon(true); ytpSetMediaPlaybackState('playing'); }
@@ -7939,111 +7924,7 @@ function ytpDestroySlotPlayers() {
   _ytActiveSlot = 'a';
 }
 
-function ytpPromoteSlotAfterCrossfade(cf) {
-  const inSlot = cf.inSlot;
-  const outSlot = cf.outSlot;
-  try { ytpSlotPlayer(outSlot)?.pauseVideo?.(); } catch (_) {}
-  ytpSetSlotVolume(outSlot, 0);
-  _ytActiveSlot = inSlot;
-  ytpSyncAPIPointer();
-  ytpSetSlotVisible(inSlot);
-  ytPlayQueueIdx(cf.idx, { skipLoad: true });
-  ytpSetSlotVolume(inSlot, cf.volume);
-  ytpSyncVolumeSlider();
-  _ytCrossfadeDoneUntil = Date.now() + 400;
-}
-
-let _ytCrossfadeDoneUntil = 0;
-
-function ytpFadeDual(outSlot, inSlot, outTo, inTo, ms) {
-  ytpCancelFade();
-  return new Promise(resolve => {
-    const outFrom = ytpGetSlotVolume(outSlot);
-    const inFrom = ytpGetSlotVolume(inSlot);
-    const t0 = performance.now();
-    if (!ms) {
-      ytpSetSlotVolume(outSlot, outTo);
-      ytpSetSlotVolume(inSlot, inTo);
-      resolve();
-      return;
-    }
-    const tick = (now) => {
-      const t = Math.min(1, (now - t0) / ms);
-      ytpSetSlotVolume(outSlot, Math.round(outFrom + (outTo - outFrom) * t));
-      ytpSetSlotVolume(inSlot, Math.round(inFrom + (inTo - inFrom) * t));
-      if (t < 1) _ytpFadeRaf = requestAnimationFrame(tick);
-      else { _ytpFadeRaf = null; resolve(); }
-    };
-    _ytpFadeRaf = requestAnimationFrame(tick);
-  });
-}
-
-async function ytpRunCrossfadeOverlap(cf) {
-  const totalMs = Math.max(1000, sjCrossfadeSeconds * 1000);
-  await ytpFadeDual(cf.outSlot, cf.inSlot, 0, cf.volume, totalMs);
-  if (_ytCrossfade !== cf) return;
-  ytpPromoteSlotAfterCrossfade(cf);
-  _ytCrossfade = null;
-}
-
-// Overlap crossfade: outgoing and incoming both audible for the full duration.
-let _ytCrossfade = null; // { token, idx, volume, phase, outSlot, inSlot }
-let _ytCrossfadeToken = 0;
-
-function ytpCrossfadeAvailable() {
-  return sjCrossfadeSeconds > 0 && !!ytPlayerEl && !!ytAPIPlayer &&
-    !_taBgActive && !_taManualAudio && _ytUserWantsPlay && ytQueue.length > 1 &&
-    !_djActive && !_ytCrossfade;
-}
-
-function ytpCancelCrossfade(restoreVolume) {
-  const active = _ytCrossfade;
-  _ytCrossfade = null;
-  ytpCancelFade();
-  if (restoreVolume && active && Number.isFinite(active.volume)) {
-    ytpSetSlotVolume(_ytActiveSlot, active.volume);
-    ytpSetSlotVolume(ytpInactiveSlot(), 0);
-  }
-}
-
-function ytpCrossfadeToQueueIdx(idx) {
-  if (!ytpCrossfadeAvailable() || idx < 0 || idx >= ytQueue.length || idx === ytQueueIdx) {
-    ytPlayQueueIdx(idx);
-    return;
-  }
-  const item = ytQueue[idx];
-  const outSlot = _ytActiveSlot;
-  const inSlot = ytpInactiveSlot();
-  const targetVol = ytpSliderVolume();
-  const active = _ytCrossfade = {
-    token: ++_ytCrossfadeToken,
-    idx,
-    volume: targetVol,
-    phase: 'preload',
-    outSlot,
-    inSlot,
-  };
-  ytpAttachSlotPlayer(inSlot, (inPlayer) => {
-    if (_ytCrossfade !== active) return;
-    try { inPlayer.setVolume(0); } catch (_) {}
-    inPlayer.loadVideoById(item.videoId);
-  });
-}
-
-function ytpMaybeCrossfade(pos, dur) {
-  if (_liveRoomListen || _djActive) return;
-  if (!ytpCrossfadeAvailable() || !Number.isFinite(dur) || dur <= 0) return;
-  if (pos < Math.max(.25, dur - sjCrossfadeSeconds)) return;
-  let next = ytPlayNextIndex();
-  if (next >= 0) _ytPlayNext = null;
-  else if (ytShuffle && ytQueue.length > 1) next = _ytShuffleNextIdx();
-  else if (ytQueueIdx < ytQueue.length - 1) next = ytQueueIdx + 1;
-  else if (ytRepeat && ytQueue.length > 1) next = 0;
-  if (next >= 0 && next !== ytQueueIdx) ytpCrossfadeToQueueIdx(next);
-}
-
-// Attach (or reuse) a YT.Player on slot 'a' or 'b'. onReadyCb fires once the
-// API wrapper is usable — used by overlap crossfade to cue the next song.
+// Attach (or reuse) a YT.Player on slot 'a' or 'b'.
 function ytpAttachSlotPlayer(slot, onReadyCb) {
   if (!window.YT || !window.YT.Player) {
     setTimeout(() => ytpAttachSlotPlayer(slot, onReadyCb), 150);
@@ -8070,12 +7951,6 @@ function ytpAttachSlotPlayer(slot, onReadyCb) {
       },
       onStateChange: function(ev) { ytpOnSlotStateChange(slot, ev); },
       onError: function(ev) {
-        if (_ytCrossfade && slot === _ytCrossfade.inSlot) {
-          const idx = _ytCrossfade.idx;
-          ytpCancelCrossfade(true);
-          ytPlayQueueIdx(idx);
-          return;
-        }
         if (slot !== _ytActiveSlot) return;
         const item = ytQueue[ytQueueIdx];
         ytpHandlePlaybackFailure(ytVideoId, item && item.trackId, item && item.title, 'error', ev.data);
@@ -8088,20 +7963,7 @@ function ytpAttachSlotPlayer(slot, onReadyCb) {
 
 function ytpOnSlotStateChange(slot, ev) {
   if (_ytpLayoutRestore) return;
-  // Incoming slot for an overlap crossfade: when it starts, blend both.
-  if (_ytCrossfade && slot === _ytCrossfade.inSlot) {
-    if (ev.data === 1 && _ytCrossfade.phase === 'preload') {
-      _ytCrossfade.phase = 'overlap';
-      ytpRunCrossfadeOverlap(_ytCrossfade);
-    }
-    return;
-  }
-  // Outgoing slot ending mid-crossfade — ignore so we don't skip ahead.
-  if (_ytCrossfade && slot === _ytCrossfade.outSlot) return;
   if (slot !== _ytActiveSlot) return;
-  if (_ytCrossfade || Date.now() < _ytCrossfadeDoneUntil) {
-    if (ev.data === 0) return;
-  }
   if (ev.data === 1) { // PLAYING
     if (_pbRestoreOpts) {
       try { ytAPIPlayer.pauseVideo(); } catch (_) {}
@@ -8152,7 +8014,6 @@ function ytpOnSlotStateChange(slot, ev) {
     _ytUserWantsPlay = false;
     ytpStopBgKeepalive();
   } else if (ev.data === 0) { // ENDED
-    if (_ytCrossfade || Date.now() < _ytCrossfadeDoneUntil) return;
     lyrSyncStop();
     if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
     patchYTPlayDuration();
@@ -9862,7 +9723,6 @@ function ytpMfPaintProgress() {
   const prefixes = ytpScrubPrefixes();
   if (!prefixes.length) return;
   const { pos, dur } = ytpMfPlaybackPos();
-  ytpMaybeCrossfade(pos, dur);
   const max = dur > 0 ? dur : 0;
   prefixes.forEach(p => {
     const seek  = document.getElementById('ytp-' + p + '-seek');
@@ -13371,7 +13231,6 @@ function ytpOnTrackChange(videoId, trackId, title) {
   sjmClose();
   _ytpLyrOffset = tvOffset(trackId, videoId);
   ytpSyncVersionBtn(trackId, videoId);
-  djSyncBtn();
   // Versions may not be in memory yet on a cold start; fill in once they land.
   if (trackId && !trackVideos[trackId]) {
     loadTrackVideos([trackId]).then(() => {
@@ -13379,7 +13238,6 @@ function ytpOnTrackChange(videoId, trackId, title) {
       _ytpLyrOffset     = tvOffset(trackId, ytVideoId);
       _lyrSyncActiveIdx = -1;
       ytpSyncVersionBtn(trackId, ytVideoId);
-      djSyncBtn();
     });
   }
   if (viewMode === 'playlistchart') playlistChartAutoLyrics();
@@ -13482,7 +13340,7 @@ async function ytpToggleVersionMenu() {
                '</span>' +
              '</button>';
     }).join('') +
-    (ytpIsMob() ? '' : '<button class="tv-menu-act" onclick="ytpCloseVersionMenu();djEnter({focusAlts:true})">Enter DJ Mode</button>') +
+    (ytpIsMob() ? '' : '<button class="tv-menu-act" onclick="ytpCloseVersionMenu();djEnter({focusAlts:true})">Side by Side mode</button>') +
     '<button class="tv-menu-act" onclick="sjmDiscoverFromPlayer()">Find another version…</button>' +
     '<div id="tv-menu-admin"></div>';
 
@@ -13536,10 +13394,9 @@ function ytpPlayVersion(videoId) {
   tvSyncOffsetUI(trackId, videoId);
 }
 
-// ── DJ Mode (desktop/tablet only) ────────────────────────────────────────
-// Two decks, one crossfader. Same song on both → lyrics in the middle.
-// Different songs → middle shows the playlist with ← / → for which deck
-// each waiting song will rise into when that side ends.
+// ── Side by Side (desktop/tablet only) ───────────────────────────────────
+// Two versions of the same song, one crossfader. Queue advances when the
+// song ends — stays open if the next track also has multiple versions.
 let _djLeft = null;   // { trackId, videoId, title, artist, album, player, ready, seek }
 let _djRight = null;
 let _djTrackId = null; // left deck's track (lyrics / now-playing)
@@ -13572,17 +13429,11 @@ function djPlayableVersions(trackId) {
 
 function djCanEnter() {
   if (ytpIsMob()) return false;
-  if (!ytPlayerEl || !ytQueue.length || ytQueueIdx < 0) return false;
   if (_taBgActive || _taManualAudio) return false;
   if (_sjjLive) return false;
-  if (_ytCrossfade) return false;
   if (_djActive) return false;
   const trackId = ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId;
-  if (!trackId) return false;
-  // Prefer two versions of the current song; otherwise need at least one
-  // more song in the queue so the other deck has something to play.
-  if (djPlayableVersions(trackId).length >= 2) return true;
-  return ytQueue.length >= 2;
+  return !!(trackId && djPlayableVersions(trackId).length >= 2);
 }
 
 function djSameSong() {
@@ -13660,43 +13511,19 @@ function djRenderPlaylist() {
   const head = document.getElementById('dj-pl-head');
   if (!list) return;
   const rows = [];
-  const pushUpcoming = (side) => {
-    _djUpcoming[side].forEach((item, i) => {
-      const arrowL = side === 'l' ? ' on' : '';
-      const arrowR = side === 'r' ? ' on' : '';
-      rows.push(
-        '<div class="dj-pl-row side-' + side + '" data-dj-id="' + escHtml(item._djId) + '">' +
-          '<button type="button" class="dj-pl-arrow' + arrowL + '" title="Play on left when left ends" onclick="djSetUpcomingSide(\'' + item._djId + '\',\'l\')">←</button>' +
-          '<span class="dj-pl-title" title="' + escHtml(djItemLabel(item)) + '">' + escHtml(djItemLabel(item)) + '</span>' +
-          '<span class="dj-pl-side-lbl">' + (side === 'l' ? 'Left' : 'Right') + (i === 0 ? ' · next' : '') + '</span>' +
-          '<button type="button" class="dj-pl-arrow' + arrowR + '" title="Play on right when right ends" onclick="djSetUpcomingSide(\'' + item._djId + '\',\'r\')">→</button>' +
-        '</div>'
-      );
-    });
-  };
-  pushUpcoming('l');
-  pushUpcoming('r');
-  const pool = djPoolIndices();
-  pool.forEach((qi) => {
-    const item = ytQueue[qi];
-    if (!item) return;
-    const label = djItemLabel(item);
+  for (let i = ytQueueIdx + 1; i < ytQueue.length; i++) {
+    const item = ytQueue[i];
+    if (!item) continue;
     rows.push(
-      '<div class="dj-pl-row" data-qi="' + qi + '">' +
-        '<button type="button" class="dj-pl-arrow" title="Queue for left" onclick="djSendToSide(\'' + 'l' + '\',' + qi + ')">←</button>' +
-        '<span class="dj-pl-title" title="' + escHtml(label) + '">' + escHtml(label) + '</span>' +
-        '<span class="dj-pl-side-lbl" style="color:var(--text-muted)">—</span>' +
-        '<button type="button" class="dj-pl-arrow" title="Queue for right" onclick="djSendToSide(\'' + 'r' + '\',' + qi + ')">→</button>' +
+      '<div class="dj-pl-row">' +
+        '<span class="dj-pl-title" title="' + escHtml(djItemLabel(item)) + '">' + escHtml(djItemLabel(item)) + '</span>' +
       '</div>'
     );
-  });
-  if (head) {
-    const waiting = _djUpcoming.l.length + _djUpcoming.r.length + pool.length;
-    head.textContent = 'Playlist' + (waiting ? ' · ' + waiting : '');
   }
+  if (head) head.textContent = 'Up next';
   list.innerHTML = rows.length
     ? rows.join('')
-    : '<div class="dj-pl-empty">No more songs waiting.<br>Add to the player queue, then send them ← left or right →.</div>';
+    : '<div class="dj-pl-empty">Nothing else in the queue.</div>';
 }
 
 function djFindUpcoming(djId) {
@@ -13733,12 +13560,6 @@ async function djSendToSide(side, queueIdx) {
     _djUpcoming[side].push(clone);
     djRenderPlaylist();
   }
-}
-
-function djSyncBtn() {
-  const btn = document.getElementById('ytp-dj-btn');
-  if (!btn) return;
-  btn.style.display = djCanEnter() || _djActive ? '' : 'none';
 }
 
 function djEqualPower(balance, master) {
@@ -14234,33 +14055,87 @@ async function djSaveSync(side) {
 
 async function djOnDeckEnded(side) {
   if (!_djActive || _djAdvancing[side]) return;
-  _djAdvancing[side] = true;
+  // Only the left deck ends the song for queue purposes.
+  if (side !== 'l') {
+    try { _djRight?.player?.pauseVideo?.(); } catch (_) {}
+    return;
+  }
+  _djAdvancing.l = true;
   try {
-    if (side === 'l' && viewMode === 'playlistchart' && playlistChartIsLive() && ytQueueIdx >= 0) {
+    if (viewMode === 'playlistchart' && playlistChartIsLive() && ytQueueIdx >= 0) {
       try { playlistChartMarkPlayed(ytQueueIdx); } catch (_) {}
     }
-    const next = _djUpcoming[side].shift();
-    if (next) {
-      await djLoadOntoDeck(side, next);
+
+    let next = ytPlayNextIndex();
+    if (next >= 0) _ytPlayNext = null;
+    else if (ytShuffle && ytQueue.length > 1) next = _ytShuffleNextIdx();
+    else if (ytQueueIdx < ytQueue.length - 1) next = ytQueueIdx + 1;
+    else if (ytRepeat && ytQueue.length > 0) next = 0;
+    else {
+      _djWantPlay = false;
+      djRenderMeta();
+      djRenderPlaylist();
       return;
     }
-    // Nothing waiting — stop this deck only; stay in DJ Mode.
-    try {
-      const deck = side === 'l' ? _djLeft : _djRight;
-      deck?.player?.pauseVideo?.();
-    } catch (_) {}
-    if (!_djUpcoming.l.length && !_djUpcoming.r.length && !djPoolIndices().length) {
-      const other = side === 'l' ? _djRight : _djLeft;
-      let otherPlaying = false;
-      try { otherPlaying = other?.player && other.player.getPlayerState?.() === 1; } catch (_) {}
-      if (!otherPlaying) {
+
+    if (viewMode === 'playlistchart' && isTrackSkipped(ytQueue[next]?.trackId)) {
+      next = playlistChartNextPlayable(next, 1);
+      if (next < 0) {
         _djWantPlay = false;
-        djRenderMeta();
+        return;
       }
     }
-    djRenderPlaylist();
+
+    const nextItem = ytQueue[next];
+    const nextTrackId = nextItem?.trackId;
+    if (!nextTrackId) {
+      djExit({ playIdx: next });
+      return;
+    }
+
+    await loadTrackVideos([nextTrackId]);
+    const vs = djPlayableVersions(nextTrackId);
+
+    if (vs.length >= 2) {
+      if (next !== ytQueueIdx) _ytCaptureLastPlayed();
+      ytQueueIdx = next;
+
+      const meta = ytpTrackMeta(nextTrackId, nextItem?.title, nextItem?.videoId) || {
+        title: nextItem?.title || 'Track',
+        artist: nextItem?.artist || '',
+        album: nextItem?.album || '',
+      };
+      const playingVid = nextItem.videoId || tvPrimary(nextTrackId)?.video_id || vs[0].video_id;
+      const leftV = tvFor(nextTrackId, playingVid) || vs[0];
+      const rightV = vs.find(v => v.video_id !== leftV.video_id) || vs[1];
+
+      _djTrackId = nextTrackId;
+      _djSyncAdj = { l: 0, r: 0 };
+      _djCanSave = !!(googleUser && await tvCanEdit(nextTrackId));
+      ytVideoId = leftV.video_id;
+      nowPlayingTrackId = nextTrackId;
+      if (nextItem) nextItem.videoId = leftV.video_id;
+
+      const leftRow = djRowFromVersion(nextTrackId, leftV, meta);
+      const rightRow = djRowFromVersion(nextTrackId, rightV, meta);
+      _djSync = true;
+      _djWantPlay = true;
+
+      djAttachDeck('l', leftRow, 0);
+      const rSeek = Math.max(0, -tvOffset(nextTrackId, leftV.video_id) + tvOffset(nextTrackId, rightV.video_id));
+      djAttachDeck('r', rightRow, rSeek);
+
+      try { ytpOnTrackChange(leftV.video_id, nextTrackId, nextItem?.title); } catch (_) {}
+      try { logPlayStart(nextTrackId, getMyVote(nextTrackId)); } catch (_) {}
+      try { updateYTQueueUI(); } catch (_) {}
+      djRenderMeta();
+      djSyncSaveUI();
+      djRenderPlaylist();
+    } else {
+      djExit({ playIdx: next });
+    }
   } finally {
-    _djAdvancing[side] = false;
+    _djAdvancing.l = false;
   }
 }
 
@@ -14363,23 +14238,21 @@ function djSeekCommit(side, el) {
 async function djEnter(opts) {
   if (_djActive) return;
   if (ytpIsMob()) return;
-  if (_sjjLive) { showToast('Pause broadcasting to use DJ Mode.'); return; }
-  if (_taBgActive || _taManualAudio) { showToast('Turn off Background Play to use DJ Mode.'); return; }
+  if (_sjjLive) { showToast('Pause broadcasting to use Side by Side.'); return; }
+  if (_taBgActive || _taManualAudio) { showToast('Turn off Background Play to use Side by Side.'); return; }
   if (!ytPlayerEl || !ytQueue.length) return;
 
   const cur = ytQueue[ytQueueIdx];
   const trackId = cur?.trackId || nowPlayingTrackId;
   if (!trackId) return;
 
-  ytpCancelCrossfade(true);
   loadYTAPI();
   await loadTrackVideos([trackId]);
   if ((ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId) !== trackId) return;
 
   const vs = djPlayableVersions(trackId);
-  if (vs.length < 2 && ytQueue.length < 2) {
-    showToast('DJ Mode needs another version of this song, or another song in the queue.');
-    djSyncBtn();
+  if (vs.length < 2) {
+    showToast('This song needs another version on YouTube for Side by Side.');
     return;
   }
 
@@ -14399,7 +14272,7 @@ async function djEnter(opts) {
     fs: !!_ytpFs,
   };
 
-  // Pause and hide the main player chrome while DJ Mode is open.
+  // Pause and hide the main player chrome while Side by Side is open.
   _ytUserWantsPlay = false;
   try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
   try { ytpSlotPlayer(ytpInactiveSlot())?.pauseVideo?.(); } catch (_) {}
@@ -14419,33 +14292,9 @@ async function djEnter(opts) {
     if (alt) rightV = alt;
   }
 
-  // No second version of this song — put the next queue song on the right.
-  let rightFromQueue = null;
-  if (!rightV) {
-    for (let i = ytQueueIdx + 1; i < ytQueue.length; i++) {
-      if (ytQueue[i]?.trackId && ytQueue[i].trackId !== trackId) {
-        rightFromQueue = djCloneItem(ytQueue[i], i);
-        break;
-      }
-    }
-  }
-
-  const leftRow = leftV ? djRowFromVersion(trackId, leftV, meta) : null;
-  let rightRow = rightV ? djRowFromVersion(trackId, rightV, meta) : null;
-  _djSync = !!(leftRow && rightRow && leftRow.trackId === rightRow.trackId);
-
-  // Seed each deck's waiting list from the rest of the playlist, alternating
-  // ← left / right → so every song already has a side before anyone clicks.
-  let flip = 0;
-  for (let i = 0; i < ytQueue.length; i++) {
-    if (i === ytQueueIdx) continue;
-    const it = ytQueue[i];
-    if (!it?.trackId) continue;
-    if (rightFromQueue && it.trackId === rightFromQueue.trackId && i === rightFromQueue.queueIdx) continue;
-    if (it.trackId === trackId && rightV) continue; // already on both decks as versions
-    const side = (flip++ % 2 === 0) ? 'l' : 'r';
-    _djUpcoming[side].push(djCloneItem(it, i));
-  }
+  const leftRow = djRowFromVersion(trackId, leftV, meta);
+  const rightRow = djRowFromVersion(trackId, rightV, meta);
+  _djSync = true;
 
   _djActive = true;
   const overlay = document.getElementById('djOverlay');
@@ -14456,21 +14305,15 @@ async function djEnter(opts) {
   const lyrSize = document.getElementById('dj-lyr-size');
   if (lyrSize) lyrSize.value = String(globalLyricSize);
 
-  if (leftRow) djAttachDeck('l', leftRow, leftSeek);
-  if (rightRow) {
-    const rSeek = _djSync
-      ? Math.max(0, leftSeek - tvOffset(trackId, leftRow.videoId) + tvOffset(trackId, rightRow.videoId))
-      : 0;
-    djAttachDeck('r', rightRow, rSeek);
-  } else if (rightFromQueue) {
-    await djLoadOntoDeck('r', rightFromQueue);
-  }
+  djAttachDeck('l', leftRow, leftSeek);
+  const rSeek = Math.max(0, leftSeek - tvOffset(trackId, leftRow.videoId) + tvOffset(trackId, rightRow.videoId));
+  djAttachDeck('r', rightRow, rSeek);
 
   djRenderMeta();
   djSyncSaveUI();
   djApplyVolumes();
   djStartTick();
-  djSyncBtn();
+  djRenderPlaylist();
 }
 
 function djExit(opts) {
@@ -14514,7 +14357,6 @@ function djExit(opts) {
   _djActive = false;
 
   if ((opts?.skipRestore && playIdx == null) || !ytPlayerEl) {
-    djSyncBtn();
     return;
   }
 
@@ -14535,13 +14377,12 @@ function djExit(opts) {
   ytpSetSlotVisible(_ytActiveSlot);
   ytpSyncAPIPointer();
 
-  // Song finished and the next one has no alt versions — leave DJ Mode
+  // Song finished and the next one has no alt versions — leave Side by Side
   // and start that track on the normal player.
   if (playIdx != null) {
     ytpSetSlotVolume(_ytActiveSlot, _djMasterVol);
     ytpSetSlotVolume(ytpInactiveSlot(), 0);
     ytpSyncVolumeSlider();
-    djSyncBtn();
     ytPlayQueueIdx(playIdx, { fromDj: true });
     return;
   }
@@ -14573,7 +14414,6 @@ function djExit(opts) {
   }
   ytpOnTrackChange(ytVideoId, item?.trackId, item?.title);
   ytpSyncVolumeSlider();
-  djSyncBtn();
 }
 
 // ── Who may retime lyrics or pick the default version ─────────────────────
@@ -23903,10 +23743,8 @@ function esLyricsMenuHTML() {
 async function esEnsureCatalog(force) {
   const session = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
   const authUserId = session?.user?.id || null;
-  // The anonymous catalogue read is not enough after sign-in: landing_stats
-  // may legitimately include private artists the listener can access. Reload
-  // once with that listener's token rather than retaining the anonymous cache.
-  if (_esLoading || (_esLoaded && !force && _esCatalogAuthUserId === authUserId)) return;
+  const cataloguePresent = Object.keys(tracks).length > 0;
+  if (_esLoading || (_esLoaded && !force && _esCatalogAuthUserId === authUserId && cataloguePresent)) return;
   _esLoading = true;
   _esError = '';
   esRepaint();
@@ -25377,6 +25215,11 @@ function resetDashboardState() {
   landingExpandedIds.clear();
   _laLoadedArtists.clear();
   laOpenAlbumIds.clear();
+  // Explore Songs loads the whole catalogue into albums/tracks. Leaving an
+  // artist jukebox wipes those globals, so the loaded flag has to go with them.
+  _esLoaded = false;
+  _esLoading = false;
+  _esError = '';
 }
 
 // artist: {id, name, slug, is_community?, added_by_name?}
@@ -25573,7 +25416,7 @@ async function loadTrackVideos(trackIds) {
 function tvList(trackId)  { return trackVideos[trackId] || []; }
 function tvFor(trackId, videoId) { return tvList(trackId).find(v => v.video_id === videoId) || null; }
 
-// Playable uploads for a song. Used by DJ Mode and the Alt Video column.
+// Playable uploads for a song. Used by Side by Side and the Alt Video column.
 function tvPlayableCount(trackId) {
   return tvList(trackId).filter(v => v?.video_id && v.is_playable !== false).length;
 }
@@ -25818,7 +25661,10 @@ function renderTrackLines(alb, mode = 'inline') {
       const parts = []; if (v) parts.push('\u25B6 ' + fmtV(v) + ' views'); if (l) parts.push('\u2665 ' + fmtV(l)); parts.push('\u266A ' + (t.track_number ? 'track ' + t.track_number : t.name));
       return parts.join('  ');
     })();
-    return `<div class="trk-line${t.id === nowPlayingTrackId ? ' trk-playing' : ''}${isTrackBlocked(t.id) ? ' trk-blocked' : ''}" data-track-id="${t.id}"
+    const skipped = isTrackSkipped(t.id);
+    const onBreak = isTrackOnBreak(t.id);
+    const untilLbl = onBreak ? ('Blocked until ' + sjBreakUntilLabel(t.id)) : '';
+    return `<div class="trk-line${t.id === nowPlayingTrackId ? ' trk-playing' : ''}${skipped ? ' trk-blocked' : ''}${onBreak ? ' trk-snoozed' : ''}" data-track-id="${t.id}"
       data-tip-name="${(t.name||'').replace(/"/g,'&quot;')}"
       data-tip-alb="${(alb.name||'').replace(/"/g,'&quot;')}${albYr ? ' · ' + albYr : ''}"
       data-tip-color="${color}"
@@ -25828,7 +25674,8 @@ function renderTrackLines(alb, mode = 'inline') {
       <button class="tvb-cycle" data-vote-track="${t.id}" onclick="cycleVote('${t.id}');event.stopPropagation()" title="Rate">-</button>
       <span class="trk-n">${t.track_number || '·'}</span>
       <span class="trk-name">${t.name}</span>
-      <button class="trk-unblock" onclick="toggleBlockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
+      <span class="trk-block-until">${untilLbl}</span>
+      <button class="trk-unblock" onclick="unblockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
       ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ <span class="trk-play-lbl">Play</span></button>` : `<span class="trk-play-spacer"></span>`}
       <button class="trk-more" onclick="sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button>
@@ -27146,12 +26993,13 @@ async function ensureMyArtistIds() {
 }
 
 function oaIsMine(a) {
-  if (!googleUser) return false;
+  if (!googleUser || !a) return false;
+  if (a.in_my_library) return true;
   if (!_myArtistIds) {
     ensureMyArtistIds();
     return false;
   }
-  return !!(a && _myArtistIds.has(a.artist_id));
+  return _myArtistIds.has(a.artist_id);
 }
 
 // The landing_stats row for an artist, which is where in_my_library lives.
@@ -29924,6 +29772,11 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-01';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-01', items: [
+    'Songs you park with Take a break now show Blocked until [date] on the album track list, with an Unblock button beside it.',
+    'Crossfade between songs is gone from Settings — it never sounded like a real blend, so the control is removed.',
+    'DJ Mode is gone. Side by Side mode is back: compare two YouTube versions of the same song with a sound-balance slider, synced playback, and lyrics under each video. Open it from Versions → Side by Side mode when the song has more than one version. When the song ends the queue advances; Side by Side stays open only if the next song also has multiple versions.',
+    'Artists you add with Add to My Library now show under My Artists, not only artists you imported yourself.',
+    'Explore Songs loads again after you leave an artist jukebox — it had been keeping an empty catalogue in memory.',
     'On Now Playing, Save as Playlist sits next to the song count and total play time instead of beside the Size slider. Size, Covers and Details stay on the right.',
   ]},
   { date: '2026-08-31', items: [
@@ -30930,8 +30783,6 @@ function settingsFillForm() {
   if (radio) radio.checked = true;
   const pref = document.querySelector('input[name="sj-shuffle-preference"][value="' + sjShufflePreference + '"]');
   if (pref) pref.checked = true;
-  const cross = document.getElementById('sj-crossfade-seconds');
-  if (cross) cross.value = String(sjCrossfadeSeconds);
 }
 
 function settingsPaintAvatar(chosen) {
@@ -30993,12 +30844,8 @@ async function settingsSave() {
   // saved whether or not the account write below succeeds.
   const pref = document.querySelector('input[name="sj-shuffle-preference"]:checked')?.value;
   if (['discovery', 'favorites', 'less_repeats', 'none'].includes(pref)) sjShufflePreference = pref;
-  const crossValue = Number(document.getElementById('sj-crossfade-seconds')?.value);
-  sjCrossfadeSeconds = [0, 3, 6].includes(crossValue) ? crossValue : 0;
-  if (!sjCrossfadeSeconds) ytpCancelCrossfade(true);
   try {
     localStorage.setItem('sj_shuffle_preference', sjShufflePreference);
-    localStorage.setItem('sj_crossfade_seconds', String(sjCrossfadeSeconds));
   } catch (_) {}
   _ytShufflePreviewIdx = null;
   if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
@@ -32106,17 +31953,29 @@ function sjNoBlocked(q) { return (q || []).filter(it => it && !isTrackSkipped(it
 
 function refreshBlockedUI(trackId) {
   const apply = tid => {
-    const on = isTrackBlocked(tid);
-    document.querySelectorAll('.trk-line[data-track-id="' + tid + '"]').forEach(el => el.classList.toggle('trk-blocked', on));
-    document.querySelectorAll('.pl-wall-cell[data-pc-track="' + tid + '"]').forEach(el => el.classList.toggle('blocked', on));
+    const skipped = isTrackSkipped(tid);
+    const onBreak = isTrackOnBreak(tid);
+    document.querySelectorAll('.trk-line[data-track-id="' + tid + '"]').forEach(el => {
+      el.classList.toggle('trk-blocked', skipped);
+      el.classList.toggle('trk-snoozed', onBreak);
+      const lbl = el.querySelector('.trk-block-until');
+      if (lbl) lbl.textContent = onBreak ? ('Blocked until ' + sjBreakUntilLabel(tid)) : '';
+    });
+    document.querySelectorAll('.pl-wall-cell[data-pc-track="' + tid + '"]').forEach(el => el.classList.toggle('blocked', skipped));
   };
   if (trackId) apply(trackId);
   else {
     document.querySelectorAll('.trk-line[data-track-id]').forEach(el => {
-      el.classList.toggle('trk-blocked', isTrackBlocked(el.getAttribute('data-track-id')));
+      const tid = el.getAttribute('data-track-id');
+      const skipped = isTrackSkipped(tid);
+      const onBreak = isTrackOnBreak(tid);
+      el.classList.toggle('trk-blocked', skipped);
+      el.classList.toggle('trk-snoozed', onBreak);
+      const lbl = el.querySelector('.trk-block-until');
+      if (lbl) lbl.textContent = onBreak ? ('Blocked until ' + sjBreakUntilLabel(tid)) : '';
     });
     document.querySelectorAll('.pl-wall-cell[data-pc-track]').forEach(el => {
-      el.classList.toggle('blocked', isTrackBlocked(el.getAttribute('data-pc-track')));
+      el.classList.toggle('blocked', isTrackSkipped(el.getAttribute('data-pc-track')));
     });
   }
   // Keep the “Never Again / Unblock” toggle buttons (expanded track cards) in sync
@@ -32128,6 +31987,12 @@ function refreshBlockedUI(trackId) {
   });
   ytpSyncBlockBtn(nowPlayingTrackId);
   if (viewMode === 'playlistchart') playlistChartRefreshPlayback();
+}
+
+function unblockTrack(trackId) {
+  if (!trackId) return;
+  if (isTrackOnBreak(trackId)) clearTrackSnooze(trackId);
+  else if (isTrackBlocked(trackId)) toggleBlockTrack(trackId);
 }
 
 async function loadMyBlockedTracks() {
@@ -37951,6 +37816,8 @@ async function sjmSendToMyJukebox(scope, id, label) {
     // Keep the local picture of My Library honest so Add to My Library does
     // not keep offering itself on the next ⋯ open.
     _esLibTrackIds = null;
+    _myArtistIds = null;
+    _myArtistIdsLoading = false;
     const artist = _sjmArtistFor(fromTrackId || (scope === 'artist' ? id : null));
     const row = artist ? sjLandingRowFor(artist.id) : sjLandingRowFor(scope === 'artist' ? id : null);
     if (row) row.in_my_library = true;
@@ -37962,6 +37829,7 @@ async function sjmSendToMyJukebox(scope, id, label) {
     // re-read before the artist can turn up under My Artists.
     if (isLandingMode) refreshLandingStats();
     else { landingStats = []; ensureOAStats(); }
+    if (googleUser) ensureMyArtistIds();
   } catch (e) { showToast(e.message || 'Could not add to My Library.'); }
 }
 
