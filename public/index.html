@@ -3510,6 +3510,8 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-back.on { background:var(--accent); border-color:var(--accent); color:#0a0a0a; }
 .pl-wall-header { margin-bottom:12px; display:flex; flex-direction:row; align-items:flex-start; justify-content:space-between; gap:10px 16px; flex-wrap:wrap; }
 .pl-wall-header-main { display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; }
+.pl-wall-now-summary { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.pl-wall-now-summary .pl-wall-summary { margin:0; }
 .pl-wall-title-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-width:0; width:100%; }
 .pl-wall-title-row .pl-wall-title { min-width:0; }
 .pl-wall-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
@@ -7098,6 +7100,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
     showYTQueueChoice(videoId, title, trackId, triggerEl);
     return;
   }
+  clearQueueSourcePlaylist();
 
   // Session restore opens the player paused - no autoplay, no mobile play kick.
   const restorePaused = !!_pbRestoreOpts;
@@ -7487,6 +7490,7 @@ function ytNormalizeQueue(items) {
 function ytPlayNow(videoId, title, trackId) {
   if (_djActive) djExit();
   ytpCancelCrossfade(true);
+  clearQueueSourcePlaylist();
   ytMarkMobPlayIntent();
   ytQueue = [ytQueueItem(videoId, title, trackId)];
   ytQueueIdx = 0;
@@ -16902,7 +16906,7 @@ async function playPlaylist(playlistId) {
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
-    _queueHasAdditions = true;
+    _queueHasAdditions = false;
     // IMPORTANT: openYTPlayer()/ytPlayNow() both reset ytQueue internally to a
     // single-track array, so ytQueue must be (re)assigned AFTER starting
     // playback, not before - otherwise it gets clobbered and ytNextTrack()
@@ -16910,11 +16914,13 @@ async function playPlaylist(playlistId) {
     if (!ytPlayerEl) {
       openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
       ytQueue = q; ytQueueIdx = 0;
+      setQueueSourcePlaylist(q);
       updateYTQueueUI();
       if (doShuffle && q.length > 1) _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
     } else {
       ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
       ytQueue = q; ytQueueIdx = 0;
+      setQueueSourcePlaylist(q);
       updateYTQueueUI();
       if (doShuffle && q.length > 1) ytNextTrack(); // player already exists - skip immediately
     }
@@ -19862,6 +19868,8 @@ function playlistChartPaintTransport() {
     as.classList.toggle('on', !!plAutoScroll);
     if (as.classList.contains('playlist-explore-action-btn')) as.classList.toggle('primary', !!plAutoScroll);
   }
+  const saveAs = document.getElementById('pl-wall-save-as');
+  if (saveAs) saveAs.hidden = !nowPlayingCanSaveAsPlaylist();
 }
 
 function playlistChartQueue() {
@@ -20691,6 +20699,10 @@ async function playlistChartPlay(startIndex) {
     ytQueue = q; ytQueueIdx = start;
     updateYTQueueUI();
   }
+  const source = playlistChartId && playlistChartId !== '__dynamic_now_playing'
+    ? ((_savedPlaylists || []).find(p => p.id === playlistChartId) || playlists.find(p => p.id === playlistChartId))
+    : null;
+  if (source) setQueueSourcePlaylist(q);
   renderPlaylistChart();
 }
 
@@ -22804,6 +22816,11 @@ function renderPlaylistChart(error) {
   const statsHTML = liveRoomMode
     ? `<div class="pl-wall-summary"><span>LIVE NOW</span><span>${liveRoomMode._listenerCount} listening</span><span>${liveRoomMode._queuedSongCount} requests waiting</span></div>`
     : plWallSummaryHTML();
+  // Keep this beside the song count, where it reads as an action on the
+  // current queue instead of as another display preference.
+  const nowPlayingSummaryHTML = isNowPlayingPage
+    ? `<div class="pl-wall-now-summary">${statsHTML}${googleUser ? `<button type="button" class="pl-wall-back" id="pl-wall-save-as" onclick="openSavePlaylistDialog()"${nowPlayingCanSaveAsPlaylist() ? '' : ' hidden'}>Save as Playlist</button>` : ''}</div>`
+    : statsHTML;
   const nowLabel = liveRoomMode ? (liveRoomMode._nowPlayingLabel || '') : '';
   const nowPlayingHTML = liveRoomMode
     ? `<div class="pl-wall-now" id="pl-wall-now"${nowLabel ? '' : ' hidden'}>${nowLabel ? '<span>Now Playing</span>' + esc(nowLabel) : ''}</div>`
@@ -22831,7 +22848,7 @@ function renderPlaylistChart(error) {
   if (isNowPlayingPage) {
     // Title row: Size / Auto Size / Covers / Details. Search sits under it in Details.
     const searchBar = searchHTML ? `<div class="pl-wall-toolbar">${searchHTML}</div>` : '';
-    pageHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${statsHTML}</div>${titleActions}</div>${searchBar}${body}</section>`;
+    pageHTML = `<section class="pl-wall-page${miniClass}${modeClass}" style="${gridStyle}"><div class="pl-wall-header"><div class="pl-wall-header-main"><h2 class="pl-wall-title">${esc(playlistChartName)}</h2>${nowPlayingSummaryHTML}</div>${titleActions}</div>${searchBar}${body}</section>`;
   } else if (liveRoomMode) {
     const liveModeTog =
       `<button type="button" class="pl-wall-back${isDetail ? '' : ' on'}" id="pl-wall-mode-thumbs" onclick="setPlaylistWallMode('thumbs')" title="Cover thumbnails">Covers</button>` +
@@ -24725,6 +24742,7 @@ function renderLanding() {
 function landingPlayQueue(q) {
   q = filterQueueForHomeBg(sjNoBlocked(q));
   if (!q.length) return;
+  clearQueueSourcePlaylist();
   const first = q[0];
   // openYTPlayer() resets ytQueue internally to a single-track array, so when
   // it's the one opening the player, ytQueue must be (re)assigned AFTER that
@@ -29900,11 +29918,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-08-31';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-01';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-01', items: [
+    'On Now Playing, Save as Playlist sits next to the song count and total play time instead of beside the Size slider. Size, Covers and Details stay on the right.',
+  ]},
   { date: '2026-08-31', items: [
     'Opening a playlist (Explore Playlists or Now Playing) starts on Details. Cover art still loads quietly in the background so switching to Covers stays smooth.',
     'Playlists get a custom web address like /p/my-mix as soon as you open the playlist (not only after Share). Share still offers Copy Link, Text, Email, X, Facebook and Reddit — no Export Image step. The Share panel follows light and dark mode.',
@@ -32875,12 +32896,43 @@ let dailyMyPlaysSpotify = {}; // personal Spotify-imported plays
 let dailyRatingData= {};   // trackId → [{date:'YYYY-MM-DD', avg:N, count:N}] sorted asc
 const _cardPlayTimers = {};  // trackId → setTimeout handle for 10-second play threshold
 let _queueHasAdditions = false;  // true when user has explicitly added to queue
+// A queue that started from a saved playlist does not need another saved copy
+// until it grows. Keep a lightweight snapshot so Now Playing can tell the
+// difference even when the listener reorders or removes songs.
+let _queueSourcePlaylistTracks = null;
 let _savedPlaylists = [];  // cached playlists from Supabase
 let _playlistsLoading = false;
 let _playlistsLoaded  = false; // set true after first load so render() never re-loops
 let playlists    = []; // own playlists
 let pubPlaylists = []; // public playlists by others
 let _ytCurrentPlay = null;  // { eventId, trackId, playbackStarted }
+
+function clearQueueSourcePlaylist() {
+  _queueSourcePlaylistTracks = null;
+}
+
+function setQueueSourcePlaylist(items) {
+  const counts = new Map();
+  (items || []).forEach(item => {
+    if (!item?.trackId) return;
+    counts.set(item.trackId, (counts.get(item.trackId) || 0) + 1);
+  });
+  _queueSourcePlaylistTracks = counts;
+}
+
+function nowPlayingCanSaveAsPlaylist() {
+  if (!ytQueue.some(item => item?.trackId)) return false;
+  if (!_queueSourcePlaylistTracks) return true;
+  const left = new Map(_queueSourcePlaylistTracks);
+  for (const item of ytQueue) {
+    const trackId = item?.trackId;
+    if (!trackId) continue;
+    const available = left.get(trackId) || 0;
+    if (!available) return true;
+    left.set(trackId, available - 1);
+  }
+  return false;
+}
 
 async function logPlayStart(trackId, currentRating) {
   try {
@@ -34687,6 +34739,7 @@ async function hydratePlaylistLink() {
     setYtShuffleEnabled(doShuffle);
     openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
     ytQueue = q; ytQueueIdx = 0;
+    setQueueSourcePlaylist(q);
     updateYTQueueUI();
     if (doShuffle && q.length > 1) _ytShuffleAfterReady = true;
   } catch (e) {}
