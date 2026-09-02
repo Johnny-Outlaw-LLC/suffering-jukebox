@@ -4118,6 +4118,41 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .es-artist:hover { color:var(--accent); text-decoration:underline; }
 .es-more { align-self:center; background:none; border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:.5rem; letter-spacing:.06em; padding:.45rem 1.1rem; border-radius:7px; cursor:pointer; }
 .es-more:hover { border-color:var(--accent); color:var(--accent); }
+/* Explore Artists / Playlists — Covers vs Details on the landing tabs */
+.explore-view-tog { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; }
+.ex-detail-page, .pe-detail-page { display:flex; flex-direction:column; gap:14px; }
+.ex-detail-artist, .pe-detail-pl { border:1px solid var(--border); border-radius:12px; background:var(--bg-card); overflow:hidden; }
+.ex-detail-artist-hd, .pe-detail-pl-hd {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 16px;
+  border-bottom:1px solid var(--border); background:var(--bg-elevated);
+}
+.ex-detail-artist-hd .ex-detail-name, .pe-detail-pl-hd .pe-detail-name { font-size:.85rem; font-weight:700; flex:1; min-width:0; }
+.ex-detail-artist-meta, .pe-detail-pl-meta { font-family:var(--mono); font-size:.48rem; color:var(--text-muted); letter-spacing:.04em; }
+.ex-detail-albs { display:flex; flex-direction:column; }
+.ex-detail-alb { border-top:1px solid var(--border); }
+.ex-detail-alb:first-child { border-top:none; }
+.ex-detail-alb-hd {
+  display:flex; align-items:center; gap:10px; padding:9px 14px 9px 22px; cursor:pointer;
+  user-select:none; transition:background .12s;
+}
+.ex-detail-alb-hd:hover { background:var(--bg-elevated); }
+.ex-detail-alb-hd.open { background:var(--bg-elevated); }
+.ex-detail-alb-art { width:28px; height:28px; border-radius:4px; object-fit:cover; flex-shrink:0; }
+.ex-detail-alb-art-ph { width:28px; height:28px; border-radius:4px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:.75rem; }
+.ex-detail-alb-name { font-family:var(--mono); font-size:.62rem; flex:1; min-width:0; }
+.ex-detail-alb-meta { font-family:var(--mono); font-size:.46rem; color:var(--text-muted); }
+.ex-detail-alb-chev { font-size:.5rem; color:var(--text-muted); flex-shrink:0; }
+.ex-detail-alb-body { display:none; border-top:1px solid var(--border); }
+.ex-detail-alb-body.open { display:block; }
+.ex-detail-alb-body .tt-scroll { max-height:52vh; overflow:auto; border:none; border-radius:0; background:var(--bg); }
+.pe-detail-pl-body { padding:0; }
+.pe-detail-pl-body .tt-scroll { max-height:58vh; overflow:auto; border:none; border-radius:0; background:var(--bg); }
+.pe-detail-group-hd {
+  font-family:var(--mono); font-size:.5rem; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--text-muted); padding:8px 16px 4px; border-top:1px solid var(--border);
+}
+.pe-detail-group-hd:first-child { border-top:none; }
+.ex-detail-loading, .pe-detail-loading { padding:2rem; text-align:center; font-family:var(--mono); font-size:.55rem; color:var(--text-muted); }
 /* Multi-select. The bar is empty markup until something is ticked, so
    nothing moves on the page until there is a selection to act on. */
 .es-selbar:empty { display:none; }
@@ -18646,6 +18681,19 @@ const SJ_SIZE_LABELS = {
 };
 let playlistCardSize = localStorage.getItem('sj_pl_card_size') || 'md';
 if (SJ_PL_SIZES.indexOf(playlistCardSize) < 0) playlistCardSize = 'md';
+// Explore Artists / Playlists page view — Covers is the card grid; Details is
+// the nested track list. Separate keys so flipping one tab does not flip the other.
+let exploreArtistsView = 'covers';   // 'covers' | 'detail'
+let explorePlaylistsView = 'covers';
+let playlistExploreDetailGroup = 'order'; // 'order' | 'artist'
+try {
+  const _eav = localStorage.getItem('sj_explore_artists_view');
+  if (_eav === 'detail' || _eav === 'covers') exploreArtistsView = _eav;
+  const _epv = localStorage.getItem('sj_explore_playlists_view');
+  if (_epv === 'detail' || _epv === 'covers') explorePlaylistsView = _epv;
+  const _pdg = localStorage.getItem('sj_pl_explore_detail_group');
+  if (_pdg === 'order' || _pdg === 'artist') playlistExploreDetailGroup = _pdg;
+} catch (_) {}
 let sjBgUnlock          = null; // { unlocked, until, used, limit, source }
 let _sjQuota90Logged    = false;
 const LANDING_SUBMITTER_NONE = '__none__'; // persisted sentinel: empty grid, all boxes unchecked
@@ -19525,6 +19573,34 @@ function setPlaylistCardSizeIdx(i) {
 function artistScope() { return googleUser ? artistExploreFilter : 'public'; }
 function plScope() { return googleUser ? playlistExploreFilter : 'public'; }
 
+function exploreViewToggleHTML(mode, setFn) {
+  const isDetail = mode === 'detail';
+  return `<span class="explore-view-tog" role="group" aria-label="View mode">` +
+    `<button type="button" class="pl-wall-back${isDetail ? '' : ' on'}" onclick="${setFn}('covers')" title="Cover cards">Covers</button>` +
+    `<button type="button" class="pl-wall-back${isDetail ? ' on' : ''}" onclick="${setFn}('detail')" title="Nested track list">Details</button>` +
+    `</span>`;
+}
+
+function setExploreArtistsView(mode) {
+  exploreArtistsView = mode === 'detail' ? 'detail' : 'covers';
+  try { localStorage.setItem('sj_explore_artists_view', exploreArtistsView); } catch (_) {}
+  if (exploreArtistsView === 'detail') esEnsureCatalog();
+  if (isLandingMode && landingTab === 'explore') renderLanding();
+}
+
+function setExplorePlaylistsView(mode) {
+  explorePlaylistsView = mode === 'detail' ? 'detail' : 'covers';
+  try { localStorage.setItem('sj_explore_playlists_view', explorePlaylistsView); } catch (_) {}
+  if (explorePlaylistsView === 'detail') peEnsureDetailData();
+  if (isLandingMode && landingTab === 'playlists') renderLanding();
+}
+
+function setPlaylistExploreDetailGroup(g) {
+  playlistExploreDetailGroup = g === 'artist' ? 'artist' : 'order';
+  try { localStorage.setItem('sj_pl_explore_detail_group', playlistExploreDetailGroup); } catch (_) {}
+  if (isLandingMode && landingTab === 'playlists' && explorePlaylistsView === 'detail') renderLanding();
+}
+
 function setArtistExploreFilter(mode) {
   if (mode === 'mine' && !googleUser) {
     showToast('Sign in to see artists you have added.');
@@ -19565,6 +19641,7 @@ async function ensurePlaylistSearchMeta() {
       const art = alb && artById[alb.artist_id];
       playlistSearchMetaByTrack[t.id] = {
         title: (t.name || '').toLowerCase(),
+        displayTitle: t.name || '',
         artist: (art?.name || '').toLowerCase(),
         // Folded for searching, and kept as written for the large cards.
         artistName: art?.name || '',
@@ -24434,11 +24511,20 @@ function renderLanding() {
             </div>`}
             <div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Card Size</span>
-              ${sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize))}
+              ${explorePlaylistsView === 'covers' ? sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize)) : ''}
             </div>
+            ${exploreViewToggleHTML(explorePlaylistsView, 'setExplorePlaylistsView')}
+            ${explorePlaylistsView === 'detail' ? `<span class="explore-view-tog" role="group" aria-label="Track order">
+              <button type="button" class="pl-wall-back${playlistExploreDetailGroup === 'order' ? ' on' : ''}" onclick="setPlaylistExploreDetailGroup('order')">Playlist order</button>
+              <button type="button" class="pl-wall-back${playlistExploreDetailGroup === 'artist' ? ' on' : ''}" onclick="setPlaylistExploreDetailGroup('artist')">By artist</button>
+            </span>` : ''}
             ${plScope() === 'mine' && googleUser ? `<label class="playlist-explore-hide-shared"><input type="checkbox"${playlistExploreHideShared ? ' checked' : ''} onchange="setPlaylistExploreHideShared(this.checked)"><span>Hide shared</span></label>` : ''}
           </div>
           ${(() => {
+            if (explorePlaylistsView === 'detail') {
+              if (!rows.length) return `<div class="landing-no-results">${emptyMsg}</div>`;
+              return peDetailPageHTML(rows);
+            }
             const cardHTML = (p) => {
               const mine = googleUser && p.user_email === googleUser.email;
               const live = p._liveRoom
@@ -24513,10 +24599,12 @@ function renderLanding() {
         </div>
         <div class="landing-control-group">
           <span class="landing-control-lbl">Card Size</span>
-          ${sjSizeSliderHTML('landing', SJ_LANDING_SIZES.indexOf(landingDetailLevel))}
+          ${exploreArtistsView === 'covers' ? sjSizeSliderHTML('landing', SJ_LANDING_SIZES.indexOf(landingDetailLevel)) : ''}
         </div>
+        ${exploreViewToggleHTML(exploreArtistsView, 'setExploreArtistsView')}
       </div>
       ${rows.length ? '' : `<div class="landing-no-results">No artists match ${landingSearchQ ? '“' + esc(landingSearchQ) + '”' : 'the current filters'}.</div>`}
+      ${exploreArtistsView === 'detail' ? eaDetailPageHTML(rows) : `
       <div class="landing-grid detail-${landingDetailLevel}${landingExpandedIds.size ? ' la-has-open' : ''}">
         ${rows.map((r, i) => { if (landingExpandedIds.has(r.artist_id)) return laExpandedCardHTML(r, i); const thumb = landingThumb(r); return `
           <div class="landing-card" data-artist-id="${r.artist_id}"
@@ -24547,6 +24635,8 @@ function renderLanding() {
       `}
     </div>
   `;
+  if (landingTab === 'explore' && exploreArtistsView === 'detail') eaRepopenAlbums();
+  if (landingTab === 'playlists' && explorePlaylistsView === 'detail') peRepopenPlaylists();
   updateLandingActionsHeader();
   if (_landingSearchFocus && landingTab === 'explore') {
     _landingSearchFocus = false;
@@ -24569,8 +24659,12 @@ function renderLanding() {
     if (ai) { ai.focus(); ai.setSelectionRange(ai.value.length, ai.value.length); }
   }
   if (landingTab === 'songs') { esEnsureCatalog(); esEnsureLibrary(); }
-  if (landingTab === 'explore') landingExpandedIds.forEach(id => laPopulateAlbums(id));
+  if (landingTab === 'explore') {
+    if (exploreArtistsView === 'detail') esEnsureCatalog();
+    else landingExpandedIds.forEach(id => laPopulateAlbums(id));
+  }
   if (landingTab === 'playlists') {
+    if (explorePlaylistsView === 'detail') peEnsureDetailData();
     Promise.all([ensureMyReactionTracks(), ensurePlaylistArtwork(), ensurePlaylistSearchMeta()]).then(changed => {
       if (changed.some(Boolean) && isLandingMode && landingTab === 'playlists') renderLanding();
     });
@@ -24975,6 +25069,251 @@ function laToggleAlbum(albumId, restoring) {
   holder.addEventListener('transitionend', function () {
     if (laOpenAlbumIds.has(albumId)) holder.style.height = '';
   }, { once: true });
+}
+
+// ══════════════════════════════════════════════════════════════
+// EXPLORE ARTISTS — DETAILS VIEW (Artist → Album → All Tracks table)
+// ══════════════════════════════════════════════════════════════
+const eaOpenAlbumIds = new Set();
+let _eaDetailLimit = 30;
+
+function eaFindTrack(trackId) {
+  for (const aid of Object.keys(tracks)) {
+    const t = (tracks[aid] || []).find(x => x.id === trackId);
+    if (t) return t;
+  }
+  return null;
+}
+
+function eaDetailAlbumHTML(alb, artistId) {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const color = albumColor(alb);
+  const thumb = albumThumb(alb);
+  const yr = (alb.release_date || '').slice(0, 4);
+  const albTracks = (tracks[alb.artist_id || artistId] || []).filter(t => t.album_id === alb.id);
+  const isOpen = eaOpenAlbumIds.has(alb.id);
+  return `<div class="ex-detail-alb">
+    <div class="ex-detail-alb-hd${isOpen ? ' open' : ''}" onclick="eaToggleAlbumDetail('${alb.id}','${alb.artist_id || artistId}')">
+      ${thumb ? `<img class="ex-detail-alb-art" src="${thumb}" loading="lazy" alt="">` : `<span class="ex-detail-alb-art-ph" style="background:${color}22;color:${color}">${(alb.name || '?').charAt(0)}</span>`}
+      <span class="ex-detail-alb-name">${esc(alb.name)}</span>
+      <span class="ex-detail-alb-meta">${yr}${yr ? ' · ' : ''}${albTracks.length} track${albTracks.length === 1 ? '' : 's'}</span>
+      <span class="ex-detail-alb-chev">${isOpen ? '▲' : '▼'}</span>
+    </div>
+    <div class="ex-detail-alb-body${isOpen ? ' open' : ''}" id="ea-alb-body-${alb.id}"></div>
+  </div>`;
+}
+
+function eaToggleAlbumDetail(albumId, artistId) {
+  const body = document.getElementById('ea-alb-body-' + albumId);
+  const hd = body && body.previousElementSibling;
+  if (!body) return;
+  const opening = !eaOpenAlbumIds.has(albumId);
+  if (opening) {
+    eaOpenAlbumIds.add(albumId);
+    if (hd) hd.classList.add('open');
+    body.classList.add('open');
+    if (!body.innerHTML) {
+      let alb = null;
+      Object.keys(albums).forEach(aid => (albums[aid] || []).forEach(a => { if (a.id === albumId) alb = a; }));
+      const aid = (alb && alb.artist_id) || artistId;
+      const albTracks = (tracks[aid] || []).filter(t => t.album_id === albumId);
+      selectedIds.add(aid);
+      body.innerHTML = '<div class="tt-scroll"><div class="tt-wrap">' +
+        renderTopTracks(albTracks, { staticSort: true, tableId: 'ea-tt-' + albumId }) + '</div></div>';
+      Object.keys(localVotes).forEach(refreshVoteUI);
+    }
+  } else {
+    eaOpenAlbumIds.delete(albumId);
+    if (hd) hd.classList.remove('open');
+    body.classList.remove('open');
+  }
+}
+
+function eaDetailArtistHTML(r) {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const memberIds = (r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id];
+  const albList = memberIds.flatMap(aid => albums[aid] || [])
+    .sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
+  return `<div class="ex-detail-artist" data-artist-id="${r.artist_id}">
+    <div class="ex-detail-artist-hd">
+      <span class="ex-detail-name">${esc(r.name)}</span>
+      <span class="ex-detail-artist-meta">${r.album_count || albList.length} albums · ${r.track_count || 0} tracks</span>
+      <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
+      ${r.discography_complete === false
+        ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')">Import Discography</button>`
+        : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore jukebox →</button>`}
+    </div>
+    <div class="ex-detail-albs">${albList.map(alb => eaDetailAlbumHTML(alb, r.artist_id)).join('')}</div>
+  </div>`;
+}
+
+function eaDetailPageHTML(rows) {
+  if (!_esLoaded && _esLoading) return '<div class="ex-detail-loading">Loading catalogue…</div>';
+  if (!_esLoaded && _esError) return `<div class="ex-detail-loading" style="color:#ef4444">${(_esError || 'Could not load').replace(/</g, '&lt;')}</div>`;
+  if (!rows.length) return '';
+  const slice = rows.slice(0, _eaDetailLimit);
+  const more = rows.length > _eaDetailLimit
+    ? `<button type="button" class="es-more" onclick="eaShowMoreArtists()">Show more artists (${(rows.length - _eaDetailLimit).toLocaleString()} remaining)</button>`
+    : '';
+  return '<div class="ex-detail-page">' + slice.map(r => eaDetailArtistHTML(r)).join('') + '</div>' + more;
+}
+
+function eaShowMoreArtists() {
+  _eaDetailLimit += 30;
+  renderLanding();
+}
+
+function eaRepopenAlbums() {
+  eaOpenAlbumIds.forEach(id => {
+    const body = document.getElementById('ea-alb-body-' + id);
+    if (!body || !body.classList.contains('open')) return;
+    let alb = null, artistId = '';
+    Object.keys(albums).forEach(aid => (albums[aid] || []).forEach(a => { if (a.id === id) { alb = a; artistId = aid; } }));
+    if (!alb) return;
+    const aid = alb.artist_id || artistId;
+    selectedIds.add(aid);
+    const albTracks = (tracks[aid] || []).filter(t => t.album_id === id);
+    body.innerHTML = '<div class="tt-scroll"><div class="tt-wrap">' +
+      renderTopTracks(albTracks, { staticSort: true, tableId: 'ea-tt-' + id }) + '</div></div>';
+    Object.keys(localVotes).forEach(refreshVoteUI);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// EXPLORE PLAYLISTS — DETAILS VIEW (Playlist → Tracks)
+// ══════════════════════════════════════════════════════════════
+let _peDetailLimit = 25;
+let _peDetailDataReady = false;
+let _peDetailLoading = false;
+const peOpenPlaylistIds = new Set();
+
+async function peEnsureDetailData() {
+  if (_peDetailLoading) return;
+  _peDetailLoading = true;
+  try {
+    await Promise.all([ensurePlaylistSearchMeta(), ensurePlaylistArtwork(), esEnsureCatalog()]);
+    const ids = [...new Set(playlistExploreRows().flatMap(p => (p._tracks || []).map(r => r.track_id)).filter(Boolean))];
+    const missing = ids.filter(id => !ytData[id]?.video_id && !ytData[id]?.views);
+    if (missing.length) {
+      const chunks = [];
+      for (let i = 0; i < missing.length; i += 70) chunks.push(missing.slice(i, i + 70));
+      const parts = await Promise.all(chunks.map(c => loadYT(c)));
+      parts.forEach(p => Object.assign(ytData, p));
+    }
+    _peDetailDataReady = true;
+  } catch (e) {
+    console.warn('peEnsureDetailData', e);
+  } finally {
+    _peDetailLoading = false;
+    if (isLandingMode && landingTab === 'playlists' && explorePlaylistsView === 'detail') renderLanding();
+  }
+}
+
+function pePlaylistTrackRows(p) {
+  const ordered = (p._tracks || []).slice().sort((a, b) => a.position - b.position);
+  return ordered.map(pt => {
+    const tid = pt.track_id;
+    if (!tid) return null;
+    const t = eaFindTrack(tid);
+    const meta = playlistSearchMetaByTrack[tid] || {};
+    if (t) return t;
+    return { id: tid, name: meta.displayTitle || meta.title || 'Track', album_id: null, track_number: pt.position, duration_ms: 0 };
+  }).filter(Boolean);
+}
+
+function peDetailTracksHTML(p) {
+  const rows = pePlaylistTrackRows(p);
+  if (!rows.length) return '<div class="ex-detail-loading">No tracks in this playlist.</div>';
+  if (playlistExploreDetailGroup === 'artist') {
+    const byArtist = {};
+    rows.forEach(t => {
+      const meta = playlistSearchMetaByTrack[t.id] || {};
+      const albById = esAlbumIndex();
+      const alb = t.album_id && albById[t.album_id];
+      const name = meta.artistName || esArtistName(alb && alb.artist_id) || 'Unknown artist';
+      (byArtist[name] = byArtist[name] || []).push(t);
+    });
+    const names = Object.keys(byArtist).sort((a, b) => a.localeCompare(b));
+    return names.map(name => {
+      const list = byArtist[name];
+      return `<div class="pe-detail-group-hd">${name.replace(/</g, '&lt;')} · ${list.length} track${list.length === 1 ? '' : 's'}</div>` +
+        '<div class="tt-scroll"><div class="tt-wrap">' +
+        renderTopTracks(list, { staticSort: true, artistCol: true, tableId: 'pe-tt-' + p.id + '-' + name.replace(/\W/g, '').slice(0, 12) }) +
+        '</div></div>';
+    }).join('');
+  }
+  return '<div class="tt-scroll"><div class="tt-wrap">' +
+    renderTopTracks(rows, { staticSort: true, artistCol: true, tableId: 'pe-tt-' + p.id }) + '</div></div>';
+}
+
+function peTogglePlaylistDetail(playlistId) {
+  const body = document.getElementById('pe-pl-body-' + playlistId);
+  const hd = body && body.previousElementSibling;
+  if (!body) return;
+  const opening = !peOpenPlaylistIds.has(playlistId);
+  if (opening) {
+    peOpenPlaylistIds.add(playlistId);
+    if (hd) hd.classList.add('open');
+    body.classList.add('open');
+    if (!body.innerHTML) {
+      const p = playlistExploreRows().find(x => x.id === playlistId)
+        || (_savedPlaylists || []).find(x => x.id === playlistId);
+      if (p) body.innerHTML = peDetailTracksHTML(p);
+      Object.keys(localVotes).forEach(refreshVoteUI);
+    }
+  } else {
+    peOpenPlaylistIds.delete(playlistId);
+    if (hd) hd.classList.remove('open');
+    body.classList.remove('open');
+  }
+}
+
+function peDetailPlaylistHTML(p) {
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const n = (p._tracks || []).length;
+  const live = p._liveRoom ? ' · LIVE' : '';
+  const by = p._dynamic ? 'dynamic' : (p.user_email ? 'by ' + esc(p.user_email.split('@')[0]) : '');
+  const isOpen = peOpenPlaylistIds.has(p.id);
+  return `<div class="pe-detail-pl" data-pl-id="${p.id}">
+    <div class="ex-detail-alb-hd pe-detail-pl-hd${isOpen ? ' open' : ''}" onclick="peTogglePlaylistDetail('${p.id}')">
+      <span class="pe-detail-name">${esc(playlistExploreCardName(p))}</span>
+      <span class="pe-detail-pl-meta">${n} track${n === 1 ? '' : 's'}${live}${by ? ' · ' + by : ''}</span>
+      <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openPlaylistChart('${p.id}')">Open →</button>
+      <span class="ex-detail-alb-chev">${isOpen ? '▲' : '▼'}</span>
+    </div>
+    <div class="pe-detail-pl-body ex-detail-alb-body${isOpen ? ' open' : ''}" id="pe-pl-body-${p.id}"></div>
+  </div>`;
+}
+
+function peDetailPageHTML(rows) {
+  if (_peDetailLoading || (!_peDetailDataReady && explorePlaylistsView === 'detail')) {
+    peEnsureDetailData();
+    return '<div class="pe-detail-loading">Loading playlists…</div>';
+  }
+  if (!rows.length) return '';
+  const slice = rows.slice(0, _peDetailLimit);
+  const more = rows.length > _peDetailLimit
+    ? `<button type="button" class="es-more" onclick="peShowMorePlaylists()">Show more playlists (${(rows.length - _peDetailLimit).toLocaleString()} remaining)</button>`
+    : '';
+  return '<div class="pe-detail-page">' + slice.map(p => peDetailPlaylistHTML(p)).join('') + '</div>' + more;
+}
+
+function peShowMorePlaylists() {
+  _peDetailLimit += 25;
+  renderLanding();
+}
+
+function peRepopenPlaylists() {
+  peOpenPlaylistIds.forEach(id => {
+    const body = document.getElementById('pe-pl-body-' + id);
+    if (!body || !body.classList.contains('open')) return;
+    const p = playlistExploreRows().find(x => x.id === id)
+      || (_savedPlaylists || []).find(x => x.id === id);
+    if (p) {
+      body.innerHTML = peDetailTracksHTML(p);
+      Object.keys(localVotes).forEach(refreshVoteUI);
+    }
+  });
 }
 
 document.addEventListener('keydown', e => {
@@ -26416,6 +26755,8 @@ function renderTopTracks(trackList, opts) {
   const showArtist = !!opts.artistCol;
   const showLyric  = !!opts.lyricCol;
   const showSel    = !!opts.selectCol;
+  const staticSort = !!opts.staticSort;
+  const tableId    = opts.tableId || 'all-tracks-tbl';
   const albById = {};
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { albById[a.id] = a; }));
 
@@ -26488,6 +26829,7 @@ function renderTopTracks(trackList, opts) {
 
   const sortArrow = col => col === ttSortCol ? (ttSortDir === -1 ? ' ↓' : ' ↑') : '';
   const thCls     = col => `style="cursor:pointer;user-select:none${col === ttSortCol ? ';color:var(--text)' : ''}"`;
+  const thClick   = col => staticSort ? '' : `onclick="ttSort('${col}')" `;
 
   // The rows actually drawn, worked out before the markup so the header
   // checkbox knows whether the visible page is already ticked and shift-click
@@ -26498,21 +26840,21 @@ function renderTopTracks(trackList, opts) {
     _esSelAllOn = drawn.length > 0 && drawn.every(t => _esSel.has(t.id));
   }
 
-  return `<table class="top-tracks-tbl" id="all-tracks-tbl">
+  return `<table class="top-tracks-tbl" id="${tableId}">
     <thead><tr>
       ${showSel ? `<th class="tt-selh" style="width:26px"><input type="checkbox"${_esSelAllOn ? ' checked' : ''} title="Select every song shown" onclick="event.stopPropagation();esSelToggleAll(this.checked)"></th>` : ''}
       <th style="width:28px"></th>
       ${showArtist
-        ? `<th onclick="ttSort('artist')" ${thCls('artist')} style="min-width:110px;cursor:pointer;user-select:none${ttSortCol==='artist'?';color:var(--text)':''}" title="Artist">Artist${sortArrow('artist')}</th>`
-        : `<th onclick="ttSort('chrono')" ${thCls('chrono')} style="width:44px;cursor:pointer;user-select:none;text-align:center${ttSortCol==='chrono'?';color:var(--text)':''}" title="Chronological album · track">Alb·Trk${sortArrow('chrono')}</th>`}
-      <th onclick="ttSort('name')" ${thCls('name')}>Track${sortArrow('name')}</th>
-      <th onclick="ttSort('dur')"   ${thCls('dur')}   style="width:60px;text-align:right;cursor:pointer;user-select:none${ttSortCol==='dur'?';color:var(--text)':''}">Dur${sortArrow('dur')}</th>
-      <th onclick="ttSort('album')" ${thCls('album')}>Album${sortArrow('album')}</th>
-      <th onclick="ttSort('alts')" ${thCls('alts')} style="width:72px;text-align:center;cursor:pointer;user-select:none${ttSortCol==='alts'?';color:var(--text)':''}" title="Alternate YouTube uploads for this song">Alt Video${sortArrow('alts')}</th>
-      ${showLyric ? `<th onclick="ttSort('lyric')" ${thCls('lyric')} style="width:78px;text-align:center;cursor:pointer;user-select:none${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyrics${sortArrow('lyric')}</th>` : ''}
-      <th onclick="ttSort('views')" ${thCls('views')} style="min-width:130px;cursor:pointer;user-select:none${ttSortCol==='views'?';color:var(--text)':''}">YouTube Views${sortArrow('views')}</th>
-      ${googleUser ? `<th onclick="ttSort('myplays')" ${thCls('myplays')} style="min-width:65px;cursor:pointer;user-select:none;text-align:right${ttSortCol==='myplays'?';color:var(--text)':''}" title="My plays">My Plays${sortArrow('myplays')}</th>` : ''}
-      <th onclick="ttSort('plays')" ${thCls('plays')} style="min-width:65px;cursor:pointer;user-select:none;text-align:right${ttSortCol==='plays'?';color:var(--text)':''}" title="Total plays">Total Plays${sortArrow('plays')}</th>
+        ? `<th ${thClick('artist')}${thCls('artist')} style="min-width:110px;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='artist'?';color:var(--text)':''}" title="Artist">Artist${sortArrow('artist')}</th>`
+        : `<th ${thClick('chrono')}${thCls('chrono')} style="width:44px;${staticSort ? '' : 'cursor:pointer;user-select:none'}text-align:center${ttSortCol==='chrono'?';color:var(--text)':''}" title="Chronological album · track">Alb·Trk${sortArrow('chrono')}</th>`}
+      <th ${thClick('name')} ${thCls('name')}>Track${sortArrow('name')}</th>
+      <th ${thClick('dur')}   ${thCls('dur')}   style="width:60px;text-align:right;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='dur'?';color:var(--text)':''}">Dur${sortArrow('dur')}</th>
+      <th ${thClick('album')} ${thCls('album')}>Album${sortArrow('album')}</th>
+      <th ${thClick('alts')} ${thCls('alts')} style="width:72px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='alts'?';color:var(--text)':''}" title="Alternate YouTube uploads for this song">Alt Video${sortArrow('alts')}</th>
+      ${showLyric ? `<th ${thClick('lyric')} ${thCls('lyric')} style="width:78px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyrics${sortArrow('lyric')}</th>` : ''}
+      <th ${thClick('views')} ${thCls('views')} style="min-width:130px;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='views'?';color:var(--text)':''}">YouTube Views${sortArrow('views')}</th>
+      ${googleUser ? `<th ${thClick('myplays')} ${thCls('myplays')} style="min-width:65px;${staticSort ? '' : 'cursor:pointer;user-select:none'}text-align:right${ttSortCol==='myplays'?';color:var(--text)':''}" title="My plays">My Plays${sortArrow('myplays')}</th>` : ''}
+      <th ${thClick('plays')} ${thCls('plays')} style="min-width:65px;${staticSort ? '' : 'cursor:pointer;user-select:none'}text-align:right${ttSortCol==='plays'?';color:var(--text)':''}" title="Total plays">Total Plays${sortArrow('plays')}</th>
       <th style="width:24px"></th>
       <th style="width:24px"></th>
     </tr></thead>
@@ -26574,7 +26916,8 @@ function setAllTracksSort(col) {
 }
 
 function ttRepaint() {
-  const tbl = document.getElementById('all-tracks-tbl');
+  const tblId = (_ttLastOpts && _ttLastOpts.tableId) || 'all-tracks-tbl';
+  const tbl = document.getElementById(tblId);
   if (tbl) {
     const tmp = document.createElement('div');
     tmp.innerHTML = renderTopTracks(ttTrackCache, _ttLastOpts);
@@ -29772,6 +30115,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-01';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-01', items: [
+    'Explore Artists and Explore Playlists each have Covers and Details toggles. Details on Explore Artists lists every artist with their albums; open an album for the same All Tracks table used inside a jukebox. Details on Explore Playlists lists every playlist; open one for its songs in playlist order or grouped by artist.',
     'Songs you park with Take a break now show Blocked until [date] on the album track list, with an Unblock button beside it.',
     'Crossfade between songs is gone from Settings — it never sounded like a real blend, so the control is removed.',
     'DJ Mode is gone. Side by Side mode is back: compare two YouTube versions of the same song with a sound-balance slider, synced playback, and lyrics under each video. Open it from Versions → Side by Side mode when the song has more than one version. When the song ends the queue advances; Side by Side stays open only if the next song also has multiple versions.',
