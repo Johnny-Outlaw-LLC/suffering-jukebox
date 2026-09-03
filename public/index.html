@@ -23595,10 +23595,14 @@ function setLandingTab(tab) {
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
   if (tab === 'playlists') {
-    loadPlaylists().then(() => ensurePlaylistPreviewMeta()).then(changed => {
-      // ensurePlaylistPreviewMeta resolves to a boolean. Calling .some on it
-      // threw every time this tab was opened, so the repaint never happened.
-      if (changed && isLandingMode && landingTab === 'playlists') renderLanding();
+    loadPlaylists().then(() => ensurePlaylistPreviewMeta()).then(() => {
+      // The playlists themselves have just arrived, so this always repaints.
+      // It used to call .some() on ensurePlaylistPreviewMeta's boolean, which
+      // threw every time the tab was opened; making it conditional on that
+      // boolean instead leaves the pane on "Loading playlists..." whenever the
+      // track meta was already cached. setLandingTab runs on a tab click and
+      // never from renderLanding, so one unconditional repaint is safe here.
+      if (isLandingMode && landingTab === 'playlists') renderLanding();
     });
   }
   renderLanding();
@@ -25538,6 +25542,10 @@ let _peDetailLoading = false;
 // that never stopped saying "Loading playlists...". The error is now a state of
 // its own, and only the Try again button clears it.
 let _peDetailError = '';
+// The playlist set the last completed pass was built for. A repeat call for the
+// same set does nothing, which is what stops the render loop; a genuinely new
+// set does the work and earns exactly one repaint.
+let _peDetailBuiltFor = null;
 const peOpenPlaylistIds = new Set();
 const PE_DETAIL_PREVIEW_TRACKS = 10;
 
@@ -25571,32 +25579,32 @@ function ensurePlaylistPreviewMeta() {
 // Doing the work is what earns the render, not being asked.
 async function peEnsureDetailData() {
   if (_peDetailLoading || _peDetailError) return;
+  const sig = playlistExploreRows().map(p => p.id).join(',');
+  // Asked again for a set already built: do nothing, paint nothing. This one
+  // line is what breaks the loop - getting here at all now means real work.
+  if (_peDetailDataReady && sig === _peDetailBuiltFor) return;
   _peDetailLoading = true;
   _peDetailError = '';
-  let changed = false;
   try {
     const ids = pePreviewTrackIds();
-    changed = (await ensurePlaylistPreviewMeta()) === true;
+    await ensurePlaylistPreviewMeta();
     const missing = ids.filter(id => !ytData[id]?.video_id && !ytData[id]?.views);
     if (missing.length) {
       const chunks = [];
       for (let i = 0; i < missing.length; i += 70) chunks.push(missing.slice(i, i + 70));
       const parts = await Promise.all(chunks.map(c => loadYT(c)));
       parts.forEach(p => Object.assign(ytData, p));
-      changed = true;
     }
-    // The first pass has to paint even when every track was already cached,
-    // because the pane is still showing "Loading playlists..." until it does.
-    if (!_peDetailDataReady) { _peDetailDataReady = true; changed = true; }
+    _peDetailBuiltFor = sig;
+    _peDetailDataReady = true;
   } catch (e) {
     console.warn('peEnsureDetailData', e);
     _peDetailError = (e && e.isTimeout)
       ? 'That took too long to load.'
       : 'Could not load these playlists.';
-    changed = true;   // the message needs painting
   } finally {
     _peDetailLoading = false;
-    if (changed && isLandingMode && landingTab === 'playlists' && explorePlaylistsView === 'detail') renderLanding();
+    if (isLandingMode && landingTab === 'playlists' && explorePlaylistsView === 'detail') renderLanding();
   }
 }
 
