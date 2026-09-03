@@ -5800,6 +5800,137 @@ const SJ_PERF_LOG_LIMIT = 1000;
 const sjPerformanceEntries = [];
 let sjPerformanceRun = 0;
 
+// The buffer is mirrored to localStorage and posted to /api/sj-perf, because the
+// freezes worth fixing happen on a phone: the tab gets force-closed, taking the
+// in-memory log with it, and there is no DevTools there to read it out of.
+const SJ_PERF_STORE_KEY  = 'sj_perf_last_session';
+const SJ_PERF_STORE_MAX  = 120;    // entries kept for the post-mortem
+const SJ_PERF_SHIP_URL   = '/api/sj-perf';
+const SJ_PERF_SHIP_MAX   = 60;     // per request; matches the route's own cap
+const SJ_PERF_SHIP_DELAY = 4000;   // batch window
+const SJ_PERF_SHIP_CAP   = 200;    // per page load, so a stall storm cannot flood
+// Only these are worth a round trip. Everything else stays local and is read
+// back with sjPerformanceReport().
+const SJ_PERF_SHIP_EVENTS = /^(browser\.|render\.|boot\.|playlist-wall\.(open-error|play-counts\.error))/;
+// Printing every entry is itself a cost once the render paths are timed, so the
+// console is opt-in: localStorage.setItem('sj_perf_verbose','1').
+const SJ_PERF_VERBOSE = (() => { try { return localStorage.getItem('sj_perf_verbose') === '1'; } catch (e) { return false; } })();
+// Random per tab. Not derived from identity - it only exists so the entries
+// around one freeze can be read back in order.
+const sjPerfSessionId = (() => {
+  try {
+    const b = new Uint8Array(8); crypto.getRandomValues(b);
+    return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return String(Date.now()) + Math.random().toString(16).slice(2, 10); }
+})();
+
+let _sjPerfPersistAt = 0;
+let _sjPerfPersistTimer = null;
+
+function sjPerfPersistNow() {
+  _sjPerfPersistTimer = null;
+  _sjPerfPersistAt = performance.now();
+  try {
+    localStorage.setItem(SJ_PERF_STORE_KEY, JSON.stringify({
+      sessionId: sjPerfSessionId,
+      savedAt: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      path: location.pathname + location.search,
+      entries: sjPerformanceEntries.slice(-SJ_PERF_STORE_MAX),
+    }));
+  } catch (e) { /* quota, or private mode. The log is a nicety, never a blocker. */ }
+}
+
+// Writing on every entry would be its own performance problem, so this coalesces
+// to at most one write a second. A freeze loses at most that last second.
+function sjPerfPersist() {
+  if (_sjPerfPersistTimer) return;
+  const since = performance.now() - _sjPerfPersistAt;
+  if (since >= 1000) { sjPerfPersistNow(); return; }
+  _sjPerfPersistTimer = setTimeout(sjPerfPersistNow, 1000 - since);
+}
+
+let _sjPerfShipQueue = [];
+let _sjPerfShipTimer = null;
+let _sjPerfShipped = 0;
+
+function _sjPerfBody(entries, sessionId, meta) {
+  return JSON.stringify({
+    sessionId: sessionId || sjPerfSessionId,
+    userAgent: (meta && meta.userAgent) || navigator.userAgent,
+    path: (meta && meta.path) || location.pathname,
+    viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+    entries,
+  });
+}
+
+function _sjPerfPost(body, useBeacon) {
+  try {
+    // pagehide is the only chance to report a freeze the visitor is escaping,
+    // and an ordinary fetch is cancelled along with the document.
+    if (useBeacon && navigator.sendBeacon) {
+      navigator.sendBeacon(SJ_PERF_SHIP_URL, new Blob([body], { type: 'application/json' }));
+      return;
+    }
+    fetch(SJ_PERF_SHIP_URL, {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).catch(() => {});
+  } catch (e) { /* telemetry never breaks the page */ }
+}
+
+function sjPerfFlush(useBeacon) {
+  if (_sjPerfShipTimer) { clearTimeout(_sjPerfShipTimer); _sjPerfShipTimer = null; }
+  if (!_sjPerfShipQueue.length) return;
+  const batch = _sjPerfShipQueue.splice(0, SJ_PERF_SHIP_MAX);
+  _sjPerfPost(_sjPerfBody(batch), useBeacon);
+}
+
+function sjPerfShip(entry) {
+  if (!SJ_PERF_SHIP_EVENTS.test(entry.event)) return;
+  if (_sjPerfShipped >= SJ_PERF_SHIP_CAP) return;
+  _sjPerfShipped++;
+  _sjPerfShipQueue.push(entry);
+  if (_sjPerfShipQueue.length >= SJ_PERF_SHIP_MAX) { sjPerfFlush(false); return; }
+  if (!_sjPerfShipTimer) _sjPerfShipTimer = setTimeout(() => sjPerfFlush(false), SJ_PERF_SHIP_DELAY);
+}
+
+addEventListener('pagehide', () => sjPerfFlush(true));
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') sjPerfFlush(true); });
+
+// Whatever the last tab was doing when it stopped answering. Read on the next
+// load, sent once, then cleared - so a freeze that ended in a force-close still
+// reports itself. window.sjLastSessionReport holds the whole thing for DevTools.
+function sjPerfRecoverLastSession() {
+  let saved = null;
+  try {
+    const raw = localStorage.getItem(SJ_PERF_STORE_KEY);
+    if (raw) saved = JSON.parse(raw);
+    localStorage.removeItem(SJ_PERF_STORE_KEY);
+  } catch (e) { return null; }
+  if (!saved || !Array.isArray(saved.entries) || saved.sessionId === sjPerfSessionId) return null;
+
+  window.sjLastSessionReport = saved;
+  const worst = saved.entries.filter(e => /^browser\.(long-task|event-loop-stall|error|unhandled-rejection)$/.test(e.event || ''));
+  if (!worst.length) return saved;
+
+  // Only the tail matters - the entries immediately before the tab went quiet.
+  _sjPerfPost(_sjPerfBody(
+    saved.entries.slice(-SJ_PERF_SHIP_MAX),
+    'prev-' + String(saved.sessionId || 'unknown').slice(0, 40),
+    saved,
+  ), false);
+  console.warn('[SJ performance] Last session ended with ' + worst.length +
+    ' stall/error entries. window.sjLastSessionReport has the detail.');
+  return saved;
+}
+
+// Off the boot path deliberately: reading and posting the post-mortem must not
+// add to the load it is trying to measure.
+if (typeof requestIdleCallback === 'function') requestIdleCallback(() => sjPerfRecoverLastSession(), { timeout: 4000 });
+else setTimeout(sjPerfRecoverLastSession, 1500);
+
 function sjPerfMemory() {
   const mem = performance && performance.memory;
   return mem ? {
@@ -5818,8 +5949,53 @@ function sjPerf(event, detail) {
   };
   sjPerformanceEntries.push(entry);
   if (sjPerformanceEntries.length > SJ_PERF_LOG_LIMIT) sjPerformanceEntries.shift();
-  console.info('[SJ performance]', event, entry);
+  if (SJ_PERF_VERBOSE) console.info('[SJ performance]', event, entry);
+  sjPerfPersist();
+  sjPerfShip(entry);
   return entry;
+}
+
+// Wraps a synchronous render and records anything over the threshold. Below it
+// nothing is logged: a fast repaint is not worth an entry, and the buffer is
+// only SJ_PERF_LOG_LIMIT deep. `detail` is a function so it costs nothing on
+// the fast path.
+const SJ_RENDER_SLOW_MS = 120;
+function sjTimeRender(label, fn, detail) {
+  const t0 = performance.now();
+  try {
+    return fn();
+  } finally {
+    const ms = sjPerfDuration(t0);
+    if (ms >= SJ_RENDER_SLOW_MS) {
+      let extra = null;
+      try { extra = detail ? detail() : null; } catch (e) { extra = null; }
+      sjPerf('render.' + label, { durationMs: ms, ...(extra || {}) });
+    }
+  }
+}
+
+// Times the heavy render paths without editing each one. These are top-level
+// function declarations in a classic script, so reassigning the global is what
+// every existing call site resolves to. Wrap AFTER the definitions, which is why
+// this runs from the bottom of the script rather than here.
+function sjInstrumentRenders() {
+  const targets = [
+    ['renderTopTracks',       (list) => ({ rows: Array.isArray(list) ? list.length : 0 })],
+    ['esRepaint',             null],
+    ['renderLanding',         null],
+    ['updateYTQueueUI',       () => ({ rows: (typeof ytQueue !== 'undefined' && ytQueue) ? ytQueue.length : 0 })],
+    ['_buildAccordionContent', null],
+    ['renderLandingHomeHTML', null],
+  ];
+  for (const [name, detail] of targets) {
+    const fn = window[name];
+    if (typeof fn !== 'function' || fn.__sjTimed) continue;
+    const wrapped = function (...args) {
+      return sjTimeRender(name, () => fn.apply(this, args), detail ? () => detail(args[0]) : null);
+    };
+    wrapped.__sjTimed = true;
+    window[name] = wrapped;
+  }
 }
 
 function sjPerfDuration(startedAt) {
@@ -30228,6 +30404,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-03';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-03', items: [
+    'When a page stalls or freezes, the site now records how long the step took and how much memory it was using, so the slow spots can be found and fixed. Timings and error messages only, never song names or account details. There is a new bullet in the Privacy policy describing it.',
     'Add Audio files for Mobile Background Playback in the Add Music wizard is no longer an orange button, so it does not compete with Finish for attention.',
     'Explore Songs sorts from a dropdown instead of a row of buttons, saving space on a phone.',
     'Explore Artists, Explore Playlists, and Explore Songs now fit on one row on a phone.',
@@ -35331,6 +35508,9 @@ if (IS_COMMUNITY) {
 }
 _initPromise = init();
 _initPromise.then(scheduleViewControlsGuard).catch(() => {});
+
+// Timing wrappers go on last, once every render function above exists.
+try { sjInstrumentRenders(); } catch (e) { console.warn('[SJ performance] Render timing unavailable', e); }
 </script>
 <footer style="text-align:center;padding:1.5rem 2rem 2rem;font-family:var(--mono);font-size:.46rem;color:var(--text-muted);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:2rem">
   a <a href="https://outlawapps.online" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">Johnny Outlaw</a> Project
