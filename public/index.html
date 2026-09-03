@@ -1332,9 +1332,9 @@ body.light .sc-link:hover { background: #e8e8e8; }
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 12px 34px rgba(0,0,0,.55); padding: 4px; font-family: var(--mono);
 }
-/* The remove choices are a real fly-out: leave the song menu in place so the
-   relationship between the action and its choices stays clear. */
-.sjm-remove-menu { z-index: 2147483002; }
+/* Second-level song actions are real fly-outs: leave the song menu in place so
+   the relationship between the action and its choices stays clear. */
+.sjm-submenu { z-index: 2147483002; }
 .sjm-item.sjm-parent-open { background: rgba(255,255,255,.07); color: var(--accent); }
 .sjm-hd {
   display: flex; align-items: center; gap: 4px;
@@ -14612,7 +14612,7 @@ let _sjmAnchor  = null;
 function sjmClose() {
   const m = document.getElementById('sjm-menu');
   if (m) m.remove();
-  sjmCloseRemoveMenu();
+  sjmCloseSubmenu();
   if (_sjmAnchor) { _sjmAnchor.removeAttribute('aria-expanded'); _sjmAnchor = null; }
   _sjmTrackId = null;
   _sjmQueueIdx = -1;
@@ -14645,8 +14645,8 @@ function _sjmScroll(e) {
 }
 function _sjmOutside(e) {
   const m = document.getElementById('sjm-menu');
-  const removeMenu = document.getElementById('sjm-remove-menu');
-  if (m && !m.contains(e.target) && !removeMenu?.contains(e.target) &&
+  const submenu = document.getElementById('sjm-submenu');
+  if (m && !m.contains(e.target) && !submenu?.contains(e.target) &&
       e.target !== _sjmAnchor && !_sjmAnchor?.contains(e.target)) sjmClose();
 }
 
@@ -14764,25 +14764,47 @@ function sjmQueueRemoveSong() {
   ytRemoveFromQueue(idx);
 }
 
-function sjmCloseRemoveMenu() {
-  const removeMenu = document.getElementById('sjm-remove-menu');
-  if (removeMenu) removeMenu.remove();
+let _sjmSubmenuTrigger = null;
+
+function sjmCloseSubmenu() {
+  const submenu = document.getElementById('sjm-submenu');
+  if (submenu) submenu.remove();
   document.querySelector('#sjm-menu .sjm-parent-open')?.classList.remove('sjm-parent-open');
+  _sjmSubmenuTrigger = null;
 }
 
-function sjmPositionRemoveMenu(trigger) {
-  const removeMenu = document.getElementById('sjm-remove-menu');
+function sjmPositionSubmenu() {
+  const trigger = _sjmSubmenuTrigger;
+  const submenu = document.getElementById('sjm-submenu');
   const parentMenu = document.getElementById('sjm-menu');
-  if (!removeMenu || !parentMenu || !trigger) return;
+  if (!submenu || !parentMenu || !trigger?.isConnected) return;
   const parent = parentMenu.getBoundingClientRect();
   const item = trigger.getBoundingClientRect();
   const gap = 6;
   const right = parent.right + gap;
-  const left = right + removeMenu.offsetWidth <= window.innerWidth - 8
+  const left = right + submenu.offsetWidth <= window.innerWidth - 8
     ? right
-    : Math.max(8, parent.left - removeMenu.offsetWidth - gap);
-  removeMenu.style.left = left + 'px';
-  removeMenu.style.top = Math.max(8, Math.min(item.top, window.innerHeight - removeMenu.offsetHeight - 8)) + 'px';
+    : Math.max(8, parent.left - submenu.offsetWidth - gap);
+  submenu.style.left = left + 'px';
+  submenu.style.top = Math.max(8, Math.min(item.top, window.innerHeight - submenu.offsetHeight - 8)) + 'px';
+}
+
+function sjmOpenSubmenu(name, html) {
+  const menu = document.getElementById('sjm-menu');
+  const trigger = menu?.querySelector('[data-sjm-submenu="' + name + '"]');
+  if (!menu || !trigger) return null;
+  sjmCloseSubmenu();
+  const submenu = document.createElement('div');
+  submenu.id = 'sjm-submenu';
+  submenu.className = 'sjm-menu sjm-submenu';
+  submenu.innerHTML = html;
+  submenu.onmousedown = (e) => e.stopPropagation();
+  submenu.onclick = (e) => e.stopPropagation();
+  document.body.appendChild(submenu);
+  _sjmSubmenuTrigger = trigger;
+  trigger.classList.add('sjm-parent-open');
+  sjmPositionSubmenu();
+  return submenu;
 }
 
 // Keep these choices beside the original menu rather than replacing it. This
@@ -14793,11 +14815,8 @@ function sjmOpenRemoveFromPlaylist() {
   if (!menu || !_sjmTrackId) return;
   const tid = _sjmTrackId;
   if (!ytQueue.some(item => item && item.trackId === tid)) { sjmRenderRoot(); return; }
-  const trigger = menu.querySelector('[data-sjm-remove]');
-  if (!trigger) return;
-  sjmCloseRemoveMenu();
   const meta = ytpTrackMeta(tid, null);
-  let html = _sjmHeader('Remove from Playlist', 'sjmRenderRoot()') +
+  let html = _sjmHeader('Remove from Playlist', 'sjmCloseSubmenu()') +
     '<button class="sjm-item" onclick="sjmQueueRemoveSong()">' +
       '<span class="sjm-ic">✕</span><span class="sjm-label">Song</span></button>';
   if (ytQueue.length > 1 && meta.artist) html +=
@@ -14806,15 +14825,7 @@ function sjmOpenRemoveFromPlaylist() {
   if (ytQueue.length > 1 && meta.album) html +=
     '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'album\')">' +
       '<span class="sjm-ic">✕</span><span class="sjm-label">This whole album</span></button>';
-  const removeMenu = document.createElement('div');
-  removeMenu.id = 'sjm-remove-menu';
-  removeMenu.className = 'sjm-menu sjm-remove-menu';
-  removeMenu.innerHTML = html;
-  removeMenu.onmousedown = (e) => e.stopPropagation();
-  removeMenu.onclick = (e) => e.stopPropagation();
-  document.body.appendChild(removeMenu);
-  trigger.classList.add('sjm-parent-open');
-  sjmPositionRemoveMenu(trigger);
+  sjmOpenSubmenu('remove', html);
 }
 
 // Drop every queued song by the same artist or album as the menu track.
@@ -15206,7 +15217,7 @@ function _sjmHeader(title, backFn) {
 function sjmRenderRoot() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_sjmTrackId) return;
-  sjmCloseRemoveMenu();
+  sjmCloseSubmenu();
   const tid     = _sjmTrackId;
   const track   = findTrackById(tid);
   const blocked = isTrackBlocked(tid);
@@ -15241,11 +15252,11 @@ function sjmRenderRoot() {
       // Player ⋯ and queue ⋯ both offer this while the track is in the playlist.
       if (!tid || !ytQueue.length) return '';
       if (!ytQueue.some(item => item && item.trackId === tid)) return '';
-      return '<button class="sjm-item" data-sjm-remove onclick="sjmOpenRemoveFromPlaylist()">' +
+      return '<button class="sjm-item" data-sjm-submenu="remove" onclick="sjmOpenRemoveFromPlaylist()">' +
           '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from Playlist</span><span class="sjm-sub">›</span></button>' +
         '<div class="sjm-sep"></div>';
     })() +
-    '<button class="sjm-item" onclick="sjmOpenPlaylists()">' +
+    '<button class="sjm-item" data-sjm-submenu="playlists" onclick="sjmOpenPlaylists()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
       (nPl ? '<span class="sjm-sub">in ' + nPl + '</span>' : '<span class="sjm-sub">›</span>') +
     '</button>' +
@@ -15256,7 +15267,7 @@ function sjmRenderRoot() {
     // and anything claimed via Add to My Library both count — in_my_library
     // tracks claimed songs; oaIsMine covers artists you imported.
     (googleUser && navArtist && navArtist.id && !sjmAlreadyInMyLibrary(navArtist.id, tid)
-      ? '<button class="sjm-item" onclick="sjmOpenMyJukebox()">' +
+      ? '<button class="sjm-item" data-sjm-submenu="my-jukebox" onclick="sjmOpenMyJukebox()">' +
           '<span class="sjm-ic">+</span><span class="sjm-label">Add to My Library</span>' +
           '<span class="sjm-sub">›</span></button>'
       : '') +
@@ -15282,7 +15293,7 @@ function sjmRenderRoot() {
           : '')
       : '') +
     (googleUser
-      ? '<button class="sjm-item" onclick="sjmOpenBreak()">' +
+      ? '<button class="sjm-item" data-sjm-submenu="break" onclick="sjmOpenBreak()">' +
           '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span>' +
           '<span class="sjm-label">' + (blocked ? 'Blocked · manage' : (isTrackOnBreak(tid) ? ('On break until ' + sjBreakUntilLabel(tid)) : 'Take a break from this song')) + '</span>' +
           '<span class="sjm-sub">›</span></button>'
@@ -15390,7 +15401,7 @@ function sjmOpenBreak() {
   const tid = _sjmTrackId;
   const until = snoozeUntil(tid);
   const blocked = isTrackBlocked(tid);
-  menu.innerHTML = _sjmHeader('Take a break', 'sjmRenderRoot()') +
+  const html = _sjmHeader('Take a break', 'sjmCloseSubmenu()') +
     (until
       ? '<div class="sjm-empty">Parked until ' + sjBreakUntilLabel(tid) + '.</div>' +
         '<button class="sjm-item" onclick="sjmClearBreak()">' +
@@ -15406,7 +15417,7 @@ function sjmOpenBreak() {
       '<span class="sjm-ic">' + (blocked ? '↺' : '⊘') + '</span>' +
       '<span class="sjm-label">' + (blocked ? 'Let this play again' : 'Never play this again') + '</span>' +
     '</button>';
-  sjmPosition();
+  sjmOpenSubmenu('break', html);
 }
 
 // True when this listener already holds the artist (or this song) in My
@@ -15447,12 +15458,12 @@ function sjmOpenMyJukebox() {
       `<span class="sjm-ic">＋</span><span class="sjm-label">${name}</span>` +
       (sub ? `<span class="sjm-sub">${escHtml(sub)}</span>` : '') +
     `</button>`;
-  menu.innerHTML = _sjmHeader('Add to My Library', 'sjmRenderRoot()') +
+  const html = _sjmHeader('Add to My Library', 'sjmCloseSubmenu()') +
     row('track', tid, title, 'Add Song to my library', '') +
     (track.album_id ? row('album', track.album_id, meta.album || 'this album', 'Add Album to my library', '') : '') +
     (navArtist && navArtist.id ? row('artist', navArtist.id, navArtist.name || 'this artist', 'Add Artist to my library', '') : '') +
     '<div class="sjm-empty" style="padding:7px 9px;line-height:1.5">Anything you add turns up under My Artists. Whoever imported it keeps the credit.</div>';
-  sjmPosition();
+  sjmOpenSubmenu('my-jukebox', html);
 }
 
 function sjmSetBreak(days) {
@@ -16069,25 +16080,24 @@ function plAppendPosition(tracks) {
 async function sjmOpenPlaylists() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_sjmTrackId) return;
-  const track = findTrackById(_sjmTrackId);
-  const head  = _sjmHeader('Add to playlist', 'sjmRenderRoot()');
+  const head  = _sjmHeader('Add to playlist', 'sjmCloseSubmenu()');
 
   if (!googleUser) {
-    menu.innerHTML = head +
+    sjmOpenSubmenu('playlists', head +
       '<div class="sjm-empty">Playlists are saved to your account.</div>' +
       '<button class="sjm-item" onclick="sjmClose();handleAuthClick()">' +
-        '<span class="sjm-ic">→</span><span class="sjm-label">Sign in with Google</span></button>';
-    sjmPosition();
+        '<span class="sjm-ic">→</span><span class="sjm-label">Sign in with Google</span></button>');
     return;
   }
 
   if (!_playlistsLoaded) {
-    menu.innerHTML = head + '<div class="sjm-empty">Loading your playlists…</div>';
-    sjmPosition();
+    sjmOpenSubmenu('playlists', head + '<div class="sjm-empty">Loading your playlists…</div>');
     const want = _sjmTrackId;
     await loadPlaylists();
     _playlistsLoaded = true;
-    if (_sjmTrackId !== want || !document.getElementById('sjm-menu')) return;
+    if (_sjmTrackId !== want || !document.getElementById('sjm-submenu')) return;
+  } else {
+    sjmOpenSubmenu('playlists', head + '<div class="sjm-empty">Loading your playlists…</div>');
   }
   sjmRenderPlaylists();
 }
@@ -16105,7 +16115,7 @@ function sjmPlaylistButton(p) {
 }
 
 function sjmRenderPlaylists(newFormOpen) {
-  const menu = document.getElementById('sjm-menu');
+  const menu = document.getElementById('sjm-submenu');
   if (!menu || !_sjmTrackId) return;
   const mine = playlists.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const personal = mine.filter(p => !p.is_public);
@@ -16129,7 +16139,7 @@ function sjmRenderPlaylists(newFormOpen) {
       '</button>'
     : '';
 
-  menu.innerHTML = _sjmHeader('Add to playlist', 'sjmRenderRoot()') +
+  menu.innerHTML = _sjmHeader('Add to playlist', 'sjmCloseSubmenu()') +
     '<div class="sjm-scroll">' +
       nowPlayingRow +
       (nowPlayingRow ? '<div class="sjm-sep" style="margin:4px 0"></div>' : '') +
@@ -16147,7 +16157,7 @@ function sjmRenderPlaylists(newFormOpen) {
         '</div>'
       : '<button class="sjm-item" onclick="sjmRenderPlaylists(true)">' +
           '<span class="sjm-ic">+</span><span class="sjm-label">New playlist…</span></button>');
-  sjmPosition();
+  sjmPositionSubmenu();
   if (newFormOpen) document.getElementById('sjm-new-name')?.focus();
 }
 
@@ -30180,6 +30190,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-02';
 const SJ_CHANGELOG = [
   { date: '2026-09-02', items: [
     'Remove from Playlist now opens its Song, Artist, and Album choices beside the song menu, so the choices stay connected to the action you selected.',
+    'Add to Playlist, Add to My Library, and Take a Break now open beside the song menu too, keeping every second-level choice in view.',
   ]},
   { date: '2026-09-01', items: [
     'What\'s New lists song additions as "added 3 songs by Artist" instead of looking like a whole new jukebox. Full discography imports still show as New Artist with an album count.',
