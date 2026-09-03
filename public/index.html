@@ -1332,6 +1332,10 @@ body.light .sc-link:hover { background: #e8e8e8; }
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 12px 34px rgba(0,0,0,.55); padding: 4px; font-family: var(--mono);
 }
+/* The remove choices are a real fly-out: leave the song menu in place so the
+   relationship between the action and its choices stays clear. */
+.sjm-remove-menu { z-index: 2147483002; }
+.sjm-item.sjm-parent-open { background: rgba(255,255,255,.07); color: var(--accent); }
 .sjm-hd {
   display: flex; align-items: center; gap: 4px;
   font-size: .48rem; color: var(--text-muted); padding: 6px 8px 5px;
@@ -14608,6 +14612,7 @@ let _sjmAnchor  = null;
 function sjmClose() {
   const m = document.getElementById('sjm-menu');
   if (m) m.remove();
+  sjmCloseRemoveMenu();
   if (_sjmAnchor) { _sjmAnchor.removeAttribute('aria-expanded'); _sjmAnchor = null; }
   _sjmTrackId = null;
   _sjmQueueIdx = -1;
@@ -14640,7 +14645,9 @@ function _sjmScroll(e) {
 }
 function _sjmOutside(e) {
   const m = document.getElementById('sjm-menu');
-  if (m && !m.contains(e.target) && e.target !== _sjmAnchor && !_sjmAnchor?.contains(e.target)) sjmClose();
+  const removeMenu = document.getElementById('sjm-remove-menu');
+  if (m && !m.contains(e.target) && !removeMenu?.contains(e.target) &&
+      e.target !== _sjmAnchor && !_sjmAnchor?.contains(e.target)) sjmClose();
 }
 
 function sjmOpen(trackId, anchorEl, ev) {
@@ -14757,13 +14764,38 @@ function sjmQueueRemoveSong() {
   ytRemoveFromQueue(idx);
 }
 
-// Second stage for the "Remove from Playlist" item - same shape as "Add to
-// playlist": one header with a back arrow, then the level to remove at.
+function sjmCloseRemoveMenu() {
+  const removeMenu = document.getElementById('sjm-remove-menu');
+  if (removeMenu) removeMenu.remove();
+  document.querySelector('#sjm-menu .sjm-parent-open')?.classList.remove('sjm-parent-open');
+}
+
+function sjmPositionRemoveMenu(trigger) {
+  const removeMenu = document.getElementById('sjm-remove-menu');
+  const parentMenu = document.getElementById('sjm-menu');
+  if (!removeMenu || !parentMenu || !trigger) return;
+  const parent = parentMenu.getBoundingClientRect();
+  const item = trigger.getBoundingClientRect();
+  const gap = 6;
+  const right = parent.right + gap;
+  const left = right + removeMenu.offsetWidth <= window.innerWidth - 8
+    ? right
+    : Math.max(8, parent.left - removeMenu.offsetWidth - gap);
+  removeMenu.style.left = left + 'px';
+  removeMenu.style.top = Math.max(8, Math.min(item.top, window.innerHeight - removeMenu.offsetHeight - 8)) + 'px';
+}
+
+// Keep these choices beside the original menu rather than replacing it. This
+// makes removal a conventional fly-out and avoids re-anchoring it to the
+// bottom of a tall source menu.
 function sjmOpenRemoveFromPlaylist() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_sjmTrackId) return;
   const tid = _sjmTrackId;
   if (!ytQueue.some(item => item && item.trackId === tid)) { sjmRenderRoot(); return; }
+  const trigger = menu.querySelector('[data-sjm-remove]');
+  if (!trigger) return;
+  sjmCloseRemoveMenu();
   const meta = ytpTrackMeta(tid, null);
   let html = _sjmHeader('Remove from Playlist', 'sjmRenderRoot()') +
     '<button class="sjm-item" onclick="sjmQueueRemoveSong()">' +
@@ -14774,8 +14806,15 @@ function sjmOpenRemoveFromPlaylist() {
   if (ytQueue.length > 1 && meta.album) html +=
     '<button class="sjm-item" onclick="sjmQueueRemoveGroup(\'album\')">' +
       '<span class="sjm-ic">✕</span><span class="sjm-label">This whole album</span></button>';
-  menu.innerHTML = html;
-  sjmPosition();
+  const removeMenu = document.createElement('div');
+  removeMenu.id = 'sjm-remove-menu';
+  removeMenu.className = 'sjm-menu sjm-remove-menu';
+  removeMenu.innerHTML = html;
+  removeMenu.onmousedown = (e) => e.stopPropagation();
+  removeMenu.onclick = (e) => e.stopPropagation();
+  document.body.appendChild(removeMenu);
+  trigger.classList.add('sjm-parent-open');
+  sjmPositionRemoveMenu(trigger);
 }
 
 // Drop every queued song by the same artist or album as the menu track.
@@ -15167,6 +15206,7 @@ function _sjmHeader(title, backFn) {
 function sjmRenderRoot() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_sjmTrackId) return;
+  sjmCloseRemoveMenu();
   const tid     = _sjmTrackId;
   const track   = findTrackById(tid);
   const blocked = isTrackBlocked(tid);
@@ -15201,7 +15241,7 @@ function sjmRenderRoot() {
       // Player ⋯ and queue ⋯ both offer this while the track is in the playlist.
       if (!tid || !ytQueue.length) return '';
       if (!ytQueue.some(item => item && item.trackId === tid)) return '';
-      return '<button class="sjm-item" onclick="sjmOpenRemoveFromPlaylist()">' +
+      return '<button class="sjm-item" data-sjm-remove onclick="sjmOpenRemoveFromPlaylist()">' +
           '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from Playlist</span><span class="sjm-sub">›</span></button>' +
         '<div class="sjm-sep"></div>';
     })() +
@@ -30133,11 +30173,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-01';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-02';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-02', items: [
+    'Remove from Playlist now opens its Song, Artist, and Album choices beside the song menu, so the choices stay connected to the action you selected.',
+  ]},
   { date: '2026-09-01', items: [
     'What\'s New lists song additions as "added 3 songs by Artist" instead of looking like a whole new jukebox. Full discography imports still show as New Artist with an album count.',
     'Audio Storage moved from the account menu into Settings, with a per-artist breakdown, upload buttons, and delete controls for each file.',
