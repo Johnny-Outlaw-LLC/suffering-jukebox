@@ -38,3 +38,11 @@ create policy perf_events_service on jukebox.perf_events
 
 revoke all on jukebox.perf_events from anon, authenticated;
 revoke all on sequence jukebox.perf_events_id_seq from anon, authenticated;
+
+-- A policy without a grant verifies nothing. PostgREST only advertises relations
+-- the requesting role can reach, so without these the insert fails as though the
+-- table were missing from the schema cache. Matches jukebox.product_events.
+grant select, insert, update, delete on jukebox.perf_events to service_role;
+grant usage, select on sequence jukebox.perf_events_id_seq to service_role;
+
+notify pgrst, 'reload schema';
