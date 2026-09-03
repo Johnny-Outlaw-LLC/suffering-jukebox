@@ -6041,14 +6041,101 @@ window.addEventListener('unhandledrejection', event => {
   sjPerf('browser.unhandled-rejection', { message: String(event.reason?.message || event.reason || 'Unknown rejection').slice(0, 300) });
 });
 
+// -- Request timeouts -------------------------------------------------------
+// Every fetch in here used to run with no timeout at all. A request that never
+// settles leaves the await holding a loading latch pending forever, so the pane
+// it belongs to says "Loading..." until the tab is closed. That is a HANG, not a
+// busy main thread, which is why neither the long-task observer nor the stall
+// watchdog ever saw the reported freezes. sjFetch() gives every request an end.
+//
+// The numbers are deliberately generous. This exists to end hangs, not to cut
+// off slow connections: a 940KB page of tracks is under a second on a desk and
+// can legitimately take tens of seconds on a phone with two bars. Anything that
+// trips this was never going to arrive.
+const SJ_FETCH_TIMEOUT_MS      = 45000;
+const SJ_FETCH_TIMEOUT_BULK_MS = 90000;  // multi-hundred-row writes and imports
+const SJ_SESSION_TIMEOUT_MS    = 15000;
+
+class SjTimeoutError extends Error {
+  constructor(ms, label) {
+    super('That took too long to answer. Check your connection and try again.');
+    this.name = 'SjTimeoutError';
+    this.isTimeout = true;
+    this.timeoutMs = ms;
+    this.label = label;
+  }
+}
+
+// Query strings carry track ids and access tokens, so only the path is ever
+// allowed near the perf log.
+function _sjFetchLabel(url) {
+  try {
+    const u = new URL(String(url), location.origin);
+    return (u.origin === location.origin ? '' : u.host) + u.pathname;
+  } catch (e) { return String(url).split('?')[0].slice(0, 120); }
+}
+
+async function sjFetch(url, opts, timeoutMs) {
+  const ms = timeoutMs || SJ_FETCH_TIMEOUT_MS;
+  const ctrl = new AbortController();
+  // A signal the caller passed still has to work, so both can abort this.
+  const outer = opts && opts.signal;
+  const onOuter = () => ctrl.abort();
+  if (outer) {
+    if (outer.aborted) ctrl.abort();
+    else outer.addEventListener('abort', onOuter);
+  }
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  const startedAt = performance.now();
+  try {
+    return await fetch(url, { ...(opts || {}), signal: ctrl.signal });
+  } catch (e) {
+    // An abort raised by the caller's own signal is a cancellation, not a
+    // timeout, and must keep looking like one to whoever cancelled it.
+    if (e && e.name === 'AbortError' && !(outer && outer.aborted)) {
+      const label = _sjFetchLabel(url);
+      sjPerf('browser.request-timeout', { durationMs: sjPerfDuration(startedAt), ms, label });
+      throw new SjTimeoutError(ms, label);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (outer) outer.removeEventListener('abort', onOuter);
+  }
+}
+
+// getSession() is usually a local read, but it makes a network call of its own
+// when the token needs refreshing - and it is awaited before nearly every write
+// in here, so unguarded it is the same hang one level up, with the fetch below
+// it never even starting.
+//
+// It REJECTS on timeout rather than reporting a null session. Quietly answering
+// "signed out" would hide an owner's private artists and turn a write into a
+// misleading "Not signed in", which is a correctness bug dressed up as a
+// graceful degradation. A rejection unsticks the latch just as well and is true.
+async function sjGetSession() {
+  let timer;
+  try {
+    return await Promise.race([
+      sbAuth.auth.getSession(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          sjPerf('browser.request-timeout', { ms: SJ_SESSION_TIMEOUT_MS, label: 'auth/getSession' });
+          reject(new SjTimeoutError(SJ_SESSION_TIMEOUT_MS, 'auth/getSession'));
+        }, SJ_SESSION_TIMEOUT_MS);
+      }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
 const dbGet = async (path) => {
-  const r = await fetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } });
+  const r = await sjFetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 };
 
 const dbRpc = async (path, body) => {
-  const r = await fetch(`${REST}${path}`, {
+  const r = await sjFetch(`${REST}${path}`, {
     method: 'POST',
     headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
       'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
@@ -6062,8 +6149,8 @@ const dbRpc = async (path, body) => {
 // functions read the caller's identity from that verified JWT; passing an email
 // in the request body would let anyone read anyone else's data.
 const dbRpcAuth = async (path, body) => {
-  const sess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
-  const r = await fetch(`${REST}${path}`, {
+  const sess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
+  const r = await sjFetch(`${REST}${path}`, {
     method: 'POST',
     headers: { apikey: ANON, Authorization: `Bearer ${sess?.access_token || ANON}`,
       'Content-Type': 'application/json',
@@ -6076,17 +6163,17 @@ const dbRpcAuth = async (path, body) => {
 };
 
 const dbGetAuth = async (path) => {
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   const tok = session?.access_token || ANON;
-  const r = await fetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Accept-Profile': 'jukebox' } });
+  const r = await sjFetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Accept-Profile': 'jukebox' } });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 };
 
 const dbPost = async (path, body) => {
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) throw new Error('Not signed in');
-  const r = await fetch(`${REST}${path}`, {
+  const r = await sjFetch(`${REST}${path}`, {
     method: 'POST',
     headers: { apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=representation' },
     body: JSON.stringify(body)
@@ -6107,22 +6194,22 @@ const dbPost = async (path, body) => {
 const DB_INSERT_CHUNK = 200;
 const dbPostRows = async (path, rows) => {
   if (!rows || !rows.length) return;
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) throw new Error('Not signed in');
   for (let i = 0; i < rows.length; i += DB_INSERT_CHUNK) {
-    const r = await fetch(`${REST}${path}`, {
+    const r = await sjFetch(`${REST}${path}`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox', Prefer: 'return=minimal' },
       body: JSON.stringify(rows.slice(i, i + DB_INSERT_CHUNK))
-    });
+    }, SJ_FETCH_TIMEOUT_BULK_MS);
     if (!r.ok) throw new Error(await r.text());
   }
 };
 
 const dbDelete = async (path) => {
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) throw new Error('Not signed in');
-  const r = await fetch(`${REST}${path}`, {
+  const r = await sjFetch(`${REST}${path}`, {
     method: 'DELETE',
     headers: { apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' }
   });
@@ -6130,9 +6217,9 @@ const dbDelete = async (path) => {
 };
 
 const dbPatch = async (path, body) => {
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) throw new Error('Not signed in');
-  const r = await fetch(`${REST}${path}`, {
+  const r = await sjFetch(`${REST}${path}`, {
     method: 'PATCH',
     headers: { apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json', 'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
     body: JSON.stringify(body)
@@ -6143,10 +6230,10 @@ const dbPatch = async (path, body) => {
 // Upsert (insert-or-update) via PostgREST on_conflict - path should NOT include on_conflict,
 // it's appended here. body may be an object or array of objects.
 const dbUpsert = async (path, onConflictCol, body) => {
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) throw new Error('Not signed in');
   const sep = path.includes('?') ? '&' : '?';
-  const r = await fetch(`${REST}${path}${sep}on_conflict=${onConflictCol}`, {
+  const r = await sjFetch(`${REST}${path}${sep}on_conflict=${onConflictCol}`, {
     method: 'POST',
     headers: {
       apikey: ANON, Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json',
@@ -10482,7 +10569,7 @@ async function submitReport() {
   let tok = ANON;
   if (googleUser && !anon) {
     try {
-      const { data: { session } } = await sbAuth.auth.getSession();
+      const { data: { session } } = await sjGetSession();
       if (session) { tok = session.access_token; row.user_id = session.user.id; }
     } catch (_) {}
     row.user_email = googleUser.email || null;
@@ -10949,7 +11036,7 @@ async function submitComment() {
   if (st) { st.style.color = 'var(--text-muted)'; st.textContent = 'Posting\u2026'; }
   if (btn) btn.disabled = true;
   try {
-    const sess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+    const sess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
     const res = await fetch(sjApiUrl('/api/sj-comment'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (sess?.access_token || ANON) },
@@ -11465,7 +11552,7 @@ async function loadAdminComments() {
   if (!body) return;
   body.innerHTML = _adminSectionTabs() + '<div class="admin-metrics-loading">Loading comments\u2026</div>';
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     const tok = session?.access_token || ANON;
     const res = await fetch(REST + '/rpc/admin_list_comments', {
       method: 'POST',
@@ -11543,7 +11630,7 @@ function renderAdminComments() {
 }
 
 async function _adminCmtRpc(fn, payload) {
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   const tok = session?.access_token || ANON;
   const res = await fetch(REST + '/rpc/' + fn, {
     method: 'POST',
@@ -11602,7 +11689,7 @@ async function loadAdminIssues() {
   if (!body) return;
   body.innerHTML = '<div class="admin-metrics-loading">Loading reports…</div>';
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     const tok = session?.access_token || ANON;
     const rows = await fetch(REST + '/rpc/admin_list_issues', {
       method: 'POST',
@@ -11657,7 +11744,7 @@ function renderAdminIssues() {
 }
 async function toggleIssueResolved(id, resolved) {
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     const tok = session?.access_token || ANON;
     const res = await fetch(REST + '/rpc/admin_resolve_issue', {
       method: 'POST',
@@ -12790,7 +12877,7 @@ function taUploadSizeMessage(maxBytes, expectMs) {
 async function taUploadOneFile(trackId, file, expectMs) {
   if (!file) return { ok: false, msg: 'No file' };
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     if (!session) return { ok: false, msg: 'Not signed in' };
     const dur = await taProbeDuration(file);
     const maxBytes = taMaxUploadBytes(expectMs, dur);
@@ -12993,7 +13080,7 @@ function taBatchMiniSync() {
 }
 
 async function taDeleteUploaded(trackId, path) {
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) throw new Error('Not signed in');
   const res = await fetch(sjApiUrl('/api/sj-audio'), {
     method: 'DELETE',
@@ -17415,7 +17502,7 @@ async function deletePlaylistFromSettings() {
 }
 
 async function playlistShareRequest(body) {
-  const { data:{session} } = await sbAuth.auth.getSession();
+  const { data:{session} } = await sjGetSession();
   const r = await fetch('/api/playlist-share', { method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${session?.access_token || ''}`}, body:JSON.stringify(body) });
   const d = await r.json().catch(()=>({})); if (!r.ok || !d.ok) throw new Error(d.error || 'Could not update sharing.'); return d;
 }
@@ -23108,7 +23195,7 @@ async function initLanding() {
     const tagline = document.getElementById('brand-tagline');
     if (tagline) tagline.textContent = '';
     document.title = _sjBaseTitle = 'Suffering Jukebox';
-    const _lsSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+    const _lsSess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${_lsSess?.access_token || ANON}`,
@@ -23129,7 +23216,7 @@ async function initLanding() {
 async function refreshLandingStats() {
   if (!isLandingMode) return;
   try {
-    const _lsSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+    const _lsSess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${_lsSess?.access_token || ANON}`,
@@ -23145,7 +23232,7 @@ async function refreshLandingStats() {
 async function ensureOAStats() {
   if (Array.isArray(landingStats) && landingStats.length) return;
   try {
-    const _s = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+    const _s = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${_s?.access_token || ANON}`,
@@ -23509,7 +23596,9 @@ function setLandingTab(tab) {
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
   if (tab === 'playlists') {
     loadPlaylists().then(() => ensurePlaylistPreviewMeta()).then(changed => {
-      if (changed.some(Boolean) && isLandingMode && landingTab === 'playlists') renderLanding();
+      // ensurePlaylistPreviewMeta resolves to a boolean. Calling .some on it
+      // threw every time this tab was opened, so the repaint never happened.
+      if (changed && isLandingMode && landingTab === 'playlists') renderLanding();
     });
   }
   renderLanding();
@@ -23568,7 +23657,7 @@ async function ensureHomeLibrary() {
   if (!googleUser) { _homeBgArtistIds = new Set(); _homeBgTrackIds = new Set(); _homeLibLoaded = true; return; }
   _homeLibLoading = true;
   try {
-    const uid = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session?.user?.id;
+    const uid = (await sjGetSession().catch(() => ({ data: {} }))).data?.session?.user?.id;
     if (!uid) { _homeBgArtistIds = new Set(); _homeBgTrackIds = new Set(); return; }
     const mine = await dbGetAuth(`/track_audio?uploaded_by=eq.${uid}&select=track_id`);
     const ids = [...new Set((mine || []).map(r => r.track_id).filter(Boolean))];
@@ -24071,7 +24160,7 @@ function esLyricsMenuHTML() {
 }
 
 async function esEnsureCatalog(force) {
-  const session = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+  const session = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
   const authUserId = session?.user?.id || null;
   const cataloguePresent = Object.keys(tracks).length > 0;
   if (_esLoading || (_esLoaded && !force && _esCatalogAuthUserId === authUserId && cataloguePresent)) return;
@@ -25444,6 +25533,11 @@ function eaRepopenAlbums() {
 let _peDetailLimit = 25;
 let _peDetailDataReady = false;
 let _peDetailLoading = false;
+// A failed load used to leave both flags false, so the re-render in `finally`
+// asked for the data again, which failed again: a request loop behind a pane
+// that never stopped saying "Loading playlists...". The error is now a state of
+// its own, and only the Try again button clears it.
+let _peDetailError = '';
 const peOpenPlaylistIds = new Set();
 const PE_DETAIL_PREVIEW_TRACKS = 10;
 
@@ -25466,26 +25560,49 @@ function ensurePlaylistPreviewMeta() {
     .then(results => results.some(Boolean));
 }
 
+// This re-rendered unconditionally in `finally`, and renderLanding() calls it.
+// So one paint of the Details view became renderLanding -> peEnsureDetailData ->
+// renderLanding, back to back at about 15ms a turn, forever: the main thread
+// never went idle again and the tab had to be force-closed. It survived a reload
+// because the tab and the view are both remembered in localStorage, which is why
+// reopening did not help either.
+//
+// The rule now is that it only repaints when it actually fetched something.
+// Doing the work is what earns the render, not being asked.
 async function peEnsureDetailData() {
-  if (_peDetailLoading) return;
+  if (_peDetailLoading || _peDetailError) return;
   _peDetailLoading = true;
+  _peDetailError = '';
+  let changed = false;
   try {
     const ids = pePreviewTrackIds();
-    await ensurePlaylistPreviewMeta();
+    changed = (await ensurePlaylistPreviewMeta()) === true;
     const missing = ids.filter(id => !ytData[id]?.video_id && !ytData[id]?.views);
     if (missing.length) {
       const chunks = [];
       for (let i = 0; i < missing.length; i += 70) chunks.push(missing.slice(i, i + 70));
       const parts = await Promise.all(chunks.map(c => loadYT(c)));
       parts.forEach(p => Object.assign(ytData, p));
+      changed = true;
     }
-    _peDetailDataReady = true;
+    // The first pass has to paint even when every track was already cached,
+    // because the pane is still showing "Loading playlists..." until it does.
+    if (!_peDetailDataReady) { _peDetailDataReady = true; changed = true; }
   } catch (e) {
     console.warn('peEnsureDetailData', e);
+    _peDetailError = (e && e.isTimeout)
+      ? 'That took too long to load.'
+      : 'Could not load these playlists.';
+    changed = true;   // the message needs painting
   } finally {
     _peDetailLoading = false;
-    if (isLandingMode && landingTab === 'playlists' && explorePlaylistsView === 'detail') renderLanding();
+    if (changed && isLandingMode && landingTab === 'playlists' && explorePlaylistsView === 'detail') renderLanding();
   }
+}
+
+function peRetryDetailData() {
+  _peDetailError = '';
+  renderLanding();
 }
 
 function pePlaylistTrackRows(p) {
@@ -25570,6 +25687,10 @@ function peDetailPlaylistHTML(p) {
 }
 
 function peDetailPageHTML(rows) {
+  if (_peDetailError) {
+    return '<div class="pe-detail-loading">' + escHtml(_peDetailError) +
+      ' <button type="button" class="landing-explore-btn" onclick="peRetryDetailData()">Try again</button></div>';
+  }
   if (_peDetailLoading || (!_peDetailDataReady && explorePlaylistsView === 'detail')) {
     peEnsureDetailData();
     return '<div class="pe-detail-loading">Loading playlists…</div>';
@@ -25643,7 +25764,7 @@ function renderManageJukeboxList() {
 async function saveArtistFeedback(artistId, patch) {
   if (!googleUser) return;
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     const tok    = session?.access_token || ANON;
     const userId = session?.user?.id;
     if (!userId) return;
@@ -26169,7 +26290,7 @@ async function loadYTVideoIds(trackIds) {
 async function loadTrackAudio(trackIds) {
   if (!trackIds.length) return;
   try {
-    const uid = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session?.user?.id || null;
+    const uid = (await sjGetSession().catch(() => ({ data: {} }))).data?.session?.user?.id || null;
     const ids = [...new Set(trackIds.filter(Boolean))];
     const chunks = [];
     for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
@@ -30404,6 +30525,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-03';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-03', items: [
+    'Fixed a freeze on Explore Playlists. Switching to Details locked the page up completely, and because the site remembers which tab you were on, reopening it froze again straight away. The Details view now opens properly and shows every playlist with its track count.',
+    'Requests that never come back now give up after a while instead of leaving a panel saying Loading forever. When one does time out you get a message and a Try again button.',
     'When a page stalls or freezes, the site now records how long the step took and how much memory it was using, so the slow spots can be found and fixed. Timings and error messages only, never song names or account details. There is a new bullet in the Privacy policy describing it.',
     'Add Audio files for Mobile Background Playback in the Add Music wizard is no longer an orange button, so it does not compete with Finish for attention.',
     'Explore Songs sorts from a dropdown instead of a row of buttons, saving space on a phone.',
@@ -31209,7 +31332,7 @@ function sjApiUrl(path) {
 }
 
 async function sjAuthHeaders() {
-  const session = (await sbAuth.auth.getSession()).data?.session;
+  const session = (await sjGetSession()).data?.session;
   return session?.access_token
     ? { Authorization: 'Bearer ' + session.access_token }
     : {};
@@ -31280,7 +31403,7 @@ function openAnalyticsInNewTab() {
     if (event.source !== analyticsTab || !sjIsTrustedAnalyticsOrigin(event.origin)) return;
     if (event.data?.type !== SJ_ANALYTICS_SESSION_REQUEST) return;
     try {
-      const session = (await sbAuth.auth.getSession()).data?.session;
+      const session = (await sjGetSession()).data?.session;
       if (session?.access_token && session.refresh_token) {
         analyticsTab.postMessage({
           type: SJ_ANALYTICS_SESSION_DELIVERY,
@@ -31783,7 +31906,7 @@ function _pbIsFinishedEnd() {
 async function markPlayerClosed() {
   if (!googleUser) return;
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     if (!session?.user) return;
     await dbUpsert('/playback_state', 'user_id', {
       user_id: session.user.id,
@@ -31797,7 +31920,7 @@ async function markPlayerClosed() {
 async function savePlaybackState() {
   if (!googleUser || !ytQueue.length || ytQueueIdx < 0) return;
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     if (!session?.user) return;
     let posSec = 0;
     try { if (_taBgActive && _taAudioEl) posSec = Math.floor(_taAudioEl.currentTime || 0); else if (ytAPIPlayer && typeof ytAPIPlayer.getCurrentTime === 'function') posSec = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
@@ -31934,7 +32057,7 @@ function initGoogleAuth() {
     updateAuthBtn();
   });
   // Pick up existing session on page load (handles OAuth redirect)
-  sbAuth.auth.getSession().then(({ data: { session } }) => {
+  sjGetSession().then(({ data: { session } }) => {
     if (session?.user) {
       const u = session.user;
       _myArtistIds = null;
@@ -32494,7 +32617,7 @@ async function loadAdminMetrics() {
   const seq = ++_sjdFetchSeq;
   if (body.querySelector('.sjd-kpis')) body.classList.add('sjd-dim');
   else body.innerHTML = '<div class="admin-metrics-loading">Loading analytics…</div>';
-  const session = (await sbAuth.auth.getSession()).data?.session;
+  const session = (await sjGetSession()).data?.session;
   if (!session?.access_token) {
     body.classList.remove('sjd-dim');
     body.innerHTML = '<div class="admin-metrics-error">Sign in required.</div>';
@@ -32892,7 +33015,7 @@ async function toggleBlockTrack(trackId) {
   if (!wasBlocked) { pruneBlockedFromQueue(trackId); showToast('Blocked - this song won\u2019t play again.'); }
   else showToast('Unblocked.');
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     const userId = session?.user?.id;
     if (!userId) return;
     await dbDelete('/blocked_tracks?track_id=eq.' + trackId);
@@ -32911,7 +33034,7 @@ async function setTrackSnooze(trackId, days) {
   pruneBlockedFromQueue(trackId);
   showToast('Taking a break until ' + sjBreakUntilLabel(trackId) + '.');
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     const userId = session?.user?.id;
     if (!userId) return;
     await dbDelete('/blocked_tracks?track_id=eq.' + trackId);
@@ -33461,7 +33584,7 @@ async function instantVote(trackId, vote) {
   if (!googleUser) return;
   try {
     const key     = 'track:' + trackId;
-    const session = (await sbAuth.auth.getSession()).data?.session;
+    const session = (await sjGetSession()).data?.session;
     const tok     = session?.access_token || ANON;
     const userId  = session?.user?.id;
     if (!userId) return;
@@ -33767,7 +33890,10 @@ async function dbGetAllPages(url, hdrs, pageSize = 1000) {
   let all = [];
   let offset = 0;
   for (;;) {
-    const r = await fetch(url, { headers: { ...hdrs, Range: `${offset}-${offset + pageSize - 1}` } });
+    const r = await sjFetch(url, { headers: { ...hdrs, Range: `${offset}-${offset + pageSize - 1}` } });
+    // A failed page used to fall through as a non-array and break the loop, so
+    // a 500 halfway through a sweep returned partial data and reported success.
+    if (!r.ok) throw new Error(await r.text());
     const page = await r.json();
     if (!Array.isArray(page) || !page.length) break;
     all = all.concat(page);
@@ -34264,7 +34390,7 @@ function getSjTrackingReferrer() {
 async function trackPageView() {
   _sjPageOpenedAt = Date.now();
   try {
-    const _tvSess = (await sbAuth.auth.getSession().catch(() => ({ data: {} }))).data?.session;
+    const _tvSess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
     const res = await fetch(sjApiUrl('/api/track-sj'), {
       method: 'POST',
       headers: Object.assign({ 'Content-Type': 'application/json' },
@@ -36087,7 +36213,7 @@ async function confirmSavePlaylist() {
   const isPublic = document.getElementById('pl-public-cb')?.checked || false;
   closeSavePlaylistModal();
 
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) { alert('Not signed in.'); return; }
 
   try {
@@ -36138,7 +36264,7 @@ function showToast(msg) {
 
 async function deletePlaylist(playlistId) {
   if (!googleUser || !confirm('Delete this playlist?')) return;
-  const { data: { session } } = await sbAuth.auth.getSession();
+  const { data: { session } } = await sjGetSession();
   if (!session) return;
   await fetch(`${REST}/playlists?id=eq.${playlistId}`, {
     method: 'DELETE',
@@ -36157,7 +36283,7 @@ async function loadPlaylists() {
   playlists = []; pubPlaylists = [];
   try {
     const myEmail = googleUser?.email;
-    const { data:{session} } = await sbAuth.auth.getSession();
+    const { data:{session} } = await sjGetSession();
     const sharedResponse = await fetch('/api/playlist-share', { headers: session ? { Authorization:`Bearer ${session.access_token}` } : {} });
     const sharedData = await sharedResponse.json();
     if (!sharedResponse.ok || !sharedData.ok) throw new Error(sharedData.error || 'Could not load playlists.');
@@ -36699,7 +36825,7 @@ async function saveLyricsEdit(trackId, mode) {
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
   try {
-    const session = (await sbAuth.auth.getSession()).data?.session;
+    const session = (await sjGetSession()).data?.session;
     const tok = session?.access_token || ANON;
     const hdrs = {
       apikey: ANON, Authorization: 'Bearer ' + tok,
@@ -36836,7 +36962,7 @@ const SJJ_RESUME_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 async function _sjjToken() {
   try {
-    const { data: { session } } = await sbAuth.auth.getSession();
+    const { data: { session } } = await sjGetSession();
     return session?.access_token || null;
   } catch (_) { return null; }
 }
@@ -37811,7 +37937,7 @@ async function mjHeaders() {
 }
 
 async function mjRequest(path, method, body) {
-  const res = await fetch(path, {
+  const res = await sjFetch(path, {
     method: method || 'GET',
     headers: method === 'GET' ? { Authorization: 'Bearer ' + (await _sjjToken() || '') } : await mjHeaders(),
     body: body ? JSON.stringify(body) : undefined
