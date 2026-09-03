@@ -19433,7 +19433,13 @@ function setPlaylistExploreFilter(mode) {
 function setPlaylistExploreSearch(v) {
   playlistExploreSearchQ = v || '';
   clearTimeout(_playlistSearchTimer);
-  _playlistSearchTimer = setTimeout(() => { _playlistSearchFocus = true; renderLanding(); }, 180);
+  _playlistSearchTimer = setTimeout(async () => {
+    // A deliberate text search still searches the whole playlist collection;
+    // only the ordinary browse/details view is capped to its on-screen preview.
+    if (playlistExploreSearchQ.trim()) await ensurePlaylistSearchMeta();
+    _playlistSearchFocus = true;
+    renderLanding();
+  }, 180);
 }
 
 function clearPlaylistExploreSearch() {
@@ -19679,9 +19685,10 @@ function setArtistExploreFilter(mode) {
   if (isLandingMode && (landingTab === 'explore' || landingTab === 'songs')) renderLanding();
 }
 
-async function ensurePlaylistSearchMeta() {
+async function ensurePlaylistSearchMeta(trackIds) {
   if (_playlistSearchMetaLoading) return _playlistSearchMetaLoading;
-  const ids = [...new Set((_savedPlaylists || []).flatMap(p => (p._tracks || []).map(r => r.track_id)).filter(Boolean))]
+  const sourceIds = trackIds || (_savedPlaylists || []).flatMap(p => (p._tracks || []).map(r => r.track_id));
+  const ids = [...new Set(sourceIds.filter(Boolean))]
     .filter(id => !playlistSearchMetaByTrack[id]);
   if (!ids.length) return false;
   _playlistSearchMetaLoading = (async () => {
@@ -19746,9 +19753,10 @@ function playlistMosaicHTML(p) {
   return `<div class="playlist-mosaic" data-n="${n}" aria-hidden="true">${cells}${p._broadcastingNow ? '<span class="playlist-broadcasting-now">Broadcasting Now</span>' : ''}</div>`;
 }
 
-async function ensurePlaylistArtwork() {
+async function ensurePlaylistArtwork(trackIds) {
   if (_playlistArtworkLoading) return _playlistArtworkLoading;
-  const ids = [...new Set(playlistExploreRows().flatMap(p => (p._tracks || []).map(r => r.track_id)).filter(Boolean))]
+  const sourceIds = trackIds || playlistExploreRows().flatMap(p => (p._tracks || []).map(r => r.track_id));
+  const ids = [...new Set(sourceIds.filter(Boolean))]
     .filter(id => playlistArtworkByTrack[id] === undefined);
   if (!ids.length) return false;
   _playlistArtworkLoading = (async () => {
@@ -23321,7 +23329,7 @@ function setLandingTab(tab) {
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
   if (tab === 'playlists') {
-    loadPlaylists().then(() => Promise.all([ensurePlaylistArtwork(), ensurePlaylistSearchMeta()])).then(changed => {
+    loadPlaylists().then(() => ensurePlaylistPreviewMeta()).then(changed => {
       if (changed.some(Boolean) && isLandingMode && landingTab === 'playlists') renderLanding();
     });
   }
@@ -24733,7 +24741,7 @@ function renderLanding() {
   }
   if (landingTab === 'playlists') {
     if (explorePlaylistsView === 'detail') peEnsureDetailData();
-    Promise.all([ensureMyReactionTracks(), ensurePlaylistArtwork(), ensurePlaylistSearchMeta()]).then(changed => {
+    Promise.all([ensureMyReactionTracks(), ensurePlaylistPreviewMeta()]).then(changed => {
       if (changed.some(Boolean) && isLandingMode && landingTab === 'playlists') renderLanding();
     });
   }
@@ -25255,13 +25263,33 @@ let _peDetailLimit = 25;
 let _peDetailDataReady = false;
 let _peDetailLoading = false;
 const peOpenPlaylistIds = new Set();
+const PE_DETAIL_PREVIEW_TRACKS = 10;
+
+// Details is a browse surface, not a request to hydrate every song in every
+// playlist. Keep its work bounded to the songs it actually puts on screen;
+// the Explore Playlist button remains the route to a full playlist.
+function pePreviewTrackIds(rows = playlistExploreRows()) {
+  const seen = new Set();
+  rows.forEach(p => {
+    (p._tracks || []).slice().sort((a, b) => a.position - b.position)
+      .slice(0, PE_DETAIL_PREVIEW_TRACKS)
+      .forEach(r => { if (r.track_id) seen.add(r.track_id); });
+  });
+  return [...seen];
+}
+
+function ensurePlaylistPreviewMeta() {
+  const ids = pePreviewTrackIds();
+  return Promise.all([ensurePlaylistSearchMeta(ids), ensurePlaylistArtwork(ids)])
+    .then(results => results.some(Boolean));
+}
 
 async function peEnsureDetailData() {
   if (_peDetailLoading) return;
   _peDetailLoading = true;
   try {
-    await Promise.all([ensurePlaylistSearchMeta(), ensurePlaylistArtwork(), esEnsureCatalog()]);
-    const ids = [...new Set(playlistExploreRows().flatMap(p => (p._tracks || []).map(r => r.track_id)).filter(Boolean))];
+    const ids = pePreviewTrackIds();
+    await ensurePlaylistPreviewMeta();
     const missing = ids.filter(id => !ytData[id]?.video_id && !ytData[id]?.views);
     if (missing.length) {
       const chunks = [];
@@ -25279,7 +25307,8 @@ async function peEnsureDetailData() {
 }
 
 function pePlaylistTrackRows(p) {
-  const ordered = (p._tracks || []).slice().sort((a, b) => a.position - b.position);
+  const ordered = (p._tracks || []).slice().sort((a, b) => a.position - b.position)
+    .slice(0, PE_DETAIL_PREVIEW_TRACKS);
   return ordered.map(pt => {
     const tid = pt.track_id;
     if (!tid) return null;
@@ -25292,6 +25321,10 @@ function pePlaylistTrackRows(p) {
 
 function peDetailTracksHTML(p) {
   const rows = pePlaylistTrackRows(p);
+  const total = (p._tracks || []).length;
+  const explore = '<div class="pe-detail-loading" style="padding:10px 16px">' +
+    (total > rows.length ? 'Showing the first ' + rows.length + ' of ' + total + ' songs. ' : '') +
+    '<button type="button" class="landing-explore-btn" onclick="openPlaylistChart(\'' + p.id + '\')">Explore playlist →</button></div>';
   if (!rows.length) return '<div class="ex-detail-loading">No tracks in this playlist.</div>';
   if (playlistExploreDetailGroup === 'artist') {
     const byArtist = {};
@@ -25309,10 +25342,10 @@ function peDetailTracksHTML(p) {
         '<div class="tt-scroll"><div class="tt-wrap">' +
         renderTopTracks(list, { ..._EA_TT_OPTS, artistCol: true, tableId: 'pe-tt-' + p.id + '-' + name.replace(/\W/g, '').slice(0, 12) }) +
         '</div></div>';
-    }).join('');
+    }).join('') + explore;
   }
   return '<div class="tt-scroll"><div class="tt-wrap">' +
-    renderTopTracks(rows, { ..._EA_TT_OPTS, artistCol: true, tableId: 'pe-tt-' + p.id }) + '</div></div>';
+    renderTopTracks(rows, { ..._EA_TT_OPTS, artistCol: true, tableId: 'pe-tt-' + p.id }) + '</div></div>' + explore;
 }
 
 function peTogglePlaylistDetail(playlistId) {
@@ -25347,7 +25380,7 @@ function peDetailPlaylistHTML(p) {
     <div class="ex-detail-alb-hd pe-detail-pl-hd${isOpen ? ' open' : ''}" onclick="peTogglePlaylistDetail('${p.id}')">
       <span class="pe-detail-name">${esc(playlistExploreCardName(p))}</span>
       <span class="pe-detail-pl-meta">${n} track${n === 1 ? '' : 's'}${live}${by ? ' · ' + by : ''}</span>
-      <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openPlaylistChart('${p.id}')">Open →</button>
+      <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openPlaylistChart('${p.id}')">Explore playlist →</button>
       <span class="ex-detail-alb-chev">${isOpen ? '▲' : '▼'}</span>
     </div>
     <div class="pe-detail-pl-body ex-detail-alb-body${isOpen ? ' open' : ''}" id="pe-pl-body-${p.id}"></div>
@@ -30191,6 +30224,7 @@ const SJ_CHANGELOG = [
   { date: '2026-09-02', items: [
     'Remove from Playlist now opens its Song, Artist, and Album choices beside the song menu, so the choices stay connected to the action you selected.',
     'Add to Playlist, Add to My Library, and Take a Break now open beside the song menu too, keeping every second-level choice in view.',
+    'Explore Playlists Details now loads a quick 10-song preview per playlist. Open a playlist whenever you want to browse its complete track list.',
   ]},
   { date: '2026-09-01', items: [
     'What\'s New lists song additions as "added 3 songs by Artist" instead of looking like a whole new jukebox. Full discography imports still show as New Artist with an album count.',
