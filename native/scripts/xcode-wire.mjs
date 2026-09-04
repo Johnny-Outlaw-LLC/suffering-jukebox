@@ -9,6 +9,11 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const projPath = resolve(here, '..', 'ios', 'App', 'App.xcodeproj', 'project.pbxproj');
 
+// Matches the other Johnny Outlaw LLC apps; D89QH2NM22 is the Personal Team
+// and cannot reach the App Store.
+const TEAM_ID = process.env.SJ_TEAM_ID || '2J69KHU242';
+const CARPLAY_ENTITLEMENT = process.env.SJ_CARPLAY_ENTITLEMENT === '1';
+
 const proj = xcode.project(projPath);
 proj.parseSync();
 const target = proj.getFirstTarget().uuid;
@@ -83,10 +88,21 @@ for (const key of Object.keys(configs)) {
   const c = configs[key];
   if (typeof c !== 'object' || !c.buildSettings) continue;
   if (String(c.buildSettings.PRODUCT_BUNDLE_IDENTIFIER || '').includes('sufferingjukebox')) {
-    c.buildSettings.CODE_SIGN_ENTITLEMENTS = '"App/App.entitlements"';
     // CarPlay's CPListItem.isEnabled and friends are iOS 15+. iOS 14 is a 2020
     // release and no current device is stuck on it.
     c.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = '15.0';
+    c.buildSettings.CODE_SIGN_STYLE = 'Automatic';
+    c.buildSettings.DEVELOPMENT_TEAM = TEAM_ID;
+    // com.apple.developer.carplay-audio has to be granted by Apple before a
+    // provisioning profile can carry it - until then automatic signing cannot
+    // build for a device at all. Simulator builds do not validate entitlements,
+    // so CarPlay is still developable meanwhile. Opt in once Apple approves:
+    //   SJ_CARPLAY_ENTITLEMENT=1 node scripts/xcode-wire.mjs
+    if (CARPLAY_ENTITLEMENT) {
+      c.buildSettings.CODE_SIGN_ENTITLEMENTS = '"App/App.entitlements"';
+    } else {
+      delete c.buildSettings.CODE_SIGN_ENTITLEMENTS;
+    }
     signed++;
   }
 }

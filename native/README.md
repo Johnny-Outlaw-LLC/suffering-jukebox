@@ -60,6 +60,24 @@ Both are referenced by bare ObjC class name via `@objc(...)`.
 that ship as npm packages; `SJNativeAudio` lives in the app target and must be
 handed to the bridge in `capacitorDidLoad()`.
 
+## Installing on a device
+
+Automatic signing on team 2J69KHU242 (the same team as the other Johnny Outlaw
+LLC apps; D89QH2NM22 is the Personal Team and cannot reach the App Store).
+
+```bash
+npm run sync
+cd ios/App
+xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug \
+  -destination 'generic/platform=iOS' -allowProvisioningUpdates build
+xcrun devicectl device install app --device <device-id> \
+  ~/Library/Developer/Xcode/DerivedData/App-*/Build/Products/Debug-iphoneos/App.app
+xcrun devicectl device launch app --device <device-id> com.johnnyoutlaw.sufferingjukebox
+```
+
+`xcrun devicectl list devices` prints the device ids. The phone has to be
+unlocked and trusted or it shows as `unavailable`.
+
 ## CarPlay entitlement
 
 `App.entitlements` declares `com.apple.developer.carplay-audio`. Apple must
