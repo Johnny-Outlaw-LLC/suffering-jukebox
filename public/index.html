@@ -6026,11 +6026,28 @@ try {
 
 // Long tasks are not exposed in every browser. This watchdog still records a
 // conspicuous main-thread stall when a one-second heartbeat arrives late.
+//
+// A BACKGROUND TAB IS NOT A STALL. Chrome throttles a one second interval in a
+// hidden tab to about once a minute, so a tab sitting behind another one
+// reported a 59,000ms "stall" every minute for as long as it was left open.
+// Those readings were all 180 of the worst stalls in the log and they buried
+// the real ones, which are hundreds of milliseconds. Any interval that spans a
+// hidden stretch is discarded rather than measured.
 let _sjPerfHeartbeatAt = performance.now();
+let _sjPerfWasHidden = document.hidden === true;
+document.addEventListener('visibilitychange', () => {
+  // Coming back to the front does not clear the flag: the interval that spans
+  // the return is the throttled one, so it is the one that has to be dropped.
+  if (document.hidden) _sjPerfWasHidden = true;
+  _sjPerfHeartbeatAt = performance.now();
+});
 setInterval(() => {
   const now = performance.now();
   const lag = now - _sjPerfHeartbeatAt - 1000;
   _sjPerfHeartbeatAt = now;
+  const skip = _sjPerfWasHidden || document.hidden;
+  _sjPerfWasHidden = document.hidden === true;
+  if (skip) return;
   if (lag >= 200) sjPerf('browser.event-loop-stall', { durationMs: Math.round(lag * 10) / 10 });
 }, 1000);
 
@@ -8659,10 +8676,35 @@ function updateYTQueueUI(opts) {
   ytpPaintUpNext();
   if (ytQueue.length <= 1 && !ytpMobFsOn()) {
     if (existingWrap) existingWrap.remove();
+    _ytQueueSig = null;
     return;
   }
 
+  // Everything the row markup reads. Order, identity, the label the artist name
+  // is hydrated into afterwards, and the Online Jukebox credit - which lands on
+  // a row that was already there when sjjAdopt() reclaims it, so leaving it out
+  // would silently cost somebody their name. Ratings are NOT in here: those
+  // repaint in place through refreshVoteUI().
+  const queueSig = ytQueue.length + '' + ytQueue.map(item =>
+    (item.trackId || '') + '' + (item.videoId || '') + '' +
+    (item.artist || '') + '' + (item.title || '') + '' +
+    (item.addedBy || '') + (item.addedByOwner ? '*' : '')
+  ).join('');
+  const listUnchanged = !!existingWrap && queueSig === _ytQueueSig;
+
   // (queue height is now fixed - no drag handle)
+
+  if (listUnchanged) {
+    // Same songs in the same order: move the highlight and leave the DOM alone.
+    // The filter is applied to these very rows already and the header count
+    // cannot have moved, so neither is re-run.
+    const prev = ytPlayerEl.querySelector('.yt-queue-row.active');
+    if (prev) prev.classList.remove('active');
+    const cur = ytPlayerEl.querySelector('.yt-queue-row[data-queue-idx="' + ytQueueIdx + '"]');
+    if (cur) cur.classList.add('active');
+    ytpQueueTail(opts, savedScroll);
+    return;
+  }
 
   const queueHTML = `<div class="yt-queue-wrap" style="display:flex;flex-direction:column;flex-shrink:0">
     ${ytPlaylistBarHTML()}
@@ -8681,7 +8723,11 @@ function updateYTQueueUI(opts) {
         </div>
       </div>
       ${ytQueue.map((item, i) => {
-        const _qm = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
+        // The lookup is only here for the artist name, and it costs a scan of
+        // the whole catalogue. A hydrated row already carries the name that
+        // scan would find - ytpHydrateQueueMeta() reads it out of the same
+        // catalogue - so a queue that has been filled in skips it entirely.
+        const _qm = (item.trackId && !item.artist) ? ytpTrackMeta(item.trackId, item.title, null, item) : null;
         const _qArtist = (_qm && _qm.artist) || item.artist || '';
         const _qSong = item.title || (_qm && _qm.title) || '';
         const _qLabel = (_qArtist ? (_qArtist + ' - ' + _qSong) : _qSong).replace(/</g, '&lt;');
@@ -8718,6 +8764,7 @@ function updateYTQueueUI(opts) {
   } else {
     ytPlayerEl.insertAdjacentHTML('beforeend', queueHTML);
   }
+  _ytQueueSig = queueSig;
   ytApplyQueueFilter();
   if (findFocused) {
     const fresh = ytPlayerEl.querySelector('#yt-queue-find');
@@ -8726,6 +8773,13 @@ function updateYTQueueUI(opts) {
       try { fresh.setSelectionRange(findAt, findAt); } catch (_) {}
     }
   }
+  ytpQueueTail(opts, savedScroll);
+}
+
+// The scroll, minimized and hydrate work that runs whether or not the list was
+// rebuilt. Kept as one function so the fast path above cannot drift from the
+// slow one.
+function ytpQueueTail(opts, savedScroll) {
   // Rebuilding the queue wrap replaces the DOM node, which would silently
   // un-hide it even while the player is minimized (e.g. after Next/shuffle
   // advances the track). Re-apply the minimized state to the fresh nodes.
@@ -8779,6 +8833,11 @@ function ytpPaintDockPlaylist() {
 // Spotify picker learned - and a five hundred row queue is not worth rebuilding
 // to hide four of them.
 let _ytQueueFilter = '';
+// What the queue list on screen was last built from. Rebuilding 2,600 rows of
+// markup costs about half a second, and most calls into updateYTQueueUI change
+// nothing about the LIST - a track advance, a rating, a five second room sync.
+// Those now move the highlight and stop. Null means there is no list to trust.
+let _ytQueueSig = null;
 
 function ytQueueFilter(text) {
   _ytQueueFilter = text || '';
@@ -10156,7 +10215,11 @@ function ytKickMobilePlay() {
 }
 
 // ── Mobile background playback (Media Session + keepalive) ─────
-function ytpTrackMeta(trackId, fallbackTitle, videoIdHint) {
+// queueItemHint: the queue row the caller is already holding. Without it this
+// scans ytQueue for a matching trackId, and a caller looping over the queue
+// therefore made the whole render quadratic - 2,600 rows became about seven
+// million comparisons, on top of a full catalogue scan per row.
+function ytpTrackMeta(trackId, fallbackTitle, videoIdHint, queueItemHint) {
   if (!trackId) {
     return { title: fallbackTitle || 'Suffering Jukebox', artist: 'Silver Jews', album: '', artwork: '/favicon.png' };
   }
@@ -10174,9 +10237,11 @@ function ytpTrackMeta(trackId, fallbackTitle, videoIdHint) {
   // no loaded data at all - so fall back to the play-time cache, then to the
   // current queue item (which we stamp + persist), so the title never goes bare.
   const cache = SJ_TRACK_META[trackId] || null;
-  const qItem = (typeof ytQueue !== 'undefined' && Array.isArray(ytQueue))
-    ? (ytQueue[ytQueueIdx]?.trackId === trackId ? ytQueue[ytQueueIdx] : ytQueue.find(q => q && q.trackId === trackId))
-    : null;
+  const qItem = (queueItemHint && queueItemHint.trackId === trackId)
+    ? queueItemHint
+    : ((typeof ytQueue !== 'undefined' && Array.isArray(ytQueue))
+      ? (ytQueue[ytQueueIdx]?.trackId === trackId ? ytQueue[ytQueueIdx] : ytQueue.find(q => q && q.trackId === trackId))
+      : null);
   const artistName = (artist && artist.name) || (cache && cache.artist) || (qItem && qItem.artist) || '';
   const albumName  = (album && album.name)   || (cache && cache.album)  || (qItem && qItem.album)  || '';
   const year       = (album && (album.release_date || '').slice(0, 4)) || (cache && cache.year) || (qItem && qItem.year) || '';
@@ -30527,11 +30592,15 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-03';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-04', items: [
+    'A long playlist no longer bogs the whole page down. With a couple of thousand songs queued up, every track change, rating and jukebox update was rebuilding the entire playlist list from scratch, which took about half a second each time and made the page stutter or stop responding. The list is now only rebuilt when the songs in it actually change.',
+    'Two new charts at the bottom of My Data & Analytics: Favorite artists and Favorite songs, scored from your thumbs-up ratings and your heart reactions. Click a bar to filter the rest of the page, the same as the other charts.',
+  ]},
   { date: '2026-09-03', items: [
     'Fixed a freeze on Explore Playlists. Switching to Details locked the page up completely, and because the site remembers which tab you were on, reopening it froze again straight away. The Details view now opens properly and shows every playlist with its track count.',
     'Requests that never come back now give up after a while instead of leaving a panel saying Loading forever. When one does time out you get a message and a Try again button.',
