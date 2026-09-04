@@ -75,8 +75,34 @@ body.light {
 html { scroll-padding-bottom: var(--ytp-dock-height); }
 body { background: var(--bg); color: var(--text); font-family: var(--mono); min-height: 100vh; overflow-x: hidden; padding-bottom: var(--ytp-dock-height); transition: background .2s, color .2s; }
 
-/* Crawlable catalog injected on /{slug} for search engines. Hidden once the
-   interactive jukebox is running so listeners are not buried under a lyric wall. */
+/* Boot cover — only when JS is on (tiny class set in <head>). Covers the
+   server-rendered SEO catalog so listeners never see a wall of lyrics flash
+   before the jukebox paints. Crawlers without JS still get the catalog text. */
+html.sj-js #sj-boot {
+  position: fixed; inset: 0; z-index: 2147483000;
+  display: flex; align-items: center; justify-content: center;
+  background: #0a0a0a; color: #f5f5f5;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+html.sj-js #sj-boot[hidden] { display: none !important; }
+.sj-boot-inner { text-align: center; padding: 1.5rem; }
+.sj-boot-glyph { font-size: 2.4rem; color: #ff6b35; line-height: 1; margin-bottom: .55rem; }
+.sj-boot-msg { font-size: .72rem; color: #888; letter-spacing: .06em; }
+html.sj-capture #sj-boot { display: none !important; }
+
+/* Crawlable catalog injected on /{slug} for search engines. Visually clipped
+   for JS listeners from the first paint (the old [hidden] flip ran too late —
+   after the lyric wall had already flashed). Still in the HTML for crawlers. */
+html.sj-js #sj-seo-catalog {
+  position: absolute !important;
+  width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
 #sj-seo-catalog[hidden] { display: none !important; }
 .sj-seo-catalog {
   max-width: 52rem; margin: 1.5rem auto 3rem; padding: 0 1.25rem 2rem;
@@ -4432,8 +4458,15 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 }
 </style>
 <script src="https://outlawdata.com/outlaw-owner.js" defer></script>
+<script>document.documentElement.classList.add('sj-js');</script>
 </head>
 <body>
+<div id="sj-boot" aria-live="polite" aria-busy="true">
+  <div class="sj-boot-inner">
+    <div class="sj-boot-glyph" aria-hidden="true">♩</div>
+    <div class="sj-boot-msg">Loading content…</div>
+  </div>
+</div>
 
 <!-- Song-card dashed-line SVG overlay -->
 <svg id="sc-lines-svg" style="position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:1998;overflow:visible" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -5859,11 +5892,20 @@ let amMaxTrk = 60;  // tracks it takes from any single playlist
 let _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
 let _PLAYLIST_PAGE = window.__PLAYLIST_PAGE__ || null;
 // Hide the server-rendered catalog wall for listeners; crawlers already saw it
-// in the first HTML response before this script ran.
+// in the first HTML response (and CSS already clips it for JS browsers).
 if (_SLUG_ARTIST) {
   const _seoCat = document.getElementById('sj-seo-catalog');
   if (_seoCat) _seoCat.hidden = true;
 }
+
+function sjBootDone() {
+  const el = document.getElementById('sj-boot');
+  if (!el || el.hidden) return;
+  el.hidden = true;
+  el.setAttribute('aria-busy', 'false');
+}
+// Safety net if a page never hits a timed render (error / empty).
+try { setTimeout(sjBootDone, 10000); } catch (_) {}
 let IS_COMMUNITY = window.location.pathname.replace(/\/+$/, '') === '/community' || !!_SLUG_ARTIST;
 let FEATURED_ARTIST_ID = _SLUG_ARTIST ? _SLUG_ARTIST.id : (IS_COMMUNITY ? new URLSearchParams(window.location.search).get('artist') : null);
 function filterPageArtists(rows) {
@@ -6092,7 +6134,10 @@ function sjTimeRender(label, fn, detail) {
     // The first heavy render to finish is the first moment this page had real
     // content on it, which is the number a visitor actually feels. Nothing else
     // in the boot path knows when that is, so it is taken here.
-    if (_sjAppReadyMs === null) _sjAppReadyMs = Math.round(performance.now());
+    if (_sjAppReadyMs === null) {
+      _sjAppReadyMs = Math.round(performance.now());
+      try { sjBootDone(); } catch (_) {}
+    }
     const ms = sjPerfDuration(t0);
     if (ms >= SJ_RENDER_SLOW_MS) {
       let extra = null;
@@ -32071,6 +32116,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-04', items: [
+    'Artist pages no longer flash a wall of song titles and lyrics while the jukebox loads. You see a short Loading content screen instead; search engines still get the full catalog text.',
     'In Manage Album, Default video is now labeled Song options — it still opens the same Manage Song panel.',
     'Manage Song can set playback and stats separately. Use for playback chooses what starts when someone hits play; Use for stats chooses which upload’s view count feeds the charts. The player’s Versions menu has the same two choices.',
     'Default video and Lyrics in Manage Album work again. Default video was opening Manage Song behind the album panel; Lyrics now opens its own editor instead of needing the song card expanded on the page.',

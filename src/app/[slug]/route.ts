@@ -140,8 +140,8 @@ export async function GET(
     })}</script>\n`;
   html = html.replace("</head>", `${inject}</head>`);
 
-  // Catalog text after </main> so crawlers see titles + lyrics; the SPA hides
-  // #sj-seo-catalog once the interactive jukebox is up.
+  // Catalog text after </main> so crawlers see titles + lyrics. CSS clips it
+  // for JS listeners from the first paint; the SPA also sets [hidden] once up.
   if (html.includes("</main>")) {
     html = html.replace("</main>", `</main>\n${catalogHtml}\n`);
   } else {
