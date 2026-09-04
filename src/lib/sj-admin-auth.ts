@@ -138,6 +138,46 @@ export type YouTubePlaylistInfo = {
 // fetching stops here and the caller is told the list was cut short.
 export const MAX_PLAYLIST_ITEMS = 300;
 
+export class YouTubeApiError extends Error {
+  status: number;
+  reason: string | null;
+  constructor(status: number, reason: string | null, message: string) {
+    super(message);
+    this.name = "YouTubeApiError";
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+const YT_QUOTA_MSG =
+  "YouTube’s daily API quota for this site is used up. Search and Rediscover will work again after midnight Pacific time.";
+
+async function throwYouTubeHttpError(res: Response, label: string): Promise<never> {
+  let reason: string | null = null;
+  let detail = "";
+  try {
+    const json = (await res.json()) as {
+      error?: { message?: string; errors?: Array<{ reason?: string }> };
+    };
+    reason = json.error?.errors?.[0]?.reason || null;
+    detail = json.error?.message || "";
+  } catch {
+    /* ignore parse failures */
+  }
+  if (
+    reason === "quotaExceeded" ||
+    reason === "dailyLimitExceeded" ||
+    /quota|daily.?limit/i.test(detail)
+  ) {
+    throw new YouTubeApiError(res.status, "quotaExceeded", YT_QUOTA_MSG);
+  }
+  throw new YouTubeApiError(
+    res.status,
+    reason,
+    `${label} (${res.status}${reason ? ": " + reason : ""})`,
+  );
+}
+
 export async function fetchYouTubePlaylistItems(
   playlistId: string,
 ): Promise<{ items: YtPlaylistItem[]; truncated: boolean }> {
@@ -158,7 +198,7 @@ export async function fetchYouTubePlaylistItems(
       if (res.status === 404) {
         throw new Error("That playlist could not be found — check it is public or unlisted.");
       }
-      throw new Error(`YouTube API error (${res.status})`);
+      await throwYouTubeHttpError(res, "YouTube API error");
     }
     const json = (await res.json()) as { items?: any[]; nextPageToken?: string };
     for (const item of json.items ?? []) {
@@ -221,7 +261,7 @@ export async function searchYouTubePlaylists(
   url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 15)));
   url.searchParams.set("key", key);
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`YouTube playlist search error (${res.status})`);
+  if (!res.ok) await throwYouTubeHttpError(res, "YouTube playlist search error");
   const json = (await res.json()) as { items?: any[] };
   const candidates = (json.items ?? [])
     .map((item) => ({ playlistId: item.id?.playlistId as string | undefined, snippet: item.snippet ?? {} }))
@@ -237,7 +277,7 @@ export async function searchYouTubePlaylists(
   detailsUrl.searchParams.set("maxResults", String(candidates.length));
   detailsUrl.searchParams.set("key", key);
   const detailsRes = await fetch(detailsUrl.toString());
-  if (!detailsRes.ok) throw new Error(`YouTube playlist details error (${detailsRes.status})`);
+  if (!detailsRes.ok) await throwYouTubeHttpError(detailsRes, "YouTube playlist details error");
   const detailsJson = (await detailsRes.json()) as { items?: any[] };
   const details = new Map((detailsJson.items ?? []).map((item) => [item.id as string, item]));
 
@@ -300,7 +340,7 @@ export async function fetchYouTubeVideoInfo(
     url.searchParams.set("id", chunk.join(","));
     url.searchParams.set("key", key);
     const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`YouTube API error (${res.status})`);
+    if (!res.ok) await throwYouTubeHttpError(res, "YouTube API error");
     const json = (await res.json()) as { items?: any[] };
     for (const item of json.items ?? []) {
       const status = item.status ?? {};
@@ -368,7 +408,7 @@ export async function searchYouTubeVideoIds(
   url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 15)));
   url.searchParams.set("key", key);
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`YouTube search error (${res.status})`);
+  if (!res.ok) await throwYouTubeHttpError(res, "YouTube search error");
   const json = (await res.json()) as { items?: any[] };
   return (json.items ?? []).map((it) => it.id?.videoId).filter(Boolean);
 }
@@ -400,7 +440,7 @@ export async function searchYouTubeVideos(query: string, maxResults = 12): Promi
   url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 15)));
   url.searchParams.set("key", key);
   const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`YouTube search error (${res.status})`);
+  if (!res.ok) await throwYouTubeHttpError(res, "YouTube search error");
   const json = (await res.json()) as { items?: any[] };
   const candidates = (json.items ?? [])
     .map((item) => ({ videoId: item.id?.videoId as string | undefined, snippet: item.snippet ?? {} }))

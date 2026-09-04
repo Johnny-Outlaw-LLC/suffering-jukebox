@@ -9,6 +9,7 @@ import {
   isSjAdmin,
   searchYouTubePlaylists,
   searchYouTubeVideoIds,
+  YouTubeApiError,
   JUKEBOX_SCHEMA,
   type YtVideoInfo,
 } from "@/lib/sj-admin-auth";
@@ -533,9 +534,27 @@ export async function POST(req: NextRequest) {
         }, { status: 429 });
       }
 
-      const result = strategy === "playlist"
-        ? await previewPlaylists(tracks)
-        : await previewSongs(tracks);
+      let result: { proposals: Proposal[]; searchesUsed: number };
+      try {
+        result = strategy === "playlist"
+          ? await previewPlaylists(tracks)
+          : await previewSongs(tracks);
+      } catch (ytErr) {
+        // YouTube failed after we reserved — put the units back so a Google
+        // quota miss does not also burn the in-app daily counter.
+        const q = await readQuota(sb, who, admin);
+        const next = Math.max(0, q.used - estimate);
+        await sb.schema(JUKEBOX_SCHEMA).from("yt_search_quota").upsert(
+          {
+            user_email: who,
+            day: q.day,
+            searches: next,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_email,day" },
+        );
+        throw ytErr;
+      }
 
       // Refund unused reserved units (estimate − actual).
       const refund = Math.max(0, estimate - result.searchesUsed);
@@ -624,6 +643,12 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : "Could not talk to YouTube.";
     if (/not configured/i.test(msg)) {
       return NextResponse.json({ ok: false, error: "YouTube search is not configured." }, { status: 500 });
+    }
+    if (
+      (err instanceof YouTubeApiError && err.reason === "quotaExceeded") ||
+      /daily API quota|quotaExceeded|midnight Pacific/i.test(msg)
+    ) {
+      return NextResponse.json({ ok: false, error: msg }, { status: 429 });
     }
     return NextResponse.json({ ok: false, error: "Could not rediscover videos right now." }, { status: 500 });
   }
