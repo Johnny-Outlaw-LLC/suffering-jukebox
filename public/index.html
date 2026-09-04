@@ -7639,6 +7639,7 @@ function ytpSetWinIcon(btn, kind) {
 // Transport glyphs for the phone control deck. Text arrows render at wildly
 // different sizes across phones, so the big buttons draw their own.
 const YTP_DECK_ICONS = {
+  awake: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   play:  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.29-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14Z"/></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4.2" height="15" rx="1.3"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.3"/></svg>',
   prev:  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5.4" width="2.4" height="13.2" rx="1.2"/><path d="M19 6.9v10.2a1 1 0 0 1-1.55.83l-7.65-5.1a1 1 0 0 1 0-1.66l7.65-5.1A1 1 0 0 1 19 6.9Z"/></svg>',
@@ -7805,6 +7806,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
         <div class="ytp-toolbar-transport">
           <button type="button" class="ytp-deck-btn" id="ytp-shuffle-tog" title="Shuffle queue" onmousedown="event.stopPropagation()" onclick="setYtShuffleEnabled(!ytShuffle);event.stopPropagation()">${YTP_DECK_ICONS.shuffle}</button>
           <button type="button" class="ytp-deck-btn" id="ytp-repeat-tog" title="Repeat queue" onmousedown="event.stopPropagation()" onclick="ytpSetRepeat(!ytRepeat);event.stopPropagation()">${YTP_DECK_ICONS.repeat}</button>
+          <button type="button" class="ytp-deck-btn" id="ytp-awake-tog" title="Keep the screen on while a song is playing" style="display:none" onmousedown="event.stopPropagation()" onclick="wakeToggle(!_wakeWanted);event.stopPropagation()">${YTP_DECK_ICONS.awake}</button>
           <button class="ytp-deck-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.prev}</button>
           <button class="ytp-deck-btn ytp-playpause-btn" id="ytp-playpause-btn" onclick="ytTogglePlayPause()" title="Pause" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.pause}</button>
           <button class="ytp-deck-btn ytp-next-btn" onclick="ytNextTrack()" title="Next in queue" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.next}</button>
@@ -7877,10 +7879,79 @@ function ytpMountFrameContent(frame, videoId, h, autoplay) {
   ytpWireFrameInteraction(frame);
 }
 
+// ── Native shell: YouTube through our own hosted frame ─────────────
+// In the Capacitor app the page is served from capacitor://... WKWebView
+// reserves http/https for real network loads, so Capacitor cannot serve the
+// bundled assets over https and the origin is always a custom scheme. The
+// YouTube embed refuses that outright (error 153). So on native we embed
+// /yt-frame - a real https origin - which owns the player and relays it over
+// postMessage. On the web none of this is reachable.
+const SJ_FRAME_ORIGIN = 'https://www.sufferingjukebox.stream';
+const sjIsNative = () => window.__SJ_NATIVE__ === true;
+
 function ytpEmbedSrc(videoId, autoplay) {
-  const origin = encodeURIComponent(location.origin);
   const ap = autoplay === false ? 0 : 1;
+  if (sjIsNative()) {
+    return `${SJ_FRAME_ORIGIN}/yt-frame?v=${encodeURIComponent(videoId)}&autoplay=${ap}`;
+  }
+  const origin = encodeURIComponent(location.origin);
   return `https://www.youtube.com/embed/${videoId}?autoplay=${ap}&rel=0&enablejsapi=1&playsinline=1&controls=1&origin=${origin}`;
+}
+
+// Stands in for a YT.Player when the real one is out of reach. Commands go to
+// the hosted frame over postMessage; the frame streams state back, and the
+// getters answer from that mirror so they stay synchronous and every existing
+// call site keeps working unchanged.
+function makeYTFrameProxy(elementId, events) {
+  const iframe = document.getElementById(elementId);
+  const st = { t: 0, d: 0, s: -1, vol: 100, muted: false, data: {} };
+  let gone = false;
+
+  const post = (method, args) => {
+    if (gone) return;
+    try {
+      iframe?.contentWindow?.postMessage({ sj: 'cmd', method, args: args || [] }, SJ_FRAME_ORIGIN);
+    } catch (_) {}
+  };
+
+  const onMsg = (e) => {
+    if (!iframe || e.source !== iframe.contentWindow) return;  // only our frame
+    const m = e.data;
+    if (!m || m.sj !== 'frame') return;
+    if (m.type === 'state')       { Object.assign(st, m.state || {}); return; }
+    if (m.type === 'ready')       { events?.onReady?.({ target: proxy }); return; }
+    if (m.type === 'stateChange') { st.s = m.data; events?.onStateChange?.({ data: m.data, target: proxy }); return; }
+    if (m.type === 'error')       { events?.onError?.({ data: m.data, target: proxy }); return; }
+  };
+  window.addEventListener('message', onMsg);
+
+  const proxy = {
+    loadVideoById: (...a) => post('loadVideoById', a),
+    cueVideoById:  (...a) => post('cueVideoById', a),
+    playVideo:     ()     => post('playVideo'),
+    pauseVideo:    ()     => post('pauseVideo'),
+    stopVideo:     ()     => post('stopVideo'),
+    // Mirror optimistically so a getter straight after a command is not stale.
+    seekTo:    (t, allow) => { st.t = t; post('seekTo', [t, allow !== false]); },
+    setVolume: (v)        => { st.vol = v; post('setVolume', [v]); },
+    mute:      ()         => { st.muted = true;  post('mute'); },
+    unMute:    ()         => { st.muted = false; post('unMute'); },
+    isMuted:        () => st.muted,
+    getVolume:      () => st.vol,
+    getCurrentTime: () => st.t,
+    getDuration:    () => st.d,
+    getPlayerState: () => st.s,
+    getVideoData:   () => st.data,
+    destroy: () => { gone = true; window.removeEventListener('message', onMsg); },
+  };
+  return proxy;
+}
+
+// Single place both player call sites go through.
+function sjCreateYTPlayer(elementId, config) {
+  return sjIsNative()
+    ? makeYTFrameProxy(elementId, config && config.events)
+    : new YT.Player(elementId, config);
 }
 
 function updateYTEmbedTheme() {
@@ -8368,6 +8439,12 @@ function ytpPaintTogs() {
   if (sh) sh.classList.toggle('on', !!ytShuffle);
   const rp = document.getElementById('ytp-repeat-tog');
   if (rp) rp.classList.toggle('on', !!ytRepeat);
+  const aw = document.getElementById('ytp-awake-tog');
+  if (aw) {
+    // Hidden entirely where the Screen Wake Lock API does not exist.
+    aw.style.display = wakeSupported() ? '' : 'none';
+    aw.classList.toggle('on', !!_wakeWanted);
+  }
   const plSh = document.getElementById('pl-wall-shuffle');
   if (plSh) {
     plSh.classList.toggle('on', !!ytShuffle);
@@ -8541,7 +8618,7 @@ function ytpAttachSlotPlayer(slot, onReadyCb) {
   }
   try { if (existing) existing.destroy(); } catch (_) {}
   _ytSlotPlayers[slot] = null;
-  const player = new YT.Player(id, {
+  const player = sjCreateYTPlayer(id, {
     events: {
       onReady: function() {
         _ytSlotPlayers[slot] = player;
@@ -8664,6 +8741,55 @@ function ytpSetPlayPauseIcon(playing) {
   const mfTitle = document.getElementById('ytp-mf-song');
   if (mfTitle) mfTitle.classList.toggle('now-playing', playing);
   playlistChartPaintTransport();
+  wakeSync(playing);
+}
+
+// ── Stay Awake (Screen Wake Lock) ──────────────────────────────────
+// Opt-in: while a song is playing the screen is held on, which is what you
+// want with the player up on a counter or a dashboard mount. The lock is
+// dropped on pause and whenever the page hides (the browser revokes it there
+// anyway), and retaken on return.
+let _wakeLock    = null;
+let _wakeWanted  = false;
+let _wakePlaying = false;
+let _wakeSeq     = 0;   // guards against a stale in-flight request winning
+
+const wakeSupported = () => 'wakeLock' in navigator;
+
+function wakeInit() {
+  try { _wakeWanted = localStorage.getItem('sj-stay-awake') === '1'; } catch (_) {}
+  ytpPaintTogs();
+}
+
+function wakeToggle(on) {
+  _wakeWanted = !!on;
+  try { localStorage.setItem('sj-stay-awake', _wakeWanted ? '1' : '0'); } catch (_) {}
+  ytpPaintTogs();
+  wakeSync(_wakePlaying);
+}
+
+async function wakeSync(playing) {
+  if (typeof playing === 'boolean') _wakePlaying = playing;
+  if (!wakeSupported()) return;
+  const seq  = ++_wakeSeq;
+  const want = _wakeWanted && _wakePlaying && document.visibilityState === 'visible';
+  if (want && !_wakeLock) {
+    let lock;
+    try { lock = await navigator.wakeLock.request('screen'); }
+    catch (_) { return; }            // refused while hidden, on low battery, etc.
+    lock.addEventListener('release', () => { if (_wakeLock === lock) _wakeLock = null; });
+    // Intent can change while the request is in flight (a pause, or the toggle
+    // going off); without this the stale acquire wins and pins the screen on.
+    if (seq !== _wakeSeq || !_wakeWanted || !_wakePlaying) {
+      try { await lock.release(); } catch (_) {}
+      return;
+    }
+    _wakeLock = lock;
+  } else if (!want && _wakeLock) {
+    const lock = _wakeLock;
+    _wakeLock = null;
+    try { await lock.release(); } catch (_) {}
+  }
 }
 
 // Whether sound is coming out right now, whichever source is carrying it.
@@ -14560,7 +14686,7 @@ function djAttachDeck(side, row, startSec) {
   const tryAttach = () => {
     if (!window.YT || !window.YT.Player) { setTimeout(tryAttach, 150); return; }
     if (!document.getElementById(iframeId)) return;
-    const player = new YT.Player(iframeId, {
+    const player = sjCreateYTPlayer(iframeId, {
       events: {
         onReady: function() {
           deck.player = player;
@@ -36314,6 +36440,7 @@ window.addEventListener('pagehide', sendSjPageDuration);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') sendSjPageDuration();
   ytpOnVisibilityChange();
+  wakeSync();   // the browser drops the lock on hide - retake it on return
 });
 
 // Playback state: catch position changes even when the track itself doesn't change
@@ -36325,6 +36452,7 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => { if (googleUser && ytPlayerEl) savePlaybackState(); }, 20000);
 
 ytpInitMediaSession();
+wakeInit();
 
 trackPageView();
 
