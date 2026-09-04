@@ -15025,14 +15025,25 @@ async function tvMakeDefault() {
   ytpCloseVersionMenu();
   try {
     await dbRpcAuth('/rpc/set_primary_track_video', { p_track_id: trackId, p_video_id: ytVideoId });
-    tvList(trackId).forEach(v => { v.is_primary = v.video_id === ytVideoId; });
-    if (ytData[trackId]) {
+    tvList(trackId).forEach(v => {
+      v.is_primary = v.video_id === ytVideoId;
+      if (v.video_id === ytVideoId) v.counts_for_charts = true;
+    });
+    try { await refreshTrackMetrics([trackId]); } catch (_) {
+      if (!ytData[trackId]) ytData[trackId] = {};
       ytData[trackId].video_id = ytVideoId;
       const v = tvFor(trackId, ytVideoId);
       if (v?.thumbnail) ytData[trackId].thumbnail = v.thumbnail;
+      const top = tvTop(trackId);
+      if (top) {
+        ytData[trackId].views = Number(top.view_count) || 0;
+        ytData[trackId].likes = Number(top.like_count) || 0;
+      }
     }
     ytpSyncVersionBtn(trackId, ytVideoId);
     showToast('This version now plays by default.');
+    try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+    try { if (typeof ttRepaint === 'function') ttRepaint(); } catch (_) {}
   } catch (e) {
     alert('Could not set the default version. ' + (e.message || ''));
   }
@@ -16987,14 +16998,16 @@ async function adNext() {
     });
     const n = (data.applied || []).length;
     showToast(n ? ('Updated ' + n + ' song' + (n === 1 ? '' : 's') + '.') : 'Nothing changed.');
-    const tids = changes.map(c => c.trackId);
-    try { await loadTrackVideos(tids); } catch (_) {}
-    try { await loadYT(tids); } catch (_) {}
+    const tids = (data.applied || []).map(a => a.trackId).filter(Boolean);
+    const refreshIds = tids.length ? tids : changes.map(c => c.trackId);
+    try { await refreshTrackMetrics(refreshIds); } catch (_) {}
     try { if (typeof amFtRefreshChart === 'function') await amFtRefreshChart(); } catch (_) {}
     const reopenId = _mgbAlbumId;
     adClose();
     try { if (reopenId) await openManageAlbum(reopenId); } catch (_) {}
     try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+    try { if (typeof ttRepaint === 'function') ttRepaint(); } catch (_) {}
+    try { if (typeof esRepaint === 'function' && document.getElementById('es-body')) esRepaint(); } catch (_) {}
   } catch (e) {
     showToast(e.message || 'Could not apply.');
     _adBusy = false;
@@ -17235,12 +17248,30 @@ async function msSetPrimary(videoId) {
   _msBusy = true;
   try {
     await msRequest('POST', { action: 'set_primary_video', track_id: _msTrackId, video_id: videoId });
-    (_msData.videos || []).forEach(v => { v.is_primary = v.video_id === videoId; });
-    tvList(_msTrackId).forEach(v => { v.is_primary = v.video_id === videoId; });
-    if (ytData[_msTrackId]) ytData[_msTrackId].video_id = videoId;
+    (_msData.videos || []).forEach(v => {
+      v.is_primary = v.video_id === videoId;
+      if (v.video_id === videoId) v.counts_for_charts = true;
+    });
+    tvList(_msTrackId).forEach(v => {
+      v.is_primary = v.video_id === videoId;
+      if (v.video_id === videoId) v.counts_for_charts = true;
+    });
+    try { await refreshTrackMetrics([_msTrackId]); } catch (_) {
+      if (!ytData[_msTrackId]) ytData[_msTrackId] = {};
+      ytData[_msTrackId].video_id = videoId;
+      const top = tvTop(_msTrackId);
+      const pri = tvPrimary(_msTrackId) || tvFor(_msTrackId, videoId);
+      if (pri?.thumbnail) ytData[_msTrackId].thumbnail = pri.thumbnail;
+      if (top) {
+        ytData[_msTrackId].views = Number(top.view_count) || 0;
+        ytData[_msTrackId].likes = Number(top.like_count) || 0;
+      }
+    }
     msRender();
     msStatus('Default version updated.');
     ytpSyncVersionBtn?.(nowPlayingTrackId, ytVideoId);
+    try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+    try { if (typeof ttRepaint === 'function') ttRepaint(); } catch (_) {}
   } catch (e) {
     msStatus(e.message || 'Could not set the default.', true);
   } finally {
@@ -27357,8 +27388,9 @@ async function loadData() {
 // is often a far less popular re-upload and the chart bar would collapse with it.
 const trackVideos = {};   // trackId → [version, ...] (most viewed first)
 
-async function loadTrackVideos(trackIds) {
+async function loadTrackVideos(trackIds, force) {
   const ids  = [...new Set((trackIds || []).filter(Boolean))];
+  if (force) ids.forEach(id => { delete trackVideos[id]; });
   const want = ids.filter(id => !trackVideos[id]);
   if (!want.length) return trackVideos;
   const chunks = [];
@@ -27375,6 +27407,32 @@ async function loadTrackVideos(trackIds) {
     want.forEach(id => { if (!trackVideos[id]) trackVideos[id] = []; });
   }
   return trackVideos;
+}
+
+// After Rediscover Apply / changing the default video, the in-memory version
+// list and ytData.views are stale until we force-refetch. loadTrackVideos
+// normally caches forever, and loadYT's return map must be assigned into ytData.
+async function refreshTrackMetrics(trackIds) {
+  const ids = [...new Set((trackIds || []).filter(Boolean))];
+  if (!ids.length) return;
+  await loadTrackVideos(ids, true);
+  try {
+    Object.assign(ytData, await loadYT(ids));
+  } catch (_) {
+    ids.forEach(tid => {
+      if (!ytData[tid]) ytData[tid] = {};
+      const pri = tvPrimary(tid);
+      const top = tvTop(tid);
+      if (pri) {
+        ytData[tid].video_id = pri.video_id;
+        if (pri.thumbnail) ytData[tid].thumbnail = pri.thumbnail;
+      }
+      if (top) {
+        ytData[tid].views = Number(top.view_count) || 0;
+        ytData[tid].likes = Number(top.like_count) || 0;
+      }
+    });
+  }
 }
 
 function tvList(trackId)  { return trackVideos[trackId] || []; }
@@ -31817,6 +31875,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-04', items: [
+    'After Rediscover Apply (or changing a song’s default video), the new YouTube view counts show up on the charts and track lists straight away — no page refresh needed.',
     'Manage Album cover is click-to-upload now — paste a link no longer. Pick a picture from your device and it replaces the cover straight away.',
     'Rediscover Apply works again — it was rejecting every apply with “Pick at least one song” even when every upgrade was ticked.',
     'Manage Album opens much faster: the panel paints from what is already loaded, and cover options load in the background.',
