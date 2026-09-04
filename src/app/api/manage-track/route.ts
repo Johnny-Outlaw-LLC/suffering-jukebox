@@ -363,7 +363,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  if (action === "set_primary_video") {
+  if (action === "set_primary_video" || action === "set_playback_video") {
     const videoId = String(body.video_id || "").trim();
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return bad("video_id required.");
     const { data: hit } = await sb
@@ -380,16 +380,15 @@ export async function POST(req: NextRequest) {
       .update({ is_primary: false })
       .eq("track_id", trackId)
       .neq("video_id", videoId);
-    // Default to play also counts for the YouTube bars — otherwise promoting a
-    // high-view upload would leave the chart on the old low-view row.
+    // Playback only — stats/charts are set separately via set_stats_video.
     const { error } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("track_videos")
-      .update({ is_primary: true, counts_for_charts: true })
+      .update({ is_primary: true })
       .eq("track_id", trackId)
       .eq("video_id", videoId);
-    if (error) return bad(error.message || "Could not set the default version.", 400);
-    // Keep the legacy metrics pointer in step with the primary.
+    if (error) return bad(error.message || "Could not set the playback version.", 400);
+    // Keep the legacy metrics pointer in step with what plays.
     const { data: met } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("metrics")
@@ -404,7 +403,35 @@ export async function POST(req: NextRequest) {
         .update({ metric_text_value: videoId })
         .eq("id", met[0].id);
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, role: "playback" });
+  }
+
+  if (action === "set_stats_video") {
+    const videoId = String(body.video_id || "").trim();
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return bad("video_id required.");
+    const { data: hit } = await sb
+      .schema(JUKEBOX_SCHEMA)
+      .from("track_videos")
+      .select("video_id")
+      .eq("track_id", trackId)
+      .eq("video_id", videoId)
+      .maybeSingle();
+    if (!hit) return bad("Version not found.", 404);
+    // Exactly one version should feed the chart: clear the rest first.
+    await sb
+      .schema(JUKEBOX_SCHEMA)
+      .from("track_videos")
+      .update({ counts_for_charts: false })
+      .eq("track_id", trackId)
+      .neq("video_id", videoId);
+    const { error } = await sb
+      .schema(JUKEBOX_SCHEMA)
+      .from("track_videos")
+      .update({ counts_for_charts: true })
+      .eq("track_id", trackId)
+      .eq("video_id", videoId);
+    if (error) return bad(error.message || "Could not set the stats version.", 400);
+    return NextResponse.json({ ok: true, role: "stats" });
   }
 
   return bad("Unknown action.");

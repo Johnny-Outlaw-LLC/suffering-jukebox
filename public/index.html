@@ -3058,6 +3058,7 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .ms-row-acts { display:flex; flex-wrap:wrap; gap:4px; flex-shrink:0; }
 .ms-row-acts .pl-btn { font-size:.45rem; padding:.28rem .5rem; }
 .ms-badge { display:inline-block; font-size:.4rem; letter-spacing:.06em; text-transform:uppercase; color:#0a0a0a; background:var(--accent); border-radius:4px; padding:.12rem .35rem; margin-left:6px; vertical-align:middle; }
+.ms-badge-stats { background:#3b82f6; color:#fff; }
 .ms-add-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:.45rem; }
 .ms-add-row input { flex:1; min-width:120px; }
 .ms-danger { width:100%; background:transparent; border:1px solid #ef444466; color:#ef4444; font-family:var(--mono); font-size:.55rem; padding:.65rem .8rem; border-radius:8px; cursor:pointer; margin-top:.4rem; }
@@ -13963,14 +13964,20 @@ async function ytpToggleVersionMenu() {
   else menu.style.top = (r.bottom + 6) + 'px';
   setTimeout(() => document.addEventListener('mousedown', _tvMenuOutside, true), 0);
 
-  // Editors get one extra control: which version everyone else lands on.
+  // Editors get controls for what plays vs what the chart counts.
   if (await tvCanEdit(trackId)) {
     const host = document.getElementById('tv-menu-admin');
     if (!host || _tvMenuEl !== menu) return;
     const cur = tvFor(trackId, ytVideoId);
-    if (cur && !cur.is_primary) {
-      host.innerHTML = '<button class="tv-menu-act" onclick="tvMakeDefault()">★ Make this the default version</button>';
+    if (!cur) return;
+    const bits = [];
+    if (!cur.is_primary) {
+      bits.push('<button class="tv-menu-act" onclick="tvMakeDefault()">★ Use for playback</button>');
     }
+    if (cur.counts_for_charts === false || msStatsVideoId(tvList(trackId)) !== cur.video_id) {
+      bits.push('<button class="tv-menu-act" onclick="tvMakeStats()">▣ Use for stats / charts</button>');
+    }
+    host.innerHTML = bits.join('');
   }
 }
 
@@ -15047,16 +15054,38 @@ async function tvMakeDefault() {
   if (!trackId || !ytVideoId) return;
   ytpCloseVersionMenu();
   try {
-    await dbRpcAuth('/rpc/set_primary_track_video', { p_track_id: trackId, p_video_id: ytVideoId });
-    tvList(trackId).forEach(v => {
-      v.is_primary = v.video_id === ytVideoId;
-      if (v.video_id === ytVideoId) v.counts_for_charts = true;
-    });
+    // Prefer the Manage Song API (playback only). Fall back to the RPC if needed.
+    try {
+      await msRequest('POST', { action: 'set_playback_video', track_id: trackId, video_id: ytVideoId });
+    } catch (_) {
+      await dbRpcAuth('/rpc/set_primary_track_video', { p_track_id: trackId, p_video_id: ytVideoId });
+    }
+    tvList(trackId).forEach(v => { v.is_primary = v.video_id === ytVideoId; });
     try { await refreshTrackMetrics([trackId]); } catch (_) {
       if (!ytData[trackId]) ytData[trackId] = {};
       ytData[trackId].video_id = ytVideoId;
       const v = tvFor(trackId, ytVideoId);
       if (v?.thumbnail) ytData[trackId].thumbnail = v.thumbnail;
+    }
+    ytpSyncVersionBtn(trackId, ytVideoId);
+    showToast('This version now plays by default.');
+    try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+    try { if (typeof ttRepaint === 'function') ttRepaint(); } catch (_) {}
+  } catch (e) {
+    alert('Could not set the playback version. ' + (e.message || ''));
+  }
+}
+
+async function tvMakeStats() {
+  const item    = ytQueue[ytQueueIdx];
+  const trackId = item?.trackId || nowPlayingTrackId;
+  if (!trackId || !ytVideoId) return;
+  ytpCloseVersionMenu();
+  try {
+    await msRequest('POST', { action: 'set_stats_video', track_id: trackId, video_id: ytVideoId });
+    tvList(trackId).forEach(v => { v.counts_for_charts = v.video_id === ytVideoId; });
+    try { await refreshTrackMetrics([trackId]); } catch (_) {
+      if (!ytData[trackId]) ytData[trackId] = {};
       const top = tvTop(trackId);
       if (top) {
         ytData[trackId].views = Number(top.view_count) || 0;
@@ -15064,11 +15093,11 @@ async function tvMakeDefault() {
       }
     }
     ytpSyncVersionBtn(trackId, ytVideoId);
-    showToast('This version now plays by default.');
+    showToast('Charts will use this upload’s view count.');
     try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
     try { if (typeof ttRepaint === 'function') ttRepaint(); } catch (_) {}
   } catch (e) {
-    alert('Could not set the default version. ' + (e.message || ''));
+    alert('Could not set the stats version. ' + (e.message || ''));
   }
 }
 
@@ -16472,9 +16501,11 @@ let _mgbBusy = false;
 
 function mgbClose() {
   document.getElementById('mgbOverlay')?.classList.remove('open');
+  try { mgbLyrClose(); } catch (_) {}
   _mgbAlbumId = null;
   _mgbData = null;
   _mgbBusy = false;
+  _mgbCoverBusy = false;
 }
 
 async function openManageAlbum(albumId) {
@@ -17205,17 +17236,22 @@ function msRender() {
     '</option>').join('');
   const videos = (d.videos || []).map(v => {
     const thumb = v.thumbnail || ('https://i.ytimg.com/vi/' + v.video_id + '/mqdefault.jpg');
+    const isPlay = !!v.is_primary;
+    const isStats = msIsStatsSource(v, d.videos);
     return '<div class="ms-row">' +
       '<img alt="" src="' + escHtml(thumb) + '">' +
       '<div class="ms-row-body">' +
         '<div class="ms-row-title">' + escHtml(v.title || v.label || v.video_id) +
-          (v.is_primary ? '<span class="ms-badge">Default</span>' : '') + '</div>' +
+          (isPlay ? '<span class="ms-badge">Play</span>' : '') +
+          (isStats ? '<span class="ms-badge ms-badge-stats">Stats</span>' : '') +
+        '</div>' +
         '<div class="ms-row-meta">' + escHtml(v.channel || '') +
           (v.view_count != null ? ' · ' + fmtV(v.view_count) + ' views' : '') + '</div>' +
       '</div>' +
       '<div class="ms-row-acts">' +
-        (v.is_primary ? '' : '<button type="button" class="pl-btn ghost" onclick="msSetPrimary(\'' + msQ(v.video_id) + '\')">Make default</button>') +
-        (v.is_primary ? '' : '<button type="button" class="pl-btn ghost" onclick="msRemoveVideo(\'' + msQ(v.video_id) + '\')">Remove</button>') +
+        (isPlay ? '' : '<button type="button" class="pl-btn ghost" onclick="msSetPlayback(\'' + msQ(v.video_id) + '\')">Use for playback</button>') +
+        (isStats ? '' : '<button type="button" class="pl-btn ghost" onclick="msSetStats(\'' + msQ(v.video_id) + '\')">Use for stats</button>') +
+        (isPlay ? '' : '<button type="button" class="pl-btn ghost" onclick="msRemoveVideo(\'' + msQ(v.video_id) + '\')">Remove</button>') +
       '</div></div>';
   }).join('') || '<div class="plb-empty small">No YouTube versions on file.</div>';
   const links = (d.links || []).map(l =>
@@ -17243,6 +17279,9 @@ function msRender() {
     '</div>' +
     '<div class="ms-sec">' +
       '<div class="ms-sec-h">YouTube versions</div>' +
+      '<div style="font-size:.46rem;color:var(--text-muted);margin:-.2rem 0 .55rem;line-height:1.4">' +
+        'Playback is what starts when someone hits play. Stats is the upload whose view count feeds the charts — they can be different videos.' +
+      '</div>' +
       '<div id="ms-videos">' + videos + '</div>' +
       '<div class="ms-add-row">' +
         '<input id="ms-yt-url" type="text" placeholder="Paste a YouTube link to add a version…">' +
@@ -17364,40 +17403,76 @@ async function msRemoveVideo(videoId) {
   }
 }
 
-async function msSetPrimary(videoId) {
+function msStatsVideoId(videos) {
+  const elig = (videos || []).filter(v =>
+    v && v.is_playable !== false && v.counts_for_charts !== false && Number.isFinite(Number(v.view_count)));
+  if (!elig.length) {
+    const any = (videos || []).find(v => v && v.counts_for_charts !== false);
+    return any ? any.video_id : null;
+  }
+  return elig.reduce((a, b) => (Number(b.view_count) > Number(a.view_count) ? b : a)).video_id;
+}
+
+function msIsStatsSource(v, videos) {
+  if (!v || !v.video_id) return false;
+  return msStatsVideoId(videos) === v.video_id;
+}
+
+async function msSetPlayback(videoId) {
   if (_msBusy || !_msTrackId || !videoId) return;
   _msBusy = true;
   try {
-    await msRequest('POST', { action: 'set_primary_video', track_id: _msTrackId, video_id: videoId });
-    (_msData.videos || []).forEach(v => {
-      v.is_primary = v.video_id === videoId;
-      if (v.video_id === videoId) v.counts_for_charts = true;
-    });
-    tvList(_msTrackId).forEach(v => {
-      v.is_primary = v.video_id === videoId;
-      if (v.video_id === videoId) v.counts_for_charts = true;
-    });
+    await msRequest('POST', { action: 'set_playback_video', track_id: _msTrackId, video_id: videoId });
+    (_msData.videos || []).forEach(v => { v.is_primary = v.video_id === videoId; });
+    tvList(_msTrackId).forEach(v => { v.is_primary = v.video_id === videoId; });
     try { await refreshTrackMetrics([_msTrackId]); } catch (_) {
       if (!ytData[_msTrackId]) ytData[_msTrackId] = {};
       ytData[_msTrackId].video_id = videoId;
-      const top = tvTop(_msTrackId);
       const pri = tvPrimary(_msTrackId) || tvFor(_msTrackId, videoId);
       if (pri?.thumbnail) ytData[_msTrackId].thumbnail = pri.thumbnail;
+    }
+    msRender();
+    msStatus('Playback version updated.');
+    ytpSyncVersionBtn?.(nowPlayingTrackId, ytVideoId);
+    try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+    try { if (typeof ttRepaint === 'function') ttRepaint(); } catch (_) {}
+  } catch (e) {
+    msStatus(e.message || 'Could not set playback version.', true);
+  } finally {
+    _msBusy = false;
+  }
+}
+
+async function msSetStats(videoId) {
+  if (_msBusy || !_msTrackId || !videoId) return;
+  _msBusy = true;
+  try {
+    await msRequest('POST', { action: 'set_stats_video', track_id: _msTrackId, video_id: videoId });
+    (_msData.videos || []).forEach(v => { v.counts_for_charts = v.video_id === videoId; });
+    tvList(_msTrackId).forEach(v => { v.counts_for_charts = v.video_id === videoId; });
+    try { await refreshTrackMetrics([_msTrackId]); } catch (_) {
+      if (!ytData[_msTrackId]) ytData[_msTrackId] = {};
+      const top = tvTop(_msTrackId);
       if (top) {
         ytData[_msTrackId].views = Number(top.view_count) || 0;
         ytData[_msTrackId].likes = Number(top.like_count) || 0;
       }
     }
     msRender();
-    msStatus('Default version updated.');
-    ytpSyncVersionBtn?.(nowPlayingTrackId, ytVideoId);
+    msStatus('Stats version updated — charts will use this upload’s view count.');
+    try { if (_mgbData) mgbRender(); } catch (_) {}
     try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
     try { if (typeof ttRepaint === 'function') ttRepaint(); } catch (_) {}
   } catch (e) {
-    msStatus(e.message || 'Could not set the default.', true);
+    msStatus(e.message || 'Could not set stats version.', true);
   } finally {
     _msBusy = false;
   }
+}
+
+// Kept for any leftover onclick — playback only now.
+async function msSetPrimary(videoId) {
+  return msSetPlayback(videoId);
 }
 
 async function msAddLink() {
