@@ -29,6 +29,15 @@ const ALLOWED_PREFIXES = [
 const NUMERIC_DETAIL_KEYS = [
   "durationMs",
   "startMs",
+  // browser.page-load carries the Navigation Timing breakdown: the server
+  // (ttfb), the first pixel (fcp), the document (dom/load), and the first heavy
+  // render finishing (appReady), which is when the page stops looking empty.
+  "ttfbMs",
+  "domMs",
+  "loadMs",
+  "fcpMs",
+  "appReadyMs",
+  "transferKb",
   "rows",
   "tracks",
   "albums",

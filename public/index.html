@@ -2881,6 +2881,30 @@ body.light .sjd-modal { --sjd-cell:rgba(0,0,0,.06); }
 .sjd-stamp i { display:inline-block; width:.26rem; height:.26rem; border-radius:50%; background:#4ade80; margin-right:.22rem; animation:sjdPulse 2s infinite; }
 @keyframes sjdPulse { 0%,100%{opacity:1} 50%{opacity:.25} }
 .sjd-nodata { font-size:.44rem; color:var(--text-muted); padding:.35rem 0; }
+.sjd-tabs { display:flex; gap:.15rem; border:1px solid var(--border); border-radius:8px; padding:.12rem; }
+.sjd-tabs button { background:none; border:none; border-radius:6px; color:var(--text-muted); font-family:var(--sjd-mono); font-size:.44rem; letter-spacing:.06em; padding:.3rem .7rem; cursor:pointer; white-space:nowrap; transition:all .15s; }
+.sjd-tabs button:hover { color:var(--text); }
+.sjd-tabs button.on { background:var(--accent); color:#0a0a0a; font-weight:600; }
+/* The card head holds a title and a sort control; on a narrow modal the control
+   drops under the title rather than squeezing it. */
+.sjd-card-tools { display:flex; gap:.15rem; border:1px solid var(--border); border-radius:7px; padding:.1rem; flex-wrap:wrap; }
+.sjd-card-tools button { background:none; border:none; border-radius:5px; color:var(--text-muted); font-family:var(--sjd-mono); font-size:.4rem; letter-spacing:.05em; padding:.2rem .45rem; cursor:pointer; white-space:nowrap; transition:all .15s; }
+.sjd-card-tools button:hover { color:var(--text); }
+.sjd-card-tools button.on { background:var(--accent); color:#0a0a0a; font-weight:600; }
+.sjd-heart { color:#f87171; }
+.sjd-legend { display:flex; gap:.7rem; font-family:var(--sjd-mono); font-size:.38rem; color:var(--text-muted); }
+.sjd-legend span { display:flex; align-items:center; gap:.22rem; }
+.sjd-legend i { width:.5rem; height:.14rem; border-radius:2px; display:inline-block; }
+.sjd-empty-note { font-size:.44rem; color:var(--text-muted); line-height:1.5; padding:.4rem 0; }
+.sjd-empty-note b { color:var(--text); font-weight:600; }
+.sjd-kpi-static { cursor:default; }
+.sjd-kpi-static:hover { border-color:var(--border); }
+.sjd-userlink { background:none; border:none; padding:0; font:inherit; font-size:.46rem; color:var(--accent); cursor:pointer; text-align:left; max-width:9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sjd-userlink:hover { text-decoration:underline; }
+@media (max-width:820px) {
+  .sjd-tabs { order:3; width:100%; }
+  .sjd-tabs button { flex:1; }
+}
 @media (max-width:900px) { .sjd-kpis { grid-template-columns:repeat(3,1fr); } .sjd-grid2, .sjd-grid-13 { grid-template-columns:1fr; } }
 @media (max-width:560px) { .sjd-kpis { grid-template-columns:repeat(2,1fr); } .sjd-minis { grid-template-columns:1fr; } .sjd-header { padding:.7rem .8rem .6rem; } .sjd-body { padding:.8rem .8rem 1rem; } .sjd-song-name, .sjd-song-track { max-width:7rem; } }
 .sjd-dim { opacity:.45; pointer-events:none; transition:opacity .15s; }
@@ -5282,6 +5306,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <div class="sjd-eyebrow">Suffering Jukebox: Admin</div>
         <div class="sjd-title">In-App <span>Analytics</span></div>
       </div>
+      <div class="sjd-tabs" id="sjd-tabs">
+        <button type="button" data-tab="overview" class="on" onclick="sjdSetTab('overview')">Overview</button>
+        <button type="button" data-tab="perf" onclick="sjdSetTab('perf')">Page Performance</button>
+      </div>
       <div class="sjd-header-actions"><span id="sjd-filter-slot"></span>
         <div class="sjd-seg" id="sjd-range">
           <button type="button" data-days="7" onclick="sjdSetRange(7)">7D</button>
@@ -5965,6 +5993,10 @@ function sjTimeRender(label, fn, detail) {
   try {
     return fn();
   } finally {
+    // The first heavy render to finish is the first moment this page had real
+    // content on it, which is the number a visitor actually feels. Nothing else
+    // in the boot path knows when that is, so it is taken here.
+    if (_sjAppReadyMs === null) _sjAppReadyMs = Math.round(performance.now());
     const ms = sjPerfDuration(t0);
     if (ms >= SJ_RENDER_SLOW_MS) {
       let extra = null;
@@ -6050,6 +6082,54 @@ setInterval(() => {
   if (skip) return;
   if (lag >= 200) sjPerf('browser.event-loop-stall', { durationMs: Math.round(lag * 10) / 10 });
 }, 1000);
+
+// -- How long this page took to come up ------------------------------------
+// perf_events recorded stalls, long tasks and slow renders, but nothing at all
+// about load time, so the Page Performance tab in the admin dashboard had no
+// source. This is that source: one row per page load, straight out of the
+// Navigation Timing API.
+//
+// durationMs is loadEventEnd - the whole load, the number that is comparable
+// between pages and browsers. The breakdown rides in detail: ttfb is the
+// server, fcp is the first pixel, and appReady is the first heavy render
+// finishing, which is when the page stops looking empty. They are different
+// questions and the tab charts them separately.
+let _sjAppReadyMs = null;
+let _sjPageLoadSent = false;
+
+function sjPerfRecordPageLoad() {
+  if (_sjPageLoadSent) return;
+  try {
+    const nav = performance.getEntriesByType('navigation')[0];
+    if (!nav || !nav.loadEventEnd) return; // still loading - try again later
+    _sjPageLoadSent = true;
+    const round = v => (typeof v === 'number' && isFinite(v) && v > 0) ? Math.round(v) : null;
+    const fcp = performance.getEntriesByName('first-contentful-paint')[0];
+    const detail = {
+      durationMs: round(nav.loadEventEnd) || 0,
+      ttfbMs: round(nav.responseStart),
+      domMs: round(nav.domContentLoadedEventEnd),
+      loadMs: round(nav.loadEventEnd),
+      fcpMs: fcp ? round(fcp.startTime) : null,
+      appReadyMs: _sjAppReadyMs,
+      transferKb: round(nav.transferSize / 1024),
+    };
+    Object.keys(detail).forEach(k => { if (detail[k] === null) delete detail[k]; });
+    sjPerf('browser.page-load', detail);
+  } catch (e) { /* telemetry never breaks the page */ }
+}
+
+// The load event fires before the app has drawn anything, so this waits a beat
+// for the first render to land and give appReadyMs a value. If it has still not
+// come by then the row goes without it rather than never going at all.
+function sjPerfSchedulePageLoad() {
+  const go = () => setTimeout(sjPerfRecordPageLoad, 1200);
+  if (document.readyState === 'complete') go();
+  else addEventListener('load', go, { once: true });
+}
+sjPerfSchedulePageLoad();
+// A visitor who leaves inside that window still counts.
+addEventListener('pagehide', sjPerfRecordPageLoad);
 
 window.addEventListener('error', event => {
   sjPerf('browser.error', { message: String(event.message || 'Unknown error').slice(0, 300) });
@@ -30617,6 +30697,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-04', items: [
+    'Top Songs in the admin analytics can now be ranked by Plays, by Rating or by Hearts, and the table shows a heart count for every song.',
+    'A new Page Performance tab in the admin analytics shows how long pages are taking to load, broken down over time, by page and by person, with the slowest loads and the most recent freezes listed underneath.',
     'A long playlist no longer bogs the whole page down. With a couple of thousand songs queued up, every track change, rating and jukebox update was rebuilding the entire playlist list from scratch, which took about half a second each time and made the page stutter or stop responding. The list is now only rebuilt when the songs in it actually change.',
     'Two new charts at the bottom of My Data & Analytics: Favorite artists and Favorite songs, scored from your thumbs-up ratings and your heart reactions. Click a bar to filter the rest of the page, the same as the other charts.',
   ]},
@@ -32306,6 +32388,10 @@ let _sjdDays = 30;
 let _sjdMetric = 'page_loads';
 let _sjdUser = null;
 let _sjdUserName = null;
+let _sjdTab = 'overview';       // 'overview' | 'perf'
+let _sjdPerf = null;            // Page Performance payload, fetched on its own
+let _sjdPerfFetchedAt = null;
+let _sjdSongSort = 'plays';     // 'plays' | 'rating' | 'hearts'
 let _sjdFetchedAt = null;
 let _sjdGradSeq = 0;
 
@@ -32514,17 +32600,49 @@ function sjdRatingChip(v) {
   return '<span class="sjd-chip" style="color:' + color + '">' + (n > 0 ? '+' : '') + n.toFixed(1) + '</span>';
 }
 
+// The server sends a candidate pool covering the top of all three rankings, so
+// switching the sort is a re-sort in the browser rather than another request.
+// Each mode measures its own bar: sorting by rating while the bar still showed
+// plays would put a short bar at the top of the list and look broken.
+const SJD_SONG_SORTS = {
+  plays:  { label: 'Plays',  bar: s => s.plays || 0,
+            cmp: (a, b) => (b.plays || 0) - (a.plays || 0) || (b.ratings || 0) - (a.ratings || 0),
+            has: s => (s.plays || 0) > 0 },
+  rating: { label: 'Rating', bar: s => (s.avg_rating === null || s.avg_rating === undefined) ? 0 : Number(s.avg_rating) + 1,
+            cmp: (a, b) => (Number(b.avg_rating) || -9) - (Number(a.avg_rating) || -9) || (b.ratings || 0) - (a.ratings || 0),
+            has: s => (s.ratings || 0) > 0 },
+  hearts: { label: 'Hearts', bar: s => s.hearts || 0,
+            cmp: (a, b) => (b.hearts || 0) - (a.hearts || 0) || (b.plays || 0) - (a.plays || 0),
+            has: s => (s.hearts || 0) > 0 },
+};
+
+function sjdSongSortHTML() {
+  return '<div class="sjd-card-tools">' + Object.keys(SJD_SONG_SORTS).map(k =>
+    '<button type="button" class="' + (_sjdSongSort === k ? 'on' : '') + '" data-songsort="' + k + '" onclick="sjdSetSongSort(this.dataset.songsort)">'
+    + escAdmin(SJD_SONG_SORTS[k].label) + '</button>').join('') + '</div>';
+}
+
+function sjdSetSongSort(k) {
+  if (!SJD_SONG_SORTS[k] || _sjdSongSort === k) return;
+  _sjdSongSort = k;
+  if (_sjdData) renderSjDashboard();
+}
+
 function sjdTopSongsHTML() {
-  const songs = _sjdData.topSongs || [];
-  if (!songs.length) return '<div class="sjd-nodata">No plays in this range.</div>';
-  const max = Math.max(...songs.map(s => s.plays), 1);
-  return '<table class="sjd-table"><thead><tr><th>Song</th><th class="num">Plays</th><th class="num">Rated</th><th class="num">Avg</th></tr></thead><tbody>'
+  const mode = SJD_SONG_SORTS[_sjdSongSort] || SJD_SONG_SORTS.plays;
+  const songs = (_sjdData.topSongs || []).filter(mode.has).sort(mode.cmp).slice(0, 12);
+  if (!songs.length) {
+    return '<div class="sjd-nodata">No ' + (_sjdSongSort === 'plays' ? 'plays' : _sjdSongSort === 'hearts' ? 'hearts' : 'ratings') + ' in this range.</div>';
+  }
+  const max = Math.max(...songs.map(mode.bar), 1);
+  return '<table class="sjd-table"><thead><tr><th>Song</th><th class="num">Plays</th><th class="num">Rated</th><th class="num">Avg</th><th class="num">♥</th></tr></thead><tbody>'
     + songs.map(s =>
       '<tr><td><span class="sjd-song-name" title="' + escAdmin(s.song) + '">' + escAdmin(s.song) + '</span>'
-      + '<span class="sjd-song-track"><i style="width:' + Math.round((s.plays / max) * 100) + '%"></i></span></td>'
-      + '<td class="num">' + s.plays.toLocaleString() + '</td>'
+      + '<span class="sjd-song-track"><i style="width:' + Math.max(2, Math.round((mode.bar(s) / max) * 100)) + '%"></i></span></td>'
+      + '<td class="num">' + (s.plays || 0).toLocaleString() + '</td>'
       + '<td class="num">' + (s.ratings || 0).toLocaleString() + '</td>'
-      + '<td class="num">' + sjdRatingChip(s.avg_rating) + '</td></tr>'
+      + '<td class="num">' + sjdRatingChip(s.avg_rating) + '</td>'
+      + '<td class="num">' + (s.hearts ? '<span class="sjd-heart">' + s.hearts.toLocaleString() + '</span>' : '<span style="opacity:.35">—</span>') + '</td></tr>'
     ).join('') + '</tbody></table>';
 }
 
@@ -32604,6 +32722,7 @@ function sjdSyncHeader() {
   const slot = document.getElementById('sjd-filter-slot');
   if (slot) slot.innerHTML = sjdFilterChipHTML();
   document.querySelectorAll('#sjd-range button').forEach(b => b.classList.toggle('on', Number(b.dataset.days) === _sjdDays));
+  document.querySelectorAll('#sjd-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === _sjdTab));
 }
 
 function renderSjDashboard() {
@@ -32656,7 +32775,7 @@ function renderSjDashboard() {
     + '<div class="sjd-card"><div class="sjd-card-title">Rating Sentiment <em>−1 to +2 · ' + scopeLbl + '</em></div>' + sjdRatingsHTML() + '</div>'
     + '</div>'
     + '<div class="sjd-grid2 sjd-grid-13">'
-    + '<div class="sjd-card"><div class="sjd-card-title">Top Songs <em>by plays · ' + scopeLbl + '</em></div>' + sjdTopSongsHTML() + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-head"><div class="sjd-card-title">Top Songs <em>by ' + escAdmin((SJD_SONG_SORTS[_sjdSongSort] || SJD_SONG_SORTS.plays).label.toLowerCase()) + ' · ' + scopeLbl + '</em></div>' + sjdSongSortHTML() + '</div>' + sjdTopSongsHTML() + '</div>'
     + '<div class="sjd-stack">'
     + '<div class="sjd-card"><div class="sjd-card-title">Traffic Sources <em>' + scopeLbl + '</em></div>' + sjdBarListHTML(_sjdData.referrers) + '</div>'
     + '<div class="sjd-card"><div class="sjd-card-title">Audience <em>' + scopeLbl + '</em></div>' + audience + '</div>'
@@ -32670,9 +32789,221 @@ function renderSjDashboard() {
   sjdSyncHeader();
 }
 
+
+// -- Admin: Page Performance --------------------------------
+// Every load-time number on this tab comes from browser.page-load, one row per
+// page load out of the Navigation Timing API. Nothing recorded load time before
+// 2026-09-04, so a range reaching back past that is thinner than it looks.
+
+function sjdMs(n) {
+  n = Number(n) || 0;
+  if (!n) return '-';
+  return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 2).replace(/\.?0+$/, '') + 's' : Math.round(n) + 'ms';
+}
+
+// Green under a second and a half, amber to four, red past it. The thresholds
+// are the same everywhere on the tab so a colour means one thing.
+function sjdMsColor(n) {
+  n = Number(n) || 0;
+  return n >= 4000 ? '#f87171' : n >= 1500 ? '#facc15' : '#4ade80';
+}
+
+function sjdMsCell(n) {
+  if (!n) return '<span style="opacity:.35">-</span>';
+  return '<span style="color:' + sjdMsColor(n) + '">' + escAdmin(sjdMs(n)) + '</span>';
+}
+
+// Three series on one set of axes. An average on its own hides the slow tail,
+// and the tail is the reason anybody opens this tab.
+const SJD_PERF_SERIES = [
+  { key: 'avg_ms',   label: 'Average',   color: '#ff6b35' },
+  { key: 'p95_ms',   label: '95th pct',  color: '#f87171' },
+  { key: 'ready_ms', label: 'App ready', color: '#a78bfa' }
+];
+
+function sjdPerfChartSVG(rows) {
+  const W = SJD_CHART.W, H = SJD_CHART.H, padL = SJD_CHART.padL, padR = SJD_CHART.padR;
+  const padT = SJD_CHART.padT, padB = SJD_CHART.padB;
+  const live = rows.filter(function (r) { return (r.loads || 0) > 0; });
+  if (live.length < 2) return '<div class="sjd-nodata">Not enough load samples in this range yet.</div>';
+  const iw = W - padL - padR, ih = H - padT - padB;
+  let max = 1;
+  rows.forEach(function (r) {
+    SJD_PERF_SERIES.forEach(function (sd) { const v = r[sd.key] || 0; if (v > max) max = v; });
+  });
+  max *= 1.08;
+  const x = function (i) { return padL + (rows.length > 1 ? (i / (rows.length - 1)) * iw : iw / 2); };
+  const y = function (v) { return padT + ih - ((v || 0) / max) * ih; };
+  let grid = '', ylab = '', xlab = '';
+  for (let i = 0; i <= 4; i++) {
+    const gy = padT + ih - (i / 4) * ih;
+    grid += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + gy.toFixed(1) + '" y2="' + gy.toFixed(1) + '" class="sjd-gridln"/>';
+    ylab += '<text x="' + (padL - 7) + '" y="' + (gy + 3).toFixed(1) + '" class="sjd-ylab">' + escAdmin(sjdMs(max * i / 4)) + '</text>';
+  }
+  const step = Math.max(1, Math.round(rows.length / 6));
+  for (let i = 0; i < rows.length; i += step) {
+    xlab += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 7) + '" class="sjd-xlab">' + escAdmin(fmtAdminDay(rows[i].day)) + '</text>';
+  }
+  // A day with no loads is a gap, not a zero - drawing it as zero would invent
+  // a fast day out of a quiet one.
+  const lines = SJD_PERF_SERIES.map(function (sd) {
+    const segs = [];
+    let cur = [];
+    rows.forEach(function (r, i) {
+      if ((r.loads || 0) > 0 && (r[sd.key] || 0) > 0) cur.push(x(i).toFixed(1) + ',' + y(r[sd.key]).toFixed(1));
+      else { if (cur.length > 1) segs.push(cur.join(' ')); cur = []; }
+    });
+    if (cur.length > 1) segs.push(cur.join(' '));
+    return segs.map(function (pts) {
+      return '<polyline points="' + pts + '" fill="none" stroke="' + sd.color
+        + '" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+    }).join('');
+  }).join('');
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sjd-chart" preserveAspectRatio="none">'
+    + grid + ylab + xlab + lines + '</svg>';
+}
+
+function sjdPerfLegendHTML() {
+  return '<div class="sjd-legend">' + SJD_PERF_SERIES.map(function (sd) {
+    return '<span><i style="background:' + sd.color + '"></i>' + escAdmin(sd.label) + '</span>';
+  }).join('') + '</div>';
+}
+
+function sjdPerfTableHTML(rows, cols, empty) {
+  if (!rows || !rows.length) return '<div class="sjd-nodata">' + escAdmin(empty) + '</div>';
+  return '<table class="sjd-table"><thead><tr>'
+    + cols.map(function (c) { return '<th' + (c.num ? ' class="num"' : '') + '>' + escAdmin(c.label) + '</th>'; }).join('')
+    + '</tr></thead><tbody>'
+    + rows.map(function (r) {
+        return '<tr>' + cols.map(function (c) {
+          return '<td' + (c.num ? ' class="num"' : '') + '>' + c.cell(r) + '</td>';
+        }).join('') + '</tr>';
+      }).join('')
+    + '</tbody></table>';
+}
+
+function sjdPerfName(text) {
+  return '<span class="sjd-song-name" title="' + escAdmin(text) + '">' + escAdmin(text) + '</span>';
+}
+
+function sjdPerfUserCell(who) {
+  const label = escAdmin(sjdWho(who));
+  if (!who || String(who).indexOf('@') < 1) return sjdPerfName(who);
+  // The index into the payload is what gets passed, never the address itself -
+  // an email in an inline onclick would need escaping twice over to be safe.
+  const i = (_sjdPerf.users || []).findIndex(function (u) { return u.who === who; });
+  if (i < 0) return sjdPerfName(who);
+  return '<button type="button" class="sjd-userlink" onclick="sjdPerfFilterUser(' + i + ')">' + label + '</button>';
+}
+
+function sjdPerfFilterUser(i) {
+  const u = (_sjdPerf && _sjdPerf.users || [])[i];
+  if (u && u.who && String(u.who).indexOf('@') > 0) sjdSetUser(u.who, u.who);
+}
+
+function renderSjPerf() {
+  const body = document.getElementById('admin-metrics-body');
+  if (!body || !_sjdPerf) return;
+  const t = _sjdPerf.totals || {};
+  const rows = _sjdPerf.daily || [];
+  const rangeLbl = 'last ' + _sjdDays + 'd';
+  const scopeLbl = rangeLbl + (_sjdUser ? ' \u00b7 ' + escAdmin(sjdWho(_sjdUserName || _sjdUser)) : '');
+
+  const kpis = [
+    { lbl: 'Page Loads', val: sjdFmtCompact(t.loads), sub: (t.sessions || 0).toLocaleString() + ' sessions', c: '#ff6b35' },
+    { lbl: 'Median Load', val: sjdMs(t.medianLoadMs), sub: 'half are faster', c: sjdMsColor(t.medianLoadMs) },
+    { lbl: '95th Pct', val: sjdMs(t.p95LoadMs), sub: 'the slow tail', c: sjdMsColor(t.p95LoadMs) },
+    { lbl: 'First Byte', val: sjdMs(t.avgTtfbMs), sub: 'server, average', c: sjdMsColor(t.avgTtfbMs) },
+    { lbl: 'First Paint', val: sjdMs(t.avgFcpMs), sub: 'first pixel, average', c: sjdMsColor(t.avgFcpMs) },
+    { lbl: 'App Ready', val: sjdMs(t.avgReadyMs), sub: 'first render, average', c: sjdMsColor(t.avgReadyMs) }
+  ];
+  const kpiHTML = kpis.map(function (k) {
+    return '<div class="sjd-kpi sjd-kpi-static" style="--c:' + k.c + '">'
+      + '<span class="sjd-kpi-lbl"><i></i>' + escAdmin(k.lbl) + '</span>'
+      + '<span class="sjd-kpi-val" style="color:' + k.c + '">' + escAdmin(k.val) + '</span>'
+      + '<span class="sjd-kpi-sub">' + escAdmin(k.sub) + '</span></div>';
+  }).join('');
+
+  // No loads recorded is the normal state right after this shipped, and saying
+  // so beats six dashes that read as broken.
+  const emptyNote = (t.loads > 0) ? ''
+    : '<div class="sjd-card"><div class="sjd-card-title">Waiting for samples</div>'
+      + '<div class="sjd-empty-note">Load timing is measured in the browser on every page load, and nothing was recorded before <b>4 Sep 2026</b>, so this fills in as people visit. '
+      + 'Renders and freezes were already being collected and are shown below.</div></div>';
+
+  body.innerHTML =
+    '<div class="sjd-kpis">' + kpiHTML + '</div>'
+    + emptyNote
+    + '<div class="sjd-card">'
+    + '<div class="sjd-card-head"><div class="sjd-card-title" style="margin-bottom:.4rem">Load Time <em>daily \u00b7 ' + scopeLbl + '</em></div>'
+    + sjdPerfLegendHTML() + '</div>'
+    + sjdPerfChartSVG(rows)
+    + '</div>'
+    + '<div class="sjd-grid2">'
+    + '<div class="sjd-card"><div class="sjd-card-title">By Page <em>' + scopeLbl + '</em></div>'
+    + sjdPerfTableHTML(_sjdPerf.pages, [
+        { label: 'Page', cell: function (r) { return sjdPerfName(r.page); } },
+        { label: 'Loads', num: true, cell: function (r) { return (r.loads || 0).toLocaleString(); } },
+        { label: 'Avg', num: true, cell: function (r) { return sjdMsCell(r.avg_ms); } },
+        { label: 'P95', num: true, cell: function (r) { return sjdMsCell(r.p95_ms); } },
+        { label: 'Worst', num: true, cell: function (r) { return sjdMsCell(r.worst_ms); } }
+      ], 'No page loads recorded in this range.') + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">By User <em>' + scopeLbl + ' \u00b7 click to filter</em></div>'
+    + sjdPerfTableHTML(_sjdPerf.users, [
+        { label: 'Who', cell: function (r) { return sjdPerfUserCell(r.who); } },
+        { label: 'Loads', num: true, cell: function (r) { return (r.loads || 0).toLocaleString(); } },
+        { label: 'Avg', num: true, cell: function (r) { return sjdMsCell(r.avg_ms); } },
+        { label: 'P95', num: true, cell: function (r) { return sjdMsCell(r.p95_ms); } },
+        { label: 'Worst', num: true, cell: function (r) { return sjdMsCell(r.worst_ms); } }
+      ], 'No page loads recorded in this range.') + '</div>'
+    + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Slowest Loads <em>' + scopeLbl + '</em></div>'
+    + '<div class="sjd-users-scroll">' + sjdPerfTableHTML(_sjdPerf.slowest, [
+        { label: 'When', cell: function (r) { return '<span style="opacity:.7">' + escAdmin(fmtAdminDateTime(r.at)) + '</span>'; } },
+        { label: 'Page', cell: function (r) { return sjdPerfName(r.page); } },
+        { label: 'Who', cell: function (r) { return '<span style="opacity:.7">' + escAdmin(sjdWho(r.who)) + '</span>'; } },
+        { label: 'Load', num: true, cell: function (r) { return sjdMsCell(r.load_ms); } },
+        { label: 'First byte', num: true, cell: function (r) { return sjdMsCell(r.ttfb_ms); } },
+        { label: 'Ready', num: true, cell: function (r) { return sjdMsCell(r.ready_ms); } },
+        { label: 'KB', num: true, cell: function (r) { return (r.kb || 0).toLocaleString(); } }
+      ], 'No page loads recorded in this range.') + '</div></div>'
+    + '<div class="sjd-grid2">'
+    + '<div class="sjd-card"><div class="sjd-card-title">Slowest Renders <em>' + scopeLbl + ' \u00b7 over ' + SJ_RENDER_SLOW_MS + 'ms</em></div>'
+    + sjdPerfTableHTML(_sjdPerf.renders, [
+        { label: 'Render', cell: function (r) { return sjdPerfName(String(r.event || '').replace(/^render\./, '')); } },
+        { label: 'Times', num: true, cell: function (r) { return (r.n || 0).toLocaleString(); } },
+        { label: 'Avg', num: true, cell: function (r) { return sjdMsCell(r.avg_ms); } },
+        { label: 'Worst', num: true, cell: function (r) { return sjdMsCell(r.worst_ms); } }
+      ], 'No slow renders recorded in this range.') + '</div>'
+    + '<div class="sjd-card"><div class="sjd-card-title">Recent Freezes <em>' + scopeLbl + ' \u00b7 over 1s</em></div>'
+    + '<div class="sjd-users-scroll">' + sjdPerfTableHTML(_sjdPerf.stalls, [
+        { label: 'When', cell: function (r) { return '<span style="opacity:.7">' + escAdmin(fmtAdminDateTime(r.at)) + '</span>'; } },
+        { label: 'What', cell: function (r) { return sjdPerfName(String(r.event || '').replace(/^browser\./, '')); } },
+        { label: 'Page', cell: function (r) { return sjdPerfName(r.page); } },
+        { label: 'For', num: true, cell: function (r) { return sjdMsCell(r.ms); } }
+      ], 'No freezes recorded in this range.') + '</div></div>'
+    + '</div>'
+    + '<div class="sjd-stamp"><i></i>Live \u00b7 updated ' + escAdmin(_sjdPerfFetchedAt ? _sjdPerfFetchedAt.toLocaleTimeString() : '') + '</div>';
+  sjdSyncHeader();
+}
+
+function sjdSetTab(tab) {
+  if (tab !== 'overview' && tab !== 'perf') return;
+  if (_sjdTab === tab) return;
+  _sjdTab = tab;
+  sjdSyncHeader();
+  // Each tab keeps what it already fetched, so flipping between them is free.
+  if (tab === 'perf' && _sjdPerf) { renderSjPerf(); return; }
+  if (tab === 'overview' && _sjdData) { renderSjDashboard(); return; }
+  loadAdminMetrics();
+}
+
 function sjdSetRange(d) {
-  if (_sjdDays === d && _sjdData) return;
+  if (_sjdDays === d) return;
   _sjdDays = d;
+  // Both tabs are stale now, not just the one on screen.
+  _sjdData = null;
+  _sjdPerf = null;
   sjdSyncHeader();
   loadAdminMetrics();
 }
@@ -32692,6 +33023,8 @@ function sjdSetUser(email, name) {
     _sjdUser = e;
     _sjdUserName = name || email;
   }
+  _sjdData = null;
+  _sjdPerf = null;
   sjdSyncHeader();
   loadAdminMetrics();
 }
@@ -32702,14 +33035,19 @@ function sjdSetUserIdx(i) {
 }
 
 function adminMetricsRefresh() {
+  if (_sjdTab === 'perf') _sjdPerf = null; else _sjdData = null;
   loadAdminMetrics();
 }
 
 let _sjdFetchSeq = 0;
 
+// Both tabs come through here. Page Performance reads perf_events, which
+// nothing on the Overview touches, so they are separate requests: loading them
+// together would make every range change pay for a tab that is usually closed.
 async function loadAdminMetrics() {
   const body = document.getElementById('admin-metrics-body');
   if (!body) return;
+  const perfTab = _sjdTab === 'perf';
   const seq = ++_sjdFetchSeq;
   if (body.querySelector('.sjd-kpis')) body.classList.add('sjd-dim');
   else body.innerHTML = '<div class="admin-metrics-loading">Loading analytics…</div>';
@@ -32720,17 +33058,24 @@ async function loadAdminMetrics() {
     return;
   }
   try {
-    const qs = '/api/sj-admin-metrics?dashboard=1&days=' + _sjdDays + (_sjdUser ? '&user=' + encodeURIComponent(_sjdUser) : '');
-    const res = await fetch(sjApiUrl(qs), {
+    const qs = '/api/sj-admin-metrics?' + (perfTab ? 'perf=1' : 'dashboard=1')
+      + '&days=' + _sjdDays + (_sjdUser ? '&user=' + encodeURIComponent(_sjdUser) : '');
+    const res = await sjFetch(sjApiUrl(qs), {
       headers: { Authorization: 'Bearer ' + session.access_token }
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to load metrics');
     if (seq !== _sjdFetchSeq) return;
-    _sjdData = data.dashboard;
-    _sjdFetchedAt = new Date();
     body.classList.remove('sjd-dim');
-    renderSjDashboard();
+    if (perfTab) {
+      _sjdPerf = data.perf;
+      _sjdPerfFetchedAt = new Date();
+      renderSjPerf();
+    } else {
+      _sjdData = data.dashboard;
+      _sjdFetchedAt = new Date();
+      renderSjDashboard();
+    }
   } catch (e) {
     if (seq !== _sjdFetchSeq) return;
     body.classList.remove('sjd-dim');

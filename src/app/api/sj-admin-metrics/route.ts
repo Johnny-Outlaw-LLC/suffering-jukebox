@@ -28,18 +28,37 @@ export async function GET(req: NextRequest) {
 
   const detail = req.nextUrl.searchParams.get("detail");
   const dashboard = req.nextUrl.searchParams.get("dashboard");
+  const perf = req.nextUrl.searchParams.get("perf");
   const sb = createSjServiceClient();
+
+  const range = () => {
+    const daysRaw = parseInt(req.nextUrl.searchParams.get("days") ?? "30", 10);
+    return {
+      days: [7, 30, 90].includes(daysRaw) ? daysRaw : 30,
+      user: req.nextUrl.searchParams.get("user")?.trim().toLowerCase() || null,
+    };
+  };
 
   try {
     if (dashboard) {
-      const daysRaw = parseInt(req.nextUrl.searchParams.get("days") ?? "30", 10);
-      const days = [7, 30, 90].includes(daysRaw) ? daysRaw : 30;
-      const user = req.nextUrl.searchParams.get("user")?.trim().toLowerCase() || null;
+      const { days, user } = range();
       const { data, error } = await sb
         .schema(JUKEBOX_SCHEMA)
         .rpc("admin_dashboard", { p_days: days, p_user: user });
       if (error) throw error;
       return NextResponse.json({ ok: true, dashboard: data });
+    }
+
+    // Page Performance is its own tab and its own query. It reads perf_events,
+    // which nothing else on the dashboard touches, so loading it alongside the
+    // rest would make every range change pay for a tab that is usually closed.
+    if (perf) {
+      const { days, user } = range();
+      const { data, error } = await sb
+        .schema(JUKEBOX_SCHEMA)
+        .rpc("admin_page_performance", { p_days: days, p_user: user });
+      if (error) throw error;
+      return NextResponse.json({ ok: true, perf: data });
     }
 
     if (detail) {
