@@ -23,10 +23,17 @@ await rm(resolve(www, 'og-image.png'), { force: true });
 const indexPath = resolve(www, 'index.html');
 let html = await readFile(indexPath, 'utf8');
 
-const FLAG = `<script>window.__SJ_NATIVE__ = true;</script>`;
-if (!html.includes('__SJ_NATIVE__')) {
+// Marker must be distinct from the app's own reads of window.__SJ_NATIVE__ -
+// the web source references that name, so testing for the bare name matched
+// the app's own code and silently skipped the injection, leaving the shell
+// running in web mode.
+const MARKER = 'sj-native-flag';
+const FLAG = `<script id="${MARKER}">window.__SJ_NATIVE__ = true;</script>`;
+if (!html.includes(`id="${MARKER}"`)) {
   html = html.replace('<head>', `<head>\n${FLAG}`);
-  if (!html.includes('__SJ_NATIVE__')) throw new Error('could not inject native flag: no <head> found');
+  if (!html.includes(`id="${MARKER}"`)) {
+    throw new Error('could not inject native flag: no <head> found');
+  }
 }
 await writeFile(indexPath, html);
 
