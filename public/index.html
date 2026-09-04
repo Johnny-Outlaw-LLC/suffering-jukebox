@@ -3036,6 +3036,11 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 /* ── PLAYLIST MODAL ── */
 .pl-modal-overlay { position:fixed; inset:0; z-index:5100; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:2rem; }
 .pl-modal-overlay.open { display:flex; }
+/* Stacked on top of Manage Album — ms/ad/lyrics must sit above mgb (DOM order
+   alone is not enough: Manage Song is declared before Manage Album). */
+#msOverlay { z-index: 5200; }
+#mgbLyrOverlay { z-index: 5200; }
+#adOverlay { z-index: 5300; }
 .ms-sec { margin:0 0 1rem; padding-bottom:.85rem; border-bottom:1px solid var(--border); }
 .ms-sec:last-of-type { border-bottom:0; margin-bottom:.4rem; padding-bottom:0; }
 .ms-sec-h { font-family:var(--mono); font-size:.48rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); margin:0 0 .55rem; }
@@ -5350,6 +5355,24 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
       <button class="pl-btn ghost" onclick="mgbClose()">Close</button>
       <button class="pl-btn ghost" onclick="adOpenFromAlbum()">Rediscover videos</button>
       <button class="pl-btn" id="mgb-save-btn" onclick="mgbSave()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT LYRICS (from Manage Album — does not need the song card open) -->
+<div class="pl-modal-overlay" id="mgbLyrOverlay" onclick="if(event.target===this)mgbLyrClose()">
+  <div class="pl-modal" style="width:min(520px,96vw);max-height:min(88vh,760px);display:flex;flex-direction:column">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title" id="mgbLyrTitle">Edit lyrics</span>
+      <button class="modal-close" onclick="mgbLyrClose()">✕</button>
+    </div>
+    <div class="pl-modal-body" style="overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px">
+      <textarea id="mgb-lyr-ta" class="lyr-edit-area" style="flex:1;min-height:280px" placeholder="Loading…"></textarea>
+      <div id="mgb-lyr-status" style="font-size:.46rem;color:var(--text-muted)"></div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="mgbLyrClose()">Cancel</button>
+      <button class="pl-btn" id="mgb-lyr-save" onclick="mgbLyrSave()">Save</button>
     </div>
   </div>
 </div>
@@ -16717,10 +16740,108 @@ async function mgbUploadCover(dataUrl) {
   }
 }
 
-function mgbEditLyrics(trackId) {
+let _mgbLyrTrackId = null;
+let _mgbLyrBusy = false;
+
+async function mgbEditLyrics(trackId) {
   if (!trackId) return;
-  try { startLyricsEdit(trackId, 'card'); } catch (_) {
-    showToast('Open the song accordion to edit lyrics.');
+  if (!googleUser) { showToast('Sign in to edit lyrics.'); return; }
+  _mgbLyrTrackId = trackId;
+  const overlay = document.getElementById('mgbLyrOverlay');
+  const ta = document.getElementById('mgb-lyr-ta');
+  const title = document.getElementById('mgbLyrTitle');
+  const status = document.getElementById('mgb-lyr-status');
+  const t = (_mgbData && _mgbData.tracks || []).find(x => x.id === trackId)
+    || (typeof findTrackById === 'function' ? findTrackById(trackId) : null);
+  if (title) title.textContent = 'Edit lyrics' + (t && t.name ? ' · ' + t.name : '');
+  if (status) status.textContent = '';
+  if (ta) { ta.value = ''; ta.placeholder = 'Loading…'; ta.disabled = true; }
+  overlay?.classList.add('open');
+  try {
+    if (lyricsCache[trackId] === undefined) {
+      const rows = await dbGet('/lyrics?track_id=eq.' + trackId + '&select=lyrics&limit=1');
+      lyricsCache[trackId] = (rows[0] && rows[0].lyrics ? String(rows[0].lyrics).trim() : null) || null;
+    }
+    if (ta) {
+      ta.value = lyricsCache[trackId] || '';
+      ta.placeholder = 'Paste or type lyrics…';
+      ta.disabled = false;
+      try { ta.focus(); } catch (_) {}
+    }
+  } catch (e) {
+    if (ta) {
+      ta.placeholder = 'Could not load lyrics.';
+      ta.disabled = false;
+    }
+    if (status) status.textContent = e.message || 'Could not load lyrics.';
+  }
+}
+
+function mgbLyrClose() {
+  document.getElementById('mgbLyrOverlay')?.classList.remove('open');
+  _mgbLyrTrackId = null;
+  _mgbLyrBusy = false;
+}
+
+async function mgbLyrSave() {
+  if (_mgbLyrBusy || !_mgbLyrTrackId || !googleUser) return;
+  const trackId = _mgbLyrTrackId;
+  const ta = document.getElementById('mgb-lyr-ta');
+  const status = document.getElementById('mgb-lyr-status');
+  const btn = document.getElementById('mgb-lyr-save');
+  const newLyrics = (ta?.value || '').trim();
+  const oldLyrics = lyricsCache[trackId] || null;
+  _mgbLyrBusy = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  if (status) status.textContent = 'Saving…';
+  try {
+    const session = (await sjGetSession()).data?.session;
+    const tok = session?.access_token || ANON;
+    const hdrs = {
+      apikey: ANON, Authorization: 'Bearer ' + tok,
+      'Content-Type': 'application/json',
+      'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox',
+      Prefer: 'return=minimal'
+    };
+    const patch = await fetch(REST + '/lyrics?track_id=eq.' + trackId, {
+      method: 'PATCH', headers: hdrs,
+      body: JSON.stringify({ lyrics: newLyrics, lyrics_source: 'user-edit', lyrics_saved_at: new Date().toISOString() })
+    });
+    if (!patch.ok) {
+      // No row yet — insert.
+      const ins = await fetch(REST + '/lyrics', {
+        method: 'POST', headers: hdrs,
+        body: JSON.stringify({
+          track_id: trackId,
+          lyrics: newLyrics,
+          lyrics_source: 'user-edit',
+          lyrics_saved_at: new Date().toISOString(),
+        })
+      });
+      if (!ins.ok) throw new Error('Could not save lyrics.');
+    }
+    await fetch(REST + '/lyrics_edits', {
+      method: 'POST', headers: hdrs,
+      body: JSON.stringify({
+        track_id: trackId, old_lyrics: oldLyrics, new_lyrics: newLyrics,
+        editor_email: googleUser.email, editor_name: sjDisplayName() || googleUser.name
+      })
+    });
+    lyricsCache[trackId] = newLyrics || null;
+    _lyricsEditHistCache.set(trackId, true);
+    try { renderLyrics(trackId, newLyrics, 'user-edit'); } catch (_) {}
+    document.querySelectorAll('[data-acc-lyric="' + trackId + '"]').forEach(el => {
+      el.className = 'sc-lyrics-text'; el.textContent = newLyrics || 'Lyrics not in database.';
+    });
+    showToast('Lyrics saved.');
+    mgbLyrClose();
+    try { if (_mgbData) mgbRender(); } catch (_) {}
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Save failed.';
+    showToast(e.message || 'Could not save lyrics.');
+  } finally {
+    _mgbLyrBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
   }
 }
 
@@ -31875,6 +31996,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-04', items: [
+    'Default video and Lyrics in Manage Album work again. Default video was opening Manage Song behind the album panel; Lyrics now opens its own editor instead of needing the song card expanded on the page.',
     'After Rediscover Apply (or changing a song’s default video), the new YouTube view counts show up on the charts and track lists straight away — no page refresh needed.',
     'Manage Album cover is click-to-upload now — paste a link no longer. Pick a picture from your device and it replaces the cover straight away.',
     'Rediscover Apply works again — it was rejecting every apply with “Pick at least one song” even when every upgrade was ticked.',
