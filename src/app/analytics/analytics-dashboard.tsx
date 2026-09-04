@@ -26,6 +26,8 @@ type ArtistRow = Split & { artist: string; tracks?: number; in_jukebox?: boolean
 type TrackRow = Split & { key: string; title: string; artist: string; in_jukebox?: boolean };
 type HeatRow = Split & { dow: number; hour: number };
 type OptionRow = { artist: string; key?: string; title?: string; events: number; duration_ms: number };
+type FavoriteArtistRow = { artist: string; favorite_score: number; thumbs_up: number; reactions: number; songs: number };
+type FavoriteTrackRow = { key: string; title: string; artist: string; favorite_score: number; thumbs_up: number; reactions: number };
 
 export type AnalyticsPayload = {
   tz?: string;
@@ -49,6 +51,8 @@ export type AnalyticsPayload = {
   byHourDow?: HeatRow[];
   artistOptions?: OptionRow[];
   trackOptions?: OptionRow[];
+  favoriteArtists?: FavoriteArtistRow[];
+  favoriteTracks?: FavoriteTrackRow[];
 };
 
 const DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -494,8 +498,12 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
 
   const topArtists = data?.topArtists || [];
   const topTracks = data?.topTracks || [];
+  const favoriteArtists = data?.favoriteArtists || [];
+  const favoriteTracks = data?.favoriteTracks || [];
   const artistMax = Math.max(1, ...topArtists.map((row) => metricValue(row, metric)));
   const trackMax = Math.max(1, ...topTracks.map((row) => metricValue(row, metric)));
+  const favoriteArtistMax = Math.max(1, ...favoriteArtists.map((row) => Number(row.favorite_score) || 0));
+  const favoriteTrackMax = Math.max(1, ...favoriteTracks.map((row) => Number(row.favorite_score) || 0));
 
   /* Everything on this chart the catalogue does not have yet, in the order the
      chart already put them - so the panel opens on the songs you play most,
@@ -594,6 +602,32 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
           </button>
           <span className={styles.rankVal}>{fmtMetric(row, metric)}</span>
           {row.in_jukebox === false ? actionOf(row) : <span />}
+        </div>
+      );
+    });
+  }
+
+  function favoriteRankRows<T extends { favorite_score: number; thumbs_up: number; reactions: number }>(
+    rows: T[],
+    max: number,
+    keyOf: (row: T) => string,
+    nameOf: (row: T) => React.ReactNode,
+    selection: Selection,
+    onClick: (key: string) => void,
+  ) {
+    return rows.map((row) => {
+      const key = keyOf(row);
+      const on = selection.mode !== "all" && selection.mode === "include" && selection.keys.includes(key);
+      const score = Number(row.favorite_score) || 0;
+      const detail = `${count(row.thumbs_up)} thumb points · ${count(row.reactions)} instant ${row.reactions === 1 ? "reaction" : "reactions"}`;
+      return (
+        <div className={`${styles.rankRow} ${on ? styles.rankRowOn : ""}`} key={key}>
+          <button type="button" className={styles.rankHit} aria-pressed={on} title={`${detail} · ${count(score)} favorite points`} onClick={() => onClick(key)}>
+            <span className={styles.rankName}>{nameOf(row)}</span>
+            <span className={`${styles.rankTrack} ${styles.favoriteTrack}`}><i style={{ width: `${(score / max) * 100}%` }} /></span>
+          </button>
+          <span className={styles.rankVal}>{count(score)}</span>
+          <span className={styles.favoriteMeta}>{detail}</span>
         </div>
       );
     });
@@ -887,6 +921,38 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
               </div>
             </section>
           </div>
+
+          <div className={styles.pair}>
+              <section className={styles.card}>
+                <div className={styles.cardHead}><h2>Favorite artists</h2></div>
+                <p className={styles.cardNote}>Based on your thumbs-up ratings and instant reactions. Click a bar to filter the dashboard; click more to add them.</p>
+                <div className={styles.rankScroll}>
+                  {favoriteArtists.length ? favoriteRankRows(
+                    favoriteArtists,
+                    favoriteArtistMax,
+                    (row) => row.artist,
+                    (row) => <>{row.artist} <small>· {count(row.songs)} songs</small></>,
+                    artistSel,
+                    (key) => setArtistSel((current) => selectionAfterBarClick(current, key)),
+                  ) : <p className={styles.favoriteEmpty}>No thumbs-up ratings or instant reactions yet.</p>}
+                </div>
+              </section>
+
+              <section className={styles.card}>
+                <div className={styles.cardHead}><h2>Favorite songs</h2></div>
+                <p className={styles.cardNote}>Based on your thumbs-up ratings and instant reactions. Click a bar to filter the dashboard; click more to add them.</p>
+                <div className={styles.rankScroll}>
+                  {favoriteTracks.length ? favoriteRankRows(
+                    favoriteTracks,
+                    favoriteTrackMax,
+                    (row) => `${row.artist}${TRACK_KEY_SEP}${row.title}`,
+                    (row) => <>{row.title} <small>· {row.artist}</small></>,
+                    trackSel,
+                    (key) => setTrackSel((current) => selectionAfterBarClick(current, key)),
+                  ) : <p className={styles.favoriteEmpty}>No thumbs-up ratings or instant reactions yet.</p>}
+                </div>
+              </section>
+            </div>
         </div>
       )}
 

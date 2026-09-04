@@ -20,6 +20,7 @@ const BUCKETS = new Set(["auto", "day", "week", "month", "year"]);
 // answering; trim it rather than handing Postgres an unbounded array.
 const FILTER_MAX = 2000;
 const DATA_BATCH_MAX = 100;
+const FAVORITES_MAX = 40;
 
 function cleanDataBatches(value: unknown): Array<{ source: "spotify" | "youtube" | "jukebox"; year: number }> {
   if (!Array.isArray(value)) return [];
@@ -49,6 +50,70 @@ function cleanFilterList(value: unknown): string[] | null {
   }
   // An explicit [] means "match no artists/songs". null means no filter.
   return [...seen];
+}
+
+type FavoriteRow = { key: string; title: string; artist: string; favorite_score: number; thumbs_up: number; reactions: number };
+
+/* Favorites are read through the service client rather than a new database
+   function, so the Analytics release is self-contained: production does not
+   need a separately coordinated schema deployment. */
+async function loadFavorites(sb: ReturnType<typeof createSjServiceClient>, userId: string, email: string) {
+  const [{ data: ratings, error: ratingsError }, { data: reactionRows, error: reactionsError }] = await Promise.all([
+    sb.schema(JUKEBOX_SCHEMA).from("rating_events").select("track_id,new_rating,rated_at").eq("user_email", email).order("rated_at", { ascending: false }).limit(1000),
+    sb.schema(JUKEBOX_SCHEMA).from("track_reactions").select("track_id").eq("user_id", userId).in("reaction", ["heart", "sad"]).limit(1000),
+  ]);
+  if (ratingsError) throw ratingsError;
+  if (reactionsError) throw reactionsError;
+
+  const ratingByTrack = new Map<string, number>();
+  for (const row of ratings || []) {
+    const trackId = String(row.track_id || "");
+    if (trackId && !ratingByTrack.has(trackId)) ratingByTrack.set(trackId, Number(row.new_rating) || 0);
+  }
+  const reactionsByTrack = new Map<string, number>();
+  for (const row of reactionRows || []) {
+    const trackId = String(row.track_id || "");
+    if (trackId) reactionsByTrack.set(trackId, (reactionsByTrack.get(trackId) || 0) + 1);
+  }
+  const ids = [...new Set([...ratingByTrack.keys(), ...reactionsByTrack.keys()])];
+  if (!ids.length) return { favoriteArtists: [], favoriteTracks: [] };
+
+  const { data: tracks, error: tracksError } = await sb.schema(JUKEBOX_SCHEMA).from("tracks").select("id,name,album_id").in("id", ids);
+  if (tracksError) throw tracksError;
+  const albumIds = [...new Set((tracks || []).map((row) => String(row.album_id || "")).filter(Boolean))];
+  const { data: albums, error: albumsError } = albumIds.length
+    ? await sb.schema(JUKEBOX_SCHEMA).from("albums").select("id,artist_id").in("id", albumIds)
+    : { data: [], error: null };
+  if (albumsError) throw albumsError;
+  const artistIds = [...new Set((albums || []).map((row) => String(row.artist_id || "")).filter(Boolean))];
+  const { data: artists, error: artistsError } = artistIds.length
+    ? await sb.schema(JUKEBOX_SCHEMA).from("artists").select("id,name").in("id", artistIds)
+    : { data: [], error: null };
+  if (artistsError) throw artistsError;
+
+  const artistNameById = new Map((artists || []).map((row) => [String(row.id), String(row.name || "Unknown artist")]));
+  const albumById = new Map((albums || []).map((row) => [String(row.id), String(row.artist_id)]));
+  const favoriteTracks: FavoriteRow[] = (tracks || []).map((track) => {
+    const key = String(track.id);
+    const rating = ratingByTrack.get(key) || 0;
+    const thumbs_up = rating === 2 ? 12 : rating === 1 ? 5 : 0;
+    const reactions = reactionsByTrack.get(key) || 0;
+    return { key, title: String(track.name || "Unknown track"), artist: artistNameById.get(albumById.get(String(track.album_id)) || "") || "Unknown artist", thumbs_up, reactions, favorite_score: thumbs_up + reactions };
+  }).filter((track) => track.favorite_score > 0);
+  const favoriteArtists = new Map<string, { artist: string; favorite_score: number; thumbs_up: number; reactions: number; songs: number }>();
+  for (const track of favoriteTracks) {
+    const existing = favoriteArtists.get(track.artist) || { artist: track.artist, favorite_score: 0, thumbs_up: 0, reactions: 0, songs: 0 };
+    existing.favorite_score += track.favorite_score;
+    existing.thumbs_up += track.thumbs_up;
+    existing.reactions += track.reactions;
+    existing.songs += 1;
+    favoriteArtists.set(track.artist, existing);
+  }
+  const sortFavorites = <T extends { favorite_score: number; reactions: number }>(a: T, b: T) => b.favorite_score - a.favorite_score || b.reactions - a.reactions;
+  return {
+    favoriteArtists: [...favoriteArtists.values()].sort((a, b) => sortFavorites(a, b) || a.artist.localeCompare(b.artist)).slice(0, FAVORITES_MAX),
+    favoriteTracks: favoriteTracks.sort((a, b) => sortFavorites(a, b) || a.title.localeCompare(b.title) || a.artist.localeCompare(b.artist)).slice(0, FAVORITES_MAX),
+  };
 }
 
 type CleanHistoryEvent = {
@@ -192,20 +257,23 @@ export async function POST(req: NextRequest) {
       const bucket = BUCKETS.has(bucketRaw) ? bucketRaw : "auto";
       const fromMs = body.from ? Date.parse(String(body.from)) : NaN;
       const toMs = body.to ? Date.parse(String(body.to)) : NaN;
-      const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("listening_analytics", {
-        p_user_id: uid,
-        p_tz: String(body.tz || "America/Chicago").slice(0, 64),
-        p_source: source,
-        p_from: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
-        p_to: Number.isFinite(toMs) ? new Date(toMs).toISOString() : null,
-        p_artists: cleanFilterList(body.artists),
-        p_artists_mode: body.artistsMode === "exclude" ? "exclude" : "include",
-        p_tracks: cleanFilterList(body.tracks),
-        p_tracks_mode: body.tracksMode === "exclude" ? "exclude" : "include",
-        p_bucket: bucket,
-      });
+      const [{ data, error }, favorites] = await Promise.all([
+        sb.schema(JUKEBOX_SCHEMA).rpc("listening_analytics", {
+          p_user_id: uid,
+          p_tz: String(body.tz || "America/Chicago").slice(0, 64),
+          p_source: source,
+          p_from: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
+          p_to: Number.isFinite(toMs) ? new Date(toMs).toISOString() : null,
+          p_artists: cleanFilterList(body.artists),
+          p_artists_mode: body.artistsMode === "exclude" ? "exclude" : "include",
+          p_tracks: cleanFilterList(body.tracks),
+          p_tracks_mode: body.tracksMode === "exclude" ? "exclude" : "include",
+          p_bucket: bucket,
+        }),
+        loadFavorites(sb, uid, email),
+      ]);
       if (error) throw error;
-      return NextResponse.json({ ok: true, analytics: data ?? null });
+      return NextResponse.json({ ok: true, analytics: { ...(data || {}), ...favorites } });
     }
 
     if (action === "import-history") {
