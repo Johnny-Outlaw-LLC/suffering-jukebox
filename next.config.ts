@@ -38,6 +38,22 @@ const framableHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
 ];
 
+// The native shell runs on capacitor://www.sufferingjukebox.stream, so every
+// call it makes to /api is cross-origin and the browser blocks it without
+// these. Scoped to that one exact origin, and no Allow-Credentials: the app
+// authenticates with a bearer token, not cookies, so nothing rides along
+// implicitly. A web page cannot forge an Origin header, so this grants nothing
+// to anyone else.
+const NATIVE_ORIGIN = "capacitor://www.sufferingjukebox.stream";
+
+const apiCorsHeaders = [
+  { key: "Access-Control-Allow-Origin", value: NATIVE_ORIGIN },
+  { key: "Access-Control-Allow-Methods", value: "GET, POST, PATCH, PUT, DELETE, OPTIONS" },
+  { key: "Access-Control-Allow-Headers", value: "authorization, content-type, apikey, x-client-info" },
+  { key: "Access-Control-Max-Age", value: "86400" },
+  { key: "Vary", value: "Origin" },
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   // Local checkouts of this repo are git worktrees whose parent directory is
@@ -47,6 +63,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/yt-frame", headers: framableHeaders },
+      { source: "/api/:path*", headers: apiCorsHeaders },
       { source: "/((?!yt-frame).*)", headers: securityHeaders },
     ];
   },

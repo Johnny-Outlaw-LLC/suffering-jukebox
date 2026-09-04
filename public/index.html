@@ -5509,10 +5509,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .set-opt .set-sub { margin-top: 2px; }
 .set-audio-meter { display: flex; flex-direction: column; gap: .45rem; margin-top: .25rem; }
 .set-audio-artist { border: 1px solid var(--border); border-radius: 10px; margin-bottom: .55rem; overflow: hidden; background: var(--bg-elevated); }
-.set-audio-artist-h { display: flex; align-items: center; gap: .5rem; padding: .6rem .7rem; cursor: pointer; user-select: none; }
+.set-audio-artist-h { display: flex; align-items: center; gap: .5rem; padding: .6rem .7rem; cursor: pointer; user-select: none; flex-wrap: wrap; }
 .set-audio-artist-h:hover { background: rgba(255,255,255,.03); }
 .set-audio-chev { width: .8rem; flex-shrink: 0; color: var(--text-muted); font-size: .55rem; }
-.set-audio-artist-name { flex: 1; min-width: 0; font-size: .6rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-audio-artist-name { flex: 1 1 7rem; min-width: 5rem; font-size: .6rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-audio-artist-meta { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); flex-shrink: 0; }
 .set-audio-act-top { font-size: .48rem !important; padding: .2rem .45rem !important; flex-shrink: 0; }
 .set-audio-tracks { border-top: 1px solid var(--border); }
@@ -33180,6 +33180,11 @@ let sjLastUpdated = SJ_APP_UPDATED_FALLBACK;
 const SJ_PROTECTED_ADMIN_EMAIL = 'johnnyoutlawllc@gmail.com';
 
 function sjApiUrl(path) {
+  // In the native shell the page is served from capacitor://... by Capacitor's
+  // own scheme handler, which only knows the bundled files - there is no /api
+  // there, and fetch() on that scheme rejects with "The string did not match
+  // the expected pattern". Every API call has to go to the real origin.
+  if (sjIsNative()) return SJ_FRAME_ORIGIN + path;
   const host = window.location.hostname;
   const base = host === 'sufferingjukebox.stream'
     ? 'https://www.sufferingjukebox.stream'
