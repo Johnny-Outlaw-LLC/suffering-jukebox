@@ -33887,7 +33887,16 @@ async function sjNativeSignIn() {
     // skipBrowserRedirect: hand us the URL rather than navigating the page.
     const { data, error } = await sbAuth.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${SJ_AUTH_SCHEME}://auth`, skipBrowserRedirect: true },
+      options: {
+        redirectTo: `${SJ_AUTH_SCHEME}://auth`,
+        skipBrowserRedirect: true,
+        // The sheet deliberately shares Safari's session, so Google would
+        // otherwise pick the signed-in account silently and never offer the
+        // chooser. prompt=select_account keeps the convenience but always lets
+        // you say which account - and is the only way to switch accounts here,
+        // since there is no browser UI to sign out from.
+        queryParams: { prompt: 'select_account' },
+      },
     });
     if (error || !data?.url) throw new Error(error?.message || 'Could not start sign-in');
 
