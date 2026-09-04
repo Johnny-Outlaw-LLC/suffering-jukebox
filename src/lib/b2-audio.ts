@@ -69,6 +69,23 @@ export async function createB2UploadUrl(key: string, contentType: string): Promi
   );
 }
 
+/** Direct put — used for small album covers where a browser presign is not worth it. */
+export async function putB2Object(
+  key: string,
+  body: Buffer | Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const client = await getClient();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: getB2AudioBucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+}
+
 export async function createB2DownloadUrl(key: string, expiresIn = 6 * 60 * 60): Promise<string> {
   const client = await getClient();
   return getSignedUrl(

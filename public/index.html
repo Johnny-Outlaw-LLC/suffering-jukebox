@@ -1344,6 +1344,17 @@ body.light .sc-link:hover { background: #e8e8e8; }
 .mgb-trk-body { flex: 1; min-width: 0; }
 .mgb-trk-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mgb-trk-meta { color: var(--text-muted); font-size: .44rem; }
+.mgb-cover {
+  display: block; width: 96px; height: 96px; padding: 0; border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; background: var(--bg-elevated); cursor: pointer;
+}
+.mgb-cover:hover { border-color: var(--accent); }
+.mgb-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mgb-cover-ph {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+  font-size: .48rem; color: var(--text-muted); text-align: center; padding: 8px; line-height: 1.3;
+}
+.mgb-cover-hint { font-size: .44rem; color: var(--text-muted); margin-top: 4px; }
 .ad-step-opt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; margin-bottom: 4px; }
 .ad-step-opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ad-step-opt b { display: block; font-size: .55rem; margin-bottom: 1px; }
@@ -16543,18 +16554,41 @@ function mgbChartHTML(albumBars) {
   }).join('') + '</div>';
 }
 
+// Real image hosts only — Wikipedia article/media-page URLs look like covers
+// in the URL box but never load as <img> src, which is what broke Garbage.
+function mgbIsUsableArtUrl(u) {
+  if (!u || typeof u !== 'string') return false;
+  if (u.startsWith('data:image/')) return true;
+  if (u.startsWith('/album-art/')) return true;
+  try {
+    const url = new URL(u, location.origin);
+    const h = url.hostname.toLowerCase();
+    if (h.includes('ytimg.com') || h.includes('ggpht.com')) return true;
+    if (h.includes('upload.wikimedia.org')) return true;
+    if ((h === location.hostname || h.endsWith('.sufferingjukebox.stream')) && url.pathname.startsWith('/album-art/')) return true;
+    return false;
+  } catch (_) { return false; }
+}
+
+function mgbArtOptions(al) {
+  const opts = [];
+  const push = (u) => { if (mgbIsUsableArtUrl(u) && !opts.includes(u)) opts.push(u); };
+  push(al.art_url);
+  push(al.art_wiki);
+  (al.art_options || []).forEach(push);
+  return opts;
+}
+
 function mgbRender() {
   const body = document.getElementById('mgb-body');
   const d = _mgbData;
   if (!body || !d) return;
   const al = d.album;
   const yr = (al.release_date || '').slice(0, 4);
-  const opts = [];
-  if (al.art_wiki) opts.push(al.art_wiki);
-  if (al.art_url && !opts.includes(al.art_url)) opts.push(al.art_url);
-  (al.art_options || []).forEach(u => { if (u && !opts.includes(u)) opts.push(u); });
-  const cover = al.art_url || opts[0] || '';
+  const opts = mgbArtOptions(al);
+  const cover = mgbIsUsableArtUrl(al.art_url) ? al.art_url : (opts[0] || '');
   const total = mgbAlbumViewsTotal(d.tracks);
+  const uploading = !!_mgbCoverBusy;
   body.innerHTML =
     '<div class="ms-sec"><div class="ms-sec-h">Album · ' + fmtV(total) + ' YouTube views</div>' +
       '<div class="ms-field"><label for="mgb-name">Name</label>' +
@@ -16562,13 +16596,20 @@ function mgbRender() {
       '<div class="ms-field"><label for="mgb-year">Year</label>' +
         '<input id="mgb-year" type="text" maxlength="4" inputmode="numeric" value="' + msQ(yr) + '" style="width:5rem"></div>' +
       '<div class="ms-field"><label>Cover</label>' +
-        (cover ? '<img src="' + escHtml(cover) + '" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:6px;margin-bottom:6px">' : '') +
-        '<input id="mgb-art" type="url" placeholder="https://… cover image URL" value="' + msQ(al.art_url || '') + '">' +
+        '<button type="button" class="mgb-cover" id="mgb-cover-btn" onclick="document.getElementById(\'mgb-art-file\').click()" ' +
+          (uploading ? 'disabled ' : '') + 'title="Upload a cover image">' +
+          (cover
+            ? '<img id="mgb-cover-img" src="' + escHtml(cover) + '" alt="">'
+            : '<span class="mgb-cover-ph">' + (uploading ? 'Uploading…' : 'Click to upload') + '</span>') +
+        '</button>' +
+        '<input type="file" id="mgb-art-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="mgbPickCover(this)">' +
+        '<div class="mgb-cover-hint" id="mgb-cover-hint">' +
+          (uploading ? 'Uploading…' : 'Click the cover to upload a new image.') + '</div>' +
         (opts.length > 1
           ? '<div class="am-ft-arts" style="margin-top:6px">' + opts.slice(0, 9).map(u =>
-              '<img src="' + escHtml(u) + '" loading="lazy" class="' + (u === (al.art_url || opts[0]) ? 'sel' : '') +
+              '<img src="' + escHtml(u) + '" loading="lazy" class="' + (u === cover ? 'sel' : '') +
               '" onclick="mgbPickArt(this)" data-u="' + msQ(u) + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid ' +
-              (u === (al.art_url || opts[0]) ? 'var(--accent)' : 'transparent') + '">').join('') + '</div>'
+              (u === cover ? 'var(--accent)' : 'transparent') + '">').join('') + '</div>'
           : '') +
       '</div></div>' +
     '<div class="ms-sec"><div class="ms-sec-h">Tracks</div>' +
@@ -16592,13 +16633,77 @@ function mgbRender() {
 
 function mgbPickArt(el) {
   const u = el?.getAttribute('data-u');
-  if (!u || !_mgbData) return;
+  if (!u || !_mgbData || !mgbIsUsableArtUrl(u)) return;
   _mgbData.album.art_url = u;
-  const inp = document.getElementById('mgb-art');
-  if (inp) inp.value = u;
+  const img = document.getElementById('mgb-cover-img');
+  if (img) img.src = u;
+  else mgbRender();
   document.querySelectorAll('#mgb-body .am-ft-arts img').forEach(im => {
     im.style.borderColor = im.getAttribute('data-u') === u ? 'var(--accent)' : 'transparent';
   });
+}
+
+const MGB_COVER_PX = 512;
+let _mgbCoverBusy = false;
+
+function mgbPickCover(input) {
+  const file = input?.files?.[0];
+  if (input) input.value = '';
+  if (!file || !_mgbData || _mgbCoverBusy) return;
+  const hint = document.getElementById('mgb-cover-hint');
+  if (hint) hint.textContent = 'Reading the picture…';
+  const reader = new FileReader();
+  reader.onerror = () => { if (hint) hint.textContent = 'That file could not be read.'; };
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => { if (hint) hint.textContent = 'That file is not a picture we can read.'; };
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      if (!side) { if (hint) hint.textContent = 'That picture is empty.'; return; }
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = MGB_COVER_PX;
+      const cx = cv.getContext('2d');
+      cx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2,
+        side, side, 0, 0, MGB_COVER_PX, MGB_COVER_PX);
+      let data = '';
+      try { data = cv.toDataURL('image/jpeg', 0.85); } catch (_) {}
+      if (!data || data.length > 550000) {
+        if (hint) hint.textContent = 'That picture could not be shrunk small enough.';
+        return;
+      }
+      mgbUploadCover(data);
+    };
+    img.src = String(reader.result || '');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function mgbUploadCover(dataUrl) {
+  if (!_mgbData || _mgbCoverBusy) return;
+  _mgbCoverBusy = true;
+  const hint = document.getElementById('mgb-cover-hint');
+  const btn = document.getElementById('mgb-cover-btn');
+  if (hint) hint.textContent = 'Uploading…';
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(sjApiUrl('/api/album-art'), {
+      method: 'POST',
+      headers: { ...(await sjAuthHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ album_id: _mgbData.album.id, image: dataUrl }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not upload cover.');
+    _mgbData.album.art_url = data.art_url;
+    const alb = almFindAlbum(_mgbData.album.id);
+    if (alb) alb.art_url = data.art_url;
+    showToast('Cover updated.');
+    try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+  } catch (e) {
+    showToast(e.message || 'Could not upload cover.');
+  } finally {
+    _mgbCoverBusy = false;
+    mgbRender();
+  }
 }
 
 function mgbEditLyrics(trackId) {
@@ -16612,7 +16717,8 @@ async function mgbSave() {
   if (!_mgbData || _mgbBusy) return;
   const name = (document.getElementById('mgb-name')?.value || '').trim();
   const yearStr = (document.getElementById('mgb-year')?.value || '').trim();
-  const art = (document.getElementById('mgb-art')?.value || '').trim();
+  // Cover uploads save themselves; Save only persists a YouTube/wiki thumb pick.
+  const art = (_mgbData.album.art_url || '').trim();
   if (!name) { showToast('Album name can’t be empty.'); return; }
   if (yearStr && !/^\d{4}$/.test(yearStr)) { showToast('Year must be 4 digits.'); return; }
   _mgbBusy = true;
@@ -16621,7 +16727,9 @@ async function mgbSave() {
   try {
     const payload = { id: _mgbData.album.id, name };
     if (yearStr) payload.release_date = yearStr;
-    if (art && /^https?:\/\//.test(art)) payload.art_url = art;
+    if (art && mgbIsUsableArtUrl(art) && !art.startsWith('/album-art/') && /^https?:\/\//.test(art)) {
+      payload.art_url = art;
+    }
     await amFetch('?action=finetune', {
       method: 'POST',
       body: JSON.stringify({ artist_id: _mgbData.album.artist_id, albums: [payload] }),
@@ -16630,7 +16738,7 @@ async function mgbSave() {
     if (alb) {
       alb.name = name;
       if (yearStr) alb.release_date = yearStr + '-01-01';
-      if (art) alb.art_url = art;
+      if (payload.art_url) alb.art_url = payload.art_url;
     }
     showToast('Album saved.');
     try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
@@ -31709,6 +31817,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-04', items: [
+    'Manage Album cover is click-to-upload now — paste a link no longer. Pick a picture from your device and it replaces the cover straight away.',
     'Rediscover Apply works again — it was rejecting every apply with “Pick at least one song” even when every upgrade was ticked.',
     'Manage Album opens much faster: the panel paints from what is already loaded, and cover options load in the background.',
     'Tighter Rediscover and Manage Album layouts so a single album fits without as much scrolling. The little views bar chart was removed from those panels.',
