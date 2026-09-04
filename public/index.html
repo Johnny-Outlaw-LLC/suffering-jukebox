@@ -8680,16 +8680,7 @@ function updateYTQueueUI(opts) {
     return;
   }
 
-  // Everything the row markup reads. Order, identity, the label the artist name
-  // is hydrated into afterwards, and the Online Jukebox credit - which lands on
-  // a row that was already there when sjjAdopt() reclaims it, so leaving it out
-  // would silently cost somebody their name. Ratings are NOT in here: those
-  // repaint in place through refreshVoteUI().
-  const queueSig = ytQueue.length + '' + ytQueue.map(item =>
-    (item.trackId || '') + '' + (item.videoId || '') + '' +
-    (item.artist || '') + '' + (item.title || '') + '' +
-    (item.addedBy || '') + (item.addedByOwner ? '*' : '')
-  ).join('');
+  const queueSig = ytQueueSignature();
   const listUnchanged = !!existingWrap && queueSig === _ytQueueSig;
 
   // (queue height is now fixed - no drag handle)
@@ -8811,12 +8802,26 @@ function ytpQueueTail(opts, savedScroll) {
   if (!opts.skipMetaHydrate) ytpHydrateQueueMeta();
 }
 
+// The dock's own copy of the playlist. Same list, same size, and this one runs
+// on EVERY updateYTQueueUI call, before that function's own guard - so it gets
+// the same treatment: rebuild only when the songs change, and do not go looking
+// up an artist name the row already carries.
 function ytpPaintDockPlaylist() {
   const el = document.getElementById('ytp-mf-playlist');
   if (!el) return;
+  const sig = ytQueueSignature();
+  if (sig === _ytpDockPlaylistSig && el.querySelector('.ytp-mf-playlist-row')) {
+    const prev = el.querySelector('.ytp-mf-playlist-row.on');
+    if (prev) prev.classList.remove('on');
+    const rows = el.querySelectorAll('.ytp-mf-playlist-row');
+    if (rows[ytQueueIdx]) rows[ytQueueIdx].classList.add('on');
+    if (_ytpMinimized) requestAnimationFrame(ytpDockSyncPlaylist);
+    return;
+  }
+  _ytpDockPlaylistSig = sig;
   el.innerHTML = '<div class="ytp-mf-playlist-head">Current playlist · ' + ytQueue.length + '</div>'
     + ytQueue.map((item, i) => {
-        const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title) : null;
+        const meta = (item.trackId && !item.artist) ? ytpTrackMeta(item.trackId, item.title, null, item) : null;
         const label = [meta?.artist || item.artist, item.title || meta?.title].filter(Boolean).join(' - ');
         return '<div class="ytp-mf-playlist-row' + (i === ytQueueIdx ? ' on' : '') + '" onclick="ytPlayQueueIdx(' + i + ')">'
           + '<span class="ytp-mf-playlist-num">' + (i + 1) + '</span>'
@@ -8833,11 +8838,25 @@ function ytpPaintDockPlaylist() {
 // Spotify picker learned - and a five hundred row queue is not worth rebuilding
 // to hide four of them.
 let _ytQueueFilter = '';
-// What the queue list on screen was last built from. Rebuilding 2,600 rows of
-// markup costs about half a second, and most calls into updateYTQueueUI change
-// nothing about the LIST - a track advance, a rating, a five second room sync.
-// Those now move the highlight and stop. Null means there is no list to trust.
+// What a rendered queue list was built from. Rebuilding 2,600 rows of markup
+// costs about half a second, and most calls into updateYTQueueUI change nothing
+// about the LIST - a track advance, a rating, a five second room sync. Those now
+// move the highlight and stop. Null means there is no list to trust.
+//
+// Everything the row markup reads: order, identity, the artist name that gets
+// hydrated in afterwards, and the Online Jukebox credit - which lands on a row
+// that was already there when sjjAdopt() reclaims it, so leaving it out would
+// silently cost somebody their name. Ratings are NOT in here: those repaint in
+// place through refreshVoteUI().
+function ytQueueSignature() {
+  return ytQueue.length + '' + ytQueue.map(item =>
+    (item.trackId || '') + '' + (item.videoId || '') + '' +
+    (item.artist || '') + '' + (item.title || '') + '' +
+    (item.addedBy || '') + (item.addedByOwner ? '*' : '')
+  ).join('');
+}
 let _ytQueueSig = null;
+let _ytpDockPlaylistSig = null;
 
 function ytQueueFilter(text) {
   _ytQueueFilter = text || '';
