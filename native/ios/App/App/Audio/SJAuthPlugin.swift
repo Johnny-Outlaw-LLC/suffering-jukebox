@@ -69,9 +69,11 @@ public class SJAuth: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresentatio
         }
     }
 
+    /// Called on the main thread by ASWebAuthenticationSession, so this must not
+    /// hop queues: a DispatchQueue.main.sync here deadlocks against the thread
+    /// it is already on and the runtime traps immediately (EXC_BREAKPOINT), which
+    /// looks exactly like the app quitting the moment you tap Sign In.
     public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        DispatchQueue.main.sync {
-            self.bridge?.viewController?.view.window ?? ASPresentationAnchor()
-        }
+        bridge?.viewController?.view.window ?? ASPresentationAnchor()
     }
 }
