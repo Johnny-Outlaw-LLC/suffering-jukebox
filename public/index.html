@@ -8819,16 +8819,19 @@ async function sjDlInit() {
       if (d.state === 'failed') alert('Download failed: ' + (d.error || 'unknown error'));
       // Repaint the menu if it is open on this track.
       if (_sjmTrackId === d.trackId && document.getElementById('sjm-menu')) sjmRenderRoot();
+      if (document.getElementById('set-audio-artists')) setAudioRender();
     });
   } catch (_) {}
 }
 
 // Builds the payload the native engine stores alongside the file, so the car
 // can show artist/album/artwork with no network at all.
-function sjDlTrackPayload(trackId) {
+function sjDlTrackPayload(trackId, meta) {
   const ta = taTrackAudio(trackId);
   if (!ta || !ta.url) return null;
-  const m = ytpTrackMeta(trackId);
+  // Settings passes what it already knows; ytpTrackMeta only finds a track
+  // whose artist is loaded in the catalogue, which it need not be here.
+  const m = meta || ytpTrackMeta(trackId);
   const art = m.artwork && /^https?:/i.test(m.artwork) ? m.artwork : undefined;
   return {
     id: trackId,
@@ -33593,19 +33596,49 @@ function setAudioRender() {
     el.innerHTML = '<div class="set-h">Uploaded audio</div>' +
       '<p class="set-sub">Nothing uploaded yet. Pick an artist below to add files — they stay private to your account.</p>';
   } else {
-    el.innerHTML = '<div class="set-h">By artist</div>' + groups.map(g => {
+    // What is actually on the phone, which is all CarPlay can reach.
+    const dlTracks = groups.reduce((n, g) => n + g.tracks.filter(t => sjDlState(t.id) === 'done').length, 0);
+    const dlBytes  = groups.reduce((n, g) => n + g.tracks.filter(t => sjDlState(t.id) === 'done')
+                                                         .reduce((b, t) => b + (t.bytes || 0), 0), 0);
+    const carplayNote = (sjIsNative() && sjDlPlugin())
+      ? '<p class="set-sub">' + (dlTracks
+          ? '<b>' + dlTracks + ' song' + (dlTracks === 1 ? '' : 's') + '</b> on this iPhone for CarPlay and offline play · ' + escHtml(fmtBytes(dlBytes))
+          : 'Nothing on this iPhone yet. CarPlay only plays songs copied to the device — add them below.') +
+        '</p>'
+      : '';
+    el.innerHTML = '<div class="set-h">By artist</div>' + carplayNote + groups.map(g => {
       const open = _setAudioExpanded.has(g.artistId);
       return '<div class="set-audio-artist">' +
         '<div class="set-audio-artist-h" onclick="setAudioToggle(\'' + g.artistId + '\')">' +
           '<span class="set-audio-chev">' + (open ? '▾' : '▸') + '</span>' +
           '<span class="set-audio-artist-name">' + escHtml(g.name) + '</span>' +
           '<span class="set-audio-artist-meta">' + g.tracks.length + ' song' + (g.tracks.length === 1 ? '' : 's') + ' · ' + escHtml(fmtBytes(g.bytes)) + '</span>' +
+          (sjIsNative() && sjDlPlugin() && g.tracks.some(t => sjDlState(t.id) === 'none' && taTrackAudio(t.id)?.url)
+            ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Copy every song here to this iPhone" ' +
+              'onclick="event.stopPropagation();setAudioCarPlayArtist(\'' + g.artistId + '\')">＋ All to CarPlay</button>'
+            : '') +
           '<button type="button" class="pl-btn ghost set-audio-act-top" onclick="event.stopPropagation();setAudioUploadBatch(\'' + g.artistId + '\')">＋ Upload</button>' +
         '</div>' +
         (open ? '<div class="set-audio-tracks">' + g.tracks.map(t =>
           '<div class="set-audio-trk">' +
             '<span class="set-audio-trk-name" title="' + escHtml(t.name) + '">' + escHtml(t.name) + '</span>' +
             '<span class="set-audio-bytes">' + escHtml(fmtBytes(t.bytes)) + '</span>' +
+            (sjIsNative() && sjDlPlugin()
+              ? (function () {
+                  const st = sjDlState(t.id);
+                  if (st === 'downloading') {
+                    return '<button type="button" class="oa-act set-audio-act" disabled>Adding…</button>';
+                  }
+                  if (st === 'done') {
+                    return '<button type="button" class="oa-act set-audio-act" style="border-color:var(--accent);color:var(--accent)" ' +
+                      'title="On this iPhone - tap to remove" onclick="setAudioCarPlayToggle(\'' + t.id + '\')">✓ CarPlay</button>';
+                  }
+                  if (!taTrackAudio(t.id)?.url) return '';
+                  return '<button type="button" class="oa-act set-audio-act" ' +
+                    'title="Copy to this iPhone so it plays in CarPlay and offline" ' +
+                    'onclick="setAudioCarPlayToggle(\'' + t.id + '\')">＋ CarPlay</button>';
+                })()
+              : '') +
             '<button type="button" class="oa-act set-audio-act" onclick="setAudioReplace(\'' + t.id + '\', ' + (t.durationMs || 'null') + ')">Replace</button>' +
             '<button type="button" class="oa-act set-audio-act" style="border-color:#ef444455;color:#ef4444" onclick="setAudioDelete(\'' + t.id + '\')">Delete</button>' +
           '</div>'
@@ -33633,6 +33666,68 @@ function setAudioRender() {
     }
   }
   uploadEl.innerHTML = uploadHtml;
+}
+
+// ── Audio Storage → CarPlay ──────────────────────────────────────────────
+// Uploading puts a file in your library; this puts a copy on the phone. CarPlay
+// and offline play can only reach what is on the device, so this is where a
+// drive's worth of music actually gets chosen.
+function setAudioGroupOf(trackId) {
+  for (const g of (_setAudioGroups || [])) {
+    const t = (g.tracks || []).find(x => x.id === trackId);
+    if (t) return { group: g, track: t };
+  }
+  return null;
+}
+
+function setAudioDlPayload(trackId) {
+  const found = setAudioGroupOf(trackId);
+  if (!found) return null;
+  return sjDlTrackPayload(trackId, {
+    title: found.track.name,
+    artist: found.group.name,
+    album: '',
+    artwork: '',
+  });
+}
+
+async function setAudioCarPlayToggle(trackId) {
+  const p = sjDlPlugin();
+  if (!p) return;
+  const state = sjDlState(trackId);
+  try {
+    if (state === 'done') {
+      await p.removeDownload({ trackId });
+      _sjDownloads.delete(trackId);
+    } else if (state === 'none') {
+      const track = setAudioDlPayload(trackId);
+      if (!track) { alert('That song has no audio file to copy over.'); return; }
+      _sjDownloads.set(trackId, 'downloading');
+      await p.download({ track });
+    }
+  } catch (e) {
+    _sjDownloads.delete(trackId);
+    alert('Could not add to CarPlay: ' + (e?.message || e));
+  }
+  setAudioRender();
+}
+
+// Whole artist at once - the realistic unit for a drive.
+async function setAudioCarPlayArtist(artistId) {
+  const p = sjDlPlugin();
+  const g = (_setAudioGroups || []).find(x => x.artistId === artistId);
+  if (!p || !g) return;
+  const pending = g.tracks.filter(t => sjDlState(t.id) === 'none' && taTrackAudio(t.id)?.url);
+  if (!pending.length) return;
+  for (const t of pending) {
+    const track = setAudioDlPayload(t.id);
+    if (!track) continue;
+    _sjDownloads.set(t.id, 'downloading');
+    // Sequential on purpose: the engine uses one background session and a
+    // whole discography at once just thrashes it.
+    try { await p.download({ track }); } catch (_) { _sjDownloads.delete(t.id); }
+  }
+  setAudioRender();
 }
 
 async function setAudioLoad() {
