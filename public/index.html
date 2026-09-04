@@ -1326,6 +1326,33 @@ body.light .sc-link:hover { background: #e8e8e8; }
 @media (hover: none) { .trk-more { opacity: .8; padding: 4px 8px; } }
 .trk-more:hover, .trk-more[aria-expanded="true"] { color: var(--accent); border-color: var(--border); }
 
+/* Album card ⋯ — same look as the track menu trigger */
+.alb-more {
+  flex: 0 0 auto; background: none; border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text-muted); font-family: var(--mono); font-size: .62rem; line-height: 1;
+  padding: 4px 8px; cursor: pointer; opacity: .85; transition: opacity .12s, color .12s, border-color .12s;
+}
+.alb-more:hover, .alb-more[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); opacity: 1; }
+
+/* Manage Album + Rediscover */
+.mgb-chart { display: flex; align-items: flex-end; gap: 8px; min-height: 110px; padding: 8px 4px 0; overflow-x: auto; }
+.mgb-chart-bar { flex: 1 1 0; min-width: 36px; max-width: 72px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.mgb-chart-col { width: 100%; border-radius: 4px 4px 0 0; background: var(--accent); min-height: 2px; }
+.mgb-chart-lbl { font-size: .42rem; color: var(--text-muted); text-align: center; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mgb-chart-n { font-size: .44rem; color: var(--accent); font-weight: 600; }
+.mgb-trk { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: .55rem; }
+.mgb-trk-body { flex: 1; min-width: 0; }
+.mgb-trk-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mgb-trk-meta { color: var(--text-muted); font-size: .48rem; }
+.ad-step-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; margin-bottom: 8px; }
+.ad-step-opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ad-step-opt b { display: block; font-size: .58rem; margin-bottom: 2px; }
+.ad-step-opt em { display: block; font-style: normal; font-size: .48rem; color: var(--text-muted); line-height: 1.4; }
+.ad-review-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: .52rem; }
+.am-ft-chart-wrap { margin-bottom: 1rem; padding: .75rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated); }
+.am-ft-chart-h { font-size: .55rem; font-weight: 600; margin-bottom: .2rem; }
+.am-ft-chart-sub { font-size: .46rem; color: var(--text-muted); margin-bottom: .55rem; line-height: 1.4; }
+
 .sjm-menu {
   position: fixed; z-index: 2147483001; width: 244px;
   background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
@@ -5298,6 +5325,38 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   </div>
 </div>
 
+<!-- MANAGE ALBUM -->
+<div class="pl-modal-overlay" id="mgbOverlay" onclick="if(event.target===this)mgbClose()">
+  <div class="pl-modal" style="width:min(640px,96vw);max-height:min(90vh,820px);display:flex;flex-direction:column">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title" id="mgbTitle">Manage album</span>
+      <button class="modal-close" onclick="mgbClose()">✕</button>
+    </div>
+    <div class="pl-modal-body" id="mgb-body" style="overflow:auto;flex:1;min-height:0">Loading…</div>
+    <div class="pl-modal-footer" id="mgb-footer" style="display:none;flex-wrap:wrap;gap:8px">
+      <button class="pl-btn ghost" onclick="mgbClose()">Close</button>
+      <button class="pl-btn ghost" onclick="adOpenFromAlbum()">Rediscover videos</button>
+      <button class="pl-btn" id="mgb-save-btn" onclick="mgbSave()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- REDISCOVER VIDEOS WIZARD -->
+<div class="pl-modal-overlay" id="adOverlay" onclick="if(event.target===this)adClose()">
+  <div class="pl-modal" style="width:min(680px,96vw);max-height:min(90vh,860px);display:flex;flex-direction:column">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title" id="adTitle">Rediscover videos</span>
+      <button class="modal-close" onclick="adClose()">✕</button>
+    </div>
+    <div class="pl-modal-body" id="ad-body" style="overflow:auto;flex:1;min-height:0">Loading…</div>
+    <div class="pl-modal-footer" id="ad-footer" style="display:flex;flex-wrap:wrap;gap:8px">
+      <button class="pl-btn ghost" onclick="adClose()">Cancel</button>
+      <button class="pl-btn ghost" id="ad-back-btn" style="display:none" onclick="adBack()">Back</button>
+      <button class="pl-btn" id="ad-next-btn" onclick="adNext()">Continue</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADMIN METRICS MODAL -->
 <div class="pl-modal-overlay" id="adminMetricsOverlay" onclick="if(event.target===this)closeAdminMetrics()">
   <div class="pl-modal sjd-modal" id="admin-metrics-modal">
@@ -6018,6 +6077,9 @@ function sjInstrumentRenders() {
     ['updateYTQueueUI',       () => ({ rows: (typeof ytQueue !== 'undefined' && ytQueue) ? ytQueue.length : 0 })],
     ['_buildAccordionContent', null],
     ['renderLandingHomeHTML', null],
+    ['renderTimeline',        (list) => ({ albums: Array.isArray(list) ? list.length : 0 })],
+    ['renderListView',        (list) => ({ albums: Array.isArray(list) ? list.length : 0 })],
+    ['renderMobileChart',     (list) => ({ albums: Array.isArray(list) ? list.length : 0 })],
   ];
   for (const [name, detail] of targets) {
     const fn = window[name];
@@ -6095,7 +6157,21 @@ setInterval(() => {
 // finishing, which is when the page stops looking empty. They are different
 // questions and the tab charts them separately.
 let _sjAppReadyMs = null;
+let _sjLcpMs = null;
 let _sjPageLoadSent = false;
+
+// Largest Contentful Paint has to be observed; it is not on the navigation
+// entry. The last one before the row is sent is the one that counts, which is
+// why the value is kept in a variable rather than read once.
+try {
+  if (typeof PerformanceObserver !== 'undefined'
+      && PerformanceObserver.supportedEntryTypes?.includes('largest-contentful-paint')) {
+    new PerformanceObserver(list => {
+      const seen = list.getEntries();
+      if (seen.length) _sjLcpMs = Math.round(seen[seen.length - 1].startTime);
+    }).observe({ type: 'largest-contentful-paint', buffered: true });
+  }
+} catch (e) { /* telemetry never breaks the page */ }
 
 function sjPerfRecordPageLoad() {
   if (_sjPageLoadSent) return;
@@ -6111,6 +6187,7 @@ function sjPerfRecordPageLoad() {
       domMs: round(nav.domContentLoadedEventEnd),
       loadMs: round(nav.loadEventEnd),
       fcpMs: fcp ? round(fcp.startTime) : null,
+      lcpMs: _sjLcpMs,
       appReadyMs: _sjAppReadyMs,
       transferKb: round(nav.transferSize / 1024),
     };
@@ -6920,7 +6997,7 @@ function buildSinglePanelHTML(alb, L) {
       </div>
       <div class="tl-panel-hdr-actions">
         ${hasVideos ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)"
-          title="Play all tracks in order">▶ Play</button>` : ''}
+          title="Play all tracks in order">▶ Play</button>${almMoreBtn(alb.id)}` : ''}
         ${SJ_COMMENTS_ENABLED ? `<button class="cmt-btn" data-cmt-badge="album:${alb.id}" onclick="event.stopPropagation();openComments('album','${alb.id}')" title="Comment on this album">Comment</button>` : ''}
       </div>
     </div>
@@ -15062,6 +15139,15 @@ function sjmClose() {
   window.removeEventListener('resize', sjmClose);
   if (typeof plmClose === 'function') plmClose();
   if (typeof lamClose === 'function') lamClose();
+  // Album ⋯ shares #sjm-menu — clear its state if that menu just closed.
+  if (_almAlbumId) {
+    if (_almAnchor) _almAnchor.setAttribute('aria-expanded', 'false');
+    _almAlbumId = null;
+    _almAnchor = null;
+    document.removeEventListener('mousedown', _almOutside, true);
+    window.removeEventListener('scroll', almClose, true);
+    window.removeEventListener('resize', almClose);
+  }
 }
 
 // Scrolling closes the menu, except while we are the ones causing the scroll -
@@ -15952,6 +16038,789 @@ function sjmManageSong() {
   const tid = _sjmTrackId;
   sjmClose();
   if (tid) openManageSong(tid);
+}
+
+// ── Album card ⋯ menu (alm*) ─────────────────────────────────────────────
+let _almAlbumId = null;
+let _almAnchor = null;
+
+function almFindAlbum(albumId) {
+  if (!albumId) return null;
+  for (const aid of (selectedIds || [])) {
+    const hit = (albums[aid] || []).find(a => a.id === albumId);
+    if (hit) return hit;
+  }
+  for (const aid of Object.keys(albums || {})) {
+    const hit = (albums[aid] || []).find(a => a.id === albumId);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function almAlbumTracks(albumId) {
+  const alb = almFindAlbum(albumId);
+  if (!alb) return [];
+  return (tracks[alb.artist_id] || [])
+    .filter(t => t.album_id === albumId && (ytData[t.id]?.video_id || tvPrimary(t.id)?.video_id))
+    .sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
+}
+
+function almAlbumQueueItems(albumId) {
+  return sjNoBlocked(almAlbumTracks(albumId).map(t => {
+    const vid = ytData[t.id]?.video_id || tvPrimary(t.id)?.video_id;
+    const meta = ytpTrackMeta(t.id, t.name);
+    return { videoId: vid, title: t.name, trackId: t.id, artist: meta.artist || '' };
+  }).filter(x => x.videoId));
+}
+
+function almCanManage(albumId) {
+  if (!googleUser) return false;
+  if (sjIsAdmin) return true;
+  const alb = almFindAlbum(albumId);
+  if (!alb) return false;
+  const row = (landingStats || []).find(r => r.artist_id === alb.artist_id);
+  return !!(row && row.can_manage);
+}
+
+function almMoreBtn(albumId) {
+  if (!albumId) return '';
+  return `<button type="button" class="alb-more" aria-label="Album menu" aria-haspopup="menu" aria-expanded="false" title="Album options" onclick="event.stopPropagation();almOpen('${albumId}',this,event)">⋯</button>`;
+}
+
+function almClose() {
+  const m = document.getElementById('sjm-menu');
+  if (m && _almAlbumId) m.remove();
+  document.getElementById('sjm-submenu')?.remove();
+  if (_almAnchor) _almAnchor.setAttribute('aria-expanded', 'false');
+  _almAlbumId = null;
+  _almAnchor = null;
+  document.removeEventListener('mousedown', _almOutside, true);
+  window.removeEventListener('scroll', almClose, true);
+  window.removeEventListener('resize', almClose);
+}
+
+function _almOutside(e) {
+  const m = document.getElementById('sjm-menu');
+  const submenu = document.getElementById('sjm-submenu');
+  if (m && !m.contains(e.target) && !submenu?.contains(e.target) &&
+      e.target !== _almAnchor && !_almAnchor?.contains(e.target)) almClose();
+}
+
+function almOpen(albumId, anchorEl, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const already = _almAlbumId === albumId && document.getElementById('sjm-menu');
+  try { sjmClose(); } catch (_) {}
+  almClose();
+  if (already) return;
+  _almAlbumId = albumId;
+  _almAnchor = anchorEl || null;
+  const menu = document.createElement('div');
+  menu.id = 'sjm-menu';
+  menu.className = 'sjm-menu';
+  menu.onmousedown = (e) => e.stopPropagation();
+  menu.onclick = (e) => e.stopPropagation();
+  document.body.appendChild(menu);
+  almRenderRoot();
+  if (anchorEl) {
+    anchorEl.setAttribute('aria-expanded', 'true');
+    // Borrow song-menu positioning against this anchor.
+    _sjmAnchor = anchorEl;
+    _sjmTrackId = null;
+    try { sjmPosition(); } catch (_) {
+      const r = anchorEl.getBoundingClientRect();
+      menu.style.left = Math.min(r.left, window.innerWidth - 260) + 'px';
+      menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 200) + 'px';
+    }
+  }
+  setTimeout(() => {
+    document.addEventListener('mousedown', _almOutside, true);
+    window.addEventListener('scroll', almClose, true);
+    window.addEventListener('resize', almClose);
+  }, 0);
+}
+
+function almRenderRoot() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_almAlbumId) return;
+  sjmCloseSubmenu();
+  const alb = almFindAlbum(_almAlbumId);
+  const name = (alb && alb.name) || 'Album';
+  const n = almAlbumQueueItems(_almAlbumId).length;
+  const canManage = almCanManage(_almAlbumId);
+  menu.innerHTML =
+    _sjmHeader(name) +
+    (canManage
+      ? '<button class="sjm-item" onclick="almManage()">' +
+          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Album</span></button>'
+      : '') +
+    '<button class="sjm-item" data-sjm-submenu="playlists" onclick="almOpenPlaylists()">' +
+      '<span class="sjm-ic">+</span><span class="sjm-label">Add Album to Playlist</span>' +
+      '<span class="sjm-sub">›</span></button>' +
+    '<button class="sjm-item" onclick="almQueuePlayNext()"' + (n ? '' : ' disabled') + '>' +
+      '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Queue Album to Play Next</span></button>' +
+    '<button class="sjm-item" onclick="almAddToQueue()"' + (n ? '' : ' disabled') + '>' +
+      '<span class="sjm-ic">+</span><span class="sjm-label">Add Album to Queue</span>' +
+      (n ? '<span class="sjm-sub">' + n + '</span>' : '') + '</button>' +
+    (googleUser
+      ? '<button class="sjm-item" data-sjm-submenu="break" onclick="almOpenBreak()">' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span>' +
+          '<span class="sjm-label">Take a Break from Album</span>' +
+          '<span class="sjm-sub">›</span></button>'
+      : '');
+  try { sjmPosition(); } catch (_) {}
+}
+
+function almManage() {
+  const id = _almAlbumId;
+  almClose();
+  if (id) openManageAlbum(id);
+}
+
+async function almOpenPlaylists() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_almAlbumId) return;
+  const head = _sjmHeader('Add album to playlist', 'sjmCloseSubmenu()');
+  if (!googleUser) {
+    sjmOpenSubmenu('playlists', head +
+      '<div class="sjm-empty">Playlists are saved to your account.</div>' +
+      '<button class="sjm-item" onclick="almClose();handleAuthClick()">' +
+        '<span class="sjm-ic">→</span><span class="sjm-label">Sign in with Google</span></button>');
+    return;
+  }
+  sjmOpenSubmenu('playlists', head + '<div class="sjm-empty">Loading your playlists…</div>');
+  if (!_playlistsLoaded) {
+    await loadPlaylists();
+    _playlistsLoaded = true;
+  }
+  almRenderPlaylists();
+}
+
+function almRenderPlaylists(newFormOpen) {
+  const menu = document.getElementById('sjm-submenu');
+  if (!menu || !_almAlbumId) return;
+  const tids = new Set(almAlbumTracks(_almAlbumId).map(t => t.id));
+  const mine = playlists.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  function btn(p) {
+    const on = (p._tracks || []).filter(r => tids.has(r.track_id)).length;
+    const all = tids.size && on === tids.size;
+    return '<button class="sjm-item' + (all ? ' sjm-on' : '') + '" onclick="almTogglePlaylist(\'' + p.id + '\')">' +
+      '<span class="sjm-ic">' + (all ? '✓' : '+') + '</span>' +
+      '<span class="sjm-label">' + escHtml(p.name || 'Untitled') + '</span>' +
+      '<span class="sjm-sub">' + on + '/' + tids.size + '</span></button>';
+  }
+  const personal = mine.filter(p => !p.is_public);
+  const myPublic = mine.filter(p => !!p.is_public);
+  menu.innerHTML = _sjmHeader('Add album to playlist', 'sjmCloseSubmenu()') +
+    '<div class="sjm-scroll">' +
+      '<div class="sjm-sec">Personal Playlists</div>' +
+      (personal.length ? personal.map(btn).join('') : '<div class="sjm-empty">No personal playlists yet.</div>') +
+      '<div class="sjm-sec">My Public Playlists</div>' +
+      (myPublic.length ? myPublic.map(btn).join('') : '<div class="sjm-empty">None yet.</div>') +
+    '</div>' +
+    '<div class="sjm-sep"></div>' +
+    (newFormOpen
+      ? '<div class="sjm-newform">' +
+          '<input id="sjm-new-name" placeholder="Playlist name" maxlength="80" ' +
+            'onkeydown="if(event.key===\'Enter\'){event.preventDefault();almCreatePlaylist()}if(event.key===\'Escape\'){almRenderPlaylists()}">' +
+          '<button id="sjm-new-go" onclick="almCreatePlaylist()">Create</button></div>'
+      : '<button class="sjm-item" onclick="almRenderPlaylists(true)">' +
+          '<span class="sjm-ic">+</span><span class="sjm-label">New playlist…</span></button>');
+  sjmPositionSubmenu();
+  if (newFormOpen) document.getElementById('sjm-new-name')?.focus();
+}
+
+async function almTogglePlaylist(playlistId) {
+  const albumId = _almAlbumId;
+  const p = playlists.find(x => x.id === playlistId);
+  const list = almAlbumTracks(albumId);
+  if (!p || !list.length) return;
+  const tids = list.map(t => t.id);
+  const have = new Set((p._tracks || []).map(r => r.track_id));
+  const allIn = tids.every(id => have.has(id));
+  try {
+    if (allIn) {
+      for (const tid of tids) {
+        await dbDelete('/playlist_tracks?playlist_id=eq.' + playlistId + '&track_id=eq.' + tid);
+      }
+      p._tracks = (p._tracks || []).filter(r => !tids.includes(r.track_id));
+      showToast('Removed album from ' + (p.name || 'playlist') + '.');
+    } else {
+      const credit = plTrackCredit();
+      for (const tid of tids) {
+        if (have.has(tid)) continue;
+        const pos = plAppendPosition(p._tracks);
+        await dbPost('/playlist_tracks', { playlist_id: playlistId, track_id: tid, position: pos, ...credit });
+        p._tracks = p._tracks || [];
+        p._tracks.push({ track_id: tid, position: pos });
+        have.add(tid);
+      }
+      showToast('Added album to ' + (p.name || 'playlist') + '.');
+    }
+    almRenderPlaylists();
+  } catch (e) {
+    showToast(e.message || 'Could not update playlist.');
+  }
+}
+
+async function almCreatePlaylist() {
+  const inp = document.getElementById('sjm-new-name');
+  const go = document.getElementById('sjm-new-go');
+  const name = (inp?.value || '').trim();
+  const albumId = _almAlbumId;
+  const list = almAlbumTracks(albumId);
+  if (!name || !googleUser || !list.length) return;
+  if (go) { go.disabled = true; go.textContent = '…'; }
+  try {
+    const [pl] = await dbPost('/playlists', {
+      name,
+      is_public: false,
+      visibility: 'private',
+      user_email: String(googleUser.email || '').trim().toLowerCase(),
+      user_name: sjDisplayName(),
+      context: _playlistContext(),
+    });
+    if (!pl?.id) throw new Error('Playlist was created but could not be read back.');
+    pl._tracks = [];
+    playlists.unshift(pl);
+    _savedPlaylists.unshift(pl);
+    await almTogglePlaylist(pl.id);
+    showToast('Created "' + name + '" and added the album.');
+  } catch (e) {
+    if (go) { go.disabled = false; go.textContent = 'Create'; }
+    showToast(e.message || 'Could not create that playlist.');
+  }
+}
+
+function almQueuePlayNext() {
+  const albumId = _almAlbumId;
+  almClose();
+  const items = almAlbumQueueItems(albumId);
+  if (!items.length) { showToast('No playable tracks on this album.'); return; }
+  if (!ytPlayerEl || !ytQueue.length) {
+    openYTPlayer(items[0].videoId, items[0].title, items[0].trackId);
+    ytQueue = items.slice();
+    ytQueueIdx = 0;
+    updateYTQueueUI();
+    showToast('Playing album.');
+    return;
+  }
+  // Insert after current, then pin the first inserted song as play-next.
+  let insertAt = Math.min(ytQueueIdx + 1, ytQueue.length);
+  const existing = new Set(ytQueue.map(q => q.trackId).filter(Boolean));
+  const toAdd = items.filter(it => !existing.has(it.trackId));
+  if (!toAdd.length) {
+    // Already in queue — move the album block after current in album order.
+    const idxs = items.map(it => ytQueue.findIndex(q => q.trackId === it.trackId)).filter(i => i >= 0);
+    if (!idxs.length) return;
+    const block = idxs.map(i => ytQueue[i]);
+    // Remove from end to start so indices stay valid.
+    [...idxs].sort((a, b) => b - a).forEach(i => {
+      ytQueue.splice(i, 1);
+      if (ytQueueIdx > i) ytQueueIdx--;
+    });
+    insertAt = Math.min(ytQueueIdx + 1, ytQueue.length);
+    ytQueue.splice(insertAt, 0, ...block);
+    ytResetShufflePool();
+    ytSetPlayNext(ytQueue[insertAt]);
+    updateYTQueueUI();
+    ytpPaintUpNext();
+    showToast('Album queued to play next.');
+    return;
+  }
+  const normalized = ytNormalizeQueue(toAdd);
+  ytQueue.splice(insertAt, 0, ...normalized);
+  _queueHasAdditions = true;
+  ytResetShufflePool();
+  ytSetPlayNext(ytQueue[insertAt]);
+  updateYTQueueUI();
+  ytpPaintUpNext();
+  showToast('Album queued to play next (' + normalized.length + ').');
+}
+
+function almAddToQueue() {
+  const albumId = _almAlbumId;
+  almClose();
+  const items = almAlbumQueueItems(albumId);
+  if (!items.length) { showToast('No playable tracks on this album.'); return; }
+  if (!ytPlayerEl || !ytQueue.length) {
+    openYTPlayer(items[0].videoId, items[0].title, items[0].trackId);
+    ytQueue = items.slice();
+    ytQueueIdx = 0;
+    updateYTQueueUI();
+    showToast('Playing album.');
+    return;
+  }
+  ytAppendQueueItems(items);
+  updateYTQueueUI();
+  showToast('Added ' + items.length + ' tracks to the queue.');
+}
+
+function almOpenBreak() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_almAlbumId) return;
+  const html = _sjmHeader('Take a break from album', 'sjmCloseSubmenu()') +
+    '<div class="sjm-empty">Skip every song on this album in shuffle and the queue. You can still play them yourself.</div>' +
+    SJ_BREAK_OPTS.map(o =>
+      '<button class="sjm-item" onclick="almSetBreak(' + o.days + ')">' +
+        '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span><span class="sjm-label">' + o.label + '</span></button>'
+    ).join('') +
+    '<div class="sjm-sep"></div>' +
+    '<button class="sjm-item" onclick="almClearBreak()">' +
+      '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>';
+  sjmOpenSubmenu('break', html);
+}
+
+async function almSetBreak(days) {
+  const albumId = _almAlbumId;
+  almClose();
+  const list = almAlbumTracks(albumId);
+  if (!list.length || !(days > 0) || !googleUser) {
+    if (!googleUser) showToast('Sign in to take a break from songs.');
+    return;
+  }
+  const untilMs = Date.now() + days * 86400000;
+  for (const t of list) {
+    delete blockedTracks[t.id];
+    snoozedTracks[t.id] = untilMs;
+    refreshBlockedUI(t.id);
+    pruneBlockedFromQueue(t.id);
+  }
+  saveLocalBlocked();
+  showToast('Taking a break from this album (' + list.length + ' songs) until ' + new Date(untilMs).toLocaleDateString() + '.');
+  try {
+    const { data: { session } } = await sjGetSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    for (const t of list) {
+      try {
+        await dbDelete('/blocked_tracks?track_id=eq.' + t.id);
+        await dbPost('/blocked_tracks', {
+          user_id: userId, user_email: googleUser.email, track_id: t.id,
+          until: new Date(untilMs).toISOString(),
+        });
+      } catch (_) {}
+    }
+  } catch (e) { console.warn('almSetBreak sync error', e); }
+}
+
+async function almClearBreak() {
+  const albumId = _almAlbumId;
+  almClose();
+  const list = almAlbumTracks(albumId);
+  for (const t of list) {
+    delete snoozedTracks[t.id];
+    refreshBlockedUI(t.id);
+  }
+  saveLocalBlocked();
+  showToast('Album can play again.');
+  for (const t of list) {
+    try { await dbDelete('/blocked_tracks?track_id=eq.' + t.id); } catch (_) {}
+  }
+}
+
+// ── Manage Album (mgb*) ──────────────────────────────────────────────────
+let _mgbAlbumId = null;
+let _mgbData = null;
+let _mgbBusy = false;
+
+function mgbClose() {
+  document.getElementById('mgbOverlay')?.classList.remove('open');
+  _mgbAlbumId = null;
+  _mgbData = null;
+  _mgbBusy = false;
+}
+
+async function openManageAlbum(albumId) {
+  if (!albumId) return;
+  if (!googleUser) {
+    if (confirm('Sign in to manage albums. Sign in now?')) handleAuthClick();
+    return;
+  }
+  if (!almCanManage(albumId) && !sjIsAdmin) {
+    showToast('Only the person who imported this music can manage it.');
+    return;
+  }
+  _mgbAlbumId = albumId;
+  const overlay = document.getElementById('mgbOverlay');
+  const body = document.getElementById('mgb-body');
+  const footer = document.getElementById('mgb-footer');
+  const title = document.getElementById('mgbTitle');
+  if (!overlay || !body) return;
+  overlay.classList.add('open');
+  body.innerHTML = '<div class="admin-metrics-loading">Loading…</div>';
+  if (footer) footer.style.display = 'none';
+  try {
+    const alb = almFindAlbum(albumId);
+    if (!alb) throw new Error('Album not found.');
+    // Ensure track videos are loaded for chart numbers.
+    const trks = (tracks[alb.artist_id] || []).filter(t => t.album_id === albumId);
+    const ids = trks.map(t => t.id);
+    if (ids.length) {
+      try { await loadTrackVideos(ids); } catch (_) {}
+    }
+    let ft = null;
+    try {
+      ft = await amFetch('?action=finetune_data&artist_id=' + encodeURIComponent(alb.artist_id));
+    } catch (_) {}
+    const ftAlb = (ft && ft.albums || []).find(a => a.id === albumId) || null;
+    _mgbData = {
+      album: {
+        id: albumId,
+        name: (ftAlb && ftAlb.name) || alb.name || '',
+        release_date: (ftAlb && ftAlb.release_date) || alb.release_date || '',
+        art_url: (ftAlb && (ftAlb._pickedArt || ftAlb.art_url)) || alb.art_url || '',
+        artist_id: alb.artist_id,
+        art_options: (ftAlb && ftAlb.art_options) || [],
+        art_wiki: (ftAlb && ftAlb.art_wiki) || null,
+      },
+      artist: (ft && ft.artist) || { id: alb.artist_id, name: '' },
+      tracks: trks.slice().sort((a, b) => (a.track_number || 0) - (b.track_number || 0)),
+    };
+    if (title) title.textContent = 'Manage album · ' + (_mgbData.album.name || '');
+    mgbRender();
+    if (footer) footer.style.display = '';
+  } catch (e) {
+    body.innerHTML = '<div style="color:#ef4444;font-size:.6rem">' + escHtml(e.message || 'Could not open Manage album.') + '</div>';
+  }
+}
+
+function mgbTrackViews(trackId) {
+  const top = tvTop(trackId);
+  if (top && Number.isFinite(Number(top.view_count))) return Number(top.view_count);
+  return Number(ytData[trackId]?.views) || 0;
+}
+
+function mgbAlbumViewsTotal(trackList) {
+  return (trackList || []).reduce((s, t) => s + mgbTrackViews(t.id), 0);
+}
+
+function mgbChartHTML(albumBars) {
+  if (!albumBars || !albumBars.length) return '';
+  const max = Math.max(...albumBars.map(b => b.views), 1);
+  return '<div class="mgb-chart">' + albumBars.map(b => {
+    const h = Math.max(4, Math.round((b.views / max) * 90));
+    return '<div class="mgb-chart-bar" title="' + escHtml(b.name) + ': ' + fmtV(b.views) + '">' +
+      '<div class="mgb-chart-n">' + fmtV(b.views) + '</div>' +
+      '<div class="mgb-chart-col" style="height:' + h + 'px"></div>' +
+      '<div class="mgb-chart-lbl">' + escHtml(b.name) + '</div></div>';
+  }).join('') + '</div>';
+}
+
+function mgbRender() {
+  const body = document.getElementById('mgb-body');
+  const d = _mgbData;
+  if (!body || !d) return;
+  const al = d.album;
+  const yr = (al.release_date || '').slice(0, 4);
+  const opts = [];
+  if (al.art_wiki) opts.push(al.art_wiki);
+  if (al.art_url && !opts.includes(al.art_url)) opts.push(al.art_url);
+  (al.art_options || []).forEach(u => { if (u && !opts.includes(u)) opts.push(u); });
+  const cover = al.art_url || opts[0] || '';
+  const total = mgbAlbumViewsTotal(d.tracks);
+  body.innerHTML =
+    '<div class="ms-sec"><div class="ms-sec-h">Album</div>' +
+      '<div class="ms-field"><label for="mgb-name">Name</label>' +
+        '<input id="mgb-name" type="text" maxlength="120" value="' + msQ(al.name) + '"></div>' +
+      '<div class="ms-field"><label for="mgb-year">Year</label>' +
+        '<input id="mgb-year" type="text" maxlength="4" inputmode="numeric" value="' + msQ(yr) + '" style="width:5rem"></div>' +
+      '<div class="ms-field"><label>Cover</label>' +
+        (cover ? '<img src="' + escHtml(cover) + '" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:6px;margin-bottom:6px">' : '') +
+        '<input id="mgb-art" type="url" placeholder="https://… cover image URL" value="' + msQ(al.art_url || '') + '">' +
+        (opts.length > 1
+          ? '<div class="am-ft-arts" style="margin-top:6px">' + opts.slice(0, 9).map(u =>
+              '<img src="' + escHtml(u) + '" loading="lazy" class="' + (u === (al.art_url || opts[0]) ? 'sel' : '') +
+              '" onclick="mgbPickArt(this)" data-u="' + msQ(u) + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid ' +
+              (u === (al.art_url || opts[0]) ? 'var(--accent)' : 'transparent') + '">').join('') + '</div>'
+          : '') +
+      '</div></div>' +
+    '<div class="ms-sec"><div class="ms-sec-h">YouTube views on this album · ' + fmtV(total) + '</div>' +
+      mgbChartHTML([{ name: al.name, views: total }]) +
+      '<div style="font-size:.46rem;color:var(--text-muted);margin-top:6px">Bars use the highest charting upload per song. Rediscover can swap in higher-view videos.</div></div>' +
+    '<div class="ms-sec"><div class="ms-sec-h">Tracks</div>' +
+      (d.tracks.length ? d.tracks.map(t => {
+        const prim = tvPrimary(t.id);
+        const views = mgbTrackViews(t.id);
+        return '<div class="mgb-trk">' +
+          '<div class="mgb-trk-body">' +
+            '<div class="mgb-trk-title">' + escHtml(t.name || '') + '</div>' +
+            '<div class="mgb-trk-meta">' + fmtV(views) + ' views' +
+              (prim ? ' · ' + escHtml(tvLabel(prim)) : '') + '</div></div>' +
+          '<button type="button" class="pl-btn ghost" onclick="openManageSong(\'' + t.id + '\')">Default video</button>' +
+          '<button type="button" class="pl-btn ghost" onclick="mgbEditLyrics(\'' + t.id + '\')">Lyrics</button>' +
+          (sjmHasLyricsHistory(t.id)
+            ? '<button type="button" class="pl-btn ghost" onclick="openLyricsHistory(\'' + t.id + '\')">History</button>'
+            : '') +
+        '</div>';
+      }).join('') : '<div class="plb-empty small">No tracks on this album.</div>') +
+    '</div>';
+}
+
+function mgbPickArt(el) {
+  const u = el?.getAttribute('data-u');
+  if (!u || !_mgbData) return;
+  _mgbData.album.art_url = u;
+  const inp = document.getElementById('mgb-art');
+  if (inp) inp.value = u;
+  document.querySelectorAll('#mgb-body .am-ft-arts img').forEach(im => {
+    im.style.borderColor = im.getAttribute('data-u') === u ? 'var(--accent)' : 'transparent';
+  });
+}
+
+function mgbEditLyrics(trackId) {
+  if (!trackId) return;
+  try { startLyricsEdit(trackId, 'card'); } catch (_) {
+    showToast('Open the song accordion to edit lyrics.');
+  }
+}
+
+async function mgbSave() {
+  if (!_mgbData || _mgbBusy) return;
+  const name = (document.getElementById('mgb-name')?.value || '').trim();
+  const yearStr = (document.getElementById('mgb-year')?.value || '').trim();
+  const art = (document.getElementById('mgb-art')?.value || '').trim();
+  if (!name) { showToast('Album name can’t be empty.'); return; }
+  if (yearStr && !/^\d{4}$/.test(yearStr)) { showToast('Year must be 4 digits.'); return; }
+  _mgbBusy = true;
+  const btn = document.getElementById('mgb-save-btn');
+  if (btn) btn.textContent = 'Saving…';
+  try {
+    const payload = { id: _mgbData.album.id, name };
+    if (yearStr) payload.release_date = yearStr;
+    if (art && /^https?:\/\//.test(art)) payload.art_url = art;
+    await amFetch('?action=finetune', {
+      method: 'POST',
+      body: JSON.stringify({ artist_id: _mgbData.album.artist_id, albums: [payload] }),
+    });
+    const alb = almFindAlbum(_mgbData.album.id);
+    if (alb) {
+      alb.name = name;
+      if (yearStr) alb.release_date = yearStr + '-01-01';
+      if (art) alb.art_url = art;
+    }
+    showToast('Album saved.');
+    try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+    try { loadData(); } catch (_) {}
+  } catch (e) {
+    showToast(e.message || 'Could not save album.');
+  } finally {
+    _mgbBusy = false;
+    if (btn) btn.textContent = 'Save';
+  }
+}
+
+function adOpenFromAlbum() {
+  const id = _mgbAlbumId;
+  if (!id) return;
+  const alb = almFindAlbum(id);
+  const tids = ((alb && tracks[alb.artist_id]) || []).filter(t => t.album_id === id).map(t => t.id);
+  adOpen({ albumIds: [id], trackIds: tids, source: 'album' });
+}
+
+// ── Rediscover videos wizard (ad*) ───────────────────────────────────────
+let _adStep = 1;
+let _adScope = null; // { albumIds, trackIds, source, artistId? }
+let _adSelected = new Set();
+let _adStrategy = 'songs'; // playlist | songs
+let _adProposals = null;
+let _adAlbums = null;
+let _adBusy = false;
+
+function adClose() {
+  document.getElementById('adOverlay')?.classList.remove('open');
+  _adStep = 1;
+  _adScope = null;
+  _adSelected = new Set();
+  _adProposals = null;
+  _adAlbums = null;
+  _adBusy = false;
+}
+
+function adOpen(opts) {
+  if (!googleUser) {
+    if (confirm('Sign in to rediscover videos. Sign in now?')) handleAuthClick();
+    return;
+  }
+  opts = opts || {};
+  _adScope = {
+    albumIds: (opts.albumIds || []).slice(),
+    trackIds: (opts.trackIds || []).slice(),
+    source: opts.source || 'album',
+    artistId: opts.artistId || null,
+  };
+  _adSelected = new Set(_adScope.trackIds);
+  _adStep = 1;
+  _adStrategy = 'songs';
+  _adProposals = null;
+  const overlay = document.getElementById('adOverlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  adRender();
+}
+
+async function adRequest(body) {
+  const opts = {
+    method: 'POST',
+    headers: { ...(await sjAuthHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+  const res = await fetch(sjApiUrl('/api/sj-auto-discover'), opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || 'Request failed.');
+  return data;
+}
+
+function adRender() {
+  const body = document.getElementById('ad-body');
+  const back = document.getElementById('ad-back-btn');
+  const next = document.getElementById('ad-next-btn');
+  const title = document.getElementById('adTitle');
+  if (!body) return;
+  if (back) back.style.display = _adStep > 1 ? '' : 'none';
+  if (next) {
+    next.disabled = !!_adBusy;
+    next.textContent = _adStep === 1 ? 'Continue'
+      : _adStep === 2 ? 'Find better videos'
+      : (_adBusy ? 'Applying…' : 'Apply selected');
+  }
+  if (title) title.textContent = 'Rediscover videos · step ' + _adStep + ' of 3';
+
+  if (_adStep === 1) {
+    const rows = (_adScope.trackIds || []).map(tid => {
+      const t = findTrackById(tid);
+      const name = (t && t.name) || tid;
+      const on = _adSelected.has(tid);
+      return '<label class="ad-step-opt' + (on ? ' on' : '') + '">' +
+        '<input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="adToggleTrack(\'' + tid + '\', this.checked)">' +
+        '<span><b>' + escHtml(name) + '</b><em>' + fmtV(mgbTrackViews(tid)) + ' views</em></span></label>';
+    }).join('');
+    body.innerHTML =
+      '<div class="ms-sec-h" style="margin-bottom:8px">Which songs should we re-check?</div>' +
+      '<div style="margin-bottom:8px">' +
+        '<button type="button" class="pl-btn ghost" onclick="adSelectAll(true)">Select all</button> ' +
+        '<button type="button" class="pl-btn ghost" onclick="adSelectAll(false)">Select none</button></div>' +
+      (rows || '<div class="plb-empty small">No songs in scope.</div>');
+    return;
+  }
+
+  if (_adStep === 2) {
+    body.innerHTML =
+      '<div class="ms-sec-h" style="margin-bottom:8px">How should we search YouTube?</div>' +
+      '<label class="ad-step-opt' + (_adStrategy === 'playlist' ? ' on' : '') + '" onclick="adSetStrategy(\'playlist\')">' +
+        '<input type="radio" name="adStrat" ' + (_adStrategy === 'playlist' ? 'checked' : '') + '>' +
+        '<span><b>Playlist</b><em>Look for album playlists and map each song by title. Cheaper on quota when a full album upload exists.</em></span></label>' +
+      '<label class="ad-step-opt' + (_adStrategy === 'songs' ? ' on' : '') + '" onclick="adSetStrategy(\'songs\')">' +
+        '<input type="radio" name="adStrat" ' + (_adStrategy === 'songs' ? 'checked' : '') + '>' +
+        '<span><b>Top Rating per Song</b><em>Search each song individually by highest YouTube view count. Best for official music videos that outrank album audio.</em></span></label>';
+    return;
+  }
+
+  // step 3 review
+  if (!_adProposals) {
+    body.innerHTML = '<div class="admin-metrics-loading">Searching YouTube…</div>';
+    return;
+  }
+  const albums = _adAlbums || [];
+  const changes = _adProposals.filter(p => p.proposedVideoId);
+  body.innerHTML =
+    '<div class="ms-sec-h">Album totals if you apply</div>' +
+    mgbChartHTML(albums.map(a => ({ name: a.albumName, views: a.after }))) +
+    '<div style="font-size:.46rem;color:var(--text-muted);margin:6px 0 12px">Before → after shown per song below. Apply sets the new upload as the play default and the chart source.</div>' +
+    '<div class="ms-sec-h">' + changes.length + ' upgrade' + (changes.length === 1 ? '' : 's') + ' found</div>' +
+    _adProposals.map(p => {
+      const up = !!p.proposedVideoId;
+      return '<div class="ad-review-row">' +
+        '<div><b>' + escHtml(p.trackName) + '</b><div style="color:var(--text-muted);font-size:.46rem">' +
+          escHtml(p.albumName) + (p.skipped && !up ? ' · ' + escHtml(p.skipped) : '') +
+          (up ? ' · ' + escHtml(p.proposedChannel || '') : '') + '</div></div>' +
+        '<div style="text-align:right">' + fmtV(p.currentViews) +
+          (up ? ' → <span style="color:var(--accent);font-weight:600">' + fmtV(p.proposedViews) + '</span>' : '') + '</div>' +
+        (up
+          ? '<label><input type="checkbox" checked data-ad-track="' + p.trackId + '" data-ad-video="' + p.proposedVideoId + '"></label>'
+          : '<span style="color:var(--text-muted)">—</span>') +
+      '</div>';
+    }).join('');
+}
+
+function adToggleTrack(tid, on) {
+  if (on) _adSelected.add(tid);
+  else _adSelected.delete(tid);
+  adRender();
+}
+
+function adSelectAll(on) {
+  _adSelected = on ? new Set(_adScope.trackIds) : new Set();
+  adRender();
+}
+
+function adSetStrategy(s) {
+  _adStrategy = s === 'playlist' ? 'playlist' : 'songs';
+  adRender();
+}
+
+function adBack() {
+  if (_adStep <= 1 || _adBusy) return;
+  _adStep -= 1;
+  if (_adStep < 3) _adProposals = null;
+  adRender();
+}
+
+async function adNext() {
+  if (_adBusy) return;
+  if (_adStep === 1) {
+    if (!_adSelected.size) { showToast('Pick at least one song.'); return; }
+    _adStep = 2;
+    adRender();
+    return;
+  }
+  if (_adStep === 2) {
+    _adBusy = true;
+    _adStep = 3;
+    adRender();
+    try {
+      const data = await adRequest({
+        action: 'preview',
+        strategy: _adStrategy,
+        track_ids: [..._adSelected],
+      });
+      _adProposals = data.proposals || [];
+      _adAlbums = data.albums || [];
+    } catch (e) {
+      _adStep = 2;
+      showToast(e.message || 'Search failed.');
+    } finally {
+      _adBusy = false;
+      adRender();
+    }
+    return;
+  }
+  // apply
+  const boxes = [...document.querySelectorAll('#ad-body input[data-ad-track]:checked')];
+  const changes = boxes.map(el => ({
+    trackId: el.getAttribute('data-ad-track'),
+    videoId: el.getAttribute('data-ad-video'),
+  })).filter(c => c.trackId && c.videoId);
+  if (!changes.length) { showToast('Nothing selected to apply.'); return; }
+  _adBusy = true;
+  adRender();
+  try {
+    const data = await adRequest({ action: 'apply', changes });
+    const n = (data.applied || []).length;
+    showToast(n ? ('Updated ' + n + ' song' + (n === 1 ? '' : 's') + '.') : 'Nothing changed.');
+    const tids = changes.map(c => c.trackId);
+    try { await loadTrackVideos(tids); } catch (_) {}
+    try { await loadYT(tids); } catch (_) {}
+    // Refresh import fine-tune chart if open
+    try { if (typeof amFtRefreshChart === 'function') await amFtRefreshChart(); } catch (_) {}
+    try { if (_mgbAlbumId) await openManageAlbum(_mgbAlbumId); } catch (_) {}
+    try { if (typeof renderCurrentView === 'function') renderCurrentView(); } catch (_) {}
+    adClose();
+  } catch (e) {
+    showToast(e.message || 'Could not apply.');
+  } finally {
+    _adBusy = false;
+    adRender();
+  }
 }
 
 // ── Manage song (ms*) — name, album, privacy, YouTube versions, links ─────
@@ -25544,7 +26413,7 @@ function laAlbumHTML(alb, idx) {
         <div class="list-views" style="color:${color}">${fmtV(views)}</div>
         <div class="list-views-lbl">yt views</div>
       </div>
-      ${hasVids ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)" title="Play album">▶ Play</button>` : ''}
+      ${hasVids ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)" title="Play album">▶ Play</button>${almMoreBtn(alb.id)}` : ''}
       <div class="list-chevron" data-la-chev="${alb.id}">${isOpen ? '▲' : '▼'}</div>
     </div>
     <div class="la-alb-tracks" data-la-tracks="${alb.id}"></div>
@@ -27301,7 +28170,7 @@ function renderListView(albList, sortOverride) {
           <div class="list-views-lbl">${_listMetricLbl}</div>
         </div>` : ''}
         ${hasVids ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)"
-          title="Play album">▶ Play</button>` : ''}
+          title="Play album">▶ Play</button>${alb._ddResearch || alb._ddResearchGroup ? '' : almMoreBtn(alb.id)}` : ''}
         <div class="list-chevron">${isExp ? '▲' : '▼'}</div>
       </div>
       ${isExp ? `<div class="list-tracks">${alb._ddResearchGroup ? ddRenderGroupTrackLines(alb) : alb._ddResearch ? ddResearchPanelBody(ddItem) : renderTrackLines(alb, 'inline')}</div>` : ''}
@@ -28612,7 +29481,9 @@ function amFtCoverSelected(u, al) {
 
 function amFtRender() {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const chartHtml = amFtChartSectionHTML();
   document.getElementById('amFtBody').innerHTML = `
+    ${chartHtml}
     <div class="am-ft-section">
       <div class="m-fl">Artist name</div>
       <input type="text" class="m-input" id="amFtArtistName" maxlength="80" value="${esc(amFt.artist.name)}" autocorrect="off" autocapitalize="words" spellcheck="false">
@@ -28649,6 +29520,91 @@ function amFtRender() {
     </div>`;
   amBgSync();
   amFtDedupArts();   // fire-and-forget: hide duplicate cover options as hashes come in
+  amFtLoadChartViews(); // fire-and-forget: fill real view counts into the preview
+}
+
+function amFtChartSectionHTML() {
+  const albums = (amFt && amFt.albums) || [];
+  if (!albums.length) return '';
+  const bars = albums.map(al => ({
+    name: al.name || 'Album',
+    views: Number(al._chartViews) || 0,
+    id: al.id,
+  }));
+  const known = bars.some(b => b.views > 0);
+  return '<div class="am-ft-section am-ft-chart-wrap" id="amFtChartWrap">' +
+    '<div class="am-ft-chart-h">YouTube views by album</div>' +
+    '<div class="am-ft-chart-sub">What the public chart will look like with the videos just matched. If an album looks too low, Rediscover can hunt for higher-view uploads.</div>' +
+    '<div id="amFtChart">' + (known ? mgbChartHTML(bars) : '<div style="font-size:.5rem;color:var(--text-muted)">Loading view counts…</div>') + '</div>' +
+    '<div style="margin-top:.65rem">' +
+      '<button type="button" class="m-btn ghost" onclick="amFtOpenRediscover()">Rediscover videos</button>' +
+    '</div></div>';
+}
+
+async function amFtLoadChartViews() {
+  if (!amFt || !amArtistId) return;
+  try {
+    const albumIds = (amFt.albums || []).map(a => a.id).filter(Boolean);
+    let trks = (tracks[amArtistId] || []).filter(t => albumIds.includes(t.album_id));
+    if (!trks.length && albumIds.length) {
+      const chunks = [];
+      for (let i = 0; i < albumIds.length; i += 40) chunks.push(albumIds.slice(i, i + 40));
+      trks = (await Promise.all(chunks.map(c =>
+        dbGet('/tracks?album_id=in.(' + c.join(',') + ')&select=id,album_id,name,track_number&order=track_number.asc&limit=500')
+      ))).flat();
+    }
+    const ids = trks.map(t => t.id).filter(Boolean);
+    if (ids.length) {
+      try { await loadTrackVideos(ids); } catch (_) {}
+    }
+    const byAlbum = {};
+    for (const t of trks) {
+      const aid = t.album_id;
+      if (!aid) continue;
+      byAlbum[aid] = (byAlbum[aid] || 0) + mgbTrackViews(t.id);
+    }
+    (amFt.albums || []).forEach(al => { al._chartViews = byAlbum[al.id] || 0; });
+    const el = document.getElementById('amFtChart');
+    if (el) {
+      const bars = (amFt.albums || []).map(al => ({ name: al.name || 'Album', views: Number(al._chartViews) || 0 }));
+      el.innerHTML = mgbChartHTML(bars) || '<div style="font-size:.5rem;color:var(--text-muted)">No view counts yet.</div>';
+    }
+  } catch (_) {
+    const el = document.getElementById('amFtChart');
+    if (el) el.innerHTML = '<div style="font-size:.5rem;color:var(--text-muted)">Could not load view counts.</div>';
+  }
+}
+
+async function amFtRefreshChart() {
+  if (!amFt) return;
+  await amFtLoadChartViews();
+}
+
+function amFtOpenRediscover() {
+  if (!amFt || !amArtistId) return;
+  const albumIds = (amFt.albums || []).map(a => a.id).filter(Boolean);
+  const trks = (tracks[amArtistId] || []).filter(t => albumIds.includes(t.album_id));
+  const trackIds = trks.map(t => t.id);
+  adOpen({
+    albumIds,
+    trackIds: trackIds.length ? trackIds : [],
+    artistId: amArtistId,
+    source: 'import',
+  });
+  if (!trackIds.length && albumIds.length) {
+    const chunks = [];
+    for (let i = 0; i < albumIds.length; i += 40) chunks.push(albumIds.slice(i, i + 40));
+    Promise.all(chunks.map(c =>
+      dbGet('/tracks?album_id=in.(' + c.join(',') + ')&select=id,album_id,name&limit=500')
+    )).then(rows => {
+      const ids = rows.flat().map(t => t.id);
+      if (_adScope && document.getElementById('adOverlay')?.classList.contains('open')) {
+        _adScope.trackIds = ids;
+        _adSelected = new Set(ids);
+        adRender();
+      }
+    }).catch(() => {});
+  }
 }
 
 async function amOpenAudioUpload() {
@@ -29018,7 +29974,7 @@ function renderMyArtistDetail() {
       </div>
       <div id="ma-addtrk-panel" style="display:none;margin:0 0 12px"></div>
       <div class="oa-albs" id="ma-albs-${a.id}">
-        ${a.albums.length ? a.albums.map(al => `<div class="oa-alb" id="ma-albrow-${al.id}" data-ma-alb-name="${esc((al.name||'').toLowerCase())}">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Edit name & year" onclick="maToggleAlbumEdit('${a.id}','${al.id}')">✎</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div><div class="ma-albedit-box" id="ma-albedit-${al.id}" style="display:none"></div>`).join('')
+        ${a.albums.length ? a.albums.map(al => `<div class="oa-alb" id="ma-albrow-${al.id}" data-ma-alb-name="${esc((al.name||'').toLowerCase())}">${al.art_url ? `<img src="${al.art_url}" loading="lazy">` : ''}<span class="oa-alb-name">${esc(al.name)}</span><span class="oa-alb-yr">${(al.release_date||'').slice(0,4)}</span><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="View tracks" onclick="maToggleTracks('${a.id}','${al.id}')">♪ Tracks</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Batch-upload background-play audio" onclick="taBatchOpen('${a.id}','${al.id}')">🎧 Audio</button><button type="button" class="oa-act" style="font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Manage album" onclick="openManageAlbum('${al.id}')">✎ Manage</button><button type="button" class="oa-act" style="border-color:#ef444455;color:#ef4444;font-size:.45rem;padding:.1rem .35rem;flex-shrink:0" title="Remove this album" onclick="maDeleteAlbum('${a.id}','${al.id}')">✕</button></div><div class="ma-trks" id="ma-trks-${al.id}" style="display:none"></div><div class="ma-albedit-box" id="ma-albedit-${al.id}" style="display:none"></div>`).join('')
           : '<div class="oa-albs-note">No albums yet. Use Add albums to run the import wizard.</div>'}
       </div>
     </div>`;
@@ -29267,23 +30223,8 @@ async function maRename(artistId) {
 }
 
 function maToggleAlbumEdit(artistId, albumId) {
-  const box = document.getElementById('ma-albedit-' + albumId);
-  if (!box) return;
-  if (box.style.display !== 'none') { box.style.display = 'none'; box.innerHTML = ''; return; }
-  const a = maFindArtist(artistId);
-  const al = a && a.albums && a.albums.find(x => x.id === albumId);
-  if (!al) return;
-  const nameAttr = (al.name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const yr = (al.release_date || '').slice(0, 4);
-  box.style.display = '';
-  box.innerHTML = `
-    <div class="ma-albedit-row">
-      <input type="text" class="m-input" id="ma-albedit-name-${albumId}" value="${nameAttr}" placeholder="Album name" style="flex:1;min-width:0" autocomplete="off">
-      <input type="number" class="m-input" id="ma-albedit-year-${albumId}" value="${yr}" placeholder="Year" min="1900" max="2100" step="1" style="width:64px;flex-shrink:0" autocomplete="off">
-      <button type="button" class="lyr-save-btn" onclick="maSaveAlbumEdit('${artistId}','${albumId}')">Save</button>
-      <button type="button" class="lyr-cancel-btn" onclick="maToggleAlbumEdit('${artistId}','${albumId}')">Cancel</button>
-    </div>`;
-  document.getElementById('ma-albedit-name-' + albumId)?.focus();
+  // Full Manage Album panel replaces the tiny inline name/year editor.
+  if (albumId) openManageAlbum(albumId);
 }
 
 async function maSaveAlbumEdit(artistId, albumId) {
@@ -30697,6 +31638,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-04', items: [
+    'Album cards now have a ⋯ menu next to Play: Manage Album, add the album to a playlist, queue it to play next, add it to the queue, or take a break from every song on it.',
+    'Manage Album lets importers fine-tune the album name, year and cover, change each song’s default YouTube video (which also updates the chart), and open lyrics plus lyric edit history.',
+    'Rediscover videos can re-check YouTube for better uploads — by album playlist or by highest view count per song — then show before and after view counts before you apply. Applying sets the new video as both what plays and what the chart counts.',
+    'After importing an artist, the Fine-tune step shows a YouTube views-by-album chart preview so you can spot low matches and run Rediscover before you finish.',
     'Top Songs in the admin analytics can now be ranked by Plays, by Rating or by Hearts, and the table shows a heart count for every song.',
     'A new Page Performance tab in the admin analytics shows how long pages are taking to load, broken down over time, by page and by person, with the slowest loads and the most recent freezes listed underneath.',
     'A long playlist no longer bogs the whole page down. With a couple of thousand songs queued up, every track change, rating and jukebox update was rebuilding the entire playlist list from scratch, which took about half a second each time and made the page stutter or stop responding. The list is now only rebuilt when the songs in it actually change.',
@@ -32818,7 +33763,7 @@ function sjdMsCell(n) {
 const SJD_PERF_SERIES = [
   { key: 'avg_ms',   label: 'Average',   color: '#ff6b35' },
   { key: 'p95_ms',   label: '95th pct',  color: '#f87171' },
-  { key: 'ready_ms', label: 'App ready', color: '#a78bfa' }
+  { key: 'ready_ms', label: 'Looks ready', color: '#a78bfa' }
 ];
 
 function sjdPerfChartSVG(rows) {
@@ -32915,7 +33860,7 @@ function renderSjPerf() {
     { lbl: '95th Pct', val: sjdMs(t.p95LoadMs), sub: 'the slow tail', c: sjdMsColor(t.p95LoadMs) },
     { lbl: 'First Byte', val: sjdMs(t.avgTtfbMs), sub: 'server, average', c: sjdMsColor(t.avgTtfbMs) },
     { lbl: 'First Paint', val: sjdMs(t.avgFcpMs), sub: 'first pixel, average', c: sjdMsColor(t.avgFcpMs) },
-    { lbl: 'App Ready', val: sjdMs(t.avgReadyMs), sub: 'first render, average', c: sjdMsColor(t.avgReadyMs) }
+    { lbl: 'Looks Ready', val: sjdMs(t.avgReadyMs), sub: 'largest paint, average', c: sjdMsColor(t.avgReadyMs) }
   ];
   const kpiHTML = kpis.map(function (k) {
     return '<div class="sjd-kpi sjd-kpi-static" style="--c:' + k.c + '">'

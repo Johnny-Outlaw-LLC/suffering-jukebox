@@ -380,10 +380,12 @@ export async function POST(req: NextRequest) {
       .update({ is_primary: false })
       .eq("track_id", trackId)
       .neq("video_id", videoId);
+    // Default to play also counts for the YouTube bars — otherwise promoting a
+    // high-view upload would leave the chart on the old low-view row.
     const { error } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("track_videos")
-      .update({ is_primary: true })
+      .update({ is_primary: true, counts_for_charts: true })
       .eq("track_id", trackId)
       .eq("video_id", videoId);
     if (error) return bad(error.message || "Could not set the default version.", 400);
