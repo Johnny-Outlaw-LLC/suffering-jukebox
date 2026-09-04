@@ -8792,6 +8792,77 @@ async function wakeSync(playing) {
   }
 }
 
+// ── Offline downloads (native shell) ───────────────────────────────
+// CarPlay and offline play are fed from files the native engine has on disk,
+// not from anything the web layer holds: the car has no web view, and a
+// presigned B2 URL would have expired by the time you got in it. Only locker
+// tracks can be downloaded - a YouTube-backed track has no file to hand over.
+const _sjDownloads = new Map();   // trackId -> 'downloading' | 'done'
+
+function sjDlPlugin() { return window.Capacitor?.Plugins?.SJNativeAudio || null; }
+
+function sjDlState(trackId) { return _sjDownloads.get(trackId) || 'none'; }
+
+async function sjDlInit() {
+  const p = sjDlPlugin();
+  if (!p) return;
+  try {
+    const { downloads } = await p.listDownloads();
+    (downloads || []).forEach(d => { if (d.state === 'done') _sjDownloads.set(d.trackId, 'done'); });
+  } catch (_) {}
+  try {
+    await p.addListener('downloadChange', d => {
+      if (!d || !d.trackId) return;
+      if (d.state === 'done')            _sjDownloads.set(d.trackId, 'done');
+      else if (d.state === 'downloading') _sjDownloads.set(d.trackId, 'downloading');
+      else                                _sjDownloads.delete(d.trackId);
+      if (d.state === 'failed') alert('Download failed: ' + (d.error || 'unknown error'));
+      // Repaint the menu if it is open on this track.
+      if (_sjmTrackId === d.trackId && document.getElementById('sjm-menu')) sjmRenderRoot();
+    });
+  } catch (_) {}
+}
+
+// Builds the payload the native engine stores alongside the file, so the car
+// can show artist/album/artwork with no network at all.
+function sjDlTrackPayload(trackId) {
+  const ta = taTrackAudio(trackId);
+  if (!ta || !ta.url) return null;
+  const m = ytpTrackMeta(trackId);
+  const art = m.artwork && /^https?:/i.test(m.artwork) ? m.artwork : undefined;
+  return {
+    id: trackId,
+    title: m.title || 'Track',
+    artist: m.artist || '',
+    album: m.album || undefined,
+    artworkUrl: art,
+    url: ta.url,
+    durationSeconds: Number(ta.duration) || 0,
+  };
+}
+
+async function sjmToggleDownload() {
+  const tid = _sjmTrackId;
+  const p = sjDlPlugin();
+  if (!tid || !p) return;
+  const state = sjDlState(tid);
+  try {
+    if (state === 'done') {
+      await p.removeDownload({ trackId: tid });
+      _sjDownloads.delete(tid);
+    } else if (state === 'none') {
+      const track = sjDlTrackPayload(tid);
+      if (!track) { alert('This song has no uploaded audio to download.'); return; }
+      _sjDownloads.set(tid, 'downloading');
+      await p.download({ track });
+    }
+  } catch (e) {
+    _sjDownloads.delete(tid);
+    alert('Download failed: ' + (e?.message || e));
+  }
+  if (document.getElementById('sjm-menu')) sjmRenderRoot();
+}
+
 // Whether sound is coming out right now, whichever source is carrying it.
 function ytpIsPlaying() {
   if (_taBgActive && _taAudioEl) return !_taAudioEl.paused;
@@ -16029,6 +16100,22 @@ function sjmRenderRoot() {
       return '<button class="sjm-item" data-sjm-submenu="remove" onclick="sjmOpenRemoveFromPlaylist()">' +
           '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from Playlist</span><span class="sjm-sub">›</span></button>' +
         '<div class="sjm-sep"></div>';
+    })() +
+    (function () {
+      // Native only, and only for a track that actually has a file behind it.
+      if (!sjIsNative() || !sjDlPlugin()) return '';
+      if (!taTrackAudio(tid)?.url) return '';
+      const st = sjDlState(tid);
+      const label = st === 'done' ? 'Remove download'
+                  : st === 'downloading' ? 'Downloading...'
+                  : 'Download for CarPlay';
+      const ic = st === 'done' ? '\u2713' : '\u2913';
+      return '<button class="sjm-item" onclick="sjmToggleDownload()"' +
+          (st === 'downloading' ? ' disabled' : '') + '>' +
+          '<span class="sjm-ic">' + ic + '</span>' +
+          '<span class="sjm-label">' + label + '</span>' +
+          '<span class="sjm-sub">' + (st === 'done' ? 'offline' : 'offline play') + '</span>' +
+        '</button><div class="sjm-sep"></div>';
     })() +
     '<button class="sjm-item" data-sjm-submenu="playlists" onclick="sjmOpenPlaylists()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span>' +
@@ -36502,6 +36589,7 @@ setInterval(() => { if (googleUser && ytPlayerEl) savePlaybackState(); }, 20000)
 
 ytpInitMediaSession();
 wakeInit();
+sjDlInit();
 
 trackPageView();
 
