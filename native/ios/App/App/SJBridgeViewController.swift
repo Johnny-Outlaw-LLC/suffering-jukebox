@@ -8,5 +8,6 @@ import UIKit
 class SJBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(SJNativeAudio())
+        bridge?.registerPluginInstance(SJAuth())
     }
 }

@@ -25,6 +25,7 @@ const SOURCES = [
   'Audio/SJAudioPlugin.swift',
   'Audio/SJDownloadStore.swift',
   'Audio/SJDownloader.swift',
+  'Audio/SJAuthPlugin.swift',
   'CarPlay/SJCarPlaySceneDelegate.swift',
   'SJSceneDelegate.swift',
   'SJBridgeViewController.swift',
