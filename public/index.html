@@ -18218,17 +18218,22 @@ function _buildAccordionContent(trackId) {
   const vote = getMyVote(trackId);
   const rxn = trackReactionCounts[trackId] || {};
   const heartN = Number(rxn.heart) || 0;
+  const lyrKnown = lyricsCache[trackId] !== undefined;
+  const lyrHas = !!(lyricsCache[trackId] && String(lyricsCache[trackId]).trim());
+  const lyrWrapStyle = (!lyrKnown || lyrHas) ? '' : 'display:none';
+  const addLyrStyle = (lyrKnown && !lyrHas) ? '' : 'display:none';
   return `<div class="trk-acc-body">
     <div class="trk-acc-actions">
       ${vid ? `<a class="sc-link yt" href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeTitle}','${trackId}',event)">▶ Play</a>` : ''}
       ${spotifyId ? `<a class="sc-link" href="https://open.spotify.com/track/${spotifyId}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#1db954;border-color:#1db954">Spotify ↗</a>` : ''}
       <button class="sc-link" onclick="sjmOpen('${trackId}',this,event)" title="Add to playlist, report a problem, and more">+ Playlist &amp; more ⋯</button>
+      <button type="button" class="sc-link" data-acc-add-lyr="${trackId}" style="${addLyrStyle}" onclick="accAddLyrics('${trackId}',event)" title="Add lyrics for this song">＋ Add Lyrics</button>
       <button type="button" class="tvb-cycle trk-acc-rxn${voteClass(vote)}" data-vote-track="${trackId}" onclick="cycleVote('${trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(vote)] || VOTE_LABELS['0'] || '-'}</button>
       <button type="button" class="trk-acc-rxn${heartN ? ' on' : ''}" data-reaction-track="${trackId}" data-track-reaction="heart" data-track-id="${trackId}" onclick="event.stopPropagation();ytpReact('heart',this,event)" oncontextmenu="ytpOpenReactionUndo('heart',this,event)" onpointerdown="ytpReactionPressStart('heart',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Heart playback reaction (while this song plays)">${SJ_REACTION_ICONS.heart}<span class="trk-acc-rxn-n">${heartN ? ytpReactionCountLabel(heartN) : ''}</span></button>
       ${SJ_COMMENTS_ENABLED ? `<button class="cmt-btn" data-cmt-badge="track:${trackId}" onclick="event.preventDefault();event.stopPropagation();openComments('track','${trackId}')" title="Comment on this track">Comment</button>` : ''}
       ${statParts ? `<span style="font-size:.42rem;color:var(--text-muted)">${statParts}</span>` : ''}
     </div>
-    <div>
+    <div data-acc-lyr-wrap="${trackId}" style="${lyrWrapStyle}">
       <div class="acc-lyric-ctrl">
         <span class="acc-lyric-size-lbl">A</span>
         <input type="range" class="acc-lyric-slider" id="${sliderIdAcc}" min="9" max="28" value="${globalLyricSize}"
@@ -18239,13 +18244,42 @@ function _buildAccordionContent(trackId) {
       <div class="trk-acc-lbl trk-acc-lyr-hdr" style="display:flex;align-items:center;gap:6px">Lyrics
         ${googleUser ? `<button class="lyr-edit-btn" onclick="startLyricsEdit('${trackId}','acc');event.stopPropagation()">&#9999; Edit</button><button class="lyr-hist-btn" onclick="openLyricsHistory('${trackId}');event.stopPropagation()" title="Edit history">&#128336;</button>` : ''}
       </div>
-      <div class="trk-acc-lyrics"><div data-acc-lyric="${trackId}" class="sc-lyrics-ph">Loading…</div></div>
-      ${SJ_COMMENTS_ENABLED ? `<div class="trk-acc-lbl" style="display:flex;align-items:center;gap:6px;margin-top:9px">Comments
-        <button class="cmt-btn" onclick="openComments('track','${trackId}');event.stopPropagation()" title="Leave a comment on this track">Add</button>
-      </div>
-      <div class="cmt-inline" data-cmt-inline="${trackId}"><div class="cmt-empty">Loading…</div></div>` : ''}
+      <div class="trk-acc-lyrics"><div data-acc-lyric="${trackId}" class="${lyrHas ? 'sc-lyrics-text' : 'sc-lyrics-ph'}">${lyrKnown ? (lyrHas ? escHtml(String(lyricsCache[trackId])) : 'Lyrics not in database.') : 'Loading…'}</div></div>
     </div>
+    ${SJ_COMMENTS_ENABLED ? `<div class="trk-acc-lbl" style="display:flex;align-items:center;gap:6px;margin-top:9px">Comments
+      <button class="cmt-btn" onclick="openComments('track','${trackId}');event.stopPropagation()" title="Leave a comment on this track">Add</button>
+    </div>
+    <div class="cmt-inline" data-cmt-inline="${trackId}"><div class="cmt-empty">Loading…</div></div>` : ''}
   </div>`;
+}
+
+function accSyncLyricsUI(trackId) {
+  if (!trackId) return;
+  const known = lyricsCache[trackId] !== undefined;
+  const has = !!(lyricsCache[trackId] && String(lyricsCache[trackId]).trim());
+  document.querySelectorAll('[data-acc-lyr-wrap="' + trackId + '"]').forEach(el => {
+    el.style.display = (!known || has) ? '' : 'none';
+  });
+  document.querySelectorAll('[data-acc-add-lyr="' + trackId + '"]').forEach(el => {
+    el.style.display = (known && !has) ? '' : 'none';
+  });
+}
+
+function accAddLyrics(trackId, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  if (!trackId) return;
+  if (!googleUser) {
+    if (confirm('Sign in to add lyrics. Sign in now?')) handleAuthClick();
+    return;
+  }
+  document.querySelectorAll('[data-acc-lyr-wrap="' + trackId + '"]').forEach(el => { el.style.display = ''; });
+  document.querySelectorAll('[data-acc-add-lyr="' + trackId + '"]').forEach(el => { el.style.display = 'none'; });
+  const host = document.querySelector('[data-acc-lyric="' + trackId + '"]');
+  if (host && !host.textContent.trim()) {
+    host.className = 'sc-lyrics-ph';
+    host.textContent = '';
+  }
+  startLyricsEdit(trackId, 'acc');
 }
 
 function toggleTrackAccordion(trackId, e) {
@@ -18311,18 +18345,10 @@ async function fetchLyricsForAcc(trackId) {
       const lyric = lyricsCache[trackId];
       el.className = lyric ? 'sc-lyrics-text' : 'sc-lyrics-ph';
       el.textContent = lyric || 'Lyrics not in database.';
-      if (!lyric && googleUser) {
-        const addBtn = document.createElement('button');
-        addBtn.type = 'button';
-        addBtn.className = 'lyr-add-btn';
-        addBtn.textContent = '＋ Add Lyrics';
-        addBtn.onclick = (e) => { e.stopPropagation(); startLyricsEdit(trackId, 'acc'); };
-        el.appendChild(document.createElement('br'));
-        el.appendChild(addBtn);
-      }
       if (lyricsFontAll && globalLyricSize !== 11) el.style.fontSize = globalLyricSize + 'px';
       _paintLyricComments(el, trackId);
     });
+    accSyncLyricsUI(trackId);
     if (trackId === nowPlayingTrackId) fetchSyncedLyrics(trackId).then(refreshLyricCardSync);
   };
   if (lyricsCache[trackId] !== undefined) { update(); return; }
@@ -18336,6 +18362,7 @@ async function fetchLyricsForAcc(trackId) {
     document.querySelectorAll(`[data-acc-lyric="${trackId}"]`).forEach(el => {
       el.className = 'sc-lyrics-ph'; el.textContent = 'Failed to load lyrics.';
     });
+    // Keep the section visible on a load error so the failure is readable.
   }
 }
 
@@ -29520,6 +29547,7 @@ function renderCommunityEmpty() {
     <p>No community music yet.</p>
     <p style="margin-top:.4rem;color:var(--text-muted);font-size:.6rem">Sign in and add any artist straight from YouTube.</p>
     <button class="btn-gold" style="margin-top:1rem" onclick="openAddMusic()">＋ Add Music</button></div>`;
+  try { sjBootDone(); } catch (_) {}
 }
 
 // The single front door.  Artist and album are the same wizard - an album
@@ -32116,6 +32144,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-04', items: [
+    'When a song has no lyrics, the empty Lyrics panel is hidden. An Add Lyrics button sits next to Playlist & more instead — tap it to write them in.',
     'Artist pages no longer flash a wall of song titles and lyrics while the jukebox loads. You see a short Loading content screen instead; search engines still get the full catalog text.',
     'In Manage Album, Default video is now labeled Song options — it still opens the same Manage Song panel.',
     'Manage Song can set playback and stats separately. Use for playback chooses what starts when someone hits play; Use for stats chooses which upload’s view count feeds the charts. The player’s Versions menu has the same two choices.',
@@ -38687,6 +38716,9 @@ function cancelLyricsEdit(trackId, mode) {
   if (mode === 'card' && cardEl) cardEl.style.display = '';
   if (mode === 'acc'  && accEl)  accEl.style.display  = '';
   if (mode === 'ytp'  && ytpEl)  ytpEl.style.display  = '';
+  if (mode === 'acc') {
+    try { accSyncLyricsUI(trackId); } catch (_) {}
+  }
 }
 
 async function saveLyricsEdit(trackId, mode) {
@@ -38729,8 +38761,10 @@ async function saveLyricsEdit(trackId, mode) {
     cancelLyricsEdit(trackId, mode);
     renderLyrics(trackId, newLyrics, 'user-edit');
     document.querySelectorAll(`[data-acc-lyric="${trackId}"]`).forEach(el => {
-      el.className = 'sc-lyrics-text'; el.textContent = newLyrics;
+      el.className = newLyrics ? 'sc-lyrics-text' : 'sc-lyrics-ph';
+      el.textContent = newLyrics || 'Lyrics not in database.';
     });
+    try { accSyncLyricsUI(trackId); } catch (_) {}
   } catch(e) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     alert('Save failed: ' + e.message);
