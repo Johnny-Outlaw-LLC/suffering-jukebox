@@ -22,8 +22,71 @@ const RATE_WINDOW_MS = 60_000;
 const PREVIEW_MAX = 4;
 const APPLY_MAX = 4;
 const TRACK_SEARCH_CAP = 20;
+/** YouTube search.list units are expensive (~100 each). 40/day ≈ 4,000 units. */
+export const DAILY_SEARCH_LIMIT = 40;
+export const DAILY_SEARCH_LIMIT_ADMIN = 200;
 const previewHits = new Map<string, number[]>();
 const applyHits = new Map<string, number[]>();
+
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function readQuota(
+  sb: ReturnType<typeof createSjServiceClient>,
+  email: string,
+  admin: boolean,
+) {
+  const limit = admin ? DAILY_SEARCH_LIMIT_ADMIN : DAILY_SEARCH_LIMIT;
+  const day = utcDay();
+  const { data } = await sb
+    .schema(JUKEBOX_SCHEMA)
+    .from("yt_search_quota")
+    .select("searches")
+    .eq("user_email", email.toLowerCase())
+    .eq("day", day)
+    .maybeSingle();
+  const used = Number(data?.searches) || 0;
+  return { day, used, limit, remaining: Math.max(0, limit - used) };
+}
+
+async function consumeQuota(
+  sb: ReturnType<typeof createSjServiceClient>,
+  email: string,
+  admin: boolean,
+  n: number,
+): Promise<{ ok: true; used: number; limit: number; remaining: number } | { ok: false; error: string; used: number; limit: number; remaining: number }> {
+  if (n <= 0) {
+    const q = await readQuota(sb, email, admin);
+    return { ok: true, ...q };
+  }
+  const q = await readQuota(sb, email, admin);
+  if (q.remaining < n) {
+    return {
+      ok: false,
+      error: `Daily YouTube search limit reached (${q.used}/${q.limit}). Try again tomorrow.`,
+      used: q.used,
+      limit: q.limit,
+      remaining: q.remaining,
+    };
+  }
+  const next = q.used + n;
+  const { error } = await sb.schema(JUKEBOX_SCHEMA).from("yt_search_quota").upsert(
+    {
+      user_email: email.toLowerCase(),
+      day: q.day,
+      searches: next,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_email,day" },
+  );
+  if (error) {
+    console.error("[sj-auto-discover:quota]", error);
+    // Fail open on quota write so a table blip does not strand Rediscover.
+    return { ok: true, used: next, limit: q.limit, remaining: Math.max(0, q.limit - next) };
+  }
+  return { ok: true, used: next, limit: q.limit, remaining: Math.max(0, q.limit - next) };
+}
 
 function rateLimited(map: Map<string, number[]>, key: string, max: number): boolean {
   const now = Date.now();
@@ -208,7 +271,7 @@ type Proposal = {
   skipped?: string;
 };
 
-async function previewSongs(tracks: TrackRow[]): Promise<Proposal[]> {
+async function previewSongs(tracks: TrackRow[]): Promise<{ proposals: Proposal[]; searchesUsed: number }> {
   const out: Proposal[] = [];
   let searches = 0;
   for (const t of tracks) {
@@ -285,10 +348,10 @@ async function previewSongs(tracks: TrackRow[]): Promise<Proposal[]> {
       skipped: same ? "Already on this video." : worse ? "Current video has as many or more views." : undefined,
     });
   }
-  return out;
+  return { proposals: out, searchesUsed: searches };
 }
 
-async function previewPlaylists(tracks: TrackRow[]): Promise<Proposal[]> {
+async function previewPlaylists(tracks: TrackRow[]): Promise<{ proposals: Proposal[]; searchesUsed: number }> {
   const byAlbum = new Map<string, TrackRow[]>();
   for (const t of tracks) {
     const list = byAlbum.get(t.album_id) || [];
@@ -296,13 +359,13 @@ async function previewPlaylists(tracks: TrackRow[]): Promise<Proposal[]> {
     byAlbum.set(t.album_id, list);
   }
   const out: Proposal[] = [];
-  let playlistSearches = 0;
+  let searches = 0;
   for (const [, albumTracks] of byAlbum) {
     const sample = albumTracks[0];
     const q = [sample.artist_name, sample.album_name].filter(Boolean).join(" ").trim();
     let items: { videoId: string; title: string; channelTitle: string; thumbnail: string | null }[] = [];
-    if (q && playlistSearches < 8) {
-      playlistSearches += 1;
+    if (q && searches < TRACK_SEARCH_CAP) {
+      searches += 1;
       const pls = await searchYouTubePlaylists(q, 5);
       const artistLc = sample.artist_name.toLowerCase();
       const albumLc = sample.album_name.toLowerCase();
@@ -334,9 +397,9 @@ async function previewPlaylists(tracks: TrackRow[]): Promise<Proposal[]> {
         best = pickBest(matched.length ? matched : items.map((i) => i.videoId), info, t.artist_name, t.name);
       }
       if (!best) {
-        // Fall back to a single song search if the playlist did not cover this track.
         const songQ = [t.artist_name, t.name].filter(Boolean).join(" ").trim();
-        if (songQ) {
+        if (songQ && searches < TRACK_SEARCH_CAP) {
+          searches += 1;
           const ids = await searchYouTubeVideoIds(songQ, 5, "viewCount");
           const songInfo = ids.length ? await fetchYouTubeVideoInfo(ids) : {};
           best = pickBest(ids, songInfo, t.artist_name, t.name);
@@ -377,7 +440,7 @@ async function previewPlaylists(tracks: TrackRow[]): Promise<Proposal[]> {
       });
     }
   }
-  return out;
+  return { proposals: out, searchesUsed: searches };
 }
 
 function albumTotals(proposals: Proposal[]) {
@@ -404,16 +467,38 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const action = body?.action === "apply" ? "apply" : "preview";
+  const action =
+    body?.action === "apply" ? "apply"
+      : body?.action === "quota" ? "quota"
+        : "preview";
   const strategy = body?.strategy === "playlist" ? "playlist" : "songs";
-  const trackIds = Array.isArray(body?.track_ids)
+  const changes = Array.isArray(body?.changes) ? body.changes : [];
+  // Apply used to send only `changes` and the handler required `track_ids`,
+  // which made every Apply fail with "Pick at least one song."
+  let trackIds = Array.isArray(body?.track_ids)
     ? body.track_ids.map((id: unknown) => uuid(id)).filter(Boolean).slice(0, 80) as string[]
     : [];
+  if (!trackIds.length && changes.length) {
+    trackIds = [...new Set(
+      changes
+        .map((ch: { trackId?: unknown; track_id?: unknown }) => uuid(ch?.trackId ?? ch?.track_id))
+        .filter(Boolean),
+    )].slice(0, 80) as string[];
+  }
+
+  const who = user.email.toLowerCase();
+  const sb = createSjServiceClient();
+  const admin = await isSjAdmin(user.email);
+
+  if (action === "quota") {
+    const q = await readQuota(sb, who, admin);
+    return NextResponse.json({ ok: true, quota: q });
+  }
+
   if (!trackIds.length) {
     return NextResponse.json({ ok: false, error: "Pick at least one song." }, { status: 400 });
   }
 
-  const who = user.email.toLowerCase();
   if (action === "preview" && rateLimited(previewHits, who, PREVIEW_MAX)) {
     return NextResponse.json({ ok: false, error: "Easy there — give Rediscover a second." }, { status: 429 });
   }
@@ -421,7 +506,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Easy there — give Rediscover a second." }, { status: 429 });
   }
 
-  const sb = createSjServiceClient();
   const tracks = await loadTracks(sb, trackIds);
   if (!tracks.length) {
     return NextResponse.json({ ok: false, error: "No tracks found." }, { status: 404 });
@@ -436,19 +520,54 @@ export async function POST(req: NextRequest) {
 
   try {
     if (action === "preview") {
-      const proposals = strategy === "playlist"
+      // Estimate worst-case searches for this run before spending quota.
+      const estimate = strategy === "playlist"
+        ? Math.min(TRACK_SEARCH_CAP, Math.max(1, new Set(tracks.map((t) => t.album_id)).size))
+        : Math.min(TRACK_SEARCH_CAP, tracks.length);
+      const reserved = await consumeQuota(sb, who, admin, estimate);
+      if (!reserved.ok) {
+        return NextResponse.json({
+          ok: false,
+          error: reserved.error,
+          quota: { used: reserved.used, limit: reserved.limit, remaining: reserved.remaining },
+        }, { status: 429 });
+      }
+
+      const result = strategy === "playlist"
         ? await previewPlaylists(tracks)
         : await previewSongs(tracks);
+
+      // Refund unused reserved units (estimate − actual).
+      const refund = Math.max(0, estimate - result.searchesUsed);
+      let quota = reserved;
+      if (refund > 0) {
+        const q = await readQuota(sb, who, admin);
+        const next = Math.max(0, q.used - refund);
+        await sb.schema(JUKEBOX_SCHEMA).from("yt_search_quota").upsert(
+          {
+            user_email: who,
+            day: q.day,
+            searches: next,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_email,day" },
+        );
+        quota = { ok: true, used: next, limit: q.limit, remaining: Math.max(0, q.limit - next) };
+      } else {
+        quota = await readQuota(sb, who, admin).then((q) => ({ ok: true as const, ...q }));
+      }
+
       return NextResponse.json({
         ok: true,
         strategy,
-        proposals,
-        albums: albumTotals(proposals),
+        proposals: result.proposals,
+        albums: albumTotals(result.proposals),
+        searchesUsed: result.searchesUsed,
+        quota: { used: quota.used, limit: quota.limit, remaining: quota.remaining },
       });
     }
 
     // apply — body.changes: [{ trackId, videoId }]
-    const changes = Array.isArray(body?.changes) ? body.changes : [];
     const applied: { trackId: string; videoId: string; views: number }[] = [];
     for (const ch of changes.slice(0, TRACK_SEARCH_CAP)) {
       const trackId = uuid(ch?.trackId ?? ch?.track_id);
