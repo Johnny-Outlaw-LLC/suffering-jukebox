@@ -74,29 +74,47 @@ export async function GET(req: NextRequest) {
     const ownRows = (data || []).filter((row) =>
       Boolean(row.storage_path) && isAuthorizedStoredPath(row.storage_path!, user.id, row.track_id),
     );
-    const tracks = await Promise.all(ownRows.map(async (row) => {
-      const legacy = isLegacyUploadPath(row.storage_path!, row.track_id);
-      let url: string | undefined;
-      if (legacy) {
-        // The source bucket stays private and was retained during the B2 move.
-        // Serve old uploads from it until their legacy keys are migrated.
-        const { data: signed, error: signedError } = await sb.storage
-          .from(LEGACY_AUDIO_BUCKET)
-          .createSignedUrl(row.storage_path!, PLAYBACK_URL_SECONDS);
-        if (signedError) throw signedError;
-        url = signed?.signedUrl;
-      } else {
-        url = await createB2DownloadUrl(row.storage_path!);
+    // Signing used to be one call per row, all in flight at once. Asking for a
+    // whole artist made Supabase Storage answer 429 "Too many connections
+    // issued to the database" and the request failed entirely. Legacy paths are
+    // now signed in a single batched call, and B2 presigning is bounded.
+    const legacyRows = ownRows.filter((row) => isLegacyUploadPath(row.storage_path!, row.track_id));
+    const b2Rows = ownRows.filter((row) => !isLegacyUploadPath(row.storage_path!, row.track_id));
+
+    const urlByPath = new Map<string, string>();
+
+    if (legacyRows.length) {
+      // The source bucket stays private and was retained during the B2 move.
+      // Serve old uploads from it until their legacy keys are migrated.
+      const { data: signed, error: signedError } = await sb.storage
+        .from(LEGACY_AUDIO_BUCKET)
+        .createSignedUrls(legacyRows.map((row) => row.storage_path!), PLAYBACK_URL_SECONDS);
+      if (signedError) throw signedError;
+      for (const entry of signed || []) {
+        if (entry?.path && entry?.signedUrl) urlByPath.set(entry.path, entry.signedUrl);
       }
-      if (!url) throw new Error("Could not create a private audio URL.");
-      return {
+    }
+
+    const B2_CONCURRENCY = 8;
+    for (let i = 0; i < b2Rows.length; i += B2_CONCURRENCY) {
+      const chunk = b2Rows.slice(i, i + B2_CONCURRENCY);
+      const urls = await Promise.all(chunk.map((row) => createB2DownloadUrl(row.storage_path!)));
+      chunk.forEach((row, j) => { if (urls[j]) urlByPath.set(row.storage_path!, urls[j]!); });
+    }
+
+    // A row we could not sign is skipped rather than failing the whole batch,
+    // so one bad object cannot cost the caller an entire album.
+    const tracks = ownRows.flatMap((row) => {
+      const url = urlByPath.get(row.storage_path!);
+      if (!url) return [];
+      return [{
         trackId: row.track_id,
         path: row.storage_path,
         url,
         duration: Number(row.duration_seconds) || null,
         uploadedBy: row.uploaded_by,
-      };
-    }));
+      }];
+    });
     return noStore({ ok: true, tracks });
   } catch (error) {
     console.error("[sj-audio] private URLs", error);
