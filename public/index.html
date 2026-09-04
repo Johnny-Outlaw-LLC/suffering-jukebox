@@ -33613,7 +33613,7 @@ function setAudioRender() {
           '<span class="set-audio-chev">' + (open ? '▾' : '▸') + '</span>' +
           '<span class="set-audio-artist-name">' + escHtml(g.name) + '</span>' +
           '<span class="set-audio-artist-meta">' + g.tracks.length + ' song' + (g.tracks.length === 1 ? '' : 's') + ' · ' + escHtml(fmtBytes(g.bytes)) + '</span>' +
-          (sjIsNative() && sjDlPlugin() && g.tracks.some(t => sjDlState(t.id) === 'none' && taTrackAudio(t.id)?.url)
+          (sjIsNative() && sjDlPlugin() && g.tracks.some(t => sjDlState(t.id) === 'none')
             ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Copy every song here to this iPhone" ' +
               'onclick="event.stopPropagation();setAudioCarPlayArtist(\'' + g.artistId + '\')">＋ All to CarPlay</button>'
             : '') +
@@ -33633,7 +33633,6 @@ function setAudioRender() {
                     return '<button type="button" class="oa-act set-audio-act" style="border-color:var(--accent);color:var(--accent)" ' +
                       'title="On this iPhone - tap to remove" onclick="setAudioCarPlayToggle(\'' + t.id + '\')">✓ CarPlay</button>';
                   }
-                  if (!taTrackAudio(t.id)?.url) return '';
                   return '<button type="button" class="oa-act set-audio-act" ' +
                     'title="Copy to this iPhone so it plays in CarPlay and offline" ' +
                     'onclick="setAudioCarPlayToggle(\'' + t.id + '\')">＋ CarPlay</button>';
@@ -33691,6 +33690,23 @@ function setAudioDlPayload(trackId) {
   });
 }
 
+// Signed URLs are fetched when a download is actually requested, not up front:
+// presigning a whole library just to draw this screen is slow and fragile, and
+// a URL minted at page load can expire before it is ever used.
+async function setAudioEnsureUrls(trackIds) {
+  const need = trackIds.filter(id => !taTrackAudio(id)?.url);
+  if (!need.length) return;
+  for (let i = 0; i < need.length; i += 50) {
+    const rows = await taOwnAudioUrls(need.slice(i, i + 50));
+    (rows || []).forEach(r => {
+      if (!r.url || !r.trackId) return;
+      taData[r.trackId] = Object.assign({}, taData[r.trackId], {
+        url: r.url, path: r.path, duration: Number(r.duration) || null,
+      });
+    });
+  }
+}
+
 async function setAudioCarPlayToggle(trackId) {
   const p = sjDlPlugin();
   if (!p) return;
@@ -33700,14 +33716,16 @@ async function setAudioCarPlayToggle(trackId) {
       await p.removeDownload({ trackId });
       _sjDownloads.delete(trackId);
     } else if (state === 'none') {
-      const track = setAudioDlPayload(trackId);
-      if (!track) { alert('That song has no audio file to copy over.'); return; }
       _sjDownloads.set(trackId, 'downloading');
+      setAudioRender();
+      await setAudioEnsureUrls([trackId]);
+      const track = setAudioDlPayload(trackId);
+      if (!track) throw new Error('No audio file is available for that song.');
       await p.download({ track });
     }
   } catch (e) {
     _sjDownloads.delete(trackId);
-    alert('Could not add to CarPlay: ' + (e?.message || e));
+    showToast('Could not add to CarPlay: ' + (e?.message || e));
   }
   setAudioRender();
 }
@@ -33717,12 +33735,21 @@ async function setAudioCarPlayArtist(artistId) {
   const p = sjDlPlugin();
   const g = (_setAudioGroups || []).find(x => x.artistId === artistId);
   if (!p || !g) return;
-  const pending = g.tracks.filter(t => sjDlState(t.id) === 'none' && taTrackAudio(t.id)?.url);
+  const pending = g.tracks.filter(t => sjDlState(t.id) === 'none');
   if (!pending.length) return;
+  pending.forEach(t => _sjDownloads.set(t.id, 'downloading'));
+  setAudioRender();
+  try {
+    await setAudioEnsureUrls(pending.map(t => t.id));
+  } catch (e) {
+    pending.forEach(t => _sjDownloads.delete(t.id));
+    showToast('Could not prepare downloads: ' + (e?.message || e));
+    setAudioRender();
+    return;
+  }
   for (const t of pending) {
     const track = setAudioDlPayload(t.id);
-    if (!track) continue;
-    _sjDownloads.set(t.id, 'downloading');
+    if (!track) { _sjDownloads.delete(t.id); continue; }
     // Sequential on purpose: the engine uses one background session and a
     // whole discography at once just thrashes it.
     try { await p.download({ track }); } catch (_) { _sjDownloads.delete(t.id); }
