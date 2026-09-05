@@ -22050,7 +22050,11 @@ function playlistMosaicHTML(p) {
 }
 
 async function ensurePlaylistArtwork(trackIds) {
-  if (_playlistArtworkLoading) return _playlistArtworkLoading;
+  // Waiting on a pass that is already running is not the same as being done:
+  // a second caller's ids were never in that request, and handing back the
+  // running promise left them undefined forever. Queue behind it, then ask
+  // again for whatever is still missing.
+  while (_playlistArtworkLoading) await _playlistArtworkLoading.catch(() => false);
   const sourceIds = trackIds || playlistExploreRows().flatMap(p => (p._tracks || []).map(r => r.track_id));
   const ids = [...new Set(sourceIds.filter(Boolean))]
     .filter(id => playlistArtworkByTrack[id] === undefined);
@@ -27583,10 +27587,36 @@ function pePreviewTrackIds(rows = playlistExploreRows()) {
   return [...seen];
 }
 
+// How many songs per playlist the cover mosaic looks at. The mosaic is meant
+// to say what is IN a playlist, and it used to read the same first ten songs
+// the Details list needs - but a playlist of one artist is filed album by
+// album, so the head of the list is one record and the cover came out a single
+// square. The Sebadoh and Pink Floyd fours both looked like single albums. An
+// even stride across the whole running order reaches every record for about
+// the same number of rows, so it costs one wider query and no extra requests.
+const PE_MOSAIC_SAMPLE = 16;
+
+function peMosaicSampleIds(rows = playlistExploreRows()) {
+  const seen = new Set();
+  rows.forEach(p => {
+    const list = (p._tracks || []).slice().sort((a, b) => a.position - b.position)
+      .filter(r => r.track_id);
+    if (!list.length) return;
+    const take = Math.min(PE_MOSAIC_SAMPLE, list.length);
+    for (let i = 0; i < take; i++) {
+      seen.add(list[Math.floor(i * list.length / take)].track_id);
+    }
+  });
+  return [...seen];
+}
+
 function ensurePlaylistPreviewMeta() {
-  const ids = pePreviewTrackIds();
-  return Promise.all([ensurePlaylistSearchMeta(ids), ensurePlaylistArtwork(ids)])
-    .then(results => results.some(Boolean));
+  // Two different questions, so two different id lists: Details prints the
+  // first ten songs of each playlist, the cover draws from across all of them.
+  return Promise.all([
+    ensurePlaylistSearchMeta(pePreviewTrackIds()),
+    ensurePlaylistArtwork(peMosaicSampleIds()),
+  ]).then(results => results.some(Boolean));
 }
 
 // This re-rendered unconditionally in `finally`, and renderLanding() calls it.
@@ -32648,11 +32678,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-04';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-05';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-05', items: [
+    'Playlist covers now show the different albums inside a playlist, even when every song is by the same band. The Sebadoh and Pink Floyd fours show four sleeves, Blue Pinkerton shows both Weezer records, instead of one cover standing in for the lot.',
+  ] },
   { date: '2026-09-04', items: [
     'When a song has no lyrics, the empty Lyrics panel is hidden. An Add Lyrics button sits next to Playlist & more instead — tap it to write them in.',
     'Artist pages no longer flash a wall of song titles and lyrics while the jukebox loads. You see a short Loading content screen instead; search engines still get the full catalog text.',
