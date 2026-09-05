@@ -1,5 +1,6 @@
 import Capacitor
 import Foundation
+import UIKit
 
 /// Bridges the web UI to the native engine. Deliberately thin: policy lives in
 /// SJAudioEngine so CarPlay, which never touches this class, behaves identically.
@@ -19,12 +20,22 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "download",       returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeDownload", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listDownloads",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "backfillArtwork", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPlaylists",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRatedTracks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "drainFeedback",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "ackFeedback",    returnType: CAPPluginReturnPromise),
     ]
 
     private var engine: SJAudioEngine { SJAudioEngine.shared }
 
     override public func load() {
         engine.delegate = self
+        // A tap in the car should reach the server while the drive is still
+        // happening when it can, rather than waiting for the next cold start.
+        SJCarPlayFeedback.shared.onChange = { [weak self] in
+            self?.notifyListeners("carplayFeedback", data: ["pending": SJFeedbackOutbox.shared.pending().count])
+        }
     }
 
     // MARK: - Transport
@@ -110,10 +121,106 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
     }
 
     @objc func listDownloads(_ call: CAPPluginCall) {
-        let downloads = SJDownloadStore.shared.all().map {
-            Self.downloadDict(trackId: $0.trackId, state: "done", progress: 1, bytes: $0.bytes)
+        let downloads = SJDownloadStore.shared.all().map { entry -> JSObject in
+            var dict = Self.downloadDict(trackId: entry.trackId, state: "done", progress: 1, bytes: entry.bytes)
+            // Lets the web layer find the covers worth repairing without
+            // shipping the whole index across the bridge.
+            dict["hasArtwork"] = SJDownloadStore.shared.artworkURL(for: entry)
+                .map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+            return dict
         }
         call.resolve(["downloads": downloads, "bytesUsed": Int(SJDownloadStore.shared.bytesUsed())])
+    }
+
+    /// Fetch covers for tracks that were downloaded before the metadata
+    /// pipeline carried album art. Images only - the audio is already on disk,
+    /// and nobody should re-download an album to fix a thumbnail.
+    @objc func backfillArtwork(_ call: CAPPluginCall) {
+        let raw = call.getArray("tracks", JSObject.self) ?? []
+        let wanted: [(String, URL)] = raw.compactMap { obj in
+            guard let id = obj["trackId"] as? String,
+                  let urlString = obj["artworkUrl"] as? String,
+                  let url = URL(string: urlString) else { return nil }
+            // Already repaired, or never downloaded: nothing to do either way.
+            guard let entry = SJDownloadStore.shared.entry(for: id) else { return nil }
+            if let art = SJDownloadStore.shared.artworkURL(for: entry),
+               FileManager.default.fileExists(atPath: art.path) { return nil }
+            return (id, url)
+        }
+        guard !wanted.isEmpty else { call.resolve(["repaired": 0]); return }
+
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var repaired = 0
+        for (id, url) in wanted {
+            group.enter()
+            URLSession.shared.dataTask(with: url) { data, response, _ in
+                defer { group.leave() }
+                guard let data, !data.isEmpty,
+                      (response as? HTTPURLResponse)?.statusCode ?? 200 < 400,
+                      UIImage(data: data) != nil else { return }
+                if SJDownloadStore.shared.attachArtwork(data, trackId: id) {
+                    lock.lock(); repaired += 1; lock.unlock()
+                }
+            }.resume()
+        }
+        group.notify(queue: .main) {
+            // A repaired cover should appear without waiting for a reconnect.
+            if repaired > 0 { SJAudioEngine.shared.artworkDidChange() }
+            call.resolve(["repaired": repaired])
+        }
+    }
+
+    // MARK: - Playlists
+
+    /// Hand CarPlay the running orders. The car cannot reach the web layer once
+    /// it is driving, so this is pushed whenever playlists change rather than
+    /// pulled when the Playlists tab is opened.
+    @objc func setPlaylists(_ call: CAPPluginCall) {
+        let raw = call.getArray("playlists", JSObject.self) ?? []
+        let playlists: [SJPlaylistStore.Playlist] = raw.compactMap { obj in
+            guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
+            let ids = (obj["trackIds"] as? [Any])?.compactMap { $0 as? String } ?? []
+            return SJPlaylistStore.Playlist(id: id, name: name, trackIds: ids)
+        }
+        SJPlaylistStore.shared.replaceAll(playlists)
+        DispatchQueue.main.async {
+            SJAudioEngine.shared.onQueueChanged?()   // repaint the car's list
+            call.resolve(["count": playlists.count])
+        }
+    }
+
+    // MARK: - Car feedback
+
+    /// Which downloaded tracks are already rated, so the car's thumb draws
+    /// filled. Pushed from the web layer, which owns what a rating means.
+    @objc func setRatedTracks(_ call: CAPPluginCall) {
+        let ids = (call.getArray("trackIds") as? [String]) ?? []
+        SJCarPlayFeedback.shared.setRated(ids)
+        call.resolve(["count": ids.count])
+    }
+
+    /// Ratings and hearts tapped in the car, for the web layer to send on.
+    /// Nothing is removed here - only an explicit ack drops an item, so a drain
+    /// that fails to reach the server is retried rather than lost.
+    @objc func drainFeedback(_ call: CAPPluginCall) {
+        let items: [JSObject] = SJFeedbackOutbox.shared.pending().map { item in
+            [
+                "id": item.id,
+                "kind": item.kind,
+                "trackId": item.trackId,
+                "value": item.value,
+                "positionMs": item.positionMs,
+                "at": item.at,
+            ]
+        }
+        call.resolve(["items": items])
+    }
+
+    @objc func ackFeedback(_ call: CAPPluginCall) {
+        let ids = (call.getArray("ids") as? [String]) ?? []
+        SJFeedbackOutbox.shared.acknowledge(ids: ids)
+        call.resolve(["remaining": SJFeedbackOutbox.shared.pending().count])
     }
 
     // MARK: - Engine delegate

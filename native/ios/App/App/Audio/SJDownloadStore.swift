@@ -119,4 +119,30 @@ final class SJDownloadStore {
         guard (try? data.write(to: url, options: .atomic)) != nil else { return nil }
         return name
     }
+
+    /// Attach a cover to a track that is already downloaded.
+    ///
+    /// Downloads taken before the metadata pipeline carried album art have no
+    /// cover on disk, and the car has no network to go and find one. Re-fetching
+    /// the audio to fix a thumbnail would be absurd, so the image is repaired in
+    /// place instead.
+    @discardableResult
+    func attachArtwork(_ data: Data, trackId: String) -> Bool {
+        guard let name = storeArtwork(data, trackId: trackId) else { return false }
+        return queue.sync(flags: .barrier) {
+            guard var entry = entries[trackId] else { return false }
+            entry.artworkFileName = name
+            entries[trackId] = entry
+            persist()
+            return true
+        }
+    }
+
+    /// Downloaded tracks with no cover on disk - what a backfill has to repair.
+    func missingArtwork() -> [Entry] {
+        all().filter { entry in
+            guard let art = artworkURL(for: entry) else { return true }
+            return !FileManager.default.fileExists(atPath: art.path)
+        }
+    }
 }

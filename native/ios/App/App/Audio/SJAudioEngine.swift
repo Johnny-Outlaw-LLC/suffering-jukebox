@@ -42,6 +42,11 @@ final class SJAudioEngine: NSObject {
     weak var delegate: SJAudioEngineDelegate?
     /// Set by the CarPlay scene so its now-playing list can follow along.
     var onQueueChanged: (() -> Void)?
+    /// Fired when the song itself changes, so the car's rating and reaction
+    /// buttons can be redrawn for whatever is playing now. Deliberately not the
+    /// twice-a-second tick, which would rebuild them for no reason.
+    var onTrackChanged: ((String?) -> Void)?
+    private var lastPublishedTrackId: String??
 
     private let player = AVPlayer()
     private(set) var queue: [SJTrack] = []
@@ -272,6 +277,13 @@ final class SJAudioEngine: NSObject {
         if let state { s.state = state }
         if updateNowPlayingTime { refreshNowPlayingTime() } else { updateNowPlaying() }
         delegate?.audioEngine(self, didChange: s)
+        // Double optional: the outer nil means "never published", so the first
+        // track - and a genuine change to no track - both notify exactly once.
+        let current = currentTrack?.id
+        if lastPublishedTrackId == nil || lastPublishedTrackId! != current {
+            lastPublishedTrackId = .some(current)
+            onTrackChanged?(current)
+        }
     }
 
     // MARK: - Now Playing
@@ -322,6 +334,15 @@ final class SJAudioEngine: NSObject {
             guard let self, let data, let image = UIImage(data: data) else { return }
             DispatchQueue.main.async { self.cacheArtwork(image, for: track) }
         }.resume()
+    }
+
+    /// Covers arrived after the fact (a backfill). Drop what was cached from
+    /// before so the now-playing entry and the CarPlay list pick the new ones up
+    /// rather than holding a placeholder until the next track change.
+    func artworkDidChange() {
+        artworkCache.removeAll()
+        if let track = currentTrack { loadArtwork(for: track) }
+        onQueueChanged?()
     }
 
     private func cacheArtwork(_ image: UIImage, for track: SJTrack) {

@@ -105,7 +105,7 @@ async function loadItems(sb: ServiceClient, userId: string): Promise<QueueItem[]
 
   const audio = new Map<string, { bytes: number; duration: number }>();
   const tracks = new Map<string, { name: string; albumId: string | null; durationMs: number | null }>();
-  const albums = new Map<string, { name: string; artistId: string | null }>();
+  const albums = new Map<string, { name: string; artistId: string | null; artUrl: string | null }>();
   const artists = new Map<string, string>();
 
   for (const part of chunk(ids, 50)) {
@@ -139,10 +139,11 @@ async function loadItems(sb: ServiceClient, userId: string): Promise<QueueItem[]
     const { data, error: albumError } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("albums")
-      .select("id,name,artist_id")
+      .select("id,name,artist_id,art_url")
       .in("id", part);
     if (albumError) throw albumError;
-    (data || []).forEach((row) => albums.set(row.id, { name: row.name, artistId: row.artist_id }));
+    (data || []).forEach((row) =>
+      albums.set(row.id, { name: row.name, artistId: row.artist_id, artUrl: row.art_url }));
   }
 
   const artistIds = [...new Set([...albums.values()].map((a) => a.artistId).filter(Boolean))] as string[];
@@ -169,6 +170,10 @@ async function loadItems(sb: ServiceClient, userId: string): Promise<QueueItem[]
         title: track?.name || "Untitled",
         artist: (album?.artistId && artists.get(album.artistId)) || "Unknown artist",
         album: album?.name || "",
+        // Without this the car shows a grey note: the accept screen is the only
+        // place these downloads get their metadata, and artwork has to be on
+        // disk before the drive, since CarPlay has no network to go fetch it.
+        artworkUrl: album?.artUrl || null,
         durationSeconds: file.duration || (track?.durationMs ? track.durationMs / 1000 : 0),
         bytes: file.bytes,
         queuedAt: row.queued_at,

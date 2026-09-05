@@ -12,7 +12,13 @@ const projPath = resolve(here, '..', 'ios', 'App', 'App.xcodeproj', 'project.pbx
 // Matches the other Johnny Outlaw LLC apps; D89QH2NM22 is the Personal Team
 // and cannot reach the App Store.
 const TEAM_ID = process.env.SJ_TEAM_ID || '2J69KHU242';
-const CARPLAY_ENTITLEMENT = process.env.SJ_CARPLAY_ENTITLEMENT === '1';
+// Apple granted com.apple.developer.carplay-audio (case 22032312), so the
+// entitlement is now the correct default. It used to be opt-in, from before the
+// grant - which meant a plain re-run of this script silently deleted
+// CODE_SIGN_ENTITLEMENTS and the next device build lost CarPlay with no error
+// pointing at the cause. Opt out explicitly if a build ever has to go out
+// without it: SJ_CARPLAY_ENTITLEMENT=0 node scripts/xcode-wire.mjs
+const CARPLAY_ENTITLEMENT = process.env.SJ_CARPLAY_ENTITLEMENT !== '0';
 
 const proj = xcode.project(projPath);
 proj.parseSync();
@@ -26,6 +32,9 @@ const SOURCES = [
   'Audio/SJDownloadStore.swift',
   'Audio/SJDownloader.swift',
   'Audio/SJAuthPlugin.swift',
+  'Audio/SJPlaylistStore.swift',
+  'Audio/SJFeedbackOutbox.swift',
+  'Audio/SJCarPlayFeedback.swift',
   'CarPlay/SJCarPlaySceneDelegate.swift',
   'SJSceneDelegate.swift',
   'SJBridgeViewController.swift',
@@ -95,10 +104,9 @@ for (const key of Object.keys(configs)) {
     c.buildSettings.CODE_SIGN_STYLE = 'Automatic';
     c.buildSettings.DEVELOPMENT_TEAM = TEAM_ID;
     // com.apple.developer.carplay-audio has to be granted by Apple before a
-    // provisioning profile can carry it - until then automatic signing cannot
-    // build for a device at all. Simulator builds do not validate entitlements,
-    // so CarPlay is still developable meanwhile. Opt in once Apple approves:
-    //   SJ_CARPLAY_ENTITLEMENT=1 node scripts/xcode-wire.mjs
+    // provisioning profile can carry it. That grant has happened, so this is on
+    // by default; without it a device build signs fine and simply has no
+    // CarPlay, which is the hardest kind of failure to trace.
     if (CARPLAY_ENTITLEMENT) {
       c.buildSettings.CODE_SIGN_ENTITLEMENTS = '"App/App.entitlements"';
     } else {

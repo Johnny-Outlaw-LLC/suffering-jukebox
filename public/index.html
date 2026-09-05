@@ -8828,6 +8828,17 @@ async function sjDlInit() {
   try {
     const { downloads } = await p.listDownloads();
     (downloads || []).forEach(d => { if (d.state === 'done') _sjDownloads.set(d.trackId, 'done'); });
+    // Songs downloaded before the pipeline carried album art have no cover on
+    // disk and no way to find one in the car. Repair them here, quietly.
+    void sjDlBackfillArtwork((downloads || []).filter(d => d.state === 'done' && !d.hasArtwork));
+    // Anything tapped in the car since this app was last awake.
+    void sjCarDrainFeedback();
+    void sjCarPushRatings();
+  } catch (_) {}
+  try {
+    // Fired by the car the moment something is tapped, so a rating reaches the
+    // server during the drive when there is signal, not days later.
+    await p.addListener('carplayFeedback', () => { void sjCarDrainFeedback(); });
   } catch (_) {}
   try {
     await p.addListener('downloadChange', d => {
@@ -8836,6 +8847,7 @@ async function sjDlInit() {
       else if (d.state === 'downloading') _sjDownloads.set(d.trackId, 'downloading');
       else                                _sjDownloads.delete(d.trackId);
       if (d.state === 'failed') alert('Download failed: ' + (d.error || 'unknown error'));
+      void sjCarPushPlaylists();
       // A finished download is what "accepted" actually means, so the queue is
       // settled here rather than when the tap happened.
       if (d.state === 'done') sjCpMarkAccepted(d.trackId);
@@ -8844,6 +8856,107 @@ async function sjDlInit() {
       if (document.getElementById('set-audio-artists')) setAudioRender();
       if (document.getElementById('carplayQueueOverlay')?.classList.contains('open')) sjCpRenderSheet();
     });
+  } catch (_) {}
+}
+
+// ── CarPlay: what the car knows, and what it sends back ────────────────
+// The car cannot reach this code while driving, so everything it needs is
+// pushed to the native side ahead of time, and everything it collects is
+// drained back out afterwards.
+
+// Playlists the car can actually offer. Only ids and names cross the bridge;
+// native decides which songs are playable against its own download index, so a
+// playlist can never promise a track the car has not got.
+async function sjCarPushPlaylists() {
+  const p = sjDlPlugin();
+  if (!p) return;
+  try {
+    const playlists = (_savedPlaylists || [])
+      .map(pl => ({
+        id: pl.id,
+        name: pl.name || 'Playlist',
+        trackIds: (pl._tracks || []).map(r => r.track_id).filter(Boolean),
+      }))
+      .filter(pl => pl.trackIds.some(id => sjDlState(id) === 'done'));
+    await p.setPlaylists({ playlists });
+  } catch (_) {}
+}
+
+// Which downloaded songs are already rated, so the car draws a filled thumb
+// rather than starting every song blank.
+async function sjCarPushRatings() {
+  const p = sjDlPlugin();
+  if (!p) return;
+  try {
+    const trackIds = [...(_sjDownloads.keys())].filter(id => getMyVote(id) > 0);
+    await p.setRatedTracks({ trackIds });
+  } catch (_) {}
+}
+
+// instantVote toggles when handed the value a track already has, which is right
+// for a button press and wrong for replaying one. The car has already decided
+// the state it wants, so this sets it.
+async function sjCarApplyRating(trackId, value) {
+  const cur = getMyVote(trackId);
+  if (value > 0 && cur !== 1) await instantVote(trackId, 1);
+  else if (value === 0 && cur !== 0) await instantVote(trackId, cur);
+}
+
+// Ratings and hearts tapped in the car. Each is acknowledged only once it has
+// been applied, so a drain that dies halfway retries rather than losing taps.
+let _sjCarDraining = false;
+async function sjCarDrainFeedback() {
+  const p = sjDlPlugin();
+  if (!p || _sjCarDraining) return;
+  _sjCarDraining = true;
+  try {
+    const { items } = await p.drainFeedback();
+    const done = [];
+    // Oldest first: two taps on one song must land in the order they happened,
+    // or the older one wins and the thumb disagrees with the car.
+    for (const it of (items || []).slice().sort((a, b) => (a.at || 0) - (b.at || 0))) {
+      try {
+        if (it.kind === 'rate') await sjCarApplyRating(it.trackId, Number(it.value) || 0);
+        else if (it.kind === 'heart') await ytpSendReaction(it.trackId, 'heart', Number(it.positionMs) || 0, null);
+        else { done.push(it.id); continue; }   // unknown kind: drop, never retry
+        done.push(it.id);
+      } catch (_) { /* leave it queued for the next drain */ }
+    }
+    if (done.length) await p.ackFeedback({ ids: done });
+    if (done.length) await sjCarPushRatings();
+  } catch (_) {
+  } finally {
+    _sjCarDraining = false;
+  }
+}
+
+// Covers for songs already on the phone. Only the images are fetched - the
+// audio is already on disk, and re-downloading an album to fix a thumbnail
+// would be absurd. Best effort throughout: a car with no signal simply keeps
+// the placeholder and tries again next launch.
+async function sjDlBackfillArtwork(rows) {
+  const p = sjDlPlugin();
+  const ids = (rows || []).map(r => r && r.trackId).filter(Boolean);
+  if (!p || !ids.length) return;
+  try {
+    // tracks -> albums is the only way to a cover, and the catalogue tables are
+    // publicly readable, so this needs no session.
+    const trackRows = [];
+    for (let i = 0; i < ids.length; i += 50) {
+      trackRows.push(...(await dbGet('/tracks?id=in.(' + ids.slice(i, i + 50).join(',') + ')&select=id,album_id') || []));
+    }
+    const albumIds = [...new Set(trackRows.map(t => t.album_id).filter(Boolean))];
+    const artByAlbum = {};
+    for (let i = 0; i < albumIds.length; i += 50) {
+      (await dbGet('/albums?id=in.(' + albumIds.slice(i, i + 50).join(',') + ')&select=id,art_url') || [])
+        .forEach(a => { if (a.art_url) artByAlbum[a.id] = a.art_url; });
+    }
+    const tracks = trackRows
+      .map(t => ({ trackId: t.id, artworkUrl: artByAlbum[t.album_id] }))
+      .filter(t => t.artworkUrl && /^https?:/i.test(t.artworkUrl));
+    if (!tracks.length) return;
+    const { repaired } = await p.backfillArtwork({ tracks });
+    if (repaired) console.log('[sj] repaired ' + repaired + ' CarPlay cover(s)');
   } catch (_) {}
 }
 
@@ -9040,7 +9153,9 @@ async function sjCpAccept(trackIds) {
       title  : it?.title  || 'Track',
       artist : it?.artist || '',
       album  : it?.album  || '',
-      artwork: '',
+      // The accept sheet is the last point with a network connection before the
+      // car, so the cover has to be taken now or the drive shows a grey note.
+      artwork: it?.artworkUrl || '',
     });
     if (!track) { _sjDownloads.delete(id); continue; }
     // Sequential on purpose: the engine has one background session, and firing
@@ -34115,8 +34230,8 @@ function setAudioDlPayload(trackId) {
   return sjDlTrackPayload(trackId, {
     title: found.track.name,
     artist: found.group.name,
-    album: '',
-    artwork: '',
+    album: found.track.album || '',
+    artwork: found.track.artwork || '',
   });
 }
 
@@ -34212,7 +34327,7 @@ async function setAudioLoad() {
     const albumMap = {};
     for (let i = 0; i < albumIds.length; i += 50) {
       const chunk = albumIds.slice(i, i + 50);
-      const rows = await dbGet('/albums?id=in.(' + chunk.join(',') + ')&select=id,name,artist_id');
+      const rows = await dbGet('/albums?id=in.(' + chunk.join(',') + ')&select=id,name,artist_id,art_url');
       (rows || []).forEach(a => { albumMap[a.id] = a; });
     }
     const artistIds = [...new Set(Object.values(albumMap).map(a => a.artist_id).filter(Boolean))];
@@ -34237,6 +34352,11 @@ async function setAudioLoad() {
         name: t?.name || 'Untitled',
         bytes: bytesByTrack[tid] || 0,
         durationMs: t?.duration_ms || null,
+        // Carried so a download taken from this screen reaches the car with an
+        // album and a cover. Without them CarPlay shows a grey note, and there
+        // is no second chance to fetch either once the phone is offline.
+        album: alb?.name || '',
+        artwork: alb?.art_url || '',
       });
     });
     _setAudioGroups = Object.values(byArtist).sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name));
@@ -39025,6 +39145,9 @@ async function loadPlaylists() {
     pubPlaylists = all.filter(p => p.is_public && p.user_email !== myEmail);
     _savedPlaylists = all;
   } catch(e) { _savedPlaylists = []; playlists = []; pubPlaylists = []; }
+  // One push per load, from the single place playlists are ever fetched, so the
+  // car's Playlists tab cannot drift from what the app shows.
+  void sjCarPushPlaylists();
   return _savedPlaylists;
 }
 
