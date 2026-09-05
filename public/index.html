@@ -34480,7 +34480,14 @@ async function sjNativeSignIn() {
     });
     if (error || !data?.url) throw new Error(error?.message || 'Could not start sign-in');
 
-    const result = await plugin.signIn({ url: data.url, callbackScheme: SJ_AUTH_SCHEME });
+    // Apple's consent alert names the host of whatever URL the sheet opens on,
+    // so handing it data.url directly asked to use "<project-ref>.supabase.co"
+    // - true, but unrecognisable to the person reading it. /api/sj-auth-start
+    // is a 302 to that exact same URL, so the alert names this site instead and
+    // the flow is otherwise byte-for-byte what it was.
+    const startUrl = sjApiUrl('/api/sj-auth-start') + '?to=' + encodeURIComponent(data.url);
+
+    const result = await plugin.signIn({ url: startUrl, callbackScheme: SJ_AUTH_SCHEME });
     const cb = new URL(result.url);
 
     // Supabase reports its own failures on the callback, not as a thrown error.
