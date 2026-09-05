@@ -21408,7 +21408,11 @@ function playlistExploreRowsAll() {
   const live = (scope === 'all' || scope === 'live' || !googleUser)
     ? liveRoomPlaylists.filter(p => !p._roomIsOwner && (!q || playlistMatchesSearch(p, q)))
     : [];
-  return live.concat(dynamic.filter(p => !q || playlistMatchesSearch(p, q)), sorted);
+  const shelf = live.concat(dynamic.filter(p => !q || playlistMatchesSearch(p, q)), sorted);
+  // Applied to the concatenation rather than to `rows`: live rooms and dynamic
+  // playlists join after the saved ones, and a filter they slipped past would
+  // put un-playable cards back on a shelf that promises the opposite.
+  return sjBgActive() ? shelf.filter(p => sjBgPlaylistOn(p)) : shelf;
 }
 
 // What actually gets drawn: the above, minus anything the listener has taken
@@ -25233,7 +25237,9 @@ async function initLanding() {
     renderLanding();
     void openLiveRoomFromUrl();
     loadPlaylists().then(() => { if (isLandingMode) renderLanding(); });
-    ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
+    // The Background Play control cannot draw itself until it knows whether
+    // there is anything to filter to, so it appears on this re-render.
+    ensureHomeLibrary().then(() => { if (isLandingMode) renderLanding(); });
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
 }
 
@@ -25292,6 +25298,7 @@ function getVisibleLandingStats(opts) {
     visible = visible.filter(r => r.visibility !== 'private');
   }
   if (!landingIncludeSinglesOnly && !opts.singlesAlways) visible = visible.filter(r => r.discography_complete !== false);
+  if (sjBgActive() && !opts.skipBgOnly) visible = visible.filter(r => sjBgArtistOn(r));
   if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
   else if (landingSubmitterFilter.size) {
     visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -25633,17 +25640,17 @@ function setLandingTab(tab) {
   renderLanding();
 }
 
-function setHomeBgOnly(on) {
-  homeBgOnly = !!on;
-  try { localStorage.setItem('sj_home_bg_only', on ? '1' : '0'); } catch (_) {}
-  if (on && googleUser) ensureHomeLibrary().then(() => { if (isLandingMode && landingTab === 'home') renderLanding(); });
-  else renderLanding();
-}
+// Retained for the retired My Jukebox markup; both checkboxes drive the one
+// piece of state, so they cannot disagree about what is filtered.
+function setHomeBgOnly(on) { setSjBgOnly(on); }
 
-// My Jukebox only: when the background filter is on, play/shuffle queues stay
-// limited to tracks I have uploaded audio for.
+// When the background filter is on, play/shuffle queues stay limited to tracks
+// that can actually sound in the background. This used to read
+// `landingTab === 'home'`, which stopped meaning anything when My Jukebox was
+// retired; without it Shuffle All would happily queue the very songs the grid
+// had just filtered away. sjBgActive() carries the mobile and non-empty checks.
 function homeJukeboxBgFilterOn() {
-  return landingTab === 'home' && homeBgOnly && !!googleUser;
+  return sjBgActive();
 }
 
 function trackPassesHomeBgFilter(trackId) {
@@ -25683,26 +25690,19 @@ function getHomeArtistRows() {
 
 async function ensureHomeLibrary() {
   if (_homeLibLoaded || _homeLibLoading) return;
-  if (!googleUser) { _homeBgArtistIds = new Set(); _homeBgTrackIds = new Set(); _homeLibLoaded = true; return; }
   _homeLibLoading = true;
   try {
-    const uid = (await sjGetSession().catch(() => ({ data: {} }))).data?.session?.user?.id;
-    if (!uid) { _homeBgArtistIds = new Set(); _homeBgTrackIds = new Set(); return; }
-    const mine = await dbGetAuth(`/track_audio?uploaded_by=eq.${uid}&select=track_id`);
-    const ids = [...new Set((mine || []).map(r => r.track_id).filter(Boolean))];
-    _homeBgTrackIds = new Set(ids);
-    if (!ids.length) { _homeBgArtistIds = new Set(); _homeBgTrackIds = new Set(); return; }
-    const chunks = [];
-    for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
-    const trackRows = (await Promise.all(chunks.map(c =>
-      dbGet(`/tracks?id=in.(${c.join(',')})&select=id,album_id`)))).flat();
-    const albumIds = [...new Set(trackRows.map(t => t.album_id).filter(Boolean))];
-    if (!albumIds.length) { _homeBgArtistIds = new Set(); return; }
-    const aChunks = [];
-    for (let i = 0; i < albumIds.length; i += 50) aChunks.push(albumIds.slice(i, i + 50));
-    const albRows = (await Promise.all(aChunks.map(c =>
-      dbGet(`/albums?id=in.(${c.join(',')})&select=id,artist_id`)))).flat();
-    _homeBgArtistIds = new Set(albRows.map(a => a.artist_id).filter(Boolean));
+    // One request rather than a walk out to tracks and albums 50 ids at a
+    // time: the server already has to do these joins, and it is the only side
+    // that can see artist-licensed audio, which is the filter's other half.
+    const res = await fetch(sjApiUrl('/api/sj-bg-available'), {
+      headers: { ...(await sjAuthHeaders()) },
+      cache: 'no-store',
+    });
+    const body = await res.json();
+    if (!res.ok || !body.ok) throw new Error(body.error || 'unavailable');
+    _homeBgTrackIds = new Set((body.trackIds || []).filter(Boolean));
+    _homeBgArtistIds = new Set((body.artistIds || []).filter(Boolean));
   } catch (_) {
     _homeBgArtistIds = new Set();
     _homeBgTrackIds = new Set();
@@ -26093,6 +26093,7 @@ function esSongRows(opts) {
   if (!skipLyric && _esLyricFilter.size) {
     rows = rows.filter(t => _esLyricFilter.has(esLyricStatus(t.id)));
   }
+  if (sjBgActive()) rows = rows.filter(t => sjBgHasTrack(t.id));
   const q = _esSearchQ.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(t => {
@@ -26324,7 +26325,8 @@ function esFiltersHTML() {
           ${esLyricsMenuHTML()}
         </div>
       </div>
-    </div>`;
+    </div>` +
+    (sjBgToggleHTML() ? `<div class="landing-control-group">${sjBgToggleHTML()}</div>` : '');
 }
 
 function esSongsPageHTML() {
@@ -26871,6 +26873,7 @@ function renderLanding() {
                 ${playlistExploreSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="clearPlaylistExploreSearch()">✕</button>` : ''}
               </div>
             </div>
+            ${sjBgToggleHTML() ? `<div class="landing-control-group" style="margin:0">${sjBgToggleHTML()}</div>` : ''}
             ${plScope() === 'live' ? '' : `<div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Sort</span>
               <select class="landing-sort-select" id="playlist-explore-sort" onchange="setPlaylistExploreSort(this.value)">
@@ -26969,6 +26972,7 @@ function renderLanding() {
             </div>
           </div>
           <label class="landing-singles-only-lbl"><input type="checkbox" ${landingIncludeSinglesOnly ? 'checked' : ''} onchange="setLandingIncludeSinglesOnly(this.checked)"> Include Singles Only Artists</label>
+          ${sjBgToggleHTML()}
         </div>
         <div class="landing-control-group landing-view-group">
           ${exploreViewToggleHTML(exploreArtistsView, 'setExploreArtistsView')}
@@ -28416,6 +28420,62 @@ async function loadTrackAudio(trackIds) {
     });
     taSyncAudioBtn();
   } catch (_) {}
+}
+
+// ── Background Play filter ─────────────────────────────────────────────
+// The mechanism underneath this is not new: homeBgOnly, _homeBgTrackIds and
+// the filterTracksForHomeBg / filterQueueForHomeBg pair were built for the
+// My Jukebox tab, which has since been retired - leaving the filter intact but
+// gated behind a tab nothing can reach any more. This puts it back in reach
+// from the three Explore tabs rather than growing a second one beside it, so
+// the queue-level enforcement and the group-artist (member_ids) handling come
+// along for free instead of being written again slightly differently.
+//
+// The "home" prefix on those names is historical; they now serve all of
+// Explore. Availability itself is loaded by ensureHomeLibrary().
+//
+// Mobile only, matching taIsMobileDevice() - the same gate that decides
+// whether artist audio is offered at all. On a desktop the sound never stops
+// for a hidden tab, so the filter would answer a question nobody asked.
+
+// The control only earns its space where it would actually narrow something.
+// Off a phone, or with nothing to play, its one possible outcome is an empty
+// grid, so it stays hidden instead.
+function sjBgFilterOffered() {
+  return taIsMobileDevice() && !!(_homeLibLoaded && _homeBgTrackIds.size);
+}
+
+function sjBgActive() { return homeBgOnly && sjBgFilterOffered(); }
+
+function sjBgHasTrack(id) { return !!(id && _homeBgTrackIds.has(id)); }
+
+// One song is enough to keep an artist or a playlist on screen: hiding Pixies
+// because 19 of its 126 songs are YouTube-only would surprise more than help.
+// Takes the landing row rather than an id so a group artist still counts when
+// the audio sits on a member's catalogue - the same test getHomeArtistRows uses.
+function sjBgArtistOn(r) {
+  if (!r) return false;
+  return _homeBgArtistIds.has(r.artist_id)
+    || (Array.isArray(r.member_ids) && r.member_ids.some(id => _homeBgArtistIds.has(id)));
+}
+
+function sjBgPlaylistOn(pl) {
+  return ((pl && pl._tracks) || []).some(r => _homeBgTrackIds.has(r.track_id));
+}
+
+function setSjBgOnly(on) {
+  homeBgOnly = !!on;
+  try { localStorage.setItem('sj_home_bg_only', homeBgOnly ? '1' : '0'); } catch (_) {}
+  renderLanding();   // draws whichever of the three tabs is open
+}
+
+// Shared across all three tabs on purpose, the way Submitted By already is:
+// a song list is the artist grid flattened, and a second copy of this switch
+// could only ever disagree with the first.
+function sjBgToggleHTML() {
+  if (!sjBgFilterOffered()) return '';
+  return `<label class="landing-singles-only-lbl sj-bg-only-lbl" title="Only what keeps playing with the screen off or the app in the background">`
+    + `<input type="checkbox"${homeBgOnly ? ' checked' : ''} onchange="setSjBgOnly(this.checked)"> \u{1F3A7} Background Play Only</label>`;
 }
 
 // ── Album helpers ─────────────────────────────────────────────
@@ -34359,6 +34419,7 @@ function initGoogleAuth() {
         _homeLibLoaded = false;
         _homeBgArtistIds = new Set();
         _homeBgTrackIds = new Set();
+        ensureHomeLibrary().then(() => { if (isLandingMode) renderLanding(); });
         loadMyPlayCounts();
         loadMyVotes();
         loadMyBlockedTracks();
@@ -34396,6 +34457,7 @@ function initGoogleAuth() {
       _homeLibLoaded = false;
       _homeBgArtistIds = new Set();
       _homeBgTrackIds = new Set();
+      ensureHomeLibrary().then(() => { if (isLandingMode) renderLanding(); });
       myInAppPlays = {};
       myLastPlayed = {};
       blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI();

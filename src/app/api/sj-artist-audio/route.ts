@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { isUuid } from "@/lib/artist-rights";
+import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
 import { createB2DownloadUrl } from "@/lib/b2-audio";
 
 export const dynamic = "force-dynamic";
@@ -27,35 +28,11 @@ export async function GET(req: NextRequest) {
   }
   try {
     const sb = createSjServiceClient();
-    const { data: candidates, error: candidateError } = await sb
-      .schema(JUKEBOX_SCHEMA)
-      .from("artist_catalog_tracks")
-      .select("id,agreement_id,track_audio_id,track_id,artist_id,approved_at")
-      .in("track_id", trackIds)
-      .eq("status", "approved")
-      .order("approved_at", { ascending: false });
-    if (candidateError) throw candidateError;
-    if (!candidates?.length) {
+    const selected = await approvedArtistAudioTracks(sb, trackIds);
+    if (!selected.length) {
       return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    const agreementIds = [...new Set(candidates.map((row) => row.agreement_id))];
-    const { data: agreements, error: agreementError } = await sb
-      .schema(JUKEBOX_SCHEMA)
-      .from("artist_rights_agreements")
-      .select("id,artist_id,status")
-      .in("id", agreementIds)
-      .eq("status", "approved");
-    if (agreementError) throw agreementError;
-    const approvedAgreements = new Set((agreements ?? []).map((row) => row.id));
-    const eligible = candidates.filter((row) => approvedAgreements.has(row.agreement_id));
-    const chosen = new Map<string, (typeof eligible)[number]>();
-    for (const row of eligible) if (!chosen.has(row.track_id)) chosen.set(row.track_id, row);
-    if (!chosen.size) {
-      return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
-    }
-
-    const selected = [...chosen.values()];
     const { data: audioRows, error: audioError } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("track_audio")
