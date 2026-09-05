@@ -19,6 +19,27 @@ reach the native engine. YouTube-backed tracks have no file to hand the OS, so
 they never appear in CarPlay and cannot be downloaded. That is a hard
 constraint from both CarPlay and YouTube's terms, not a first cut.
 
+## Getting songs into the car
+
+CarPlay can only play files that are already on the phone, and picking a drive's
+worth of music on a phone is miserable. So the picking and the downloading are
+split across devices:
+
+1. **Anywhere else** (usually a desktop) — Settings → Audio Storage, `＋ Send to
+   iPhone` on a song or `＋ Send all to iPhone` on an artist. That writes track
+   ids to `jukebox.carplay_queue` through `/api/sj-carplay-queue`. No audio moves.
+2. **On the phone** — the app checks the queue on sign-in and on every return to
+   the foreground, and offers the list as one sheet: *Ready for CarPlay*.
+   Downloading is a deliberate tap there, never automatic: the phone may be on
+   cellular and the list may be a whole discography.
+3. A finished download marks its row accepted, which is what turns the desktop's
+   `◷ Queued` into `✓ On iPhone`.
+
+The phone can still download a single song directly — the track menu and the
+`＋ CarPlay` buttons in Audio Storage are unchanged. Removing a queue row never
+deletes a file, and removing a download never deletes a queue row: they are a
+request and a file, not two copies of one state.
+
 ## Build
 
 ```bash

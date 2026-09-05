@@ -5109,6 +5109,25 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   </div>
 </div>
 
+<!-- CARPLAY QUEUE (songs picked on another device, accepted here) -->
+<div class="modal-overlay" id="carplayQueueOverlay" style="z-index:5200" onclick="if(event.target===this)sjCpCloseSheet()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Ready for CarPlay</span>
+      <button class="modal-close" onclick="sjCpCloseSheet()">✕</button>
+    </div>
+    <div class="modal-body" style="gap:.8rem">
+      <p class="set-sub" id="sjcpLede" style="margin:0"></p>
+      <div id="sjcpList"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="sjCpCloseSheet()">Not now</button>
+      <button class="m-btn ghost" onclick="sjCpClearAll()" style="border-color:#ef444455;color:#ef4444">Clear list</button>
+      <button class="m-btn" id="sjcpAcceptBtn" onclick="sjCpAcceptAll()">Download all</button>
+    </div>
+  </div>
+</div>
+
 <!-- Batch audio upload minimized progress pill -->
 <div id="ta-minibar" onclick="taBatchRestore()" title="Click to reopen audio upload">
   <span class="m-spin"></span><span class="ta-mini-txt">Uploading audio…</span>
@@ -8817,9 +8836,13 @@ async function sjDlInit() {
       else if (d.state === 'downloading') _sjDownloads.set(d.trackId, 'downloading');
       else                                _sjDownloads.delete(d.trackId);
       if (d.state === 'failed') alert('Download failed: ' + (d.error || 'unknown error'));
+      // A finished download is what "accepted" actually means, so the queue is
+      // settled here rather than when the tap happened.
+      if (d.state === 'done') sjCpMarkAccepted(d.trackId);
       // Repaint the menu if it is open on this track.
       if (_sjmTrackId === d.trackId && document.getElementById('sjm-menu')) sjmRenderRoot();
       if (document.getElementById('set-audio-artists')) setAudioRender();
+      if (document.getElementById('carplayQueueOverlay')?.classList.contains('open')) sjCpRenderSheet();
     });
   } catch (_) {}
 }
@@ -8844,6 +8867,23 @@ function sjDlTrackPayload(trackId, meta) {
   };
 }
 
+// Signed URLs are fetched when a download is actually requested, not up front:
+// presigning a whole library just to draw a screen is slow and fragile, and a
+// URL minted at page load can expire before it is ever used.
+async function sjDlEnsureUrls(trackIds) {
+  const need = trackIds.filter(id => !taTrackAudio(id)?.url);
+  if (!need.length) return;
+  for (let i = 0; i < need.length; i += 50) {
+    const rows = await taOwnAudioUrls(need.slice(i, i + 50));
+    (rows || []).forEach(r => {
+      if (!r.url || !r.trackId) return;
+      taData[r.trackId] = Object.assign({}, taData[r.trackId], {
+        url: r.url, path: r.path, duration: Number(r.duration) || null,
+      });
+    });
+  }
+}
+
 async function sjmToggleDownload() {
   const tid = _sjmTrackId;
   const p = sjDlPlugin();
@@ -8864,6 +8904,238 @@ async function sjmToggleDownload() {
     alert('Download failed: ' + (e?.message || e));
   }
   if (document.getElementById('sjm-menu')) sjmRenderRoot();
+}
+
+// ── CarPlay queue: pick on the desktop, accept on the phone ─────────
+// Picking a drive's worth of music on a phone is miserable, and CarPlay can
+// only play files that are already on the device. So the picking happens on
+// whatever screen the listener is comfortable with, the server holds the list,
+// and the phone offers the whole thing as one menu. Nothing downloads until it
+// is accepted there: the phone may be on cellular, and the list may be a whole
+// discography.
+let _sjCpItems     = [];   // the queue as the server last described it
+let _sjCpLoaded    = false;
+let _sjCpBusy      = false; // an accept run is in flight
+let _sjCpAutoShown = '';    // the list the sheet last opened itself for
+
+async function sjCpApi(method, body) {
+  const res = await fetch(sjApiUrl('/api/sj-carplay-queue'), {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: 'no-store',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'The CarPlay queue is unavailable right now.');
+  return data;
+}
+
+async function sjCpRefresh() {
+  if (!googleUser) { _sjCpItems = []; _sjCpLoaded = false; return []; }
+  try {
+    _sjCpItems  = (await sjCpApi('GET')).items || [];
+    _sjCpLoaded = true;
+  } catch (_) { /* a convenience, not a dependency - never block a screen on it */ }
+  return _sjCpItems;
+}
+
+function sjCpItem(trackId)  { return _sjCpItems.find(i => i.trackId === trackId) || null; }
+function sjCpPending()      { return _sjCpItems.filter(i => !i.acceptedAt); }
+function sjCpState(trackId) {
+  const it = sjCpItem(trackId);
+  return !it ? 'none' : (it.acceptedAt ? 'accepted' : 'pending');
+}
+
+function sjCpRepaint() {
+  if (document.getElementById('set-audio-artists')) setAudioRender();
+  if (document.getElementById('sjm-menu')) sjmRenderRoot();
+  if (document.getElementById('carplayQueueOverlay')?.classList.contains('open')) sjCpRenderSheet();
+}
+
+// ── Sending, from whatever device is doing the picking ──
+
+async function sjCpSend(trackIds) {
+  const ids = [...new Set((trackIds || []).filter(Boolean))];
+  if (!ids.length) return;
+  if (!googleUser) { showToast('Sign in to send songs to your phone.'); return; }
+  try {
+    const n = (await sjCpApi('POST', { track_ids: ids })).queued || 0;
+    await sjCpRefresh();
+    showToast(n
+      ? n + ' song' + (n === 1 ? '' : 's') + ' queued — open the app on your iPhone to accept'
+      : 'Those songs have no uploaded audio, so there is nothing to send.');
+  } catch (e) {
+    showToast(e.message || 'Could not queue those songs.');
+  }
+  sjCpRepaint();
+}
+
+// Removing a request never removes a file: a song already on the phone stays.
+async function sjCpUnsend(trackIds) {
+  const ids = [...new Set((trackIds || []).filter(Boolean))];
+  if (!ids.length) return;
+  try {
+    await sjCpApi('DELETE', { track_ids: ids });
+    _sjCpItems = _sjCpItems.filter(i => !ids.includes(i.trackId));
+  } catch (e) {
+    showToast(e.message || 'Could not update the queue.');
+  }
+  sjCpRepaint();
+}
+
+async function sjCpClearAll() {
+  if (!_sjCpItems.length) return;
+  if (!confirm('Clear the list of songs queued for your phone? Anything already downloaded stays on the phone.')) return;
+  try {
+    await sjCpApi('DELETE', { all: true });
+    _sjCpItems = [];
+  } catch (e) {
+    showToast(e.message || 'Could not clear the queue.');
+  }
+  sjCpCloseSheet();
+  sjCpRepaint();
+}
+
+// ── Accepting, on the phone ──
+
+// Acknowledgement is batched: an album finishes one track at a time, and a
+// request per track would be a dozen of them over a car-park connection.
+let _sjCpAck      = new Set();
+let _sjCpAckTimer = null;
+
+function sjCpMarkAccepted(trackId) {
+  if (sjCpState(trackId) !== 'pending') return;
+  _sjCpAck.add(trackId);
+  clearTimeout(_sjCpAckTimer);
+  _sjCpAckTimer = setTimeout(async () => {
+    const ids = [..._sjCpAck];
+    _sjCpAck = new Set();
+    try { await sjCpApi('PATCH', { track_ids: ids, accepted: true }); } catch (_) { return; }
+    const now = new Date().toISOString();
+    ids.forEach(id => { const it = sjCpItem(id); if (it) it.acceptedAt = now; });
+    sjCpRepaint();
+  }, 1200);
+}
+
+async function sjCpAccept(trackIds) {
+  const p = sjDlPlugin();
+  if (!p) return;
+  const ids = [...new Set((trackIds || []).filter(Boolean))].filter(id => sjDlState(id) === 'none');
+  if (!ids.length) return;
+  _sjCpBusy = true;
+  ids.forEach(id => _sjDownloads.set(id, 'downloading'));
+  sjCpRepaint();
+  try {
+    await sjDlEnsureUrls(ids);
+  } catch (e) {
+    ids.forEach(id => _sjDownloads.delete(id));
+    _sjCpBusy = false;
+    showToast('Could not prepare the downloads: ' + (e?.message || e));
+    sjCpRepaint();
+    return;
+  }
+  for (const id of ids) {
+    const it = sjCpItem(id);
+    const track = sjDlTrackPayload(id, {
+      title  : it?.title  || 'Track',
+      artist : it?.artist || '',
+      album  : it?.album  || '',
+      artwork: '',
+    });
+    if (!track) { _sjDownloads.delete(id); continue; }
+    // Sequential on purpose: the engine has one background session, and firing
+    // a whole list at it just thrashes it.
+    try { await p.download({ track }); } catch (_) { _sjDownloads.delete(id); }
+  }
+  _sjCpBusy = false;
+  sjCpRepaint();
+}
+
+function sjCpAcceptAll() {
+  sjCpAccept(sjCpPending().filter(i => sjDlState(i.trackId) !== 'done').map(i => i.trackId));
+}
+
+// ── The accept sheet ──
+
+function sjCpOpenSheet() {
+  const ov = document.getElementById('carplayQueueOverlay');
+  if (!ov) return;
+  ov.classList.add('open');
+  sjCpRenderSheet();
+}
+
+function sjCpCloseSheet() {
+  document.getElementById('carplayQueueOverlay')?.classList.remove('open');
+}
+
+function sjCpRenderSheet() {
+  const list = document.getElementById('sjcpList');
+  if (!list) return;
+  const lede = document.getElementById('sjcpLede');
+  const btn  = document.getElementById('sjcpAcceptBtn');
+  const waiting = sjCpPending().filter(i => sjDlState(i.trackId) !== 'done');
+  const bytes   = waiting.reduce((n, i) => n + (i.bytes || 0), 0);
+
+  if (lede) {
+    lede.textContent = !_sjCpItems.length
+      ? 'Nothing queued. On your computer, open Settings → Audio Storage and send songs here.'
+      : waiting.length
+        ? waiting.length + ' song' + (waiting.length === 1 ? '' : 's') + ' waiting · ' + fmtBytes(bytes) +
+          '. Downloading puts them on this iPhone, where CarPlay and offline play can reach them.'
+        : 'Everything queued is on this iPhone. CarPlay lists it under Library.';
+  }
+  if (btn) {
+    btn.disabled = _sjCpBusy || !waiting.length;
+    btn.textContent = _sjCpBusy
+      ? 'Downloading…'
+      : waiting.length ? 'Download ' + waiting.length : 'All downloaded';
+  }
+
+  list.innerHTML = _sjCpItems.length
+    ? _sjCpItems.map(i => {
+        const st   = sjDlState(i.trackId);
+        const done = st === 'done';
+        const meta = [i.artist, i.album, fmtBytes(i.bytes || 0)].filter(Boolean).join(' · ');
+        return '<div class="set-audio-trk">' +
+          '<span class="set-audio-trk-name" title="' + escHtml(i.title) + '">' + escHtml(i.title) + '</span>' +
+          '<span class="set-audio-bytes">' + escHtml(meta) + '</span>' +
+          (done
+            ? '<span class="oa-act in set-audio-act">✓ On this iPhone</span>'
+            : st === 'downloading'
+              ? '<span class="oa-act set-audio-act">Downloading…</span>'
+              : '<button type="button" class="oa-act set-audio-act" onclick="sjCpAccept([\'' + i.trackId + '\'])">↓ Download</button>' +
+                '<button type="button" class="oa-act set-audio-act" title="Not for the car" ' +
+                  'onclick="sjCpUnsend([\'' + i.trackId + '\'])">✕</button>') +
+        '</div>';
+      }).join('')
+    : '';
+}
+
+// The phone checks on sign-in, on return to the foreground, and when Audio
+// Storage opens. A list it has not offered before opens the sheet by itself - being
+// asked is the whole point of queueing from another device.
+// Anything queued that is already downloaded - added from the track menu, or
+// accepted on a run that never got to report it - is settled without asking.
+function sjCpSettle() {
+  if (!sjDlPlugin()) return;
+  sjCpPending().forEach(i => { if (sjDlState(i.trackId) === 'done') sjCpMarkAccepted(i.trackId); });
+}
+
+async function sjCpNativeCheck(opts) {
+  if (!sjIsNative() || !sjDlPlugin() || !googleUser) return;
+  await sjCpRefresh();
+  sjCpSettle();
+
+  const waiting = sjCpPending().filter(i => sjDlState(i.trackId) !== 'done');
+  if (!waiting.length) return;
+  const signature = waiting.map(i => i.trackId).sort().join(',');
+  if (opts?.auto) {
+    if (signature === _sjCpAutoShown) return;   // already offered this exact list
+    // Never land on top of something the listener opened themselves.
+    if (document.querySelector('.modal-overlay.open, .pl-modal-overlay.open')) return;
+  }
+  _sjCpAutoShown = signature;
+  sjCpOpenSheet();
 }
 
 // Whether sound is coming out right now, whichever source is carrying it.
@@ -16118,6 +16390,28 @@ function sjmRenderRoot() {
           '<span class="sjm-ic">' + ic + '</span>' +
           '<span class="sjm-label">' + label + '</span>' +
           '<span class="sjm-sub">' + (st === 'done' ? 'offline' : 'offline play') + '</span>' +
+        '</button><div class="sjm-sep"></div>';
+    })() +
+    (function () {
+      // Off the phone there is no engine to download with, so the same row
+      // queues the song instead and the phone offers it on its next launch.
+      if (sjIsNative() || !googleUser) return '';
+      const ta = taTrackAudio(tid);
+      if (!ta || ta.isPublic) return '';
+      const cp = sjCpState(tid);
+      if (cp === 'accepted') {
+        return '<button class="sjm-item" disabled>' +
+            '<span class="sjm-ic">\u2713</span>' +
+            '<span class="sjm-label">On your iPhone</span>' +
+            '<span class="sjm-sub">CarPlay</span>' +
+          '</button><div class="sjm-sep"></div>';
+      }
+      return '<button class="sjm-item" onclick="' +
+          (cp === 'pending' ? 'sjCpUnsend' : 'sjCpSend') + '([\'' + tid + '\'])">' +
+          '<span class="sjm-ic">' + (cp === 'pending' ? '\u25f7' : '\u21e2') + '</span>' +
+          '<span class="sjm-label">' +
+            (cp === 'pending' ? 'Queued for your iPhone' : 'Send to iPhone for CarPlay') + '</span>' +
+          '<span class="sjm-sub">' + (cp === 'pending' ? 'tap to undo' : 'accept in the app') + '</span>' +
         '</button><div class="sjm-sep"></div>';
     })() +
     '<button class="sjm-item" data-sjm-submenu="playlists" onclick="sjmOpenPlaylists()">' +
@@ -33605,12 +33899,29 @@ function setAudioRender() {
     const dlTracks = groups.reduce((n, g) => n + g.tracks.filter(t => sjDlState(t.id) === 'done').length, 0);
     const dlBytes  = groups.reduce((n, g) => n + g.tracks.filter(t => sjDlState(t.id) === 'done')
                                                          .reduce((b, t) => b + (t.bytes || 0), 0), 0);
-    const carplayNote = (sjIsNative() && sjDlPlugin())
-      ? '<p class="set-sub">' + (dlTracks
-          ? '<b>' + dlTracks + ' song' + (dlTracks === 1 ? '' : 's') + '</b> on this iPhone for CarPlay and offline play · ' + escHtml(fmtBytes(dlBytes))
-          : 'Nothing on this iPhone yet. CarPlay only plays songs copied to the device — add them below.') +
-        '</p>'
-      : '';
+    // Two different jobs share this screen: on the phone it reports what is on
+    // the device and offers the queue somebody else filled; anywhere else it is
+    // where that queue gets filled.
+    const carplayNote = (function () {
+      if (sjIsNative() && sjDlPlugin()) {
+        const waiting = sjCpPending().filter(i => sjDlState(i.trackId) !== 'done');
+        return '<p class="set-sub">' + (dlTracks
+            ? '<b>' + dlTracks + ' song' + (dlTracks === 1 ? '' : 's') + '</b> on this iPhone for CarPlay and offline play · ' + escHtml(fmtBytes(dlBytes))
+            : 'Nothing on this iPhone yet. CarPlay only plays songs copied to the device — add them below.') +
+          '</p>' +
+          (waiting.length
+            ? '<p class="set-sub"><b>' + waiting.length + ' song' + (waiting.length === 1 ? '' : 's') +
+              '</b> queued from another device. ' +
+              '<button type="button" class="oa-act" onclick="sjCpOpenSheet()">Review</button></p>'
+            : '');
+      }
+      if (!googleUser) return '';
+      const waiting = sjCpPending().length;
+      return '<p class="set-sub">' + (waiting
+        ? '<b>' + waiting + ' song' + (waiting === 1 ? '' : 's') + '</b> waiting for your iPhone — open Suffering Jukebox on the phone and tap Download. ' +
+          '<button type="button" class="oa-act" onclick="sjCpClearAll()">Clear queue</button>'
+        : 'Send songs to your iPhone here, then accept them in the app to play them in CarPlay and offline.') + '</p>';
+    })();
     el.innerHTML = '<div class="set-h">By artist</div>' + carplayNote + groups.map(g => {
       const open = _setAudioExpanded.has(g.artistId);
       return '<div class="set-audio-artist">' +
@@ -33618,10 +33929,15 @@ function setAudioRender() {
           '<span class="set-audio-chev">' + (open ? '▾' : '▸') + '</span>' +
           '<span class="set-audio-artist-name">' + escHtml(g.name) + '</span>' +
           '<span class="set-audio-artist-meta">' + g.tracks.length + ' song' + (g.tracks.length === 1 ? '' : 's') + ' · ' + escHtml(fmtBytes(g.bytes)) + '</span>' +
-          (sjIsNative() && sjDlPlugin() && g.tracks.some(t => sjDlState(t.id) === 'none')
-            ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Copy every song here to this iPhone" ' +
-              'onclick="event.stopPropagation();setAudioCarPlayArtist(\'' + g.artistId + '\')">＋ All to CarPlay</button>'
-            : '') +
+          (sjIsNative() && sjDlPlugin()
+            ? (g.tracks.some(t => sjDlState(t.id) === 'none')
+                ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Copy every song here to this iPhone" ' +
+                  'onclick="event.stopPropagation();setAudioCarPlayArtist(\'' + g.artistId + '\')">＋ All to CarPlay</button>'
+                : '')
+            : (googleUser && g.tracks.some(t => sjCpState(t.id) === 'none')
+                ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Queue every song here for your iPhone" ' +
+                  'onclick="event.stopPropagation();setAudioSendArtist(\'' + g.artistId + '\')">＋ Send all to iPhone</button>'
+                : '')) +
           '<button type="button" class="pl-btn ghost set-audio-act-top" onclick="event.stopPropagation();setAudioUploadBatch(\'' + g.artistId + '\')">＋ Upload</button>' +
         '</div>' +
         (open ? '<div class="set-audio-tracks">' + g.tracks.map(t =>
@@ -33642,7 +33958,23 @@ function setAudioRender() {
                     'title="Copy to this iPhone so it plays in CarPlay and offline" ' +
                     'onclick="setAudioCarPlayToggle(\'' + t.id + '\')">＋ CarPlay</button>';
                 })()
-              : '') +
+              : (function () {
+                  // No engine on this device, so the most it can do is ask the
+                  // phone. The song is only downloaded once it is accepted there.
+                  if (!googleUser) return '';
+                  const cp = sjCpState(t.id);
+                  if (cp === 'accepted') {
+                    return '<span class="oa-act in set-audio-act" title="Downloaded on your iPhone">✓ On iPhone</span>';
+                  }
+                  if (cp === 'pending') {
+                    return '<button type="button" class="oa-act set-audio-act" style="border-color:var(--accent);color:var(--accent)" ' +
+                      'title="Queued - accept it in the app on your iPhone. Tap to take it off the list." ' +
+                      'onclick="sjCpUnsend([\'' + t.id + '\'])">◷ Queued</button>';
+                  }
+                  return '<button type="button" class="oa-act set-audio-act" ' +
+                    'title="Queue for your iPhone - accept it in the app to play it in CarPlay and offline" ' +
+                    'onclick="sjCpSend([\'' + t.id + '\'])">＋ Send to iPhone</button>';
+                })()) +
             '<button type="button" class="oa-act set-audio-act" onclick="setAudioReplace(\'' + t.id + '\', ' + (t.durationMs || 'null') + ')">Replace</button>' +
             '<button type="button" class="oa-act set-audio-act" style="border-color:#ef444455;color:#ef4444" onclick="setAudioDelete(\'' + t.id + '\')">Delete</button>' +
           '</div>'
@@ -33695,23 +34027,6 @@ function setAudioDlPayload(trackId) {
   });
 }
 
-// Signed URLs are fetched when a download is actually requested, not up front:
-// presigning a whole library just to draw this screen is slow and fragile, and
-// a URL minted at page load can expire before it is ever used.
-async function setAudioEnsureUrls(trackIds) {
-  const need = trackIds.filter(id => !taTrackAudio(id)?.url);
-  if (!need.length) return;
-  for (let i = 0; i < need.length; i += 50) {
-    const rows = await taOwnAudioUrls(need.slice(i, i + 50));
-    (rows || []).forEach(r => {
-      if (!r.url || !r.trackId) return;
-      taData[r.trackId] = Object.assign({}, taData[r.trackId], {
-        url: r.url, path: r.path, duration: Number(r.duration) || null,
-      });
-    });
-  }
-}
-
 async function setAudioCarPlayToggle(trackId) {
   const p = sjDlPlugin();
   if (!p) return;
@@ -33723,7 +34038,7 @@ async function setAudioCarPlayToggle(trackId) {
     } else if (state === 'none') {
       _sjDownloads.set(trackId, 'downloading');
       setAudioRender();
-      await setAudioEnsureUrls([trackId]);
+      await sjDlEnsureUrls([trackId]);
       const track = setAudioDlPayload(trackId);
       if (!track) throw new Error('No audio file is available for that song.');
       await p.download({ track });
@@ -33745,7 +34060,7 @@ async function setAudioCarPlayArtist(artistId) {
   pending.forEach(t => _sjDownloads.set(t.id, 'downloading'));
   setAudioRender();
   try {
-    await setAudioEnsureUrls(pending.map(t => t.id));
+    await sjDlEnsureUrls(pending.map(t => t.id));
   } catch (e) {
     pending.forEach(t => _sjDownloads.delete(t.id));
     showToast('Could not prepare downloads: ' + (e?.message || e));
@@ -33760,6 +34075,16 @@ async function setAudioCarPlayArtist(artistId) {
     try { await p.download({ track }); } catch (_) { _sjDownloads.delete(t.id); }
   }
   setAudioRender();
+}
+
+// The picking-device twin of the above: queue a whole artist for the phone in
+// one go, which is the realistic unit for a drive.
+function setAudioSendArtist(artistId) {
+  const g = (_setAudioGroups || []).find(x => x.artistId === artistId);
+  if (!g) return;
+  const ids = g.tracks.filter(t => sjCpState(t.id) === 'none').map(t => t.id);
+  if (!ids.length) return;
+  sjCpSend(ids);
 }
 
 async function setAudioLoad() {
@@ -33825,6 +34150,10 @@ async function setAudioLoad() {
     _setAudioGroups.forEach(g => g.tracks.sort((a, b) => a.name.localeCompare(b.name)));
 
     if (trackIds.length) await loadTrackAudio(trackIds);
+
+    // The queue drives half of this screen's buttons on every device.
+    await sjCpRefresh();
+    sjCpSettle();
 
     try {
       await ensureMyArtistIds();
@@ -34000,6 +34329,10 @@ function initGoogleAuth() {
         loadMyPlayCounts();
         loadMyVotes();
         loadMyBlockedTracks();
+        // On the phone this is the moment to offer whatever was queued
+        // elsewhere; everywhere else it just makes the Send buttons honest.
+        if (sjIsNative()) sjCpNativeCheck({ auto: true });
+        else sjCpRefresh();
         refreshSjAdminState().then(updateAuthBtn);
         refreshBgUnlock().then(() => { if (isLandingMode) renderLanding(); });
         restorePlaybackState();
@@ -36704,6 +37037,9 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') sendSjPageDuration();
   ytpOnVisibilityChange();
   wakeSync();   // the browser drops the lock on hide - retake it on return
+  // Songs queued from a laptop mid-session should be waiting when the phone is
+  // picked up, not only after a restart.
+  if (document.visibilityState === 'visible') sjCpNativeCheck({ auto: true });
 });
 
 // Playback state: catch position changes even when the track itself doesn't change

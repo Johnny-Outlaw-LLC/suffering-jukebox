@@ -49,7 +49,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         guard !downloads.isEmpty else {
             let empty = CPListItem(
                 text: "Nothing downloaded yet",
-                detailText: "Download tracks in the app to play them here."
+                detailText: "Pick songs on sufferingjukebox.stream, then accept them in the app."
             )
             empty.isEnabled = false
             return [CPListSection(items: [empty])]
