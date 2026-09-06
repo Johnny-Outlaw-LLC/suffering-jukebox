@@ -149,14 +149,24 @@ export async function GET(req: NextRequest) {
       }
       let query = createSjClient()
         .from("track_reactions")
-        .select("track_id")
+        .select("track_id,reaction")
         .in("reaction", [...REACTIONS]);
       query = userId ? query.eq("user_id", userId) : query.eq("device_id", device!);
       const { data, error } = await query.limit(5000);
       if (error) throw error;
+      // How many times this listener has sent a heart to each track - Audio
+      // Storage shows this per song. track_ids stays a plain dedup for every
+      // existing caller; heart_counts is additive, nobody else reads it yet.
+      const heartCounts: Record<string, number> = {};
+      for (const row of data ?? []) {
+        if (row.reaction === "heart" && row.track_id) {
+          heartCounts[row.track_id] = (heartCounts[row.track_id] ?? 0) + 1;
+        }
+      }
       return NextResponse.json({
         ok: true,
         track_ids: [...new Set((data ?? []).map((row) => row.track_id).filter(Boolean))],
+        heart_counts: heartCounts,
       });
     }
     const rawMany = req.nextUrl.searchParams.get("track_ids");
