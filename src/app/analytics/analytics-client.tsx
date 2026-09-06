@@ -5,6 +5,7 @@ import type { Session } from "@supabase/supabase-js";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
 import AnalyticsDashboard from "./analytics-dashboard";
 import DataManager from "./data-manager";
+import DownloadData from "./download-data";
 import ImportMissing, { type MissingSong } from "./import-missing";
 import styles from "./analytics.module.css";
 import { parseYouTubeTakeoutHtml, type YouTubeMusicConfidence } from "@/lib/youtube-history";
@@ -342,7 +343,7 @@ export default function AnalyticsClient() {
   const [sessionReady, setSessionReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [accessToken, setAccessToken] = useState("");
-  const [view, setView] = useState<"dashboard" | "import" | "manage">("dashboard");
+  const [view, setView] = useState<"dashboard" | "import" | "download" | "manage">("dashboard");
   const [dashKey, setDashKey] = useState(0);
   const [error, setError] = useState("");
 
@@ -392,6 +393,7 @@ export default function AnalyticsClient() {
           <nav className={styles.dataTabs} aria-label="My Data sections">
             <button className={`${styles.secondaryButton} ${view === "dashboard" ? styles.activeTab : ""}`} onClick={() => setView("dashboard")}>Analytics</button>
             <button className={`${styles.secondaryButton} ${view === "import" ? styles.activeTab : ""}`} onClick={() => setView("import")}>Import listening history</button>
+            <button className={`${styles.secondaryButton} ${view === "download" ? styles.activeTab : ""}`} onClick={() => setView("download")}>Download my data</button>
             <button className={`${styles.secondaryButton} ${view === "manage" ? styles.activeTab : ""}`} onClick={() => setView("manage")}>Manage my data</button>
           </nav>
         )}
@@ -409,6 +411,8 @@ export default function AnalyticsClient() {
           {error && <div className={styles.error}>{error}</div>}
           {view === "import" ? (
             <Wizard accessToken={accessToken} onComplete={() => { setDashKey((k) => k + 1); setError(""); }} />
+          ) : view === "download" && accessToken ? (
+            <DownloadData accessToken={accessToken} />
           ) : view === "manage" && accessToken ? (
             <DataManager accessToken={accessToken} onChange={() => setDashKey((k) => k + 1)} />
           ) : accessToken ? (

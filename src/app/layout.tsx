@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
 
+// The same tab icon the dashboard, /help and /about serve. This used to be a
+// drawn-from-scratch record-and-jukebox SVG, which meant the React pages sat
+// in the browser under a different logo from the rest of the site.
 export const metadata: Metadata = {
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/favicon.png" }],
   },
 };
 
