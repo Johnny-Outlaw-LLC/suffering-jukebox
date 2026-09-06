@@ -4325,6 +4325,19 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .landing-card:focus-within .landing-card-x { opacity: 1; }
 .landing-card-x:hover { background: var(--accent); border-color: var(--accent); transform: scale(1.12); }
 @media (hover: none) { .landing-card-x { opacity: .85; } }
+.landing-card-more-abs {
+  position: absolute; top: 8px; left: 8px; z-index: 4;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.28);
+  color: #fff; font-size: .85rem; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+  opacity: 0; transition: opacity .15s, background .15s, border-color .15s, transform .12s;
+}
+.landing-card:hover .landing-card-more-abs,
+.landing-card:focus-within .landing-card-more-abs { opacity: 1; }
+.landing-card-more-abs:hover, .landing-card-more-abs[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); opacity: 1; }
+@media (hover: none) { .landing-card-more-abs { opacity: .85; } }
+.landing-grid.detail-full .landing-card-more-abs { display: none; }
 .landing-card-art {
   width: 100%; aspect-ratio: 4 / 3; background-size: cover; background-position: center;
   background-color: var(--bg-elevated); border-bottom: 4px solid var(--card-accent, var(--accent)); flex-shrink: 0;
@@ -16360,6 +16373,10 @@ function plmRender(p) {
     '</button>' +
     '<button class="sjm-item" onclick="plmAddToQueue()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add playlist to queue</span></button>' +
+    '<button class="sjm-item" onclick="plmEnableBgPlay()">' +
+      '<span class="sjm-ic">🎧</span><span class="sjm-label">Enable Mobile Background Play</span>' +
+      (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
+    '</button>' +
     (canShare
       ? '<button class="sjm-item" onclick="plmShare()">' +
           '<span class="sjm-ic">↗</span><span class="sjm-label">Share playlist</span></button>'
@@ -16389,6 +16406,19 @@ function plmShare() {
   const id = _plmPlaylistId;
   plmClose();
   if (id) openPlShareModal(id);
+}
+
+// Opens the same folder-matching batch upload used by Audio Storage's
+// By Playlist cards, scoped to this playlist's full tracklist - not just
+// whatever already has audio. Uploading is private to the account, so this
+// needs no ownership check; taBatchOpenPlaylist prompts to sign in itself.
+function plmEnableBgPlay() {
+  const id = _plmPlaylistId;
+  const p = (_savedPlaylists || []).find(x => x.id === id) || (playlists || []).find(x => x.id === id);
+  plmClose();
+  if (!id || !p) return;
+  const trackIds = (p._tracks || []).map(pt => pt.track_id).filter(Boolean);
+  taBatchOpenPlaylist(id, trackIds, p.name || 'playlist');
 }
 
 function plmSettings() {
@@ -16487,6 +16517,10 @@ function lamRender(row) {
     '<button class="sjm-item" onclick="lamDeepDive()">' +
       '<span class="sjm-ic">◈</span><span class="sjm-label">Add supplemental content</span>' +
       '<span class="sjm-sub">YouTube</span></button>' +
+    '<button class="sjm-item" onclick="lamEnableBgPlay()">' +
+      '<span class="sjm-ic">🎧</span><span class="sjm-label">Enable Mobile Background Play</span>' +
+      (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
+    '</button>' +
     (lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamManage()">' +
@@ -16553,6 +16587,16 @@ function lamManage() {
   const id = _lamArtistId;
   lamClose();
   if (id) openMyArtists(id);
+}
+
+// Opens the same folder-matching batch upload used by Audio Storage's
+// By Artist cards, scoped to this artist's whole catalogue. Uploading is
+// private to the account, so this needs no manage-artist check;
+// taBatchOpen prompts to sign in itself.
+function lamEnableBgPlay() {
+  const id = _lamArtistId;
+  lamClose();
+  if (id) taBatchOpen(id, null);
 }
 
 function lamDeepDive() {
@@ -27230,6 +27274,7 @@ function renderLanding() {
                style="--card-accent:${landingColor(r, i)}"
                onclick="toggleLandingCard('${r.artist_id}')">
             <button type="button" class="landing-card-x" title="Remove from my jukebox" aria-label="Hide this artist from my jukebox" onclick="event.stopPropagation();hideArtistFromCard('${r.artist_id}')">✕</button>
+            <button type="button" class="landing-card-more-abs" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
             <div class="landing-card-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
             <div class="landing-card-body">
             <div class="landing-card-name">${esc(r.name)}</div>
@@ -32995,6 +33040,8 @@ const SJ_CHANGELOG = [
     'By Artist and By Playlist in Audio Storage now list every artist and playlist you have, not just the ones with audio already uploaded, and each one has its own Upload MP3s button.',
     'By Song in Audio Storage has a search box for finding one song by name and uploading an MP3 for just that song.',
     'The old Upload to an artist list of name buttons at the bottom of Audio Storage is gone — use the Upload MP3s button on the artist, playlist, or song instead.',
+    'The ⋯ menu on artist and playlist cards has a new Enable Mobile Background Play option, opening the same upload matcher as Audio Storage for that whole artist or playlist.',
+    'The ⋯ menu on artist cards no longer disappears at the smaller Card Size settings — it now shows on hover at every size.',
   ] },
   { date: '2026-09-05', items: [
     'Playlist covers now show the different albums inside a playlist, even when every song is by the same band. The Sebadoh and Pink Floyd fours show four sleeves, Blue Pinkerton shows both Weezer records, instead of one cover standing in for the lot.',
