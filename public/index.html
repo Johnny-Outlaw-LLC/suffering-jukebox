@@ -4780,7 +4780,6 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
               </div>
             </div>
             <div class="set-block" id="set-audio-artists"><div class="set-status">Loading your uploads…</div></div>
-            <div class="set-block" id="set-audio-upload"></div>
           </div>
         </section>
 
@@ -5581,6 +5580,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .set-audio-trk-stat { display: inline-flex; align-items: center; gap: .12rem; white-space: nowrap; }
 .set-audio-trk-stat.on { color: var(--accent); }
 .set-audio-trk-stat.blocked { color: #ef4444; }
+.set-audio-song-hit { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .38rem 0; border-top: 1px solid var(--border); font-size: .54rem; }
+.set-audio-song-hit:first-child { border-top: 0; }
+.set-audio-song-hit-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-audio-song-hit-sub { color: var(--text-muted); font-size: .46rem; }
 .sj-confirm-overlay { position: fixed; inset: 0; z-index: 5300; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; padding: 1.2rem; }
 .sj-confirm-overlay.open { display: flex; }
 .sj-confirm-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; max-width: 380px; width: 100%; padding: 1.1rem 1.2rem 1rem; animation: slideUp .18s ease; }
@@ -13926,6 +13929,30 @@ function taSim(a, b) {
   return Math.min(1, dice + sub);
 }
 
+// Shared modal-opening boilerplate for every flavour of the batch matcher
+// (one artist's albums, one playlist, or a single song). Callers still set
+// _taBatch.tracks themselves once they know what those tracks are.
+function taBatchStartSession(scopeKey, artistId, albumId, title) {
+  _taBatch = { artistId: artistId || null, albumId: albumId || null, scopeKey: scopeKey || null, tracks: [], files: [], assign: {}, uploadedThisRun: [], finished: false };
+  _taBatchCancel = false;
+  _taBatchLastStatus = '';
+  document.getElementById('taBatchTitle').textContent = 'Background audio · ' + (title || '');
+  document.getElementById('taBatchConsent').checked = _taConsentOk;
+  document.getElementById('taBatchStatus').textContent = '';
+  document.getElementById('taBatchUploadBtn').disabled = true;
+  document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
+  _taBatchMinimized = false;
+  const mb = document.getElementById('ta-minibar');
+  if (mb) mb.style.display = 'none';
+  document.getElementById('audioBatchOverlay').classList.add('open');
+  taBatchSync();
+}
+
+function taBatchTracksError(e) {
+  const box = document.getElementById('taBatchList');
+  if (box) box.innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${(e?.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
+}
+
 async function taBatchOpen(artistId, albumId) {
   if (!googleUser) {
     if (confirm('Sign in with Google to upload audio. Sign in now?')) handleAuthClick();
@@ -13958,21 +13985,9 @@ async function taBatchOpen(artistId, albumId) {
     showToast('Could not load the imported artist for audio matching.');
     return;
   }
-  const album  = albumId ? (artist?.albums || []).find(x => x.id === albumId) : null;
-  _taBatch = { artistId, albumId: albumId || null, tracks: [], files: [], assign: {}, uploadedThisRun: [], finished: false };
-  _taBatchCancel = false;
-  _taBatchLastStatus = '';
-  document.getElementById('taBatchTitle').textContent =
-    'Background audio · ' + (artist?.name || '') + (album ? ' · ' + album.name : ' · all albums');
-  document.getElementById('taBatchConsent').checked = _taConsentOk;
-  document.getElementById('taBatchStatus').textContent = '';
-  document.getElementById('taBatchUploadBtn').disabled = true;
-  document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
-  _taBatchMinimized = false;
-  const mb = document.getElementById('ta-minibar');
-  if (mb) mb.style.display = 'none';
-  document.getElementById('audioBatchOverlay').classList.add('open');
-  taBatchSync();
+  const album = albumId ? (artist?.albums || []).find(x => x.id === albumId) : null;
+  taBatchStartSession('artist:' + artistId + (albumId ? ':' + albumId : ''), artistId, albumId || null,
+    (artist?.name || '') + (album ? ' · ' + album.name : ' · all albums'));
   try {
     const albumIds = albumId ? [albumId] : (artist?.albums || []).map(a => a.id);
     const rows = [];
@@ -13985,7 +14000,71 @@ async function taBatchOpen(artistId, albumId) {
     _taBatch.tracks = rows;
     taBatchRender();
   } catch (e) {
-    document.getElementById('taBatchList').innerHTML = `<div class="oa-albs-note" style="color:#ef4444">${(e.message || 'Could not load tracks').replace(/</g, '&lt;')}</div>`;
+    taBatchTracksError(e);
+  }
+}
+
+// A playlist's own tracklist, in playlist order, rather than one artist's
+// albums. trackIds comes from the caller (Audio Storage already has each
+// playlist's track ids loaded) so this never re-fetches playlist_tracks.
+async function taBatchOpenPlaylist(playlistId, trackIds, title) {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to upload audio. Sign in now?')) handleAuthClick();
+    return;
+  }
+  if (!(trackIds || []).length) { showToast('This playlist has no songs yet.'); return; }
+  if (!(await sjEnsureBgUnlock('batch_upload'))) return;
+  await refreshBgUnlock();
+  taSyncQuotaLabel('taBatchQuota');
+  const scopeKey = 'playlist:' + playlistId;
+  if (_taBatch && (_taBatchBusy || _taBatchMinimized || _taBatch.scopeKey === scopeKey)) {
+    taBatchRestore();
+    return;
+  }
+  taBatchStartSession(scopeKey, null, null, title || 'playlist');
+  try {
+    const ids = [...new Set(trackIds.filter(Boolean))];
+    const trackMap = {};
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      const rows = await dbGet(`/tracks?id=in.(${chunk.join(',')})&select=id,name,album_id,track_number,duration_ms`);
+      (rows || []).forEach(t => { trackMap[t.id] = t; });
+    }
+    const tracks = ids.map(id => trackMap[id]).filter(Boolean);
+    await loadTrackAudio(ids);
+    if (!_taBatch) return;
+    _taBatch.tracks = tracks;
+    taBatchRender();
+  } catch (e) {
+    taBatchTracksError(e);
+  }
+}
+
+// The single-song door: search finds one track by name, then this opens the
+// same matcher scoped to just that song — useful when you have one file and
+// don't want to hunt for which artist or playlist it belongs to first.
+async function taBatchOpenSong(trackId) {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to upload audio. Sign in now?')) handleAuthClick();
+    return;
+  }
+  if (!(await sjEnsureBgUnlock('batch_upload'))) return;
+  await refreshBgUnlock();
+  taSyncQuotaLabel('taBatchQuota');
+  const scopeKey = 'song:' + trackId;
+  if (_taBatch && (_taBatchBusy || _taBatchMinimized || _taBatch.scopeKey === scopeKey)) {
+    taBatchRestore();
+    return;
+  }
+  taBatchStartSession(scopeKey, null, null, 'one song');
+  try {
+    const rows = await dbGet('/tracks?id=eq.' + trackId + '&select=id,name,album_id,track_number,duration_ms');
+    if (!_taBatch) return;
+    _taBatch.tracks = rows || [];
+    if (rows && rows[0]) document.getElementById('taBatchTitle').textContent = 'Background audio · ' + rows[0].name;
+    taBatchRender();
+  } catch (e) {
+    taBatchTracksError(e);
   }
 }
 
@@ -14077,7 +14156,7 @@ async function taBatchCancel() {
       _taBatchLastStatus = 'Cancelled — uploads removed';
       if (status) status.textContent = _taBatchLastStatus;
       const albs = new Set(_taBatch.tracks.map(t => t.album_id));
-      albs.forEach(aid => { if (_maTrkCache[aid]) maRenderTracks(_taBatch.artistId, aid); });
+      if (_taBatch.artistId) albs.forEach(aid => { if (_maTrkCache[aid]) maRenderTracks(_taBatch.artistId, aid); });
       taSyncAudioBtn();
     }
   }
@@ -14267,7 +14346,7 @@ async function taBatchUpload() {
   taBatchMiniSync();
   // Refresh any open track list for the affected album(s) so the 🎧 badges update.
   const albs = new Set(_taBatch.tracks.map(t => t.album_id));
-  albs.forEach(aid => { if (_maTrkCache[aid]) maRenderTracks(_taBatch.artistId, aid); });
+  if (_taBatch.artistId) albs.forEach(aid => { if (_maTrkCache[aid]) maRenderTracks(_taBatch.artistId, aid); });
   taSyncAudioBtn();
   if (ok > 0) {
     if (_taBatch.finished && _taBatch.artistId === amArtistId) {
@@ -32913,6 +32992,9 @@ const SJ_CHANGELOG = [
     'Settings → Audio Storage can now be viewed by Artist, by Playlist, or as one list of every song you have uploaded.',
     'Each uploaded song now shows your rating, how many hearts you have sent it, how many times you have played it in the jukebox, and whether it is blocked or on a break from Take a Break.',
     'Deleting an uploaded audio file now asks inside the app instead of popping up a browser dialog.',
+    'By Artist and By Playlist in Audio Storage now list every artist and playlist you have, not just the ones with audio already uploaded, and each one has its own Upload MP3s button.',
+    'By Song in Audio Storage has a search box for finding one song by name and uploading an MP3 for just that song.',
+    'The old Upload to an artist list of name buttons at the bottom of Audio Storage is gone — use the Upload MP3s button on the artist, playlist, or song instead.',
   ] },
   { date: '2026-09-05', items: [
     'Playlist covers now show the different albums inside a playlist, even when every song is by the same band. The Sebadoh and Pink Floyd fours show four sleeves, Blue Pinkerton shows both Weezer records, instead of one cover standing in for the lot.',
@@ -34180,42 +34262,77 @@ function setAudioSetView(view) {
   setAudioRender();
 }
 
-// Same uploaded tracks, three different groupings, all derived client-side
-// from _setAudioGroups/_setAudioAllTracks so switching views never re-fetches
-// audio storage itself.
+// Same account, three different groupings. Artist and Playlist always list
+// EVERY artist/playlist you have - including ones with no uploaded audio at
+// all - because that empty case is exactly where somebody needs the Upload
+// MP3s button most. Song stays scoped to what is already uploaded; finding a
+// brand new song to upload for goes through the search card instead (a
+// catalogue could be thousands of songs - nobody wants that as a wall list).
 function setAudioGroupsForView() {
   if (_setAudioView === 'song') {
     const tracks = (_setAudioAllTracks || []).slice().sort((a, b) => a.name.localeCompare(b.name));
     _setAudioExpanded.add('__all_songs'); // one group - collapsing it would serve nothing
-    return [{ id: '__all_songs', name: 'All songs', bytes: tracks.reduce((n, t) => n + (t.bytes || 0), 0), tracks, _noUpload: true }];
+    return [{ id: '__all_songs', name: 'Already uploaded', bytes: tracks.reduce((n, t) => n + (t.bytes || 0), 0), tracks, totalCount: tracks.length, _noUpload: true }];
   }
   if (_setAudioView === 'playlist') {
     const byId = {};
     (_setAudioAllTracks || []).forEach(t => { byId[t.id] = t; });
-    const used = new Set();
     const groups = (playlists || []).map(p => {
-      const tracks = (p._tracks || []).map(pt => byId[pt.track_id]).filter(Boolean);
-      tracks.forEach(t => used.add(t.id));
+      const allIds = (p._tracks || []).map(pt => pt.track_id).filter(Boolean);
+      const uploaded = allIds.map(id => byId[id]).filter(Boolean);
       return {
-        id: 'pl-' + p.id, name: p.name || 'Untitled playlist',
-        bytes: tracks.reduce((n, t) => n + (t.bytes || 0), 0),
-        tracks: tracks.slice().sort((a, b) => a.name.localeCompare(b.name)),
-        _noUpload: true,
+        id: 'pl-' + p.id, playlistId: p.id, name: p.name || 'Untitled playlist',
+        bytes: uploaded.reduce((n, t) => n + (t.bytes || 0), 0),
+        tracks: uploaded.slice().sort((a, b) => a.name.localeCompare(b.name)),
+        allTrackIds: allIds, totalCount: allIds.length,
+        _isPlaylist: true,
       };
-    }).filter(g => g.tracks.length);
+    });
     groups.sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name));
-    const rest = (_setAudioAllTracks || []).filter(t => !used.has(t.id)).sort((a, b) => a.name.localeCompare(b.name));
-    if (rest.length) {
-      groups.push({ id: '__no_playlist', name: 'Not in a playlist', bytes: rest.reduce((n, t) => n + (t.bytes || 0), 0), tracks: rest, _noUpload: true });
-    }
     return groups;
   }
-  return _setAudioGroups || [];
+  // Artist - every artist you manage, merged with whichever of them already
+  // have uploaded audio.
+  const byId = {};
+  (_setAudioGroups || []).forEach(g => { byId[g.id] = g; });
+  const groups = (_setAudioManageArtists || []).map(a => {
+    const existing = byId[a.id];
+    return existing
+      ? { ...existing, totalCount: Number(a.track_count) || existing.tracks.length }
+      : { id: a.id, artistId: a.id, name: a.name, bytes: 0, tracks: [], totalCount: Number(a.track_count) || 0 };
+  });
+  // The two lists come from different queries - an artist with uploads that
+  // somehow isn't in _setAudioManageArtists still gets a card of its own
+  // rather than silently disappearing.
+  const have = new Set(groups.map(g => g.id));
+  (_setAudioGroups || []).forEach(g => { if (!have.has(g.id)) groups.push({ ...g, totalCount: g.tracks.length }); });
+  groups.sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name));
+  return groups;
+}
+
+// "12 songs · 4.2 MB", "18 songs · none uploaded yet", "3 of 12 uploaded".
+function setAudioGroupMeta(g) {
+  const total = g.totalCount || g.tracks.length || 0;
+  if (!g.tracks.length) {
+    return total ? (total + ' song' + (total === 1 ? '' : 's') + ' · none uploaded yet') : 'No audio uploaded yet';
+  }
+  if (total > g.tracks.length) {
+    return g.tracks.length + ' of ' + total + ' uploaded · ' + fmtBytes(g.bytes);
+  }
+  return g.tracks.length + ' song' + (g.tracks.length === 1 ? '' : 's') + ' · ' + fmtBytes(g.bytes);
 }
 
 function setAudioUploadBatch(artistId) {
   if (!artistId) return;
   taBatchOpen(artistId, null);
+}
+
+// The card-level Upload MP3s button, whatever kind of card it is on.
+function setAudioUploadForGroup(groupId) {
+  const g = (_setAudioRenderedGroups || []).find(x => x.id === groupId);
+  if (!g) return;
+  if (g._isPlaylist) taBatchOpenPlaylist(g.playlistId, g.allTrackIds, g.name);
+  else setAudioUploadBatch(g.artistId || g.id);
 }
 
 async function setAudioReplace(trackId, durationMs) {
@@ -34268,136 +34385,179 @@ function setAudioStatsHTML(trackId) {
   '</span>';
 }
 
-function setAudioRender() {
-  const el = document.getElementById('set-audio-artists');
-  const uploadEl = document.getElementById('set-audio-upload');
-  if (!el) return;
-  const hasUploads = !!(_setAudioGroups || []).length;
-  const groups = hasUploads ? setAudioGroupsForView() : [];
-  _setAudioRenderedGroups = groups;
-  const viewBar = hasUploads
-    ? '<div class="set-audio-viewbar">' + [['artist', 'By Artist'], ['playlist', 'By Playlist'], ['song', 'By Song']].map(([v, label]) =>
-        '<button type="button" class="set-audio-view-btn' + (_setAudioView === v ? ' active' : '') + '" onclick="setAudioSetView(\'' + v + '\')">' + label + '</button>'
-      ).join('') + '</div>'
-    : '';
-  if (!groups.length) {
-    el.innerHTML = viewBar + '<div class="set-h">Uploaded audio</div>' +
-      '<p class="set-sub">Nothing uploaded yet. Pick an artist below to add files — they stay private to your account.</p>';
-  } else {
-    // What is actually on the phone, which is all CarPlay can reach. Counted
-    // off the flat track list so a song appearing in several playlists is
-    // never counted twice.
-    const dlTracks = (_setAudioAllTracks || []).filter(t => sjDlState(t.id) === 'done').length;
-    const dlBytes  = (_setAudioAllTracks || []).filter(t => sjDlState(t.id) === 'done')
-                                                .reduce((b, t) => b + (t.bytes || 0), 0);
-    const groupHeading = _setAudioView === 'song' ? 'All songs' : _setAudioView === 'playlist' ? 'By playlist' : 'By artist';
-    // Two different jobs share this screen: on the phone it reports what is on
-    // the device and offers the queue somebody else filled; anywhere else it is
-    // where that queue gets filled.
-    const carplayNote = (function () {
-      if (sjIsNative() && sjDlPlugin()) {
-        const waiting = sjCpPending().filter(i => sjDlState(i.trackId) !== 'done');
-        return '<p class="set-sub">' + (dlTracks
-            ? '<b>' + dlTracks + ' song' + (dlTracks === 1 ? '' : 's') + '</b> on this iPhone for CarPlay and offline play · ' + escHtml(fmtBytes(dlBytes))
-            : 'Nothing on this iPhone yet. CarPlay only plays songs copied to the device — add them below.') +
-          '</p>' +
-          (waiting.length
-            ? '<p class="set-sub"><b>' + waiting.length + ' song' + (waiting.length === 1 ? '' : 's') +
-              '</b> queued from another device. ' +
-              '<button type="button" class="oa-act" onclick="sjCpOpenSheet()">Review</button></p>'
-            : '');
-      }
-      if (!googleUser) return '';
-      const waiting = sjCpPending().length;
-      return '<p class="set-sub">' + (waiting
-        ? '<b>' + waiting + ' song' + (waiting === 1 ? '' : 's') + '</b> waiting for your iPhone — open Suffering Jukebox on the phone and tap Download. ' +
-          '<button type="button" class="oa-act" onclick="sjCpClearAll()">Clear queue</button>'
-        : 'Send songs to your iPhone here, then accept them in the app to play them in CarPlay and offline.') + '</p>';
-    })();
-    el.innerHTML = viewBar + '<div class="set-h">' + groupHeading + '</div>' + carplayNote + groups.map(g => {
-      const open = _setAudioExpanded.has(g.id);
-      return '<div class="set-audio-artist">' +
-        '<div class="set-audio-artist-h" onclick="setAudioToggle(\'' + g.id + '\')">' +
-          '<span class="set-audio-chev">' + (open ? '▾' : '▸') + '</span>' +
-          '<span class="set-audio-artist-name">' + escHtml(g.name) + '</span>' +
-          '<span class="set-audio-artist-meta">' + g.tracks.length + ' song' + (g.tracks.length === 1 ? '' : 's') + ' · ' + escHtml(fmtBytes(g.bytes)) + '</span>' +
-          (sjIsNative() && sjDlPlugin()
-            ? (g.tracks.some(t => sjDlState(t.id) === 'none')
-                ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Copy every song here to this iPhone" ' +
-                  'onclick="event.stopPropagation();setAudioCarPlayGroup(\'' + g.id + '\')">＋ All to CarPlay</button>'
-                : '')
-            : (googleUser && g.tracks.some(t => sjCpState(t.id) === 'none')
-                ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Queue every song here for your iPhone" ' +
-                  'onclick="event.stopPropagation();setAudioSendGroup(\'' + g.id + '\')">＋ Send all to iPhone</button>'
-                : '')) +
-          (g._noUpload ? '' : '<button type="button" class="pl-btn ghost set-audio-act-top" onclick="event.stopPropagation();setAudioUploadBatch(\'' + g.id + '\')">＋ Upload</button>') +
-        '</div>' +
-        (open ? '<div class="set-audio-tracks">' + g.tracks.map(t =>
-          '<div class="set-audio-trk">' +
-            '<span class="set-audio-trk-name" title="' + escHtml(t.name) + '">' + escHtml(t.name) + '</span>' +
-            setAudioStatsHTML(t.id) +
-            '<span class="set-audio-bytes">' + escHtml(fmtBytes(t.bytes)) + '</span>' +
-            (sjIsNative() && sjDlPlugin()
-              ? (function () {
-                  const st = sjDlState(t.id);
-                  if (st === 'downloading') {
-                    return '<button type="button" class="oa-act set-audio-act" disabled>Adding…</button>';
-                  }
-                  if (st === 'done') {
-                    return '<button type="button" class="oa-act set-audio-act" style="border-color:var(--accent);color:var(--accent)" ' +
-                      'title="On this iPhone - tap to remove" onclick="setAudioCarPlayToggle(\'' + t.id + '\')">✓ CarPlay</button>';
-                  }
-                  return '<button type="button" class="oa-act set-audio-act" ' +
-                    'title="Copy to this iPhone so it plays in CarPlay and offline" ' +
-                    'onclick="setAudioCarPlayToggle(\'' + t.id + '\')">＋ CarPlay</button>';
-                })()
-              : (function () {
-                  // No engine on this device, so the most it can do is ask the
-                  // phone. The song is only downloaded once it is accepted there.
-                  if (!googleUser) return '';
-                  const cp = sjCpState(t.id);
-                  if (cp === 'accepted') {
-                    return '<span class="oa-act in set-audio-act" title="Downloaded on your iPhone">✓ On iPhone</span>';
-                  }
-                  if (cp === 'pending') {
-                    return '<button type="button" class="oa-act set-audio-act" style="border-color:var(--accent);color:var(--accent)" ' +
-                      'title="Queued - accept it in the app on your iPhone. Tap to take it off the list." ' +
-                      'onclick="sjCpUnsend([\'' + t.id + '\'])">◷ Queued</button>';
-                  }
-                  return '<button type="button" class="oa-act set-audio-act" ' +
-                    'title="Queue for your iPhone - accept it in the app to play it in CarPlay and offline" ' +
-                    'onclick="sjCpSend([\'' + t.id + '\'])">＋ Send to iPhone</button>';
-                })()) +
-            '<button type="button" class="oa-act set-audio-act" onclick="setAudioReplace(\'' + t.id + '\', ' + (t.durationMs || 'null') + ')">Replace</button>' +
-            '<button type="button" class="oa-act set-audio-act" style="border-color:#ef444455;color:#ef4444" onclick="setAudioDelete(\'' + t.id + '\')">Delete</button>' +
-          '</div>'
-        ).join('') + '</div>' : '') +
+// One group card: a header row (name, meta, buttons) and, when it has
+// uploads and is expanded, the per-track list underneath. A group with no
+// uploads yet gets no chevron and no track list - there's nothing to open.
+function setAudioGroupHTML(g) {
+  const hasTracks = g.tracks.length > 0;
+  const open = hasTracks && _setAudioExpanded.has(g.id);
+  return '<div class="set-audio-artist">' +
+    '<div class="set-audio-artist-h"' + (hasTracks ? ' onclick="setAudioToggle(\'' + g.id + '\')"' : ' style="cursor:default"') + '>' +
+      '<span class="set-audio-chev">' + (hasTracks ? (open ? '▾' : '▸') : '') + '</span>' +
+      '<span class="set-audio-artist-name">' + escHtml(g.name) + '</span>' +
+      '<span class="set-audio-artist-meta">' + escHtml(setAudioGroupMeta(g)) + '</span>' +
+      (sjIsNative() && sjDlPlugin()
+        ? (hasTracks && g.tracks.some(t => sjDlState(t.id) === 'none')
+            ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Copy every song here to this iPhone" ' +
+              'onclick="event.stopPropagation();setAudioCarPlayGroup(\'' + g.id + '\')">＋ All to CarPlay</button>'
+            : '')
+        : (googleUser && hasTracks && g.tracks.some(t => sjCpState(t.id) === 'none')
+            ? '<button type="button" class="pl-btn ghost set-audio-act-top" title="Queue every song here for your iPhone" ' +
+              'onclick="event.stopPropagation();setAudioSendGroup(\'' + g.id + '\')">＋ Send all to iPhone</button>'
+            : '')) +
+      (g._noUpload ? '' : '<button type="button" class="pl-btn ghost set-audio-act-top" onclick="event.stopPropagation();setAudioUploadForGroup(\'' + g.id + '\')">＋ Upload MP3s</button>') +
+    '</div>' +
+    (open ? '<div class="set-audio-tracks">' + g.tracks.map(t =>
+      '<div class="set-audio-trk">' +
+        '<span class="set-audio-trk-name" title="' + escHtml(t.name) + '">' + escHtml(t.name) + '</span>' +
+        setAudioStatsHTML(t.id) +
+        '<span class="set-audio-bytes">' + escHtml(fmtBytes(t.bytes)) + '</span>' +
+        (sjIsNative() && sjDlPlugin()
+          ? (function () {
+              const st = sjDlState(t.id);
+              if (st === 'downloading') {
+                return '<button type="button" class="oa-act set-audio-act" disabled>Adding…</button>';
+              }
+              if (st === 'done') {
+                return '<button type="button" class="oa-act set-audio-act" style="border-color:var(--accent);color:var(--accent)" ' +
+                  'title="On this iPhone - tap to remove" onclick="setAudioCarPlayToggle(\'' + t.id + '\')">✓ CarPlay</button>';
+              }
+              return '<button type="button" class="oa-act set-audio-act" ' +
+                'title="Copy to this iPhone so it plays in CarPlay and offline" ' +
+                'onclick="setAudioCarPlayToggle(\'' + t.id + '\')">＋ CarPlay</button>';
+            })()
+          : (function () {
+              // No engine on this device, so the most it can do is ask the
+              // phone. The song is only downloaded once it is accepted there.
+              if (!googleUser) return '';
+              const cp = sjCpState(t.id);
+              if (cp === 'accepted') {
+                return '<span class="oa-act in set-audio-act" title="Downloaded on your iPhone">✓ On iPhone</span>';
+              }
+              if (cp === 'pending') {
+                return '<button type="button" class="oa-act set-audio-act" style="border-color:var(--accent);color:var(--accent)" ' +
+                  'title="Queued - accept it in the app on your iPhone. Tap to take it off the list." ' +
+                  'onclick="sjCpUnsend([\'' + t.id + '\'])">◷ Queued</button>';
+              }
+              return '<button type="button" class="oa-act set-audio-act" ' +
+                'title="Queue for your iPhone - accept it in the app to play it in CarPlay and offline" ' +
+                'onclick="sjCpSend([\'' + t.id + '\'])">＋ Send to iPhone</button>';
+            })()) +
+        '<button type="button" class="oa-act set-audio-act" onclick="setAudioReplace(\'' + t.id + '\', ' + (t.durationMs || 'null') + ')">Replace</button>' +
+        '<button type="button" class="oa-act set-audio-act" style="border-color:#ef444455;color:#ef4444" onclick="setAudioDelete(\'' + t.id + '\')">Delete</button>' +
+      '</div>'
+    ).join('') + '</div>' : '') +
+  '</div>';
+}
+
+// The Song view's search card: find any song by name and upload an MP3 for
+// just that one, without browsing by artist or playlist first. Deliberately
+// its own small query (name only, capped, debounced) rather than the heavier
+// shared catalogue search, which also matches lyrics and albums - overkill
+// for "find one song to attach a file to".
+let _setAudioSongSearchTimer = null;
+let _setAudioSongSearchToken = 0;
+
+function setAudioSongSearchInput(val) {
+  clearTimeout(_setAudioSongSearchTimer);
+  _setAudioSongSearchTimer = setTimeout(() => setAudioSongSearchRun(val), 260);
+}
+
+async function setAudioSongSearchRun(val) {
+  const box = document.getElementById('setAudioSongSearchResults');
+  if (!box) return;
+  const q = (val || '').trim();
+  if (q.length < 2) { box.innerHTML = ''; return; }
+  const token = ++_setAudioSongSearchToken;
+  box.innerHTML = '<div class="set-status">Searching…</div>';
+  try {
+    const rows = await dbGet('/tracks?name=ilike.*' + encodeURIComponent(q) + '*&select=id,name,albums(name,artists(name))&order=name.asc&limit=20');
+    if (token !== _setAudioSongSearchToken) return;
+    if (!rows || !rows.length) { box.innerHTML = '<p class="set-sub">No songs match “' + escHtml(q) + '”.</p>'; return; }
+    box.innerHTML = rows.map(t => {
+      const sub = [t.albums?.artists?.name, t.albums?.name].filter(Boolean).join(' · ');
+      return '<div class="set-audio-song-hit">' +
+        '<span class="set-audio-song-hit-name" title="' + escHtml(t.name) + '">' + escHtml(t.name) +
+          (sub ? '<span class="set-audio-song-hit-sub"> — ' + escHtml(sub) + '</span>' : '') + '</span>' +
+        '<button type="button" class="pl-btn ghost set-audio-act-top" onclick="taBatchOpenSong(\'' + t.id + '\')">＋ Upload MP3s</button>' +
       '</div>';
     }).join('');
+  } catch (e) {
+    if (token !== _setAudioSongSearchToken) return;
+    box.innerHTML = '<p class="set-sub" style="color:#ef4444">Could not search songs.</p>';
   }
-  if (!uploadEl) return;
-  // Deliberately off the real artist grouping, not the current view - this
-  // section is "upload to an artist" and has nothing to do with how the list
-  // above is sorted.
-  const have = new Set((_setAudioGroups || []).map(g => g.id));
-  const targets = (_setAudioManageArtists || []).filter(a => a.id && !have.has(a.id));
-  const allTargets = (_setAudioManageArtists || []).filter(a => a.id);
-  let uploadHtml = '<div class="set-h">Upload to an artist</div>' +
-    '<p class="set-sub">Batch-match a folder of files to songs, or replace one song at a time from the list above.</p>';
-  if (!allTargets.length) {
-    uploadHtml += '<p class="set-sub">Import an artist first, then come back here to upload audio for Background Play.</p>' +
-      '<button type="button" class="pl-btn" onclick="closeSettings();openAddMusic()">Import Music</button>';
-  } else {
-    uploadHtml += '<div class="set-audio-upload-grid">' +
-      allTargets.map(a =>
-        '<button type="button" class="pl-btn ghost" onclick="setAudioUploadBatch(\'' + a.id + '\')">' + escHtml(a.name) + '</button>'
-      ).join('') +
-    '</div>';
-    if (!targets.length && groups.length) {
-      uploadHtml += '<p class="set-sub" style="margin-top:.5rem">Every artist you manage already has at least one upload. Use ＋ Upload on a row above to add more.</p>';
+}
+
+function setAudioSongSearchCardHTML() {
+  return '<div class="set-audio-artist set-audio-search-card">' +
+    '<div class="set-audio-artist-h" style="cursor:default">' +
+      '<span class="set-audio-artist-name">Upload for one song</span>' +
+    '</div>' +
+    '<div class="set-audio-tracks" style="padding:.6rem .7rem">' +
+      '<p class="set-sub" style="margin:0 0 .5rem">Find any song by name and upload an MP3 for just that one — no need to browse by artist or playlist.</p>' +
+      '<input type="text" class="m-input" id="setAudioSongSearchField" placeholder="Search songs…" autocomplete="off" oninput="setAudioSongSearchInput(this.value)">' +
+      '<div id="setAudioSongSearchResults" style="margin-top:.5rem"></div>' +
+    '</div>' +
+  '</div>';
+}
+
+function setAudioRender() {
+  const el = document.getElementById('set-audio-artists');
+  if (!el) return;
+  const groups = setAudioGroupsForView();
+  _setAudioRenderedGroups = groups;
+  const viewBar = '<div class="set-audio-viewbar">' + [['artist', 'By Artist'], ['playlist', 'By Playlist'], ['song', 'By Song']].map(([v, label]) =>
+      '<button type="button" class="set-audio-view-btn' + (_setAudioView === v ? ' active' : '') + '" onclick="setAudioSetView(\'' + v + '\')">' + label + '</button>'
+    ).join('') + '</div>';
+
+  if (_setAudioView === 'song') {
+    const flatGroup = groups[0]; // the single "Already uploaded" pseudo-group
+    const hasAny = flatGroup && flatGroup.tracks.length > 0;
+    el.innerHTML = viewBar + setAudioSongSearchCardHTML() + (hasAny ? setAudioGroupHTML(flatGroup) : '');
+    return;
+  }
+
+  if (!groups.length) {
+    const isPl = _setAudioView === 'playlist';
+    el.innerHTML = viewBar + '<div class="set-h">' + (isPl ? 'By playlist' : 'By artist') + '</div>' +
+      '<p class="set-sub">' + (isPl
+        ? 'You don’t have any playlists yet. Create one, then come back here to upload audio for its songs.'
+        : 'Import an artist first, then come back here to upload audio for its songs.') + '</p>' +
+      (isPl ? '' : '<button type="button" class="pl-btn" onclick="closeSettings();openAddMusic()">Import Music</button>');
+    return;
+  }
+
+  // What is actually on the phone, which is all CarPlay can reach. Counted
+  // off the flat track list so a song appearing in several playlists is
+  // never counted twice.
+  const dlTracks = (_setAudioAllTracks || []).filter(t => sjDlState(t.id) === 'done').length;
+  const dlBytes  = (_setAudioAllTracks || []).filter(t => sjDlState(t.id) === 'done')
+                                              .reduce((b, t) => b + (t.bytes || 0), 0);
+  // Two different jobs share this screen: on the phone it reports what is on
+  // the device and offers the queue somebody else filled; anywhere else it is
+  // where that queue gets filled.
+  const carplayNote = (function () {
+    if (sjIsNative() && sjDlPlugin()) {
+      const waiting = sjCpPending().filter(i => sjDlState(i.trackId) !== 'done');
+      return '<p class="set-sub">' + (dlTracks
+          ? '<b>' + dlTracks + ' song' + (dlTracks === 1 ? '' : 's') + '</b> on this iPhone for CarPlay and offline play · ' + escHtml(fmtBytes(dlBytes))
+          : 'Nothing on this iPhone yet. CarPlay only plays songs copied to the device — add them below.') +
+        '</p>' +
+        (waiting.length
+          ? '<p class="set-sub"><b>' + waiting.length + ' song' + (waiting.length === 1 ? '' : 's') +
+            '</b> queued from another device. ' +
+            '<button type="button" class="oa-act" onclick="sjCpOpenSheet()">Review</button></p>'
+          : '');
     }
-  }
-  uploadEl.innerHTML = uploadHtml;
+    if (!googleUser) return '';
+    const waiting = sjCpPending().length;
+    return '<p class="set-sub">' + (waiting
+      ? '<b>' + waiting + ' song' + (waiting === 1 ? '' : 's') + '</b> waiting for your iPhone — open Suffering Jukebox on the phone and tap Download. ' +
+        '<button type="button" class="oa-act" onclick="sjCpClearAll()">Clear queue</button>'
+      : 'Send songs to your iPhone here, then accept them in the app to play them in CarPlay and offline.') + '</p>';
+  })();
+  const groupHeading = _setAudioView === 'playlist' ? 'By playlist' : 'By artist';
+  el.innerHTML = viewBar + '<div class="set-h">' + groupHeading + '</div>' + carplayNote + groups.map(setAudioGroupHTML).join('');
 }
 
 // ── Audio Storage → CarPlay ──────────────────────────────────────────────
