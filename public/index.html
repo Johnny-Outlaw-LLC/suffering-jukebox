@@ -5129,11 +5129,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <span style="font-size:.48rem;color:var(--text-muted)">Pick a whole album at once — files are matched to tracks by name.</span>
       </div>
       <div id="taBatchAfterPick" style="display:none">
-        <label style="display:flex;align-items:flex-start;gap:.45rem;font-size:.55rem;cursor:pointer;user-select:none;line-height:1.5">
-          <input type="checkbox" id="taBatchConsent" onchange="taBatchSync()" style="margin-top:2px;flex-shrink:0;accent-color:var(--accent)">
-          <span>I have the right to store and personally play these files. Keep them private to my signed-in account.</span>
-        </label>
-        <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;margin-top:.55rem;line-height:1.6">
+        <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
           This upload stays private to your account. YouTube remains the source for discovery and normal playback.
         </div>
         <div style="border-top:1px solid var(--border);margin-top:.75rem;padding-top:.75rem">
@@ -5577,7 +5573,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .set-audio-chev { width: .8rem; flex-shrink: 0; color: var(--text-muted); font-size: .55rem; }
 .set-audio-artist-name { flex: 1 1 7rem; min-width: 5rem; font-size: .6rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-audio-artist-meta { font-family: var(--mono); font-size: .48rem; color: var(--text-muted); flex-shrink: 0; }
-.set-audio-act-top { font-size: .48rem !important; padding: .2rem .45rem !important; flex-shrink: 0; }
+.set-audio-act-top { font-size: .48rem !important; padding: .2rem .45rem !important; flex-shrink: 0; text-transform: none !important; }
 .set-audio-tracks { border-top: 1px solid var(--border); }
 .set-audio-trk { display: flex; align-items: center; gap: .45rem; padding: .45rem .7rem; font-size: .54rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .set-audio-trk:first-child { border-top: 0; }
@@ -13950,7 +13946,6 @@ function taBatchStartSession(scopeKey, artistId, albumId, title) {
   _taBatchCancel = false;
   _taBatchLastStatus = '';
   document.getElementById('taBatchTitle').textContent = 'Background audio · ' + (title || '');
-  document.getElementById('taBatchConsent').checked = _taConsentOk;
   document.getElementById('taBatchStatus').textContent = '';
   document.getElementById('taBatchUploadBtn').disabled = true;
   document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
@@ -14246,7 +14241,6 @@ function taBatchReassign(tid, val) {
 }
 
 function taBatchSync() {
-  const personal = !!document.getElementById('taBatchConsent')?.checked;
   const n = _taBatch ? Object.values(_taBatch.assign).filter(v => v != null).length : 0;
   const hasPicked = !!(_taBatch?.files?.length);
   const afterPick = document.getElementById('taBatchAfterPick');
@@ -14255,7 +14249,7 @@ function taBatchSync() {
   if (btn) {
     const finished = !!_taBatch?.finished;
     btn.style.display = finished ? 'none' : '';
-    btn.disabled = finished || _taBatchBusy || !(personal && n > 0);
+    btn.disabled = finished || _taBatchBusy || !(n > 0);
     btn.textContent = _taBatchBusy
       ? 'Uploading…'
       : (n > 0 ? `Upload ${n} file${n === 1 ? '' : 's'}` : 'Upload matched');
@@ -14297,7 +14291,7 @@ function taBatchPublish() {
 }
 
 async function taBatchUpload() {
-  if (!_taBatch || _taBatchBusy || !document.getElementById('taBatchConsent').checked) return;
+  if (!_taBatch || _taBatchBusy) return;
   _taConsentOk = true;
   const entries = Object.entries(_taBatch.assign).filter(([, fi]) => fi != null);
   if (!entries.length) return;
@@ -33042,6 +33036,8 @@ const SJ_CHANGELOG = [
     'The old Upload to an artist list of name buttons at the bottom of Audio Storage is gone — use the Upload MP3s button on the artist, playlist, or song instead.',
     'The ⋯ menu on artist and playlist cards has a new Enable Mobile Background Play option, opening the same upload matcher as Audio Storage for that whole artist or playlist.',
     'The ⋯ menu on artist cards no longer disappears at the smaller Card Size settings — it now shows on hover at every size.',
+    'The batch audio upload no longer makes you tick a personal-rights checkbox before picking files — uploads stay private to your account either way.',
+    'The Upload MP3s, All to CarPlay, and Send all to iPhone buttons in Audio Storage read in normal case now instead of all capitals.',
   ] },
   { date: '2026-09-05', items: [
     'Playlist covers now show the different albums inside a playlist, even when every song is by the same band. The Sebadoh and Pink Floyd fours show four sleeves, Blue Pinkerton shows both Weezer records, instead of one cover standing in for the lot.',
