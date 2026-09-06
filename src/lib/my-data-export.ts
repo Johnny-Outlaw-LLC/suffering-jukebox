@@ -11,6 +11,7 @@
 
 import { JUKEBOX_SCHEMA, type createSjServiceClient } from "@/lib/sj-admin-auth";
 import { normTitle } from "@/lib/catalog-index";
+import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
 
 type Sb = ReturnType<typeof createSjServiceClient>;
 const T = (sb: Sb, table: string) => sb.schema(JUKEBOX_SCHEMA).from(table);
@@ -74,6 +75,95 @@ async function pageAll<T = Record<string, unknown>>(
     if (rows.length < PAGE) break;
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Filters                                                            */
+/* ------------------------------------------------------------------ */
+
+export type BackgroundFilter = "any" | "yes" | "no";
+
+export type ExportFilters = {
+  /** Artist names as the person picked or typed them. Empty means every artist. */
+  artists: string[];
+  /** Playlist names. Empty means every playlist. Only narrows My Playlists. */
+  playlists: string[];
+  background: BackgroundFilter;
+};
+
+export const NO_FILTERS: ExportFilters = { artists: [], playlists: [], background: "any" };
+
+/* Names, never ids. An imported Spotify play carries its artist as text and
+   nothing else, so an id-based artist filter would silently drop the half of a
+   listening history that never matched the catalogue. */
+export function foldName(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function nameList(value: unknown, cap = 400) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of value) {
+    const label = String(item ?? "").trim();
+    const key = foldName(label);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+export function readFilters(value: unknown): ExportFilters {
+  const input = (value || {}) as Record<string, unknown>;
+  const background = input.background;
+  return {
+    artists: nameList(input.artists),
+    playlists: nameList(input.playlists),
+    background: background === "yes" || background === "no" ? background : "any",
+  };
+}
+
+export function anyFilterSet(filters: ExportFilters) {
+  return filters.artists.length > 0 || filters.playlists.length > 0 || filters.background !== "any";
+}
+
+export function describeFilters(dataset: Dataset, filters: ExportFilters) {
+  const parts: string[] = [];
+  if (filters.artists.length) parts.push(`artist ${filters.artists.join(", ")}`);
+  // A playlist choice is named even on the three files it cannot narrow, so a
+  // My Music export does not read as one that quietly obeyed it.
+  if (filters.playlists.length) {
+    parts.push(dataset === "playlists"
+      ? `playlist ${filters.playlists.join(", ")}`
+      : "playlist (which does not narrow this file)");
+  }
+  if (filters.background === "yes") parts.push("songs with background audio only");
+  if (filters.background === "no") parts.push("songs without background audio only");
+  return parts.length ? ` Filtered by ${parts.join("; ")}.` : "";
+}
+
+type Prepared = {
+  artists: Set<string> | null;
+  playlists: Set<string> | null;
+  background: BackgroundFilter;
+};
+
+function prepare(filters: ExportFilters): Prepared {
+  return {
+    artists: filters.artists.length ? new Set(filters.artists.map(foldName)) : null,
+    playlists: filters.playlists.length ? new Set(filters.playlists.map(foldName)) : null,
+    background: filters.background,
+  };
+}
+
+/** Does one row survive the artist and background-audio filters. */
+function keepRow(prepared: Prepared, artist: string | null | undefined, hasBackground: boolean) {
+  if (prepared.artists && !prepared.artists.has(foldName(artist))) return false;
+  if (prepared.background === "yes" && !hasBackground) return false;
+  if (prepared.background === "no" && hasBackground) return false;
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -209,26 +299,51 @@ async function loadCatalog(sb: Sb): Promise<Catalog> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Background audio                                                   */
+/* ------------------------------------------------------------------ */
+
+/* Which songs would still sound with the screen off, FOR THIS PERSON. The two
+   sources are the two /api/sj-bg-available answers the Background Play filter
+   from: this account's own uploads, and tracks an artist has licensed for
+   everybody. A flag read off track_audio alone would tell somebody a song
+   plays in the background when the only upload is another account's. */
+async function backgroundAudioTracks(sb: Sb, userId: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const mine = await pageAll<{ track_id: string | null }>((from, to) => T(sb, "track_audio")
+    .select("track_id")
+    .eq("uploaded_by", userId)
+    .order("id")
+    .range(from, to));
+  for (const row of mine) if (row.track_id) ids.add(String(row.track_id));
+  for (const row of await approvedArtistAudioTracks(sb)) ids.add(String(row.track_id));
+  return ids;
+}
+
+type Ctx = { filters: Prepared; background: Set<string> };
+
+/* ------------------------------------------------------------------ */
 /* Columns                                                            */
 /* ------------------------------------------------------------------ */
 
 export const COLUMNS: Record<Dataset, string[]> = {
   music: [
     "Artist", "Album", "Song", "Release Date", "Disc", "Track Number", "Duration",
-    "Visibility", "Added To Jukebox", "YouTube Video ID", "YouTube URL", "YouTube Views",
-    "Playable On YouTube", "Artist YouTube Channel", "Album YouTube Playlist",
+    "Visibility", "Added To Jukebox", "Background Audio", "YouTube Video ID", "YouTube URL",
+    "YouTube Views", "Playable On YouTube", "Artist YouTube Channel", "Album YouTube Playlist",
   ],
   playlists: [
     "Playlist", "Visibility", "Playlist Created", "Position", "Artist", "Album", "Song",
-    "Duration", "Added To Playlist", "Added By", "YouTube Video ID", "YouTube URL",
+    "Duration", "Added To Playlist", "Added By", "Background Audio", "YouTube Video ID",
+    "YouTube URL",
   ],
   songs: [
     "Song", "Artist", "Album", "Duration", "Added From", "Your Rating", "Has Lyrics",
-    "Added To Library", "YouTube Video ID", "YouTube URL", "YouTube Views",
+    "Background Audio", "Added To Library", "YouTube Video ID", "YouTube URL", "YouTube Views",
   ],
   history: [
     "Played At (UTC)", "Played On", "Type", "Artist", "Song", "Album", "Listened",
-    "Listened (ms)", "Skipped", "Rating At Play", "YouTube Video ID", "YouTube URL", "Imported From",
+    "Listened (ms)", "Skipped", "Rating At Play", "Background Audio", "YouTube Video ID",
+    "YouTube URL", "Imported From",
   ],
 };
 
@@ -263,7 +378,7 @@ export type Row = Cell[];
 /* The four datasets                                                  */
 /* ------------------------------------------------------------------ */
 
-async function* musicRows(sb: Sb, email: string): AsyncGenerator<Row> {
+async function* musicRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> {
   const catalog = await loadCatalog(sb);
   const owned = catalog.artistIdsAddedBy(email);
   if (!owned.size) return;
@@ -276,10 +391,13 @@ async function* musicRows(sb: Sb, email: string): AsyncGenerator<Row> {
     || (a.trackNumber || 0) - (b.trackNumber || 0)
     || a.name.localeCompare(b.name));
   for (const track of rows) {
+    const background = ctx.background.has(track.id);
+    if (!keepRow(ctx.filters, track.artistName, background)) continue;
     yield [
       track.artistName, track.albumName, track.name, track.albumReleaseDate || "",
       track.discNumber ?? "", track.trackNumber ?? "", clock(track.durationMs),
-      track.visibility, track.createdAt || "", track.videoId || "", watchUrl(track.videoId),
+      track.visibility, track.createdAt || "", yesNo(background),
+      track.videoId || "", watchUrl(track.videoId),
       track.videoViews ?? "", yesNo(track.videoPlayable),
       channelUrl(track.artistChannelId), listUrl(track.albumPlaylistId),
     ];
@@ -289,7 +407,7 @@ async function* musicRows(sb: Sb, email: string): AsyncGenerator<Row> {
 type PlaylistRow = { id: string; name: string | null; visibility: string | null; is_public: boolean | null; created_at: string | null };
 type PlaylistTrackRow = { playlist_id: string; track_id: string; position: number | null; added_at: string | null; added_by_name: string | null; added_by_email: string | null };
 
-async function* playlistRows(sb: Sb, email: string): AsyncGenerator<Row> {
+async function* playlistRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> {
   const playlists = await pageAll<PlaylistRow>((from, to) => T(sb, "playlists")
     .select("id,name,visibility,is_public,created_at")
     .ilike("user_email", likeSafe(email))
@@ -314,23 +432,31 @@ async function* playlistRows(sb: Sb, email: string): AsyncGenerator<Row> {
     byPlaylist.set(key, list);
   }
 
+  // A filter that can only be satisfied by a song is a filter an empty
+  // playlist cannot pass, so its placeholder row goes with it.
+  const songFilterOn = !!ctx.filters.artists || ctx.filters.background !== "any";
+
   for (const playlist of playlists) {
+    if (ctx.filters.playlists && !ctx.filters.playlists.has(foldName(playlist.name))) continue;
     const visibility = String(playlist.visibility || (playlist.is_public ? "public" : "private"));
     const list = byPlaylist.get(String(playlist.id)) || [];
     // An empty playlist is still a playlist the person made; leaving it out of
     // their own export would quietly lose it.
     if (!list.length) {
-      yield [playlist.name || "", visibility, playlist.created_at || "", "", "", "", "", "", "", "", "", ""];
+      if (songFilterOn) continue;
+      yield [playlist.name || "", visibility, playlist.created_at || "", "", "", "", "", "", "", "", "", "", ""];
       continue;
     }
     for (let index = 0; index < list.length; index += 1) {
       const item = list[index];
       const track = catalog.byTrackId.get(String(item.track_id));
+      const background = ctx.background.has(String(item.track_id));
+      if (!keepRow(ctx.filters, track?.artistName, background)) continue;
       yield [
         playlist.name || "", visibility, playlist.created_at || "", index + 1,
         track?.artistName || "", track?.albumName || "", track?.name || "",
         clock(track?.durationMs), item.added_at || "",
-        item.added_by_name || item.added_by_email || "",
+        item.added_by_name || item.added_by_email || "", yesNo(background),
         track?.videoId || "", watchUrl(track?.videoId),
       ];
     }
@@ -343,7 +469,7 @@ type LibraryRow = {
   source: string | null; youtube_view_count: number | null; lyrics: string | null; created_at: string | null;
 };
 
-async function* songRows(sb: Sb, email: string): AsyncGenerator<Row> {
+async function* songRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> {
   const jukeboxes = await pageAll<{ id: string }>((from, to) => T(sb, "jukeboxes").select("id").ilike("owner_email", likeSafe(email)).order("id").range(from, to));
   if (!jukeboxes.length) return;
   const catalog = await loadCatalog(sb);
@@ -373,10 +499,13 @@ async function* songRows(sb: Sb, email: string): AsyncGenerator<Row> {
       || catalog.byName.get(nameKey(String(item.artist_name || ""), String(item.title || "")))?.videoId
       || null;
     const rating = item.catalog_track_id ? ratingByTrack.get(String(item.catalog_track_id)) : undefined;
+    const background = !!item.catalog_track_id && ctx.background.has(String(item.catalog_track_id));
+    if (!keepRow(ctx.filters, item.artist_name, background)) continue;
     yield [
       item.title || "", item.artist_name || "", item.album_name || "", clock(item.duration_ms),
-      item.source || "", ratingLabel(rating), yesNo(!!item.lyrics), item.created_at || "",
-      videoId || "", watchUrl(videoId), item.youtube_view_count ?? track?.videoViews ?? "",
+      item.source || "", ratingLabel(rating), yesNo(!!item.lyrics), yesNo(background),
+      item.created_at || "", videoId || "", watchUrl(videoId),
+      item.youtube_view_count ?? track?.videoViews ?? "",
     ];
   }
 }
@@ -388,7 +517,7 @@ type ImportedRow = {
   youtube_video_id: string | null; youtube_url: string | null; source_file_name: string | null;
 };
 
-async function* historyRows(sb: Sb, email: string, userId: string): AsyncGenerator<Row> {
+async function* historyRows(sb: Sb, email: string, userId: string, ctx: Ctx): AsyncGenerator<Row> {
   const catalog = await loadCatalog(sb);
 
   const plays = await pageAll<PlayRow>((from, to) => T(sb, "play_events")
@@ -401,11 +530,13 @@ async function* historyRows(sb: Sb, email: string, userId: string): AsyncGenerat
 
   for (const play of plays) {
     const track = catalog.byTrackId.get(String(play.track_id));
+    const background = ctx.background.has(String(play.track_id));
+    if (!keepRow(ctx.filters, track?.artistName, background)) continue;
     yield [
       play.played_at || "", "Suffering Jukebox", "Music",
       track?.artistName || "", track?.name || "", track?.albumName || "",
       clock(play.duration_played_ms), play.duration_played_ms ?? "", "",
-      ratingLabel(play.rating_at_play),
+      ratingLabel(play.rating_at_play), yesNo(background),
       track?.videoId || "", watchUrl(track?.videoId),
       play.source || "jukebox",
     ];
@@ -422,31 +553,115 @@ async function* historyRows(sb: Sb, email: string, userId: string): AsyncGenerat
   for (const event of imported) {
     // A YouTube import already carries its own watch URL. A Spotify row never
     // does, so the catalogue is asked whether we hold that song — an honest
-    // blank when we do not, rather than a guessed search link.
-    const matched = event.youtube_video_id
-      ? undefined
-      : catalog.byName.get(nameKey(String(event.artist || ""), String(event.title || "")));
+    // blank when we do not, rather than a guessed search link. The lookup runs
+    // either way now, because it is also the only thing that can say whether an
+    // imported play is a song this account can hear with the screen off.
+    const matched = catalog.byName.get(nameKey(String(event.artist || ""), String(event.title || "")));
     const videoId = event.youtube_video_id || matched?.videoId || null;
     const type = String(event.content_type || "music");
+    const background = !!matched && ctx.background.has(matched.id);
+    if (!keepRow(ctx.filters, event.artist, background)) continue;
     yield [
       event.played_at || "",
       event.history_source === "youtube" ? "YouTube" : "Spotify",
       type.charAt(0).toUpperCase() + type.slice(1),
       event.artist || "", event.title || "", event.album || "",
       clock(event.duration_played_ms), event.duration_played_ms ?? "",
-      yesNo(!!event.skipped), "",
+      yesNo(!!event.skipped), "", yesNo(background),
       videoId || "", event.youtube_url || watchUrl(videoId),
       event.source_file_name || "",
     ];
   }
 }
 
-export function exportRows(sb: Sb, dataset: Dataset, user: { id: string; email: string }): AsyncGenerator<Row> {
+/* A delegating generator rather than a plain function, so the background-audio
+   set can be read once, up front, without making the caller await before it has
+   a stream to hand back. */
+export async function* exportRows(
+  sb: Sb,
+  dataset: Dataset,
+  user: { id: string; email: string },
+  filters: ExportFilters = NO_FILTERS,
+): AsyncGenerator<Row> {
   const email = user.email.toLowerCase();
-  if (dataset === "music") return musicRows(sb, email);
-  if (dataset === "playlists") return playlistRows(sb, email);
-  if (dataset === "songs") return songRows(sb, email);
-  return historyRows(sb, email, user.id);
+  const ctx: Ctx = { filters: prepare(filters), background: await backgroundAudioTracks(sb, user.id) };
+  if (dataset === "music") yield* musicRows(sb, email, ctx);
+  else if (dataset === "playlists") yield* playlistRows(sb, email, ctx);
+  else if (dataset === "songs") yield* songRows(sb, email, ctx);
+  else yield* historyRows(sb, email, user.id, ctx);
+}
+
+/* ------------------------------------------------------------------ */
+/* What there is to filter by                                         */
+/* ------------------------------------------------------------------ */
+
+/* The artist and playlist names to offer above the download buttons.
+   Deliberately built from the three catalogue-backed sources and NOT from the
+   listening history: a history is tens of thousands of rows and paging all of
+   them to fill a dropdown would make opening the tab the slow part of the
+   feature. An artist that only ever appears in an imported Spotify history can
+   still be typed into the picker, which is why the artist filter matches on a
+   folded name rather than on an id. */
+export async function exportOptions(sb: Sb, user: { id: string; email: string }) {
+  const email = user.email.toLowerCase();
+  const catalog = await loadCatalog(sb);
+
+  const artists = new Map<string, string>();
+  const addArtist = (name: string | null | undefined) => {
+    const label = String(name || "").trim();
+    const key = foldName(label);
+    if (key && !artists.has(key)) artists.set(key, label);
+  };
+
+  const owned = catalog.artistIdsAddedBy(email);
+  for (const track of catalog.byTrackId.values()) {
+    if (track.artistId && owned.has(track.artistId)) addArtist(track.artistName);
+  }
+
+  const playlists = await pageAll<PlaylistRow>((from, to) => T(sb, "playlists")
+    .select("id,name,visibility,is_public,created_at")
+    .ilike("user_email", likeSafe(email))
+    .order("created_at", { ascending: true })
+    .order("id")
+    .range(from, to));
+
+  if (playlists.length) {
+    const items = await pageAll<PlaylistTrackRow>((from, to) => T(sb, "playlist_tracks")
+      .select("playlist_id,track_id,position,added_at,added_by_name,added_by_email")
+      .in("playlist_id", playlists.map((row) => String(row.id)))
+      .order("playlist_id", { ascending: true })
+      .order("position", { ascending: true })
+      .order("id")
+      .range(from, to));
+    for (const item of items) addArtist(catalog.byTrackId.get(String(item.track_id))?.artistName);
+  }
+
+  const jukeboxes = await pageAll<{ id: string }>((from, to) => T(sb, "jukeboxes")
+    .select("id").ilike("owner_email", likeSafe(email)).order("id").range(from, to));
+  if (jukeboxes.length) {
+    const library = await pageAll<{ artist_name: string | null }>((from, to) => T(sb, "my_jukebox_items")
+      .select("artist_name,id")
+      .in("jukebox_id", jukeboxes.map((row) => String(row.id)))
+      .order("id")
+      .range(from, to));
+    for (const item of library) addArtist(item.artist_name);
+  }
+
+  const playlistNames: string[] = [];
+  const seenPlaylist = new Set<string>();
+  for (const row of playlists) {
+    const label = String(row.name || "").trim();
+    const key = foldName(label);
+    if (!key || seenPlaylist.has(key)) continue;
+    seenPlaylist.add(key);
+    playlistNames.push(label);
+  }
+
+  const collator = new Intl.Collator(undefined, { sensitivity: "base" });
+  return {
+    artists: [...artists.values()].sort((a, b) => collator.compare(a, b)),
+    playlists: playlistNames.sort((a, b) => collator.compare(a, b)),
+  };
 }
 
 /* ------------------------------------------------------------------ */
