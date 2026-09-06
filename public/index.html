@@ -1912,7 +1912,7 @@ textarea.report-input { resize:vertical; }
   cursor:ns-resize; touch-action:none; user-select:none;
 }
 .ytp-mf-resize::after {
-  content: ''; width: 36px; height: 3px; border-radius: 2px; background: var(--border); transition: background .15s;
+  content: ''; width: 72px; height: 3px; border-radius: 2px; background: var(--border); transition: background .15s;
 }
 .ytp-mf-resize:hover::after, .ytp-mf-resize.active::after { background: var(--accent); }
 /* Dragged far enough that letting go opens the full screen player. Colouring
@@ -2310,7 +2310,7 @@ textarea.report-input { resize:vertical; }
      handle real height and paint a wider grip, and lift the dock's own top
      padding to match so it only ever covers padding. */
   .ytp-mf-resize { height: 26px; }
-  .ytp-mf-resize::after { width: 52px; height: 5px; border-radius: 3px; }
+  .ytp-mf-resize::after { width: 104px; height: 5px; border-radius: 3px; }
   .ytp-mf-resize:active::after { background: var(--accent); }
   .ytp-mini-footer {
     --mf-body: 56px;
@@ -4552,6 +4552,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
       <div class="ytp-mf-up-next" id="ytp-mf-up-next"></div>
       <span class="ytp-mf-sep" aria-hidden="true"></span>
       <div class="ytp-mf-win">
+        <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpDockMinimize()" title="Minimize" id="ytp-mf-minimize"></button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Full screen" id="ytp-mf-restore"></button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close" id="ytp-mf-close">✕</button>
       </div>
@@ -10379,7 +10380,7 @@ function ytpArrangeDockControls() {
   const top = row('ytp-mf-top');
   const middle = row('ytp-mf-middle');
   const bottom = row('ytp-mf-bottom');
-  ['ytp-mf-restore', 'ytp-mf-close'].forEach(id => {
+  ['ytp-mf-minimize', 'ytp-mf-restore', 'ytp-mf-close'].forEach(id => {
     const el = document.getElementById(id); if (el) top.appendChild(el);
   });
   // The same five buttons, in the same order, as the phone's full screen
@@ -10548,6 +10549,19 @@ function ytpApplyDockHeight() {
   }
 }
 
+// Collapses the dock to its smallest resting size - the floor the drag
+// handle itself would stop at, without having to drag it there by hand.
+function ytpDockMinimize() {
+  if (!ytPlayerEl || !_ytpMinimized) return;
+  const mob = ytpIsMob();
+  const vh = ytpDockViewportH();
+  const rest = ytpDockMinH();
+  const min = mob ? Math.max(YTP_DOCK_MOB_ABS_MIN, Math.round(vh * YTP_DOCK_MOB_MIN_FRAC)) : rest;
+  _ytpDockH = min;
+  try { localStorage.setItem('sj_dock_h', String(_ytpDockH)); } catch (_) {}
+  ytpApplyDockHeight();
+}
+
 function ytpDockResizeStart(e) {
   if (e.type === 'mousedown' && e.button !== 0) return;
   const el = document.getElementById('ytp-mini-footer');
@@ -10680,6 +10694,8 @@ function showYtpMiniFooter() {
     ytpSetWinIcon(restoreBtn, 'maximize');
     restoreBtn.title = 'Full screen';
   }
+  const minimizeBtn = document.getElementById('ytp-mf-minimize');
+  if (minimizeBtn) ytpSetWinIcon(minimizeBtn, 'minimize');
   ytpApplyDockHeight();
   ytpUpdateMiniFooter();
   ytpMfApplyLyricStrip();
@@ -26603,8 +26619,7 @@ function esFiltersHTML() {
           ${esLyricsMenuHTML()}
         </div>
       </div>
-    </div>` +
-    (sjBgToggleHTML() ? `<div class="landing-control-group">${sjBgToggleHTML()}</div>` : '');
+    </div>`;
 }
 
 function esSongsPageHTML() {
@@ -27151,7 +27166,6 @@ function renderLanding() {
                 ${playlistExploreSearchQ ? `<button type="button" class="landing-search-clear" title="Clear search" onclick="clearPlaylistExploreSearch()">✕</button>` : ''}
               </div>
             </div>
-            ${sjBgToggleHTML() ? `<div class="landing-control-group" style="margin:0">${sjBgToggleHTML()}</div>` : ''}
             ${plScope() === 'live' ? '' : `<div class="landing-control-group" style="margin:0">
               <span class="landing-control-lbl">Sort</span>
               <select class="landing-sort-select" id="playlist-explore-sort" onchange="setPlaylistExploreSort(this.value)">
@@ -27250,7 +27264,6 @@ function renderLanding() {
             </div>
           </div>
           <label class="landing-singles-only-lbl"><input type="checkbox" ${landingIncludeSinglesOnly ? 'checked' : ''} onchange="setLandingIncludeSinglesOnly(this.checked)"> Include Singles Only Artists</label>
-          ${sjBgToggleHTML()}
         </div>
         <div class="landing-control-group landing-view-group">
           ${exploreViewToggleHTML(exploreArtistsView, 'setExploreArtistsView')}
@@ -28748,15 +28761,6 @@ function setSjBgOnly(on) {
   renderLanding();   // draws whichever of the three tabs is open
 }
 
-// Shared across all three tabs on purpose, the way Submitted By already is:
-// a song list is the artist grid flattened, and a second copy of this switch
-// could only ever disagree with the first.
-function sjBgToggleHTML() {
-  if (!sjBgFilterOffered()) return '';
-  return `<label class="landing-singles-only-lbl sj-bg-only-lbl" title="Only what keeps playing with the screen off or the app in the background">`
-    + `<input type="checkbox"${homeBgOnly ? ' checked' : ''} onchange="setSjBgOnly(this.checked)"> \u{1F3A7} Background Play Only</label>`;
-}
-
 // ── Album helpers ─────────────────────────────────────────────
 function albumViews(album) {
   if (barChartMode === 'hidden') return 0;
@@ -29063,6 +29067,7 @@ function updateLandingActionsHeader() {
         <button type="button" class="playlist-explore-filter${artistScope() === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
         <button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">${mineScopeLbl}</button>
         <button type="button" class="playlist-explore-filter${artistScope() === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
+        ${sjBgFilterOffered() ? `<button type="button" class="playlist-explore-filter${homeBgOnly ? ' active' : ''}" onclick="setSjBgOnly(${homeBgOnly ? 'false' : 'true'})" title="Only what keeps playing with the screen off or the app in the background">Background Enabled</button>` : ''}
       </span>`
     : landingTab === 'playlists'
     ? `<span class="landing-nav-scope" role="group" aria-label="Playlist scope">
@@ -29070,6 +29075,7 @@ function updateLandingActionsHeader() {
         <button type="button" class="playlist-explore-filter${plScope() === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
         <button type="button" class="playlist-explore-filter${plScope() === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
         ${liveScopeCount ? `<button type="button" class="playlist-explore-filter${plScope() === 'live' ? ' active' : ''}" onclick="setPlaylistExploreFilter('live')">Live (${liveScopeCount})</button>` : ''}
+        ${sjBgFilterOffered() ? `<button type="button" class="playlist-explore-filter${homeBgOnly ? ' active' : ''}" onclick="setSjBgOnly(${homeBgOnly ? 'false' : 'true'})" title="Only what keeps playing with the screen off or the app in the background">Background Enabled</button>` : ''}
       </span>`
     : '';
   // Chips and totals share one row under the tabs, so the tab buttons keep the
