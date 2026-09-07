@@ -92,9 +92,17 @@ cd ios/App
 xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug \
   -destination 'generic/platform=iOS' -allowProvisioningUpdates build
 xcrun devicectl device install app --device <device-id> \
-  ~/Library/Developer/Xcode/DerivedData/App-*/Build/Products/Debug-iphoneos/App.app
-xcrun devicectl device launch app --device <device-id> com.johnnyoutlaw.sufferingjukebox
+  ~/Library/Developer/Xcode/DerivedData/App-<hash>/Build/Products/Debug-iphoneos/App.app
+xcrun devicectl device process launch --device <device-id> --terminate-existing \
+  com.johnnyoutlaw.sufferingjukebox
 ```
+
+The DerivedData path glob (`App-*`) matches every derived-data folder Xcode has
+ever made for this project, not just the latest - `install` fails with
+"Unexpected argument" if more than one exists, so resolve the `<hash>` first
+(`ls -dt ~/Library/Developer/Xcode/DerivedData/App-*/ | head -1`) rather than
+passing the wildcard straight through. `device launch` is also gone as of the
+Xcode 17 toolchain; the subcommand is `device process launch`.
 
 `xcrun devicectl list devices` prints the device ids. The phone has to be
 unlocked and trusted or it shows as `unavailable`.
