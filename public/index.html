@@ -4338,6 +4338,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .landing-card-more-abs:hover, .landing-card-more-abs[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); opacity: 1; }
 @media (hover: none) { .landing-card-more-abs { opacity: .85; } }
 .landing-grid.detail-full .landing-card-more-abs { display: none; }
+/* At name-only size there's no actions row to fall back on, so the ⋯ over
+   the art is the only way in - it can't wait on a hover that a dense grid
+   of small cards makes easy to miss. */
+.landing-grid.detail-name .landing-card-more-abs { opacity: .85; }
 .landing-card-art {
   width: 100%; aspect-ratio: 4 / 3; background-size: cover; background-position: center;
   background-color: var(--bg-elevated); border-bottom: 4px solid var(--card-accent, var(--accent)); flex-shrink: 0;
@@ -16176,14 +16180,14 @@ let _sjmSubmenuTrigger = null;
 function sjmCloseSubmenu() {
   const submenu = document.getElementById('sjm-submenu');
   if (submenu) submenu.remove();
-  document.querySelector('#sjm-menu .sjm-parent-open')?.classList.remove('sjm-parent-open');
+  document.querySelector('.sjm-parent-open')?.classList.remove('sjm-parent-open');
   _sjmSubmenuTrigger = null;
 }
 
 function sjmPositionSubmenu() {
   const trigger = _sjmSubmenuTrigger;
   const submenu = document.getElementById('sjm-submenu');
-  const parentMenu = document.getElementById('sjm-menu');
+  const parentMenu = trigger?.closest('.sjm-menu');
   if (!submenu || !parentMenu || !trigger?.isConnected) return;
   const parent = parentMenu.getBoundingClientRect();
   const item = trigger.getBoundingClientRect();
@@ -16197,9 +16201,8 @@ function sjmPositionSubmenu() {
 }
 
 function sjmOpenSubmenu(name, html) {
-  const menu = document.getElementById('sjm-menu');
-  const trigger = menu?.querySelector('[data-sjm-submenu="' + name + '"]');
-  if (!menu || !trigger) return null;
+  const trigger = document.querySelector('[data-sjm-submenu="' + name + '"]');
+  if (!trigger) return null;
   sjmCloseSubmenu();
   const submenu = document.createElement('div');
   submenu.id = 'sjm-submenu';
@@ -16555,12 +16558,143 @@ function lamRender(row) {
       '<span class="sjm-ic">🎧</span><span class="sjm-label">Enable Mobile Background Play</span>' +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
     '</button>' +
+    (googleUser
+      ? '<button class="sjm-item" data-sjm-submenu="break" onclick="lamOpenBreak()">' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span>' +
+          '<span class="sjm-label">Take a Break from Artist</span>' +
+          '<span class="sjm-sub">›</span></button>'
+      : '') +
     (lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamManage()">' +
           '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>'
+      : '') +
+    (oaIsMine(row)
+      ? '<div class="sjm-sep"></div>' +
+        '<button class="sjm-item sjm-danger" onclick="lamRemoveFromMine()">' +
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from My Artists</span></button>'
       : '');
 }
+
+// Every song this artist has, fetched fresh - the landing card never holds a
+// loaded track list the way an artist-jukebox page does.
+async function lamArtistTrackIds(artistId) {
+  const albs = await dbGet('/albums?artist_id=eq.' + artistId + '&select=id');
+  const albIds = albs.map(a => a.id);
+  const out = [];
+  for (let i = 0; i < albIds.length; i += 50) {
+    const rows = await dbGet('/tracks?album_id=in.(' + albIds.slice(i, i + 50).join(',') + ')&select=id');
+    rows.forEach(r => out.push(r.id));
+  }
+  return out;
+}
+
+function lamOpenBreak() {
+  if (!_lamArtistId) return;
+  const html = _sjmHeader('Take a break from artist', 'sjmCloseSubmenu()') +
+    '<div class="sjm-empty">Skip every song by this artist in shuffle and the queue. You can still play them yourself.</div>' +
+    SJ_BREAK_OPTS.map(o =>
+      '<button class="sjm-item" onclick="lamSetBreak(' + o.days + ')">' +
+        '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span><span class="sjm-label">' + o.label + '</span></button>'
+    ).join('') +
+    '<div class="sjm-sep"></div>' +
+    '<button class="sjm-item" onclick="lamClearBreak()">' +
+      '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>';
+  sjmOpenSubmenu('break', html);
+}
+
+async function lamSetBreak(days) {
+  const artistId = _lamArtistId;
+  lamClose();
+  if (!artistId || !(days > 0) || !googleUser) {
+    if (!googleUser) showToast('Sign in to take a break from songs.');
+    return;
+  }
+  const list = await lamArtistTrackIds(artistId);
+  if (!list.length) return;
+  const untilMs = Date.now() + days * 86400000;
+  for (const tid of list) {
+    delete blockedTracks[tid];
+    snoozedTracks[tid] = untilMs;
+    refreshBlockedUI(tid);
+    pruneBlockedFromQueue(tid);
+  }
+  saveLocalBlocked();
+  showToast('Taking a break from this artist (' + list.length + ' songs) until ' + new Date(untilMs).toLocaleDateString() + '.');
+  try {
+    const { data: { session } } = await sjGetSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    for (const tid of list) {
+      try {
+        await dbDelete('/blocked_tracks?track_id=eq.' + tid);
+        await dbPost('/blocked_tracks', {
+          user_id: userId, user_email: googleUser.email, track_id: tid,
+          until: new Date(untilMs).toISOString(),
+        });
+      } catch (_) {}
+    }
+  } catch (e) { console.warn('lamSetBreak sync error', e); }
+}
+
+async function lamClearBreak() {
+  const artistId = _lamArtistId;
+  lamClose();
+  if (!artistId) return;
+  const list = await lamArtistTrackIds(artistId);
+  for (const tid of list) {
+    delete snoozedTracks[tid];
+    refreshBlockedUI(tid);
+  }
+  saveLocalBlocked();
+  showToast('Artist can play again.');
+  for (const tid of list) {
+    try { await dbDelete('/blocked_tracks?track_id=eq.' + tid); } catch (_) {}
+  }
+}
+
+// Owned (added_by/can_manage) vs. claimed-into-library are different removals:
+// an owned public artist stays public with its attribution intact and just
+// stops counting as mine; a claim never touched the artist to begin with, so
+// removing it only drops the claim. Only an owned PRIVATE artist is actually
+// deleted, since nobody else can see it anyway.
+async function lamRemoveFromMine() {
+  const artistId = _lamArtistId;
+  const row = (landingStats || []).find(r => r.artist_id === artistId);
+  lamClose();
+  if (!row || !googleUser) return;
+  if (!row.can_manage) {
+    if (!confirm('Remove ' + row.name + ' from My Artists? This only removes your claim on it - the artist stays exactly as it is for everyone else.')) return;
+    try {
+      await mjPost({ action: 'remove_artist', artistName: row.name });
+      row.in_my_library = false;
+      if (_myArtistIds) _myArtistIds.delete(artistId);
+      renderLanding();
+      showToast('Removed from My Artists.');
+    } catch (e) { showToast(e.message || 'Could not remove.'); }
+    return;
+  }
+  if (row.visibility === 'private') {
+    if (!confirm('Remove ' + row.name + ' completely? This artist is private to you, so this deletes it and everything under it. This cannot be undone.')) return;
+    try {
+      await amFetch('?action=delete_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId }) });
+      landingStats = landingStats.filter(r => r.artist_id !== artistId);
+      if (_myArtistIds) _myArtistIds.delete(artistId);
+      renderLanding();
+      showToast('Removed.');
+    } catch (e) { showToast(e.message || 'Could not remove.'); }
+    return;
+  }
+  if (!confirm('Remove ' + row.name + ' from My Artists? It stays public with your name on it - this only takes it out of your My Artists filter.')) return;
+  try {
+    await saveArtistFeedback(artistId, { removed_from_mine: true });
+    row.removed_from_mine = true;
+    if (_myArtistIds) _myArtistIds.delete(artistId);
+    renderLanding();
+    showToast('Removed from My Artists.');
+  } catch (e) { showToast(e.message || 'Could not remove.'); }
+}
+
 
 async function lamLoadFavorites(artistId) {
   const favIds = Object.keys(localVotes || {}).filter(id => getMyVote(id) > 0);
@@ -30244,6 +30378,7 @@ async function ensureMyArtistIds() {
 
 function oaIsMine(a) {
   if (!googleUser || !a) return false;
+  if (a.removed_from_mine) return false;
   if (a.in_my_library) return true;
   if (!_myArtistIds) {
     ensureMyArtistIds();
@@ -33096,6 +33231,9 @@ const SJ_CHANGELOG = [
   { date: '2026-09-07', items: [
     'Explore Artists no longer hides an artist just because its discography import was incomplete, as long as real albums came in. Include Singles Only Artists now only affects artists who are genuinely here for a single loose track.',
     'Fixed a rare timing issue where a song you set to Never Play Again (or put on a break) could still turn up playing right after you signed in, if your resumed queue loaded a beat before your blocked list did.',
+    'The ⋯ menu on an artist card now has Take a Break from Artist, skipping every song by that artist in shuffle and the queue for a while.',
+    'The ⋯ button on an artist card now stays visible at the smallest card size instead of only showing on hover.',
+    'My Artists has a new Remove option: for an artist only you can see, it deletes it outright; for a public one, it stays public with your name on it and just drops out of your My Artists filter; for one you only added to your library, it just removes your claim on it.',
   ] },
   { date: '2026-09-06', items: [
     'My Data & Analytics has a new Download my data tab. You can take away four files: your music, your playlists, your songs and your listening history. Every row carries a link straight to the song on YouTube, so the file is still useful long after it leaves here.',
