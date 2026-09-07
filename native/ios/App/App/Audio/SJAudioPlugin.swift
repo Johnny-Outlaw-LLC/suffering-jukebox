@@ -23,6 +23,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "backfillArtwork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPlaylists",   returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRatedTracks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setHeartCounts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drainFeedback",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "ackFeedback",    returnType: CAPPluginReturnPromise),
     ]
@@ -197,7 +198,22 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
     @objc func setRatedTracks(_ call: CAPPluginCall) {
         let ids = (call.getArray("trackIds") as? [String]) ?? []
         SJCarPlayFeedback.shared.setRated(ids)
+        DispatchQueue.main.async { SJAudioEngine.shared.onModeChanged?() }
         call.resolve(["count": ids.count])
+    }
+
+    /// All-time heart counts for downloaded tracks, so the car's heart button
+    /// can show a number and turn red rather than answering only yes/no.
+    @objc func setHeartCounts(_ call: CAPPluginCall) {
+        let raw = call.getObject("counts") ?? JSObject()
+        var counts: [String: Int] = [:]
+        for (id, value) in raw {
+            if let n = value as? Int { counts[id] = n }
+            else if let n = value as? Double { counts[id] = Int(n) }
+        }
+        SJCarPlayFeedback.shared.setHeartCounts(counts)
+        DispatchQueue.main.async { SJAudioEngine.shared.onModeChanged?() }
+        call.resolve(["count": counts.count])
     }
 
     /// Ratings and hearts tapped in the car, for the web layer to send on.

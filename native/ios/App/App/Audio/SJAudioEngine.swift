@@ -19,6 +19,18 @@ enum SJPlaybackState: String {
     case idle, buffering, playing, paused, ended
 }
 
+enum SJRepeatMode: String {
+    case off, all, one
+
+    var next: SJRepeatMode {
+        switch self {
+        case .off: return .all
+        case .all: return .one
+        case .one: return .off
+        }
+    }
+}
+
 struct SJStatus {
     var state: SJPlaybackState = .idle
     var index: Int = -1
@@ -46,6 +58,10 @@ final class SJAudioEngine: NSObject {
     /// buttons can be redrawn for whatever is playing now. Deliberately not the
     /// twice-a-second tick, which would rebuild them for no reason.
     var onTrackChanged: ((String?) -> Void)?
+    /// Fired whenever something the Now Playing buttons draw from changes
+    /// without the queue or the track itself changing: shuffle, repeat, or a
+    /// fresh rating/heart-count push from the web layer.
+    var onModeChanged: (() -> Void)?
     private var lastPublishedTrackId: String??
 
     private let player = AVPlayer()
@@ -56,11 +72,78 @@ final class SJAudioEngine: NSObject {
     private var statusObservation: NSKeyValueObservation?
     private var artworkCache: [String: MPMediaItemArtwork] = [:]
 
+    /// A shuffled permutation of the queue's indices, walked instead of `index
+    /// + 1` while shuffle is on. Rebuilt whenever the queue or the setting
+    /// changes; the currently playing track is always kept first so turning
+    /// shuffle on mid-song does not jump anywhere.
+    private var playOrder: [Int] = []
+
+    private(set) var shuffleEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(shuffleEnabled, forKey: Self.shuffleDefaultsKey)
+            rebuildPlayOrder()
+        }
+    }
+    private(set) var repeatMode: SJRepeatMode {
+        didSet { UserDefaults.standard.set(repeatMode.rawValue, forKey: Self.repeatDefaultsKey) }
+    }
+    private static let shuffleDefaultsKey = "sj.carplay.shuffle"
+    private static let repeatDefaultsKey = "sj.carplay.repeat"
+
     private override init() {
+        shuffleEnabled = UserDefaults.standard.bool(forKey: Self.shuffleDefaultsKey)
+        repeatMode = SJRepeatMode(rawValue: UserDefaults.standard.string(forKey: Self.repeatDefaultsKey) ?? "") ?? .off
         super.init()
         configureSession()
         configureRemoteCommands()
         observePlayer()
+    }
+
+    func setShuffle(_ on: Bool) {
+        guard shuffleEnabled != on else { return }
+        shuffleEnabled = on
+        onModeChanged?()
+    }
+
+    func cycleRepeatMode() {
+        repeatMode = repeatMode.next
+        onModeChanged?()
+    }
+
+    private func rebuildPlayOrder() {
+        guard shuffleEnabled, !queue.isEmpty else { playOrder = []; return }
+        var order = Array(0..<queue.count)
+        order.shuffle()
+        if index >= 0, let pos = order.firstIndex(of: index) {
+            order.remove(at: pos)
+            order.insert(index, at: 0)
+        }
+        playOrder = order
+    }
+
+    private func nextIndex() -> Int? {
+        guard !queue.isEmpty else { return nil }
+        if shuffleEnabled {
+            guard let pos = playOrder.firstIndex(of: index) else { return playOrder.first }
+            if pos + 1 < playOrder.count { return playOrder[pos + 1] }
+            guard repeatMode == .all else { return nil }
+            rebuildPlayOrder()
+            return playOrder.first
+        }
+        if index + 1 < queue.count { return index + 1 }
+        return repeatMode == .all ? 0 : nil
+    }
+
+    private func previousIndex() -> Int? {
+        guard !queue.isEmpty else { return nil }
+        if shuffleEnabled {
+            guard let pos = playOrder.firstIndex(of: index), pos > 0 else {
+                return repeatMode == .all ? playOrder.last : nil
+            }
+            return playOrder[pos - 1]
+        }
+        if index > 0 { return index - 1 }
+        return repeatMode == .all ? queue.count - 1 : nil
     }
 
     deinit {
@@ -142,6 +225,7 @@ final class SJAudioEngine: NSObject {
 
         if let playingId, let stillThere = tracks.firstIndex(where: { $0.id == playingId }) {
             index = stillThere
+            rebuildPlayOrder()
             updateNowPlaying()
             onQueueChanged?()
             publish()
@@ -150,6 +234,7 @@ final class SJAudioEngine: NSObject {
 
         let target = tracks.isEmpty ? -1 : max(0, min(startIndex, tracks.count - 1))
         index = target
+        rebuildPlayOrder()
         onQueueChanged?()
         if target >= 0 {
             load(at: target, autoPlay: autoPlay)
@@ -183,16 +268,23 @@ final class SJAudioEngine: NSObject {
         player.replaceCurrentItem(with: item)
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] obs, _ in
             guard let self else { return }
-            if obs.status == .failed { self.advance() } else { self.publish() }
+            if obs.status == .failed { self.advance(honorRepeatOne: false) } else { self.publish() }
         }
         if autoPlay { player.play() }
         updateNowPlaying()
         publish()
     }
 
-    private func advance() {
-        if index + 1 < queue.count {
-            load(at: index + 1, autoPlay: true)
+    /// `honorRepeatOne` is false for a deliberate skip - a manual Next, or a
+    /// file that failed to load and is never going to load by trying it again.
+    /// Repeat-one only means something for a track that finished on its own.
+    private func advance(honorRepeatOne: Bool = true) {
+        if honorRepeatOne, repeatMode == .one, index >= 0 {
+            load(at: index, autoPlay: true)
+            return
+        }
+        if let next = nextIndex() {
+            load(at: next, autoPlay: true)
         } else {
             player.pause()
             publish(state: .ended)
@@ -224,15 +316,15 @@ final class SJAudioEngine: NSObject {
         isPlaying ? pause() : play()
     }
 
-    func next() { advance() }
+    func next() { advance(honorRepeatOne: false) }
 
     /// Matches every other music player: restart the track unless you are
     /// already near the top, in which case go back one.
     func previous() {
         if currentPosition > 3, player.currentItem != nil {
             seek(to: 0)
-        } else if index > 0 {
-            load(at: index - 1, autoPlay: true)
+        } else if let prev = previousIndex() {
+            load(at: prev, autoPlay: true)
         } else {
             seek(to: 0)
         }

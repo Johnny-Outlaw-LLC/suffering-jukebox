@@ -8893,6 +8893,15 @@ async function sjDlInit() {
     // Anything tapped in the car since this app was last awake.
     void sjCarDrainFeedback();
     void sjCarPushRatings();
+    // Favorites Plus needs to know which tracks were hearted, which otherwise
+    // only loads when Explore Playlists is opened in the app itself - easy to
+    // never do on a phone that goes straight to CarPlay.
+    void ensureMyReactionTracks().then(() => sjCarPushPlaylists());
+    // loadPlaylists() may already have pushed once with an empty download
+    // index if it won the race with listDownloads() above - a real playlist
+    // would look empty to the car until something else happened to repaint
+    // it. Push again now that the index is actually known.
+    void sjCarPushPlaylists();
   } catch (_) {}
   try {
     // Fired by the car the moment something is tapped, so a rating reaches the
@@ -8926,11 +8935,19 @@ async function sjDlInit() {
 // Playlists the car can actually offer. Only ids and names cross the bridge;
 // native decides which songs are playable against its own download index, so a
 // playlist can never promise a track the car has not got.
+//
+// Favorites and Favorites Plus are included alongside the saved playlists -
+// they live only as a client-side computation over ratings and reactions
+// (dynamicPlaylistRows), never in the playlists table, so the car would never
+// see them from _savedPlaylists alone. dynamicPlaylistRows() itself answers
+// nothing until ratings have loaded, which is fine: this is re-pushed once
+// they do (see loadMyVotes / ensureMyReactionTracks).
 async function sjCarPushPlaylists() {
   const p = sjDlPlugin();
   if (!p) return;
   try {
-    const playlists = (_savedPlaylists || [])
+    const named = (_savedPlaylists || []).concat(dynamicPlaylistRows());
+    const playlists = named
       .map(pl => ({
         id: pl.id,
         name: pl.name || 'Playlist',
@@ -8941,14 +8958,23 @@ async function sjCarPushPlaylists() {
   } catch (_) {}
 }
 
-// Which downloaded songs are already rated, so the car draws a filled thumb
-// rather than starting every song blank.
+// Which downloaded songs are already rated, and how many hearts each has
+// picked up, so the car draws a filled green thumb and a numbered red heart
+// instead of starting every song blank.
 async function sjCarPushRatings() {
   const p = sjDlPlugin();
   if (!p) return;
   try {
-    const trackIds = [...(_sjDownloads.keys())].filter(id => getMyVote(id) > 0);
-    await p.setRatedTracks({ trackIds });
+    const trackIds = [...(_sjDownloads.keys())];
+    const rated = trackIds.filter(id => getMyVote(id) > 0);
+    await p.setRatedTracks({ trackIds: rated });
+    await plWallLoadReactionCounts(trackIds);
+    const counts = {};
+    trackIds.forEach(id => {
+      const n = Number((trackReactionCounts[id] || {}).heart) || 0;
+      if (n > 0) counts[id] = n;
+    });
+    await p.setHeartCounts({ counts });
   } catch (_) {}
 }
 
@@ -21983,6 +22009,9 @@ async function ensureMyReactionTracks(force) {
       const changed = next.join('|') !== myReactionTrackIds.join('|');
       myReactionTrackIds = next;
       _myReactionTracksLoaded = true;
+      // Favorites Plus is favorites plus these ids - repaint the car's copy
+      // once it might actually be different.
+      if (changed) void sjCarPushPlaylists();
       return changed;
     } catch (e) {
       console.warn('ensureMyReactionTracks error', e);
@@ -37394,6 +37423,10 @@ async function loadMyVotes() {
     // Detail rows are built with whatever votes were known at paint time.
     // Re-sync so a late load turns grey thumbs green and rating-sort works.
     if (viewMode === 'playlistchart') plWallSyncBadges();
+    // Favorites and Favorites Plus cannot exist for the car until votes are
+    // known - this is the first point they can.
+    void sjCarPushPlaylists();
+    void sjCarPushRatings();
   } catch (e) {
     _myVotesLoaded = false;
     console.warn('loadMyVotes error', e);

@@ -13,7 +13,7 @@ import UIKit
 /// Playlists / Explore Songs, so the car is a narrower view of a familiar shape
 /// rather than a second, differently-organised app.
 @objc(SJCarPlaySceneDelegate)
-class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
+class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, CPNowPlayingTemplateObserver {
 
     private var interfaceController: CPInterfaceController?
     private var artistsTab: CPListTemplate?
@@ -30,11 +30,20 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         interfaceController = controller
         controller.setRootTemplate(makeTabBar(), animated: false, completion: nil)
 
+        CPNowPlayingTemplate.shared.add(self)
+        CPNowPlayingTemplate.shared.isUpNextButtonEnabled = true
+        CPNowPlayingTemplate.shared.upNextTitle = "Up Next"
+
         // Downloads finishing mid-drive should show up without a reconnect.
         SJAudioEngine.shared.onQueueChanged = { [weak self] in
             DispatchQueue.main.async { self?.refreshTabs() }
         }
         SJAudioEngine.shared.onTrackChanged = { [weak self] _ in
+            DispatchQueue.main.async { self?.refreshNowPlayingButtons() }
+        }
+        // Shuffle, repeat, a fresh rating or a fresh heart count all redraw the
+        // same button row without the track changing underneath it.
+        SJAudioEngine.shared.onModeChanged = { [weak self] in
             DispatchQueue.main.async { self?.refreshNowPlayingButtons() }
         }
         refreshNowPlayingButtons()
@@ -46,8 +55,37 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         artistsTab = nil
         playlistsTab = nil
         songsTab = nil
+        CPNowPlayingTemplate.shared.remove(self)
         SJAudioEngine.shared.onQueueChanged = nil
         SJAudioEngine.shared.onTrackChanged = nil
+        SJAudioEngine.shared.onModeChanged = nil
+    }
+
+    // MARK: - Now Playing: Up Next
+
+    /// The queue that produced whatever is playing now, shown so the driver
+    /// can see what is coming or jump ahead - the same list Artists, Playlists
+    /// and Songs already built to start playback, just framed as "what plays
+    /// next" instead of "what to start playing."
+    func nowPlayingTemplateUpNextButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
+        let engine = SJAudioEngine.shared
+        let queue = engine.queue
+        guard !queue.isEmpty else { return }
+        let items = queue.enumerated().map { (i, track) -> CPListItem in
+            let item = CPListItem(text: track.title, detailText: track.artist)
+            item.setImage(artwork(forTrackId: track.id))
+            item.isPlaying = (i == engine.index)
+            item.handler = { [weak self] _, completion in
+                SJAudioEngine.shared.play(index: i)
+                // Up Next was pushed on top of Now Playing, so returning to it
+                // is a pop, not another push of the (singleton) template.
+                self?.interfaceController?.popTemplate(animated: true, completion: nil)
+                completion()
+            }
+            return item
+        }
+        let template = CPListTemplate(title: "Up Next", sections: [CPListSection(items: items)])
+        interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
 
     // MARK: - Templates
@@ -207,10 +245,18 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         return scaled
     }
 
+    /// Up Next works from the live queue (SJTrack), not the download index, so
+    /// it needs its cover by id rather than by SJDownloadStore.Entry.
+    private func artwork(forTrackId trackId: String) -> UIImage? {
+        artwork(for: SJDownloadStore.shared.entry(for: trackId))
+    }
+
     // MARK: - Rating and reactions
 
-    /// Two buttons on the Now Playing screen: a thumbs-up that toggles the
-    /// track's rating, and a heart that stamps the moment being listened to.
+    /// Four buttons on the Now Playing screen: shuffle and repeat for the
+    /// queue, a thumbs-up that toggles the track's rating (drawn green once
+    /// awarded), and a heart that stamps the moment being listened to (drawn
+    /// red with a count once the track has any).
     ///
     /// A tap goes to disk before anything else (SJFeedbackOutbox). The web layer
     /// owns what a rating means and does the actual sending, but in a car it may
@@ -222,16 +268,34 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             CPNowPlayingTemplate.shared.updateNowPlayingButtons([])
             return
         }
+        let engine = SJAudioEngine.shared
+
+        let shuffle = CPNowPlayingImageButton(
+            image: symbol("shuffle", color: engine.shuffleEnabled ? .systemGreen : nil)
+        ) { _ in
+            SJAudioEngine.shared.setShuffle(!SJAudioEngine.shared.shuffleEnabled)
+        }
+
         let rated = isRated(trackId)
         let thumb = CPNowPlayingImageButton(
-            image: symbol(rated ? "hand.thumbsup.fill" : "hand.thumbsup")
+            image: symbol(rated ? "hand.thumbsup.fill" : "hand.thumbsup", color: rated ? .systemGreen : nil)
         ) { [weak self] _ in
             self?.tapRating(trackId: trackId)
         }
-        let heart = CPNowPlayingImageButton(image: symbol("heart")) { [weak self] _ in
+
+        let heart = CPNowPlayingImageButton(image: heartImage(count: heartCount(trackId))) { [weak self] _ in
             self?.tapHeart(trackId: trackId)
         }
-        CPNowPlayingTemplate.shared.updateNowPlayingButtons([thumb, heart])
+
+        let repeatMode = engine.repeatMode
+        let repeatIcon = repeatMode == .one ? "repeat.1" : "repeat"
+        let repeatBtn = CPNowPlayingImageButton(
+            image: symbol(repeatIcon, color: repeatMode == .off ? nil : .systemGreen)
+        ) { _ in
+            SJAudioEngine.shared.cycleRepeatMode()
+        }
+
+        CPNowPlayingTemplate.shared.updateNowPlayingButtons([shuffle, thumb, heart, repeatBtn])
     }
 
     /// What the web layer last told us, overlaid with anything tapped in the car
@@ -239,6 +303,15 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private func isRated(_ trackId: String) -> Bool {
         if let pending = SJFeedbackOutbox.shared.pendingRatings()[trackId] { return pending > 0 }
         return SJCarPlayFeedback.shared.ratedTrackIds.contains(trackId)
+    }
+
+    /// The server's count, plus anything hearted in the car this session that
+    /// has not been sent yet - so a tap bumps the badge immediately instead of
+    /// waiting on a drain and a round trip.
+    private func heartCount(_ trackId: String) -> Int {
+        let pending = SJFeedbackOutbox.shared.pending()
+            .filter { $0.kind == "heart" && $0.trackId == trackId }.count
+        return SJCarPlayFeedback.shared.heartCount(for: trackId) + pending
     }
 
     private func tapRating(trackId: String) {
@@ -253,12 +326,44 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         // the site - not a toggle, so there is no state to show back.
         let ms = Int(SJAudioEngine.shared.status().positionSeconds * 1000)
         SJFeedbackOutbox.shared.add(kind: "heart", trackId: trackId, value: 0, positionMs: max(0, ms))
+        refreshNowPlayingButtons()
         SJCarPlayFeedback.shared.onChange?()
     }
 
-    private func symbol(_ name: String) -> UIImage {
+    private func symbol(_ name: String, color: UIColor? = nil) -> UIImage {
         let config = UIImage.SymbolConfiguration(pointSize: 40, weight: .regular)
-        return UIImage(systemName: name, withConfiguration: config) ?? UIImage()
+        let image = UIImage(systemName: name, withConfiguration: config) ?? UIImage()
+        guard let color else { return image }
+        return image.withTintColor(color, renderingMode: .alwaysOriginal)
+    }
+
+    /// A filled red heart with the count drawn into its corner. CarPlay's
+    /// button images are static, so the number is baked into the bitmap rather
+    /// than drawn as a separate overlay the template has no slot for.
+    private func heartImage(count: Int) -> UIImage {
+        let base = symbol(count > 0 ? "heart.fill" : "heart", color: count > 0 ? .systemRed : nil)
+        guard count > 0 else { return base }
+        let text = count > 99 ? "99+" : "\(count)"
+        let size = base.size
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            base.draw(in: CGRect(origin: .zero, size: size))
+            let font = UIFont.boldSystemFont(ofSize: size.height * 0.34)
+            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
+            let textSize = (text as NSString).size(withAttributes: attrs)
+            let badgeH = size.height * 0.46
+            let badgeW = max(textSize.width + badgeH * 0.6, badgeH)
+            let badgeRect = CGRect(x: size.width - badgeW * 0.8, y: -badgeH * 0.08, width: badgeW, height: badgeH)
+            UIColor.systemRed.setFill()
+            UIColor.white.withAlphaComponent(0.9).setStroke()
+            let path = UIBezierPath(roundedRect: badgeRect, cornerRadius: badgeH / 2)
+            path.lineWidth = 1.5
+            path.fill()
+            path.stroke()
+            (text as NSString).draw(
+                in: CGRect(x: badgeRect.midX - textSize.width / 2, y: badgeRect.midY - textSize.height / 2,
+                           width: textSize.width, height: textSize.height),
+                withAttributes: attrs)
+        }
     }
 
     // MARK: - Playback
