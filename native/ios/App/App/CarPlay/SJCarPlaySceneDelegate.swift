@@ -32,19 +32,30 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
         CPNowPlayingTemplate.shared.add(self)
         CPNowPlayingTemplate.shared.isUpNextButtonEnabled = true
-        CPNowPlayingTemplate.shared.upNextTitle = "Up Next"
+        refreshUpNextTitle()
 
         // Downloads finishing mid-drive should show up without a reconnect.
         SJAudioEngine.shared.onQueueChanged = { [weak self] in
-            DispatchQueue.main.async { self?.refreshTabs() }
+            DispatchQueue.main.async {
+                self?.refreshTabs()
+                self?.refreshUpNextTitle()
+            }
         }
         SJAudioEngine.shared.onTrackChanged = { [weak self] _ in
-            DispatchQueue.main.async { self?.refreshNowPlayingButtons() }
+            DispatchQueue.main.async {
+                self?.refreshNowPlayingButtons()
+                self?.refreshUpNextTitle()
+            }
         }
         // Shuffle, repeat, a fresh rating or a fresh heart count all redraw the
-        // same button row without the track changing underneath it.
+        // same button row without the track changing underneath it. Shuffle and
+        // repeat also change what plays next, so the Up Next button's own
+        // label needs the same refresh.
         SJAudioEngine.shared.onModeChanged = { [weak self] in
-            DispatchQueue.main.async { self?.refreshNowPlayingButtons() }
+            DispatchQueue.main.async {
+                self?.refreshNowPlayingButtons()
+                self?.refreshUpNextTitle()
+            }
         }
         refreshNowPlayingButtons()
     }
@@ -86,6 +97,18 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
         let template = CPListTemplate(title: "Up Next", sections: [CPListSection(items: items)])
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
+    }
+
+    /// The button itself names the next track, rather than a generic "Up
+    /// Next" label that only means something once tapped - so the driver
+    /// sees what's coming without opening the queue.
+    private func refreshUpNextTitle() {
+        guard let next = SJAudioEngine.shared.nextTrack else {
+            CPNowPlayingTemplate.shared.upNextTitle = "Up Next"
+            return
+        }
+        let title = next.title
+        CPNowPlayingTemplate.shared.upNextTitle = title.count > 30 ? String(title.prefix(30)) + "…" : title
     }
 
     // MARK: - Templates
@@ -240,7 +263,19 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
               let image = UIImage(data: data) else { return nil }
         let side: CGFloat = 60
         let scaled = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
-            image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+            // Not every stored cover is square. Scale to fill the row's square
+            // slot and let the longer side run off the edges (object-fit:
+            // cover), rather than stretching the source into a square, which
+            // is what made some covers look squashed.
+            let size = image.size
+            guard size.width > 0, size.height > 0 else {
+                image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+                return
+            }
+            let fillScale = max(side / size.width, side / size.height)
+            let w = size.width * fillScale
+            let h = size.height * fillScale
+            image.draw(in: CGRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h))
         }
         artworkCache[entry.trackId] = scaled
         return scaled

@@ -26848,6 +26848,37 @@ function esSelAddQueue() {
   showToast('Added ' + q.length + ' song' + (q.length === 1 ? '' : 's') + ' to the queue.');
 }
 
+// A row's own click used to only expand the lyrics accordion, leaving the
+// small ▶ at the end of the row as the only way to actually start playback -
+// easy to miss, and not what clicking a song in a jukebox should do. Opening
+// a row now also plays it, queued through the rest of the table in its
+// current sort order (same shape as esSelPlayNow, just seeded from one row
+// instead of the checkbox selection). Collapsing a row back does not replay
+// it - only a fresh open does.
+function esRowClick(trackId) {
+  const row = document.querySelector('#all-tracks-tbl .tt-row[data-track-id="' + trackId + '"]');
+  const wasOpen = !!(row && row.classList.contains('tt-row-open'));
+  toggleTTAccordion(trackId);
+  if (!wasOpen) esRowPlay(trackId);
+}
+
+async function esRowPlay(trackId) {
+  const ids = _esDrawn && _esDrawn.length ? _esDrawn : [trackId];
+  const start = ids.indexOf(trackId);
+  const ordered = start === -1 ? [trackId] : ids.slice(start).concat(ids.slice(0, start));
+  const q = ordered.map(id => {
+    const vid = ytData[id] && ytData[id].video_id;
+    if (!vid) return null;
+    const t = findTrackById(id);
+    return { videoId: vid, title: (t && t.name) || 'Track', trackId: id };
+  }).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
+  if (!q.length) { showToast('No video to play for this song yet.'); return; }
+  const resolved = await sjjResolveQueueOverwrite(q);
+  if (!resolved || !resolved.length) return;
+  landingPlayQueue(resolved);
+  try { await loadTrackAudio(resolved.slice(0, 40).map(x => x.trackId)); taSyncAudioBtn(); } catch (e) {}
+}
+
 // LRCLIB limits one lookup batch to forty songs. Keep the batch control free
 // to work across a larger selection, while making one bounded request at a
 // time so a slow provider does not cause the whole action to be abandoned.
@@ -29745,7 +29776,7 @@ function renderTopTracks(trackList, opts) {
         data-tip-alb="${((t._alb?.name||'') + (yr ? ' \u00B7 ' + yr : '')).replace(/"/g,'&quot;')}"
         data-tip-color="${color}"
         data-tip-stats="${tipStats.replace(/"/g,'&quot;')}"
-        style="animation-delay:${Math.min(i,.8) * .018}s" onclick="toggleTTAccordion('${t.id}')">
+        style="animation-delay:${Math.min(i,.8) * .018}s" onclick="${showSel ? `esRowClick('${t.id}')` : `toggleTTAccordion('${t.id}')`}">
         ${showSel ? `<td class="tt-selc" onclick="event.stopPropagation()"><input type="checkbox"${_esSel.has(t.id) ? ' checked' : ''} aria-label="Select ${(t.name||'').replace(/"/g,'&quot;')}" onclick="event.stopPropagation();esSelToggle('${t.id}',this.checked,event)"></td>` : ''}
         <td class="tt-rank">${i + 1}</td>
         ${showArtist

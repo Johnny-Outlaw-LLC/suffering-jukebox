@@ -249,6 +249,14 @@ final class SJAudioEngine: NSObject {
         return queue[index]
     }
 
+    /// What plays after this one, honoring shuffle and repeat - so a caller
+    /// (the CarPlay Up Next button) can preview it without re-deriving the
+    /// queue-walking logic that `nextIndex()` already owns.
+    var nextTrack: SJTrack? {
+        guard let next = nextIndex(), queue.indices.contains(next) else { return nil }
+        return queue[next]
+    }
+
     /// Prefers the downloaded file. Offline is not a mode - if the file is
     /// there it is always used, which also saves cellular data in the car.
     private func playableURL(for track: SJTrack) -> URL? {
