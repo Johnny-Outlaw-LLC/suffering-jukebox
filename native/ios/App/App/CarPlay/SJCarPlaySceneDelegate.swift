@@ -111,6 +111,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     }
 
     private func refreshTabs() {
+        artworkCache.removeAll()
         artistsTab?.updateSections(artistSections())
         playlistsTab?.updateSections(playlistSections())
         songsTab?.updateSections(songSections())
@@ -141,7 +142,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         let items = byArtist.keys.sorted().prefix(itemLimit).map { artist -> CPListItem in
             let entries = sorted(byArtist[artist] ?? [])
             let item = CPListItem(text: artist, detailText: songCount(entries.count))
-            item.setImage(artwork(for: entries.first))
+            item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
                 self?.pushSongList(title: artist, entries: entries)
                 completion()
@@ -168,7 +169,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             // Kept in the saved running order, not re-sorted: a playlist is a
             // sequence, and alphabetising it would quietly destroy the point.
             let item = CPListItem(text: playlist.name, detailText: songCount(entries.count))
-            item.setImage(artwork(for: entries.first))
+            item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
                 self?.pushSongList(title: playlist.name, entries: entries, preserveOrder: true)
                 completion()
@@ -276,12 +277,16 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             SJAudioEngine.shared.setShuffle(!SJAudioEngine.shared.shuffleEnabled)
         }
 
+        shuffle.isSelected = engine.shuffleEnabled
+
         let rated = isRated(trackId)
         let thumb = CPNowPlayingImageButton(
             image: symbol(rated ? "hand.thumbsup.fill" : "hand.thumbsup", color: rated ? .systemGreen : nil)
         ) { [weak self] _ in
             self?.tapRating(trackId: trackId)
         }
+
+        thumb.isSelected = rated
 
         let heart = CPNowPlayingImageButton(image: heartImage(count: heartCount(trackId))) { [weak self] _ in
             self?.tapHeart(trackId: trackId)
@@ -295,6 +300,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             SJAudioEngine.shared.cycleRepeatMode()
         }
 
+        repeatBtn.isSelected = repeatMode != .off
         CPNowPlayingTemplate.shared.updateNowPlayingButtons([shuffle, thumb, heart, repeatBtn])
     }
 
@@ -330,39 +336,47 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         SJCarPlayFeedback.shared.onChange?()
     }
 
-    private func symbol(_ name: String, color: UIColor? = nil) -> UIImage {
-        let config = UIImage.SymbolConfiguration(pointSize: 40, weight: .regular)
-        let image = UIImage(systemName: name, withConfiguration: config) ?? UIImage()
-        guard let color else { return image }
-        return image.withTintColor(color, renderingMode: .alwaysOriginal)
+    // CarPlay retints these images from their alpha channel. Keep the canvas
+    // transparent and fit every glyph without changing its aspect ratio.
+    private func buttonImage(_ draw: (CGContext, CGSize) -> Void) -> UIImage {
+        let size = CPNowPlayingButtonMaximumImageSize
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = interfaceController?.carTraitCollection.displayScale ?? 2
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            draw(context.cgContext, size)
+        }.withRenderingMode(.alwaysTemplate)
     }
 
-    /// A filled red heart with the count drawn into its corner. CarPlay's
-    /// button images are static, so the number is baked into the bitmap rather
-    /// than drawn as a separate overlay the template has no slot for.
+    private func drawSymbol(_ name: String, in rect: CGRect) {
+        guard let image = UIImage(systemName: name,
+                                  withConfiguration: UIImage.SymbolConfiguration(pointSize: 28, weight: .regular))?.withTintColor(.white, renderingMode: .alwaysOriginal) else { return }
+        let scale = min(rect.width / image.size.width, rect.height / image.size.height)
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        image.draw(in: CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
+                              width: size.width, height: size.height))
+    }
+
+    private func symbol(_ name: String, color: UIColor? = nil) -> UIImage {
+        buttonImage { _, size in
+            self.drawSymbol(name, in: CGRect(origin: .zero, size: size).insetBy(dx: 5, dy: 5))
+        }
+    }
+
+    /// Knock the digits out of the heart's alpha mask so system tinting cannot
+    /// turn the count and its background into one solid rectangle.
     private func heartImage(count: Int) -> UIImage {
-        let base = symbol(count > 0 ? "heart.fill" : "heart", color: count > 0 ? .systemRed : nil)
-        guard count > 0 else { return base }
-        let text = count > 99 ? "99+" : "\(count)"
-        let size = base.size
-        return UIGraphicsImageRenderer(size: size).image { _ in
-            base.draw(in: CGRect(origin: .zero, size: size))
-            let font = UIFont.boldSystemFont(ofSize: size.height * 0.34)
+        guard count > 0 else { return symbol("heart") }
+        return buttonImage { context, size in
+            self.drawSymbol("heart.fill", in: CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2))
+            let text = count > 99 ? "99+" : "\(count)"
+            let font = UIFont.boldSystemFont(ofSize: min(size.width, size.height) * 0.28)
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white]
             let textSize = (text as NSString).size(withAttributes: attrs)
-            let badgeH = size.height * 0.46
-            let badgeW = max(textSize.width + badgeH * 0.6, badgeH)
-            let badgeRect = CGRect(x: size.width - badgeW * 0.8, y: -badgeH * 0.08, width: badgeW, height: badgeH)
-            UIColor.systemRed.setFill()
-            UIColor.white.withAlphaComponent(0.9).setStroke()
-            let path = UIBezierPath(roundedRect: badgeRect, cornerRadius: badgeH / 2)
-            path.lineWidth = 1.5
-            path.fill()
-            path.stroke()
-            (text as NSString).draw(
-                in: CGRect(x: badgeRect.midX - textSize.width / 2, y: badgeRect.midY - textSize.height / 2,
-                           width: textSize.width, height: textSize.height),
-                withAttributes: attrs)
+            context.setBlendMode(.destinationOut)
+            (text as NSString).draw(at: CGPoint(x: (size.width - textSize.width) / 2,
+                                                y: size.height * 0.43 - textSize.height / 2),
+                                   withAttributes: attrs)
         }
     }
 

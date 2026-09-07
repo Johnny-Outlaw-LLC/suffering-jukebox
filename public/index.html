@@ -2325,14 +2325,14 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-main {
     display: grid;
     grid-template-columns: 1fr auto;
-    /* Transport and the window buttons share the bottom row: transport from
-       the left, Full screen / Close hard right. ⋯ lives beside the hearts. */
+    /* Window controls have their own top row; transport spans the bottom. */
     grid-template-areas:
+      "top    top"
       "now    now"
       "lyr    lyr"
       "scrub  scrub"
       "upnext upnext"
-      "middle top";
+      "middle middle";
     align-items: center;
     column-gap: 8px;
     row-gap: 10px;
@@ -2350,7 +2350,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
   .ytp-mf-top { grid-area: top; justify-content: flex-end; gap: 5px; }
-  .ytp-mf-middle { grid-area: middle; justify-content: flex-start; gap: 5px; min-width: 0; }
+  .ytp-mf-middle { grid-area: middle; justify-content: space-between; gap: 5px; min-width: 0; width: 100%; }
   .ytp-mf-up-next {
     grid-area: upnext; max-width: none; width: 100%;
   }
@@ -2358,7 +2358,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-bottom { display: contents; }
   /* The bars are frozen on the bottom edge: the artwork row takes every pixel
      a drag adds and the scrubber and buttons stay where they are. */
-  .ytp-mf-main { grid-template-rows: minmax(56px, 1fr) auto auto auto auto; }
+  .ytp-mf-main { grid-template-rows: auto minmax(56px, 1fr) auto auto auto auto; }
   .ytp-mf-art-wrap { max-height: 100%; }
   /* The lyric window is two lines on a phone whatever the dock's height.
      Tying it to --mf-body meant a drag grew the artwork AND the lyrics, so
@@ -8897,11 +8897,9 @@ async function sjDlInit() {
     // only loads when Explore Playlists is opened in the app itself - easy to
     // never do on a phone that goes straight to CarPlay.
     void ensureMyReactionTracks().then(() => sjCarPushPlaylists());
-    // loadPlaylists() may already have pushed once with an empty download
-    // index if it won the race with listDownloads() above - a real playlist
-    // would look empty to the car until something else happened to repaint
-    // it. Push again now that the index is actually known.
-    void sjCarPushPlaylists();
+    // Load saved playlists even if the phone never opens Explore Playlists.
+    // Native keeps its last snapshot until this fetch succeeds.
+    void loadPlaylists();
   } catch (_) {}
   try {
     // Fired by the car the moment something is tapped, so a rating reaches the
@@ -8942,9 +8940,10 @@ async function sjDlInit() {
 // see them from _savedPlaylists alone. dynamicPlaylistRows() itself answers
 // nothing until ratings have loaded, which is fine: this is re-pushed once
 // they do (see loadMyVotes / ensureMyReactionTracks).
+let _sjCarPlaylistsLoaded = false;
 async function sjCarPushPlaylists() {
   const p = sjDlPlugin();
-  if (!p) return;
+  if (!p || !_sjCarPlaylistsLoaded) return;
   try {
     const named = (_savedPlaylists || []).concat(dynamicPlaylistRows());
     const playlists = named
@@ -8952,8 +8951,7 @@ async function sjCarPushPlaylists() {
         id: pl.id,
         name: pl.name || 'Playlist',
         trackIds: (pl._tracks || []).map(r => r.track_id).filter(Boolean),
-      }))
-      .filter(pl => pl.trackIds.some(id => sjDlState(id) === 'done'));
+      }));
     await p.setPlaylists({ playlists });
   } catch (_) {}
 }
@@ -9033,8 +9031,8 @@ async function sjDlBackfillArtwork(rows) {
     const albumIds = [...new Set(trackRows.map(t => t.album_id).filter(Boolean))];
     const artByAlbum = {};
     for (let i = 0; i < albumIds.length; i += 50) {
-      (await dbGet('/albums?id=in.(' + albumIds.slice(i, i + 50).join(',') + ')&select=id,art_url') || [])
-        .forEach(a => { if (a.art_url) artByAlbum[a.id] = a.art_url; });
+      (await dbGet('/albums?id=in.(' + albumIds.slice(i, i + 50).join(',') + ')&select=id,name,art_url') || [])
+        .forEach(a => { artByAlbum[a.id] = ALBUM_ART[a.name] || a.art_url; });
     }
     const tracks = trackRows
       .map(t => ({ trackId: t.id, artworkUrl: artByAlbum[t.album_id] }))
@@ -37712,7 +37710,14 @@ document.addEventListener('visibilitychange', () => {
   wakeSync();   // the browser drops the lock on hide - retake it on return
   // Songs queued from a laptop mid-session should be waiting when the phone is
   // picked up, not only after a restart.
-  if (document.visibilityState === 'visible') sjCpNativeCheck({ auto: true });
+  if (document.visibilityState === 'visible') {
+    sjCpNativeCheck({ auto: true });
+    if (sjDlPlugin()) {
+      void loadPlaylists();
+      void sjDlPlugin().listDownloads().then(({ downloads }) =>
+        sjDlBackfillArtwork((downloads || []).filter(d => d.state === 'done' && !d.hasArtwork))).catch(() => {});
+    }
+  }
 });
 
 // Playback state: catch position changes even when the track itself doesn't change
@@ -39584,18 +39589,18 @@ async function deletePlaylist(playlistId) {
 // ══════════════════════════════════════════════════════════════
 
 async function loadPlaylists() {
-  playlists = []; pubPlaylists = [];
   try {
     const myEmail = googleUser?.email;
     const { data:{session} } = await sjGetSession();
-    const sharedResponse = await fetch('/api/playlist-share', { headers: session ? { Authorization:`Bearer ${session.access_token}` } : {} });
+    const sharedResponse = await fetch(sjApiUrl('/api/playlist-share'), { headers: session ? { Authorization:`Bearer ${session.access_token}` } : {} });
     const sharedData = await sharedResponse.json();
     if (!sharedResponse.ok || !sharedData.ok) throw new Error(sharedData.error || 'Could not load playlists.');
     const all = sharedData.playlists || [];
     playlists    = myEmail ? all.filter(p => p.user_email === myEmail) : [];
     pubPlaylists = all.filter(p => p.is_public && p.user_email !== myEmail);
     _savedPlaylists = all;
-  } catch(e) { _savedPlaylists = []; playlists = []; pubPlaylists = []; }
+    _sjCarPlaylistsLoaded = true;
+  } catch(e) { return _savedPlaylists; }
   // One push per load, from the single place playlists are ever fetched, so the
   // car's Playlists tab cannot drift from what the app shows.
   void sjCarPushPlaylists();

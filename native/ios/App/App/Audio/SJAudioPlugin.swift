@@ -126,8 +126,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
             var dict = Self.downloadDict(trackId: entry.trackId, state: "done", progress: 1, bytes: entry.bytes)
             // Lets the web layer find the covers worth repairing without
             // shipping the whole index across the bridge.
-            dict["hasArtwork"] = SJDownloadStore.shared.artworkURL(for: entry)
-                .map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+            dict["hasArtwork"] = SJDownloadStore.shared.hasArtwork(for: entry)
             return dict
         }
         call.resolve(["downloads": downloads, "bytesUsed": Int(SJDownloadStore.shared.bytesUsed())])
@@ -144,8 +143,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
                   let url = URL(string: urlString) else { return nil }
             // Already repaired, or never downloaded: nothing to do either way.
             guard let entry = SJDownloadStore.shared.entry(for: id) else { return nil }
-            if let art = SJDownloadStore.shared.artworkURL(for: entry),
-               FileManager.default.fileExists(atPath: art.path) { return nil }
+            if SJDownloadStore.shared.hasArtwork(for: entry) { return nil }
             return (id, url)
         }
         guard !wanted.isEmpty else { call.resolve(["repaired": 0]); return }

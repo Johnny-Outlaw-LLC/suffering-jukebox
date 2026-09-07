@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// Local storage for locker tracks the listener has taken offline.
 ///
@@ -114,6 +115,7 @@ final class SJDownloadStore {
     }
 
     func storeArtwork(_ data: Data, trackId: String) -> String? {
+        guard UIImage(data: data) != nil else { return nil }
         let name = "\(trackId).art"
         let url = root.appendingPathComponent(name)
         guard (try? data.write(to: url, options: .atomic)) != nil else { return nil }
@@ -138,11 +140,16 @@ final class SJDownloadStore {
         }
     }
 
+    func hasArtwork(for entry: Entry) -> Bool {
+        guard let url = artworkURL(for: entry),
+              let data = try? Data(contentsOf: url) else { return false }
+        return UIImage(data: data) != nil
+    }
+
     /// Downloaded tracks with no cover on disk - what a backfill has to repair.
     func missingArtwork() -> [Entry] {
         all().filter { entry in
-            guard let art = artworkURL(for: entry) else { return true }
-            return !FileManager.default.fileExists(atPath: art.path)
+            !hasArtwork(for: entry)
         }
     }
 }
