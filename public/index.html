@@ -16798,14 +16798,22 @@ function _sjmArtistFromLanding(aid) {
   return (r && r.slug) ? { id: r.artist_id, name: r.name || 'Artist', slug: r.slug } : null;
 }
 
+// A "singles only" artist has at most one album against an incomplete
+// discography - a real multi-album import that only partly landed (four of
+// 311's albums, say) is not a single, so discography_complete alone is not
+// enough to call it one. album_count is what tells the two apart.
+function isSinglesOnlyRow(row) {
+  return !!row && row.discography_complete === false && (row.album_count || 0) <= 1;
+}
+
 // Explore Artist Jukebox is only worth offering where there is a jukebox to
-// explore. A singles-only artist (discography_complete false) is a handful of
-// loose uploads, and their page would be the row already on screen. An artist
-// landing_stats has nothing to say about is left alone rather than hidden.
+// explore. A singles-only artist is a handful of loose uploads, and their
+// page would be the row already on screen. An artist landing_stats has
+// nothing to say about is left alone rather than hidden.
 function sjmArtistHasDiscography(artistId) {
   const row = sjLandingRowFor(artistId);
   if (!row) return true;
-  return row.discography_complete !== false;
+  return !isSinglesOnlyRow(row);
 }
 
 function _sjmArtistFor(tid) {
@@ -25618,7 +25626,7 @@ function getVisibleLandingStats(opts) {
   } else if (artistScope() === 'public') {
     visible = visible.filter(r => r.visibility !== 'private');
   }
-  if (!landingIncludeSinglesOnly && !opts.singlesAlways) visible = visible.filter(r => r.discography_complete !== false);
+  if (!landingIncludeSinglesOnly && !opts.singlesAlways) visible = visible.filter(r => !isSinglesOnlyRow(r));
   if (sjBgActive() && !opts.skipBgOnly) visible = visible.filter(r => sjBgArtistOn(r));
   if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
   else if (landingSubmitterFilter.size) {
@@ -30334,9 +30342,8 @@ function oaSetSort(v) {
 function oaIsSinglesOnly(a) {
   if (!a) return false;
   const row = oaStatRow(a.id) || sjLandingRowFor(a.id);
-  if (row && row.discography_complete === false) return true;
-  if (a.discography_complete === false) return true;
-  return false;
+  if (row) return isSinglesOnlyRow(row);
+  return a.discography_complete === false && (a.album_count || 0) <= 1;
 }
 
 function oaSetIncludeSinglesOnly(on) {
@@ -33081,11 +33088,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-06';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-07';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-07', items: [
+    'Explore Artists no longer hides an artist just because its discography import was incomplete, as long as real albums came in. Include Singles Only Artists now only affects artists who are genuinely here for a single loose track.',
+  ] },
   { date: '2026-09-06', items: [
     'My Data & Analytics has a new Download my data tab. You can take away four files: your music, your playlists, your songs and your listening history. Every row carries a link straight to the song on YouTube, so the file is still useful long after it leaves here.',
     'Choose CSV to open a download in a spreadsheet, or JSON to feed it to another program. Downloading changes nothing and deletes nothing.',
