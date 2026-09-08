@@ -3611,9 +3611,6 @@ body.live-room-listening #ytp-md-repeat,
 body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:none; }
 .playlist-explore-body { padding:14px 44px 15px 16px; display:flex; flex-direction:column; gap:7px; }
 .playlist-explore-name { font-size:.82rem; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.playlist-explore-name .pl-name-lg { display:none; }
-.playlist-explore-grid.pl-size-lg .playlist-explore-name .pl-name-lg { display:inline; }
-.playlist-explore-grid.pl-size-lg .playlist-explore-name .pl-name-sm { display:none; }
 .playlist-explore-meta { color:var(--text-muted); font-size:.5rem; }
 /* Small says what it is and how big it is; medium adds who put it there;
    large adds who is on it. Every card writes all three - the size class is
@@ -21922,7 +21919,11 @@ function playlistExploreStats() {
 // It walks the playlist in order and stops at PL_ARTIST_SAMPLE distinct names,
 // so it is the front of the record rather than a survey of all two thousand.
 const PL_ARTIST_SAMPLE = 3;
-function playlistArtistSample(p) {
+// Favorites and Favorites Plus get a bigger sample on the largest card size -
+// there is unused space in that layout now that the title stopped growing to
+// spell out the artists itself, so the artists line takes it instead.
+const PL_ARTIST_SAMPLE_LG = 5;
+function playlistArtistSample(p, cap = PL_ARTIST_SAMPLE) {
   const seen = new Set();
   const out = [];
   for (const row of (p._tracks || [])) {
@@ -21935,10 +21936,10 @@ function playlistArtistSample(p) {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push(name.trim());
-    if (out.length >= PL_ARTIST_SAMPLE) break;
+    if (out.length >= cap) break;
   }
   if (!out.length) return '';
-  return out.join(' \u00b7 ') + (seen.size >= PL_ARTIST_SAMPLE ? ' \u2026' : '');
+  return out.join(' \u00b7 ') + (seen.size >= cap ? ' \u2026' : '');
 }
 
 function dynamicPlaylistTracks(trackIds) {
@@ -21946,7 +21947,7 @@ function dynamicPlaylistTracks(trackIds) {
 }
 
 /** Artists on the heart/sad-only songs that Favorites Plus adds beyond thumbs-up. */
-function favoritesPlusArtistSample(trackIds) {
+function favoritesPlusArtistSample(trackIds, cap = PL_ARTIST_SAMPLE) {
   const seen = new Set();
   const out = [];
   let more = false;
@@ -21957,7 +21958,7 @@ function favoritesPlusArtistSample(trackIds) {
       || '';
     const key = name.trim().toLowerCase();
     if (!key || seen.has(key)) continue;
-    if (out.length >= PL_ARTIST_SAMPLE) { more = true; break; }
+    if (out.length >= cap) { more = true; break; }
     seen.add(key);
     out.push(name.trim());
   }
@@ -21972,13 +21973,8 @@ function playlistExploreCardName(p) {
 function playlistExploreNameHTML(p, esc) {
   const base = esc(playlistExploreCardName(p));
   const tip = p._description ? ' ⓘ' : '';
-  // Large cards spell out who Favorites Plus adds beyond thumbs-up. Both
-  // strings ride in the markup so the Card Size slider can flip them with
-  // CSS instead of rebuilding the wall mid-drag.
-  if (p && p.id === '__dynamic_favorites_plus' && p._plusArtistSample) {
-    const plus = esc('Favorites PLUS ' + p._plusArtistSample);
-    return `<span class="playlist-explore-name"><span class="pl-name-sm">${base}${tip}</span><span class="pl-name-lg">${plus}${tip}</span></span>`;
-  }
+  // The name is the name at every card size - who is on Favorites Plus reads
+  // on the artists line below instead, alongside Favorites' own line.
   return `<span class="playlist-explore-name">${base}${tip}</span>`;
 }
 
@@ -22020,7 +22016,7 @@ function dynamicPlaylistRows() {
     rows.push({
       id:'__dynamic_favorites_plus', name:'Favorites Plus', _dynamic:true,
       _description:'Songs you\'ve given a thumbs up to or a playback reaction to.',
-      _plusArtistSample: favoritesPlusArtistSample(extraIds),
+      _plusArtistSample: favoritesPlusArtistSample(extraIds, PL_ARTIST_SAMPLE_LG),
       _tracks:dynamicPlaylistTracks(plusIds),
     });
   }
@@ -27407,8 +27403,8 @@ function renderLanding() {
               const vis = mine && !p.is_public ? ' · private' : '';
               const sharedTag = p._sharedWithMe ? '<span class="pl-shared-badge">Shared</span>' : '';
               const artists = (p.id === '__dynamic_favorites_plus' && p._plusArtistSample)
-                ? ('Favorites PLUS ' + p._plusArtistSample)
-                : playlistArtistSample(p);
+                ? p._plusArtistSample
+                : playlistArtistSample(p, (p.id === '__dynamic_favorites' || p.id === '__dynamic_favorites_plus') ? PL_ARTIST_SAMPLE_LG : PL_ARTIST_SAMPLE);
               const tip = p._description ? ` title="${p._description}" aria-description="${p._description}"` : '';
               return `<div class="playlist-explore-cardwrap"><button type="button" class="playlist-explore-card"${tip} onclick="openPlaylistChart('${p.id}')">${playlistMosaicHTML(p)}<span class="playlist-explore-body">${playlistExploreNameHTML(p, esc)}${sharedTag}<span class="playlist-explore-meta"><span class="pl-meta-n">${p._tracks?.length || 0} tracks${live}</span><span class="pl-meta-by">${by}${vis}</span></span>${artists ? `<span class="playlist-explore-artists">${esc(artists)}</span>` : ''}<span class="playlist-explore-action">Open playlist →</span></span></button><button type="button" class="playlist-explore-x" title="Remove from this list" aria-label="Remove this playlist from the list" onclick="event.stopPropagation();hidePlaylistFromCard('${p.id}')">✕</button>${(p._liveRoom || p._dynamic) ? '' : `<button type="button" class="playlist-explore-more" title="More" aria-label="Playlist options" onclick="event.stopPropagation();plmOpen('${p.id}',this,event)">⋯</button>`}</div>`;
             };
@@ -33238,6 +33234,7 @@ const SJ_CHANGELOG = [
     'The ⋯ button on an artist card now stays visible at the smallest card size instead of only showing on hover.',
     'My Artists has a new Remove option: for an artist only you can see, it deletes it outright; for a public one, it stays public with your name on it and just drops out of your My Artists filter; for one you only added to your library, it just removes your claim on it.',
     'Fixed a search bug where narrowing Explore Artists down to a single matching artist blew its picture up to fill the whole screen instead of showing it at the normal card size.',
+    'Favorites and Favorites Plus keep their plain names on Explore Playlists at every card size again - the largest size had started swapping the title itself for a list of artists. Those artists now show on the description line instead, alongside every other playlist, with room for up to five on the largest cards.',
   ] },
   { date: '2026-09-06', items: [
     'My Data & Analytics has a new Download my data tab. You can take away four files: your music, your playlists, your songs and your listening history. Every row carries a link straight to the song on YouTube, so the file is still useful long after it leaves here.',
