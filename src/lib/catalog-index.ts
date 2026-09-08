@@ -150,3 +150,205 @@ export async function privateIndexFor(sb: Sb, userEmail: string): Promise<Catalo
   buildFrom((data ?? []) as TrackRow[], index);
   return index;
 }
+
+// ── Resolving a file to one track ────────────────────────────────────────
+//
+// indexHas() above answers "do we hold this song?" with a boolean, which is
+// all the Spotify picker needs. Uploading background audio for a folder off
+// somebody's hard drive asks a harder question: WHICH track is this file, by
+// id, so the upload can be attached to it. Same normalisers, same artist-keyed
+// shape and the same reason for living on the server - the browser is not
+// downloading 5,000 tracks to answer it - but the rows carry ids, album names
+// and durations so a match can be scored and then shown to a person to check.
+
+export type CatalogTrack = {
+  id: string;
+  name: string;
+  artist: string;
+  album: string;
+  durationMs: number | null;
+  nt: string;      // normalised title
+  na: string;      // normalised artist
+  nal: string;     // normalised album
+};
+
+export type ResolveIndex = {
+  byArtist: Map<string, CatalogTrack[]>;
+  byTitle: Map<string, CatalogTrack[]>;
+};
+
+export function emptyResolveIndex(): ResolveIndex {
+  return { byArtist: new Map(), byTitle: new Map() };
+}
+
+function pushInto(map: Map<string, CatalogTrack[]>, key: string, track: CatalogTrack) {
+  const bucket = map.get(key);
+  if (bucket) bucket.push(track);
+  else map.set(key, [track]);
+}
+
+export function addToResolveIndex(index: ResolveIndex, row: {
+  id?: string; name?: string; duration_ms?: number | null;
+  albums?: { name?: string; artists?: { name?: string } };
+}) {
+  const id = row?.id;
+  const name = row?.name || "";
+  const artist = row?.albums?.artists?.name || "";
+  if (!id || !name) return;
+  const nt = normTitle(name);
+  const na = normTitle(artist);
+  if (!nt) return;
+  const track: CatalogTrack = {
+    id, name, artist,
+    album: row?.albums?.name || "",
+    durationMs: typeof row?.duration_ms === "number" ? row.duration_ms : null,
+    nt, na, nal: normTitle(row?.albums?.name || ""),
+  };
+  // A track with no artist name still belongs in the title bucket: it can be
+  // reached by an exact title, just never by an artist folder.
+  if (na) pushInto(index.byArtist, na, track);
+  pushInto(index.byTitle, nt, track);
+}
+
+export type MatchCandidate = {
+  title?: string;
+  artist?: string;
+  album?: string;
+  durationSeconds?: number | null;
+};
+
+export type MatchResult = {
+  trackId: string;
+  name: string;
+  artist: string;
+  album: string;
+  durationMs: number | null;
+  score: number;
+  weak: boolean;
+};
+
+// The title has to match at minimum - an artist folder alone never picks a
+// song. Everything else only adds confidence, and the total is what decides
+// whether the row comes back flagged for a human to look at.
+function scoreOne(cand: { t: string; a: string; al: string; secs: number | null }, track: CatalogTrack) {
+  let score = 0;
+  if (cand.t === track.nt) score += 0.6;
+  else if (titleMatches(cand.t, track.nt)) score += 0.4;
+  else return 0;
+  if (cand.a) {
+    if (cand.a === track.na) score += 0.3;
+    else if (artistMatches(cand.a, track.na)) score += 0.22;
+  }
+  if (cand.al && track.nal && cand.al === track.nal) score += 0.08;
+  if (cand.secs && track.durationMs) {
+    const diff = Math.abs(cand.secs - track.durationMs / 1000);
+    // A wrong-length match is the one error a listener would not spot from a
+    // song title, so a big gap is punished rather than merely not rewarded.
+    if (diff <= 3) score += 0.12;
+    else if (diff <= 10) score += 0.04;
+    else if (diff > 25) score -= 0.2;
+  }
+  return score;
+}
+
+/**
+ * Best track for one file, across every index handed in, or null.
+ *
+ * With an artist to go on, the pool is that artist's songs and a loose title
+ * is safe - the same reason titleMatches() has a 40% floor rather than
+ * demanding equality. With no artist (a loose folder of MP3s with no tags),
+ * the only safe rule is an exact title, because "Alive" across 5,000 tracks
+ * is not an answer, it is a coin toss.
+ */
+export function resolveCandidate(indexes: ResolveIndex[], candidate: MatchCandidate): MatchResult | null {
+  const t = normTitle(candidate?.title);
+  const a = normTitle(candidate?.artist);
+  const al = normTitle(candidate?.album);
+  if (!t) return null;
+  const secs = typeof candidate?.durationSeconds === "number" && candidate.durationSeconds > 0
+    ? candidate.durationSeconds : null;
+
+  const pool: CatalogTrack[] = [];
+  if (a) {
+    for (const index of indexes) {
+      for (const [knownArtist, tracks] of index.byArtist) {
+        if (artistMatches(knownArtist, a)) pool.push(...tracks);
+      }
+    }
+  }
+  const artistKnown = pool.length > 0;
+  if (!artistKnown) {
+    for (const index of indexes) pool.push(...(index.byTitle.get(t) ?? []));
+  }
+  if (!pool.length) return null;
+
+  const cand = { t, a: artistKnown ? a : "", al, secs };
+  let best: CatalogTrack | null = null;
+  let bestScore = 0;
+  for (const track of pool) {
+    const score = scoreOne(cand, track);
+    if (score > bestScore) { bestScore = score; best = track; }
+  }
+  // No artist behind it means the title carried the whole match, so the bar is
+  // the exact-title score and nothing less.
+  const floor = artistKnown ? 0.5 : 0.6;
+  if (!best || bestScore < floor) return null;
+  return {
+    trackId: best.id,
+    name: best.name,
+    artist: best.artist,
+    album: best.album,
+    durationMs: best.durationMs,
+    score: Math.round(Math.min(1, bestScore) * 100) / 100,
+    weak: !artistKnown || bestScore < 0.75,
+  };
+}
+
+let resolveCached: { at: number; index: ResolveIndex } | null = null;
+
+export function invalidateResolveIndex() { resolveCached = null; }
+
+type ResolveRow = {
+  id?: string; name?: string; duration_ms?: number | null;
+  albums?: { name?: string; visibility?: string | null; artists?: { name?: string; visibility?: string | null } };
+};
+
+/** The public catalogue, with ids. Cached across users on the same TTL. */
+export async function resolveCatalogIndex(sb: Sb): Promise<ResolveIndex> {
+  if (resolveCached && Date.now() - resolveCached.at < TTL_MS) return resolveCached.index;
+  const index = emptyResolveIndex();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await T(sb, "tracks")
+      .select("id,name,duration_ms,albums!inner(name,artists!inner(name,visibility))")
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as ResolveRow[];
+    rows.forEach((row) => {
+      if ((row.albums?.artists?.visibility ?? "public") !== "public") return;
+      addToResolveIndex(index, row);
+    });
+    if (rows.length < PAGE) break;
+  }
+  resolveCached = { at: Date.now(), index };
+  return index;
+}
+
+/** This listener's own private imports, with ids. Never cached - see privateIndexFor. */
+export async function resolvePrivateIndexFor(sb: Sb, userEmail: string): Promise<ResolveIndex> {
+  const index = emptyResolveIndex();
+  if (!userEmail) return index;
+  const { data: owned, error } = await T(sb, "artists")
+    .select("id")
+    .eq("visibility", "private")
+    .ilike("added_by", userEmail);
+  if (error) throw error;
+  const artistIds = (owned ?? []).map((row: any) => row.id as string).filter(Boolean);
+  if (!artistIds.length) return index;
+  const { data, error: trackError } = await T(sb, "tracks")
+    .select("id,name,duration_ms,albums!inner(artist_id,name,artists!inner(name))")
+    .in("albums.artist_id", artistIds)
+    .limit(5000);
+  if (trackError) throw trackError;
+  (data ?? []).forEach((row) => addToResolveIndex(index, row as ResolveRow));
+  return index;
+}

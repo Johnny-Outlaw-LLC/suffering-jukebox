@@ -595,6 +595,35 @@ body:not(.light) .tt-num { color: var(--text); }
 /* stack above Add Music pill when both are up */
 #ta-minibar { bottom: 64px; }
 @media (max-width: 640px) { #ta-minibar { bottom: 124px; } }
+
+/* Folder mode: one row per FILE, with the song we matched it to. Deliberately
+   a grid rather than flex so the filename and the matched song hold the same
+   two columns down a list of 400 rows - a ragged middle is unreadable at that
+   length. Below 700px it stacks, because five things do not fit on a phone. */
+.ta-f-head { font-size: .5rem; color: var(--text-muted); line-height: 1.55; margin-bottom: .45rem; }
+.ta-f-row { display: grid; grid-template-columns: auto 1fr auto 1.35fr auto 4.2rem; align-items: center; gap: .4rem; font-size: .52rem; padding: .24rem 0; border-bottom: 1px solid #ffffff10; }
+.ta-f-row.off { opacity: .52; }
+.ta-f-tick { accent-color: var(--accent); margin: 0; cursor: pointer; }
+.ta-f-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.ta-f-arrow { opacity: .4; }
+.ta-f-to { min-width: 0; overflow: hidden; }
+.ta-f-match { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-f-match.weak { color: #f59e0b; }
+.ta-f-none { color: #ef4444; }
+.ta-f-sub { color: var(--text-muted); }
+.ta-f-note { display: block; font-size: .44rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-f-st { font-size: .45rem; text-align: right; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-f-search { display: none; grid-column: 1 / -1; padding: .35rem 0 .5rem; }
+.ta-f-search.open { display: block; }
+.ta-f-search .ta-f-q { width: 100%; font-size: .52rem; }
+.ta-f-hits { display: flex; flex-direction: column; gap: .15rem; margin-top: .3rem; max-height: 11rem; overflow-y: auto; }
+.ta-f-hit { text-align: left; background: none; border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-family: inherit; font-size: .5rem; padding: .28rem .45rem; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-f-hit:hover { border-color: var(--accent); }
+@media (max-width: 700px) {
+  .ta-f-row { grid-template-columns: auto 1fr auto 4.2rem; }
+  .ta-f-arrow { display: none; }
+  .ta-f-to { grid-column: 2 / -1; }
+}
 .am-ident-card { display: flex; gap: .8rem; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 8px; padding: .8rem; align-items: flex-start; }
 .am-ident-card img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
 .am-ident-extract { font-size: .55rem; color: var(--text-muted); line-height: 1.55; margin-top: .3rem; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
@@ -5131,7 +5160,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap" id="taBatchPickRow">
         <label class="m-btn" style="cursor:pointer;margin:0">＋ Select files<input type="file" accept="audio/*" multiple style="display:none" onchange="taBatchAddFiles(this)"></label>
         <label class="m-btn ghost" style="cursor:pointer;margin:0">📁 Select a folder<input type="file" accept="audio/*" multiple webkitdirectory style="display:none" onchange="taBatchAddFiles(this)"></label>
-        <span style="font-size:.48rem;color:var(--text-muted)">Pick a whole album at once — files are matched to tracks by name.</span>
+        <span id="taBatchPickHint" style="font-size:.48rem;color:var(--text-muted)">Pick a whole album at once — files are matched to tracks by name.</span>
       </div>
       <div id="taBatchAfterPick" style="display:none">
         <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
@@ -13992,13 +14021,21 @@ function taSim(a, b) {
 // Shared modal-opening boilerplate for every flavour of the batch matcher
 // (one artist's albums, one playlist, or a single song). Callers still set
 // _taBatch.tracks themselves once they know what those tracks are.
-function taBatchStartSession(scopeKey, artistId, albumId, title) {
-  _taBatch = { artistId: artistId || null, albumId: albumId || null, scopeKey: scopeKey || null, tracks: [], files: [], assign: {}, uploadedThisRun: [], finished: false };
+function taBatchStartSession(scopeKey, artistId, albumId, title, mode) {
+  _taBatch = { artistId: artistId || null, albumId: albumId || null, scopeKey: scopeKey || null,
+               mode: mode === 'files' ? 'files' : 'tracks', rows: [], scanning: false, scanError: '',
+               tracks: [], files: [], assign: {}, uploadedThisRun: [], finished: false };
   _taBatchCancel = false;
   _taBatchLastStatus = '';
   document.getElementById('taBatchTitle').textContent = 'Background audio · ' + (title || '');
   document.getElementById('taBatchStatus').textContent = '';
   document.getElementById('taBatchUploadBtn').disabled = true;
+  // Track mode asks which file is this song; folder mode asks the reverse, so
+  // the row of pick buttons has to say which way round it is working.
+  const hint = document.getElementById('taBatchPickHint');
+  if (hint) hint.textContent = _taBatch.mode === 'files'
+    ? 'Choose the folder your music is in — every file inside is matched to a song in your Jukebox.'
+    : 'Pick a whole album at once — files are matched to tracks by name.';
   document.getElementById('taBatchList').innerHTML = '<div class="oa-albs-note">Loading tracks…</div>';
   _taBatchMinimized = false;
   const mb = document.getElementById('ta-minibar');
@@ -14127,6 +14164,420 @@ async function taBatchOpenSong(trackId) {
   }
 }
 
+// ── Folder mode: one folder, matched against the whole catalogue ───────
+//
+// Every other door into this modal starts from a scope - one artist, one
+// playlist, one song - and asks which of those tracks each file is. A folder
+// off a hard drive has no scope: the answer is somewhere in 5,000 tracks, so
+// the matching happens on the server (/api/my-jukebox/match-audio) and the
+// modal turns itself inside out. The list becomes one row per FILE with the
+// song we think it is, rather than one row per track with a file picker,
+// because somebody checking 400 guesses reads them file first.
+//
+// Nothing is uploaded off the back of a guess. The list is a proposal, which
+// is what makes a loose match safe: a wrong row gets fixed on screen.
+async function taBatchOpenFolder() {
+  if (!googleUser) {
+    if (confirm('Sign in with Google to upload audio. Sign in now?')) handleAuthClick();
+    return;
+  }
+  if (!(await sjEnsureBgUnlock('batch_upload'))) return;
+  await refreshBgUnlock();
+  taSyncQuotaLabel('taBatchQuota');
+  if (_taBatch && (_taBatchBusy || _taBatchMinimized || _taBatch.scopeKey === 'folder')) {
+    taBatchRestore();
+    return;
+  }
+  taBatchStartSession('folder', null, null, 'a folder of music', 'files');
+  taBatchRender();
+}
+
+const TA_META_CONCURRENCY = 12;   // tag reads are a slice() each, not a decode
+const TA_MATCH_CHUNK      = 300;  // matches /api/my-jukebox/match-audio's own cap
+const TA_ID3_MAX_BYTES    = 3 * 1024 * 1024;  // a tag bigger than this is cover art
+
+function taCleanTag(s) {
+  return (s || '').replace(/\u0000/g, '').trim();
+}
+
+// ID3 text frames carry their encoding in the first byte. UTF-16 may or may
+// not bring a BOM, so the BOM decides endianness when there is one and the
+// frame's own encoding byte decides when there is not.
+function taDecodeId3Text(bytes, enc) {
+  try {
+    if (enc === 1 || enc === 2) {
+      const le = enc === 1 && bytes[0] === 0xFF && bytes[1] === 0xFE;
+      const be = enc === 2 || (enc === 1 && bytes[0] === 0xFE && bytes[1] === 0xFF);
+      const body = (enc === 1 && (le || be)) ? bytes.subarray(2) : bytes;
+      return new TextDecoder(be ? 'utf-16be' : 'utf-16le').decode(body);
+    }
+    return new TextDecoder(enc === 3 ? 'utf-8' : 'iso-8859-1').decode(bytes);
+  } catch (_) { return ''; }
+}
+
+// A tag beats a folder name every time: a folder can say anything, a tag is
+// what the ripper wrote. v2.2, v2.3 and v2.4 differ in frame id length and in
+// whether the frame size is syncsafe, and all three are still in the wild.
+async function taReadId3(file) {
+  try {
+    const head = new Uint8Array(await file.slice(0, 10).arrayBuffer());
+    if (head.length < 10 || head[0] !== 0x49 || head[1] !== 0x44 || head[2] !== 0x33) return null;
+    const major = head[3];
+    const size = ((head[6] & 0x7f) << 21) | ((head[7] & 0x7f) << 14) | ((head[8] & 0x7f) << 7) | (head[9] & 0x7f);
+    if (!size || size > TA_ID3_MAX_BYTES) return null;
+    const buf = new Uint8Array(await file.slice(10, 10 + size).arrayBuffer());
+    const short = major <= 2;
+    const idLen = short ? 3 : 4;
+    const headerLen = short ? 6 : 10;
+    const wanted = short
+      ? { TT2: 'title', TP1: 'artist', TAL: 'album', TLE: 'lengthMs' }
+      : { TIT2: 'title', TPE1: 'artist', TALB: 'album', TLEN: 'lengthMs' };
+    const out = {};
+    let at = 0;
+    while (at + headerLen <= buf.length) {
+      let id = '';
+      for (let i = 0; i < idLen; i++) id += String.fromCharCode(buf[at + i]);
+      if (!/^[A-Z0-9]+$/.test(id)) break;   // padding, or we walked off the end
+      let len;
+      if (short) len = (buf[at + 3] << 16) | (buf[at + 4] << 8) | buf[at + 5];
+      else if (major === 4) len = ((buf[at + 4] & 0x7f) << 21) | ((buf[at + 5] & 0x7f) << 14) | ((buf[at + 6] & 0x7f) << 7) | (buf[at + 7] & 0x7f);
+      else len = (buf[at + 4] * 0x1000000) + (buf[at + 5] << 16) + (buf[at + 6] << 8) + buf[at + 7];
+      if (!(len > 0) || at + headerLen + len > buf.length) break;
+      const key = wanted[id];
+      if (key && len > 1) {
+        out[key] = taCleanTag(taDecodeId3Text(buf.subarray(at + headerLen + 1, at + headerLen + len), buf[at + headerLen]));
+      }
+      at += headerLen + len;
+    }
+    return (out.title || out.artist) ? out : null;
+  } catch (_) { return null; }
+}
+
+// The 128 bytes on the end of an old MP3. Still the only tag on plenty of
+// files ripped before 2000, which is exactly the music this feature is for.
+async function taReadId3v1(file) {
+  try {
+    if (file.size < 128) return null;
+    const b = new Uint8Array(await file.slice(file.size - 128).arrayBuffer());
+    if (b[0] !== 0x54 || b[1] !== 0x41 || b[2] !== 0x47) return null;   // "TAG"
+    const dec = new TextDecoder('iso-8859-1');
+    const read = at => taCleanTag(dec.decode(b.subarray(at, at + 30)));
+    const title = read(3), artist = read(33), album = read(63);
+    return (title || artist) ? { title, artist, album } : null;
+  } catch (_) { return null; }
+}
+
+// Artist/Album/01 Title.mp3 is the shape almost every ripper writes, so the
+// path is what answers when a file carries no tags at all. With only one
+// folder above the file there is no telling whether it names the band or the
+// record, so it goes up as the artist and the server falls back to an exact
+// title match when it turns out to be neither - which is the same answer.
+function taGuessFromPath(file) {
+  const parts = (file.webkitRelativePath || file.name || '').split(/[\\/]/).filter(Boolean);
+  const fileName = parts.pop() || file.name || '';
+  const album = parts.length ? parts[parts.length - 1] : '';
+  const folderArtist = parts.length > 1 ? parts[parts.length - 2] : (parts[0] || '');
+  let title = fileName.replace(/\.[a-z0-9]+$/i, '').replace(/^\s*\d{1,3}\s*[-._).]*\s*/, '').trim();
+  let nameArtist = '';
+  const dash = title.split(/\s+-\s+/);
+  if (dash.length >= 2) { nameArtist = dash[0].trim(); title = dash.slice(1).join(' - ').trim(); }
+  // "Artist - Title" inside the filename beats the folder above it: on a
+  // compilation the folder is the compiler's name and the filename is right.
+  return { title, album, artist: nameArtist || folderArtist };
+}
+
+async function taFileMeta(file) {
+  const path = taGuessFromPath(file);
+  const tag = (await taReadId3(file)) || (await taReadId3v1(file)) || {};
+  const secs = Number(tag.lengthMs) > 0 ? Math.round(Number(tag.lengthMs) / 1000) : 0;
+  return {
+    title:  taCleanTag(tag.title)  || path.title  || '',
+    artist: taCleanTag(tag.artist) || path.artist || '',
+    album:  taCleanTag(tag.album)  || path.album  || '',
+    // Only a tag's own TLEN, never a probe: decoding 400 files to sharpen a
+    // signal the review list already covers is not worth the wait.
+    durationSeconds: (secs > 0 && secs < 36000) ? secs : null,
+  };
+}
+
+async function taBatchAddFolderFiles(picked) {
+  const seen = new Set((_taBatch.rows || []).map(r => r.key));
+  const fresh = [];
+  picked.forEach(f => {
+    const key = (f.webkitRelativePath || f.name) + ':' + f.size;
+    if (seen.has(key)) return;
+    seen.add(key);
+    fresh.push({ key, file: f });
+  });
+  if (!fresh.length) { showToast('Those files are already on the list.'); return; }
+  _taBatch.finished = false;
+  _taBatch.scanning = true;
+  _taBatch.scanError = '';
+  taBatchRenderFiles();
+  const say = t => { const el = document.getElementById('taBatchScanNote'); if (el) el.textContent = t; };
+
+  // Read every file's tags first, a few at a time.
+  const metas = new Array(fresh.length);
+  let next = 0, read = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= fresh.length || !_taBatch) return;
+      metas[i] = await taFileMeta(fresh[i].file);
+      read++;
+      if (read % 8 === 0 || read === fresh.length) say('Reading song details… ' + read + ' of ' + fresh.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(TA_META_CONCURRENCY, fresh.length) }, worker));
+  if (!_taBatch) return;
+
+  // Then ask the server which track each one is, in chunks it will accept.
+  const matches = new Array(fresh.length).fill(null);
+  for (let i = 0; i < fresh.length; i += TA_MATCH_CHUNK) {
+    if (!_taBatch) return;
+    say('Finding these songs in the Jukebox… ' + Math.min(i + TA_MATCH_CHUNK, fresh.length) + ' of ' + fresh.length);
+    const chunk = metas.slice(i, i + TA_MATCH_CHUNK).map(m => ({
+      title: m.title, artist: m.artist, album: m.album, durationSeconds: m.durationSeconds,
+    }));
+    try {
+      const res = await mjRequest('/api/my-jukebox/match-audio', 'POST', { tracks: chunk });
+      (res.matches || []).forEach((m, n) => { matches[i + n] = m || null; });
+    } catch (e) {
+      if (!_taBatch) return;
+      _taBatch.scanning = false;
+      _taBatch.scanError = e.message || 'Could not match these files to the Jukebox.';
+      taBatchRenderFiles();
+      return;
+    }
+  }
+  if (!_taBatch) return;
+  fresh.forEach((row, i) => _taBatch.rows.push({
+    key: row.key, file: row.file, meta: metas[i] || {}, match: matches[i] || null, use: false, touched: false,
+  }));
+  taBatchSettleRows();
+  _taBatch.scanning = false;
+  taBatchFilesCommit();
+  taBatchRenderFiles();
+}
+
+// Two files landing on one track happens - a folder holding both an album and
+// a best-of - and only one of them can be that track's audio. The better score
+// keeps it. Anything the listener has already touched is left exactly as they
+// left it; only untouched rows get a default.
+function taBatchSettleRows() {
+  const best = {};
+  _taBatch.rows.forEach((r, i) => {
+    if (!r.match) return;
+    const prev = best[r.match.trackId];
+    if (prev == null || ((_taBatch.rows[prev].match || {}).score || 0) < (r.match.score || 0)) best[r.match.trackId] = i;
+  });
+  _taBatch.rows.forEach((r, i) => {
+    r.dupe = !!(r.match && best[r.match.trackId] !== i);
+    // Off by default for anything that would replace audio already uploaded,
+    // so running the same folder twice costs nothing and overwrites nothing.
+    if (!r.touched) r.use = !!r.match && !r.dupe && !taData[r.match.trackId];
+  });
+}
+
+// The upload loop is shared with the artist and playlist modes and reads
+// _taBatch.assign (track id -> file index) and _taBatch.tracks. File mode
+// keeps both in step rather than growing an uploader of its own.
+function taBatchFilesCommit() {
+  const assign = {}, tracks = [], claimed = new Set();
+  _taBatch.files = _taBatch.rows.map(r => r.file);
+  _taBatch.rows.forEach((r, i) => {
+    if (!r.use || !r.match || claimed.has(r.match.trackId)) return;
+    claimed.add(r.match.trackId);
+    assign[r.match.trackId] = i;
+    tracks.push({ id: r.match.trackId, name: r.match.name, album_id: null, track_number: null, duration_ms: r.match.durationMs });
+  });
+  _taBatch.assign = assign;
+  _taBatch.tracks = tracks;
+}
+
+// The shared upload loop reports into one cell per track. In file mode the
+// list is keyed by file, so the row holding that track is looked up rather
+// than addressed by a track id two rows could both be showing.
+function taBatchCell(trackId) {
+  if (_taBatch && _taBatch.mode === 'files') {
+    const i = (_taBatch.rows || []).findIndex(r => r.use && r.match && r.match.trackId === trackId);
+    return i < 0 ? null : document.getElementById('tabf-' + i);
+  }
+  return document.getElementById('tabx-' + trackId);
+}
+
+function taBatchRenderFiles() {
+  const box = document.getElementById('taBatchList');
+  if (!box || !_taBatch) return;
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  if (_taBatch.scanning) {
+    box.innerHTML = '<div class="oa-albs-note"><span class="m-spin"></span> ' +
+      '<span id="taBatchScanNote">Reading song details…</span></div>';
+    taBatchSync();
+    return;
+  }
+  const rows = _taBatch.rows || [];
+  if (_taBatch.scanError && !rows.length) {
+    box.innerHTML = '<div class="oa-albs-note" style="color:#ef4444">' + esc(_taBatch.scanError) + '</div>';
+    taBatchSync();
+    return;
+  }
+  if (!rows.length) {
+    box.innerHTML = '<div class="oa-albs-note">Choose a folder above. Every audio file inside it is read and matched against your whole Jukebox — artists, albums and singles — so you never have to say which artist a file belongs to. You will see every match here before anything is uploaded.</div>';
+    taBatchSync();
+    return;
+  }
+  const lock = _taBatchBusy;
+  let html = '<div class="ta-f-head" id="taBatchFilesSummary"></div>';
+  html += rows.map((r, i) => {
+    const m = r.match;
+    const sub = m ? [m.artist, m.album].filter(Boolean).join(' · ') : '';
+    const note = !m ? 'nothing in the Jukebox looks like this file'
+      : r.dupe ? 'another file already matched this song'
+      : taData[m.trackId] ? 'already has audio — ticking this replaces it'
+      : m.weak ? 'worth a look before you upload this one' : '';
+    return '<div class="ta-f-row' + (r.use ? '' : ' off') + '" id="ta-f-' + i + '">' +
+      '<input type="checkbox" class="ta-f-tick"' + (r.use ? ' checked' : '') + (m && !lock ? '' : ' disabled') +
+        ' onchange="taBatchFileToggle(' + i + ', this.checked)">' +
+      '<span class="ta-f-file" title="' + esc(r.file.webkitRelativePath || r.file.name) + '">' + esc(r.file.name) + '</span>' +
+      '<span class="ta-f-arrow">→</span>' +
+      '<span class="ta-f-to">' +
+        (m ? '<span class="ta-f-match' + (m.weak ? ' weak' : '') + '">' + esc(m.name) +
+             (sub ? '<span class="ta-f-sub"> — ' + esc(sub) + '</span>' : '') + '</span>'
+           : '<span class="ta-f-none">No match found</span>') +
+        (note ? '<span class="ta-f-note">' + note + '</span>' : '') +
+      '</span>' +
+      '<button type="button" class="oa-act"' + (lock ? ' disabled' : '') + ' onclick="taBatchFileFix(' + i + ')">' + (m ? 'Change' : 'Find') + '</button>' +
+      '<span class="ta-f-st" id="tabf-' + i + '"></span>' +
+      '<div class="ta-f-search" id="ta-f-search-' + i + '"></div>' +
+    '</div>';
+  }).join('');
+  box.innerHTML = html;
+  taBatchFilesCounts();
+}
+
+// Ticking a box must not rebuild 400 rows - that is the lesson spiRefreshList
+// already learned about the filter box, and here it would also close whatever
+// Change search was open. Only the summary line and this row's own class move.
+function taBatchFilesCounts() {
+  const rows = (_taBatch && _taBatch.rows) || [];
+  const el = document.getElementById('taBatchFilesSummary');
+  if (el) {
+    const on = rows.filter(r => r.use && r.match).length;
+    const none = rows.filter(r => !r.match).length;
+    el.innerHTML = '<b>' + on + '</b> of ' + rows.length + ' file' + (rows.length === 1 ? '' : 's') +
+      ' ready to upload' + (none ? ' · ' + none + ' with no match found' : '') +
+      '. Untick anything you do not want, or press Change to point a file at a different song.';
+  }
+  taBatchSync();
+}
+
+function taBatchFileToggle(i, on) {
+  if (!_taBatch || _taBatchBusy) return;
+  const row = _taBatch.rows[i];
+  if (!row || !row.match) return;
+  row.touched = true;
+  row.use = !!on;
+  if (row.use) {
+    // One file per track: ticking this one lets go of whatever held the song.
+    _taBatch.rows.forEach((r, n) => {
+      if (n === i || !r.use || !r.match || r.match.trackId !== row.match.trackId) return;
+      r.use = false;
+      r.touched = true;
+      const other = document.getElementById('ta-f-' + n);
+      if (other) {
+        other.classList.add('off');
+        const cb = other.querySelector('.ta-f-tick');
+        if (cb) cb.checked = false;
+      }
+    });
+  }
+  const el = document.getElementById('ta-f-' + i);
+  if (el) el.classList.toggle('off', !row.use);
+  _taBatch.finished = false;
+  taBatchFilesCommit();
+  taBatchFilesCounts();
+}
+
+// The safety net for a wrong or missing match: search the catalogue by name
+// and hand this file to a different song. Its own small query rather than the
+// shared catalogue search, for the same reason the one-song card uses one.
+let _taBatchFixTimer = null;
+let _taBatchFixToken = 0;
+
+function taBatchFileFix(i) {
+  if (!_taBatch || _taBatchBusy) return;
+  const box = document.getElementById('ta-f-search-' + i);
+  if (!box) return;
+  if (box.classList.contains('open')) { box.classList.remove('open'); box.innerHTML = ''; return; }
+  const row = _taBatch.rows[i] || {};
+  const guess = ((row.meta && row.meta.title) || '').slice(0, 60);
+  box.classList.add('open');
+  box.innerHTML = '<input type="text" class="m-input ta-f-q" placeholder="Search songs…" autocomplete="off" oninput="taBatchFixInput(' + i + ', this.value)">' +
+    '<div class="ta-f-hits" id="ta-f-hits-' + i + '"></div>';
+  const input = box.querySelector('.ta-f-q');
+  if (input) {
+    input.value = guess;
+    input.focus();
+    if (guess.length >= 2) taBatchFixRun(i, guess);
+  }
+}
+
+function taBatchFixInput(i, val) {
+  clearTimeout(_taBatchFixTimer);
+  _taBatchFixTimer = setTimeout(() => taBatchFixRun(i, val), 260);
+}
+
+async function taBatchFixRun(i, val) {
+  const box = document.getElementById('ta-f-hits-' + i);
+  if (!box) return;
+  const q = (val || '').trim();
+  if (q.length < 2) { box.innerHTML = ''; return; }
+  const token = ++_taBatchFixToken;
+  box.innerHTML = '<div class="set-status">Searching…</div>';
+  try {
+    const hits = await dbGet('/tracks?name=ilike.*' + encodeURIComponent(q) + '*&select=id,name,duration_ms,albums(name,artists(name))&order=name.asc&limit=15');
+    if (token !== _taBatchFixToken) return;
+    const target = document.getElementById('ta-f-hits-' + i);
+    if (!target) return;
+    if (!hits || !hits.length) { target.innerHTML = '<p class="set-sub" style="margin:.25rem 0">No songs match that.</p>'; return; }
+    target.innerHTML = hits.map(t => {
+      const artistName = (t.albums && t.albums.artists && t.albums.artists.name) || '';
+      const albumName = (t.albums && t.albums.name) || '';
+      const sub = [artistName, albumName].filter(Boolean).join(' · ');
+      const payload = encodeURIComponent(JSON.stringify({
+        trackId: t.id, name: t.name, artist: artistName, album: albumName,
+        durationMs: t.duration_ms == null ? null : t.duration_ms, score: 1, weak: false,
+      }));
+      return '<button type="button" class="ta-f-hit" onclick="taBatchFilePick(' + i + ', &quot;' + payload + '&quot;)">' +
+        escHtml(t.name) + (sub ? '<span class="ta-f-sub"> — ' + escHtml(sub) + '</span>' : '') + '</button>';
+    }).join('');
+  } catch (_) {
+    if (token !== _taBatchFixToken) return;
+    const target = document.getElementById('ta-f-hits-' + i);
+    if (target) target.innerHTML = '<p class="set-sub" style="color:#ef4444;margin:.25rem 0">Could not search songs.</p>';
+  }
+}
+
+function taBatchFilePick(i, payload) {
+  if (!_taBatch || _taBatchBusy) return;
+  const row = _taBatch.rows[i];
+  if (!row) return;
+  let match = null;
+  try { match = JSON.parse(decodeURIComponent(payload)); } catch (_) { return; }
+  if (!match || !match.trackId) return;
+  row.match = match;
+  row.touched = true;
+  row.use = true;
+  // Whoever else was pointing at this song lets go of it: chosen beats guessed.
+  _taBatch.rows.forEach((r, n) => {
+    if (n !== i && r.match && r.match.trackId === match.trackId) { r.use = false; r.touched = true; }
+  });
+  _taBatch.finished = false;
+  taBatchFilesCommit();
+  taBatchRenderFiles();   // this row's own text changed, so this one does redraw
+}
+
 // Close / backdrop / ✕: while uploading, tuck away; otherwise dismiss.
 function taBatchRequestClose() {
   if (_taBatchBusy) { taBatchMinimize(); return; }
@@ -14208,7 +14659,7 @@ async function taBatchCancel() {
       if (status) status.textContent = 'Deleting…';
       for (const u of uploaded) {
         try { await taDeleteUploaded(u.trackId, u.path); } catch (_) {}
-        const cell = document.getElementById('tabx-' + u.trackId);
+        const cell = taBatchCell(u.trackId);
         if (cell) { cell.textContent = 'removed'; cell.style.color = 'var(--text-muted)'; }
       }
       _taBatch.uploadedThisRun = [];
@@ -14227,6 +14678,7 @@ function taBatchAddFiles(inputEl) {
     /^audio\//.test(f.type) || /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac|webm)$/i.test(f.name));
   inputEl.value = '';
   if (!picked.length || !_taBatch || _taBatchBusy) return;
+  if (_taBatch.mode === 'files') { taBatchAddFolderFiles(picked); return; }
   _taBatch.finished = false;
   const seen = new Set();
   _taBatch.files = _taBatch.files.concat(picked).filter(f => {
@@ -14259,6 +14711,7 @@ function taBatchAutoMatch() {
 function taBatchRender() {
   const box = document.getElementById('taBatchList');
   if (!box || !_taBatch) return;
+  if (_taBatch.mode === 'files') { taBatchRenderFiles(); return; }
   const { tracks, files, assign } = _taBatch;
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   if (!tracks.length) { box.innerHTML = '<div class="oa-albs-note">No tracks in this selection.</div>'; taBatchSync(); return; }
@@ -14358,7 +14811,7 @@ async function taBatchUpload() {
   let done = 0, ok = 0;
   for (const [tid, fi] of entries) {
     if (_taBatchCancel) break;
-    const cell = document.getElementById('tabx-' + tid);
+    const cell = taBatchCell(tid);
     if (cell) { cell.textContent = 'uploading…'; cell.style.color = ''; }
     const t = _taBatch.tracks.find(x => x.id === tid);
     const r = await taUploadOneFile(tid, _taBatch.files[fi], t?.duration_ms);
@@ -14388,7 +14841,7 @@ async function taBatchUpload() {
       if (status) status.textContent = 'Deleting…';
       for (const u of [..._taBatch.uploadedThisRun]) {
         try { await taDeleteUploaded(u.trackId, u.path); } catch (_) {}
-        const cell = document.getElementById('tabx-' + u.trackId);
+        const cell = taBatchCell(u.trackId);
         if (cell) { cell.textContent = 'removed'; cell.style.color = 'var(--text-muted)'; }
       }
       _taBatch.uploadedThisRun = [];
@@ -33236,6 +33689,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-08';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-08', items: [
+    'Settings → Audio Storage has a new Upload a folder button. Point it at a folder of music on your computer and every file inside is matched to a song in your Jukebox automatically, across every artist and album you have — you no longer have to pick an artist or a playlist first.',
+    'Each file is read for the artist, album and song name it carries inside it, so a folder of properly tagged music finds its songs even when the files are named 01.mp3. Files with no details inside fall back to the folder names around them.',
+    'You see every match before anything uploads. Untick any file you do not want, and press Change on a wrong one to search for the right song. A file matching a song that already has audio is left unticked, so running the same folder twice never replaces anything by accident.',
     'Download my data now includes Favorites and Favorites Plus in the Playlist menu. Export your liked songs, or liked songs plus every song you have given a playback reaction to.',
     'Shuffle All in CarPlay plays every downloaded song for an artist, a playlist, or your full Songs list.',
     'CarPlay puts Favorites at the top of Playlists, includes playlists with just one downloaded song, and lets you sort Songs by artist, total plays, or title.'
@@ -34758,6 +35214,23 @@ async function setAudioSongSearchRun(val) {
   }
 }
 
+// The whole-library door. Every other way into the batch matcher makes you
+// name an artist, a playlist or a song first, which is the wrong question when
+// what you have is a hard drive full of MP3s. This one takes the folder and
+// works out the artist itself, file by file, across the whole catalogue. It
+// sits above the three views because it belongs to none of them.
+function setAudioFolderCardHTML() {
+  return '<div class="set-audio-artist set-audio-search-card">' +
+    '<div class="set-audio-artist-h" style="cursor:default">' +
+      '<span class="set-audio-artist-name">Upload a folder</span>' +
+    '</div>' +
+    '<div class="set-audio-tracks" style="padding:.6rem .7rem">' +
+      '<p class="set-sub" style="margin:0 0 .55rem">Point this at a folder of music and every file in it is matched to a song in your Jukebox automatically — no need to pick an artist or a playlist first. You see every match before anything uploads.</p>' +
+      '<button type="button" class="pl-btn" onclick="taBatchOpenFolder()">📁 Choose a folder</button>' +
+    '</div>' +
+  '</div>';
+}
+
 function setAudioSongSearchCardHTML() {
   return '<div class="set-audio-artist set-audio-search-card">' +
     '<div class="set-audio-artist-h" style="cursor:default">' +
@@ -34778,7 +35251,7 @@ function setAudioRender() {
   _setAudioRenderedGroups = groups;
   const viewBar = '<div class="set-audio-viewbar">' + [['artist', 'By Artist'], ['playlist', 'By Playlist'], ['song', 'By Song']].map(([v, label]) =>
       '<button type="button" class="set-audio-view-btn' + (_setAudioView === v ? ' active' : '') + '" onclick="setAudioSetView(\'' + v + '\')">' + label + '</button>'
-    ).join('') + '</div>';
+    ).join('') + '</div>' + setAudioFolderCardHTML();
 
   if (_setAudioView === 'song') {
     const flatGroup = groups[0]; // the single "Already uploaded" pseudo-group
