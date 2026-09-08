@@ -21,6 +21,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "removeDownload", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "listDownloads",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "backfillArtwork", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPlayCounts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPlaylists",   returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRatedTracks", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHeartCounts", returnType: CAPPluginReturnPromise),
@@ -182,11 +183,30 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
             let ids = (obj["trackIds"] as? [Any])?.compactMap { $0 as? String } ?? []
             return SJPlaylistStore.Playlist(id: id, name: name, trackIds: ids)
         }
-        SJPlaylistStore.shared.replaceAll(playlists)
+        let preserveSaved = call.getBool("preserveSaved") ?? false
+        let preserveFavorites = call.getBool("preserveFavorites") ?? false
+        let retained = SJPlaylistStore.shared.all().filter {
+            $0.id.hasPrefix("__dynamic_favorites") ? preserveFavorites : preserveSaved
+        }
+        let incoming = playlists.filter {
+            $0.id.hasPrefix("__dynamic_favorites") ? !preserveFavorites : !preserveSaved
+        }
+        SJPlaylistStore.shared.replaceAll(retained + incoming)
         DispatchQueue.main.async {
             SJAudioEngine.shared.onQueueChanged?()   // repaint the car's list
             call.resolve(["count": playlists.count])
         }
+    }
+
+    @objc func setPlayCounts(_ call: CAPPluginCall) {
+        let raw = call.getObject("counts") ?? JSObject()
+        var counts = UserDefaults.standard.dictionary(forKey: "sj.carplay.playCounts") as? [String: Int] ?? [:]
+        for (id, value) in raw {
+            if let n = value as? Int { counts[id] = max(0, n) }
+        }
+        UserDefaults.standard.set(counts, forKey: "sj.carplay.playCounts")
+        DispatchQueue.main.async { SJAudioEngine.shared.onQueueChanged?() }
+        call.resolve()
     }
 
     // MARK: - Car feedback

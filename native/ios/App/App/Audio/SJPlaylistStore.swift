@@ -50,7 +50,13 @@ final class SJPlaylistStore {
     /// Playlists with at least one song on the device, each narrowed to the
     /// songs that will actually play, in the running order the listener saved.
     func playable() -> [(playlist: Playlist, entries: [SJDownloadStore.Entry])] {
-        all().compactMap { playlist in
+        // Pin Favorites first while preserving every other playlist's order.
+        let ordered = all().enumerated().sorted { left, right in
+            let leftFavorite = left.element.id == "__dynamic_favorites"
+            let rightFavorite = right.element.id == "__dynamic_favorites"
+            return leftFavorite != rightFavorite ? leftFavorite : left.offset < right.offset
+        }.map { $0.element }
+        return ordered.compactMap { playlist in
             let entries = playlist.trackIds.compactMap { SJDownloadStore.shared.entry(for: $0) }
             return entries.isEmpty ? nil : (playlist, entries)
         }

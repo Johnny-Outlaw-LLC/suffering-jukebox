@@ -349,7 +349,7 @@ export const COLUMNS: Record<Dataset, string[]> = {
 
 export const DATASET_NOTE: Record<Dataset, string> = {
   music: "Every song under an artist or album you imported into the Jukebox catalogue.",
-  playlists: "Every playlist you own, one row per song, in playing order.",
+  playlists: "Your saved playlists, Favorites (liked songs), and Favorites Plus (liked songs and playback reactions), one row per song.",
   songs: "Every song in your personal My Jukebox library, with your rating.",
   history: "Every play from the Jukebox, plus any Spotify or YouTube history you imported.",
 };
@@ -407,22 +407,50 @@ async function* musicRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> 
 type PlaylistRow = { id: string; name: string | null; visibility: string | null; is_public: boolean | null; created_at: string | null };
 type PlaylistTrackRow = { playlist_id: string; track_id: string; position: number | null; added_at: string | null; added_by_name: string | null; added_by_email: string | null };
 
-async function* playlistRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> {
+// Read the same current votes and account reactions used by the Jukebox's
+// computed playlists. Repeated reactions produce one song, even without a like.
+async function favoritePlaylists(sb: Sb, user: { id: string; email: string }) {
+  const [votes, reactions] = await Promise.all([
+    pageAll<{ track_id: string | null }>((from, to) => T(sb, "feedback")
+      .select("track_id").ilike("user_email", likeSafe(user.email))
+      .eq("target_type", "track").gt("vote", 0).order("id").range(from, to)),
+    pageAll<{ track_id: string | null }>((from, to) => T(sb, "track_reactions")
+      .select("track_id").eq("user_id", user.id).order("id").range(from, to)),
+  ]);
+  const favorites = [...new Set(votes.map(row => row.track_id).filter((id): id is string => !!id))];
+  const plus = [...new Set([...favorites, ...reactions.map(row => row.track_id).filter((id): id is string => !!id)])];
+  return [
+    { id: "__dynamic_favorites", name: "Favorites", trackIds: favorites },
+    { id: "__dynamic_favorites_plus", name: "Favorites Plus", trackIds: plus },
+  ];
+}
+
+async function* playlistRows(sb: Sb, email: string, userId: string, ctx: Ctx): AsyncGenerator<Row> {
   const playlists = await pageAll<PlaylistRow>((from, to) => T(sb, "playlists")
     .select("id,name,visibility,is_public,created_at")
     .ilike("user_email", likeSafe(email))
     .order("created_at", { ascending: true })
     .order("id")
     .range(from, to));
-  if (!playlists.length) return;
   const catalog = await loadCatalog(sb);
-  const items = await pageAll<PlaylistTrackRow>((from, to) => T(sb, "playlist_tracks")
+  const items = playlists.length ? await pageAll<PlaylistTrackRow>((from, to) => T(sb, "playlist_tracks")
     .select("playlist_id,track_id,position,added_at,added_by_name,added_by_email")
     .in("playlist_id", playlists.map((row) => String(row.id)))
     .order("playlist_id", { ascending: true })
     .order("position", { ascending: true })
     .order("id")
-    .range(from, to));
+    .range(from, to)) : [];
+
+  for (const favorite of await favoritePlaylists(sb, { id: userId, email })) {
+    playlists.push({ id: favorite.id, name: favorite.name, visibility: "private", is_public: false, created_at: null });
+    const ids = favorite.trackIds.sort((a, b) => {
+      const left = catalog.byTrackId.get(a), right = catalog.byTrackId.get(b);
+      return (left?.artistName || "").localeCompare(right?.artistName || "")
+        || (left?.name || "").localeCompare(right?.name || "") || a.localeCompare(b);
+    });
+    items.push(...ids.map((track_id, position) => ({ playlist_id: favorite.id, track_id, position,
+      added_at: null, added_by_name: null, added_by_email: null })));
+  }
 
   const byPlaylist = new Map<string, PlaylistTrackRow[]>();
   for (const item of items) {
@@ -586,7 +614,7 @@ export async function* exportRows(
   const email = user.email.toLowerCase();
   const ctx: Ctx = { filters: prepare(filters), background: await backgroundAudioTracks(sb, user.id) };
   if (dataset === "music") yield* musicRows(sb, email, ctx);
-  else if (dataset === "playlists") yield* playlistRows(sb, email, ctx);
+  else if (dataset === "playlists") yield* playlistRows(sb, email, user.id, ctx);
   else if (dataset === "songs") yield* songRows(sb, email, ctx);
   else yield* historyRows(sb, email, user.id, ctx);
 }
@@ -647,8 +675,12 @@ export async function exportOptions(sb: Sb, user: { id: string; email: string })
     for (const item of library) addArtist(item.artist_name);
   }
 
-  const playlistNames: string[] = [];
-  const seenPlaylist = new Set<string>();
+  const favorites = await favoritePlaylists(sb, user);
+  for (const playlist of favorites) {
+    for (const id of playlist.trackIds) addArtist(catalog.byTrackId.get(id)?.artistName);
+  }
+  const playlistNames: string[] = favorites.map(playlist => playlist.name);
+  const seenPlaylist = new Set(playlistNames.map(foldName));
   for (const row of playlists) {
     const label = String(row.name || "").trim();
     const key = foldName(label);

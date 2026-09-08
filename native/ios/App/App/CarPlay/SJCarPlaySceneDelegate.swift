@@ -82,7 +82,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         let engine = SJAudioEngine.shared
         let queue = engine.queue
         guard !queue.isEmpty else { return }
-        let items = queue.enumerated().map { (i, track) -> CPListItem in
+        let items = queue.enumerated().prefix(itemLimit).map { (i, track) -> CPListItem in
             let item = CPListItem(text: track.title, detailText: track.artist)
             item.setImage(artwork(forTrackId: track.id))
             item.isPlaying = (i == engine.index)
@@ -205,14 +205,49 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     // MARK: - Songs
 
+    private var songSort: String {
+        get { UserDefaults.standard.string(forKey: "sj.carplay.songSort") ?? "Alphabetical" }
+        set { UserDefaults.standard.set(newValue, forKey: "sj.carplay.songSort") }
+    }
+
+    private func showSongSort() {
+        let items = ["By Artist", "By Plays", "Alphabetical"].map { order in
+            let item = CPListItem(text: order, detailText: order == songSort ? "Selected" : nil)
+            item.handler = { [weak self] _, completion in
+                self?.songSort = order
+                self?.songsTab?.updateSections(self?.songSections() ?? [])
+                self?.interfaceController?.popTemplate(animated: true, completion: nil)
+                completion()
+            }
+            return item
+        }
+        interfaceController?.pushTemplate(CPListTemplate(title: "Sort Songs", sections: [CPListSection(items: items)]),
+                                          animated: true, completion: nil)
+    }
+
     private func songSections() -> [CPListSection] {
-        let downloads = sorted(SJDownloadStore.shared.all())
+        let counts = UserDefaults.standard.dictionary(forKey: "sj.carplay.playCounts") as? [String: Int] ?? [:]
+        let downloads = SJDownloadStore.shared.all().sorted { a, b in
+            if songSort == "By Plays", counts[a.trackId, default: 0] != counts[b.trackId, default: 0] {
+                return counts[a.trackId, default: 0] > counts[b.trackId, default: 0]
+            }
+            if songSort == "By Artist" {
+                let artist = a.artist.localizedStandardCompare(b.artist)
+                if artist != .orderedSame { return artist == .orderedAscending }
+            }
+            let title = a.title.localizedStandardCompare(b.title)
+            return title == .orderedSame ? a.trackId < b.trackId : title == .orderedAscending
+        }
         guard !downloads.isEmpty else {
             return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
-        return [CPListSection(items: listItems(for: Array(downloads.prefix(itemLimit)),
-                                              in: downloads,
-                                              showArtist: true))]
+        let sort = CPListItem(text: "Sort: " + songSort, detailText: nil)
+        sort.handler = { [weak self] _, completion in
+            self?.showSongSort()
+            completion()
+        }
+        return [CPListSection(items: [shuffleItem(for: downloads), sort] + listItems(for: Array(downloads.prefix(max(0, itemLimit - 2))),
+                                                       in: downloads, showArtist: true))]
     }
 
     // MARK: - Shared list plumbing
@@ -221,11 +256,28 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                               entries: [SJDownloadStore.Entry],
                               preserveOrder: Bool = false) {
         let ordered = preserveOrder ? entries : sorted(entries)
-        let section = CPListSection(items: listItems(for: Array(ordered.prefix(itemLimit)),
+        let section = CPListSection(items: [shuffleItem(for: ordered)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
                                                     in: ordered,
                                                     showArtist: false))
         let template = CPListTemplate(title: title, sections: [section])
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
+    }
+
+    private func shuffleItem(for entries: [SJDownloadStore.Entry]) -> CPListItem {
+        let item = CPListItem(text: "Shuffle All", detailText: songCount(entries.count))
+        item.setImage(UIImage(systemName: "shuffle"))
+        item.isEnabled = !entries.isEmpty
+        item.handler = { [weak self] _, completion in
+            if let first = entries.randomElement() {
+                let engine = SJAudioEngine.shared
+                // Repeat One must not trap Shuffle All on its first song.
+                if engine.repeatMode == .one { engine.cycleRepeatMode() }
+                engine.setShuffle(true)
+                self?.play(startingAt: first, in: entries)
+            }
+            completion()
+        }
+        return item
     }
 
     private func listItems(for shown: [SJDownloadStore.Entry],

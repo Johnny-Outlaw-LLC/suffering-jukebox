@@ -27,7 +27,7 @@ const FILES: Array<{ dataset: Dataset; name: string; file: string; note: string 
     dataset: "playlists",
     name: "My Playlists",
     file: "my-playlists",
-    note: "Every playlist you own, one row per song in playing order, with who added it and its YouTube link.",
+    note: "Your saved playlists, Favorites (liked songs), and Favorites Plus (liked songs and playback reactions), one row per song with its YouTube link.",
   },
   {
     dataset: "songs",

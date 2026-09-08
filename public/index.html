@@ -8896,6 +8896,7 @@ async function sjDlInit() {
     void sjDlBackfillArtwork((downloads || []).filter(d => d.state === 'done' && !d.hasArtwork));
     // Anything tapped in the car since this app was last awake.
     void sjCarDrainFeedback();
+    void sjCarPushPlayCounts();
     void sjCarPushRatings();
     // Favorites Plus needs to know which tracks were hearted, which otherwise
     // only loads when Explore Playlists is opened in the app itself - easy to
@@ -8947,7 +8948,7 @@ async function sjDlInit() {
 let _sjCarPlaylistsLoaded = false;
 async function sjCarPushPlaylists() {
   const p = sjDlPlugin();
-  if (!p || !_sjCarPlaylistsLoaded) return;
+  if (!p || (!_sjCarPlaylistsLoaded && !_myVotesLoaded)) return;
   try {
     const named = (_savedPlaylists || []).concat(dynamicPlaylistRows());
     const playlists = named
@@ -8956,8 +8957,14 @@ async function sjCarPushPlaylists() {
         name: pl.name || 'Playlist',
         trackIds: (pl._tracks || []).map(r => r.track_id).filter(Boolean),
       }));
-    await p.setPlaylists({ playlists });
+    await p.setPlaylists({ playlists, preserveSaved: !_sjCarPlaylistsLoaded, preserveFavorites: !_myVotesLoaded });
   } catch (_) {}
+}
+
+async function sjCarPushPlayCounts() {
+  const p = sjDlPlugin();
+  if (!p || !p.setPlayCounts) return;
+  try { await p.setPlayCounts({ counts: inAppPlays }); } catch (_) {}
 }
 
 // Which downloaded songs are already rated, and how many hearts each has
@@ -26715,6 +26722,7 @@ async function esEnsureCatalog(force) {
     videoRows.forEach(r => { if (r.track_id) (tvNew[r.track_id] = tvNew[r.track_id] || []).push(r); });
     Object.keys(tvNew).forEach(tid => { trackVideos[tid] = tvNew[tid]; });
     playRows.forEach(r => { if (r.track_id) inAppPlays[r.track_id] = Number(r.play_count) || 0; });
+    void sjCarPushPlayCounts();
 
     // track_videos already carries what loadYT() would go to metrics for, and
     // it is the table the charts trust: tvTop for the count that shows, and
@@ -33222,11 +33230,16 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-07';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-08';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-08', items: [
+    'Download my data now includes Favorites and Favorites Plus in the Playlist menu. Export your liked songs, or liked songs plus every song you have given a playback reaction to.',
+    'Shuffle All in CarPlay plays every downloaded song for an artist, a playlist, or your full Songs list.',
+    'CarPlay puts Favorites at the top of Playlists, includes playlists with just one downloaded song, and lets you sort Songs by artist, total plays, or title.'
+  ]},
   { date: '2026-09-07', items: [
     'Explore Artists no longer hides an artist just because its discography import was incomplete, as long as real albums came in. Include Singles Only Artists now only affects artists who are genuinely here for a single loose track.',
     'Fixed a rare timing issue where a song you set to Never Play Again (or put on a break) could still turn up playing right after you signed in, if your resumed queue loaded a beat before your blocked list did.',
@@ -37306,6 +37319,7 @@ function _applyPlayCounts(rows) {
 }
 
 function _afterPlayCountsLoaded() {
+  void sjCarPushPlayCounts();
   Object.keys(inAppPlays).filter(tid => inAppPlays[tid] > 0).forEach(tid => refreshInAppPlayUI(tid));
   if (barChartMode === 'total' || barChartMode === 'mine') {
     if (viewMode === 'alltracks') render();
@@ -37613,6 +37627,7 @@ async function loadMyVotes() {
     // Favorites and Favorites Plus cannot exist for the car until votes are
     // known - this is the first point they can.
     void sjCarPushPlaylists();
+    void sjCarPushPlayCounts();
     void sjCarPushRatings();
   } catch (e) {
     _myVotesLoaded = false;
