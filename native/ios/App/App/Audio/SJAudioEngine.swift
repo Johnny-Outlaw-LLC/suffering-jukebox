@@ -216,14 +216,26 @@ final class SJAudioEngine: NSObject {
 
     // MARK: - Queue
 
-    /// Replaces the queue. If the track playing right now survives into the new
-    /// queue, playback continues untouched and only the index moves - that is
-    /// what lets the web layer refresh expiring signed URLs mid-song.
+    /// Replaces the queue. If the caller is re-handing the track that is
+    /// already playing - e.g. the web layer refreshing an expiring signed URL
+    /// mid-song - playback continues untouched and only the index moves.
+    ///
+    /// That shortcut used to trigger whenever the playing track merely
+    /// *appeared* anywhere in the new list, which is nearly always true in
+    /// CarPlay: Artists, Playlists and Songs all draw from the same download
+    /// library. So tapping a different song while something was already
+    /// playing silently repointed the index and never called `load` -
+    /// nothing happened, and the old track just kept playing. The shortcut
+    /// now only applies when the requested start index names the track
+    /// that's already playing.
     func setQueue(_ tracks: [SJTrack], startIndex: Int, autoPlay: Bool) {
         let playingId = currentTrack?.id
+        let target = tracks.isEmpty ? -1 : max(0, min(startIndex, tracks.count - 1))
+        let requestedId = target >= 0 ? tracks[target].id : nil
         queue = tracks
 
-        if let playingId, let stillThere = tracks.firstIndex(where: { $0.id == playingId }) {
+        if let playingId, playingId == requestedId,
+           let stillThere = tracks.firstIndex(where: { $0.id == playingId }) {
             index = stillThere
             rebuildPlayOrder()
             updateNowPlaying()
@@ -232,7 +244,6 @@ final class SJAudioEngine: NSObject {
             return
         }
 
-        let target = tracks.isEmpty ? -1 : max(0, min(startIndex, tracks.count - 1))
         index = target
         rebuildPlayOrder()
         onQueueChanged?()

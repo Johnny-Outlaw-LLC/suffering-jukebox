@@ -108,7 +108,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             return
         }
         let title = next.title
-        CPNowPlayingTemplate.shared.upNextTitle = title.count > 30 ? String(title.prefix(30)) + "…" : title
+        let truncated = title.count > 30 ? String(title.prefix(30)) + "…" : title
+        CPNowPlayingTemplate.shared.upNextTitle = "NEXT: " + truncated
     }
 
     // MARK: - Templates
