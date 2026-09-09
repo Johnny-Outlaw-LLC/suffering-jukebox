@@ -16945,6 +16945,9 @@ let _lamAnchor = null;
 let _lamFavIds = null; // null = still checking; [] = none
 
 function lamClose() {
+  // The artist break picker is a sibling fly-out, not a child of #lam-menu.
+  // Remove it along with its parent so it cannot outlive the selected artist.
+  sjmCloseSubmenu();
   const m = document.getElementById('lam-menu');
   if (m) m.remove();
   if (_lamAnchor) { _lamAnchor.removeAttribute('aria-expanded'); _lamAnchor = null; }
@@ -16957,7 +16960,12 @@ function lamClose() {
 
 function _lamOutside(e) {
   const m = document.getElementById('lam-menu');
-  if (m && !m.contains(e.target) && e.target !== _lamAnchor && !_lamAnchor?.contains(e.target)) lamClose();
+  const submenu = document.getElementById('sjm-submenu');
+  // This listener runs during the capture phase. Without recognizing the
+  // sibling fly-out as part of the menu, a tap on a duration clears
+  // _lamArtistId before lamSetBreak() receives the subsequent click.
+  if (m && !m.contains(e.target) && !submenu?.contains(e.target) &&
+      e.target !== _lamAnchor && !_lamAnchor?.contains(e.target)) lamClose();
 }
 
 function lamOpen(artistId, anchorEl, ev) {
@@ -17057,16 +17065,30 @@ async function lamArtistTrackIds(artistId) {
 
 function lamOpenBreak() {
   if (!_lamArtistId) return;
-  const html = _sjmHeader('Take a break from artist', 'sjmCloseSubmenu()') +
+  const breakMenu = (canPlayNow) => _sjmHeader('Take a break from artist', 'sjmCloseSubmenu()') +
     '<div class="sjm-empty">Skip every song by this artist in shuffle and the queue. You can still play them yourself.</div>' +
     SJ_BREAK_OPTS.map(o =>
       '<button class="sjm-item" onclick="lamSetBreak(' + o.days + ')">' +
         '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span><span class="sjm-label">' + o.label + '</span></button>'
     ).join('') +
     '<div class="sjm-sep"></div>' +
-    '<button class="sjm-item" onclick="lamClearBreak()">' +
-      '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>';
-  sjmOpenSubmenu('break', html);
+    '<button class="sjm-item sjm-danger" onclick="lamBlockArtist()">' +
+      '<span class="sjm-ic">⊘</span><span class="sjm-label">Never play these again</span></button>' +
+    (canPlayNow
+      ? '<button class="sjm-item" onclick="lamClearBreak()">' +
+          '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>'
+      : '');
+  sjmOpenSubmenu('break', breakMenu(false));
+
+  // Only offer an undo when this artist actually has songs on a timed break.
+  // The permanent action must never be presented as an undo action.
+  const artistId = _lamArtistId;
+  lamArtistTrackIds(artistId).then(ids => {
+    if (_lamArtistId !== artistId || !document.getElementById('sjm-submenu')) return;
+    if (!ids.some(id => isTrackOnBreak(id))) return;
+    const submenu = document.getElementById('sjm-submenu');
+    if (submenu) { submenu.innerHTML = breakMenu(true); sjmPositionSubmenu(); }
+  }).catch(e => console.warn('lamOpenBreak state error', e));
 }
 
 async function lamSetBreak(days) {
@@ -17076,7 +17098,9 @@ async function lamSetBreak(days) {
     if (!googleUser) showToast('Sign in to take a break from songs.');
     return;
   }
-  const list = await lamArtistTrackIds(artistId);
+  let list;
+  try { list = await lamArtistTrackIds(artistId); }
+  catch (e) { console.warn('lamSetBreak tracks error', e); showToast('Could not load this artist\'s songs.'); return; }
   if (!list.length) return;
   const untilMs = Date.now() + days * 86400000;
   for (const tid of list) {
@@ -17103,18 +17127,53 @@ async function lamSetBreak(days) {
   } catch (e) { console.warn('lamSetBreak sync error', e); }
 }
 
+async function lamBlockArtist() {
+  const artistId = _lamArtistId;
+  lamClose();
+  if (!artistId || !googleUser) {
+    if (!googleUser) showToast('Sign in to block songs.');
+    return;
+  }
+  let list;
+  try { list = await lamArtistTrackIds(artistId); }
+  catch (e) { console.warn('lamBlockArtist tracks error', e); showToast('Could not load this artist\'s songs.'); return; }
+  if (!list.length) return;
+  for (const tid of list) {
+    delete snoozedTracks[tid];
+    blockedTracks[tid] = true;
+    refreshBlockedUI(tid);
+    pruneBlockedFromQueue(tid);
+  }
+  saveLocalBlocked();
+  showToast('Blocked every song by this artist (' + list.length + ' songs).');
+  try {
+    const { data: { session } } = await sjGetSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    for (const tid of list) {
+      try {
+        await dbDelete('/blocked_tracks?track_id=eq.' + tid);
+        await dbPost('/blocked_tracks', { user_id: userId, user_email: googleUser.email, track_id: tid });
+      } catch (_) {}
+    }
+  } catch (e) { console.warn('lamBlockArtist sync error', e); }
+}
+
 async function lamClearBreak() {
   const artistId = _lamArtistId;
   lamClose();
   if (!artistId) return;
-  const list = await lamArtistTrackIds(artistId);
-  for (const tid of list) {
+  let list;
+  try { list = await lamArtistTrackIds(artistId); }
+  catch (e) { console.warn('lamClearBreak tracks error', e); showToast('Could not load this artist\'s songs.'); return; }
+  const onBreak = list.filter(tid => isTrackOnBreak(tid));
+  for (const tid of onBreak) {
     delete snoozedTracks[tid];
     refreshBlockedUI(tid);
   }
   saveLocalBlocked();
   showToast('Artist can play again.');
-  for (const tid of list) {
+  for (const tid of onBreak) {
     try { await dbDelete('/blocked_tracks?track_id=eq.' + tid); } catch (_) {}
   }
 }
@@ -17915,6 +17974,7 @@ function almAddToQueue() {
 function almOpenBreak() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_almAlbumId) return;
+  const hasTimedBreak = almAlbumTracks(_almAlbumId).some(t => isTrackOnBreak(t.id));
   const html = _sjmHeader('Take a break from album', 'sjmCloseSubmenu()') +
     '<div class="sjm-empty">Skip every song on this album in shuffle and the queue. You can still play them yourself.</div>' +
     SJ_BREAK_OPTS.map(o =>
@@ -17922,8 +17982,12 @@ function almOpenBreak() {
         '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span><span class="sjm-label">' + o.label + '</span></button>'
     ).join('') +
     '<div class="sjm-sep"></div>' +
-    '<button class="sjm-item" onclick="almClearBreak()">' +
-      '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>';
+    '<button class="sjm-item sjm-danger" onclick="almBlockAlbum()">' +
+      '<span class="sjm-ic">⊘</span><span class="sjm-label">Never play these again</span></button>' +
+    (hasTimedBreak
+      ? '<button class="sjm-item" onclick="almClearBreak()">' +
+          '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>'
+      : '');
   sjmOpenSubmenu('break', html);
 }
 
@@ -17960,17 +18024,47 @@ async function almSetBreak(days) {
   } catch (e) { console.warn('almSetBreak sync error', e); }
 }
 
+async function almBlockAlbum() {
+  const albumId = _almAlbumId;
+  almClose();
+  const list = almAlbumTracks(albumId);
+  if (!list.length || !googleUser) {
+    if (!googleUser) showToast('Sign in to block songs.');
+    return;
+  }
+  for (const t of list) {
+    delete snoozedTracks[t.id];
+    blockedTracks[t.id] = true;
+    refreshBlockedUI(t.id);
+    pruneBlockedFromQueue(t.id);
+  }
+  saveLocalBlocked();
+  showToast('Blocked every song on this album (' + list.length + ' songs).');
+  try {
+    const { data: { session } } = await sjGetSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    for (const t of list) {
+      try {
+        await dbDelete('/blocked_tracks?track_id=eq.' + t.id);
+        await dbPost('/blocked_tracks', { user_id: userId, user_email: googleUser.email, track_id: t.id });
+      } catch (_) {}
+    }
+  } catch (e) { console.warn('almBlockAlbum sync error', e); }
+}
+
 async function almClearBreak() {
   const albumId = _almAlbumId;
   almClose();
   const list = almAlbumTracks(albumId);
-  for (const t of list) {
+  const onBreak = list.filter(t => isTrackOnBreak(t.id));
+  for (const t of onBreak) {
     delete snoozedTracks[t.id];
     refreshBlockedUI(t.id);
   }
   saveLocalBlocked();
   showToast('Album can play again.');
-  for (const t of list) {
+  for (const t of onBreak) {
     try { await dbDelete('/blocked_tracks?track_id=eq.' + t.id); } catch (_) {}
   }
 }
@@ -33685,7 +33779,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-09';
 const SJ_CHANGELOG = [
   { date: '2026-09-09', items: [
     'When you minimize a music import or a background-audio upload, its progress notice now stays above the Player dock and moves up as the dock grows, so it remains visible and ready to reopen.',
-    'Send all to iPhone now queues your whole selected music collection for CarPlay and offline play instead of stopping after 200 songs. The phone still waits for you to approve the download before it uses data or storage.'
+    'Send all to iPhone now queues your whole selected music collection for CarPlay and offline play instead of stopping after 200 songs. The phone still waits for you to approve the download before it uses data or storage.',
+    'Take a Break from Artist now works when you choose a duration. Its permanent option is clearly labeled Never play these again; Play these again now only appears when that artist is already on a timed break.'
   ]},
   { date: '2026-09-08', items: [
     'Large folders of audio no longer stop at an hourly upload limit. Upload as many songs as your account storage allows; progress now counts successful uploads separately from failed files.',
