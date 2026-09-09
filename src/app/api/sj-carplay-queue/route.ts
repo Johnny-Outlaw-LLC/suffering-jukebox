@@ -18,8 +18,11 @@ import { getAuthUser, createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-adm
 
 export const dynamic = "force-dynamic";
 
-// One drive's worth, generously. Bounds both the request body and the reply.
-const MAX_IDS = 200;
+// A user can queue their whole locker for a long trip. Keep a generous ceiling
+// on the API payload and reply, while chunking database writes below so one
+// large library does not become one oversized PostgREST mutation.
+const MAX_IDS = 2_000;
+const WRITE_CHUNK = 200;
 
 type QueueRow = { track_id: string; queued_at: string; accepted_at: string | null };
 
@@ -216,19 +219,21 @@ export async function POST(req: NextRequest) {
     if (queueable.length) {
       // Re-queuing an already-accepted song is a deliberate ask - the listener
       // removed the download, or wants it back - so acceptance is cleared.
-      const { error } = await sb
-        .schema(JUKEBOX_SCHEMA)
-        .from("carplay_queue")
-        .upsert(
-          queueable.map((track_id) => ({
-            user_id: user.id,
-            track_id,
-            queued_at: new Date().toISOString(),
-            accepted_at: null,
-          })),
-          { onConflict: "user_id,track_id" },
-        );
-      if (error) throw error;
+      for (const part of chunk(queueable, WRITE_CHUNK)) {
+        const { error } = await sb
+          .schema(JUKEBOX_SCHEMA)
+          .from("carplay_queue")
+          .upsert(
+            part.map((track_id) => ({
+              user_id: user.id,
+              track_id,
+              queued_at: new Date().toISOString(),
+              accepted_at: null,
+            })),
+            { onConflict: "user_id,track_id" },
+          );
+        if (error) throw error;
+      }
     }
     return noStore({ ok: true, queued: queueable.length, skipped: ids.length - queueable.length });
   } catch (e) {
