@@ -32,7 +32,7 @@ test('a tap inside the artist break fly-out keeps its selected artist', () => {
   assert.equal(context.__artistId(), 'artist-1');
 });
 
-test('artist break menu always presents a permanent Never play action', async () => {
+test('artist break menu only presents a permanent Never play action', async () => {
   const from = html.indexOf('function lamOpenBreak()');
   const to = html.indexOf('async function lamSetBreak(', from);
   assert.ok(from > 0 && to > from, 'could not locate the artist break menu');
@@ -55,4 +55,9 @@ test('artist break menu always presents a permanent Never play action', async ()
   await new Promise(resolve => setImmediate(resolve));
   assert.match(rendered, /Never play these again/);
   assert.doesNotMatch(rendered, /Play these again now/);
+});
+
+test('the retired Play these again now action is absent from the app', () => {
+  assert.doesNotMatch(html, /Play these again now/);
+  assert.doesNotMatch(html, /lamClearBreak|almClearBreak/);
 });

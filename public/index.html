@@ -1436,6 +1436,14 @@ body.light .sc-link:hover { background: #e8e8e8; }
   border-bottom: 1px solid var(--border); margin-bottom: 3px;
 }
 .sjm-hd-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
+.sjm-scope { display: flex; gap: 3px; padding: 5px 6px 3px; }
+.sjm-scope-btn {
+  flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text-muted); font: inherit; font-size: .43rem; padding: 5px 3px; cursor: pointer;
+}
+.sjm-scope-btn:hover:not(:disabled), .sjm-scope-btn.on { border-color: var(--accent); color: var(--accent); }
+.sjm-scope-btn.on { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); font-weight: 600; }
+.sjm-scope-btn:disabled { opacity: .38; cursor: default; }
 .sjm-back {
   background: none; border: 0; color: var(--text-muted); font: inherit; font-size: .8rem;
   line-height: 1; padding: 0 4px 2px; cursor: pointer;
@@ -4810,10 +4818,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
             <div class="set-block">
       <div class="set-h">Shuffle</div>
       <p class="set-sub">Choose how Suffering Jukebox selects the next song when Shuffle is on.</p>
-      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="discovery"><span><b>Discovery</b><span class="set-sub" style="display:block">Gives less-listened-to tracks more weight in your personal shuffle.</span></span></label>
-      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="favorites"><span><b>Favorites First</b><span class="set-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
-      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
-      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="discovery" onchange="sjSetShufflePreference(this.value)"><span><b>Discovery</b><span class="set-sub" style="display:block">Gives less-listened-to tracks more weight in your personal shuffle.</span></span></label>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="favorites" onchange="sjSetShufflePreference(this.value)"><span><b>Favorites First</b><span class="set-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats" onchange="sjSetShufflePreference(this.value)"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
+      <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none" onchange="sjSetShufflePreference(this.value)"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
             </div>
           </div>
         </section>
@@ -6747,11 +6755,31 @@ let _ytShufflePreviewIdx = null; // reserved next track shown in Up next
 let _ytShuffleRecent     = [];   // short history prevents weighted modes clustering at a cycle boundary
 let _ytQueueMetaPromise  = null; // one bulk artist-name lookup for the current queue at a time
 let _ytQueueMetaQueue    = null;
-let sjShufflePreference  = 'none'; // 'discovery' | 'favorites' | 'less_repeats' | 'none'
-try {
-  const savedShufflePreference = localStorage.getItem('sj_shuffle_preference');
-  if (['discovery', 'favorites', 'less_repeats', 'none'].includes(savedShufflePreference)) sjShufflePreference = savedShufflePreference;
-} catch (_) {}
+const SJ_SHUFFLE_PREFERENCES = ['discovery', 'favorites', 'less_repeats', 'none'];
+let sjShufflePreference = 'none'; // 'discovery' | 'favorites' | 'less_repeats' | 'none'
+
+function sjLoadShufflePreference() {
+  try {
+    const saved = localStorage.getItem('sj_shuffle_preference');
+    if (SJ_SHUFFLE_PREFERENCES.includes(saved)) sjShufflePreference = saved;
+  } catch (_) {}
+  return sjShufflePreference;
+}
+
+// A shuffle choice is local to this device, so changing the radio must be
+// durable immediately. It must not depend on unrelated profile fields also
+// passing validation when the Settings form is saved.
+function sjSetShufflePreference(value) {
+  if (!SJ_SHUFFLE_PREFERENCES.includes(value)) return false;
+  sjShufflePreference = value;
+  try { localStorage.setItem('sj_shuffle_preference', value); } catch (_) {}
+  _ytShufflePreviewIdx = null;
+  if (ytShuffle) ytResetShufflePool();
+  if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
+  return true;
+}
+
+sjLoadShufflePreference();
 let _ytUserWantsPlay    = false; // user intent - not paused by user
 let _ytBgAudio          = null;  // silent keepalive for mobile background playback
 let _ytBgResumeTimer    = null;  // retries playVideo while tab is hidden
@@ -8467,6 +8495,20 @@ function _ytShuffleNextIdx() {
   const bagPos = _ytShuffleBag.indexOf(idx);
   if (bagPos !== -1) _ytShuffleBag.splice(bagPos, 1);
   _ytShufflePreviewIdx = null;
+  return idx;
+}
+
+// Seed a new Shuffle queue through the same weighted picker used for every
+// later song. Starting at index 0 and only weighting the second song made a
+// fresh Shuffle All ignore the listener's choice for its first pick.
+function ytPrimeShuffleQueue(queue) {
+  if (!Array.isArray(queue) || !queue.length) return -1;
+  ytQueue = queue;
+  ytQueueIdx = -1;
+  ytResetShufflePool();
+  const idx = _ytShuffleNextIdx();
+  const trackId = queue[idx]?.trackId;
+  if (trackId) _ytShuffleRecent = [trackId].concat(_ytShuffleRecent.filter(id => id !== trackId)).slice(0, 4);
   return idx;
 }
 
@@ -16476,6 +16518,9 @@ async function tvSaveOffset() {
 let _sjmTrackId = null;
 let _sjmQueueIdx = -1;   // >= 0 when the menu was opened from a play-queue row
 let _sjmAnchor  = null;
+let _sjmBreakScope = 'song';
+const _sjmBreakScopeCache = {};
+const _sjmBreakScopeFetch = {};
 
 function sjmClose() {
   const m = document.getElementById('sjm-menu');
@@ -16484,6 +16529,7 @@ function sjmClose() {
   if (_sjmAnchor) { _sjmAnchor.removeAttribute('aria-expanded'); _sjmAnchor = null; }
   _sjmTrackId = null;
   _sjmQueueIdx = -1;
+  _sjmBreakScope = 'song';
   document.removeEventListener('mousedown', _sjmOutside, true);
   window.removeEventListener('scroll', _sjmScroll, true);
   window.removeEventListener('resize', sjmClose);
@@ -16534,6 +16580,7 @@ function sjmOpen(trackId, anchorEl, ev) {
   if (already) return;   // second tap on the same button closes it
   _sjmTrackId = trackId;
   _sjmAnchor  = anchorEl || null;
+  _sjmBreakScope = 'song';
   const menu  = document.createElement('div');
   menu.id = 'sjm-menu';
   menu.className = 'sjm-menu';
@@ -17065,7 +17112,7 @@ async function lamArtistTrackIds(artistId) {
 
 function lamOpenBreak() {
   if (!_lamArtistId) return;
-  const breakMenu = (canPlayNow) => _sjmHeader('Take a break from artist', 'sjmCloseSubmenu()') +
+  const html = _sjmHeader('Take a break from artist', 'sjmCloseSubmenu()') +
     '<div class="sjm-empty">Skip every song by this artist in shuffle and the queue. You can still play them yourself.</div>' +
     SJ_BREAK_OPTS.map(o =>
       '<button class="sjm-item" onclick="lamSetBreak(' + o.days + ')">' +
@@ -17073,22 +17120,8 @@ function lamOpenBreak() {
     ).join('') +
     '<div class="sjm-sep"></div>' +
     '<button class="sjm-item sjm-danger" onclick="lamBlockArtist()">' +
-      '<span class="sjm-ic">⊘</span><span class="sjm-label">Never play these again</span></button>' +
-    (canPlayNow
-      ? '<button class="sjm-item" onclick="lamClearBreak()">' +
-          '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>'
-      : '');
-  sjmOpenSubmenu('break', breakMenu(false));
-
-  // Only offer an undo when this artist actually has songs on a timed break.
-  // The permanent action must never be presented as an undo action.
-  const artistId = _lamArtistId;
-  lamArtistTrackIds(artistId).then(ids => {
-    if (_lamArtistId !== artistId || !document.getElementById('sjm-submenu')) return;
-    if (!ids.some(id => isTrackOnBreak(id))) return;
-    const submenu = document.getElementById('sjm-submenu');
-    if (submenu) { submenu.innerHTML = breakMenu(true); sjmPositionSubmenu(); }
-  }).catch(e => console.warn('lamOpenBreak state error', e));
+      '<span class="sjm-ic">⊘</span><span class="sjm-label">Never play these again</span></button>';
+  sjmOpenSubmenu('break', html);
 }
 
 async function lamSetBreak(days) {
@@ -17157,25 +17190,6 @@ async function lamBlockArtist() {
       } catch (_) {}
     }
   } catch (e) { console.warn('lamBlockArtist sync error', e); }
-}
-
-async function lamClearBreak() {
-  const artistId = _lamArtistId;
-  lamClose();
-  if (!artistId) return;
-  let list;
-  try { list = await lamArtistTrackIds(artistId); }
-  catch (e) { console.warn('lamClearBreak tracks error', e); showToast('Could not load this artist\'s songs.'); return; }
-  const onBreak = list.filter(tid => isTrackOnBreak(tid));
-  for (const tid of onBreak) {
-    delete snoozedTracks[tid];
-    refreshBlockedUI(tid);
-  }
-  saveLocalBlocked();
-  showToast('Artist can play again.');
-  for (const tid of onBreak) {
-    try { await dbDelete('/blocked_tracks?track_id=eq.' + tid); } catch (_) {}
-  }
 }
 
 // Owned (added_by/can_manage) vs. claimed-into-library are different removals:
@@ -17525,12 +17539,6 @@ function sjmViewArtist() {
   if (artist) enterArtistJukebox(artist);
 }
 
-function sjmBlock() {
-  const tid = _sjmTrackId;
-  sjmClose();
-  if (tid) toggleBlockTrack(tid);
-}
-
 const SJ_BREAK_OPTS = [
   { days: 7, label: '1 week' },
   { days: 30, label: '30 days' },
@@ -17538,29 +17546,108 @@ const SJ_BREAK_OPTS = [
   { days: 180, label: '180 days' },
 ];
 
+function sjmBreakScopeInfo(trackId) {
+  const saved = _sjmBreakScopeCache[trackId] || {};
+  const track = findTrackById(trackId);
+  const albumId = track?.album_id || saved.albumId || null;
+  const album = albumId ? almFindAlbum(albumId) : null;
+  const artist = _sjmArtistFor(trackId);
+  return {
+    albumId,
+    artistId: artist?.id || album?.artist_id || saved.artistId || null,
+  };
+}
+
+async function sjmEnsureBreakScopeInfo(trackId) {
+  const known = sjmBreakScopeInfo(trackId);
+  if (known.albumId && known.artistId) return known;
+  if (_sjmBreakScopeFetch[trackId]) return _sjmBreakScopeFetch[trackId];
+  _sjmBreakScopeFetch[trackId] = (async () => {
+    try {
+      const rows = await dbGet('/tracks?id=eq.' + trackId + '&select=album_id,albums(artist_id)&limit=1');
+      const row = rows?.[0];
+      const album = Array.isArray(row?.albums) ? row.albums[0] : row?.albums;
+      _sjmBreakScopeCache[trackId] = {
+        albumId: row?.album_id || null,
+        artistId: album?.artist_id || null,
+        resolved: true,
+      };
+    } catch (_) {
+      // Song remains available even if the relationship lookup cannot load.
+      _sjmBreakScopeCache[trackId] = Object.assign({}, _sjmBreakScopeCache[trackId], { resolved: true });
+    } finally {
+      delete _sjmBreakScopeFetch[trackId];
+    }
+    return sjmBreakScopeInfo(trackId);
+  })();
+  return _sjmBreakScopeFetch[trackId];
+}
+
+function sjmChooseBreakScope(scope) {
+  const info = sjmBreakScopeInfo(_sjmTrackId);
+  if (!['song', 'album', 'artist'].includes(scope) ||
+      (scope === 'album' && !info.albumId) ||
+      (scope === 'artist' && !info.artistId)) return;
+  _sjmBreakScope = scope;
+  sjmOpenBreak();
+}
+
+async function sjmBreakScopeTrackIds(trackId, scope) {
+  if (scope === 'song') return trackId ? [trackId] : [];
+  const info = await sjmEnsureBreakScopeInfo(trackId);
+  if (scope === 'album') {
+    if (!info.albumId) return [];
+    const rows = await dbGet('/tracks?album_id=eq.' + info.albumId + '&select=id');
+    return (rows || []).map(row => row.id).filter(Boolean);
+  }
+  if (!info.artistId) return [];
+  return lamArtistTrackIds(info.artistId);
+}
+
+function sjmBreakScopeLabel(scope) {
+  return scope === 'album' ? 'this album' : scope === 'artist' ? 'this artist' : 'this song';
+}
+
 function sjmOpenBreak() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_sjmTrackId) return;
   const tid = _sjmTrackId;
-  const until = snoozeUntil(tid);
-  const blocked = isTrackBlocked(tid);
+  const scope = _sjmBreakScope;
+  const info = sjmBreakScopeInfo(tid);
+  const until = scope === 'song' ? snoozeUntil(tid) : 0;
+  const blocked = scope === 'song' && isTrackBlocked(tid);
+  const label = sjmBreakScopeLabel(scope);
+  const breakDescription = scope === 'song'
+    ? 'Skip this song in shuffle and the queue. You can still play it yourself.'
+    : 'Skip every song ' + (scope === 'artist' ? 'by this artist' : 'on this album') + ' in shuffle and the queue. You can still play them yourself.';
+  const scopeButtons = '<div class="sjm-scope" aria-label="Break scope">' +
+    '<button class="sjm-scope-btn' + (scope === 'song' ? ' on' : '') + '" onclick="sjmChooseBreakScope(\'song\')">Song</button>' +
+    '<button class="sjm-scope-btn' + (scope === 'album' ? ' on' : '') + '" onclick="sjmChooseBreakScope(\'album\')"' + (info.albumId ? '' : ' disabled') + '>Album</button>' +
+    '<button class="sjm-scope-btn' + (scope === 'artist' ? ' on' : '') + '" onclick="sjmChooseBreakScope(\'artist\')"' + (info.artistId ? '' : ' disabled') + '>Artist</button>' +
+  '</div>';
   const html = _sjmHeader('Take a break', 'sjmCloseSubmenu()') +
+    scopeButtons +
     (until
       ? '<div class="sjm-empty">Parked until ' + sjBreakUntilLabel(tid) + '.</div>' +
         '<button class="sjm-item" onclick="sjmClearBreak()">' +
           '<span class="sjm-ic">↺</span><span class="sjm-label">Play this again now</span></button>' +
         '<div class="sjm-sep"></div>'
-      : '<div class="sjm-empty">Skip this song in shuffle and the queue. You can still play it yourself.</div>') +
+      : '<div class="sjm-empty">' + breakDescription + '</div>') +
     (blocked ? '' : SJ_BREAK_OPTS.map(o =>
-      '<button class="sjm-item" onclick="sjmSetBreak(' + o.days + ')">' +
+      '<button class="sjm-item" onclick="sjmSetBreakScope(' + o.days + ')">' +
         '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span><span class="sjm-label">' + o.label + '</span></button>'
     ).join('')) +
     '<div class="sjm-sep"></div>' +
-    '<button class="sjm-item' + (blocked ? '' : ' sjm-danger') + '" onclick="sjmBlock()">' +
+    '<button class="sjm-item' + (blocked ? '' : ' sjm-danger') + '" onclick="sjmBlockScope()">' +
       '<span class="sjm-ic">' + (blocked ? '↺' : '⊘') + '</span>' +
-      '<span class="sjm-label">' + (blocked ? 'Let this play again' : 'Never play this again') + '</span>' +
+      '<span class="sjm-label">' + (blocked ? 'Let ' + label + ' play again' : 'Never play ' + label + ' again') + '</span>' +
     '</button>';
   sjmOpenSubmenu('break', html);
+  if ((!info.albumId || !info.artistId) && !_sjmBreakScopeCache[tid]?.resolved) {
+    sjmEnsureBreakScopeInfo(tid).then(() => {
+      if (_sjmTrackId === tid && document.getElementById('sjm-submenu')) sjmOpenBreak();
+    });
+  }
 }
 
 // True when this listener already holds the artist (or this song) in My
@@ -17609,10 +17696,69 @@ function sjmOpenMyJukebox() {
   sjmOpenSubmenu('my-jukebox', html);
 }
 
-function sjmSetBreak(days) {
+async function sjmSetBreakScope(days) {
   const tid = _sjmTrackId;
+  const scope = _sjmBreakScope;
   sjmClose();
-  if (tid) setTrackSnooze(tid, days);
+  if (!tid || !(days > 0)) return;
+  if (scope === 'song') { setTrackSnooze(tid, days); return; }
+  if (!googleUser) { showToast('Sign in to take a break from songs.'); return; }
+  let ids;
+  try { ids = await sjmBreakScopeTrackIds(tid, scope); }
+  catch (e) { console.warn('sjmSetBreakScope tracks error', e); showToast('Could not load those songs.'); return; }
+  if (!ids.length) return;
+  const untilMs = Date.now() + days * 86400000;
+  for (const id of ids) {
+    delete blockedTracks[id];
+    snoozedTracks[id] = untilMs;
+    refreshBlockedUI(id);
+    pruneBlockedFromQueue(id);
+  }
+  saveLocalBlocked();
+  showToast('Taking a break from ' + sjmBreakScopeLabel(scope) + ' (' + ids.length + ' songs) until ' + new Date(untilMs).toLocaleDateString() + '.');
+  try {
+    const { data: { session } } = await sjGetSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    for (const id of ids) {
+      try {
+        await dbDelete('/blocked_tracks?track_id=eq.' + id);
+        await dbPost('/blocked_tracks', { user_id: userId, user_email: googleUser.email, track_id: id, until: new Date(untilMs).toISOString() });
+      } catch (_) {}
+    }
+  } catch (e) { console.warn('sjmSetBreakScope sync error', e); }
+}
+
+async function sjmBlockScope() {
+  const tid = _sjmTrackId;
+  const scope = _sjmBreakScope;
+  sjmClose();
+  if (!tid) return;
+  if (scope === 'song') { toggleBlockTrack(tid); return; }
+  if (!googleUser) { showToast('Sign in to block songs.'); return; }
+  let ids;
+  try { ids = await sjmBreakScopeTrackIds(tid, scope); }
+  catch (e) { console.warn('sjmBlockScope tracks error', e); showToast('Could not load those songs.'); return; }
+  if (!ids.length) return;
+  for (const id of ids) {
+    delete snoozedTracks[id];
+    blockedTracks[id] = true;
+    refreshBlockedUI(id);
+    pruneBlockedFromQueue(id);
+  }
+  saveLocalBlocked();
+  showToast('Blocked every song ' + (scope === 'artist' ? 'by this artist' : 'on this album') + ' (' + ids.length + ' songs).');
+  try {
+    const { data: { session } } = await sjGetSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    for (const id of ids) {
+      try {
+        await dbDelete('/blocked_tracks?track_id=eq.' + id);
+        await dbPost('/blocked_tracks', { user_id: userId, user_email: googleUser.email, track_id: id });
+      } catch (_) {}
+    }
+  } catch (e) { console.warn('sjmBlockScope sync error', e); }
 }
 
 function sjmClearBreak() {
@@ -17974,7 +18120,6 @@ function almAddToQueue() {
 function almOpenBreak() {
   const menu = document.getElementById('sjm-menu');
   if (!menu || !_almAlbumId) return;
-  const hasTimedBreak = almAlbumTracks(_almAlbumId).some(t => isTrackOnBreak(t.id));
   const html = _sjmHeader('Take a break from album', 'sjmCloseSubmenu()') +
     '<div class="sjm-empty">Skip every song on this album in shuffle and the queue. You can still play them yourself.</div>' +
     SJ_BREAK_OPTS.map(o =>
@@ -17983,11 +18128,7 @@ function almOpenBreak() {
     ).join('') +
     '<div class="sjm-sep"></div>' +
     '<button class="sjm-item sjm-danger" onclick="almBlockAlbum()">' +
-      '<span class="sjm-ic">⊘</span><span class="sjm-label">Never play these again</span></button>' +
-    (hasTimedBreak
-      ? '<button class="sjm-item" onclick="almClearBreak()">' +
-          '<span class="sjm-ic">↺</span><span class="sjm-label">Play these again now</span></button>'
-      : '');
+      '<span class="sjm-ic">⊘</span><span class="sjm-label">Never play these again</span></button>';
   sjmOpenSubmenu('break', html);
 }
 
@@ -18051,22 +18192,6 @@ async function almBlockAlbum() {
       } catch (_) {}
     }
   } catch (e) { console.warn('almBlockAlbum sync error', e); }
-}
-
-async function almClearBreak() {
-  const albumId = _almAlbumId;
-  almClose();
-  const list = almAlbumTracks(albumId);
-  const onBreak = list.filter(t => isTrackOnBreak(t.id));
-  for (const t of onBreak) {
-    delete snoozedTracks[t.id];
-    refreshBlockedUI(t.id);
-  }
-  saveLocalBlocked();
-  showToast('Album can play again.');
-  for (const t of onBreak) {
-    try { await dbDelete('/blocked_tracks?track_id=eq.' + t.id); } catch (_) {}
-  }
 }
 
 // ── Manage Album (mgb*) ──────────────────────────────────────────────────
@@ -20128,8 +20253,7 @@ async function playlistsShuffleAll() {
         : 'No playable songs in the playlists shown.');
       return;
     }
-    shuffleInPlace(q);
-    landingPlayQueue(q);
+    landingPlayQueue(q, { shuffle: true });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
   } catch (e) {
@@ -28092,20 +28216,30 @@ function renderLanding() {
   }
 }
 
-function landingPlayQueue(q) {
+function landingPlayQueue(q, opts) {
+  const shuffle = !!opts?.shuffle;
   q = filterQueueForHomeBg(sjNoBlocked(q));
   if (!q.length) return;
+  let startIdx = 0;
+  if (shuffle) {
+    // Do not pre-randomize this queue. The playback shuffle bag owns every
+    // pick, which is where Discovery, Favorites First, and Less Repeats are
+    // applied consistently.
+    setYtShuffleEnabled(true);
+    startIdx = ytPrimeShuffleQueue(q);
+    if (startIdx < 0) startIdx = 0;
+  }
   clearQueueSourcePlaylist();
-  const first = q[0];
+  const first = q[startIdx];
   // openYTPlayer() resets ytQueue internally to a single-track array, so when
   // it's the one opening the player, ytQueue must be (re)assigned AFTER that
   // call, not before - otherwise the full queue gets clobbered back to 1 item.
   if (ytPlayerEl) {
-    ytQueue = q; ytQueueIdx = 0;
-    ytPlayQueueIdx(0);
+    ytQueue = q; ytQueueIdx = startIdx;
+    ytPlayQueueIdx(startIdx);
   } else {
     openYTPlayer(first.videoId, first.title, first.trackId);
-    ytQueue = q; ytQueueIdx = 0;
+    ytQueue = q; ytQueueIdx = startIdx;
   }
   updateYTQueueUI();
 }
@@ -28201,7 +28335,7 @@ async function landingShuffleAll() {
     });
     // Video ids only — views/likes/thumbnails belong on artist-page chart loads.
     const yt = await loadYTVideoIds(trackRows.map(t => t.id));
-    const q = shuffleInPlace(trackRows.filter(t => yt[t.id]?.video_id))
+    const q = trackRows.filter(t => yt[t.id]?.video_id)
       .map(t => ({ videoId: yt[t.id].video_id, title: t.name, trackId: t.id }));
     if (!q.length) {
       alert(homeJukeboxBgFilterOn()
@@ -28209,7 +28343,7 @@ async function landingShuffleAll() {
         : 'No playable tracks found.');
       return;
     }
-    landingPlayQueue(q);
+    landingPlayQueue(q, { shuffle: true });
     // Background-play audio for the head of the queue (await so the toggle can appear).
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
@@ -28234,10 +28368,10 @@ async function landingShuffleFavorites() {
       if (!playIds.length) { alert('None of your favorites have background-play audio yet.'); return; }
     }
     const info = await resolvePlaylistTracks(playIds);
-    const q = shuffleInPlace(playIds.filter(tid => info[tid]?.videoId))
+    const q = playIds.filter(tid => info[tid]?.videoId)
       .map(tid => ({ videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }));
     if (!q.length) { alert('No favorited tracks have YouTube videos.'); return; }
-    landingPlayQueue(q);
+    landingPlayQueue(q, { shuffle: true });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
   } catch (e) {
@@ -33780,7 +33914,9 @@ const SJ_CHANGELOG = [
   { date: '2026-09-09', items: [
     'When you minimize a music import or a background-audio upload, its progress notice now stays above the Player dock and moves up as the dock grows, so it remains visible and ready to reopen.',
     'Send all to iPhone now queues your whole selected music collection for CarPlay and offline play instead of stopping after 200 songs. The phone still waits for you to approve the download before it uses data or storage.',
-    'Take a Break from Artist now works when you choose a duration. Its permanent option is clearly labeled Never play these again; Play these again now only appears when that artist is already on a timed break.'
+    'Take a Break from Artist now works when you choose a duration, and its permanent option is clearly labeled Never play these again.',
+    'Your Shuffle choice now saves as soon as you select it, even if you close Settings without changing anything else. Shuffle All now uses that choice for every pick, whether you start it from artists, songs, or playlists.',
+    'Never Play from a song now lets you choose Song, Album, or Artist before you apply it. Song is the default; album and artist block every song in the chosen group.'
   ]},
   { date: '2026-09-08', items: [
     'Large folders of audio no longer stop at an hourly upload limit. Upload as many songs as your account storage allows; progress now counts successful uploads separately from failed files.',
@@ -34875,7 +35011,7 @@ function settingsFillForm() {
   const vis = sjDefaultImportVisibility();
   const radio = document.querySelector('input[name="set-import-vis"][value="' + vis + '"]');
   if (radio) radio.checked = true;
-  const pref = document.querySelector('input[name="sj-shuffle-preference"][value="' + sjShufflePreference + '"]');
+  const pref = document.querySelector('input[name="sj-shuffle-preference"][value="' + sjLoadShufflePreference() + '"]');
   if (pref) pref.checked = true;
 }
 
@@ -34934,15 +35070,10 @@ async function settingsSave() {
   const btn = document.getElementById('set-save');
   if (btn?.disabled) return;
 
-  // Playback is a device preference and never leaves this browser, so it is
-  // saved whether or not the account write below succeeds.
+  // Keep this call for Settings' Save button too. The radio persists changes
+  // immediately, but Save must never roll a newer playback choice backward.
   const pref = document.querySelector('input[name="sj-shuffle-preference"]:checked')?.value;
-  if (['discovery', 'favorites', 'less_repeats', 'none'].includes(pref)) sjShufflePreference = pref;
-  try {
-    localStorage.setItem('sj_shuffle_preference', sjShufflePreference);
-  } catch (_) {}
-  _ytShufflePreviewIdx = null;
-  if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
+  if (pref) sjSetShufflePreference(pref);
 
   const name = (document.getElementById('set-name')?.value || '').trim();
   if (name && name.length < 2) {
@@ -39911,22 +40042,21 @@ function loadQueueForShuffle(q) {
   if (!q.length) return;
   q = ytNormalizeQueue(q);
   setYtShuffleEnabled(true);
-  ytResetShufflePool();
+  let startIdx = ytPrimeShuffleQueue(q);
+  if (startIdx < 0) startIdx = 0;
   _queueHasAdditions = false;
   ytMarkMobPlayIntent();
   if (!ytPlayerEl) {
-    openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
+    openYTPlayer(q[startIdx].videoId, q[startIdx].title, q[startIdx].trackId);
     ytQueue = q;
-    ytQueueIdx = 0;
+    ytQueueIdx = startIdx;
     updateYTQueueUI();
-    if (q.length > 1) _ytShuffleAfterReady = true;
     return;
   }
   ytQueue = q;
-  ytQueueIdx = 0;
+  ytQueueIdx = startIdx;
   updateYTQueueUI();
-  if (q.length > 1) ytNextTrack();
-  else ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
+  ytPlayQueueIdx(startIdx);
 }
 
 function shuffleAllVisible() {
