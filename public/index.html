@@ -14828,7 +14828,7 @@ async function taBatchUpload() {
       cell.textContent = r.ok ? (r.warn ? `±${r.warn}s` : '✓ done') : '✗ ' + r.msg;
       cell.style.color = r.ok ? (r.warn ? '#f59e0b' : '#22c55e') : '#ef4444';
     }
-    _taBatchLastStatus = `${done}/${entries.length} uploaded`;
+    _taBatchLastStatus = `${ok}/${entries.length} uploaded` + (done > ok ? ` · ${done - ok} failed` : '');
     if (status) status.textContent = _taBatchLastStatus;
     taBatchMiniSync();
   }
@@ -26733,19 +26733,8 @@ async function sjEnsureUploadQuota(fileSize, reason) {
     showToast(`Not enough storage left in your ${fmtBytes(limit)} allocation. Delete some uploads to free space.`);
     return false;
   }
-  // Soft rate limit: 40 uploads / rolling hour (abuse guard)
-  const now = Date.now();
-  try {
-    const raw = JSON.parse(localStorage.getItem('sj_upload_ts') || '[]');
-    const recent = (Array.isArray(raw) ? raw : []).filter(t => now - t < 60 * 60 * 1000);
-    if (recent.length >= 40) {
-      sjTrackProductEvent('bg_upload_rate_limited', { count: recent.length });
-      showToast('Slow down — too many uploads in the last hour. Try again shortly.');
-      return false;
-    }
-    recent.push(now);
-    localStorage.setItem('sj_upload_ts', JSON.stringify(recent));
-  } catch (_) {}
+  // Folder imports have no per-hour file cap. Account storage and per-file
+  // limits are enforced by the authenticated upload API.
   return true;
 }
 
@@ -33693,6 +33682,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-08';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-08', items: [
+    'Large folders of audio no longer stop at an hourly upload limit. Upload as many songs as your account storage allows; progress now counts successful uploads separately from failed files.',
     'Settings → Audio Storage has a new Upload a folder button. Point it at a folder of music on your computer and every file inside is matched to a song in your Jukebox automatically, across every artist and album you have — you no longer have to pick an artist or a playlist first.',
     'Each file is read for the artist, album and song name it carries inside it, so a folder of properly tagged music finds its songs even when the files are named 01.mp3. Files with no details inside fall back to the folder names around them.',
     'You see every match before anything uploads. Untick any file you do not want, and press Change on a wrong one to search for the right song. A file matching a song that already has audio is left unticked, so running the same folder twice never replaces anything by accident.',
