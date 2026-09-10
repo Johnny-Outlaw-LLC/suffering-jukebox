@@ -6085,6 +6085,42 @@ const SJ_BRAND = Object.assign({
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
+// ── Landing tabs ──────────────────────────────────────────────────────────
+// Which tabs exist is a property of the brand: Suffering Jukebox leads with
+// artists, Listening Party leads with playlists and has no artist jukebox to
+// send anyone to. Built in one place and called from all three headers.
+const LANDING_TABS = [
+  { id: 'explore',   label: 'Explore Artists',   feature: 'artistJukebox' },
+  { id: 'playlists', label: 'Explore Playlists', feature: null },
+  { id: 'songs',     label: 'Explore Songs',     feature: 'exploreSongs' },
+];
+function landingTabsAvailable() {
+  return LANDING_TABS.filter(t => !t.feature || SJ_BRAND.features[t.feature]);
+}
+function landingTabAllowed(tab) {
+  return landingTabsAvailable().some(t => t.id === tab);
+}
+/** The brand's own first tab, falling back to whatever it does offer. */
+function landingDefaultTab() {
+  const want = SJ_BRAND.features.defaultLandingTab;
+  if (landingTabAllowed(want)) return want;
+  const first = landingTabsAvailable()[0];
+  return first ? first.id : 'playlists';
+}
+/** A remembered tab a brand no longer offers must not strand the visitor. */
+function landingClampTab(tab, fallback) {
+  if (landingTabAllowed(tab)) return tab;
+  if (fallback && landingTabAllowed(fallback)) return fallback;
+  return landingDefaultTab();
+}
+/** `active` marks a tab, or '' for none. `handler` is the onclick function. */
+function landingTabsHTML(active, handler) {
+  return landingTabsAvailable().map(t =>
+    `<button type="button" class="landing-tab${active === t.id ? ' active' : ''}"`
+    + ` onclick="${handler}('${t.id}')">${t.label}</button>`
+  ).join('\n    ');
+}
+
 /** An origin this brand may legitimately be served from. */
 function sjIsBrandOrigin(origin) {
   return origin === window.location.origin || (SJ_BRAND.origins || []).indexOf(origin) !== -1;
@@ -17924,7 +17960,7 @@ function sjmRenderRoot() {
               '<span class="sjm-ic">✎</span><span class="sjm-label">Manage song</span></button>'
           : '')
       : '') +
-    (navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id) && sjmArtistHasDiscography(navArtist.id)
+    (SJ_BRAND.features.artistJukebox && navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id) && sjmArtistHasDiscography(navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Jukebox</span></button>'
       : '') +
@@ -22905,12 +22941,12 @@ async function plbSave() {
 let landingStats       = [];
 const landingExpandedIds = new Set(); // artist ids expanded on the landing grid
 let isLandingMode       = false;  // true once initLanding() takes over root ("/")
-let landingTab          = localStorage.getItem('sj_landing_tab_v2') || 'explore'; // explore | playlists
+let landingTab          = landingClampTab(localStorage.getItem('sj_landing_tab_v2') || landingDefaultTab()); // explore | playlists | songs
 // My Jukebox as a third tab is retired - "My Artists" is a filter on Explore Artists.
 if (landingTab === 'home') {
-  landingTab = 'explore';
+  landingTab = landingDefaultTab();
   try {
-    localStorage.setItem('sj_landing_tab_v2', 'explore');
+    localStorage.setItem('sj_landing_tab_v2', landingTab);
     if (!localStorage.getItem('sj_artist_explore_filter')) localStorage.setItem('sj_artist_explore_filter', 'mine');
   } catch (_) {}
 }
@@ -23527,9 +23563,7 @@ function renderNowPlayingHeader() {
   const count = row?._tracks?.length || playlistChartRows.length || 0;
   nav.style.display = 'block';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse ${SJ_BRAND.name}">
-    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>
-    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>
-    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>
+    ${landingTabsHTML('', 'returnToPlaylistExplorer')}
     <button type="button" class="landing-tab landing-tab-now active" id="landing-now-playing-tab" onclick="openNowPlayingChart()" title="Open the queue that is playing right now">♪ Now Playing${count > 1 ? ' (' + count.toLocaleString() + ')' : ''}</button>
   </nav>
   <div class="landing-nav-row2 now-playing-controls" role="group" aria-label="Now Playing playback">
@@ -24122,9 +24156,7 @@ function renderPlaylistExploreHeader() {
   const _np = nowPlayingDynamicRow();
   nav.style.display = 'block';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse ${SJ_BRAND.name}">
-    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>
-    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>
-    <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>
+    ${landingTabsHTML('', 'returnToPlaylistExplorer')}
     <button type="button" class="landing-tab landing-tab-now" id="landing-now-playing-tab" onclick="openNowPlayingChart()" title="Open the queue that is playing right now"${_np ? '' : ' hidden'}>♪ Now Playing${_np && _np._tracks.length > 1 ? ' (' + _np._tracks.length.toLocaleString() + ')' : ''}</button>
   </nav>`;
   nav.dataset.armed = '1';
@@ -25215,7 +25247,9 @@ function returnToPlaylistExplorer(tab) {
   isLandingMode = true;
   // The back button still means Explore Playlists; the Now Playing page's own
   // Explore Artists / Explore Songs buttons pass their own tab.
-  landingTab = ['explore', 'playlists', 'songs'].includes(tab) ? tab : 'playlists';
+  // Explore Playlists is the deliberate fallback here: the back button means
+  // the playlist explorer, whatever tab the caller asked for.
+  landingTab = landingClampTab(tab, 'playlists');
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
   plClearShareUrl();
   renderLanding();
@@ -27533,7 +27567,7 @@ function setLandingTab(tab) {
     openMyJukebox('library');
     return;
   }
-  const nextTab = ['explore', 'playlists', 'songs'].includes(tab) ? tab : 'explore';
+  const nextTab = landingClampTab(tab);
   if (nextTab !== landingTab) resetLandingSheetFilters();
   landingTab = nextTab;
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
@@ -27807,7 +27841,7 @@ function renderLandingHomeHTML(esc) {
       <div class="home-actions">
         <button type="button" class="home-action-btn primary" onclick="landingShuffleAll()">Shuffle All</button>
         <button type="button" class="home-action-btn" onclick="landingShuffleFavorites()">Shuffle Favorites</button>
-        <button type="button" class="home-action-btn" onclick="setLandingTab('explore')">Explore Artists →</button>
+        ${SJ_BRAND.features.artistJukebox ? `<button type="button" class="home-action-btn" onclick="setLandingTab('explore')">Explore Artists →</button>` : ''}
         ${googleUser ? `<button type="button" class="home-action-btn" onclick="openImportMusic()">＋ Import Music</button>` : ''}
         ${googleUser ? `<button type="button" class="home-action-btn" onclick="openMyJukebox('library')">Manage My Music</button>` : ''}
         ${googleUser ? `<button type="button" class="home-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : `<button type="button" class="home-action-btn" onclick="handleAuthClick()">Sign in</button>`}
@@ -30758,9 +30792,7 @@ function updateLandingActionsHeader() {
   const row2 = (scopeChips || totals || actions)
     ? `<div class="landing-nav-row2">${scopeChips}${totals}${shuffle}${actions}</div>` : '';
   nav.innerHTML = `<nav class="landing-nav" aria-label="Browse ${SJ_BRAND.name}">
-    <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
-    <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
-    <button type="button" class="landing-tab${landingTab === 'songs' ? ' active' : ''}" onclick="setLandingTab('songs')">Explore Songs</button>
+    ${landingTabsHTML(landingTab, 'setLandingTab')}
     <button type="button" class="landing-tab landing-tab-now" id="landing-now-playing-tab" onclick="openNowPlayingChart()" title="Open the queue that is playing right now"${_npRow ? '' : ' hidden'}>♪ Now Playing${_npRow && _npRow._tracks.length > 1 ? ' (' + _npRow._tracks.length.toLocaleString() + ')' : ''}</button>
   </nav>${row2}`;
   nav.dataset.armed = '1';

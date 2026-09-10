@@ -2,6 +2,7 @@
 // One crawlable hub linking to all /share/<slug> pages.
 import { NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { currentSurface } from "@/lib/surface";
 import { listSharedSlugs, getShareImages, shareImageUrl } from "@/lib/share-images";
 
 export const runtime = "nodejs";
@@ -18,6 +19,12 @@ const esc = (s: string) =>
     .replace(/"/g, "&quot;");
 
 export async function GET() {
+  // A brand with no nightly artist captures has nothing to index here, and
+  // serving the other brand's catalogue under this domain would be worse than
+  // a 404.
+  const surface = currentSurface();
+  if (!surface.features.shareImages) return NextResponse.redirect(`${surface.url}/`, 302);
+
   const slugs = await listSharedSlugs();
 
   let artists: Array<{ name: string; slug: string }> = [];

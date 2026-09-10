@@ -15,7 +15,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { existsSync } from 'node:fs';
-import { loadTs, readRepoFile, dashboardHtml } from './_load.mjs';
+import { loadTs, loadHtmlFnsInScope, readRepoFile, dashboardHtml } from './_load.mjs';
 
 const surface = loadTs('src/lib/surface.ts');
 const head = loadTs('src/lib/surface-head.ts', { 'lib/surface': surface });
@@ -232,6 +232,86 @@ test('the two brands agree on shape, so neither can grow a field alone', () => {
   );
 });
 
+// ── The landing tab strip ─────────────────────────────────────────────────
+
+/**
+ * The tab helpers out of public/index.html, run against a given brand.
+ *
+ * LANDING_TABS is a const rather than a function so it cannot be lifted the
+ * way the functions can; it is parsed out of the same file instead, which is
+ * what keeps this test honest about what actually ships.
+ */
+function tabHelpersFor(s) {
+  const at = indexHtml.indexOf('const LANDING_TABS = [');
+  assert.ok(at >= 0, 'LANDING_TABS is gone from public/index.html');
+  const end = indexHtml.indexOf('];', at);
+  const literal = indexHtml.slice(at + 'const LANDING_TABS = '.length, end + 1);
+  const scope = {
+    LANDING_TABS: new Function(`return (${literal});`)(),
+    SJ_BRAND: surface.publicSurface(s),
+  };
+  return loadHtmlFnsInScope(
+    ['landingTabsAvailable', 'landingTabAllowed', 'landingDefaultTab', 'landingClampTab', 'landingTabsHTML'],
+    scope,
+  );
+}
+
+test('Suffering Jukebox offers all three tabs and opens on artists', () => {
+  const t = tabHelpersFor(SJ);
+  assert.deepStrictEqual(
+    t.landingTabsAvailable().map((x) => x.id),
+    ['explore', 'playlists', 'songs'],
+  );
+  assert.equal(t.landingDefaultTab(), 'explore');
+});
+
+test('Listening Party offers playlists alone and opens on them', () => {
+  const t = tabHelpersFor(LP);
+  assert.deepStrictEqual(t.landingTabsAvailable().map((x) => x.id), ['playlists']);
+  assert.equal(t.landingDefaultTab(), 'playlists');
+  assert.equal(t.landingTabAllowed('explore'), false);
+  assert.equal(t.landingTabAllowed('songs'), false);
+});
+
+test('a tab remembered from the other brand does not strand the visitor', () => {
+  // sj_landing_tab_v2 survives in localStorage, and a browser that last used
+  // Suffering Jukebox arrives at Listening Party still asking for Explore
+  // Artists. Without the clamp that renders a tab strip with nothing selected.
+  const lp = tabHelpersFor(LP);
+  assert.equal(lp.landingClampTab('explore'), 'playlists');
+  assert.equal(lp.landingClampTab('songs'), 'playlists');
+  assert.equal(lp.landingClampTab('playlists'), 'playlists');
+
+  const sj = tabHelpersFor(SJ);
+  assert.equal(sj.landingClampTab('songs'), 'songs');
+  assert.equal(sj.landingClampTab('nonsense'), 'explore');
+  // The back button means Explore Playlists whatever the caller asked for.
+  assert.equal(sj.landingClampTab('nonsense', 'playlists'), 'playlists');
+});
+
+test('the tab strip marks the active tab and names its handler', () => {
+  const html = tabHelpersFor(SJ).landingTabsHTML('songs', 'setLandingTab');
+  assert.equal((html.match(/class="landing-tab/g) || []).length, 3);
+  assert.ok(html.includes(`class="landing-tab active" onclick="setLandingTab('songs')"`));
+  assert.ok(html.includes(`onclick="setLandingTab('explore')"`));
+
+  const lpHtml = tabHelpersFor(LP).landingTabsHTML('', 'returnToPlaylistExplorer');
+  assert.equal((lpHtml.match(/class="landing-tab/g) || []).length, 1);
+  assert.ok(!lpHtml.includes('Explore Artists'));
+  assert.ok(lpHtml.includes(`onclick="returnToPlaylistExplorer('playlists')"`));
+});
+
+test('the tab strip is built in one place, not three', () => {
+  // Three headers render it. They were three copies of the same three buttons,
+  // which is three chances for a brand's tabs to disagree with themselves.
+  const calls = (indexHtml.match(/landingTabsHTML\(/g) || []).length;
+  assert.ok(calls >= 4, `expected the builder plus three call sites, saw ${calls}`);
+  assert.ok(
+    !/class="landing-tab[^"]*"\s+onclick="(setLandingTab|returnToPlaylistExplorer)\(/.test(indexHtml),
+    'a hand-written tab button came back into the strip',
+  );
+});
+
 test('Listening Party leads with playlists and has no artist pages', () => {
   assert.equal(LP.features.defaultLandingTab, 'playlists');
   assert.equal(LP.features.artistPages, false);
@@ -241,8 +321,17 @@ test('Listening Party leads with playlists and has no artist pages', () => {
 });
 
 test('the dashboard is unaware of any brand but the one it is serving', () => {
+  // Comments may name the other brand - explaining why a tab strip is built
+  // per brand is the whole reason the code reads. Live code may not.
+  const code = dashboardHtml
+    .split('\n')
+    .filter((line) => {
+      const t = line.trimStart();
+      return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+    })
+    .join('\n');
   assert.ok(
-    !dashboardHtml.includes('Listening Party'),
+    !code.includes('Listening Party'),
     'public/index.html must not name the other brand; it reads window.__SURFACE__',
   );
 });

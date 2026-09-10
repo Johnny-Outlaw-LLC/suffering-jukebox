@@ -6,6 +6,7 @@
 // to the player so a search result turns into a listen.
 import { NextRequest, NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { currentSurface } from "@/lib/surface";
 import {
   getShareImages,
   shareImageUrl,
@@ -67,6 +68,10 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
+  const surface = currentSurface();
+  // No nightly captures behind this brand, so there is no chart page to show.
+  if (!surface.features.shareImages) return NextResponse.redirect(`${surface.url}/`, 302);
+
   const { slug: raw } = await params;
   const slug = (raw || "").toLowerCase();
   if (!SLUG_RE.test(slug)) return NextResponse.redirect(`${SITE_URL}/`, 302);

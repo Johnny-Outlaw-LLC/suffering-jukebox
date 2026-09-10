@@ -26,6 +26,13 @@ export interface SurfaceFeatures {
   defaultLandingTab: "explore" | "playlists";
   /** The nightly per-artist share-image pipeline and the /share pages. */
   shareImages: boolean;
+  /**
+   * List public /p/<slug> playlist pages in the sitemap. Off for Suffering
+   * Jukebox not because the pages are worse there, but because switching them
+   * on is a real SEO change and deserves its own decision rather than arriving
+   * as a side effect of building the other brand.
+   */
+  sitemapPlaylists: boolean;
 }
 
 export interface Surface {
@@ -44,6 +51,11 @@ export interface Surface {
   description: string;
   ogDescription: string;
   twitterDescription: string;
+  /**
+   * Installed-app description. Kept apart from the social copy because the
+   * two are written for different readers and SJ's was already in the wild.
+   */
+  manifestDescription: string;
   keywords: string;
   tagline: string;
   /**
@@ -92,6 +104,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "Free online music player and jukebox for 170+ artists. Stream songs, read lyrics, rate tracks, and build playlists — including Silver Jews and Purple Mountains.",
     twitterDescription:
       "Free online music player and jukebox. Stream artists, read lyrics, and build playlists — no account required to listen.",
+    manifestDescription:
+      "Stream Silver Jews and Purple Mountains. A David Berman music player with ratings, lyrics, and playlists.",
     keywords:
       "free online music player, free jukebox, online jukebox, free music player with lyrics, Suffering Jukebox, Silver Jews, Purple Mountains, David Berman, stream music free, artist jukebox, lyrics",
     tagline: "Explore an artist, one song at a time.",
@@ -113,6 +127,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       exploreSongs: true,
       defaultLandingTab: "explore",
       shareImages: true,
+      sitemapPlaylists: false,
     },
   },
 
@@ -129,6 +144,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "Build a playlist from anything on YouTube, share it with a link, and listen together. Free, with lyrics, ratings and listening stats.",
     twitterDescription:
       "Build a playlist, share it with a link, listen together. No account required to listen.",
+    manifestDescription:
+      "Build a playlist from anything on YouTube, share it with a link, and listen together.",
     keywords:
       "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
     tagline: "Join the listening party.",
@@ -165,6 +182,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       exploreSongs: false,
       defaultLandingTab: "playlists",
       shareImages: false,
+      sitemapPlaylists: true,
     },
   },
 };
@@ -225,7 +243,17 @@ export function publicSurface(s: Surface) {
     authScheme: s.authScheme,
     shareText: s.shareText,
     redditSub: s.redditSub,
-    features: s.features,
+    // Only the flags the browser actually acts on. A server-only decision
+    // (sitemapPlaylists) has no business in the page, and listing them
+    // explicitly means adding one later cannot silently oblige the dashboard
+    // to grow a matching default.
+    features: {
+      artistPages: s.features.artistPages,
+      artistJukebox: s.features.artistJukebox,
+      exploreSongs: s.features.exploreSongs,
+      defaultLandingTab: s.features.defaultLandingTab,
+      shareImages: s.features.shareImages,
+    },
   };
 }
 
