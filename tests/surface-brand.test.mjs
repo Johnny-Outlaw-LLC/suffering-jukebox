@@ -359,9 +359,13 @@ test('Listening Party leads with playlists and has no artist pages', () => {
 });
 
 test('the dashboard is unaware of any brand but the one it is serving', () => {
-  // Comments may name the other brand - explaining why a tab strip is built
-  // per brand is the whole reason the code reads. Live code may not.
-  const code = dashboardHtml
+  // Two exemptions, both prose rather than behaviour. Comments may name the
+  // other brand - explaining why a tab strip is built per brand is the whole
+  // reason the code reads. And SJ_CHANGELOG is news written for people, where
+  // announcing a second front door is the entire point of the entry.
+  const upToChangelog = dashboardHtml.slice(0, dashboardHtml.indexOf('const SJ_CHANGELOG'));
+  assert.ok(upToChangelog.length > 0, 'SJ_CHANGELOG moved or is gone');
+  const code = upToChangelog
     .split('\n')
     .filter((line) => {
       const t = line.trimStart();

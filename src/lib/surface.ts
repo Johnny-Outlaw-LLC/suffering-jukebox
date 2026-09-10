@@ -27,6 +27,12 @@ export interface SurfaceFeatures {
   /** The nightly per-artist share-image pipeline and the /share pages. */
   shareImages: boolean;
   /**
+   * The welcome hero above the playlist explorer: what the site is for, how to
+   * start, and three playlists to start with. A brand that leads with artists
+   * has a wall of artists to lead with and does not need one.
+   */
+  welcomeHero: boolean;
+  /**
    * List public /p/<slug> playlist pages in the sitemap. Off for Suffering
    * Jukebox not because the pages are worse there, but because switching them
    * on is a real SEO change and deserves its own decision rather than arriving
@@ -142,6 +148,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       defaultLandingTab: "explore",
       shareImages: true,
       sitemapPlaylists: false,
+      welcomeHero: false,
     },
   },
 
@@ -164,11 +171,12 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
     tagline: "Join the listening party.",
     assetBase: "/brand/lp",
-    // Built by capture/_lp_wordmark.mjs, which reproduces the old site's
-    // lockup: the mark beside live text rather than stacked above a tagline.
-    // A PNG for the same reason Suffering Jukebox's is one - an SVG in an
-    // <img> cannot fetch Inter and would reshape itself per machine.
-    textLogo: "/brand/lp/wordmark.png",
+    // The official mark from outlawapps.online/branding, trimmed of its
+    // transparent margin by capture/_lp_brand.mjs so it sits flush in the
+    // header. Listening Party has no official WORDMARK - that page offers one
+    // for Suffering Jukebox and only a square mark for this brand - so the
+    // header shows the mark and nothing here invents lettering beside it.
+    textLogo: "/brand/lp/header-mark.png",
     // TODO(step 4): a proper 1200x630 social card. The app icon is a valid
     // image and will not 404, but it is square and says nothing about the app.
     ogImage: `${LP_URL}/brand/lp/favicon.png`,
@@ -201,6 +209,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       defaultLandingTab: "playlists",
       shareImages: false,
       sitemapPlaylists: true,
+      welcomeHero: true,
     },
   },
 };
@@ -274,6 +283,7 @@ export function publicSurface(s: Surface) {
       exploreSongs: s.features.exploreSongs,
       defaultLandingTab: s.features.defaultLandingTab,
       shareImages: s.features.shareImages,
+      welcomeHero: s.features.welcomeHero,
     },
   };
 }
