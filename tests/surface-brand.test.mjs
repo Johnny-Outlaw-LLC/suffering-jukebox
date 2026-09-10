@@ -114,13 +114,51 @@ test('the browser chrome colour follows the brand', () => {
   const lp = headOf(head.applySurfaceHead(indexHtml, LP));
   assert.ok(lp.includes(`<meta name="theme-color" content="${LP.themeColor}">`));
   assert.ok(!lp.includes(`content="${SJ.themeColor}"`), 'SJ theme-color left in the LP head');
+});
 
-  // Deliberately NOT asserting the accent is gone from the head. The <style>
-  // block lives there and spells #ff6b35 out hundreds of times, so Listening
-  // Party still paints orange until the palette moves to a custom property.
-  // That is a separate job from the brand seam, and pretending otherwise here
-  // would either fail forever or tempt a blind find-and-replace through CSS.
-  assert.ok(lp.includes(SJ.themeColor), 'the accent is still hard-coded in the stylesheet');
+test('the accent is a custom property, not a colour typed into rules', () => {
+  // Everything translucent used to be spelled rgba(255,107,53,X), which no
+  // brand but Suffering Jukebox could ever follow.
+  const css = headOf(indexHtml);
+  assert.ok(css.includes('--accent-rgb: 255,107,53'), 'the accent triple is not declared');
+  assert.ok(!/rgba\(\s*255,\s*107,\s*53/.test(css), 'a literal accent rgba() came back');
+  assert.ok(!/#ff6b35[0-9a-f]{2}\b/i.test(css), 'a literal accent-with-alpha came back');
+
+  // What is left is the declaration, the theme-color meta, and var() fallbacks
+  // that only apply if the property is somehow undefined.
+  const bare = css.match(/#ff6b35\b/gi) || [];
+  assert.equal(bare.length, 4, `unexpected bare accent literals in the head: ${bare.length}`);
+});
+
+test('a brand with its own accent gets it before the first paint', () => {
+  // From script it would repaint after load, and the boot glyph renders before
+  // any JS runs - a page that flashed orange then turned purple looks broken.
+  const lp = headOf(head.applySurfaceHead(indexHtml, LP));
+  assert.ok(lp.includes(`--accent:${LP.accent}`), 'no accent override for LP');
+  assert.ok(lp.includes(`--accent-rgb:${LP.accentRgb}`));
+  assert.ok(lp.indexOf('--accent:' + LP.accent) < lp.length, 'override must be in the head');
+
+  // Nothing is emitted for the brand the file is already authored as.
+  const sj = headOf(head.applySurfaceHead(indexHtml, SJ));
+  assert.ok(!sj.includes('<style>:root{--accent:'), 'SJ got a redundant theme override');
+});
+
+test('an accent has to be legible on the near-black page', () => {
+  // LP's mark colour is a deep purple that works as a tile behind white
+  // artwork and would vanish as a highlight. Relative luminance, sRGB.
+  const lum = (hex) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const [r, g, b] = c.map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (hex) => (lum(hex) + 0.05) / (lum('#0a0a0a') + 0.05);
+  for (const s of [SJ, LP]) {
+    assert.ok(
+      contrast(s.accent) >= 3,
+      `${s.id}: accent ${s.accent} is only ${contrast(s.accent).toFixed(2)}:1 on the page`,
+    );
+  }
+  assert.ok(contrast(LP.themeColor) < 3, 'LP theme colour is light enough to have been the accent');
 });
 
 // ── The injected surface ──────────────────────────────────────────────────

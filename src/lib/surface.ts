@@ -75,7 +75,18 @@ export interface Surface {
    * so this travels with the image rather than being assumed.
    */
   ogImageSize: { w: number; h: number };
+  /** Browser chrome colour. Not the UI accent - see `accent`. */
   themeColor: string;
+  /**
+   * The UI accent, which is a different job from themeColor. Listening Party's
+   * mark is a deep purple that works as a tile behind white artwork and would
+   * be nearly invisible as a highlight on a near-black page, so the accent is
+   * a brighter relative of it rather than the same value.
+   */
+  accent: string;
+  accentHover: string;
+  /** The accent as "r,g,b" so CSS can build rgba() at any alpha. */
+  accentRgb: string;
   /** Custom URL scheme the native shell signs in through. */
   authScheme: string;
   /** Sentence used when sharing the site itself. */
@@ -114,6 +125,9 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     ogImage: `${SJ_URL}/og-image.png`,
     ogImageSize: { w: 1200, h: 630 },
     themeColor: "#ff6b35",
+    accent: "#ff6b35",
+    accentHover: "#ff8555",
+    accentRgb: "255,107,53",
     authScheme: "com.johnnyoutlaw.sufferingjukebox",
     shareText:
       "Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, ratings, and lyrics.",
@@ -159,6 +173,9 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     ogImage: `${LP_URL}/brand/lp/favicon.png`,
     ogImageSize: { w: 192, h: 192 },
     themeColor: "#4A1B6D",
+    accent: "#9D4EDD",
+    accentHover: "#B57BEA",
+    accentRgb: "157,78,221",
     authScheme: "com.johnnyoutlaw.listeningparty",
     shareText:
       "Listening Party - build a playlist from anything on YouTube, share it with a link, and listen together.",
@@ -240,6 +257,9 @@ export function publicSurface(s: Surface) {
     /** 192px app icon, for the lock screen and anywhere the client needs art. */
     icon: `${s.assetBase}/favicon.png`,
     themeColor: s.themeColor,
+    accent: s.accent,
+    accentHover: s.accentHover,
+    accentRgb: s.accentRgb,
     authScheme: s.authScheme,
     shareText: s.shareText,
     redditSub: s.redditSub,

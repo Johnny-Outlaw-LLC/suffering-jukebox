@@ -47,6 +47,9 @@ export interface HeadOverrides {
   extraHead?: string;
 }
 
+/** The accent public/index.html is authored with, on :root at the top of it. */
+const SJ_ACCENT = "#ff6b35";
+
 export function esc(s: string): string {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -146,9 +149,24 @@ export function applySurfaceHead(
     );
   }
 
+  // The accent is already a custom property (:root{--accent}) that nearly all
+  // the stylesheet reads, so a brand only has to redefine three values. Doing
+  // it here rather than from script means the first paint is already the right
+  // colour - the boot glyph renders before any JS runs, and a brand whose page
+  // flashed orange before turning purple would look broken.
+  //
+  // Emitted only when it actually differs, so Suffering Jukebox keeps serving
+  // exactly the bytes it served before any of this existed.
+  const theme =
+    surface.accent.toLowerCase() === SJ_ACCENT
+      ? ""
+      : `<style>:root{--accent:${surface.accent};--accent-hover:${surface.accentHover};` +
+        `--accent-rgb:${surface.accentRgb}}</style>\n`;
+
   // The dashboard is a classic script that reads this at startup, so it has to
   // be defined before it and JSON.stringify keeps it inert markup either way.
   const inject =
+    theme +
     `<script>window.__SURFACE__=${JSON.stringify(publicSurface(surface)).replace(
       /</g,
       "\\u003c"
