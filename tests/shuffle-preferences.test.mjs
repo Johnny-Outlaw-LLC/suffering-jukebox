@@ -1,3 +1,6 @@
+// @suite Shuffle preferences
+// @area Playback
+// @covers the shuffle preference controls in public/index.html
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';

@@ -1,3 +1,6 @@
+// @suite Take a break from an artist
+// @area Track menu
+// @covers sjmOpenBreak and the artist break window in public/index.html
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';

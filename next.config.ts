@@ -56,6 +56,13 @@ const apiCorsHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // The admin Test Coverage page reads test-results.json off disk through
+  // /api/sj-admin-tests. It is deliberately not under public/ (that page is
+  // restricted, and the report names every gap in the app), so tracing has to
+  // be told about it or the standalone build ships without it.
+  outputFileTracingIncludes: {
+    "/api/sj-admin-tests": ["./test-results.json"],
+  },
   // Local checkouts of this repo are git worktrees whose parent directory is
   // another copy of the repo, lockfile and all. Without this Next walks up,
   // picks the parent as the workspace root and serves its src/app instead.

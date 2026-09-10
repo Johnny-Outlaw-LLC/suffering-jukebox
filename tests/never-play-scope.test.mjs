@@ -1,3 +1,6 @@
+// @suite Never play this again
+// @area Track menu
+// @covers sjmBlockScope in public/index.html
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';

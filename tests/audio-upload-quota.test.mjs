@@ -1,3 +1,6 @@
+// @suite Audio upload quota
+// @area Audio storage
+// @covers the upload quota guard in public/index.html
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';

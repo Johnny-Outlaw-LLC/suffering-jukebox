@@ -1,3 +1,6 @@
+// @suite Reading tags off an audio file
+// @area Audio storage
+// @covers taReadId3 and the path guesser in public/index.html
 // Pulls the ID3 reader and path guesser straight out of the dashboard HTML and
 // runs them against synthetic files, because a tag parser that quietly returns
 // null looks exactly like a folder of untagged music.

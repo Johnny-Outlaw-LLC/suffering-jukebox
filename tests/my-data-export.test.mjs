@@ -1,3 +1,6 @@
+// @suite Exporting your own data
+// @area Accounts
+// @covers src/lib/my-data-export.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';

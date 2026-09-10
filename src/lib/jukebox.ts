@@ -138,7 +138,8 @@ export const RESERVED_SLUGS = new Set([
   "new", "news", "oembed", "p", "playlist", "playlists", "pricing", "privacy",
   "qr", "queue", "robots", "rss", "s", "search", "settings", "share",
   "share-image", "signin", "signout", "signup", "sitemap", "song", "songs",
-  "static", "support", "terms", "track", "tracks", "well-known",
+  "static", "support", "terms", "test-coverage", "track", "tracks",
+  "well-known",
 ]);
 
 export const MIN_SLUG = 3;

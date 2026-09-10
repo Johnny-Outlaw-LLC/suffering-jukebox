@@ -1,3 +1,6 @@
+// @suite Matching a folder of files to the catalogue
+// @area Import
+// @covers src/lib/catalog-index.ts resolveCandidate
 // The folder uploader in Settings -> Audio Storage sends one guess per file
 // (title, artist, album, length) and gets back one track id, so everything
 // that decides which song a file IS lives in resolveCandidate. These cover the

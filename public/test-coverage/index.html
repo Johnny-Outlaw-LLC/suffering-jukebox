@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Test Coverage | Suffering Jukebox Admin</title>
+<link rel="stylesheet" href="/legal.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  header, main, footer { width: min(1140px, calc(100% - 32px)); }
+  .headline { display:flex; flex-wrap:wrap; gap:18px; align-items:stretch; margin:18px 0 8px; }
+  .verdict { flex:1 1 260px; border-radius:12px; border:1px solid var(--line); padding:20px 22px; background:rgba(18,18,18,.94); }
+  .verdict.pass { border-color:#245d3a; background:#0e2116; }
+  .verdict.fail { border-color:#672c2c; background:#211010; }
+  .verdict .big { font:900 3.1rem/1 Arial, sans-serif; letter-spacing:-.04em; display:block; }
+  .verdict.pass .big { color:var(--ok); }
+  .verdict.fail .big { color:var(--danger); }
+  .facts { flex:2 1 420px; display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .fact { background:#121212; padding:14px 16px; }
+  .fact dt { font:700 .7rem/1.2 monospace; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:0 0 6px; }
+  .fact dd { margin:0; font-size:.95rem; word-break:break-word; }
+  .areabar { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 4px; }
+  .chip { border:1px solid var(--line); border-radius:99px; padding:7px 13px; font-size:.82rem; background:#121212; cursor:pointer; color:var(--text); font-weight:600; }
+  .chip[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); }
+  .chip .n { color:var(--muted); font-family:monospace; margin-left:6px; }
+  .chip.bad { border-color:var(--danger); color:var(--danger); }
+  .toolbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:16px 0 6px; }
+  .toolbar input[type=search] { flex:1 1 260px; width:auto; }
+  .suite { border:1px solid var(--line); border-radius:12px; background:rgba(18,18,18,.94); margin:12px 0; overflow:hidden; }
+  .suite.failed { border-color:#672c2c; }
+  .suite > summary { list-style:none; cursor:pointer; padding:15px 18px; display:flex; gap:14px; align-items:baseline; flex-wrap:wrap; }
+  .suite > summary::-webkit-details-marker { display:none; }
+  .suite > summary::before { content:'\25B8'; color:var(--muted); margin-right:2px; }
+  .suite[open] > summary::before { content:'\25BE'; }
+  .suite h3 { margin:0; font-size:1.02rem; flex:1 1 auto; }
+  .suite .area-tag { font:700 .68rem/1 monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); border:1px solid var(--line); border-radius:99px; padding:5px 9px; }
+  .tally { font-family:monospace; font-size:.82rem; color:var(--ok); white-space:nowrap; }
+  .tally.bad { color:var(--danger); }
+  .suite-body { padding:0 18px 16px; }
+  .suite-why { color:var(--muted); font-size:.85rem; white-space:pre-wrap; margin:0 0 12px; border-left:2px solid var(--line); padding-left:12px; }
+  .covers { font-family:monospace; font-size:.78rem; color:var(--muted); margin:0 0 12px; }
+  ul.cases { list-style:none; margin:0; padding:0; }
+  ul.cases li { display:flex; gap:10px; align-items:baseline; padding:7px 0; border-top:1px solid #1f1f1f; font-size:.88rem; }
+  ul.cases li .mark { font-family:monospace; font-weight:800; }
+  li.pass .mark { color:var(--ok); }
+  li.fail .mark { color:var(--danger); }
+  li .ms { margin-left:auto; font-family:monospace; font-size:.76rem; color:#5f5f5f; white-space:nowrap; }
+  li .why { flex-basis:100%; margin:6px 0 4px 24px; white-space:pre-wrap; font-family:monospace; font-size:.78rem; color:#ffb4b4; background:#1a0f0f; border:1px solid #472222; border-radius:6px; padding:10px; }
+  .gap { border-top:1px solid var(--line); padding:14px 0; }
+  .gap:first-of-type { border-top:0; }
+  .gap h3 { margin:0 0 4px; }
+  .risk { font:800 .68rem/1 monospace; letter-spacing:.1em; text-transform:uppercase; padding:4px 8px; border-radius:99px; border:1px solid currentColor; margin-left:8px; }
+  .risk.high { color:var(--danger); }
+  .risk.medium { color:var(--warn); }
+  .risk.low { color:var(--muted); }
+  code.cmd { display:block; background:#050505; border:1px solid var(--line); border-radius:8px; padding:12px 14px; font-size:.85rem; overflow-x:auto; margin:10px 0; }
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/">Suffering Jukebox Admin</a>
+  <nav>
+    <a href="/">Jukebox</a>
+    <a href="/artist-rights-admin">Rights &amp; DMCA review</a>
+    <a href="/help">Help</a>
+  </nav>
+</header>
+
+<main>
+  <div class="eyebrow">Restricted</div>
+  <h1>Test coverage</h1>
+  <p class="lede">Every automated check in the repository, the last time they were run, and an honest list of what they do not reach.</p>
+
+  <div id="gate" class="panel">Checking administrator access&hellip;</div>
+  <div id="report" class="hidden"></div>
+</main>
+
+<footer>
+  Restricted to Suffering Jukebox administrators. Results are generated by
+  <code>npm test</code> and committed with the code they describe.
+</footer>
+
+<script>
+const SB_URL = 'https://ntyvtpimesfoesuykuyi.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMTc0NjIsImV4cCI6MjA4OTU5MzQ2Mn0.S6hw0xc4PVKZy_OBj7eu8eRpGHEqZMJ6_6p_Lut1BpQ';
+const sb = window.supabase.createClient(SB_URL, SB_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+});
+
+// Stamped in by the route from the deployment's own commit, so the page can say
+// whether the results it is showing were generated from the code being served.
+const DEPLOY_SHA = (document.documentElement.dataset.deploySha || '').trim();
+
+let REPORT = null;
+let filterArea = null;       // null = every area
+let failuresOnly = false;
+let query = '';
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function when(iso) {
+  if (!iso) return 'unknown';
+  const d = new Date(iso);
+  if (isNaN(d)) return esc(iso);
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+function ago(iso) {
+  const then = Date.parse(iso);
+  if (!isFinite(then)) return '';
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return hrs + 'h ago';
+  return Math.round(hrs / 24) + ' days ago';
+}
+
+async function authHeaders() {
+  const s = (await sb.auth.getSession()).data.session;
+  return s ? { Authorization: 'Bearer ' + s.access_token } : {};
+}
+
+async function init() {
+  const gate = document.getElementById('gate');
+  const h = await authHeaders();
+  if (!h.Authorization) {
+    gate.innerHTML = 'Sign in through <a href="/">Suffering Jukebox</a> first.';
+    return;
+  }
+  let admin = false;
+  try {
+    const r = await fetch('/api/sj-admin-check', { method: 'POST', headers: h });
+    admin = r.ok && (await r.json()).isAdmin;
+  } catch (e) { /* handled below */ }
+  if (!admin) { gate.textContent = 'Administrator access required.'; return; }
+
+  try {
+    const r = await fetch('/api/sj-admin-tests', { headers: h, cache: 'no-store' });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || 'Could not load the last test run.');
+    REPORT = body;
+  } catch (e) {
+    gate.className = 'panel danger';
+    gate.textContent = e.message;
+    return;
+  }
+  gate.classList.add('hidden');
+  document.getElementById('report').classList.remove('hidden');
+  render();
+}
+
+function visibleSuites() {
+  const q = query.trim().toLowerCase();
+  return REPORT.suites
+    .filter(s => !filterArea || s.area === filterArea)
+    .filter(s => !failuresOnly || s.failed > 0)
+    .map(s => {
+      if (!q) return s;
+      const hitSuite = (s.suite + ' ' + s.area + ' ' + s.covers).toLowerCase().includes(q);
+      const cases = s.tests.filter(t => t.name.toLowerCase().includes(q));
+      if (hitSuite) return s;
+      return cases.length ? Object.assign({}, s, { tests: cases }) : null;
+    })
+    .filter(Boolean);
+}
+
+function render() {
+  const r = REPORT;
+  const ok = r.totals.failed === 0;
+  const staleSha = DEPLOY_SHA && r.git.sha && !DEPLOY_SHA.startsWith(r.git.sha) && !r.git.sha.startsWith(DEPLOY_SHA);
+
+  const notes = [];
+  if (staleSha) notes.push('<div class="panel warning">These results were generated from commit <code>' +
+    esc(r.git.sha) + '</code>, but this deployment is <code>' + esc(DEPLOY_SHA.slice(0, 12)) +
+    '</code>. Something shipped without a fresh run of <code>npm test</code>.</div>');
+  if (r.git.dirty) notes.push('<div class="panel warning">The working tree had uncommitted changes when this ran, so the results describe code that may never have been pushed.</div>');
+
+  document.getElementById('report').innerHTML =
+    '<div class="headline">'
+      + '<div class="verdict ' + (ok ? 'pass' : 'fail') + '">'
+        + '<span class="big">' + (ok ? r.totals.tests : r.totals.failed) + '</span>'
+        + '<strong>' + (ok ? 'checks passing' : (r.totals.failed === 1 ? 'check failing' : 'checks failing')) + '</strong>'
+        + '<div class="fine">' + r.totals.tests + ' checks across ' + r.totals.suites + ' suites</div>'
+      + '</div>'
+      + '<dl class="facts">'
+        + fact('Last run', when(r.generatedAt) + ' <span class="fine">' + ago(r.generatedAt) + '</span>')
+        + fact('Commit', '<code>' + esc(r.git.sha || 'unknown') + '</code> <span class="fine">' + esc(r.git.branch || '') + '</span>')
+        + fact('Change', esc(r.git.subject || ''))
+        + fact('Run time', (r.wallMs / 1000).toFixed(1) + 's on Node ' + esc(r.node))
+      + '</dl>'
+    + '</div>'
+    + notes.join('')
+    + areaBar()
+    + toolbar()
+    + '<div id="suites"></div>'
+    + gapsPanel()
+    + howTo();
+
+  document.getElementById('q').addEventListener('input', e => { query = e.target.value; paintSuites(); });
+  document.getElementById('failures-only').addEventListener('click', e => {
+    failuresOnly = !failuresOnly;
+    e.currentTarget.setAttribute('aria-pressed', String(failuresOnly));
+    paintSuites();
+  });
+  document.querySelectorAll('[data-area]').forEach(el => el.addEventListener('click', () => {
+    filterArea = el.dataset.area === '*' ? null : el.dataset.area;
+    document.querySelectorAll('[data-area]').forEach(o => {
+      const isAll = o.dataset.area === '*';
+      o.setAttribute('aria-pressed', String(isAll ? filterArea === null : o.dataset.area === filterArea));
+    });
+    paintSuites();
+  }));
+  paintSuites();
+}
+
+function fact(label, value) {
+  return '<div class="fact"><dt>' + label + '</dt><dd>' + value + '</dd></div>';
+}
+
+function areaBar() {
+  const all = '<button type="button" class="chip" data-area="*" aria-pressed="true">All areas<span class="n">'
+    + REPORT.totals.tests + '</span></button>';
+  return '<div class="areabar">' + all + REPORT.areas.map(a =>
+    '<button type="button" class="chip' + (a.failed ? ' bad' : '') + '" data-area="' + esc(a.area) + '" aria-pressed="false">'
+      + esc(a.area) + '<span class="n">' + a.tests + '</span></button>').join('') + '</div>';
+}
+
+function toolbar() {
+  return '<div class="toolbar">'
+    + '<input type="search" id="q" placeholder="Search a suite or a check&hellip;">'
+    + '<button type="button" class="chip" id="failures-only" aria-pressed="false">Failures only</button>'
+    + '</div>';
+}
+
+function paintSuites() {
+  const list = visibleSuites();
+  const host = document.getElementById('suites');
+  if (!list.length) {
+    host.innerHTML = '<div class="panel' + (failuresOnly && !REPORT.totals.failed ? ' success' : '') + '">'
+      + (failuresOnly && !REPORT.totals.failed ? 'Nothing is failing.' : 'Nothing matches.')
+      + '</div>';
+    return;
+  }
+  host.innerHTML = list.map(suiteCard).join('');
+}
+
+function suiteCard(s) {
+  const bad = s.failed > 0;
+  return '<details class="suite' + (bad ? ' failed' : '') + '"' + (bad || query ? ' open' : '') + '>'
+    + '<summary>'
+      + '<span class="area-tag">' + esc(s.area) + '</span>'
+      + '<h3>' + esc(s.suite) + '</h3>'
+      + '<span class="tally' + (bad ? ' bad' : '') + '">'
+        + (bad ? s.failed + ' failing / ' + s.tests.length : s.tests.length + ' passing')
+        + ' &middot; ' + s.durationMs.toFixed(0) + 'ms</span>'
+    + '</summary>'
+    + '<div class="suite-body">'
+      + (s.description ? '<p class="suite-why">' + esc(s.description) + '</p>' : '')
+      + (s.covers ? '<p class="covers">covers ' + esc(s.covers) + '</p>' : '')
+      + '<p class="covers">' + esc(s.file) + '</p>'
+      + '<ul class="cases">' + s.tests.map(caseRow).join('') + '</ul>'
+    + '</div>'
+  + '</details>';
+}
+
+function caseRow(t) {
+  return '<li class="' + t.status + '">'
+    + '<span class="mark">' + (t.status === 'pass' ? '✓' : '✗') + '</span>'
+    + '<span>' + esc(t.name) + '</span>'
+    + '<span class="ms">' + t.durationMs.toFixed(1) + 'ms</span>'
+    + (t.error ? '<span class="why">' + esc(t.error) + '</span>' : '')
+    + '</li>';
+}
+
+function gapsPanel() {
+  if (!REPORT.gaps || !REPORT.gaps.length) return '';
+  return '<h2>What these checks do not reach</h2>'
+    + '<p class="fine">Kept by hand in <code>tests/coverage-gaps.json</code>. A green page above means the rules that are covered still hold; it does not mean the app is proven.</p>'
+    + '<div class="panel">' + REPORT.gaps.map(g =>
+      '<div class="gap"><h3>' + esc(g.gap)
+        + '<span class="risk ' + esc(g.risk || 'low') + '">' + esc(g.risk || 'low') + '</span></h3>'
+        + '<div class="fine">' + esc(g.area) + '</div>'
+        + '<p>' + esc(g.detail) + '</p></div>').join('') + '</div>';
+}
+
+function howTo() {
+  return '<h2>Running them yourself</h2>'
+    + '<div class="panel">'
+    + '<code class="cmd">npm test</code>'
+    + '<p class="fine">Runs every suite and rewrites <code>test-results.json</code>, which is what this page reads. '
+    + 'Commit that file alongside the change it describes, or this page will describe the run before it. '
+    + '<code>npm run test:only -- tests/jukebox-rules.test.mjs</code> runs one suite without rewriting the report.</p>'
+    + '<p class="fine">A new suite is a file in <code>tests/</code> ending <code>.test.mjs</code>, with '
+    + '<code>// @suite</code>, <code>// @area</code> and <code>// @covers</code> at the top. Those three lines are '
+    + 'what group and label it here, and everything after them in the same comment block becomes the note under its name.</p>'
+    + '</div>';
+}
+
+init();
+</script>
+</body>
+</html>

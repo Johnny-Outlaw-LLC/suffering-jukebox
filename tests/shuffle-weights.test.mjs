@@ -1,3 +1,6 @@
+// @suite Shuffle weighting
+// @area Playback
+// @covers _ytWeightedShufflePick and the weighting engine in public/index.html
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
