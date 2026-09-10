@@ -1,17 +1,20 @@
-// Johnny Outlaw, LLC — Suffering Jukebox — indexable artist jukebox pages (/pavement)
+// Johnny Outlaw, LLC — indexable artist jukebox pages (/pavement)
 // Serves the SPA shell with artist-specific meta, MusicGroup JSON-LD, and a
 // crawlable HTML catalog (song titles + lyrics as real text) so search engines
 // and AI crawlers can find the artist and the words — not only a Loading… div.
+//
+// Only surfaces that lead with artists have these pages. Listening Party leads
+// with playlists and has no artist view to land on, so it sends the visitor
+// home rather than rendering a page whose navigation does not exist.
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync } from "fs";
-import { join } from "path";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { readPublicHtml } from "@/lib/serve-html";
+import { currentSurface } from "@/lib/surface";
+import { applySurfaceHead } from "@/lib/surface-head";
 import { getOgImage, shareImageUrl } from "@/lib/share-images";
 import {
   artistPageDescription,
   buildArtistCatalogHtml,
   buildArtistJsonLd,
-  esc,
   fetchArtistCatalog,
   fetchPublicArtistBySlug,
 } from "@/lib/artist-seo";
@@ -22,9 +25,12 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const surface = currentSurface(req.headers.get("host"));
   // Keep the query string on redirects so a shared-link ?s= still hydrates
   // on the main page even when the artist slug no longer resolves.
-  const home = `${SITE_URL}/${req.nextUrl.search}`;
+  const home = `${surface.url}/${req.nextUrl.search}`;
+  if (!surface.features.artistPages) return NextResponse.redirect(home, 302);
+
   const { slug: raw } = await params;
   const slug = (raw || "").toLowerCase();
   if (!/^[a-z0-9][a-z0-9-]{1,79}$/.test(slug)) {
@@ -40,11 +46,13 @@ export async function GET(
   // this site actually does. Album art is the fallback for an artist added
   // since the last capture run; the generic site image is the last resort.
   let art = "";
-  try {
-    const card = await getOgImage(artist.slug);
-    if (card) art = shareImageUrl(card);
-  } catch {
-    /* album art below */
+  if (surface.features.shareImages) {
+    try {
+      const card = await getOgImage(artist.slug);
+      if (card) art = shareImageUrl(card);
+    } catch {
+      /* album art below */
+    }
   }
   if (!art) {
     try {
@@ -72,73 +80,30 @@ export async function GET(
 
   const catalog = await fetchArtistCatalog(artist.id);
   const name = (artist.name || "").trim();
-  const title = `${name} Jukebox — Free Online Music Player | ${SITE_NAME}`;
+  const title = `${name} Jukebox — Free Online Music Player | ${surface.name}`;
   const desc = artistPageDescription(name, catalog.tracks.length, catalog.albums.length);
-  const pageUrl = `${SITE_URL}/${artist.slug}`;
+  const pageUrl = `${surface.url}/${artist.slug}`;
   const jsonLd = buildArtistJsonLd(artist, catalog, pageUrl);
   const catalogHtml = buildArtistCatalogHtml(artist, catalog, pageUrl);
 
-  let html = readFileSync(join(process.cwd(), "public", "index.html"), "utf-8");
-  html = html
-    .replace(/<title>[^<]*<\/title>/, `<title>${esc(title)}</title>`)
-    .replace(
-      /<meta name="description" content="[^"]*">/,
-      `<meta name="description" content="${esc(desc)}">`
-    )
-    .replace(
-      /<meta name="keywords" content="[^"]*">/,
-      `<meta name="keywords" content="${esc(
-        `${name}, ${name} jukebox, ${name} lyrics, ${name} songs, free online music player, free jukebox, stream ${name}, ${SITE_NAME}`
-      )}">`
-    )
-    .replace(
-      /<meta property="og:url" content="[^"]*">/,
-      `<meta property="og:url" content="${esc(pageUrl)}">`
-    )
-    .replace(
-      /<meta property="og:title" content="[^"]*">/,
-      `<meta property="og:title" content="${esc(title)}">`
-    )
-    .replace(
-      /<meta property="og:description" content="[^"]*">/,
-      `<meta property="og:description" content="${esc(desc)}">`
-    )
-    .replace(
-      /<meta name="twitter:title" content="[^"]*">/,
-      `<meta name="twitter:title" content="${esc(title)}">`
-    )
-    .replace(
-      /<meta name="twitter:description" content="[^"]*">/,
-      `<meta name="twitter:description" content="${esc(desc)}">`
-    );
-
-  // Drop the homepage Silver Jews WebApplication block; artist graph replaces it.
-  html = html.replace(
-    /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
-    `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`
-  );
-
-  if (art) {
-    html = html
-      .replace(
-        /<meta property="og:image" content="[^"]*">/,
-        `<meta property="og:image" content="${esc(art)}">`
-      )
-      .replace(
-        /<meta name="twitter:image" content="[^"]*">/,
-        `<meta name="twitter:image" content="${esc(art)}">`
-      );
-  }
-
-  const inject =
-    `<link rel="canonical" href="${esc(pageUrl)}">\n` +
-    `<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">\n` +
-    `<script>window.__SLUG_ARTIST__=${JSON.stringify({
+  let html = applySurfaceHead(readPublicHtml("index.html"), surface, {
+    title,
+    description: desc,
+    keywords: `${name}, ${name} jukebox, ${name} lyrics, ${name} songs, free online music player, free jukebox, stream ${name}, ${surface.name}`,
+    url: pageUrl,
+    canonical: pageUrl,
+    // Only override when we found one; otherwise the surface's own card, which
+    // is already in the head, stands.
+    image: art || undefined,
+    // Drop the homepage WebApplication block; the artist graph replaces it.
+    jsonLd,
+    robots: "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1",
+    extraHead: `<script>window.__SLUG_ARTIST__=${JSON.stringify({
       id: artist.id,
       name: artist.name,
       slug: artist.slug,
-    })}</script>\n`;
-  html = html.replace("</head>", `${inject}</head>`);
+    })}</script>\n`,
+  });
 
   // Catalog text after </main> so crawlers see titles + lyrics. CSS clips it
   // for JS listeners from the first paint; the SPA also sets [hidden] once up.

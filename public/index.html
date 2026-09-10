@@ -4670,13 +4670,13 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   <div class="hdr-r1">
     <div class="hdr-r1-left">
       <div class="brand-block">
-        <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="goHome()" title="Back to the Suffering Jukebox home page">
+        <img src="/suffering-jukebox-text-logo.png" data-sj-logo alt="Suffering Jukebox" style="cursor:pointer" onclick="goHome()" title="Back to the Suffering Jukebox home page">
         <p class="brand-tagline" id="brand-tagline"></p>
       </div>
       <div id="filter-header"></div>
     </div>
     <div class="brand-block hdr-brand-mobile">
-      <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox" style="cursor:pointer" onclick="goHome()" title="Back to the Suffering Jukebox home page">
+      <img src="/suffering-jukebox-text-logo.png" data-sj-logo alt="Suffering Jukebox" style="cursor:pointer" onclick="goHome()" title="Back to the Suffering Jukebox home page">
     </div>
     <div class="header-btns">
       <div class="hdr-search-wrap">
@@ -4870,7 +4870,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
           <div class="set-body">
             <div class="set-block">
       <div class="set-h">Shuffle</div>
-      <p class="set-sub">Choose how Suffering Jukebox selects the next song when Shuffle is on.</p>
+      <p class="set-sub" data-sj-brand="Choose how {brand} selects the next song when Shuffle is on.">Choose how Suffering Jukebox selects the next song when Shuffle is on.</p>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="discovery" onchange="sjSetShufflePreference(this.value)"><span><b>Discovery</b><span class="set-sub" style="display:block">Gives less-listened-to tracks more weight in your personal shuffle.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="favorites" onchange="sjSetShufflePreference(this.value)"><span><b>Favorites First</b><span class="set-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats" onchange="sjSetShufflePreference(this.value)"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
@@ -5383,7 +5383,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 <!-- SHARE MODAL -->
 <div class="pl-modal-overlay" id="shareModalOverlay" onclick="if(event.target===this)closeShareModal()">
   <div class="pl-modal" style="width:400px">
-    <div class="pl-modal-header"><span class="pl-modal-title">Share Suffering Jukebox</span><button class="modal-close" onclick="closeShareModal()">✕</button></div>
+    <div class="pl-modal-header"><span class="pl-modal-title" data-sj-brand="Share {brand}">Share Suffering Jukebox</span><button class="modal-close" onclick="closeShareModal()">✕</button></div>
     <div class="pl-modal-body">
       <p style="font-size:.54rem;color:#666;line-height:1.5;margin-bottom:.85rem">Share with friends - each link is tagged so visits show up in analytics.</p>
       <div id="share-native-wrap" style="display:none"><button type="button" class="share-native-btn" onclick="shareNative()">Share via…</button></div>
@@ -5588,7 +5588,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   <div class="pl-modal sjd-modal" id="admin-metrics-modal">
     <div class="sjd-header">
       <div>
-        <div class="sjd-eyebrow">Suffering Jukebox: Admin</div>
+        <div class="sjd-eyebrow" data-sj-brand="{brand}: Admin">Suffering Jukebox: Admin</div>
         <div class="sjd-title">In-App <span>Analytics</span></div>
       </div>
       <div class="sjd-tabs" id="sjd-tabs">
@@ -6058,6 +6058,64 @@ const ANON    = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsIn
 const SYNC_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/music-sync';
 const YT_FN   = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/youtube-sync';
 const COMMUNITY_FN = 'https://ntyvtpimesfoesuykuyi.supabase.co/functions/v1/community-import';
+
+// ── Brand surface ─────────────────────────────────────────────
+// One codebase, two brands. Suffering Jukebox leads with artists; Listening
+// Party leads with playlists. The server stamps window.__SURFACE__ into the
+// head and src/lib/surface.ts is the source of truth for what is in it. The
+// defaults below are the Suffering Jukebox values, so this file still opens
+// and runs on its own.
+//
+// Read the brand through SJ_BRAND. Never type the product name into a string:
+// that is exactly the drift a fork would have caused.
+const SJ_BRAND = Object.assign({
+  id: 'sj',
+  name: 'Suffering Jukebox',
+  url: 'https://www.sufferingjukebox.stream',
+  host: 'sufferingjukebox.stream',
+  origins: ['https://sufferingjukebox.stream', 'https://www.sufferingjukebox.stream'],
+  tagline: '',
+  textLogo: '/suffering-jukebox-text-logo.png',
+  icon: '/favicon.png',
+  themeColor: '#ff6b35',
+  authScheme: 'com.johnnyoutlaw.sufferingjukebox',
+  shareText: 'Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, ratings, and lyrics.',
+  redditSub: 'sufferingjukebox',
+  features: { artistPages: true, artistJukebox: true, exploreSongs: true, defaultLandingTab: 'explore', shareImages: true }
+}, (window.__SURFACE__ || {}));
+SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
+
+/** An origin this brand may legitimately be served from. */
+function sjIsBrandOrigin(origin) {
+  return origin === window.location.origin || (SJ_BRAND.origins || []).indexOf(origin) !== -1;
+}
+/** A hostname belonging to this brand, including www and any subdomain. */
+function sjIsBrandHost(h) {
+  h = String(h || '').toLowerCase();
+  return h === SJ_BRAND.host || h === 'www.' + SJ_BRAND.host || h.endsWith('.' + SJ_BRAND.host);
+}
+/**
+ * The body markup is authored as Suffering Jukebox. Point the few brand-bearing
+ * elements at the live brand instead. Idempotent, and safe to call twice.
+ */
+function sjApplyBrandToDom() {
+  try {
+    const logoTitle = 'Back to the ' + SJ_BRAND.name + ' home page';
+    document.querySelectorAll('img[data-sj-logo]').forEach(function (img) {
+      if (img.getAttribute('src') !== SJ_BRAND.textLogo) img.src = SJ_BRAND.textLogo;
+      img.alt = SJ_BRAND.name;
+      img.title = logoTitle;
+    });
+    document.querySelectorAll('[data-sj-brand]').forEach(function (el) {
+      const t = el.getAttribute('data-sj-brand');
+      el.textContent = t ? t.split('{brand}').join(SJ_BRAND.name) : SJ_BRAND.name;
+    });
+  } catch (_) {}
+}
+sjApplyBrandToDom();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', sjApplyBrandToDom);
+}
 let amMaxPl = 50;   // playlists the edge function will accept in one import
 let amMaxTrk = 60;  // tracks it takes from any single playlist
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
@@ -6790,7 +6848,7 @@ let ytQueueIdx          = -1;   // index of currently playing item
 let _ytLastPlayed       = null; // last track before the current one (shuffle-safe back)
 let _ytSkipLastCapture  = false;
 let SJ_TRACK_META = {}; // trackId -> {title, artist, album, year}; populated as data loads so community/landing playback resolves the title
-let _sjBaseTitle = 'Suffering Jukebox'; // tab title to restore to when the player closes
+let _sjBaseTitle = SJ_BRAND.name; // tab title to restore to when the player closes
 let nowPlayingTrackId   = null;  // trackId of the row to highlight orange in track lists
 let ytShuffle           = false;
 let ytRepeat            = false;
@@ -8073,7 +8131,7 @@ function ytpMountFrameContent(frame, videoId, h, autoplay) {
 // YouTube embed refuses that outright (error 153). So on native we embed
 // /yt-frame - a real https origin - which owns the player and relays it over
 // postMessage. On the web none of this is reachable.
-const SJ_FRAME_ORIGIN = 'https://www.sufferingjukebox.stream';
+const SJ_FRAME_ORIGIN = SJ_BRAND.url;
 const sjIsNative = () => window.__SJ_NATIVE__ === true;
 
 function ytpEmbedSrc(videoId, autoplay) {
@@ -8216,7 +8274,7 @@ function closeYTPlayer() {
     nowPlayingTrackId = null; applyNowPlayingHighlight();
     refreshQuickPlaylistNowPlaying();
     try { sjSyncNowPlayingTab(); } catch (_) {}
-    document.title = _sjBaseTitle || 'Suffering Jukebox';
+    document.title = _sjBaseTitle || SJ_BRAND.name;
   }, 140);
 }
 
@@ -11663,7 +11721,7 @@ function ytKickMobilePlay() {
 // million comparisons, on top of a full catalogue scan per row.
 function ytpTrackMeta(trackId, fallbackTitle, videoIdHint, queueItemHint) {
   if (!trackId) {
-    return { title: fallbackTitle || 'Suffering Jukebox', artist: 'Silver Jews', album: '', artwork: '/favicon.png' };
+    return { title: fallbackTitle || SJ_BRAND.name, artist: 'Silver Jews', album: '', artwork: SJ_BRAND.icon };
   }
   let track = null, album = null, artist = null;
   for (const aid of Object.keys(tracks)) {
@@ -13910,7 +13968,7 @@ function bgsRender() {
       '<div class="bgs-ok">✓ Ready for background play</div>' +
       '<div class="bgs-lede">' + (mob
         ? 'Turn it on and the uploaded audio takes over from the video, so this keeps playing with your screen off.'
-        : 'Background play runs on phones. Open Suffering Jukebox on your phone, play this song, and tap <b>Background Play</b> in the player — it is already set up.') +
+        : 'Background play runs on phones. Open ' + SJ_BRAND.name + ' on your phone, play this song, and tap <b>Background Play</b> in the player — it is already set up.') +
       '</div>' +
       (googleUser
         ? bgsPickerHtml('Replace the audio file', 'Drop a file here or click to choose a different one') + bgsFolderHtml(meta) + bgsConsentHtml() + bgsMeterHtml()
@@ -19038,7 +19096,7 @@ function mgbIsUsableArtUrl(u) {
     const h = url.hostname.toLowerCase();
     if (h.includes('ytimg.com') || h.includes('ggpht.com')) return true;
     if (h.includes('upload.wikimedia.org')) return true;
-    if ((h === location.hostname || h.endsWith('.sufferingjukebox.stream')) && url.pathname.startsWith('/album-art/')) return true;
+    if ((h === location.hostname || sjIsBrandHost(h)) && url.pathname.startsWith('/album-art/')) return true;
     return false;
   } catch (_) { return false; }
 }
@@ -19921,7 +19979,7 @@ async function msDeleteLink(linkId) {
 async function msDelete() {
   if (_msBusy || !_msTrackId || !_msData) return;
   const name = _msData.track?.name || 'this song';
-  if (!confirm('Remove "' + name + '" from Suffering Jukebox? This cannot be undone.')) return;
+  if (!confirm('Remove "' + name + '" from ' + SJ_BRAND.name + '? This cannot be undone.')) return;
   _msBusy = true;
   msStatus('Removing…');
   try {
@@ -21724,7 +21782,7 @@ function plbWizardTopHTML() {
       : 'Choose where the songs for this playlist will come from.';
     return steps + `<div class="plb-hint">${lead}</div>` +
       `<div class="plb-source-grid" style="--src-cols:3">` +
-        `<button type="button" class="plb-source-card${_plbImportSource === 'jukebox' ? ' on' : ''}" onclick="plbSetImportSource('jukebox')"><b>Search the Jukebox</b><span>Find songs, albums, or artists already in Suffering Jukebox.</span></button>` +
+        `<button type="button" class="plb-source-card${_plbImportSource === 'jukebox' ? ' on' : ''}" onclick="plbSetImportSource('jukebox')"><b>Search the Jukebox</b><span>Find songs, albums, or artists already in ${SJ_BRAND.name}.</span></button>` +
         `<button type="button" class="plb-source-card${_plbImportSource === 'yt-playlist' ? ' on' : ''}" onclick="plbSetImportSource('yt-playlist')"><b>A YouTube playlist</b><span>Find a playlist or paste its link, review its songs, and choose which ones to bring in.</span></button>` +
         `<button type="button" class="plb-source-card${_plbImportSource === 'yt-song' ? ' on' : ''}" onclick="plbSetImportSource('yt-song')"><b>A song from YouTube</b><span>Search YouTube one song at a time and pull each one into the Jukebox.</span></button>` +
       `</div>`;
@@ -23468,7 +23526,7 @@ function renderNowPlayingHeader() {
   const row = nowPlayingDynamicRow();
   const count = row?._tracks?.length || playlistChartRows.length || 0;
   nav.style.display = 'block';
-  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
+  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse ${SJ_BRAND.name}">
     <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>
     <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>
     <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>
@@ -24063,7 +24121,7 @@ function renderPlaylistExploreHeader() {
   if (!nav || playlistChartId === '__dynamic_now_playing') return;
   const _np = nowPlayingDynamicRow();
   nav.style.display = 'block';
-  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
+  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse ${SJ_BRAND.name}">
     <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('explore')">Explore Artists</button>
     <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('playlists')">Explore Playlists</button>
     <button type="button" class="landing-tab" onclick="returnToPlaylistExplorer('songs')">Explore Songs</button>
@@ -27077,7 +27135,7 @@ async function initLanding() {
   try {
     const tagline = document.getElementById('brand-tagline');
     if (tagline) tagline.textContent = '';
-    document.title = _sjBaseTitle = 'Suffering Jukebox';
+    document.title = _sjBaseTitle = SJ_BRAND.name;
     const _lsSess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
     const rows = await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
@@ -27206,7 +27264,7 @@ function landingSubmitterOptions() {
   landingStats.forEach(r => {
     if (r.hidden) return;
     const key = r.added_by_name || '__official__';
-    if (!counts.has(key)) counts.set(key, { label: r.added_by_name ? r.added_by_name : 'Suffering Jukebox (official)', n: 0 });
+    if (!counts.has(key)) counts.set(key, { label: r.added_by_name ? r.added_by_name : (SJ_BRAND.name + ' (official)'), n: 0 });
     counts.get(key).n++;
   });
   return [...counts.entries()].map(([key, v]) => [key, v.label, v.n]).sort((a, b) => {
@@ -29826,7 +29884,7 @@ async function loadArtistPageData() {
   const _ap = FEATURED_ARTIST_ID;
   const _one = _ap && allArtists.find(a => a.id === _ap);
   if (_one) {
-    document.title = _sjBaseTitle = _one.name + ' Jukebox: Suffering Jukebox';
+    document.title = _sjBaseTitle = _one.name + ' Jukebox: ' + SJ_BRAND.name;
     const _tag = document.getElementById('brand-tagline');
     if (_tag) _tag.innerHTML = 'The <strong>' + (_one.name || '').replace(/</g, '&lt;') + '</strong> jukebox' + (_one.added_by_name ? ', added to the community by ' + (_one.added_by_name || '').replace(/</g, '&lt;') : '');
   }
@@ -30699,7 +30757,7 @@ function updateLandingActionsHeader() {
     : '';
   const row2 = (scopeChips || totals || actions)
     ? `<div class="landing-nav-row2">${scopeChips}${totals}${shuffle}${actions}</div>` : '';
-  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse Suffering Jukebox">
+  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse ${SJ_BRAND.name}">
     <button type="button" class="landing-tab${landingTab === 'explore' ? ' active' : ''}" onclick="setLandingTab('explore')">Explore Artists</button>
     <button type="button" class="landing-tab${landingTab === 'playlists' ? ' active' : ''}" onclick="setLandingTab('playlists')">Explore Playlists</button>
     <button type="button" class="landing-tab${landingTab === 'songs' ? ' active' : ''}" onclick="setLandingTab('songs')">Explore Songs</button>
@@ -31894,7 +31952,7 @@ function renderOtherArtistsBtn() {
   const _byCounts = new Map();
   _oaList.forEach(a => {
     const k = a.added_by_name || '__official__';
-    if (!_byCounts.has(k)) _byCounts.set(k, { label: a.added_by_name || 'Suffering Jukebox (official)', n: 0 });
+    if (!_byCounts.has(k)) _byCounts.set(k, { label: a.added_by_name || (SJ_BRAND.name + ' (official)'), n: 0 });
     _byCounts.get(k).n++;
   });
   const _byOpts = [..._byCounts.entries()].sort((x, y) =>
@@ -31977,7 +32035,7 @@ function renderOtherArtistsBtn() {
       </div>
     </div>
   </div>
-  <a href="/" class="ctrl-btn" onclick="event.preventDefault();goHome()" title="Back to the Suffering Jukebox home page">Home</a>`;
+  <a href="/" class="ctrl-btn" onclick="event.preventDefault();goHome()" title="Back to the ${SJ_BRAND.name} home page">Home</a>`;
 }
 
 function amStepReset() {
@@ -35506,8 +35564,10 @@ function sjApiUrl(path) {
   // the expected pattern". Every API call has to go to the real origin.
   if (sjIsNative()) return SJ_FRAME_ORIGIN + path;
   const host = window.location.hostname;
-  const base = host === 'sufferingjukebox.stream'
-    ? 'https://www.sufferingjukebox.stream'
+  // The apex redirects to www on Suffering Jukebox, and a redirect mid-request
+  // loses the Authorization header, so address the canonical origin directly.
+  const base = host === SJ_BRAND.host && SJ_BRAND.url !== 'https://' + SJ_BRAND.host
+    ? SJ_BRAND.url
     : window.location.origin;
   return base + path;
 }
@@ -35562,9 +35622,7 @@ const SJ_ANALYTICS_SESSION_REQUEST = 'sj:analytics-session-request';
 const SJ_ANALYTICS_SESSION_DELIVERY = 'sj:analytics-session-delivery';
 
 function sjIsTrustedAnalyticsOrigin(origin) {
-  return origin === window.location.origin
-    || origin === 'https://sufferingjukebox.stream'
-    || origin === 'https://www.sufferingjukebox.stream';
+  return sjIsBrandOrigin(origin);
 }
 
 function openAnalyticsInNewTab() {
@@ -36251,7 +36309,7 @@ function setAudioRender() {
     if (!googleUser) return '';
     const waiting = sjCpPending().length;
     return '<p class="set-sub">' + (waiting
-      ? '<b>' + waiting + ' song' + (waiting === 1 ? '' : 's') + '</b> waiting for your iPhone — open Suffering Jukebox on the phone and tap Download. ' +
+      ? '<b>' + waiting + ' song' + (waiting === 1 ? '' : 's') + '</b> waiting for your iPhone — open ' + SJ_BRAND.name + ' on the phone and tap Download. ' +
         '<button type="button" class="oa-act" onclick="sjCpClearAll()">Clear queue</button>'
       : 'Send songs to your iPhone here, then accept them in the app to play them in CarPlay and offline.') + '</p>';
   })();
@@ -36695,7 +36753,7 @@ function sjAuthRedirectUrl() {
 
 // Custom scheme the sign-in sheet hands the callback back on. It never has to
 // resolve to anything - ASWebAuthenticationSession intercepts it.
-const SJ_AUTH_SCHEME = 'com.johnnyoutlaw.sufferingjukebox';
+const SJ_AUTH_SCHEME = SJ_BRAND.authScheme;
 
 async function handleAuthClick() {
   if (googleUser) return;
@@ -39370,14 +39428,14 @@ sjDlInit();
 trackPageView();
 
 // ── Share (UTM-tagged links for analytics) ───────────────────
-const SJ_SHARE_SITE = 'https://sufferingjukebox.stream';
-const SJ_SHARE_TEXT = 'Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, ratings, and lyrics.';
+const SJ_SHARE_SITE = SJ_BRAND.url;
+const SJ_SHARE_TEXT = SJ_BRAND.shareText;
 
 function buildShareUrl(medium) {
   const url = new URL(SJ_SHARE_SITE);
   url.searchParams.set('utm_source', 'share');
   url.searchParams.set('utm_medium', medium);
-  url.searchParams.set('utm_campaign', 'suffering_jukebox');
+  url.searchParams.set('utm_campaign', SJ_BRAND.utmCampaign);
   return url.toString();
 }
 
@@ -39445,7 +39503,7 @@ function sjExportArtistMeta() {
     || (allArtists.length === 1 ? allArtists[0] : null)
     || allArtists[0]
     || null;
-  const name = (a && a.name) || 'Suffering Jukebox';
+  const name = (a && a.name) || SJ_BRAND.name;
   const slug = (a && a.slug)
     || (_SLUG_ARTIST && _SLUG_ARTIST.slug)
     || String(name).toLowerCase().replace(/['\u2019]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
@@ -40018,7 +40076,7 @@ function sjShareVia(medium) {
   const url  = sjJukeboxShareUrl();
   const note = (document.getElementById('sjs-text')?.value || '').trim();
   const text = note || (_sjShareKind === 'playlist' ? name : `${name} Jukebox`);
-  if (medium === 'native') { navigator.share({ title: 'Suffering Jukebox', text, url }).catch(() => {}); return; }
+  if (medium === 'native') { navigator.share({ title: SJ_BRAND.name, text, url }).catch(() => {}); return; }
   if (medium === 'sms')    { window.open(`sms:?${/iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : ''}body=${encodeURIComponent(text + ' ' + url)}`, '_blank'); return; }
   if (medium === 'email')  { window.open(`mailto:?subject=${encodeURIComponent(text)}&body=${encodeURIComponent(text + '\n\n' + url)}`, '_blank'); return; }
   if (medium === 'twitter'){ window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer'); return; }
@@ -40344,7 +40402,7 @@ async function sjExportComposeReel({ artistName, slug, label, stageBlob }) {
   ctx.fillText('Open & play', W / 2, H - 110);
   ctx.fillStyle = '#ff6b35';
   ctx.font = '600 26px Inter, system-ui, sans-serif';
-  const url = 'sufferingjukebox.stream/' + slug;
+  const url = SJ_BRAND.host + '/' + slug;
   ctx.fillText(url, W / 2, H - 70);
 
   return new Promise((resolve, reject) => {
@@ -40374,7 +40432,7 @@ function closeShareModal() {
 async function shareNative() {
   const url = buildShareUrl('native');
   try {
-    await navigator.share({ title: 'Suffering Jukebox', text: SJ_SHARE_TEXT, url });
+    await navigator.share({ title: SJ_BRAND.name, text: SJ_SHARE_TEXT, url });
     closeShareModal();
   } catch (e) {
     if (e?.name !== 'AbortError') showShareToast('Could not open share sheet');
@@ -40402,7 +40460,7 @@ async function shareVia(medium) {
     return;
   }
   if (medium === 'email') {
-    window.open(`mailto:?subject=${encodeURIComponent('Suffering Jukebox')}&body=${encodeURIComponent(body)}`, '_blank');
+    window.open(`mailto:?subject=${encodeURIComponent(SJ_BRAND.name)}&body=${encodeURIComponent(body)}`, '_blank');
     closeShareModal();
     return;
   }
@@ -40569,7 +40627,7 @@ function updatePageTitle(visAlbList) {
 }
 
 if (IS_COMMUNITY) {
-  document.title = _sjBaseTitle = 'Community Jukebox: Suffering Jukebox';
+  document.title = _sjBaseTitle = 'Community Jukebox: ' + SJ_BRAND.name;
   const _tag = document.getElementById('brand-tagline');
   if (_tag) _tag.innerHTML = 'The <strong>Community</strong> jukebox, music added by listeners';
   document.querySelectorAll('.hdr-brand-mobile img, .brand-block img').forEach(img => { img.title = 'Community Jukebox'; });
