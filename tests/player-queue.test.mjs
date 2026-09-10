@@ -63,22 +63,34 @@ test('a rating is deliberately not in the signature', () => {
   assert.equal(sigOf([song('1')]), sigOf([song('1', { myVote: 1, hearts: 3 })]));
 });
 
-test('the queue list and the dock list hold separate signatures of the same value', () => {
-  // ytpPaintDockPlaylist is a SECOND copy of the list and it runs before
-  // updateYTQueueUI's own guard, so it needs its own remembered signature.
+test('the queue list and the dock list hold separate signatures of one shared value', () => {
+  // The dock is a SECOND copy of the list and it paints before updateYTQueueUI
+  // reaches its own guard, so it still needs its own remembered signature - but
+  // the value is built ONCE per update and handed down. Building it twice walked
+  // the whole queue twice for an answer that cannot have changed in between.
   assert.match(dashboardHtml, /let _ytQueueSig = null;/);
   assert.match(dashboardHtml, /let _ytpDockPlaylistSig = null;/);
-  const dock = htmlSlice('function ytpPaintDockPlaylist()', '\nfunction ');
-  assert.match(dock, /const sig = ytQueueSignature\(\);/);
+  const update = htmlSlice('function updateYTQueueUI(opts)', '\nfunction ');
+  assert.equal(
+    (update.match(/ytQueueSignature\(\)/g) || []).length, 1,
+    'one signature per update, not one per list',
+  );
+  assert.match(update, /ytpPaintDockPlaylist\(queueSig\)/);
+  const dock = htmlSlice('function ytpPaintDockPlaylist(sig, fromSync)', '\nfunction ');
   assert.match(dock, /sig === _ytpDockPlaylistSig/);
 });
 
 test('a row already carrying its artist never pays for a catalogue scan', () => {
   // ytpTrackMeta scans the whole catalogue AND scans ytQueue. Called once per
-  // row it made the render quadratic.
-  const dock = htmlSlice('function ytpPaintDockPlaylist()', '\nfunction ');
-  assert.match(dock, /item\.trackId && !item\.artist/);
-  assert.match(dock, /ytpTrackMeta\(item\.trackId, item\.title, null, item\)/);
+  // row it made the render quadratic. There is now exactly one place that can
+  // make that call, and both lists read their names through it.
+  const label = htmlSlice('function ytQueueLabelAt(i)', '\nfunction ');
+  assert.match(label, /item\.trackId && !item\.artist/);
+  assert.match(label, /ytpTrackMeta\(item\.trackId, item\.title, null, item\)/);
+  const dock = htmlSlice('function ytpDockRowHTML(i)', '\nfunction ');
+  assert.doesNotMatch(dock, /ytpTrackMeta\(/, 'the dock reads names through ytQueueLabelAt');
+  const row = htmlSlice('function ytQueueRowHTML(i)', '\nfunction ');
+  assert.doesNotMatch(row, /ytpTrackMeta\(/, 'so does the player list');
 });
 
 // ── Moving a row without losing the song on screen ────────────────────────

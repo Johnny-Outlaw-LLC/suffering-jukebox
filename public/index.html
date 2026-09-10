@@ -443,7 +443,17 @@ main > * { min-width: 0; }
 #sj-lh-body { overflow-y:auto;padding:12px 18px 18px;display:flex;flex-direction:column;gap:12px }
 .sj-lh-stats { display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px }
 .sj-lh-stat { border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--bg-elevated) }
-.sj-lh-stat b { display:block;font-size:.8rem;line-height:1.25 }
+.sj-lh-stat b { display:flex;align-items:center;gap:5px;font-size:.8rem;line-height:1.25 }
+.sj-lh-ic { display:inline-flex;width:15px;height:15px;flex:none }
+.sj-lh-ic svg { width:100%;height:100% }
+.sj-lh-ic.up { color:#22c55e }
+.sj-lh-ic.heart { color:#f43f5e }
+.sj-lh-ic.off { color:var(--text-muted);opacity:.45 }
+/* Listens over time. Wider than a counter because a shape needs room to be a
+   shape, and it is drawn from the very rows listed below it. */
+.sj-lh-stat.spark { grid-column:span 2;min-width:150px }
+.sj-lh-spark { display:block;width:100%;height:26px;color:var(--accent);margin:1px 0 2px }
+.sj-lh-spark rect { fill:currentColor;opacity:.85 }
 .sj-lh-stat span { font-size:.4rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em }
 .sj-lh-why { border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-elevated);font-size:.5rem;line-height:1.7;color:var(--text-muted) }
 .sj-lh-why b { color:var(--text) }
@@ -2857,7 +2867,9 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
                        background:var(--bg-elevated); border:1px solid var(--border); border-radius:5px; outline:none; }
 .yt-queue-find input:focus { border-color:var(--accent); }
 .yt-queue-find .cnt { flex-shrink:0; font-size:.42rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted); }
-.yt-queue-row.filtered { display:none; }
+/* Spacers standing in for the rows outside the window. They carry the height
+   of what is not drawn, so the scrollbar is the size of the whole queue. */
+.yt-queue-pad, .ytp-mf-playlist-pad { flex:none; }
 .yt-queue-up-next { display:flex; align-items:center; gap:7px; min-width:0; padding:5px 10px 6px; background:var(--bg-elevated); border-bottom:1px solid var(--border); }
 .yt-queue-up-next-lbl { color:var(--accent); font-size:.42rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; flex-shrink:0; }
 .yt-queue-up-next-title { flex:1; min-width:0; color:var(--text); font-size:.55rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -4595,7 +4607,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <div class="ytp-mf-video-slot" id="ytp-mf-video-slot"></div>
       </div>
       <div class="ytp-mf-side">
-      <div class="ytp-mf-playlist" id="ytp-mf-playlist" onclick="event.stopPropagation()"></div>
+      <div class="ytp-mf-playlist" id="ytp-mf-playlist" onclick="event.stopPropagation()" onscroll="ytpDockPlaylistOnScroll()"></div>
       <div class="ytp-mf-meta">
         <div class="ytp-mf-artist" id="ytp-mf-artist"></div>
         <div class="ytp-mf-song-row">
@@ -9770,10 +9782,33 @@ function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
   attachYTQueueChoiceCloser();
 }
 
+// The playing row is usually outside the drawn window, so its position is
+// worked out from the model instead of being read off an element that is not
+// there. A long jump lands instantly: a smooth scroll across a windowed list
+// outruns the renderer and would flash empty spacers on the way.
 function ytScrollQueueToCurrent() {
   if (!ytPlayerEl) return;
-  const row = ytPlayerEl.querySelector(`.yt-queue-row[data-queue-idx="${ytQueueIdx}"]`);
-  if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const sec = ytPlayerEl.querySelector('.yt-queue-section');
+  if (!sec) return;
+  if (!(_ytQueueRowH > 0)) {
+    const row = ytPlayerEl.querySelector('.yt-queue-row[data-queue-idx="' + ytQueueIdx + '"]');
+    if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return;
+  }
+  const pos = ytQueueVisibleIdx().indexOf(ytQueueIdx);
+  if (pos < 0) return;                       // filtered out of the list on screen
+  const head  = ytPlayerEl.querySelector('.yt-queue-sticky');
+  const headH = head ? head.offsetHeight : 0;
+  const view  = sec.clientHeight || 0;
+  const top   = headH + pos * _ytQueueRowH;
+  if (top >= sec.scrollTop + headH && top + _ytQueueRowH <= sec.scrollTop + view) return;
+  const target = Math.max(0, top - Math.round((view - _ytQueueRowH) / 2));
+  if (Math.abs(target - sec.scrollTop) > view * 2) {
+    sec.scrollTop = target;
+    ytQueueRenderWindow(true);
+  } else {
+    sec.scrollTo({ top: target, behavior: 'smooth' });
+  }
 }
 
 function ytRemoveFromQueue(i) {
@@ -9810,7 +9845,14 @@ function updateYTQueueUI(opts) {
   try { if (_sjjLive) sjjNudgeSync(); } catch (_) {}
   refreshQuickPlaylistNowPlaying();
   playlistChartRefreshPlayback();
-  ytpPaintDockPlaylist();
+  // One signature per update, shared with the dock's copy of the list. It walks
+  // the whole queue to build a string, so computing it twice was pure waste.
+  const queueSig = ytQueueSignature();
+  if (queueSig !== _ytQueueLabelSig) {
+    _ytQueueLabelSig = queueSig;
+    ytQueueResetLabels();
+  }
+  ytpPaintDockPlaylist(queueSig);
   try { sjSyncNowPlayingTab(); } catch (_) {}
   if (!ytPlayerEl) return;
   // The player is rebuilt often enough that the badge has to be re-applied
@@ -9840,7 +9882,6 @@ function updateYTQueueUI(opts) {
     return;
   }
 
-  const queueSig = ytQueueSignature();
   const listUnchanged = !!existingWrap && queueSig === _ytQueueSig;
 
   // (queue height is now fixed - no drag handle)
@@ -9851,6 +9892,8 @@ function updateYTQueueUI(opts) {
     // cannot have moved, so neither is re-run.
     const prev = ytPlayerEl.querySelector('.yt-queue-row.active');
     if (prev) prev.classList.remove('active');
+    // The playing row may sit outside the drawn window, which is not a
+    // failure - there is simply nothing on screen to highlight.
     const cur = ytPlayerEl.querySelector('.yt-queue-row[data-queue-idx="' + ytQueueIdx + '"]');
     if (cur) cur.classList.add('active');
     ytpQueueTail(opts, savedScroll);
@@ -9859,7 +9902,7 @@ function updateYTQueueUI(opts) {
 
   const queueHTML = `<div class="yt-queue-wrap" style="display:flex;flex-direction:column;flex-shrink:0">
     ${ytPlaylistBarHTML()}
-    <div class="yt-queue-section">
+    <div class="yt-queue-section" onscroll="ytQueueOnScroll()">
       <div class="yt-queue-sticky">
         <div class="yt-queue-head">
           <span>Queue · ${ytQueue.length} track${ytQueue.length === 1 ? '' : 's'}</span>
@@ -9873,33 +9916,7 @@ function updateYTQueueUI(opts) {
           <span class="cnt" id="yt-queue-find-count"></span>
         </div>
       </div>
-      ${ytQueue.map((item, i) => {
-        // The lookup is only here for the artist name, and it costs a scan of
-        // the whole catalogue. A hydrated row already carries the name that
-        // scan would find - ytpHydrateQueueMeta() reads it out of the same
-        // catalogue - so a queue that has been filled in skips it entirely.
-        const _qm = (item.trackId && !item.artist) ? ytpTrackMeta(item.trackId, item.title, null, item) : null;
-        const _qArtist = (_qm && _qm.artist) || item.artist || '';
-        const _qSong = item.title || (_qm && _qm.title) || '';
-        const _qLabel = (_qArtist ? (_qArtist + ' - ' + _qSong) : _qSong).replace(/</g, '&lt;');
-        return `<div class="yt-queue-row${i === ytQueueIdx ? ' active' : ''}" data-queue-idx="${i}" data-find="${_qLabel.toLowerCase().replace(/"/g, '&quot;')}" onclick="ytPlayQueueIdx(${i})">
-        <span class="yt-queue-num">${i + 1}</span>
-        <span class="yt-queue-title">${_qLabel}</span>
-        ${(item.addedBy && !item.addedByOwner) ? `<span class="yt-queue-by" title="Queued from the Online Jukebox by ${escHtml(item.addedBy)}">Added by ${escHtml(item.addedBy)}</span>` : ''}
-        ${item.trackId ? `<button class="tvb-cycle${voteClass(getMyVote(item.trackId))}" data-vote-track="${item.trackId}" onclick="cycleVote('${item.trackId}');event.stopPropagation()" title="Rate">${VOTE_LABELS[String(getMyVote(item.trackId))]||'-'}</button>` : ''}
-        ${item.trackId ? `<button class="yt-queue-more" onclick="sjmOpenQueue(${i},this,event)" title="More">⋯</button>` : ''}
-        <span class="yt-queue-moves">
-          <button onclick="event.stopPropagation();ytMoveQueue(${i},${i}-1)"
-            class="yt-queue-move"
-            ${i===0?'disabled':''}>▲</button>
-          <button onclick="event.stopPropagation();ytMoveQueue(${i},${i}+1)"
-            class="yt-queue-move"
-            ${i===ytQueue.length-1?'disabled':''}>▼</button>
-        </span>
-        <button onclick="event.stopPropagation();ytRemoveFromQueue(${i})"
-          class="yt-queue-remove">✕</button>
-      </div>`;
-      }).join('')}
+      <div class="yt-queue-rows" id="yt-queue-rows"></div>
     </div>
   </div>`;
 
@@ -9916,7 +9933,8 @@ function updateYTQueueUI(opts) {
     ytPlayerEl.insertAdjacentHTML('beforeend', queueHTML);
   }
   _ytQueueSig = queueSig;
-  ytApplyQueueFilter();
+  ytQueueRenderWindow(true);
+  ytQueueSyncFindCount();
   if (findFocused) {
     const fresh = ytPlayerEl.querySelector('#yt-queue-find');
     if (fresh) {
@@ -9943,53 +9961,118 @@ function ytpQueueTail(opts, savedScroll) {
     // Reorder rebuild used to reset scroll then jump to the playing row.
     // Stay put; only nudge if the moved row left the visible strip.
     freshQueue.scrollTop = savedScroll;
-    if (opts.keepIdx != null) {
-      const row = freshQueue.querySelector('.yt-queue-row[data-queue-idx="' + opts.keepIdx + '"]');
-      if (row) {
-        const rowRect = row.getBoundingClientRect();
-        const secRect = freshQueue.getBoundingClientRect();
-        if (rowRect.top < secRect.top) {
-          freshQueue.scrollTop -= (secRect.top - rowRect.top);
-        } else if (rowRect.bottom > secRect.bottom) {
-          freshQueue.scrollTop += (rowRect.bottom - secRect.bottom);
-        }
-      }
-    }
+    ytQueueRenderWindow();
+    if (opts.keepIdx != null) ytQueueNudgeIntoView(opts.keepIdx);
   } else {
-    requestAnimationFrame(() => ytScrollQueueToCurrent());
+    requestAnimationFrame(() => { ytQueueRenderWindow(); ytScrollQueueToCurrent(); });
   }
   ytpMobSyncDeck();
   if (!opts.skipMetaHydrate) ytpHydrateQueueMeta();
 }
 
 // The dock's own copy of the playlist. Same list, same size, and this one runs
-// on EVERY updateYTQueueUI call, before that function's own guard - so it gets
-// the same treatment: rebuild only when the songs change, and do not go looking
-// up an artist name the row already carries.
-function ytpPaintDockPlaylist() {
+// on EVERY updateYTQueueUI call - so it gets the same treatment as the player's
+// list: windowed, and rebuilt only when the songs change.
+//
+// It is also DISPLAY:NONE most of the time. It only shows on a desktop, with
+// the dock minimised, grown, and tall enough to fit it. Building 796 rows into
+// a hidden element on every queue change bought nothing, so a hidden list is
+// marked dirty and left alone; ytpDockSyncPlaylist() paints it at the moment it
+// puts it on screen.
+const SJ_DOCKLIST_OVERSCAN = 10;
+const SJ_DOCKLIST_MIN = 20;
+let _ytpDockRowH = 0;
+let _ytpDockWinFrom = -1;
+let _ytpDockWinTo = -1;
+let _ytpDockScrollFrame = 0;
+let _ytpDockMeasuring = false;
+
+function ytpDockPlaylistShowing() {
+  const dock = document.getElementById('ytp-mini-footer');
+  return !!dock && dock.classList.contains('dock-show-playlist');
+}
+
+function ytpPaintDockPlaylist(sig, fromSync) {
   const el = document.getElementById('ytp-mf-playlist');
   if (!el) return;
-  const sig = ytQueueSignature();
+  if (sig == null) sig = ytQueueSignature();
   if (sig === _ytpDockPlaylistSig && el.querySelector('.ytp-mf-playlist-row')) {
     const prev = el.querySelector('.ytp-mf-playlist-row.on');
     if (prev) prev.classList.remove('on');
-    const rows = el.querySelectorAll('.ytp-mf-playlist-row');
-    if (rows[ytQueueIdx]) rows[ytQueueIdx].classList.add('on');
-    if (_ytpMinimized) requestAnimationFrame(ytpDockSyncPlaylist);
+    const cur = el.querySelector('.ytp-mf-playlist-row[data-qi="' + ytQueueIdx + '"]');
+    if (cur) cur.classList.add('on');
+    if (_ytpMinimized && !fromSync) requestAnimationFrame(ytpDockSyncPlaylist);
     return;
   }
+  if (!ytpDockPlaylistShowing()) {
+    // Nothing on screen to be wrong. Mark it stale so the sync that reveals it
+    // rebuilds rather than trusting a signature it never drew.
+    _ytpDockPlaylistSig = null;
+    _ytpDockWinFrom = _ytpDockWinTo = -1;
+    if (_ytpMinimized && !fromSync) requestAnimationFrame(ytpDockSyncPlaylist);
+    return;
+  }
+  el.innerHTML = '<div class="ytp-mf-playlist-head">Current playlist &middot; ' + ytQueue.length + '</div>'
+    + '<div class="ytp-mf-playlist-rows" id="ytp-mf-playlist-rows"></div>';
   _ytpDockPlaylistSig = sig;
-  el.innerHTML = '<div class="ytp-mf-playlist-head">Current playlist · ' + ytQueue.length + '</div>'
-    + ytQueue.map((item, i) => {
-        const meta = (item.trackId && !item.artist) ? ytpTrackMeta(item.trackId, item.title, null, item) : null;
-        const label = [meta?.artist || item.artist, item.title || meta?.title].filter(Boolean).join(' - ');
-        return '<div class="ytp-mf-playlist-row' + (i === ytQueueIdx ? ' on' : '') + '" onclick="ytPlayQueueIdx(' + i + ')">'
-          + '<span class="ytp-mf-playlist-num">' + (i + 1) + '</span>'
-          + '<span class="ytp-mf-playlist-name">' + escHtml(label) + '</span>'
-          + '<button type="button" class="ytp-mf-playlist-rm" title="Remove from playlist" aria-label="Remove from playlist" onclick="event.stopPropagation();ytRemoveFromQueue(' + i + ')">✕</button>'
-          + '</div>';
-      }).join('');
-  if (_ytpMinimized) requestAnimationFrame(ytpDockSyncPlaylist);
+  _ytpDockWinFrom = _ytpDockWinTo = -1;
+  ytpDockRenderWindow(true);
+  if (_ytpMinimized && !fromSync) requestAnimationFrame(ytpDockSyncPlaylist);
+}
+
+function ytpDockRowHTML(i) {
+  const item = ytQueue[i] || {};
+  const label = ytQueueLabelAt(i).label;
+  return '<div class="ytp-mf-playlist-row' + (i === ytQueueIdx ? ' on' : '') +
+      '" data-qi="' + i + '" onclick="ytPlayQueueIdx(' + i + ')">'
+    + '<span class="ytp-mf-playlist-num">' + (i + 1) + '</span>'
+    + '<span class="ytp-mf-playlist-name">' + escHtml(label) + '</span>'
+    + '<button type="button" class="ytp-mf-playlist-rm" title="Remove from playlist" '
+    + 'aria-label="Remove from playlist" onclick="event.stopPropagation();ytRemoveFromQueue('
+    + i + ')">✕</button>'
+    + '</div>';
+}
+
+function ytpDockRenderWindow(force) {
+  const el = document.getElementById('ytp-mf-playlist');
+  const rowsEl = document.getElementById('ytp-mf-playlist-rows');
+  if (!el || !rowsEl) return;
+  const head = el.querySelector('.ytp-mf-playlist-head');
+  const headH = head ? head.offsetHeight : 0;
+  const total = ytQueue.length;
+  const rowH = _ytpDockRowH;
+  let start = 0, end = Math.min(total, SJ_DOCKLIST_MIN);
+  if (rowH > 0 && total) {
+    const top = Math.max(0, el.scrollTop - headH);
+    start = Math.max(0, Math.floor(top / rowH) - SJ_DOCKLIST_OVERSCAN);
+    end = Math.min(total, Math.max(
+      Math.ceil((top + Math.max(1, el.clientHeight)) / rowH) + SJ_DOCKLIST_OVERSCAN,
+      start + SJ_DOCKLIST_MIN));
+    if (end - start < SJ_DOCKLIST_MIN) start = Math.max(0, end - SJ_DOCKLIST_MIN);
+  }
+  if (!force && start === _ytpDockWinFrom && end === _ytpDockWinTo) return;
+  let html = '<div class="ytp-mf-playlist-pad" style="height:' + Math.max(0, start * rowH) + 'px"></div>';
+  for (let i = start; i < end; i++) html += ytpDockRowHTML(i);
+  html += '<div class="ytp-mf-playlist-pad" style="height:' + Math.max(0, (total - end) * rowH) + 'px"></div>';
+  rowsEl.innerHTML = html;
+  _ytpDockWinFrom = start; _ytpDockWinTo = end;
+  const first = rowsEl.querySelector('.ytp-mf-playlist-row');
+  if (first) {
+    const h = first.offsetHeight;
+    if (h > 0 && Math.abs(h - rowH) > 0.5 && !_ytpDockMeasuring) {
+      _ytpDockRowH = h;
+      _ytpDockMeasuring = true;
+      try { ytpDockRenderWindow(true); } finally { _ytpDockMeasuring = false; }
+    }
+  }
+}
+
+function ytpDockPlaylistOnScroll() {
+  if (_ytpDockScrollFrame) cancelAnimationFrame(_ytpDockScrollFrame);
+  _ytpDockScrollFrame = requestAnimationFrame(() => {
+    _ytpDockScrollFrame = 0;
+    ytpDockRenderWindow();
+  });
 }
 
 // ── Searching the playlist ───────────────────────────────────────────────
@@ -10018,23 +10101,233 @@ function ytQueueSignature() {
 let _ytQueueSig = null;
 let _ytpDockPlaylistSig = null;
 
+// -- The queue list is windowed -------------------------------------------
+// A 796 song queue drawn whole is about 800KB of markup, and the logs put that
+// at 320ms to 2.5s of blocked main thread on EVERY genuine queue change - a
+// guest add, a reorder, hydration landing. Only the rows near the viewport are
+// drawn now; two spacers carry the height of everything else, so the scrollbar
+// still measures the whole queue.
+//
+// The search filter is what used to force every row into the DOM. It no longer
+// reads the DOM at all - ytQueueVisibleIdx() filters the MODEL and the window
+// is a slice of that - so a filtered queue windows exactly like a whole one.
+const SJ_QLIST_OVERSCAN = 12;  // rows drawn past each edge, so a flick has cover
+const SJ_QLIST_MIN      = 24;  // floor, so a short list and the first measure work
+
+let _ytQueueLabels  = [];      // index -> { label, find }, filled as rows are drawn
+let _ytQueueVis     = null;    // the filtered index list the window slices
+let _ytQueueVisQ    = null;    // the query _ytQueueVis was built for
+let _ytQueueVisLen  = -1;      // the queue length it was built for
+let _ytQueueRowH    = 0;       // measured, because the phone's rows are taller
+let _ytQueueWinFrom = -1;
+let _ytQueueWinTo   = -1;
+let _ytQueueWinLaidOut = false; // was the last draw against a container with a height
+let _ytQueueMeasuring = false;  // re-entrancy guard for the row height correction
+let _ytQueueLabelSig = null;   // the queue the cached labels describe
+let _ytQueueScrollFrame = 0;
+
+function ytQueueResetLabels() {
+  _ytQueueLabels = [];
+  _ytQueueVis = null;
+  _ytQueueWinFrom = _ytQueueWinTo = -1;
+}
+
+// The name a row shows. The catalogue scan is only ever paid for a row being
+// drawn - at most a window's worth - because ytpHydrateQueueMeta() is already
+// on its way to fill item.artist in one batched lookup and re-render.
+function ytQueueLabelAt(i) {
+  const cached = _ytQueueLabels[i];
+  if (cached) return cached;
+  const item = ytQueue[i] || {};
+  const m = (item.trackId && !item.artist)
+    ? ytpTrackMeta(item.trackId, item.title, null, item) : null;
+  const artist = (m && m.artist) || item.artist || '';
+  const song   = item.title || (m && m.title) || '';
+  const label  = artist ? (artist + ' - ' + song) : song;
+  return (_ytQueueLabels[i] = { label, find: label.toLowerCase() });
+}
+
+// What the filter matches against. Deliberately the names the row already
+// carries rather than ytQueueLabelAt(): searching must not trigger a catalogue
+// scan per row, which on a long unhydrated queue is the very cost this whole
+// change exists to remove. The two agree for every hydrated row, which after
+// ytpHydrateQueueMeta() has run is all of them.
+function ytQueueFindText(i) {
+  const cached = _ytQueueLabels[i];
+  if (cached) return cached.find;
+  const item = ytQueue[i] || {};
+  return ((item.artist ? item.artist + ' - ' : '') + (item.title || '')).toLowerCase();
+}
+
+function ytQueueVisibleIdx() {
+  const q = (_ytQueueFilter || '').trim().toLowerCase();
+  if (_ytQueueVis && _ytQueueVisQ === q && _ytQueueVisLen === ytQueue.length) return _ytQueueVis;
+  const out = [];
+  for (let i = 0; i < ytQueue.length; i++) {
+    if (!q || ytQueueFindText(i).includes(q)) out.push(i);
+  }
+  _ytQueueVis = out; _ytQueueVisQ = q; _ytQueueVisLen = ytQueue.length;
+  _ytQueueWinFrom = _ytQueueWinTo = -1;
+  return out;
+}
+
+function ytQueueRowHTML(i) {
+  const item  = ytQueue[i] || {};
+  const label = escHtml(ytQueueLabelAt(i).label);
+  const tid   = item.trackId;
+  return '<div class="yt-queue-row' + (i === ytQueueIdx ? ' active' : '') +
+      '" data-queue-idx="' + i + '" onclick="ytPlayQueueIdx(' + i + ')">' +
+    '<span class="yt-queue-num">' + (i + 1) + '</span>' +
+    '<span class="yt-queue-title">' + label + '</span>' +
+    ((item.addedBy && !item.addedByOwner)
+      ? '<span class="yt-queue-by" title="Queued from the Online Jukebox by ' +
+        escHtml(item.addedBy) + '">Added by ' + escHtml(item.addedBy) + '</span>' : '') +
+    (tid ? '<button class="tvb-cycle' + voteClass(getMyVote(tid)) + '" data-vote-track="' + tid +
+      '" onclick="cycleVote(\'' + tid + '\');event.stopPropagation()" title="Rate">' +
+      (VOTE_LABELS[String(getMyVote(tid))] || '-') + '</button>' : '') +
+    (tid ? '<button class="yt-queue-more" onclick="sjmOpenQueue(' + i +
+      ',this,event)" title="More">⋯</button>' : '') +
+    '<span class="yt-queue-moves">' +
+      '<button onclick="event.stopPropagation();ytMoveQueue(' + i + ',' + (i - 1) +
+        ')" class="yt-queue-move"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
+      '<button onclick="event.stopPropagation();ytMoveQueue(' + i + ',' + (i + 1) +
+        ')" class="yt-queue-move"' + (i === ytQueue.length - 1 ? ' disabled' : '') + '>▼</button>' +
+    '</span>' +
+    '<button onclick="event.stopPropagation();ytRemoveFromQueue(' + i +
+      ')" class="yt-queue-remove">✕</button>' +
+  '</div>';
+}
+
+// Where the window sits, given a scroll container whose content starts with a
+// sticky header. Pure arithmetic so it can be tested without a DOM.
+function ytQueueWindowFor(scrollTop, viewH, headH, rowH, total) {
+  if (!(rowH > 0) || !total) return { start: 0, end: Math.min(total, SJ_QLIST_MIN) };
+  const top = Math.max(0, (scrollTop || 0) - (headH || 0));
+  let start = Math.floor(top / rowH) - SJ_QLIST_OVERSCAN;
+  let end   = Math.ceil((top + Math.max(1, viewH || 0)) / rowH) + SJ_QLIST_OVERSCAN;
+  start = Math.max(0, start);
+  end   = Math.min(total, Math.max(end, start + SJ_QLIST_MIN));
+  if (end - start < SJ_QLIST_MIN) start = Math.max(0, end - SJ_QLIST_MIN);
+  return { start, end };
+}
+
+function ytQueueRenderWindow(force) {
+  if (!ytPlayerEl) return;
+  const rowsEl = ytPlayerEl.querySelector('#yt-queue-rows');
+  if (!rowsEl) return;
+  const sec  = ytPlayerEl.querySelector('.yt-queue-section');
+  const head = ytPlayerEl.querySelector('.yt-queue-sticky');
+  const vis  = ytQueueVisibleIdx();
+  const rowH = _ytQueueRowH;
+  const w = ytQueueWindowFor(sec ? sec.scrollTop : 0, sec ? sec.clientHeight : 0,
+                             head ? head.offsetHeight : 0, rowH, vis.length);
+  // A hidden container measures zero, so the window it produced is the fallback
+  // one and its rows could not be measured. Coming back on screen has to redraw
+  // even though the numbers did not move, or the list stays 24 rows long.
+  const laidOut = !!(sec && sec.clientHeight > 0);
+  if (!force && laidOut === _ytQueueWinLaidOut &&
+      w.start === _ytQueueWinFrom && w.end === _ytQueueWinTo) return;
+
+  const pre  = Math.max(0, w.start * rowH);
+  const post = Math.max(0, (vis.length - w.end) * rowH);
+  let html = '<div class="yt-queue-pad" style="height:' + pre + 'px"></div>';
+  for (let k = w.start; k < w.end; k++) html += ytQueueRowHTML(vis[k]);
+  html += '<div class="yt-queue-pad" style="height:' + post + 'px"></div>';
+  rowsEl.innerHTML = html;
+  _ytQueueWinFrom = w.start; _ytQueueWinTo = w.end;
+  _ytQueueWinLaidOut = laidOut;
+
+  // Measured, not assumed: the phone's full screen rows are nearly twice the
+  // height of the desktop list's, and the spacers are only right if they are
+  // sized from the row height actually on screen. One correction pass, never a
+  // loop - the flag, not `force`, is what stops it recurring, because every
+  // visibility change forces a draw and those are exactly the draws whose row
+  // height has just changed.
+  const first = rowsEl.querySelector('.yt-queue-row');
+  if (first) {
+    const h = first.offsetHeight;
+    if (h > 0 && Math.abs(h - rowH) > 0.5 && !_ytQueueMeasuring) {
+      _ytQueueRowH = h;
+      _ytQueueMeasuring = true;
+      try { ytQueueRenderWindow(true); } finally { _ytQueueMeasuring = false; }
+    }
+  }
+}
+
+function ytQueueOnScroll() {
+  if (_ytQueueScrollFrame) cancelAnimationFrame(_ytQueueScrollFrame);
+  _ytQueueScrollFrame = requestAnimationFrame(() => {
+    _ytQueueScrollFrame = 0;
+    ytQueueRenderWindow();
+  });
+}
+
+function ytQueueSyncFindCount() {
+  if (!ytPlayerEl) return;
+  const el = ytPlayerEl.querySelector('#yt-queue-find-count');
+  if (!el) return;
+  const q = (_ytQueueFilter || '').trim();
+  el.textContent = q ? ytQueueVisibleIdx().length + ' of ' + ytQueue.length : '';
+}
+
+// Scroll one row into the drawn window and hand it back. Used by anything that
+// needs the element itself - re-anchoring the row menu after a move - because a
+// row outside the window genuinely is not in the DOM.
+function ytQueueEnsureRendered(i) {
+  if (!ytPlayerEl) return null;
+  const sel = '.yt-queue-row[data-queue-idx="' + i + '"]';
+  let row = ytPlayerEl.querySelector(sel);
+  if (row) return row;
+  const pos = ytQueueVisibleIdx().indexOf(i);
+  if (pos < 0) return null;
+  const sec  = ytPlayerEl.querySelector('.yt-queue-section');
+  const head = ytPlayerEl.querySelector('.yt-queue-sticky');
+  if (sec && _ytQueueRowH > 0) {
+    const headH = head ? head.offsetHeight : 0;
+    sec.scrollTop = Math.max(0,
+      headH + pos * _ytQueueRowH - Math.round((sec.clientHeight - _ytQueueRowH) / 2));
+  }
+  ytQueueRenderWindow(true);
+  return ytPlayerEl.querySelector(sel);
+}
+
+// Move the list only if the row has left the strip, the behaviour the reorder
+// arrows have always had - worked out from the model, since the row may not be
+// drawn to be measured.
+function ytQueueNudgeIntoView(i) {
+  if (!ytPlayerEl || !(_ytQueueRowH > 0)) return;
+  const sec = ytPlayerEl.querySelector('.yt-queue-section');
+  if (!sec) return;
+  const pos = ytQueueVisibleIdx().indexOf(i);
+  if (pos < 0) return;
+  const head  = ytPlayerEl.querySelector('.yt-queue-sticky');
+  const headH = head ? head.offsetHeight : 0;
+  const top   = headH + pos * _ytQueueRowH;
+  const view  = sec.clientHeight || 0;
+  if (top < sec.scrollTop + headH)                    sec.scrollTop = Math.max(0, top - headH);
+  else if (top + _ytQueueRowH > sec.scrollTop + view) sec.scrollTop = top + _ytQueueRowH - view;
+  else return;
+  ytQueueRenderWindow(true);
+}
+
 function ytQueueFilter(text) {
-  _ytQueueFilter = text || '';
+  const next = text || '';
+  const changed = next !== _ytQueueFilter;
+  _ytQueueFilter = next;
+  // A narrowed list is read from the top, and a scrollTop left over from the
+  // unfiltered list would open it halfway down four results.
+  if (changed && ytPlayerEl) {
+    const sec = ytPlayerEl.querySelector('.yt-queue-section');
+    if (sec) sec.scrollTop = 0;
+  }
   ytApplyQueueFilter();
 }
 
 function ytApplyQueueFilter() {
   if (!ytPlayerEl) return;
-  const q = _ytQueueFilter.trim().toLowerCase();
-  const rows = ytPlayerEl.querySelectorAll('.yt-queue-row');
-  let shown = 0;
-  rows.forEach(row => {
-    const hit = !q || (row.dataset.find || '').includes(q);
-    row.classList.toggle('filtered', !hit);
-    if (hit) shown++;
-  });
-  const count = ytPlayerEl.querySelector('#yt-queue-find-count');
-  if (count) count.textContent = q ? shown + ' of ' + rows.length : '';
+  _ytQueueVis = null;              // the query moved; rebuild the index
+  ytQueueRenderWindow(true);
+  ytQueueSyncFindCount();
 }
 
 // Undo the inline hiding above. A queue rebuilt while the player was minimized
@@ -10044,6 +10337,9 @@ function ytpShowQueueChrome() {
   if (!ytPlayerEl) return;
   ytPlayerEl.querySelectorAll('.yt-queue-section, .yt-playlist-bar')
     .forEach(el => { el.style.display = ''; });
+  // It has a height now, so the rows can finally be measured and the spacers
+  // given their size.
+  ytQueueRenderWindow(true);
 }
 
 function ytMoveQueue(from, to) {
@@ -10198,6 +10494,7 @@ function ytpMobSetTab(tab, userSet) {
   if (lyrics !== _ytpLyricsOpen) ytpToggleLyrics(lyrics, userSet ? { user: true } : undefined);
   if (!lyrics) {
     updateYTQueueUI();
+    ytQueueRenderWindow(true);
     requestAnimationFrame(ytScrollQueueToCurrent);
   }
   ytpMobSyncDeck();
@@ -10722,6 +11019,9 @@ function ytpDockSyncPlaylist() {
 
   playlist.style.maxHeight = available + 'px';
   dock.classList.add('dock-show-playlist');
+  // Now it is on screen and has its height, so it is worth drawing. fromSync
+  // stops the paint scheduling another sync straight back.
+  ytpPaintDockPlaylist(null, true);
   ytpMfLayoutLyrics();
 }
 
@@ -16748,7 +17048,10 @@ function sjmQueueMove(delta) {
   _sjmScrollGuard = true;
   ytMoveQueue(q, to);       // rebuilds the queue DOM under us
   _sjmQueueIdx = to;
-  const btn = ytPlayerEl && ytPlayerEl.querySelector('.yt-queue-row[data-queue-idx="' + to + '"] .yt-queue-more');
+  // The row it moved to may have gone outside the drawn window, so bring it
+  // back before looking for the button the menu hangs off.
+  const movedRow = ytQueueEnsureRendered(to);
+  const btn = movedRow && movedRow.querySelector('.yt-queue-more');
   if (btn) { _sjmAnchor = btn; btn.setAttribute('aria-expanded', 'true'); }
   sjmRenderRoot();
   setTimeout(() => { _sjmScrollGuard = false; }, 80);
@@ -17978,9 +18281,47 @@ function sjLhDur(ms) {
   return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 }
 
-function sjLhStat(value, label) {
-  return '<div class="sj-lh-stat"><b>' + escHtml(String(value)) +
+function sjLhStat(value, label, icon) {
+  return '<div class="sj-lh-stat"><b>' + (icon || '') + escHtml(String(value)) +
          '</b><span>' + escHtml(label) + '</span></div>';
+}
+
+// The thumb and the heart are the same two marks the player draws, taken from
+// the same constants, so the card cannot drift from the dock the way an emoji
+// copy of them did.
+function sjLhIcon(kind, on) {
+  const svg = kind === 'heart' ? SJ_REACTION_ICONS.heart : _SVG_TH_UP;
+  return '<span class="sj-lh-ic ' + (on ? kind : 'off') + '">' + svg + '</span>';
+}
+
+// Plays bucketed across the stretch they cover. Drawn from the rows already
+// listed below rather than a second query, so it describes exactly that list -
+// which is why the caption names the span instead of implying all time.
+function sjLhSparkline(rows) {
+  const times = rows.map(r => new Date(r.played_at).getTime())
+                    .filter(t => Number.isFinite(t)).sort((a, b) => a - b);
+  if (times.length < 2) return '';
+  const first = times[0], last = times[times.length - 1];
+  const span  = Math.max(1, last - first);
+  const N = 28, W = 132, H = 26, GAP = 1;
+  const buckets = new Array(N).fill(0);
+  times.forEach(t => {
+    buckets[Math.min(N - 1, Math.floor(((t - first) / span) * N))]++;
+  });
+  const peak = Math.max.apply(null, buckets) || 1;
+  const bw = (W - GAP * (N - 1)) / N;
+  const bars = buckets.map((n, i) => {
+    if (!n) return '';
+    const h = Math.max(2, (n / peak) * H);
+    return '<rect x="' + (i * (bw + GAP)).toFixed(2) + '" y="' + (H - h).toFixed(2) +
+           '" width="' + bw.toFixed(2) + '" height="' + h.toFixed(2) + '" rx="1"/>';
+  }).join('');
+  const fmt = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  const range = fmt(first) === fmt(last) ? fmt(first) : fmt(first) + ' - ' + fmt(last);
+  return '<div class="sj-lh-stat spark">' +
+    '<svg class="sj-lh-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" ' +
+      'role="img" aria-label="Listens over time, ' + escHtml(range) + '">' + bars + '</svg>' +
+    '<span>listens over time &middot; ' + escHtml(range) + '</span></div>';
 }
 
 // Where a play happened. CarPlay writes source 'audio' like any other locker
@@ -18052,15 +18393,16 @@ function sjLhShuffleHTML(trackId) {
 function sjLhRenderHTML(trackId, s, rows) {
   const plays  = Number(s.plays) || 0;
   const hearts = Number(s.hearts_total) || 0;
-  const inRows = rows.reduce((n, r) => n + (Number(r.hearts) || 0), 0);
   const rating = Number(s.rating_now) || 0;
 
   const stats = '<div class="sj-lh-stats">' +
     sjLhStat(plays, plays === 1 ? 'play' : 'plays') +
     sjLhStat(Number(s.plays_7d)  || 0, 'last 7 days') +
     sjLhStat(Number(s.plays_30d) || 0, 'last 30 days') +
-    sjLhStat(hearts, hearts === 1 ? 'heart' : 'hearts') +
-    sjLhStat(rating > 0 ? '\ud83d\udc4d' : '\u2013', 'your rating') +
+    sjLhStat(hearts, hearts === 1 ? 'playback reaction' : 'playback reactions',
+             sjLhIcon('heart', hearts > 0)) +
+    sjLhStat(rating > 0 ? '' : '\u2013', 'your rating', sjLhIcon('up', rating > 0)) +
+    sjLhSparkline(rows) +
   '</div>';
 
   const list = rows.length
@@ -18069,10 +18411,11 @@ function sjLhRenderHTML(trackId, s, rows) {
         const before = Number(r.rating_before) || 0;
         const after  = Number(r.rating_after)  || 0;
         const tags   = [];
-        if (after > before)      tags.push('<span class="sj-lh-tag up">\ud83d\udc4d thumbs up given</span>');
+        if (after > before)      tags.push('<span class="sj-lh-tag up">' + sjLhIcon('up', true) + ' thumbs up given</span>');
         else if (after < before) tags.push('<span class="sj-lh-tag down">thumbs up taken back</span>');
         const h = Number(r.hearts) || 0;
-        if (h) tags.push('<span class="sj-lh-tag heart">\u2665 ' + h + (h === 1 ? ' heart' : ' hearts') + '</span>');
+        if (h) tags.push('<span class="sj-lh-tag heart">' + sjLhIcon('heart', true) + ' ' + h +
+          (h === 1 ? ' reaction' : ' reactions') + '</span>');
         Object.keys(r.reactions || {}).forEach(k => {
           if (k === 'heart') return;
           tags.push('<span class="sj-lh-tag">' + escHtml(k) + ' &times;' + (Number(r.reactions[k]) || 0) + '</span>');
@@ -18092,14 +18435,13 @@ function sjLhRenderHTML(trackId, s, rows) {
   if (rows.length && rows.length < plays) {
     notes.push('Showing the ' + rows.length + ' most recent of ' + plays + ' plays.');
   }
-  if (hearts > inRows) {
-    notes.push(hearts + ' hearts in total, ' + inRows + ' of them while one of these plays was running. ' +
-      'The rest were given from a song card, or on a device that was not logging plays at the time.');
-  }
   notes.push('A play claims whatever you rated or hearted until the next song started, capped at 30 minutes.');
 
-  return stats + sjLhShuffleHTML(trackId) + list +
-    '<p class="sj-lh-note">' + notes.map(escHtml).join(' ') + '</p>';
+  // The shuffle report is the answer to "why am I hearing this" - interesting
+  // once you have read the history, not before it.
+  return stats + list +
+    '<p class="sj-lh-note">' + notes.map(escHtml).join(' ') + '</p>' +
+    sjLhShuffleHTML(trackId);
 }
 
 async function openListeningHistory(trackId) {
@@ -34284,7 +34626,11 @@ const SJ_CHANGELOG = [
     'That same screen shows what your Shuffle choice is doing right now: how heavily this song is weighted compared with everything else loaded in the player, where it ranks for what plays next, and why.',
     'Shuffle preferences now count how long it has actually been since you played a song, not just what has come up since you opened the page, and they remember far more of what you have already heard. Less Repeats and Discovery both push repeats a lot further down.',
     'Songs you play in CarPlay now count. Playback in the car is recorded on the phone and sent up the next time the app is open, so it shows in your listening history, your play counts, and your shuffle preferences.',
-    'CarPlay shuffle now follows your Shuffle preference instead of picking at random.'
+    'CarPlay shuffle now follows your Shuffle preference instead of picking at random.',
+    'A long playlist no longer makes the player stutter. The queue used to redraw every song in it each time a track changed or somebody added one, which on a few hundred songs was long enough to see. It now draws only the part you are looking at, so a playlist of two thousand songs is as quick to move around as a playlist of ten.',
+    'Searching inside your playlist is quicker for the same reason, and the queue on the small player beside the artwork is no longer built while it is hidden.',
+    'The listening history screen now shows a small chart of when you played the song, so you can see at a glance whether it was a phase or something you keep coming back to.',
+    'That screen uses the same thumb and heart the player does, calls hearts playback reactions the way the rest of the site does, and puts the explanation of what shuffle is doing at the bottom, under the plays it is talking about.'
   ]},
   { date: '2026-09-09', items: [
     'On a phone, the Player now has only compact and full-screen views. The drag handles and extra height-only minimize control are gone, and the full-screen and close controls sit with the playback controls instead of beside the title.',
