@@ -164,10 +164,11 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
     tagline: "Join the listening party.",
     assetBase: "/brand/lp",
-    // TODO(step 4): a wide wordmark for the header slot. logo.svg is the real
-    // mark but it is 512x640 and sits portrait where SJ's is landscape, so it
-    // is right in colour and wrong in shape until the LP design pass.
-    textLogo: "/brand/lp/logo.svg",
+    // Built by capture/_lp_wordmark.mjs, which reproduces the old site's
+    // lockup: the mark beside live text rather than stacked above a tagline.
+    // A PNG for the same reason Suffering Jukebox's is one - an SVG in an
+    // <img> cannot fetch Inter and would reshape itself per machine.
+    textLogo: "/brand/lp/wordmark.png",
     // TODO(step 4): a proper 1200x630 social card. The app icon is a valid
     // image and will not 404, but it is square and says nothing about the app.
     ogImage: `${LP_URL}/brand/lp/favicon.png`,
