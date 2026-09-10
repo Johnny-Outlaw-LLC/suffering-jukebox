@@ -36,6 +36,7 @@ const NUMERIC_DETAIL_KEYS = [
   "domMs",
   "loadMs",
   "fcpMs",
+  "lcpMs",
   "appReadyMs",
   "transferKb",
   "rows",

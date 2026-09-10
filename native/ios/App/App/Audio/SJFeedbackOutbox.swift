@@ -14,11 +14,14 @@ final class SJFeedbackOutbox {
 
     struct Item: Codable {
         let id: String
-        let kind: String        // "rate" | "heart"
+        let kind: String        // "rate" | "heart" | "play"
         let trackId: String
-        let value: Int          // rate: 1 or 0. heart: unused.
+        let value: Int          // rate: 1 or 0. heart and play: unused.
         let positionMs: Int
         let at: Double          // epoch seconds, so the web layer can order them
+        /// How long a "play" was actually listened to. Optional so an outbox
+        /// written before plays were recorded still decodes.
+        var ms: Int?
     }
 
     static let shared = SJFeedbackOutbox()
@@ -45,16 +48,38 @@ final class SJFeedbackOutbox {
         }
     }
 
-    func add(kind: String, trackId: String, value: Int, positionMs: Int) {
+    /// Returns the new item's id, so a play can have its duration filled in
+    /// when the song is actually left.
+    @discardableResult
+    func add(kind: String, trackId: String, value: Int, positionMs: Int,
+             at when: Double = Date().timeIntervalSince1970, ms: Int? = nil) -> String {
+        let id = UUID().uuidString
         queue.sync(flags: .barrier) {
-            items.append(Item(id: UUID().uuidString,
+            items.append(Item(id: id,
                               kind: kind,
                               trackId: trackId,
                               value: value,
                               positionMs: positionMs,
-                              at: Date().timeIntervalSince1970))
+                              at: when,
+                              ms: ms))
             // A drive with a stuck web view should not grow without bound.
             if items.count > 500 { items.removeFirst(items.count - 500) }
+            persistLocked()
+        }
+        return id
+    }
+
+    /// How long a play that is already in the outbox ended up running for.
+    ///
+    /// A play is written the moment it crosses the listen threshold, not when
+    /// it ends, so an app the car kills mid-song still counts it. The duration
+    /// is the one thing that cannot be known at that point, so it is filled in
+    /// afterwards - and if the app dies first the row simply carries no
+    /// duration, which every reader already handles.
+    func setPlayedMs(id: String, ms: Int) {
+        queue.sync(flags: .barrier) {
+            guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+            items[i].ms = max(0, ms)
             persistLocked()
         }
     }

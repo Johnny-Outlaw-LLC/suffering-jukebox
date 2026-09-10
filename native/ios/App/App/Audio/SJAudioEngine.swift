@@ -105,20 +105,60 @@ final class SJAudioEngine: NSObject {
         onModeChanged?()
     }
 
+    /// A new profile pushed from the web layer redraws the rest of the running
+    /// order. The song playing stays where it is - rebuildPlayOrder keeps it
+    /// first - so nothing skips underneath the listener.
+    func reshuffleForProfileChange() {
+        guard shuffleEnabled else { return }
+        rebuildPlayOrder()
+        onQueueChanged?()
+    }
+
     func cycleRepeatMode() {
         repeatMode = repeatMode.next
         onModeChanged?()
     }
 
+    /// The running order for a shuffled queue.
+    ///
+    /// A flat `order.shuffle()` ignored the listener's Shuffle preference
+    /// entirely, so Less Repeats and Discovery worked on the website and did
+    /// nothing in the car - the one place where hearing the same songs round
+    /// and round is hardest to escape. The whole permutation is drawn once,
+    /// weighted, rather than picking a weighted song at each step: the order
+    /// has to exist up front for Previous and for the Up Next preview.
     private func rebuildPlayOrder() {
         guard shuffleEnabled, !queue.isEmpty else { playOrder = []; return }
-        var order = Array(0..<queue.count)
-        order.shuffle()
+        var order = weightedPermutation(of: Array(0..<queue.count))
         if index >= 0, let pos = order.firstIndex(of: index) {
             order.remove(at: pos)
             order.insert(index, at: 0)
         }
         playOrder = order
+    }
+
+    /// Sampling without replacement, each draw proportional to the pushed
+    /// weight. Falls back to a flat shuffle when there is no profile to apply,
+    /// which is what a listener on No Preferences actually asked for.
+    private func weightedPermutation(of indices: [Int]) -> [Int] {
+        let profile = SJShuffleProfile.shared
+        guard profile.isWeighted else { return indices.shuffled() }
+        var pool = indices.map { (idx: $0, w: profile.weight(for: queue[$0].id)) }
+        var out: [Int] = []
+        out.reserveCapacity(pool.count)
+        while !pool.isEmpty {
+            let total = pool.reduce(0.0) { $0 + $1.w }
+            guard total > 0 else { out.append(contentsOf: pool.map { $0.idx }.shuffled()); break }
+            var roll = Double.random(in: 0..<total)
+            var picked = pool.count - 1
+            for (i, entry) in pool.enumerated() {
+                roll -= entry.w
+                if roll <= 0 { picked = i; break }
+            }
+            out.append(pool[picked].idx)
+            pool.remove(at: picked)
+        }
+        return out
     }
 
     private func nextIndex() -> Int? {
@@ -203,6 +243,7 @@ final class SJAudioEngine: NSObject {
     private func observePlayer() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
+            self?.tickPlayRun(0.5)
             self?.publish(updateNowPlayingTime: true)
         }
         itemEndObserver = NotificationCenter.default.addObserver(
@@ -283,6 +324,7 @@ final class SJAudioEngine: NSObject {
             advance()
             return
         }
+        beginPlayRun(track.id)
         let item = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: item)
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] obs, _ in
@@ -305,9 +347,59 @@ final class SJAudioEngine: NSObject {
         if let next = nextIndex() {
             load(at: next, autoPlay: true)
         } else {
+            endPlayRun()
             player.pause()
             publish(state: .ended)
         }
+    }
+
+    // MARK: - Play log
+    //
+    // Nothing was recording CarPlay listening at all. The web view is asleep in
+    // the car, so a song heard six times on a road trip counted zero - which is
+    // exactly what makes a shuffle preference look broken to the person living
+    // with it, and what leaves the website's listening history with a hole in
+    // it the shape of every drive.
+    //
+    // A play is written to the outbox the moment it crosses the listen
+    // threshold, matching the website's own ten-second rule, and its duration
+    // is filled in when the song is left. Written at the threshold rather than
+    // at the end on purpose: an app the system kills mid-song still counts it.
+
+    private static let playLogThreshold: TimeInterval = 10
+
+    private var playRunTrackId: String?
+    private var playRunStartedAt: Date?
+    private var playRunSeconds: TimeInterval = 0
+    private var playRunOutboxId: String?
+
+    private func beginPlayRun(_ trackId: String) {
+        endPlayRun()
+        playRunTrackId = trackId
+        playRunStartedAt = Date()
+        playRunSeconds = 0
+        playRunOutboxId = nil
+    }
+
+    /// Only counts time the player was actually playing, so a song left paused
+    /// at a petrol station does not log itself.
+    private func tickPlayRun(_ delta: TimeInterval) {
+        guard let trackId = playRunTrackId, isPlaying else { return }
+        playRunSeconds += delta
+        guard playRunOutboxId == nil, playRunSeconds >= Self.playLogThreshold else { return }
+        playRunOutboxId = SJFeedbackOutbox.shared.add(
+            kind: "play", trackId: trackId, value: 0, positionMs: 0,
+            at: (playRunStartedAt ?? Date()).timeIntervalSince1970, ms: nil)
+    }
+
+    private func endPlayRun() {
+        if let id = playRunOutboxId {
+            SJFeedbackOutbox.shared.setPlayedMs(id: id, ms: Int(playRunSeconds * 1000))
+        }
+        playRunTrackId = nil
+        playRunStartedAt = nil
+        playRunSeconds = 0
+        playRunOutboxId = nil
     }
 
     // MARK: - Transport
@@ -327,6 +419,8 @@ final class SJAudioEngine: NSObject {
     }
 
     func pause() {
+        // Deliberately NOT ending the play run: a pause at a red light is the
+        // same play, and the tick already stops counting while paused.
         player.pause()
         publish()
     }

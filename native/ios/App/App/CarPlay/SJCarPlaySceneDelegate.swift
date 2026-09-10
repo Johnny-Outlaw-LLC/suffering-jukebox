@@ -268,7 +268,24 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         item.setImage(UIImage(systemName: "shuffle"))
         item.isEnabled = !entries.isEmpty
         item.handler = { [weak self] _, completion in
-            if let first = entries.randomElement() {
+            // The first song is drawn with the listener's own weights too, not
+            // at random - otherwise Shuffle All ignores the preference for
+            // exactly the song they are most likely to notice.
+            let profile = SJShuffleProfile.shared
+            let first: SJDownloadStore.Entry?
+            if profile.isWeighted, !entries.isEmpty {
+                let total = entries.reduce(0.0) { $0 + profile.weight(for: $1.trackId) }
+                var roll = Double.random(in: 0..<max(total, .leastNonzeroMagnitude))
+                var chosen = entries.last
+                for entry in entries {
+                    roll -= profile.weight(for: entry.trackId)
+                    if roll <= 0 { chosen = entry; break }
+                }
+                first = chosen
+            } else {
+                first = entries.randomElement()
+            }
+            if let first {
                 let engine = SJAudioEngine.shared
                 // Repeat One must not trap Shuffle All on its first song.
                 if engine.repeatMode == .one { engine.cycleRepeatMode() }

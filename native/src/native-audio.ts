@@ -67,6 +67,21 @@ export interface SJNativeAudioPlugin {
   seek(options: { positionSeconds: number }): Promise<SJStatus>;
   getStatus(): Promise<SJStatus>;
 
+  /**
+   * The listener's Shuffle preference and this account's weight for every
+   * song on the phone, so the car can draw a next song the way the website
+   * would. The car has no session, no catalogue and no network on the drive,
+   * so it is handed finished numbers rather than the inputs.
+   *
+   * `weights` is keyed by jukebox.tracks.id. A song with no entry is treated
+   * as 1.0 - the same as an unweighted draw - so a fresh download is never
+   * silently left out of the shuffle.
+   */
+  setShuffleProfile(options: {
+    preference: 'discovery' | 'favorites' | 'less_repeats' | 'none';
+    weights: Record<string, number>;
+  }): Promise<{ count: number }>;
+
   /** Persist a track for offline play. Resolves when the download is queued. */
   download(options: { track: SJTrack }): Promise<SJDownload>;
   removeDownload(options: { trackId: string }): Promise<void>;

@@ -120,6 +120,13 @@ class CPListItem {
   func setImage(_ image: UIImage?) {}
 }
 class SJDownloadStore { struct Entry { let trackId: String } }
+class SJShuffleProfile {
+  static let shared = SJShuffleProfile()
+  var isWeighted = true
+  // Only one song carries any weight, so a weighted draw can only ever return
+  // that one - which is what makes the assertion below mean something.
+  func weight(for trackId: String) -> Double { trackId == "742" ? 1.0 : 0.0 }
+}
 class SJAudioEngine {
   enum Mode { case one, off }
   static let shared = SJAudioEngine()
@@ -146,6 +153,9 @@ item.handler?(item, { completed = true })
 assert(completed)
 assert(subject.played.count == 1000)
 assert(entries.contains { $0.trackId == subject.first })
+// Shuffle All draws its first song against the listener's weights too, so the
+// one song carrying any weight is the only one it can start on.
+assert(subject.first == "742")
 assert(SJAudioEngine.shared.shuffle)
 assert(SJAudioEngine.shared.repeatMode == .off)
 assert(!subject.shuffleItem(for: []).isEnabled)

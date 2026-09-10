@@ -431,6 +431,39 @@ main > * { min-width: 0; }
 .lyr-hist-diff { font-size:.55rem;line-height:1.7;white-space:pre-wrap;max-height:160px;overflow-y:auto;background:var(--bg-elevated);border-radius:6px;padding:8px }
 .lyr-hist-diff .diff-add { color:#22c55e }
 .lyr-hist-diff .diff-del { color:#ef4444;text-decoration:line-through }
+
+/* Listening history - every play of one song, with what the thumb and the
+   hearts did during it, and the proof that the Shuffle preference is doing
+   something. Shares the lyrics-history overlay's shape deliberately. */
+#sj-lh-modal { display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center }
+#sj-lh-modal.open { display:flex }
+#sj-lh-box { background:var(--bg-card);border:1px solid var(--border);border-radius:14px;width:min(720px,96vw);max-height:85vh;display:flex;flex-direction:column;overflow:hidden }
+#sj-lh-head { padding:14px 18px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px }
+#sj-lh-head h3 { margin:0;font-size:.8rem;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+#sj-lh-body { overflow-y:auto;padding:12px 18px 18px;display:flex;flex-direction:column;gap:12px }
+.sj-lh-stats { display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px }
+.sj-lh-stat { border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--bg-elevated) }
+.sj-lh-stat b { display:block;font-size:.8rem;line-height:1.25 }
+.sj-lh-stat span { font-size:.4rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em }
+.sj-lh-why { border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-elevated);font-size:.5rem;line-height:1.7;color:var(--text-muted) }
+.sj-lh-why b { color:var(--text) }
+.sj-lh-why p { margin:0 0 6px }
+.sj-lh-why p:last-child { margin-bottom:0 }
+.sj-lh-pref { color:var(--accent) }
+.sj-lh-bar { height:5px;border-radius:3px;background:var(--border);margin:8px 0 4px;overflow:hidden }
+.sj-lh-bar i { display:block;height:100%;background:var(--accent) }
+.sj-lh-list { display:flex;flex-direction:column;gap:5px }
+.sj-lh-row { display:grid;grid-template-columns:1fr auto;gap:5px 10px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:.5rem }
+.sj-lh-when { color:var(--text);min-width:0 }
+.sj-lh-when small { color:var(--text-muted);font-size:.42rem;display:block }
+.sj-lh-tags { display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end }
+.sj-lh-tag { font-size:.4rem;border:1px solid var(--border);border-radius:999px;padding:2px 7px;color:var(--text-muted);white-space:nowrap }
+.sj-lh-tag.up { color:#22c55e;border-color:#22c55e66 }
+.sj-lh-tag.down { color:#ef4444;border-color:#ef444466 }
+.sj-lh-tag.heart { color:#f43f5e;border-color:#f43f5e66 }
+.sj-lh-tag.car { color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent) }
+.sj-lh-note { font-size:.44rem;color:var(--text-muted);line-height:1.7;margin:0 }
+@media (max-width:640px){ .sj-lh-row { grid-template-columns:1fr } .sj-lh-tags { justify-content:flex-start } }
 .tt-bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 3px; overflow: hidden; min-width: 60px; }
 .tt-bar-fill { height: 100%; border-radius: 3px; }
 .tt-num { font-size: .58rem; color: var(--text-muted); text-align: right; white-space: nowrap; min-width: 40px; }
@@ -2264,6 +2297,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-playlist-row:hover .ytp-mf-playlist-rm { opacity:.85; }
 .ytp-mf-playlist-rm:hover { color:#ef4444; opacity:1; }
 .ytp-mf-top, .ytp-mf-middle, .ytp-mf-bottom { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+.ytp-mf-mobile-window { display: none; }
 .ytp-mf-up-next {
   display:none; align-items:center; gap:7px; min-width:0; max-width:min(320px,42vw);
   padding:4px 0 0; align-self:stretch;
@@ -2340,15 +2374,10 @@ textarea.report-input { resize:vertical; }
 #ytp-mf-reactions svg { width: 15px; height: 15px; display: block; }
 #ytp-mf-reactions .ytp-mf-btn:active { transform: scale(.88); }
 @media (max-width: 640px) {
-  /* Mobile mini bar: title row + big transport row. No windowed chrome —
-     restore expands to fullscreen; maximize is unused (hidden). */
-  /* Phone: art + header on top, lyrics under it, scrub, big transport last. */
-  /* A 14px strip is a desktop pointer target, not a thumb one. Give the
-     handle real height and paint a wider grip, and lift the dock's own top
-     padding to match so it only ever covers padding. */
-  .ytp-mf-resize { height: 26px; }
-  .ytp-mf-resize::after { width: 104px; height: 5px; border-radius: 3px; }
-  .ytp-mf-resize:active::after { background: var(--accent); }
+  /* A phone player has two deliberate states: its compact dock and the full
+     player. It is not a draggable sheet, so neither state exposes a grab bar. */
+  .ytp-mf-resize,
+  #yt-player-container.ytp-mob-fs .ytp-fs-grab { display: none !important; }
   .ytp-mini-footer {
     --mf-body: 56px;
     /* One square for all seven, sized so they still cross a 320px phone:
@@ -2356,20 +2385,20 @@ textarea.report-input { resize:vertical; }
     --mf-btn: clamp(36px, 10vw, 42px);
     min-height: 0;
     gap: 8px;
-    padding: 26px calc(16px + env(safe-area-inset-right, 0px))
+    padding: 14px calc(16px + env(safe-area-inset-right, 0px))
              calc(14px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
   }
   .ytp-mf-main {
     display: grid;
     grid-template-columns: 1fr auto;
-    /* Window controls have their own top row; transport spans the bottom. */
+    /* Window controls live below playback controls, away from the title. */
     grid-template-areas:
-      "top    top"
       "now    now"
       "lyr    lyr"
       "scrub  scrub"
       "upnext upnext"
-      "middle middle";
+      "middle middle"
+      "window window";
     align-items: center;
     column-gap: 8px;
     row-gap: 10px;
@@ -2386,7 +2415,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-now { grid-area: now; flex: 1 1 auto; gap: 9px; }
   .ytp-mf-win { grid-area: win; margin-left: 0; }
   .ytp-mf-right { display: contents; }
-  .ytp-mf-top { grid-area: top; justify-content: flex-end; gap: 5px; }
+  .ytp-mf-top { display: none; }
   .ytp-mf-middle { grid-area: middle; justify-content: space-between; gap: 5px; min-width: 0; width: 100%; }
   .ytp-mf-up-next {
     grid-area: upnext; max-width: none; width: 100%;
@@ -2395,7 +2424,7 @@ textarea.report-input { resize:vertical; }
   .ytp-mf-bottom { display: contents; }
   /* The bars are frozen on the bottom edge: the artwork row takes every pixel
      a drag adds and the scrubber and buttons stay where they are. */
-  .ytp-mf-main { grid-template-rows: auto minmax(56px, 1fr) auto auto auto auto; }
+  .ytp-mf-main { grid-template-rows: minmax(56px, 1fr) auto auto auto auto auto; }
   .ytp-mf-art-wrap { max-height: 100%; }
   /* The lyric window is two lines on a phone whatever the dock's height.
      Tying it to --mf-body meant a drag grew the artwork AND the lyrics, so
@@ -2418,11 +2447,15 @@ textarea.report-input { resize:vertical; }
      filled, not by being a different size. */
   .ytp-mf-btn { font-size: 1.2rem; border-radius: 14px; }
   .ytp-mf-btn svg { width: 20px; height: 20px; }
-  .ytp-mf-top .ytp-mf-btn svg { width: 18px; height: 18px; }
   .ytp-mf-sep { display: none !important; }
-  /* The window glyphs are drawn at 10px for the desktop title bar - scale them
-     up so they carry a button this size. */
-  #ytp-mf-restore svg { width: 16px; height: 16px; }
+  .ytp-mf-mobile-window { grid-area: window; display: flex; justify-content: flex-end; gap: 8px; }
+  .ytp-mf-mobile-window .ytp-mf-btn {
+    width: calc(var(--mf-btn) * .84); height: calc(var(--mf-btn) * .84);
+    color: var(--text-muted); border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  }
+  .ytp-mf-mobile-window .ytp-mf-btn svg { width: 16px; height: 16px; }
+  /* The old third, height-only minimize control does not exist on phones. */
+  #ytp-mf-minimize { display: none !important; }
   #ytp-mf-vote svg { width: 17px; height: 17px; }
   /* Scrubbing is the fiddliest thing a thumb does in here. The painted track
      stays 6px, but padding grows the input's hit box to 24px and a matching
@@ -2444,15 +2477,9 @@ textarea.report-input { resize:vertical; }
   #ytp-mini-footer #ytp-mf-repeat { display: flex !important; visibility: visible !important; }
   #ytp-mf-repeat:active { transform: scale(.93); }
   .ytp-mf-middle { gap: clamp(5px, 2vw, 9px) !important; }
-  /* Play/pause leads the row the way it does in the deck: filled, and a size
-     up. The window buttons step down instead, so the seven still cross a
-     320px phone. */
+  /* Play/pause leads the row the way it does in the deck: filled, and a size up. */
   #ytp-mini-footer #ytp-mf-playpause { width: calc(var(--mf-btn) * 1.16); height: calc(var(--mf-btn) * 1.16); }
   #ytp-mini-footer #ytp-mf-playpause svg { width: 22px; height: 22px; }
-  .ytp-mf-top .ytp-mf-btn {
-    width: calc(var(--mf-btn) * .84); height: calc(var(--mf-btn) * .84);
-    color: var(--text-muted); border-color: color-mix(in srgb, var(--border) 80%, transparent);
-  }
   /* Ratings and reactions were desktop-sized squares sitting in a phone
      layout - 24px is under half of what a thumb can reliably hit. */
   #ytp-mini-footer .ytp-mf-feedback { gap: 6px; min-height: 0; margin-top: 6px; }
@@ -2522,6 +2549,12 @@ textarea.report-input { resize:vertical; }
   background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted);
   font-family: var(--mono); font-size: .52rem; padding: 0 13px; cursor: pointer; white-space: nowrap; }
 .ytp-md-chip.on { color: var(--accent); border-color: var(--accent); }
+.ytp-md-window-controls { display: flex; justify-content: flex-end; gap: 8px; }
+.ytp-md-window-btn { display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 34px; border-radius: 10px; background: none; border: 1px solid var(--border);
+  color: var(--text-muted); cursor: pointer; }
+.ytp-md-window-btn svg { width: 16px; height: 16px; }
+.ytp-md-window-btn:active { transform: scale(.93); }
 .ytp-md-reactions { display: flex; flex-direction: column; gap: 5px; }
 .ytp-md-reactions .sj-reaction-rail { width: 100%; flex-direction: column; align-items: stretch; gap: 5px; }
 .ytp-md-reactions .sj-reaction-buttons { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -2551,6 +2584,9 @@ textarea.report-input { resize:vertical; }
   #yt-player-container.ytp-mob-fs .ytp-mob-deck { display: flex; }
   /* Everything the deck now carries lives in one place only. */
   #yt-player-container.ytp-mob-fs .ytp-toolbar-row { display: none !important; }
+  /* Full-screen window controls belong at the bottom of the deck, not beside
+     the title. The height-only minimize control is not part of mobile. */
+  #yt-player-container.ytp-mob-fs .ytp-titlebar-btns { display: none !important; }
   #yt-player-container.ytp-mob-fs .yt-player {
     order: 1; width: 100% !important; min-width: 0 !important;
     height: auto !important; min-height: 0; border: none;
@@ -4610,6 +4646,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         onpointerdown="ytpMfSeekStart()"
         onpointerup="ytpMfSeekEnd()">
       <span class="ytp-mf-scrub-time dur" id="ytp-mf-dur">0:00</span>
+    </div>
+    <div class="ytp-mf-mobile-window" aria-label="Player controls">
+      <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpToggleMinimize()" title="Maximize player" aria-label="Maximize player"><svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><rect x="1.5" y="1.5" width="7" height="7" stroke="currentColor" stroke-width="1.15" fill="none"/></svg></button>
+      <button class="ytp-mf-btn" onclick="event.stopPropagation();closeYTPlayer()" title="Close player" aria-label="Close player">✕</button>
     </div>
   </div>
 </div>
@@ -6776,6 +6816,9 @@ function sjSetShufflePreference(value) {
   _ytShufflePreviewIdx = null;
   if (ytShuffle) ytResetShufflePool();
   if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
+  // The car shuffles the songs on its own phone with this web view asleep, so
+  // the choice has to travel to it now rather than be asked for at the time.
+  if (typeof sjCarPushShuffleProfile === 'function') void sjCarPushShuffleProfile();
   return true;
 }
 
@@ -7819,6 +7862,10 @@ function ytpMobDeckHTML(trackId) {
         <button class="ytp-md-chip" id="ytp-md-ver" style="display:none" onclick="ytpToggleVersionMenu();event.stopPropagation()">⇄ Versions ▾</button>
         <button class="ytp-md-chip" id="ytp-md-more" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem">⋯ More</button>
       </div>
+      <div class="ytp-md-window-controls" aria-label="Player controls">
+        <button class="ytp-md-window-btn" onclick="ytpToggleFullscreen();event.stopPropagation()" title="Return to minimized player" aria-label="Return to minimized player">${YTP_WIN_ICONS.restore}</button>
+        <button class="ytp-md-window-btn" onclick="ytpCloseToMini();event.stopPropagation()" title="Close player" aria-label="Close player">✕</button>
+      </div>
       <div class="ytp-md-tabs" role="tablist">
         <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics',true);event.stopPropagation()">Lyrics</button>
         <button class="ytp-md-tab" id="ytp-md-tab-playlist" role="tab" onclick="ytpMobSetTab('playlist',true);event.stopPropagation()">Playlist</button>
@@ -7857,20 +7904,6 @@ function openYTPlayer(videoId, title, trackId, ev) {
   _ytpContainerEl = document.createElement('div');
   _ytpContainerEl.id = 'yt-player-container';
   _ytpContainerEl.style.cssText = `left:${cx}px;top:20px;z-index:${++scZCounter}`;
-
-  // ── Phone full screen: the bar that pulls the sheet back down to the dock.
-  // CSS hides it on every other layout, and order:0 floats it to the top of
-  // the flex column so it sits on the screen's edge - where the dock's own
-  // handle is. Touch is bound with passive:false so the drag can cancel the
-  // page scroll underneath it.
-  const fsGrab = document.createElement('div');
-  fsGrab.className = 'ytp-fs-grab';
-  fsGrab.id = 'ytp-fs-grab';
-  fsGrab.setAttribute('role', 'separator');
-  fsGrab.setAttribute('aria-label', 'Drag down to shrink the player back to the dock');
-  fsGrab.onmousedown = ytpFsDragStart;
-  fsGrab.addEventListener('touchstart', ytpFsDragStart, { passive: false });
-  _ytpContainerEl.appendChild(fsGrab);
 
   // ── Integrated lyrics pane (left, hidden until checkbox checked)
   _ytpLyricsPaneEl = document.createElement('div');
@@ -8365,7 +8398,7 @@ function ytPlayQueueIdx(idx, opts) {
   ytQueueIdx = idx;
   const item = ytQueue[idx];
   if (item?.trackId) {
-    _ytShuffleRecent = [item.trackId].concat(_ytShuffleRecent.filter(id => id !== item.trackId)).slice(0, 4);
+    _ytRememberShufflePlay(item.trackId);
   }
   ytVideoId = item.videoId;
   if (_taPreferBg && taIsMobileDevice() && taTrackAudio(item.trackId)) _taManualAudio = true;
@@ -8433,17 +8466,85 @@ function _ytShuffleCandidates() {
   return _ytShuffleBag.slice();
 }
 
-function _ytShuffleWeight(idx) {
-  if (sjShufflePreference === 'none') return 1;
-  const item = ytQueue[idx] || {};
-  const plays = Math.max(0, Number(myInAppPlays[item.trackId]) || 0);
-  const favorite = item.trackId && getMyVote(item.trackId) > 0;
-  if (sjShufflePreference === 'discovery') return 1 + (4 / (1 + Math.sqrt(plays)));
-  if (sjShufflePreference === 'less_repeats') {
-    const recentPos = _ytShuffleRecent.indexOf(item.trackId);
-    return recentPos === -1 ? 1 : 0.1 + (recentPos * 0.1);
+// How deep the "played recently" memory runs. Four was nothing against a 500
+// song queue - two dozen songs could come round again while the memory still
+// only knew the last four, which is exactly why Less Repeats felt like no
+// preference at all. A quarter of what is loaded, floor 4, ceiling 100.
+const SJ_SHUFFLE_RECENT_MIN = 4;
+const SJ_SHUFFLE_RECENT_CAP = 100;
+function _ytShuffleRecentDepth() {
+  return Math.max(SJ_SHUFFLE_RECENT_MIN,
+    Math.min(SJ_SHUFFLE_RECENT_CAP, Math.floor((ytQueue.length || 0) / 4)));
+}
+
+// Every path that starts a song calls this - the on-screen player, the
+// background-audio advance, and the fresh-queue primer. One helper, because
+// three copies of a .slice() is three chances for one of them to keep a
+// shallower memory than the other two.
+function _ytRememberShufflePlay(trackId) {
+  if (!trackId) return;
+  _ytShuffleRecent = [trackId]
+    .concat(_ytShuffleRecent.filter(id => id !== trackId))
+    .slice(0, _ytShuffleRecentDepth());
+}
+
+// Days since this listener last played the song, or null if they never have.
+// It comes from my_play_counts, so it survives a reload and reaches across
+// devices - which is the whole difference between a preference that works and
+// one that only remembers the current tab.
+function sjDaysSinceLastPlay(trackId) {
+  const iso = (trackId && typeof myLastPlayed !== 'undefined') ? myLastPlayed[trackId] : null;
+  if (!iso) return null;
+  const d = (Date.now() - new Date(iso).getTime()) / 86400000;
+  return isFinite(d) ? Math.max(0, d) : null;
+}
+
+// 0 (just heard it) to 1 (not for a fortnight, or never). Two inputs on
+// purpose: the server's last-played stamp knows nothing about what has already
+// played in this session, and this session knows nothing about yesterday.
+const SJ_SHUFFLE_COOL_DAYS = 14;
+function _sjRecencyDamp(trackId) {
+  const days = sjDaysSinceLastPlay(trackId);
+  let d = (days == null) ? 1 : Math.min(1, days / SJ_SHUFFLE_COOL_DAYS);
+  const pos = _ytShuffleRecent.indexOf(trackId);
+  if (pos !== -1) {
+    // Played in this session. The more recently, the harder it is held back,
+    // and never above half - a song from ten minutes ago is not "fresh"
+    // however long ago the server thinks it last heard from you.
+    const depth = Math.max(1, _ytShuffleRecentDepth());
+    d = Math.min(d, ((pos + 1) / (depth + 1)) * 0.5);
   }
-  return 1 + (favorite ? 6 : 0) + Math.min(3, Math.log2(plays + 1));
+  return Math.max(0.02, d);
+}
+
+// The weight one song carries in the next-song draw under the preference that
+// is switched on. Keyed by TRACK ID rather than a queue index, so the same
+// arithmetic can answer for a song that is not loaded in the player: the
+// listening history page and the CarPlay push both need exactly that.
+function _ytShuffleWeightFor(trackId) {
+  if (sjShufflePreference === 'none') return 1;
+  const plays = Math.max(0, Number(
+    (typeof myInAppPlays !== 'undefined' && myInAppPlays[trackId]) || 0));
+  const favorite = !!(trackId && getMyVote(trackId) > 0);
+  const cool = _sjRecencyDamp(trackId);
+  if (sjShufflePreference === 'discovery') {
+    // Fewest plays first - but a song heard this morning is still a song you
+    // have heard, and the play count alone called it new again the next day.
+    return (1 + (4 / (1 + Math.sqrt(plays)))) * cool;
+  }
+  if (sjShufflePreference === 'less_repeats') {
+    // Recency IS the preference here, so it is the whole of the weight.
+    return 0.05 + (4.95 * cool);
+  }
+  // Favorites First. Still damped, because hearing the same six favourites all
+  // evening is the complaint - but floored, so a favourite always outranks a
+  // song that was never rated.
+  return (1 + (favorite ? 6 : 0) + Math.min(3, Math.log2(plays + 1)))
+       * Math.max(0.35, cool);
+}
+
+function _ytShuffleWeight(idx) {
+  return _ytShuffleWeightFor((ytQueue[idx] || {}).trackId);
 }
 
 function _ytWeightedShufflePick(candidates) {
@@ -8508,7 +8609,7 @@ function ytPrimeShuffleQueue(queue) {
   ytResetShufflePool();
   const idx = _ytShuffleNextIdx();
   const trackId = queue[idx]?.trackId;
-  if (trackId) _ytShuffleRecent = [trackId].concat(_ytShuffleRecent.filter(id => id !== trackId)).slice(0, 4);
+  _ytRememberShufflePlay(trackId);
   return idx;
 }
 
@@ -8970,6 +9071,7 @@ async function sjDlInit() {
     // Anything tapped in the car since this app was last awake.
     void sjCarDrainFeedback();
     void sjCarPushPlayCounts();
+    void sjCarPushShuffleProfile();
     void sjCarPushRatings();
     // Favorites Plus needs to know which tracks were hearted, which otherwise
     // only loads when Explore Playlists is opened in the app itself - easy to
@@ -8994,7 +9096,7 @@ async function sjDlInit() {
       void sjCarPushPlaylists();
       // A finished download is what "accepted" actually means, so the queue is
       // settled here rather than when the tap happened.
-      if (d.state === 'done') sjCpMarkAccepted(d.trackId);
+      if (d.state === 'done') { sjCpMarkAccepted(d.trackId); sjCarSchedulePushRatings(); }
       // Repaint the menu if it is open on this track.
       if (_sjmTrackId === d.trackId && document.getElementById('sjm-menu')) sjmRenderRoot();
       if (document.getElementById('set-audio-artists')) setAudioRender();
@@ -9034,10 +9136,37 @@ async function sjCarPushPlaylists() {
   } catch (_) {}
 }
 
+let _sjCarRatingsTimer = null;
+function sjCarSchedulePushRatings() {
+  clearTimeout(_sjCarRatingsTimer);
+  _sjCarRatingsTimer = setTimeout(() => { void sjCarPushRatings(); }, 2500);
+}
+
 async function sjCarPushPlayCounts() {
   const p = sjDlPlugin();
   if (!p || !p.setPlayCounts) return;
   try { await p.setPlayCounts({ counts: inAppPlays }); } catch (_) {}
+}
+
+// The listener's Shuffle choice, and this account's weight for every song on
+// the phone, so the car draws its next song the way the website would rather
+// than reaching for a flat random one. Computed by _ytShuffleWeightFor, the
+// same function the player itself calls - a second copy of that arithmetic
+// could only ever disagree with the one that decides what actually plays.
+async function sjCarPushShuffleProfile() {
+  const p = sjDlPlugin();
+  if (!p || !p.setShuffleProfile) return;
+  // Before votes and play counts land every weight would read as "never
+  // played, never rated" - a real answer for a new listener and a wrong one
+  // for everybody else. Native keeps its last profile until then.
+  if (googleUser && !_myVotesLoaded) return;
+  try {
+    const weights = {};
+    for (const id of _sjDownloads.keys()) {
+      weights[id] = Math.round(_ytShuffleWeightFor(id) * 1000) / 1000;
+    }
+    await p.setShuffleProfile({ preference: sjShufflePreference, weights });
+  } catch (_) {}
 }
 
 // Which downloaded songs are already rated, and how many hearts each has
@@ -9046,8 +9175,15 @@ async function sjCarPushPlayCounts() {
 async function sjCarPushRatings() {
   const p = sjDlPlugin();
   if (!p) return;
+  // Native keeps this set on disk, so a push is a REPLACE and an empty one wipes
+  // what the car had. Two ways that used to happen: pushing before a signed-in
+  // listener's server votes have landed (localVotes is still the last account's,
+  // or nothing at all), and pushing before listDownloads has answered. Neither is
+  // worth a write - loadMyVotes and sjDlInit both push again once they know.
+  if (googleUser && !_myVotesLoaded) return;
   try {
     const trackIds = [...(_sjDownloads.keys())];
+    if (!trackIds.length) return;
     const rated = trackIds.filter(id => getMyVote(id) > 0);
     await p.setRatedTracks({ trackIds: rated });
     await plWallLoadReactionCounts(trackIds);
@@ -9057,6 +9193,9 @@ async function sjCarPushRatings() {
       if (n > 0) counts[id] = n;
     });
     await p.setHeartCounts({ counts });
+    // Ratings feed Favorites First, so the car's weights are stale until this
+    // has run at least once.
+    await sjCarPushShuffleProfile();
   } catch (_) {}
 }
 
@@ -9079,15 +9218,42 @@ async function sjCarDrainFeedback() {
   try {
     const { items } = await p.drainFeedback();
     const done = [];
+    // Songs heard in the car. Held back from the loop below and sent as one
+    // batch: a drive is a list, not a tap.
+    const drive = [];
     // Oldest first: two taps on one song must land in the order they happened,
     // or the older one wins and the thumb disagrees with the car.
     for (const it of (items || []).slice().sort((a, b) => (a.at || 0) - (b.at || 0))) {
       try {
         if (it.kind === 'rate') await sjCarApplyRating(it.trackId, Number(it.value) || 0);
         else if (it.kind === 'heart') await ytpSendReaction(it.trackId, 'heart', Number(it.positionMs) || 0, null);
+        else if (it.kind === 'play') { drive.push(it); continue; }  // acked with the batch below
         else { done.push(it.id); continue; }   // unknown kind: drop, never retry
         done.push(it.id);
       } catch (_) { /* leave it queued for the next drain */ }
+    }
+    // Nothing was logging CarPlay listening at all before this: the web view is
+    // asleep in the car, so a song heard six times on a road trip counted zero,
+    // which is exactly what makes a shuffle preference look broken. The RPC
+    // skips a play it already holds, so a drain that dies after the write and
+    // before the acknowledgement retries without counting anything twice.
+    if (drive.length) {
+      try {
+        for (let i = 0; i < drive.length; i += 200) {
+          const part = drive.slice(i, i + 200);
+          await dbRpcAuth('/rpc/log_carplay_plays', {
+            p_plays: part.map(it => ({
+              trackId:  it.trackId,
+              at:       Number(it.at) || 0,
+              ms:       Number(it.ms) || 0,
+              deviceId: getDeviceId(),
+            })),
+          });
+          part.forEach(it => done.push(it.id));
+        }
+        // What the car played now counts towards the weights and the history.
+        void loadMyPlayCounts();
+      } catch (_) { /* left queued for the next drain */ }
     }
     if (done.length) await p.ackFeedback({ ids: done });
     if (done.length) await sjCarPushRatings();
@@ -10600,7 +10766,9 @@ function ytpApplyDockHeight() {
   // Opening still lands on the height the content wants, so widening the range
   // did not change what the dock looks like when it appears.
   const open = Math.min(Math.max(rest, min), max);
-  const h = _ytpDockH == null ? open : Math.min(Math.max(_ytpDockH, min), max);
+  // Phones intentionally have no in-between player size. Ignoring the old
+  // remembered drag height also repairs sessions that saved a half-open dock.
+  const h = mob ? min : (_ytpDockH == null ? open : Math.min(Math.max(_ytpDockH, min), max));
   _ytpDockH = h;
   el.style.height = h + 'px';
   ytpDockSetPageInset(h);
@@ -10671,6 +10839,9 @@ function ytpDockMinimize() {
 }
 
 function ytpDockResizeStart(e) {
+  // Desktop retains its resizable dock. On a phone the handle is removed and
+  // the player moves only between its compact and full-screen states.
+  if (ytpIsMob()) return;
   if (e.type === 'mousedown' && e.button !== 0) return;
   const el = document.getElementById('ytp-mini-footer');
   const handle = document.getElementById('ytp-mf-resize');
@@ -10726,67 +10897,10 @@ function ytpDockResizeStart(e) {
   document.addEventListener('touchend', onUp);
 }
 
-// ── The other half of the same gesture ────────────────────────────────────
-// The full screen player on a phone carries the same grab bar on its top
-// edge. Pulled down it drags the sheet with the thumb, and past the commit
-// point it lands on the half-height dock - the size the drag was heading
-// for. From there the dock's own handle scales it the rest of the way down.
-function ytpFsDragStart(e) {
-  if (!_ytpFs || !ytpIsMob() || !_ytpContainerEl) return;
-  if (e.type === 'mousedown' && e.button !== 0) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const el = _ytpContainerEl;
-  const grab = document.getElementById('ytp-fs-grab');
-  const startY = e.touches ? e.touches[0].clientY : e.clientY;
-  const startedAt = Date.now();
-  let dy = 0;
-  if (grab) grab.classList.add('active');
-  el.style.transition = 'none';
-  const detach = () => {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-    document.removeEventListener('touchmove', onMove);
-    document.removeEventListener('touchend', onUp);
-    if (grab) grab.classList.remove('active');
-  };
-  const onMove = (ev) => {
-    const y = ev.touches ? ev.touches[0].clientY : ev.clientY;
-    dy = Math.max(0, y - startY);
-    // Follow the thumb one to one until the commit point, then ease off, so
-    // the sheet says by feel that it has already given all it is going to.
-    const shown = dy <= YTP_FS_DISMISS_PX ? dy : YTP_FS_DISMISS_PX + (dy - YTP_FS_DISMISS_PX) * .42;
-    el.style.transform = 'translateY(' + Math.round(shown) + 'px)';
-    if (ev.cancelable && ev.type === 'touchmove') ev.preventDefault();
-  };
-  const onUp = () => {
-    detach();
-    const speed = dy / Math.max(1, Date.now() - startedAt);
-    const commit = dy >= YTP_FS_DISMISS_PX || (dy > 30 && speed >= YTP_FS_DISMISS_SPEED);
-    // Both states clear the transform themselves, but the snap back needs it
-    // animated and the commit needs it gone before the dock measures anything.
-    el.style.transition = commit ? '' : 'transform .2s ease';
-    el.style.transform = '';
-    if (commit) {
-      el.style.transition = '';
-      ytpDockFromFullscreen();
-    } else {
-      setTimeout(() => { if (_ytpFs) el.style.transition = ''; }, 240);
-    }
-  };
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-  document.addEventListener('touchmove', onMove, { passive: false });
-  document.addEventListener('touchend', onUp);
-}
-
-// Leaving full screen by the handle always lands on the half-height dock,
-// whatever size the dock was last left at. The gesture was a request for
-// "smaller, but still the big one", and dropping straight to a quarter-screen
-// sliver would overshoot what was asked for.
+// Compatibility exit used by older callers. On phones ytpApplyDockHeight
+// always chooses the compact dock; desktop keeps its remembered dock size.
 function ytpDockFromFullscreen() {
-  _ytpDockH = Math.floor(ytpDockViewportH() * YTP_DOCK_MAX_FRAC);
-  try { localStorage.setItem('sj_dock_h', String(_ytpDockH)); } catch (_) {}
+  if (!ytpIsMob()) _ytpDockH = Math.floor(ytpDockViewportH() * YTP_DOCK_MAX_FRAC);
   ytpEnterDocked();
 }
 
@@ -13778,7 +13892,7 @@ function taPlayBgIdx(idx) {
   // Same shuffle bookkeeping the on-screen path does, so a screen-off advance
   // does not re-pick what just played.
   if (item?.trackId) {
-    _ytShuffleRecent = [item.trackId].concat(_ytShuffleRecent.filter(id => id !== item.trackId)).slice(0, 4);
+    _ytRememberShufflePlay(item.trackId);
   }
   const ta = taTrackAudio(item?.trackId);
   if (!ta) return false;
@@ -17056,6 +17170,10 @@ function lamRender(row) {
   const menu = document.getElementById('lam-menu');
   if (!menu || !row) return;
   const n = Number(row.track_count) || 0;
+  const isMine = oaIsMine(row);
+  // Adding a public artist is a library claim, never an ownership change.
+  // Owners continue to manage their artist through the existing menu item.
+  const canAddToMyArtists = !!(googleUser && !isMine && !row.can_manage && row.visibility === 'public');
   const fav = _lamFavIds;
   const favBtn = fav === null
     ? '<div class="sjm-empty" style="padding:6px 10px">Checking favorites…</div>'
@@ -17085,16 +17203,34 @@ function lamRender(row) {
           '<span class="sjm-label">Take a Break from Artist</span>' +
           '<span class="sjm-sub">›</span></button>'
       : '') +
+    (canAddToMyArtists
+      ? '<div class="sjm-sep"></div>' +
+        '<button class="sjm-item" onclick="lamAddToMyArtists()">' +
+          '<span class="sjm-ic">+</span><span class="sjm-label">Add to My Artists</span></button>'
+      : '') +
     (lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamManage()">' +
           '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>'
       : '') +
-    (oaIsMine(row)
+    (isMine
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item sjm-danger" onclick="lamRemoveFromMine()">' +
           '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from My Artists</span></button>'
       : '');
+}
+
+async function lamAddToMyArtists() {
+  const artistId = _lamArtistId;
+  const row = sjLandingRowFor(artistId);
+  if (!artistId || !row) return;
+  if (!googleUser) { showToast('Sign in to add artists to My Artists.'); return; }
+  if (oaIsMine(row)) { showToast(row.name + ' is already in My Artists.'); return; }
+  lamClose();
+  // add_catalog copies the artist's existing catalog tracks to the listener's
+  // private library. It is the same non-owning relationship used by the
+  // current Remove from My Artists action.
+  await sjmSendToMyJukebox('artist', artistId, row.name || 'this artist');
 }
 
 // Every song this artist has, fetched fresh - the landing card never holds a
@@ -17442,6 +17578,13 @@ function sjmRenderRoot() {
           : '')
       : '') +
     (googleUser
+      ? '<button class="sjm-item" onclick="sjmListeningHistory()">' +
+          '<span class="sjm-ic">\ud83d\udcca</span><span class="sjm-label">View listening history</span>' +
+          '<span class="sjm-sub">' +
+            (myInAppPlays[tid] ? (myInAppPlays[tid] + (myInAppPlays[tid] === 1 ? ' play' : ' plays')) : '\u203a') +
+          '</span></button>'
+      : '') +
+    (googleUser
       ? '<button class="sjm-item" data-sjm-submenu="break" onclick="sjmOpenBreak()">' +
           '<span class="sjm-ic">' + YTP_DECK_ICONS.pause + '</span>' +
           '<span class="sjm-label">' + (blocked ? 'Blocked · manage' : (isTrackOnBreak(tid) ? ('On break until ' + sjBreakUntilLabel(tid)) : 'Take a break from this song')) + '</span>' +
@@ -17777,6 +17920,228 @@ function sjmEditLyrics() {
   const tid = _sjmTrackId;
   sjmClose();
   if (tid) startLyricsEdit(tid, 'card');
+}
+
+// ══════════════════════════════════════════════════════════════
+// LISTENING HISTORY  (sjLh*)  - added 2026-09-10
+//
+// Every time this listener played one song, and what their thumb and their
+// hearts did during each play. Two SECURITY DEFINER RPCs do the work:
+//
+//   track_listening_history matches feedback to a play by TIME - a play claims
+//   whatever happened from when it started until the next song began, capped
+//   at 30 minutes - because only 17 of 383 rating rows ever carried a
+//   play_event_id and nothing was ever going to backfill the rest.
+//
+//   track_listening_summary counts the totals, and deliberately counts EVERY
+//   heart rather than only the ones that landed inside a listed play. The two
+//   numbers disagree on purpose, and the footer says why.
+//
+// It doubles as the proof that a Shuffle preference is doing something: the
+// weight on screen is read from _ytShuffleWeightFor(), the same function the
+// picker itself calls. A second copy of that arithmetic could disagree with
+// the player, which would be worse than showing nothing at all.
+// ══════════════════════════════════════════════════════════════
+
+const SJ_SHUFFLE_PREF_LABEL = {
+  discovery: 'Discovery', favorites: 'Favorites First',
+  less_repeats: 'Less Repeats', none: 'No Preferences',
+};
+const SJ_SHUFFLE_PREF_WHAT = {
+  discovery: 'songs you have played least come up most',
+  favorites: 'songs you gave a thumbs up come up most',
+  less_repeats: 'songs you have heard recently come up least',
+  none: 'a true even shuffle, with nothing weighted',
+};
+
+let _sjLhTrack = null;
+
+function sjLhAgo(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!isFinite(ms)) return '';
+  const m = Math.round(ms / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return m + (m === 1 ? ' minute ago' : ' minutes ago');
+  const h = Math.round(m / 60);
+  if (h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+  const d = Math.round(h / 24);
+  if (d < 31) return d + (d === 1 ? ' day ago' : ' days ago');
+  const mo = Math.round(d / 30.4);
+  if (mo < 12) return mo + (mo === 1 ? ' month ago' : ' months ago');
+  return (d / 365).toFixed(1) + ' years ago';
+}
+
+function sjLhDur(ms) {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+
+function sjLhStat(value, label) {
+  return '<div class="sj-lh-stat"><b>' + escHtml(String(value)) +
+         '</b><span>' + escHtml(label) + '</span></div>';
+}
+
+// Where a play happened. CarPlay writes source 'audio' like any other locker
+// playback - it IS locker playback, and every chart and analytics filter
+// already understands that word - so the car names itself in device_id.
+function sjLhWhere(row) {
+  if (String(row.device_id || '').indexOf('carplay:') === 0) return { label: 'CarPlay', cls: 'car' };
+  if (row.source === 'audio')   return { label: 'Background audio', cls: '' };
+  if (row.source === 'spotify') return { label: 'Spotify', cls: '' };
+  return { label: 'Jukebox', cls: '' };
+}
+
+// The weight the picker is using for this song right now, and where that puts
+// it against everything else loaded in the player.
+function sjShuffleWeightReport(trackId) {
+  const ids    = [...new Set(ytQueue.map(i => i && i.trackId).filter(Boolean))];
+  const weight = _ytShuffleWeightFor(trackId);
+  let avg = 0, rank = 0;
+  if (ids.length) {
+    const weights = ids.map(id => _ytShuffleWeightFor(id));
+    avg  = weights.reduce((a, b) => a + b, 0) / weights.length;
+    rank = weights.filter(x => x > weight).length + 1;
+  }
+  return {
+    pref: sjShufflePreference, weight, avg, rank, total: ids.length,
+    inQueue: ids.includes(trackId),
+    days: sjDaysSinceLastPlay(trackId),
+    plays: Number(myInAppPlays[trackId]) || 0,
+    favorite: getMyVote(trackId) > 0,
+  };
+}
+
+function sjLhShuffleHTML(trackId) {
+  const r = sjShuffleWeightReport(trackId);
+  const out = ['<p>Your shuffle is set to <b class="sj-lh-pref">' +
+    escHtml(SJ_SHUFFLE_PREF_LABEL[r.pref] || r.pref) + '</b> - ' +
+    escHtml(SJ_SHUFFLE_PREF_WHAT[r.pref] || '') + '.</p>'];
+
+  if (r.pref === 'none') {
+    out.push('<p>Nothing is weighted, so this song is exactly as likely as every other one loaded. ' +
+      'If you keep hearing the same songs, try <b>Less Repeats</b> or <b>Discovery</b> in ' +
+      '<a href="#" onclick="closeListeningHistory();openSettings(\'playback\');return false" ' +
+      'style="color:var(--accent)">Settings &rsaquo; Playback</a>.</p>');
+  } else if (!r.total) {
+    out.push('<p>Nothing is loaded in the player yet, so there is nothing to weigh this song ' +
+      'against. Start some music and open this again.</p>');
+  } else {
+    const times = r.avg > 0 ? (r.weight / r.avg) : 1;
+    const how = times >= 1.02 ? 'about <b>' + times.toFixed(1) + '&times; as likely</b> as the average song'
+              : times <= 0.98 ? 'about <b>' + (1 / times).toFixed(1) + '&times; less likely</b> than the average song'
+              : '<b>about as likely</b> as the average song';
+    out.push('<p>Right now it carries a weight of <b>' + r.weight.toFixed(2) +
+      '</b> against an average of <b>' + r.avg.toFixed(2) + '</b> across the ' + r.total +
+      ' songs loaded in the player' + (r.inQueue ? '' : ' (this one is not among them)') +
+      ' - ' + how + ', ranked <b>' + r.rank + ' of ' + r.total + '</b> for what plays next.</p>');
+    const pct = Math.max(2, Math.min(100,
+      Math.round((1 - ((r.rank - 1) / Math.max(1, r.total))) * 100)));
+    out.push('<div class="sj-lh-bar"><i style="width:' + pct + '%"></i></div>');
+    const why = [r.plays
+      ? 'you have played it <b>' + r.plays + '</b> ' + (r.plays === 1 ? 'time' : 'times')
+      : 'you have never played it'];
+    if (r.days != null) why.push('last <b>' + escHtml(sjLhAgo(myLastPlayed[trackId])) + '</b>');
+    if (r.pref === 'favorites') why.push(r.favorite ? 'and it has your <b>thumbs up</b>' : 'and it has no thumbs up');
+    out.push('<p>Why: ' + why.join(', ') + '.</p>');
+  }
+  return '<div class="sj-lh-why">' + out.join('') + '</div>';
+}
+
+function sjLhRenderHTML(trackId, s, rows) {
+  const plays  = Number(s.plays) || 0;
+  const hearts = Number(s.hearts_total) || 0;
+  const inRows = rows.reduce((n, r) => n + (Number(r.hearts) || 0), 0);
+  const rating = Number(s.rating_now) || 0;
+
+  const stats = '<div class="sj-lh-stats">' +
+    sjLhStat(plays, plays === 1 ? 'play' : 'plays') +
+    sjLhStat(Number(s.plays_7d)  || 0, 'last 7 days') +
+    sjLhStat(Number(s.plays_30d) || 0, 'last 30 days') +
+    sjLhStat(hearts, hearts === 1 ? 'heart' : 'hearts') +
+    sjLhStat(rating > 0 ? '\ud83d\udc4d' : '\u2013', 'your rating') +
+  '</div>';
+
+  const list = rows.length
+    ? '<div class="sj-lh-list">' + rows.map(r => {
+        const where  = sjLhWhere(r);
+        const before = Number(r.rating_before) || 0;
+        const after  = Number(r.rating_after)  || 0;
+        const tags   = [];
+        if (after > before)      tags.push('<span class="sj-lh-tag up">\ud83d\udc4d thumbs up given</span>');
+        else if (after < before) tags.push('<span class="sj-lh-tag down">thumbs up taken back</span>');
+        const h = Number(r.hearts) || 0;
+        if (h) tags.push('<span class="sj-lh-tag heart">\u2665 ' + h + (h === 1 ? ' heart' : ' hearts') + '</span>');
+        Object.keys(r.reactions || {}).forEach(k => {
+          if (k === 'heart') return;
+          tags.push('<span class="sj-lh-tag">' + escHtml(k) + ' &times;' + (Number(r.reactions[k]) || 0) + '</span>');
+        });
+        const ms = Number(r.ms) || 0;
+        if (ms) tags.push('<span class="sj-lh-tag">' + sjLhDur(ms) + '</span>');
+        tags.push('<span class="sj-lh-tag ' + where.cls + '">' + escHtml(where.label) + '</span>');
+        return '<div class="sj-lh-row">' +
+          '<div class="sj-lh-when">' + escHtml(new Date(r.played_at).toLocaleString()) +
+            '<small>' + escHtml(sjLhAgo(r.played_at)) + '</small></div>' +
+          '<div class="sj-lh-tags">' + tags.join('') + '</div>' +
+        '</div>';
+      }).join('') + '</div>'
+    : '<p class="sj-lh-note">No plays recorded yet. A song counts as played once it actually starts.</p>';
+
+  const notes = [];
+  if (rows.length && rows.length < plays) {
+    notes.push('Showing the ' + rows.length + ' most recent of ' + plays + ' plays.');
+  }
+  if (hearts > inRows) {
+    notes.push(hearts + ' hearts in total, ' + inRows + ' of them while one of these plays was running. ' +
+      'The rest were given from a song card, or on a device that was not logging plays at the time.');
+  }
+  notes.push('A play claims whatever you rated or hearted until the next song started, capped at 30 minutes.');
+
+  return stats + sjLhShuffleHTML(trackId) + list +
+    '<p class="sj-lh-note">' + notes.map(escHtml).join(' ') + '</p>';
+}
+
+async function openListeningHistory(trackId) {
+  const modal = document.getElementById('sj-lh-modal');
+  const body  = document.getElementById('sj-lh-body');
+  const title = document.getElementById('sj-lh-title');
+  if (!modal || !body) return;
+  _sjLhTrack = trackId;
+  const meta = ytpTrackMeta(trackId);
+  const name = (meta.title && meta.title !== 'Unknown')
+    ? ((meta.artist ? meta.artist + ' - ' : '') + meta.title) : '';
+  if (title) title.textContent = 'Listening history' + (name ? ' - ' + name : '');
+  modal.classList.add('open');
+  if (!googleUser) {
+    body.innerHTML = '<p class="sj-lh-note">Sign in to see when you played this song.</p>';
+    return;
+  }
+  body.innerHTML = '<p class="sj-lh-note">Loading&hellip;</p>';
+  try {
+    const [summary, rows] = await Promise.all([
+      dbRpcAuth('/rpc/track_listening_summary', { p_track_id: trackId }),
+      dbRpcAuth('/rpc/track_listening_history', { p_track_id: trackId, p_limit: 300 }),
+    ]);
+    // Opened, closed, reopened on another song while this was in flight.
+    if (_sjLhTrack !== trackId) return;
+    const sum = (Array.isArray(summary) ? summary[0] : summary) || {};
+    body.innerHTML = sjLhRenderHTML(trackId, sum, Array.isArray(rows) ? rows : []);
+  } catch (e) {
+    if (_sjLhTrack !== trackId) return;
+    body.innerHTML = '<p class="sj-lh-note" style="color:#ef4444">Could not load this song\'s ' +
+      'listening history. Try again in a moment.</p>';
+  }
+}
+
+function closeListeningHistory() {
+  _sjLhTrack = null;
+  document.getElementById('sj-lh-modal')?.classList.remove('open');
+}
+
+function sjmListeningHistory() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) openListeningHistory(tid);
 }
 
 function sjmLyricsHistory() {
@@ -33906,12 +34271,23 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-09';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-10';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-10', items: [
+    'CarPlay now shows the thumbs up and heart count you already gave a song on the website. Your ratings are kept on the phone, so they are there the moment you get in the car, before the app has been opened or had any signal.',
+    'A song you have just downloaded for CarPlay now arrives with its rating already on it instead of coming up blank until the next time you open the app.',
+    'Every song\u2019s \u22ef menu has a new View listening history. It lists every time you played that song, when, on what, whether you gave or took back a thumbs up during that play, and how many hearts you gave it.',
+    'That same screen shows what your Shuffle choice is doing right now: how heavily this song is weighted compared with everything else loaded in the player, where it ranks for what plays next, and why.',
+    'Shuffle preferences now count how long it has actually been since you played a song, not just what has come up since you opened the page, and they remember far more of what you have already heard. Less Repeats and Discovery both push repeats a lot further down.',
+    'Songs you play in CarPlay now count. Playback in the car is recorded on the phone and sent up the next time the app is open, so it shows in your listening history, your play counts, and your shuffle preferences.',
+    'CarPlay shuffle now follows your Shuffle preference instead of picking at random.'
+  ]},
   { date: '2026-09-09', items: [
+    'On a phone, the Player now has only compact and full-screen views. The drag handles and extra height-only minimize control are gone, and the full-screen and close controls sit with the playback controls instead of beside the title.',
+    'Public artists can now be added to My Artists from their ⋯ menu. This adds their catalog to your library so they appear under My Artists, without changing who owns or manages the artist.',
     'When you minimize a music import or a background-audio upload, its progress notice now stays above the Player dock and moves up as the dock grows, so it remains visible and ready to reopen.',
     'Send all to iPhone now queues your whole selected music collection for CarPlay and offline play instead of stopping after 200 songs. The phone still waits for you to approve the download before it uses data or storage.',
     'Take a Break from Artist now works when you choose a duration, and its permanent option is clearly labeled Never play these again.',
@@ -38347,6 +38723,8 @@ async function loadMyPlayCounts() {
       if (r.last_played) myLastPlayed[r.track_id] = r.last_played;
     });
     Object.keys(myInAppPlays).forEach(tid => refreshMyPlayUI(tid));
+    // Play counts and last-played stamps are half of every weighted mode.
+    void sjCarPushShuffleProfile();
     if (viewMode === 'playlistchart') plWallRefreshStats();
   } catch(e) { console.warn('loadMyPlayCounts error', e); }
 }
@@ -39867,6 +40245,17 @@ try { sjInstrumentRenders(); } catch (e) { console.warn('[SJ performance] Render
       <button onclick="closeLyricsHistory()" style="background:none;border:none;color:var(--text-muted);font-size:1.1rem;cursor:pointer">✕</button>
     </div>
     <div id="lyr-hist-body"><p style="color:var(--text-muted);font-size:.6rem;padding:8px">Loading…</p></div>
+  </div>
+</div>
+
+<!-- Listening history modal -->
+<div id="sj-lh-modal" onclick="if(event.target===this)closeListeningHistory()">
+  <div id="sj-lh-box">
+    <div id="sj-lh-head">
+      <h3 id="sj-lh-title">Listening history</h3>
+      <button onclick="closeListeningHistory()" style="background:none;border:none;color:var(--text-muted);font-size:1.1rem;cursor:pointer" aria-label="Close">✕</button>
+    </div>
+    <div id="sj-lh-body"><p class="sj-lh-note">Loading…</p></div>
   </div>
 </div>
 
@@ -42992,8 +43381,7 @@ async function sjmSendToMyJukebox(scope, id, label) {
     _esLibTrackIds = null;
     _myArtistIds = null;
     _myArtistIdsLoading = false;
-    const artist = _sjmArtistFor(fromTrackId || (scope === 'artist' ? id : null));
-    const row = artist ? sjLandingRowFor(artist.id) : sjLandingRowFor(scope === 'artist' ? id : null);
+    const row = sjLandingRowFor(scope === 'artist' ? id : _sjmArtistFor(fromTrackId)?.id);
     if (row) row.in_my_library = true;
     sjmClose();
     showToast((data.added || 0)

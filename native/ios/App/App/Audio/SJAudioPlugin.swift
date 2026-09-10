@@ -25,6 +25,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "setPlaylists",   returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRatedTracks", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHeartCounts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShuffleProfile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drainFeedback",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "ackFeedback",    returnType: CAPPluginReturnPromise),
     ]
@@ -232,6 +233,25 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         SJCarPlayFeedback.shared.setHeartCounts(counts)
         DispatchQueue.main.async { SJAudioEngine.shared.onModeChanged?() }
         call.resolve(["count": counts.count])
+    }
+
+    /// The listener's Shuffle preference, and this account's weight for every
+    /// song on the phone. The car cannot work these out - no session, no
+    /// catalogue, no network on the drive - so the website hands over finished
+    /// numbers and the engine draws its running order against them.
+    @objc func setShuffleProfile(_ call: CAPPluginCall) {
+        let preference = call.getString("preference") ?? "none"
+        let raw = call.getObject("weights") ?? JSObject()
+        var weights: [String: Double] = [:]
+        for (id, value) in raw {
+            if let n = value as? Double { weights[id] = n }
+            else if let n = value as? Int { weights[id] = Double(n) }
+        }
+        SJShuffleProfile.shared.set(preference: preference, weights: weights)
+        // A profile that lands mid-drive should take effect at the next song,
+        // not the next launch.
+        DispatchQueue.main.async { SJAudioEngine.shared.reshuffleForProfileChange() }
+        call.resolve(["count": weights.count])
     }
 
     /// Ratings and hearts tapped in the car, for the web layer to send on.
