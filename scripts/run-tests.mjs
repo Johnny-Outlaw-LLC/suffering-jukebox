@@ -3,9 +3,9 @@
  * The test runner behind /test-coverage.
  *
  * Runs every tests/*.test.mjs through node:test, then writes the whole run to
- * public/test-results.json: one entry per suite, one line per test, with the
- * header metadata each test file declares about itself (@suite, @area, @covers)
- * and the honest list of gaps in tests/coverage-gaps.json.
+ * test-results.json: one entry per suite, one line per test, with the header
+ * metadata each test file declares about itself (@suite, @area, @covers) and
+ * the honest list of gaps in tests/coverage-gaps.json.
  *
  * That file is COMMITTED, and it sits at the repository root rather than under
  * public/ - the page that reads it is admin only, and it is served through
@@ -20,6 +20,9 @@
  * it is showing describe the code being served. `--no-fail` is passed there:
  * failing tests turn the page red, they do not stop the deploy.
  *
+ * Every run is also recorded as one row in jukebox.test_runs, which is what the
+ * calendar on that page is built from. See recordRun().
+ *
  * Exit code is otherwise the run's: non-zero when anything failed, for a hook.
  */
 import { run } from 'node:test';
@@ -33,6 +36,7 @@ const testsDir = join(root, 'tests');
 // Deliberately NOT under public/: this file names every check and every gap,
 // and the page that reads it is admin only. /api/sj-admin-tests serves it.
 const OUT = join(root, 'test-results.json');
+const SUPABASE_URL = 'https://ntyvtpimesfoesuykuyi.supabase.co';
 
 const files = readdirSync(testsDir)
   .filter((f) => f.endsWith('.test.mjs'))
@@ -152,7 +156,86 @@ function readGaps() {
   }
 }
 
-function report() {
+/** Vercel has it in the environment; locally it is in one of a few .env files. */
+function serviceRoleKey() {
+  const fromEnv = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  for (const rel of ['.env.local', '../env.local', '../.env.local']) {
+    try {
+      const line = readFileSync(join(root, rel), 'utf8')
+        .split(/\r?\n/)
+        .find((l) => /^\s*(export\s+)?SUPABASE_SERVICE_ROLE_KEY\s*=/.test(l));
+      if (line) return line.slice(line.indexOf('=') + 1).trim().replace(/^['"]|['"]$/g, '');
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null;
+}
+
+/**
+ * Keep one row per run in jukebox.test_runs, which is the whole of the calendar
+ * on the Test Coverage page.
+ *
+ * test-results.json only ever describes the CURRENT run - the build rewrites it
+ * every time - so history has to live somewhere that survives a deploy.
+ * Deliberately not the whole report: totals, the per-area split and what
+ * actually failed are what a calendar needs, and keeping every test name for
+ * every run forever would grow without bound.
+ *
+ * Never fatal. A run that cannot reach the database has still told you
+ * everything it found, and failing a build over the bookkeeping would be worse
+ * than losing one square on a calendar.
+ */
+async function recordRun(result) {
+  const key = serviceRoleKey();
+  if (!key) {
+    console.log('no service role key in the environment, so this run was not recorded');
+    return;
+  }
+  const failed = [];
+  for (const suite of result.suites) {
+    for (const t of suite.tests) {
+      if (t.status === 'fail') failed.push({ suite: suite.suite, name: t.name, error: t.error });
+    }
+  }
+  const row = {
+    ran_at: result.generatedAt,
+    commit_sha: result.git.sha || null,
+    branch: result.git.branch || null,
+    subject: result.git.subject || null,
+    node: result.node,
+    source: process.env.VERCEL_GIT_COMMIT_SHA ? 'build' : 'local',
+    dirty: !!result.git.dirty,
+    wall_ms: result.wallMs,
+    suites: result.totals.suites,
+    tests: result.totals.tests,
+    passed: result.totals.passed,
+    failed: result.totals.failed,
+    areas: result.areas,
+    failures: failed,
+  };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/test_runs`, {
+      method: 'POST',
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'Content-Profile': 'jukebox',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(row),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 200)}`);
+    console.log('recorded this run in jukebox.test_runs');
+  } catch (err) {
+    console.warn(`could not record the run (${err.message}) - the results above still stand`);
+  }
+}
+
+async function report() {
   const list = [...suites.values()].filter((s) => s.tests.length || s.failed);
   for (const suite of list) suite.tests.sort((a, b) => a.name.localeCompare(b.name));
   list.sort((a, b) => (a.area + a.suite).localeCompare(b.area + b.suite));
@@ -171,7 +254,7 @@ function report() {
     };
   });
 
-  const report = {
+  const result = {
     generatedAt: new Date().toISOString(),
     wallMs: Date.now() - startedAt,
     node: process.version,
@@ -182,9 +265,9 @@ function report() {
     gaps: readGaps(),
   };
 
-  writeFileSync(OUT, JSON.stringify(report, null, 2) + '\n', 'utf8');
+  writeFileSync(OUT, JSON.stringify(result, null, 2) + '\n', 'utf8');
   const label = failed ? `${failed} FAILED` : 'all passing';
-  console.log(`${tests} tests in ${list.length} suites, ${label} (${report.wallMs}ms)`);
+  console.log(`${tests} tests in ${list.length} suites, ${label} (${result.wallMs}ms)`);
   console.log(`wrote ${OUT.replace(root, '.')}`);
   if (failed) {
     for (const suite of list) {
@@ -193,6 +276,9 @@ function report() {
       }
     }
   }
+
+  await recordRun(result);
+
   // --no-fail is how the build runs it. The page's job is to REPORT a failure in
   // red, not to stop a deploy: a red Test Coverage page is more useful than a
   // deployment that never happened, and the pre-push hook is where a gate
@@ -200,4 +286,4 @@ function report() {
   process.exitCode = failures && !process.argv.includes('--no-fail') ? 1 : 0;
 }
 
-report();
+await report();

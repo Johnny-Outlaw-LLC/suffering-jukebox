@@ -9,6 +9,47 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   header, main, footer { width: min(1140px, calc(100% - 32px)); }
+  header a.brand { display:inline-flex; align-items:center; gap:12px; }
+  header a.brand img { height:30px; width:auto; display:block; }
+  .brand-tag { font:800 .66rem/1 monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); border:1px solid var(--accent); border-radius:99px; padding:5px 9px; }
+
+  /* Run history calendar */
+  .cal { border:1px solid var(--line); border-radius:12px; background:rgba(18,18,18,.94); padding:16px 18px; margin:16px 0; }
+  .cal-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .cal-head h2 { margin:0; font-size:1.05rem; flex:0 0 auto; }
+  .cal-nav { display:flex; gap:6px; margin-left:auto; }
+  .cal-nav button { padding:6px 11px; font-size:.85rem; background:transparent; color:var(--text); border-color:#555; }
+  .cal-nav button:disabled { opacity:.3; }
+  .cal-sum { font-size:.82rem; color:var(--muted); flex:1 1 100%; margin:0; }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:5px; }
+  .cal-dow { font:700 .66rem/1 monospace; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); text-align:center; padding-bottom:4px; }
+  .cal-day { aspect-ratio:1/1; border:1px solid #1f1f1f; border-radius:8px; background:#0d0d0d; padding:5px 6px; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; font:inherit; color:var(--muted); cursor:default; min-height:44px; }
+  .cal-day.blank { border-color:transparent; background:transparent; }
+  .cal-day .dnum { font-size:.74rem; font-family:monospace; }
+  .cal-day .runs { font-size:.66rem; font-family:monospace; align-self:flex-end; }
+  .cal-day.has { cursor:pointer; color:var(--text); }
+  .cal-day.ok { border-color:#245d3a; background:#0e2116; }
+  .cal-day.ok .runs { color:var(--ok); }
+  .cal-day.bad { border-color:#7a2f2f; background:#2a1212; }
+  .cal-day.bad .runs { color:var(--danger); }
+  .cal-day.today { outline:1px solid var(--accent); outline-offset:1px; }
+  .cal-day[aria-pressed="true"] { border-color:var(--accent); }
+  .cal-legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:12px; font-size:.76rem; color:var(--muted); }
+  .cal-legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:-1px; border:1px solid #1f1f1f; }
+  .cal-legend i.ok { border-color:#245d3a; background:#0e2116; }
+  .cal-legend i.bad { border-color:#7a2f2f; background:#2a1212; }
+  .cal-day-detail { margin-top:14px; border-top:1px solid var(--line); padding-top:12px; }
+  .cal-day-detail h3 { margin:0 0 8px; font-size:.95rem; }
+  .run { display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; padding:9px 0; border-top:1px solid #1f1f1f; font-size:.85rem; }
+  .run:first-of-type { border-top:0; }
+  .run .time { font-family:monospace; font-size:.8rem; color:var(--muted); white-space:nowrap; }
+  .run .src { font:700 .64rem/1 monospace; letter-spacing:.1em; text-transform:uppercase; border:1px solid var(--line); border-radius:99px; padding:4px 7px; color:var(--muted); }
+  .run .src.build { color:var(--accent); border-color:var(--accent); }
+  .run .sha { font-family:monospace; font-size:.78rem; color:var(--muted); }
+  .run .score { margin-left:auto; font-family:monospace; font-size:.8rem; color:var(--ok); white-space:nowrap; }
+  .run .score.bad { color:var(--danger); }
+  .run .subject { flex:1 1 100%; color:var(--muted); font-size:.8rem; }
+  .run .fails { flex:1 1 100%; margin:6px 0 0; padding:9px 11px; border:1px solid #472222; background:#1a0f0f; border-radius:6px; font-family:monospace; font-size:.76rem; color:#ffb4b4; white-space:pre-wrap; }
   .headline { display:flex; flex-wrap:wrap; gap:18px; align-items:stretch; margin:18px 0 8px; }
   .verdict { flex:1 1 260px; border-radius:12px; border:1px solid var(--line); padding:20px 22px; background:rgba(18,18,18,.94); }
   .verdict.pass { border-color:#245d3a; background:#0e2116; }
@@ -59,7 +100,10 @@
 </head>
 <body>
 <header>
-  <a class="brand" href="/">Suffering Jukebox Admin</a>
+  <a class="brand" href="/" title="Back to Suffering Jukebox">
+    <img src="/suffering-jukebox-text-logo.png" alt="Suffering Jukebox">
+    <span class="brand-tag">Admin</span>
+  </a>
   <nav>
     <a href="/">Jukebox</a>
     <a href="/artist-rights-admin">Rights &amp; DMCA review</a>
@@ -96,6 +140,22 @@ let REPORT = null;
 let filterArea = null;       // null = every area
 let failuresOnly = false;
 let query = '';
+let calMonth = null;         // first of the month on screen
+let calDay = null;           // 'YYYY-MM-DD' of the open day, or null
+
+const DAY_MS = 86400000;
+
+/**
+ * Local date key for a run.
+ *
+ * Deliberately local rather than UTC: a build at 9pm Central is a Tuesday to
+ * the person reading this, and a calendar that puts it on Wednesday is wrong
+ * however defensible the timezone maths.
+ */
+function dayKey(d) {
+  const t = new Date(d);
+  return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+}
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
@@ -193,6 +253,7 @@ function render() {
       + '</dl>'
     + '</div>'
     + notes.join('')
+    + '<div id="calendar"></div>'
     + areaBar()
     + toolbar()
     + '<div id="suites"></div>'
@@ -213,7 +274,153 @@ function render() {
     });
     paintSuites();
   }));
+  paintCalendar();
   paintSuites();
+}
+
+// ── Run history ───────────────────────────────────────────────────────────
+// One row per run in jukebox.test_runs, grouped into days. A day is red if ANY
+// run in it failed: a green afternoon does not undo a red morning, and the
+// question the calendar answers is "was anything broken that day".
+
+function runsByDay() {
+  const map = new Map();
+  for (const run of REPORT.history || []) {
+    const key = dayKey(run.ran_at);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(run);
+  }
+  for (const runs of map.values()) runs.sort((a, b) => Date.parse(b.ran_at) - Date.parse(a.ran_at));
+  return map;
+}
+
+function paintCalendar() {
+  const host = document.getElementById('calendar');
+  if (!host) return;
+
+  if (REPORT.historyAvailable === false) {
+    host.innerHTML = '<div class="cal"><h2>Run history</h2>'
+      + '<p class="fine">The history could not be read from the database just now. '
+      + 'The run above is unaffected.</p></div>';
+    return;
+  }
+
+  const byDay = runsByDay();
+  if (!byDay.size) {
+    host.innerHTML = '<div class="cal"><h2>Run history</h2>'
+      + '<p class="fine">No runs recorded yet. Every <code>npm test</code> and every deployment '
+      + 'adds one, so this fills in from here.</p></div>';
+    return;
+  }
+
+  const newest = new Date(REPORT.history[0].ran_at);
+  if (!calMonth) calMonth = new Date(newest.getFullYear(), newest.getMonth(), 1);
+
+  const year = calMonth.getFullYear();
+  const month = calMonth.getMonth();
+  const first = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const oldest = new Date(REPORT.history[REPORT.history.length - 1].ran_at);
+
+  // Sunday-first, matching the rest of the app's audience.
+  const lead = first.getDay();
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<div class="cal-day blank"></div>');
+
+  const today = dayKey(new Date());
+  let monthRuns = 0;
+  let redDays = 0;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = dayKey(new Date(year, month, d));
+    const runs = byDay.get(key) || [];
+    const bad = runs.some(r => r.failed > 0);
+    monthRuns += runs.length;
+    if (bad) redDays++;
+    const cls = ['cal-day'];
+    if (runs.length) cls.push('has', bad ? 'bad' : 'ok');
+    if (key === today) cls.push('today');
+    const label = runs.length
+      ? runs.length + ' run' + (runs.length === 1 ? '' : 's') + ', ' + (bad ? 'something failed' : 'all passing')
+      : 'no runs';
+    cells.push(
+      (runs.length ? '<button type="button" data-day="' + key + '" aria-pressed="' + (calDay === key) + '"' : '<div')
+      + ' class="' + cls.join(' ') + '" title="' + esc(key + ' - ' + label) + '">'
+      + '<span class="dnum">' + d + '</span>'
+      + (runs.length ? '<span class="runs">' + (bad ? '✕' : '✓') + ' ' + runs.length + '</span>' : '')
+      + (runs.length ? '</button>' : '</div>')
+    );
+  }
+
+  const monthName = first.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+  const prevEnd = new Date(year, month, 0);
+  const canPrev = prevEnd >= new Date(oldest.getFullYear(), oldest.getMonth(), 1);
+  const canNext = new Date(year, month + 1, 1) <= new Date(newest.getFullYear(), newest.getMonth(), 1);
+
+  host.innerHTML = '<div class="cal">'
+    + '<div class="cal-head">'
+      + '<h2>Run history</h2>'
+      + '<span class="fine">' + esc(monthName) + '</span>'
+      + '<div class="cal-nav">'
+        + '<button type="button" id="cal-prev"' + (canPrev ? '' : ' disabled') + ' aria-label="Previous month">&lsaquo;</button>'
+        + '<button type="button" id="cal-next"' + (canNext ? '' : ' disabled') + ' aria-label="Next month">&rsaquo;</button>'
+      + '</div>'
+      + '<p class="cal-sum">' + monthSummary(monthRuns, redDays) + '</p>'
+    + '</div>'
+    + '<div class="cal-grid">'
+      + ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => '<div class="cal-dow">' + d + '</div>').join('')
+      + cells.join('')
+    + '</div>'
+    + '<div class="cal-legend">'
+      + '<span><i class="ok"></i>every run passed</span>'
+      + '<span><i class="bad"></i>something failed</span>'
+      + '<span><i></i>no run</span>'
+    + '</div>'
+    + dayDetail(byDay)
+  + '</div>';
+
+  const prev = document.getElementById('cal-prev');
+  const next = document.getElementById('cal-next');
+  if (prev) prev.addEventListener('click', () => { calMonth = new Date(year, month - 1, 1); calDay = null; paintCalendar(); });
+  if (next) next.addEventListener('click', () => { calMonth = new Date(year, month + 1, 1); calDay = null; paintCalendar(); });
+  host.querySelectorAll('[data-day]').forEach(el => el.addEventListener('click', () => {
+    calDay = calDay === el.dataset.day ? null : el.dataset.day;
+    paintCalendar();
+  }));
+}
+
+function monthSummary(runs, redDays) {
+  if (!runs) return 'No runs this month.';
+  const r = runs + ' run' + (runs === 1 ? '' : 's');
+  if (!redDays) return r + ', nothing failing. Click a day to see them.';
+  return r + ', ' + redDays + ' day' + (redDays === 1 ? '' : 's') + ' with a failure. Click a day to see them.';
+}
+
+function dayDetail(byDay) {
+  if (!calDay) return '';
+  const runs = byDay.get(calDay) || [];
+  if (!runs.length) return '';
+  const heading = new Date(calDay + 'T12:00:00').toLocaleDateString(undefined, { dateStyle: 'full' });
+  return '<div class="cal-day-detail"><h3>' + esc(heading) + '</h3>' + runs.map(runRow).join('') + '</div>';
+}
+
+function runRow(run) {
+  const bad = run.failed > 0;
+  const time = new Date(run.ran_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const fails = (run.failures || []).slice(0, 12)
+    .map(f => f.suite + ' > ' + f.name + (f.error ? '\n    ' + f.error.split('\n')[0] : ''))
+    .join('\n');
+  const more = (run.failures || []).length - 12;
+  return '<div class="run">'
+    + '<span class="time">' + esc(time) + '</span>'
+    + '<span class="src ' + (run.source === 'build' ? 'build' : '') + '">' + esc(run.source === 'build' ? 'deploy' : 'local') + '</span>'
+    + '<span class="sha">' + esc(run.commit_sha || 'unknown') + (run.dirty ? ' +uncommitted' : '') + '</span>'
+    + '<span class="score' + (bad ? ' bad' : '') + '">'
+      + (bad ? run.failed + ' failed of ' + run.tests : run.tests + ' passing')
+    + '</span>'
+    + (run.subject ? '<span class="subject">' + esc(run.subject) + '</span>' : '')
+    + (fails ? '<pre class="fails">' + esc(fails) + (more > 0 ? '\n... and ' + more + ' more' : '') + '</pre>' : '')
+  + '</div>';
 }
 
 function fact(label, value) {

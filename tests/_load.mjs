@@ -74,7 +74,11 @@ export function htmlSlice(startMarker, endMarker) {
  * inputs as its server-side twin.
  */
 export function loadHtmlFns(names, { startMarker, endMarker } = {}) {
-  const source = startMarker ? htmlSlice(startMarker, endMarker) : html;
+  return loadFnsFrom(startMarker ? htmlSlice(startMarker, endMarker) : html, names);
+}
+
+/** The same, out of any source text - the admin pages are not the dashboard. */
+export function loadFnsFrom(source, names) {
   const out = {};
   for (const name of names) {
     const decl = `function ${name}(`;
