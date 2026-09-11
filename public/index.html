@@ -4882,6 +4882,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
         <button type="button" class="set-nav-btn" data-set-nav="profile" onclick="settingsShow('profile')">Profile</button>
         <button type="button" class="set-nav-btn" data-set-nav="privacy" onclick="settingsShow('privacy')">Privacy</button>
         <button type="button" class="set-nav-btn" data-set-nav="playback" onclick="settingsShow('playback')">Playback</button>
+        <button type="button" class="set-nav-btn" data-set-nav="integrations" onclick="settingsShow('integrations')">Integrations</button>
         <button type="button" class="set-nav-btn" data-set-nav="audio" onclick="settingsShow('audio')">Audio Storage</button>
         <button type="button" class="set-nav-btn" data-set-nav="jukebox" onclick="settingsShow('jukebox')">Online Jukebox</button>
       </nav>
@@ -4931,6 +4932,28 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="favorites" onchange="sjSetShufflePreference(this.value)"><span><b>Favorites First</b><span class="set-sub" style="display:block">Prefers tracks you have favorited and played most.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats" onchange="sjSetShufflePreference(this.value)"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none" onchange="sjSetShufflePreference(this.value)"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="set-sec" data-set-pane="integrations">
+          <div class="set-body">
+            <div class="set-block">
+              <div class="set-h" id="set-int-h">Sister site</div>
+              <p class="set-sub" id="set-int-sub">You already use one Google account on both sites. Turn this on to keep shuffle preference in sync, and so Analytics can colour listening from each site separately.</p>
+              <label class="set-opt" id="set-int-opt">
+                <input type="checkbox" id="set-link-sister" onchange="settingsToggleSisterLink(this.checked)">
+                <span>
+                  <b id="set-int-label">Sync with Listening Party</b>
+                  <span class="set-sub" style="display:block" id="set-int-detail">Playback history is already on this account. Enabling syncs your Shuffle choice both ways and stamps new plays so My Data &amp; Analytics can show Suffering Jukebox and Listening Party in different colours.</span>
+                </span>
+              </label>
+              <span class="set-status" id="set-int-note"></span>
+            </div>
+            <div class="set-block">
+              <div class="set-h">Open the other site</div>
+              <p class="set-sub" id="set-int-open-sub">Same music, same account, different front door.</p>
+              <a class="pl-btn ghost" id="set-int-open" href="https://listeningparty.stream/" target="_blank" rel="noopener">Open Listening Party</a>
             </div>
           </div>
         </section>
@@ -7095,18 +7118,21 @@ function sjLoadShufflePreference() {
 }
 
 // A shuffle choice is local to this device, so changing the radio must be
-// durable immediately. It must not depend on unrelated profile fields also
-// passing validation when the Settings form is saved.
-function sjSetShufflePreference(value) {
+// durable immediately. When Integrations links the sister site, the same
+// choice is also written to the account so the other brand picks it up.
+function sjSetShufflePreference(value, opts) {
   if (!SJ_SHUFFLE_PREFERENCES.includes(value)) return false;
   sjShufflePreference = value;
   try { localStorage.setItem('sj_shuffle_preference', value); } catch (_) {}
   _ytShufflePreviewIdx = null;
   if (ytShuffle) ytResetShufflePool();
   if (ytPlayerEl) updateYTQueueUI({ preserveScroll: true });
-  // The car shuffles the songs on its own phone with this web view asleep, so
-  // the choice has to travel to it now rather than be asked for at the time.
   if (typeof sjCarPushShuffleProfile === 'function') void sjCarPushShuffleProfile();
+  if (!opts?.skipRemote && googleUser && sjProfile?.linkSisterSite) {
+    dbRpcAuth('/rpc/set_my_settings', { p_shuffle_preference: value }).then((p) => {
+      if (p) sjProfile = p;
+    }).catch(() => {});
+  }
   return true;
 }
 
@@ -34896,6 +34922,8 @@ const SJ_CHANGELOG = [
   { date: '2026-09-11', items: [
     'Discover alternative version now finds the song you searched for, not just the artist’s most popular uploads. Searching “Pink Floyd Dogs” returns Dogs again, and each result shows its length so a 17-minute cut is easy to tell from a short one.',
     'Listening Party has its own Help page now. Opening Help there no longer sends you to the Suffering Jukebox guide.',
+    'Settings has an Integrations section. Link Suffering Jukebox and Listening Party to keep your Shuffle preference in sync across both sites.',
+    'My Data & Analytics can now colour Listening Party and Suffering Jukebox separately when you have listened on both, the same way it already separates Spotify.',
   ]},
   { date: '2026-09-10', items: [
     'There is a second way in to the same music: Listening Party, at listeningparty.stream. It leads with playlists instead of artists, and it is the same songs, the same playlists and the same account - anything you build on one shows up on the other.',
@@ -35771,6 +35799,9 @@ async function loadSjProfile() {
   if (!googleUser) { sjProfile = null; return null; }
   try {
     sjProfile = await dbRpcAuth('/rpc/my_settings', {});
+    if (sjProfile?.linkSisterSite && SJ_SHUFFLE_PREFERENCES.includes(sjProfile.shufflePreference)) {
+      sjSetShufflePreference(sjProfile.shufflePreference, { skipRemote: true });
+    }
   } catch (_) {
     sjProfile = null;   // signed in but unreachable: fall back to Google's word
   }
@@ -35954,7 +35985,7 @@ async function userMenuAction(action) {
 // Save at the bottom; the Online Jukebox section is the live host console,
 // which acts as you press things and so hides that footer.
 let _setSection = 'profile';
-const SET_SECTIONS = ['profile', 'privacy', 'playback', 'audio', 'jukebox'];
+const SET_SECTIONS = ['profile', 'privacy', 'playback', 'integrations', 'audio', 'jukebox'];
 // Held here rather than read back off the <img>, which carries the Google
 // picture when nothing has been chosen. Undefined means "not touched".
 let _setPendingAvatar;
@@ -35993,11 +36024,12 @@ function settingsShow(section) {
   });
   // The console and audio storage have no Save: everything on them takes effect as it is pressed.
   const save = document.getElementById('set-save');
-  if (save) save.style.display = (section === 'jukebox' || section === 'audio') ? 'none' : '';
+  if (save) save.style.display = (section === 'jukebox' || section === 'audio' || section === 'integrations') ? 'none' : '';
   settingsSay('');
   if (section === 'jukebox') settingsStartJukeboxPoll();
   else settingsStopJukeboxPoll();
   if (section === 'audio') setAudioLoad();
+  if (section === 'integrations') settingsPaintIntegrations();
 }
 
 function settingsSay(msg) {
@@ -36023,6 +36055,74 @@ function settingsFillForm() {
   if (radio) radio.checked = true;
   const pref = document.querySelector('input[name="sj-shuffle-preference"][value="' + sjLoadShufflePreference() + '"]');
   if (pref) pref.checked = true;
+  settingsPaintIntegrations();
+}
+
+function settingsSisterBrand() {
+  const here = (typeof SJ_BRAND !== 'undefined' && SJ_BRAND?.id) || 'sj';
+  if (here === 'lp') {
+    return {
+      otherName: 'Suffering Jukebox',
+      otherUrl: 'https://www.sufferingjukebox.stream/',
+      label: 'Sync with Suffering Jukebox',
+    };
+  }
+  return {
+    otherName: 'Listening Party',
+    otherUrl: 'https://listeningparty.stream/',
+    label: 'Sync with Listening Party',
+  };
+}
+
+function settingsPaintIntegrations() {
+  const sister = settingsSisterBrand();
+  const h = document.getElementById('set-int-h');
+  const sub = document.getElementById('set-int-sub');
+  const label = document.getElementById('set-int-label');
+  const detail = document.getElementById('set-int-detail');
+  const open = document.getElementById('set-int-open');
+  const openSub = document.getElementById('set-int-open-sub');
+  const box = document.getElementById('set-link-sister');
+  const note = document.getElementById('set-int-note');
+  if (h) h.textContent = sister.otherName;
+  if (sub) {
+    sub.textContent = 'You already use one Google account on both sites. Turn this on to keep your Shuffle preference in sync, and so Analytics can colour listening from each site separately.';
+  }
+  if (label) label.textContent = sister.label;
+  if (detail) {
+    detail.textContent = 'Playback history is already on this account. Enabling syncs your Shuffle choice both ways and stamps new plays so My Data & Analytics can show Suffering Jukebox and Listening Party in different colours.';
+  }
+  if (open) { open.href = sister.otherUrl; open.textContent = 'Open ' + sister.otherName; }
+  if (openSub) openSub.textContent = 'Same music, same account, different front door.';
+  if (box) box.checked = !!sjProfile?.linkSisterSite;
+  if (note) {
+    note.textContent = box?.checked
+      ? 'Linked. Shuffle changes here follow you to ' + sister.otherName + '.'
+      : 'Not linked yet. Listening history still lives on this account either way.';
+  }
+}
+
+async function settingsToggleSisterLink(on) {
+  const note = document.getElementById('set-int-note');
+  if (!googleUser) { showToast('Sign in to change integrations.'); return; }
+  if (note) note.textContent = 'Saving\u2026';
+  try {
+    const shuffle = sjLoadShufflePreference();
+    sjProfile = await dbRpcAuth('/rpc/set_my_settings', {
+      p_link_sister_site: !!on,
+      p_shuffle_preference: on ? shuffle : null,
+    });
+    if (on && sjProfile?.shufflePreference && SJ_SHUFFLE_PREFERENCES.includes(sjProfile.shufflePreference)) {
+      sjSetShufflePreference(sjProfile.shufflePreference, { skipRemote: true });
+    }
+    settingsPaintIntegrations();
+    settingsSay(on ? 'Linked.' : 'Unlinked.');
+  } catch (e) {
+    const box = document.getElementById('set-link-sister');
+    if (box) box.checked = !on;
+    if (note) note.textContent = 'Could not save that. Try again.';
+    showToast('Could not update integrations.');
+  }
 }
 
 function settingsPaintAvatar(chosen) {
@@ -36101,6 +36201,10 @@ async function settingsSave() {
       p_public_name: name || null,
       p_avatar_url: avatar || null,
       p_default_visibility: vis,
+      p_shuffle_preference: pref || sjLoadShufflePreference(),
+      p_link_sister_site: document.getElementById('set-link-sister')
+        ? !!document.getElementById('set-link-sister').checked
+        : null,
     });
     _setPendingAvatar = undefined;
     settingsFillForm();
@@ -38956,7 +39060,8 @@ async function logPlayStart(trackId, currentRating) {
     const id = await dbRpcAuth('/rpc/log_play_event', {
       p_track_id:       trackId,
       p_device_id:      getDeviceId(),
-      p_rating_at_play: currentRating || null
+      p_rating_at_play: currentRating || null,
+      p_surface_id:     (typeof SJ_BRAND !== 'undefined' && SJ_BRAND?.id) || 'sj',
     });
     _activeCards[trackId] = { playEventId: id || null, openedAt: Date.now(),
       ratingAtOpen: currentRating || 0, currentRating: currentRating || 0 };
@@ -39008,7 +39113,8 @@ async function logYTPlay(videoId, trackId, eventType, source) {
       p_event_type:     eventType,
       p_source:         source || (eventType === 'play' ? 'video' : null),
       p_device_id:      getDeviceId(),
-      p_rating_at_play: getMyVote(trackId) || null
+      p_rating_at_play: getMyVote(trackId) || null,
+      p_surface_id:     (typeof SJ_BRAND !== 'undefined' && SJ_BRAND?.id) || 'sj',
     });
     if (eventType === 'play') {
       _ytCurrentPlay = { eventId, trackId, playbackStarted: null };

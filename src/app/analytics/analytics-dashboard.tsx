@@ -10,7 +10,7 @@ import ImportMissing, { type MissingSong } from "./import-missing";
 
 type Bucket = "day" | "week" | "month" | "year";
 type BucketMode = "auto" | Bucket;
-type SourceFilter = "all" | "jukebox" | "spotify";
+type SourceFilter = "all" | "jukebox" | "sj" | "lp" | "spotify";
 type Metric = "hours" | "plays";
 type Preset = "all" | "30d" | "90d" | "12m" | "24m" | "ytd" | "custom";
 
@@ -19,7 +19,18 @@ type Preset = "all" | "30d" | "90d" | "12m" | "24m" | "ytd" | "custom";
    hence the third mode. "all" is the same as an empty filter. */
 type Selection = { mode: "all" } | { mode: "none" } | { mode: "include" | "exclude"; keys: string[] };
 
-type Split = { duration_ms: number; events: number; spotify_ms: number; jukebox_ms: number; spotify_events: number; jukebox_events: number };
+type Split = {
+  duration_ms: number;
+  events: number;
+  spotify_ms: number;
+  sj_ms: number;
+  lp_ms: number;
+  jukebox_ms: number;
+  spotify_events: number;
+  sj_events: number;
+  lp_events: number;
+  jukebox_events: number;
+};
 type SeriesRow = Split & { bucket_start: string };
 type CalendarRow = Split & { day: string };
 type ArtistRow = Split & { artist: string; tracks?: number; in_jukebox?: boolean };
@@ -34,7 +45,7 @@ export type AnalyticsPayload = {
   source?: SourceFilter;
   bucket?: Bucket;
   bounds?: { first_played_at?: string | null; last_played_at?: string | null; events?: number };
-  available?: { spotify?: boolean; jukebox?: boolean };
+  available?: { spotify?: boolean; jukebox?: boolean; sj?: boolean; lp?: boolean };
   totals?: Partial<Split> & {
     artists?: number;
     tracks?: number;
@@ -83,7 +94,30 @@ const MAX_OPTION_ROWS = 200;
 // song key, because two artists share a title often enough to matter.
 const TRACK_KEY_SEP = "";
 const JUKEBOX_RGB = [255, 107, 53];
+const LP_RGB = [157, 78, 221];
 const SPOTIFY_RGB = [29, 185, 84];
+
+const EMPTY_SPLIT: Split = {
+  duration_ms: 0, events: 0, spotify_ms: 0, sj_ms: 0, lp_ms: 0, jukebox_ms: 0,
+  spotify_events: 0, sj_events: 0, lp_events: 0, jukebox_events: 0,
+};
+
+function coerceSplit(row: Partial<Split> | undefined): Split {
+  const spotify_ms = Number(row?.spotify_ms) || 0;
+  const sj_ms = Number(row?.sj_ms) || 0;
+  const lp_ms = Number(row?.lp_ms) || 0;
+  const jukebox_ms = Number(row?.jukebox_ms) || (sj_ms + lp_ms);
+  const spotify_events = Number(row?.spotify_events) || 0;
+  const sj_events = Number(row?.sj_events) || 0;
+  const lp_events = Number(row?.lp_events) || 0;
+  const jukebox_events = Number(row?.jukebox_events) || (sj_events + lp_events);
+  return {
+    duration_ms: Number(row?.duration_ms) || 0,
+    events: Number(row?.events) || 0,
+    spotify_ms, sj_ms, lp_ms, jukebox_ms,
+    spotify_events, sj_events, lp_events, jukebox_events,
+  };
+}
 
 const ALL: Selection = { mode: "all" };
 
@@ -139,20 +173,23 @@ function metricValue(row: Partial<Split> | undefined, metric: Metric) {
   return metric === "hours" ? hoursOf(row.duration_ms) : Number(row.events) || 0;
 }
 function metricParts(row: Partial<Split> | undefined, metric: Metric) {
-  if (!row) return { jukebox: 0, spotify: 0 };
-  return metric === "hours"
-    ? { jukebox: hoursOf(row.jukebox_ms), spotify: hoursOf(row.spotify_ms) }
-    : { jukebox: Number(row.jukebox_events) || 0, spotify: Number(row.spotify_events) || 0 };
+  const s = coerceSplit(row);
+  if (metric === "hours") {
+    return { sj: hoursOf(s.sj_ms), lp: hoursOf(s.lp_ms), spotify: hoursOf(s.spotify_ms), jukebox: hoursOf(s.jukebox_ms) };
+  }
+  return { sj: s.sj_events, lp: s.lp_events, spotify: s.spotify_events, jukebox: s.jukebox_events };
 }
 function fmtMetric(row: Partial<Split> | undefined, metric: Metric) {
   return metric === "hours" ? fmtHours(row?.duration_ms) : count(row?.events);
 }
 function describe(row: Partial<Split> | undefined) {
-  const jukebox = Number(row?.jukebox_ms) || 0;
-  const spotify = Number(row?.spotify_ms) || 0;
-  const both = jukebox > 0 && spotify > 0;
-  const total = `${fmtHours(row?.duration_ms)} · ${count(row?.events)} plays`;
-  return both ? `${total} (Jukebox ${fmtHours(jukebox)}, Spotify ${fmtHours(spotify)})` : total;
+  const s = coerceSplit(row);
+  const bits: string[] = [];
+  if (s.sj_ms > 0) bits.push(`Suffering Jukebox ${fmtHours(s.sj_ms)}`);
+  if (s.lp_ms > 0) bits.push(`Listening Party ${fmtHours(s.lp_ms)}`);
+  if (s.spotify_ms > 0) bits.push(`Spotify ${fmtHours(s.spotify_ms)}`);
+  const total = `${fmtHours(s.duration_ms)} · ${count(s.events)} plays`;
+  return bits.length > 1 ? `${total} (${bits.join(", ")})` : total;
 }
 function usDate(value?: string | null) {
   if (!value) return "—";
@@ -212,11 +249,15 @@ function hourLabel(hour: number) {
 function heatColor(row: Partial<Split> | undefined, intensity: number) {
   const level = Math.max(0, Math.min(1, intensity));
   if (level <= 0) return "rgba(255,255,255,.045)";
-  const jukebox = Number(row?.jukebox_ms) || 0;
-  const spotify = Number(row?.spotify_ms) || 0;
-  const share = jukebox + spotify > 0 ? spotify / (jukebox + spotify) : 0;
-  const channels = JUKEBOX_RGB.map((value, index) => value + (SPOTIFY_RGB[index] - value) * share);
-  return `rgb(${channels.map((value) => Math.round(16 + (value - 16) * (0.22 + 0.78 * level))).join(",")})`;
+  const s = coerceSplit(row);
+  const total = s.sj_ms + s.lp_ms + s.spotify_ms;
+  const mix = (rgb: number[]) =>
+    `rgb(${rgb.map((value) => Math.round(16 + (value - 16) * (0.22 + 0.78 * level))).join(",")})`;
+  if (total <= 0) return mix(JUKEBOX_RGB);
+  // Dominant source wins the cell colour; ties prefer SJ then Spotify.
+  if (s.spotify_ms >= s.sj_ms && s.spotify_ms >= s.lp_ms) return mix(SPOTIFY_RGB);
+  if (s.lp_ms > s.sj_ms) return mix(LP_RGB);
+  return mix(JUKEBOX_RGB);
 }
 function sourceHeatColor(rgb: number[], intensity: number) {
   const level = Math.max(0, Math.min(1, intensity));
@@ -459,7 +500,10 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const bucket: Bucket = (data?.bucket as Bucket) || "month";
   const hasAnyHistory = Number(data?.bounds?.events || 0) > 0;
   const hasRows = Number(totals?.events || 0) > 0;
-  const bothSources = Number(totals?.jukebox_ms || 0) > 0 && Number(totals?.spotify_ms || 0) > 0;
+  const showSj = Number(totals?.sj_ms || 0) > 0 || available.sj === true || (available.jukebox === true && available.lp !== true);
+  const showLp = Number(totals?.lp_ms || 0) > 0 || available.lp === true;
+  const showSpotify = Number(totals?.spotify_ms || 0) > 0 || available.spotify === true;
+  const multiSource = [Number(totals?.sj_ms || 0) > 0, Number(totals?.lp_ms || 0) > 0, Number(totals?.spotify_ms || 0) > 0].filter(Boolean).length > 1;
 
   const artistOptions = useMemo<Option[]>(
     () => (data?.artistOptions || []).map((row) => ({
@@ -484,9 +528,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     const filled: SeriesRow[] = [];
     for (let cursor = first; cursor.getTime() <= last.getTime(); cursor = stepBucket(cursor, bucket)) {
       const key = cursor.toISOString().slice(0, 10);
-      filled.push(known.get(key) || {
-        bucket_start: key, events: 0, duration_ms: 0, spotify_ms: 0, jukebox_ms: 0, spotify_events: 0, jukebox_events: 0,
-      });
+      filled.push(known.get(key) || { bucket_start: key, ...EMPTY_SPLIT });
       if (filled.length > MAX_BARS) return rows;
     }
     return filled.length ? filled : rows;
@@ -523,15 +565,21 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     return { map, max: Math.max(1, max) };
   }, [data, metric]);
   const heatSources = useMemo(() => {
-    const sourceValue = (row: HeatRow | undefined, key: "jukebox" | "spotify") => Number(metric === "hours" ? row?.[`${key}_ms`] : row?.[`${key}_events`]) || 0;
+    const sourceValue = (row: HeatRow | undefined, key: "sj" | "lp" | "spotify") => {
+      const s = coerceSplit(row);
+      if (metric === "hours") return hoursOf(s[`${key}_ms`]);
+      return Number(s[`${key}_events`]) || 0;
+    };
     return ([
-      { key: "jukebox" as const, label: "Suffering Jukebox", rgb: JUKEBOX_RGB },
+      { key: "sj" as const, label: "Suffering Jukebox", rgb: JUKEBOX_RGB },
+      { key: "lp" as const, label: "Listening Party", rgb: LP_RGB },
       { key: "spotify" as const, label: "Spotify", rgb: SPOTIFY_RGB },
-    ]).filter((item) => source === "all" || source === item.key).map((item) => ({
-      ...item,
-      max: Math.max(1, ...(data?.byHourDow || []).map((row) => sourceValue(row, item.key))),
-      value: (row: HeatRow | undefined) => sourceValue(row, item.key),
-    })).filter((item) => (data?.byHourDow || []).some((row) => item.value(row) > 0));
+    ]).filter((item) => source === "all" || source === item.key || (source === "jukebox" && (item.key === "sj" || item.key === "lp")))
+      .map((item) => ({
+        ...item,
+        max: Math.max(1, ...(data?.byHourDow || []).map((row) => sourceValue(row, item.key))),
+        value: (row: HeatRow | undefined) => sourceValue(row, item.key),
+      })).filter((item) => (data?.byHourDow || []).some((row) => item.value(row) > 0));
   }, [data, metric, source]);
 
   const calendarDays = useMemo(() => new Map((data?.calendar || []).map((row) => [row.day, row])), [data]);
@@ -557,7 +605,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
       const key = cursor.toISOString().slice(0, 10);
       const row = calendarDays.get(key) || null;
       if (row) max = Math.max(max, metricValue(row, metric));
-      cells.push(row || { day: key, events: 0, duration_ms: 0, spotify_ms: 0, jukebox_ms: 0, spotify_events: 0, jukebox_events: 0 });
+      cells.push(row || { day: key, ...EMPTY_SPLIT });
     }
     const weeks: Array<Array<CalendarRow | null>> = [];
     for (let index = 0; index < cells.length; index += 7) weeks.push(cells.slice(index, index + 7));
@@ -589,13 +637,14 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
       const key = keyOf(row);
       const on = selection.mode !== "all" && selection.mode === "include" && selection.keys.includes(key);
       const parts = metricParts(row, metric);
-      const total = Math.max(parts.jukebox + parts.spotify, metricValue(row, metric));
+      const total = Math.max(parts.sj + parts.lp + parts.spotify, metricValue(row, metric));
       return (
         <div className={`${styles.rankRow} ${on ? styles.rankRowOn : ""}`} key={key}>
           <button type="button" className={styles.rankHit} aria-pressed={on} title={describe(row)} onClick={() => onClick(key)}>
             <span className={styles.rankName}>{nameOf(row)}</span>
             <span className={styles.rankTrack}>
-              <i className={styles.segJukebox} style={{ width: `${(parts.jukebox / max) * 100}%` }} />
+              <i className={styles.segJukebox} style={{ width: `${(parts.sj / max) * 100}%` }} />
+              <i className={styles.segLp} style={{ width: `${(parts.lp / max) * 100}%` }} />
               <i className={styles.segSpotify} style={{ width: `${(parts.spotify / max) * 100}%` }} />
               {total === 0 && <i style={{ width: "2px", background: "#333" }} />}
             </span>
@@ -660,22 +709,32 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
       </header>
 
       <div className={styles.toolbar}>
-        {available.spotify && (
+        {(showSpotify || showLp) && (
           <div className={styles.toolGroup}>
             <span className={styles.toolLabel}>Listening platform</span>
             <div className={styles.seg}>
               <button type="button" className={source === "all" ? styles.segOn : ""} onClick={() => setSource("all")}>All</button>
-              <button
-                type="button"
-                className={source === "jukebox" ? styles.segOn : ""}
-                disabled={available.jukebox === false}
-                onClick={() => setSource("jukebox")}
-              >Suffering Jukebox</button>
-              <button
-                type="button"
-                className={source === "spotify" ? styles.segOn : ""}
-                onClick={() => setSource("spotify")}
-              >Spotify</button>
+              {(showSj || available.jukebox !== false) && (
+                <button
+                  type="button"
+                  className={source === "sj" || source === "jukebox" ? styles.segOn : ""}
+                  onClick={() => setSource("sj")}
+                >Suffering Jukebox</button>
+              )}
+              {showLp && (
+                <button
+                  type="button"
+                  className={source === "lp" ? styles.segOn : ""}
+                  onClick={() => setSource("lp")}
+                >Listening Party</button>
+              )}
+              {showSpotify && (
+                <button
+                  type="button"
+                  className={source === "spotify" ? styles.segOn : ""}
+                  onClick={() => setSource("spotify")}
+                >Spotify</button>
+              )}
             </div>
           </div>
         )}
@@ -743,8 +802,14 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
 
       {hasRows && (
         <div className={styles.legend}>
-          {Number(totals?.jukebox_ms || 0) > 0 && (
-            <span><i className={styles.swJukebox} /> Suffering Jukebox <b>{fmtHours(totals?.jukebox_ms)}</b> · {count(totals?.jukebox_events)} plays</span>
+          {Number(totals?.sj_ms || 0) > 0 && (
+            <span><i className={styles.swJukebox} /> Suffering Jukebox <b>{fmtHours(totals?.sj_ms)}</b> · {count(totals?.sj_events)} plays</span>
+          )}
+          {Number(totals?.lp_ms || 0) > 0 && (
+            <span><i className={styles.swLp} /> Listening Party <b>{fmtHours(totals?.lp_ms)}</b> · {count(totals?.lp_events)} plays</span>
+          )}
+          {Number(totals?.sj_ms || 0) === 0 && Number(totals?.lp_ms || 0) === 0 && Number(totals?.jukebox_ms || 0) > 0 && (
+            <span><i className={styles.swJukebox} /> Jukebox <b>{fmtHours(totals?.jukebox_ms)}</b> · {count(totals?.jukebox_events)} plays</span>
           )}
           {Number(totals?.spotify_ms || 0) > 0 && (
             <span><i className={styles.swSpotify} /> Spotify <b>{fmtHours(totals?.spotify_ms)}</b> · {count(totals?.spotify_events)} plays</span>
@@ -789,8 +854,23 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
               <p className={styles.readout}>{readout ? <><b>{bucketFullLabel(readout.bucket_start, bucket)}</b> · {describe(readout)}</> : <em>{count(series.length)} {bucket}{series.length === 1 ? "" : "s"} · hover a bar for the exact {bucket}.</em>}</p>
               <div className={styles.tsBars} onMouseLeave={() => setHover(null)}>
                 {series.map((row, index) => {
-                  const value = metricValue(row, metric); const parts = metricParts(row, metric); const sum = parts.jukebox + parts.spotify || 1;
-                  return <div key={row.bucket_start} className={`${styles.tsBar} ${value ? "" : styles.tsBarZero} ${hover === index ? styles.tsBarOn : ""}`} title={`${bucketFullLabel(row.bucket_start, bucket)} · ${describe(row)}`} onMouseEnter={() => setHover(index)}><i style={{ height: `${Math.max(value > 0 ? 2 : 1, (value / seriesMax) * 100)}%` }}><b className={styles.segJukebox} style={{ height: `${(parts.jukebox / sum) * 100}%` }} /><b className={styles.segSpotify} style={{ height: `${(parts.spotify / sum) * 100}%` }} /></i></div>;
+                  const value = metricValue(row, metric);
+                  const parts = metricParts(row, metric);
+                  const sum = parts.sj + parts.lp + parts.spotify || 1;
+                  return (
+                    <div
+                      key={row.bucket_start}
+                      className={`${styles.tsBar} ${value ? "" : styles.tsBarZero} ${hover === index ? styles.tsBarOn : ""}`}
+                      title={`${bucketFullLabel(row.bucket_start, bucket)} · ${describe(row)}`}
+                      onMouseEnter={() => setHover(index)}
+                    >
+                      <i style={{ height: `${Math.max(value > 0 ? 2 : 1, (value / seriesMax) * 100)}%` }}>
+                        <b className={styles.segJukebox} style={{ height: `${(parts.sj / sum) * 100}%` }} />
+                        <b className={styles.segLp} style={{ height: `${(parts.lp / sum) * 100}%` }} />
+                        <b className={styles.segSpotify} style={{ height: `${(parts.spotify / sum) * 100}%` }} />
+                      </i>
+                    </div>
+                  );
                 })}
               </div>
               <div className={styles.tsAxis} aria-hidden="true">{series.map((row, index) => <span key={row.bucket_start}>{index % axisStep === 0 ? bucketLabel(row.bucket_start, bucket, seriesSpansYears) : ""}</span>)}</div>
@@ -842,7 +922,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
               {series.map((row, index) => {
                 const value = metricValue(row, metric);
                 const parts = metricParts(row, metric);
-                const sum = parts.jukebox + parts.spotify || 1;
+                const sum = parts.sj + parts.lp + parts.spotify || 1;
                 return (
                   <div
                     key={row.bucket_start}
@@ -851,7 +931,8 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                     onMouseEnter={() => setHover(index)}
                   >
                     <i style={{ height: `${Math.max(value > 0 ? 2 : 1, (value / seriesMax) * 100)}%` }}>
-                      <b className={styles.segJukebox} style={{ height: `${(parts.jukebox / sum) * 100}%` }} />
+                      <b className={styles.segJukebox} style={{ height: `${(parts.sj / sum) * 100}%` }} />
+                      <b className={styles.segLp} style={{ height: `${(parts.lp / sum) * 100}%` }} />
                       <b className={styles.segSpotify} style={{ height: `${(parts.spotify / sum) * 100}%` }} />
                     </i>
                   </div>
@@ -958,8 +1039,8 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
 
       <p className={styles.footNote}>
         Hours come from how long each track actually played. A Jukebox play with no measured length falls back to
-        the song&apos;s own running time, so the two sources can be added together.
-        {bothSources ? " Orange is listening inside Suffering Jukebox, green is imported Spotify history." : ""}
+        the song&apos;s own running time, so the sources can be added together.
+        {multiSource ? " Orange is Suffering Jukebox, purple is Listening Party, green is imported Spotify history." : ""}
         {Number(totals?.skipped || 0) > 0 ? ` ${count(totals?.skipped)} of these plays were skipped early.` : ""}
         {" "}<b>Add to Jukebox</b> appears beside any song the catalogue does not already hold, and imports it here without leaving the page.
       </p>
