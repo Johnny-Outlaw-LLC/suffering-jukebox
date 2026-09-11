@@ -164,13 +164,14 @@ test('"just added" is worded in days, not a timestamp', () => {
 
 // ── The page it renders on ────────────────────────────────────────────────
 
-test('the hero names what the site is even before its picks arrive', () => {
-  // A first paint with no data must still say what this is, and a failed fetch
+test('the featured strip loads even before its picks arrive', () => {
+  // A first paint with no data must still show the section, and a failed fetch
   // must not leave the page empty.
   for (const state of [{ picks: null }, { picks: [], failed: true }]) {
     const html = hero(LP, state).lphHeroHTML();
-    assert.ok(html.includes('lph-h'), 'no headline');
-    assert.ok(html.includes('lph-steps'), 'no how-to-start steps');
+    assert.ok(html.includes('lph'), 'no featured section');
+    assert.ok(!html.includes('Put something on'), 'welcome blurb was removed');
+    assert.ok(!html.includes('lph-steps'), 'how-to steps were removed');
     assert.ok(!html.includes('undefined'));
   }
   // Loading shows placeholders; a failure shows none rather than empty frames.

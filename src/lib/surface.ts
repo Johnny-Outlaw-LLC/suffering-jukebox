@@ -27,9 +27,8 @@ export interface SurfaceFeatures {
   /** The nightly per-artist share-image pipeline and the /share pages. */
   shareImages: boolean;
   /**
-   * The welcome hero above the playlist explorer: what the site is for, how to
-   * start, and three playlists to start with. A brand that leads with artists
-   * has a wall of artists to lead with and does not need one.
+   * Three featured playlists above the playlist explorer. A brand that leads
+   * with artists has a wall of artists to lead with and does not need one.
    */
   welcomeHero: boolean;
   /**
@@ -65,6 +64,11 @@ export interface Surface {
   keywords: string;
   tagline: string;
   /**
+   * Text shown beside the header mark when the brand has no wordmark.
+   * Empty for Suffering Jukebox (the wordmark already says the name).
+   */
+  headerTitle: string;
+  /**
    * Prefix for this brand's static art under public/. Empty for Suffering
    * Jukebox, whose files sit at the root and must keep sitting there: they are
    * plain static assets on the CDN and routing them through a handler to gain
@@ -99,6 +103,12 @@ export interface Surface {
   shareText: string;
   /** Subreddit for the share sheet, or null to drop that button. */
   redditSub: string | null;
+  /**
+   * The other brand on the same account (Integrations). Handed to the browser
+   * so the dashboard never has to name the sister site in its own source.
+   */
+  sisterName: string;
+  sisterUrl: string;
   /** Home-page structured data. Null leaves whatever the HTML already carries. */
   homeJsonLd: Record<string, unknown> | null;
   features: SurfaceFeatures;
@@ -126,6 +136,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     keywords:
       "free online music player, free jukebox, online jukebox, free music player with lyrics, Suffering Jukebox, Silver Jews, Purple Mountains, David Berman, stream music free, artist jukebox, lyrics",
     tagline: "Explore an artist, one song at a time.",
+    headerTitle: "",
     assetBase: "",
     textLogo: "/suffering-jukebox-text-logo.png",
     ogImage: `${SJ_URL}/og-image.png`,
@@ -138,6 +149,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     shareText:
       "Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, ratings, and lyrics.",
     redditSub: "sufferingjukebox",
+    sisterName: "Listening Party",
+    sisterUrl: `${LP_URL}/`,
     // The home page's existing WebApplication block is already correct for SJ,
     // so nothing is rewritten and the served bytes stay as they are today.
     homeJsonLd: null,
@@ -169,13 +182,14 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "Build a playlist from anything on YouTube, share it with a link, and listen together.",
     keywords:
       "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
-    tagline: "Join the listening party.",
+    tagline: "Join the Listening Party",
+    headerTitle: "ListeningParty.stream",
     assetBase: "/brand/lp",
     // The official mark from outlawapps.online/branding, trimmed of its
     // transparent margin by capture/_lp_brand.mjs so it sits flush in the
     // header. Listening Party has no official WORDMARK - that page offers one
     // for Suffering Jukebox and only a square mark for this brand - so the
-    // header shows the mark and nothing here invents lettering beside it.
+    // header shows the mark plus headerTitle / tagline beside it.
     textLogo: "/brand/lp/header-mark.png",
     // TODO(step 4): a proper 1200x630 social card. The app icon is a valid
     // image and will not 404, but it is square and says nothing about the app.
@@ -189,6 +203,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     shareText:
       "Listening Party - build a playlist from anything on YouTube, share it with a link, and listen together.",
     redditSub: null,
+    sisterName: "Suffering Jukebox",
+    sisterUrl: `${SJ_URL}/`,
     homeJsonLd: {
       "@context": "https://schema.org",
       "@type": "WebApplication",
@@ -263,6 +279,7 @@ export function publicSurface(s: Surface) {
     host: s.host,
     origins: s.origins,
     tagline: s.tagline,
+    headerTitle: s.headerTitle,
     textLogo: s.textLogo,
     /** 192px app icon, for the lock screen and anywhere the client needs art. */
     icon: `${s.assetBase}/favicon.png`,
@@ -273,6 +290,8 @@ export function publicSurface(s: Surface) {
     authScheme: s.authScheme,
     shareText: s.shareText,
     redditSub: s.redditSub,
+    sisterName: s.sisterName,
+    sisterUrl: s.sisterUrl,
     // Only the flags the browser actually acts on. A server-only decision
     // (sitemapPlaylists) has no business in the page, and listing them
     // explicitly means adding one later cannot silently oblige the dashboard

@@ -67,7 +67,10 @@ test('the body is never rewritten, so the changelog keeps its history', () => {
 // ── Listening Party ───────────────────────────────────────────────────────
 
 test('no Suffering Jukebox string survives in a Listening Party head', () => {
-  const out = headOf(head.applySurfaceHead(indexHtml, LP));
+  // The injected window.__SURFACE__ may name the sister site for Integrations.
+  // Everything else in the head (title, metas, canonical, favicons) must be LP.
+  let out = headOf(head.applySurfaceHead(indexHtml, LP));
+  out = out.replace(/<script>window\.__SURFACE__=[\s\S]*?<\/script>/, '');
   assert.ok(!out.includes('Suffering Jukebox'), 'brand name leaked into the LP head');
   assert.ok(!out.includes('sufferingjukebox.stream'), 'SJ host leaked into the LP head');
   assert.ok(out.includes('Listening Party'));
@@ -194,11 +197,20 @@ function clientBrandDefaults() {
 test('the dashboard fallback brand is exactly what the server would send for SJ', () => {
   const client = clientBrandDefaults();
   const server = surface.publicSurface(SJ);
-  // tagline is deliberately blank in the file: the header element is filled in
-  // per view, and shipping a default would flash the wrong words on load.
+  // tagline / headerTitle / sister* are deliberately blank in the file: they
+  // arrive on window.__SURFACE__, and shipping SJ defaults that name the other
+  // brand would break the "unaware of any brand but the one it is serving" rule.
   assert.equal(client.tagline, '');
+  assert.equal(client.headerTitle, '');
+  assert.equal(client.sisterName, '');
+  assert.equal(client.sisterUrl, '');
   delete client.tagline;
-  const { tagline: _drop, ...rest } = server;
+  delete client.headerTitle;
+  delete client.sisterName;
+  delete client.sisterUrl;
+  const {
+    tagline: _t, headerTitle: _h, sisterName: _sn, sisterUrl: _su, ...rest
+  } = server;
   assert.deepStrictEqual(client, rest);
 });
 
