@@ -130,9 +130,10 @@ async function searchAction(
   }
 
   const pasted = parseYouTubeVideoId(query);
-  // Keep the manual picker focused: YouTube returns its five most-viewed
-  // embeddable matches rather than a long relevance-sorted result list.
-  const ids = pasted ? [pasted] : await searchYouTubeVideoIds(query, 5, "viewCount");
+  // Relevance, not viewCount: ranking by views for "Pink Floyd Dogs" returns
+  // Comfortably Numb and Wish You Were Here (huge Pink Floyd uploads) and
+  // buries the actual song. Match what youtube.com search shows.
+  const ids = pasted ? [pasted] : await searchYouTubeVideoIds(query, 8, "relevance");
   const info = ids.length ? await fetchYouTubeVideoInfo(ids) : {};
 
   const sb = createSjServiceClient();
@@ -153,6 +154,7 @@ async function searchAction(
       thumbnail: v?.thumbnail || thumbFor(id),
       views: v?.views ?? 0,
       likes: v?.likes ?? 0,
+      durationMs: v?.durationMs ?? null,
       playable: v ? v.playable : false,
       reason: v ? v.reason : "Video not found on YouTube",
       already: !!row,

@@ -389,9 +389,9 @@ export async function fetchYouTubeVideoInfo(
   return out;
 }
 
-// Search YouTube for embeddable candidate video ids for a track. Most callers
-// want relevance, but the alternative-version picker deliberately asks for the
-// most-viewed uploads so a user can quickly compare the meaningful choices.
+// Search YouTube for embeddable candidate video ids for a track. Default is
+// relevance (what youtube.com does). Pass "viewCount" only when the caller
+// specifically wants the most popular matches (e.g. auto-discover).
 export async function searchYouTubeVideoIds(
   query: string,
   maxResults = 10,
