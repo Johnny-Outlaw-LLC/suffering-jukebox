@@ -34012,6 +34012,7 @@ async function amImport() {
 
     const data = { success: false, artist_id: null, albums: 0, tracks: 0, albums_detail: [] };
     let lastErr = null;
+    let failedBatches = 0;
     for (const b of batches) {
       amStepGo(3, b.label);
       if (b.song) amLogLine('head', `▶ ${b.label}`);
@@ -34022,13 +34023,22 @@ async function amImport() {
         });
         if (!r.success) throw new Error(r.error || 'Import failed');
         (r.log || []).forEach(l => amLogLine(l.includes('✓') ? 'ok' : l.includes('⚠') ? 'err' : '', l));
+        const gotAlbums = r.albums || 0;
+        // Song-by-song batches used to return success:true with 0 albums when
+        // matching failed (e.g. Remastered 2009 titles). Treat that as a miss.
+        if (gotAlbums === 0 && b.list.length) {
+          failedBatches++;
+          amLogLine('err', `  ✗ ${b.list.map(x => x.title).join(', ')}: nothing imported`);
+          continue;
+        }
         data.success = true;
         data.artist_id = r.artist_id || data.artist_id;
-        data.albums += r.albums || 0;
+        data.albums += gotAlbums;
         data.tracks += r.tracks || 0;
         (r.albums_detail || []).forEach(x => data.albums_detail.push(x));
       } catch (e) {
         lastErr = e;
+        failedBatches++;
         amLogLine('err', `  ✗ ${b.list.map(x => x.title).join(', ')}: ${e.message}`);
       }
     }
@@ -34058,6 +34068,19 @@ async function amImport() {
     }
     const _amDone = new Set(data.albums_detail.map(x => String(x.name || '').toLowerCase()));
     picked.forEach(a => { if (_amDone.has(String(a.title).toLowerCase())) a.already = true; });
+    const _amMissing = picked.filter(a => !_amDone.has(String(a.title).toLowerCase()));
+    if (data.artist_id) {
+      try {
+        const complete = amScope === 'artist' && _amMissing.length === 0;
+        await amFetch(
+          `?action=set_discography_complete&artist_id=${encodeURIComponent(data.artist_id)}&complete=${complete ? '1' : '0'}`,
+        );
+      } catch (_) {}
+    }
+    if (_amMissing.length) {
+      amLogLine('err', `  ⚠ ${_amMissing.length} album${_amMissing.length === 1 ? '' : 's'} did not import: ${_amMissing.map(a => a.title).join(', ')}`);
+      amLogLine('', '  · Open Import Discography on their card to finish the rest.');
+    }
     amPicked.clear();
     // Refresh the artist lists so the new artist is findable everywhere, but
     // leave the current jukebox's selection alone. Folding a fresh import into
@@ -35172,6 +35195,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-11';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-11', items: [
+    'Importing a big discography is more reliable. Songs on YouTube titled like “Love Me Do (Remastered 2009)” now match the official track, so albums stop vanishing when there is no ready-made playlist.',
+    'If some albums in an import do not land, the wizard says so and keeps Import Discography available instead of pretending the artist is finished.',
+    'My Artists now includes artists you added albums to, not only artists where you created the first page. Fine-tuning works for those imports too.',
     'Listening Party now opens on a Home tab, ahead of Explore Playlists. Home welcomes you to the party, puts three playlists in front of you to start with, shows when you usually listen, and has doors for importing music and building a playlist.',
     'On Home, sign in to remember your play history and add music. Once you are signed in, Pick up where you left off resumes your last queue, or Jump to Now Playing if something is already going.',
     'The listening-by-hour-and-day chart on Home links through to My Listening Data for the full analytics page.',
