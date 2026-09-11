@@ -22,13 +22,20 @@ export interface SurfaceFeatures {
   artistJukebox: boolean;
   /** The Explore Songs landing tab. */
   exploreSongs: boolean;
+  /**
+   * A Home landing tab in front of Explore Playlists: welcome copy, featured
+   * picks, listening chart and import doors. Listening Party leads with this;
+   * Suffering Jukebox keeps the artist wall as its front door.
+   */
+  homeTab: boolean;
   /** Which landing tab a first-time visitor lands on. */
-  defaultLandingTab: "explore" | "playlists";
+  defaultLandingTab: "home" | "explore" | "playlists";
   /** The nightly per-artist share-image pipeline and the /share pages. */
   shareImages: boolean;
   /**
-   * Three featured playlists above the playlist explorer. A brand that leads
-   * with artists has a wall of artists to lead with and does not need one.
+   * Three featured playlists on the Home tab (or above the playlist explorer
+   * when there is no Home). A brand that leads with artists has a wall of
+   * artists to lead with and does not need one.
    */
   welcomeHero: boolean;
   /**
@@ -158,6 +165,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       artistPages: true,
       artistJukebox: true,
       exploreSongs: true,
+      homeTab: false,
       defaultLandingTab: "explore",
       shareImages: true,
       sitemapPlaylists: false,
@@ -222,7 +230,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       artistPages: false,
       artistJukebox: false,
       exploreSongs: false,
-      defaultLandingTab: "playlists",
+      homeTab: true,
+      defaultLandingTab: "home",
       shareImages: false,
       sitemapPlaylists: true,
       welcomeHero: true,
@@ -300,6 +309,7 @@ export function publicSurface(s: Surface) {
       artistPages: s.features.artistPages,
       artistJukebox: s.features.artistJukebox,
       exploreSongs: s.features.exploreSongs,
+      homeTab: s.features.homeTab,
       defaultLandingTab: s.features.defaultLandingTab,
       shareImages: s.features.shareImages,
       welcomeHero: s.features.welcomeHero,

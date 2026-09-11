@@ -199,10 +199,15 @@ test('a playlist name cannot inject markup into the card', () => {
   assert.ok(html.includes('&lt;img'));
 });
 
-test('the hero is mounted on the playlists tab and nowhere else', () => {
+test('the hero is mounted on the Home tab and nowhere else', () => {
+  // Home is the playlist-led front door; Explore Playlists is the wall.
   assert.ok(
-    indexHtml.includes(`\${landingTab === 'playlists' ? lphHeroHTML() : ''}`),
-    'the hero is not mounted, or is mounted somewhere it does not belong',
+    /function landingHomeHTML\(\)[\s\S]*?\$\{lphHeroHTML\(\)\}/.test(indexHtml),
+    'the hero is not mounted on Home',
+  );
+  assert.ok(
+    !indexHtml.includes(`landingTab === 'playlists' ? lphHeroHTML()`),
+    'the hero must not also sit on Explore Playlists',
   );
   assert.equal(
     (indexHtml.match(/lphHeroHTML\(\)/g) || []).length,
