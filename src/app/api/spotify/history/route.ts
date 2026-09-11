@@ -252,7 +252,7 @@ export async function POST(req: NextRequest) {
     if (action === "analytics") {
       if (rateLimited(`listening-analytics:${uid}`, 240, 60_000)) return tooMany();
       const sourceRaw = String(body.source || "all").trim().toLowerCase();
-      const source = ["jukebox", "sj", "lp", "spotify"].includes(sourceRaw) ? sourceRaw : "all";
+      const source = ["jukebox", "sj", "lp", "spotify", "youtube"].includes(sourceRaw) ? sourceRaw : "all";
       const bucketRaw = String(body.bucket || "auto").trim().toLowerCase();
       const bucket = BUCKETS.has(bucketRaw) ? bucketRaw : "auto";
       const fromMs = body.from ? Date.parse(String(body.from)) : NaN;
