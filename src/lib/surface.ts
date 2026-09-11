@@ -131,17 +131,17 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     url: SJ_URL,
     host: "sufferingjukebox.stream",
     origins: ["https://sufferingjukebox.stream", SJ_URL],
-    title: "Suffering Jukebox — Free Online Music Player & Jukebox",
+    title: "Suffering Jukebox | Free Online Music Player (sufferingjukebox.stream)",
     description:
-      "Suffering Jukebox is a free online music player and jukebox. Stream 170+ artists with lyrics, ratings, and playlists — including Silver Jews, Purple Mountains, and artists anyone can add. No account needed to listen.",
+      "Suffering Jukebox is the free website and online music player at sufferingjukebox.stream. Stream 170+ artists with lyrics, ratings, and playlists — including Silver Jews and Purple Mountains. Named after the Silver Jews song; this page is the app, not the track. No account needed to listen.",
     ogDescription:
-      "Free online music player and jukebox for 170+ artists. Stream songs, read lyrics, rate tracks, and build playlists — including Silver Jews and Purple Mountains.",
+      "The free Suffering Jukebox website at sufferingjukebox.stream. Stream 170+ artists, read lyrics, rate tracks, and build playlists — including Silver Jews and Purple Mountains.",
     twitterDescription:
-      "Free online music player and jukebox. Stream artists, read lyrics, and build playlists — no account required to listen.",
+      "The free Suffering Jukebox website and music player at sufferingjukebox.stream. Stream artists, read lyrics, build playlists — no account required.",
     manifestDescription:
       "Stream Silver Jews and Purple Mountains. A David Berman music player with ratings, lyrics, and playlists.",
     keywords:
-      "free online music player, free jukebox, online jukebox, free music player with lyrics, Suffering Jukebox, Silver Jews, Purple Mountains, David Berman, stream music free, artist jukebox, lyrics",
+      "Suffering Jukebox, sufferingjukebox.stream, Suffering Jukebox website, Suffering Jukebox app, Suffering Jukebox online, free online music player, free jukebox, online jukebox, free music player with lyrics, Silver Jews, Purple Mountains, David Berman, stream music free, artist jukebox, lyrics",
     tagline: "Explore an artist, one song at a time.",
     headerTitle: "",
     assetBase: "",
@@ -158,8 +158,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     redditSub: "sufferingjukebox",
     sisterName: "Listening Party",
     sisterUrl: `${LP_URL}/`,
-    // The home page's existing WebApplication block is already correct for SJ,
-    // so nothing is rewritten and the served bytes stay as they are today.
+    // Head JSON-LD lives in public/index.html so the SJ rewrite stays an
+    // identity. Keep this null; change the block in the HTML instead.
     homeJsonLd: null,
     features: {
       artistPages: true,

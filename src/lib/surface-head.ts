@@ -33,9 +33,9 @@ export interface HeadOverrides {
   /** Page URL for og:url. */
   url?: string;
   /**
-   * Emits <link rel="canonical">. Separate from `url` on purpose: artist pages
-   * want one and the home page has never had one, and quietly adding it would
-   * be an SEO change smuggled in under a rebrand.
+   * Emits <link rel="canonical"> when the page does not already carry one in
+   * HTML. Home keeps its canonical in public/index.html so the SJ rewrite
+   * stays an identity; artist pages pass one here.
    */
   canonical?: string;
   /** Absolute image URL for og:image / twitter:image. */
