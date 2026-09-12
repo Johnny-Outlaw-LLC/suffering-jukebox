@@ -207,9 +207,20 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 #landing-nav-header { display: none; flex: 1 1 100%; min-width: 0; width: 100%; }
 .hdr-brand-mobile { display: none; }
 .hdr-r1-filters { display: none; }
-.brand-block { flex-shrink: 0; }
+.brand-block { flex-shrink: 0; min-width: 0; }
 .brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; cursor: pointer; }
-.brand-block img { height: clamp(37px, 5.5vw, 56px); width: auto; flex-shrink: 0; object-fit: contain; display: block; }
+/* Height-led so both brands' header art stay sharp. max-width keeps a wide
+   lockup (name already painted in the PNG) from shoving the search/auth
+   controls off a phone. */
+.brand-block img {
+  height: clamp(40px, 5.8vw, 58px);
+  width: auto;
+  max-width: min(300px, 52vw);
+  flex-shrink: 1;
+  object-fit: contain;
+  object-position: left center;
+  display: block;
+}
 .brand-copy { display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 3px; }
 .brand-copy[hidden] { display: none; }
 .brand-sub { font-size: 0.5rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); font-weight: 500; }
@@ -613,6 +624,13 @@ body:not(.light) .tt-num { color: var(--text); }
 /* ── Community / Add Music ── */
 .am-bg-note { display: flex; align-items: center; gap: .45rem; font-size: .52rem; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .65rem; margin-bottom: .7rem; }
 .am-bg-note.done { color: #22c55e; border-color: rgba(34,197,94,.35); }
+.am-dym { margin-top: .55rem; font-size: .55rem; line-height: 1.5; color: var(--text); }
+.am-dym-btn {
+  display: inline; padding: 0; margin: 0; border: 0; background: none; cursor: pointer;
+  color: var(--accent); font: inherit; font-weight: 700; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.am-dym-btn:hover { color: var(--accent-hover, var(--accent)); }
 .hdr-page-link { text-decoration: none; white-space: nowrap; }
 .hdr-add-music-btn { white-space: nowrap; }
 .am-albums { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: .4rem; background: var(--bg-card); }
@@ -869,11 +887,12 @@ body:not(.light) .tt-num { color: var(--text); }
     min-width: 0;
     width: 100%;
   }
-  .hdr-brand-mobile .brand-lockup { width: 100%; }
+  .hdr-brand-mobile .brand-lockup { width: 100%; max-width: 100%; }
   .hdr-brand-mobile img {
     width: auto !important;
-    height: 44px !important;
+    height: 48px !important;
     max-height: 52px;
+    max-width: min(280px, 72vw) !important;
     object-fit: contain;
     object-position: left center;
   }
@@ -30506,6 +30525,9 @@ function resetDashboardState() {
   _esLoaded = false;
   _esLoading = false;
   _esError = '';
+  dailyYtData = {};
+  dailyPlaysData = {};
+  dailyRatingData = {};
 }
 
 // artist: {id, name, slug, is_community?, added_by_name?}
@@ -30635,7 +30657,7 @@ async function loadData() {
     ytData = await loadYT(trackRows.map(t => t.id));
     loadPlayCounts(trackRows.map(t => t.id));        // non-blocking
     loadTrackVoteScores();  // non-blocking - all tracks, all voters
-    loadDailyMetrics();     // non-blocking - daily trend data for sparklines
+    loadDailyMetrics(trackRows.map(t => t.id));      // non-blocking - sparklines for THIS page only
 
     // Fetch YouTube last-sync date from metrics table
     try {
@@ -32773,6 +32795,43 @@ function amIsExactArtistIdentity(query, found) {
   return !!wanted && wanted === got;
 }
 
+// Wikipedia page titles often carry a disambiguator; strip the common ones so
+// "Electric Light Orchestra (band)" still compares as the artist name.
+function amCleanWikiTitle(title) {
+  return String(title || '')
+    .replace(/\s*\((band|musician|singer|group|rapper|duo|orchestra|musical group)\)\s*$/i, '')
+    .trim();
+}
+function amChannelArtistName(channel) {
+  if (!channel || !channel.title) return '';
+  return String(channel.title).replace(/\s*-\s*Topic\s*$/i, '').trim();
+}
+// "Electronic Light Orchestra" → wiki says Electric Light Orchestra and the
+// YouTube Topic channel agrees. Two independent signals, same corrected name,
+// different from what was typed → offer Did you mean. One signal alone is not
+// enough (wiki alone fuzzy-matches too freely).
+function amDidYouMeanName(query, data) {
+  const wiki = amCleanWikiTitle(data && data.wiki && data.wiki.title);
+  const channel = amChannelArtistName(data && data.channel);
+  if (!wiki || !channel) return '';
+  if (!amIsExactArtistIdentity(wiki, channel)) return '';
+  if (amIsExactArtistIdentity(query, wiki)) return '';
+  return wiki;
+}
+function amDidYouMeanHtml(query, suggestion) {
+  if (!suggestion) return '';
+  const safe = String(suggestion).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return `<div class="am-dym">No albums matched “${escHtml(query)}”. `
+    + `Did you mean <button type="button" class="am-dym-btn" onclick="amSearchAs('${safe}')">`
+    + `${escHtml(suggestion)}</button>?</div>`;
+}
+function amSearchAs(name) {
+  const input = document.getElementById('amSearchInput');
+  if (!input || !name) return;
+  input.value = name;
+  amSearch();
+}
+
 async function amSearch() {
   const q = document.getElementById('amSearchInput').value.trim();
   if (!q) return;
@@ -32791,14 +32850,20 @@ async function amSearch() {
   card.innerHTML = '<div style="color:var(--text-muted);font-size:.55rem"><span class="m-spin"></span> Identifying artist…</div>';
   try {
     const d = await amFetch(`?action=identify&q=${encodeURIComponent(q)}`);
+    const suggestion = amDidYouMeanName(q, d);
     if (!amIsExactArtistIdentity(q, d.artist_name)) {
       amIdent = null; amChannel = null; amAlbums = []; amPicked = new Set();
-      card.innerHTML = `<div style="color:#ef4444;font-size:.55rem;line-height:1.55"><b>Artist match needs review.</b><br>Searching for “${escHtml(q)}” found “${escHtml(d.artist_name || 'an unknown artist')}”, so nothing was imported. Refine the name or use the channel option only when it is the artist’s actual channel.</div>`;
-      amStepGo(1, 'Artist name did not match exactly. Nothing was imported.');
+      const alt = suggestion || (d.artist_name && !amIsExactArtistIdentity(q, d.artist_name) ? d.artist_name : '');
+      card.innerHTML = `<div style="color:#ef4444;font-size:.55rem;line-height:1.55"><b>Artist match needs review.</b><br>Searching for “${escHtml(q)}” found “${escHtml(d.artist_name || 'an unknown artist')}”, so nothing was imported. Refine the name or use the channel option only when it is the artist’s actual channel.</div>`
+        + (alt ? amDidYouMeanHtml(q, alt) : '');
+      amStepGo(1, alt
+        ? `Did you mean “${alt}”? Tap the suggestion to search again.`
+        : 'Artist name did not match exactly. Nothing was imported.');
       amSetFooter(false, 'Next: Choose Albums ›', true);
       return;
     }
     amIdent = d; amChannel = d.channel || null;
+    amIdent._didYouMean = suggestion || '';
     const nrm = s => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
     const already = (d.existing_albums || []).map(nrm);
     amAlbums = (d.albums || []).map(a => ({ ...a, already: already.includes(nrm(a.title)) }));
@@ -32807,6 +32872,7 @@ async function amSearch() {
     const blocked = d.existing && d.existing.is_community === false;
     amSetFooter(false, 'Next: Choose Albums ›', blocked || !amAlbums.length || !amChannel);
     if (blocked) amStepGo(1, `“${d.existing.name}” is already on the main jukebox.`);
+    else if (!amAlbums.length && suggestion) amStepGo(1, `Did you mean “${suggestion}”? Tap the suggestion to search again.`);
     else if (!amAlbums.length) amStepGo(1, 'No discography found. Try a different spelling, or add them manually below.');
     else if (!amChannel) amStepGo(1, 'No YouTube channel found for this artist. You can add them manually below.');
     else if (d.catalog_source === 'itunes') amStepGo(1, 'MusicBrainz is temporarily unavailable. Apple Music verified this artist and album list — continue to choose albums.');
@@ -32831,6 +32897,9 @@ function renderAmIdentCard() {
   ];
   if (amIdent.existing && amIdent.existing.is_community) metaBits.push('already in the jukebox, missing albums can be added');
   const img = (w && w.thumbnail) || (amIdent.channel && amIdent.channel.thumbnail) || null;
+  const dym = (!amIdent.albums.length && amIdent._didYouMean)
+    ? amDidYouMeanHtml(amIdent.artist_name, amIdent._didYouMean)
+    : '';
   card.style.display = '';
   card.innerHTML = `
     ${img ? `<img src="${img}" alt="">` : ''}
@@ -32839,7 +32908,7 @@ function renderAmIdentCard() {
       <div class="am-ident-extract">${esc(w ? w.extract : 'No Wikipedia summary found.')}</div>
       <div class="m-sel-meta" style="margin-top:.35rem">${metaBits.join(' · ')}${w && w.url ? ` · <a href="${w.url}" target="_blank" rel="noopener" style="color:var(--accent)">Wikipedia ↗</a>` : ''}</div>
       ${blocked ? `<div style="color:#ef4444;font-size:.52rem;margin-top:.35rem">“${esc(amIdent.existing.name)}” is already part of the main jukebox.</div>` : ''}
-      <div style="color:var(--text-muted);font-size:.48rem;margin-top:.35rem">Not the right artist? Refine your search above.</div>
+      ${dym || '<div style="color:var(--text-muted);font-size:.48rem;margin-top:.35rem">Not the right artist? Refine your search above.</div>'}
     </div>`;
 }
 
@@ -33932,8 +34001,49 @@ async function amEnrichBg(albumList) {
     }
   }
   amLogLine('ok', '✓ Lyrics & dates lookup complete.');
-  if (IS_COMMUNITY) { try { await loadData(); } catch(_) {} }
+  // Merge the new dates/lyrics into memory. Do NOT call loadData() — that
+  // rebuilds the whole jukebox (and used to re-fetch every sparkline in the
+  // catalogue) while the listener is already on the page, which is exactly
+  // when Chrome put up Page Unresponsive after a big import.
+  try { await amEnrichMerge(albumList); } catch (_) {}
   amBgFinished(out);
+}
+
+// Soft refresh after background enrich: release dates + lyrics_synced only.
+async function amEnrichMerge(albumList) {
+  const albumIds = [...new Set((albumList || []).map(a => a.id).filter(Boolean))];
+  if (!albumIds.length) return;
+  const albRows = await dbGet(
+    `/albums?id=in.(${albumIds.join(',')})&select=id,artist_id,release_date,art_url,name`
+  );
+  let datesChanged = false;
+  (albRows || []).forEach(row => {
+    const list = albums[row.artist_id] || [];
+    const hit = list.find(a => a.id === row.id);
+    if (!hit) return;
+    if (row.release_date && hit.release_date !== row.release_date) {
+      hit.release_date = row.release_date;
+      datesChanged = true;
+    }
+    if (row.art_url) hit.art_url = row.art_url;
+  });
+  const chunks = [];
+  for (let i = 0; i < albumIds.length; i += 40) chunks.push(albumIds.slice(i, i + 40));
+  const trackRows = (await Promise.all(chunks.map(c =>
+    dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,album_id,lyrics_synced`)
+  ))).flat();
+  const byId = {};
+  trackRows.forEach(t => { byId[t.id] = t; });
+  Object.keys(tracks).forEach(aid => {
+    (tracks[aid] || []).forEach(t => {
+      const u = byId[t.id];
+      if (u && u.lyrics_synced != null) t.lyrics_synced = u.lyrics_synced;
+    });
+  });
+  // Years moved on the chart — repaint the timeline only, keep player/queue.
+  if (datesChanged && !isLandingMode) {
+    try { renderTimelineOnly(); } catch (_) {}
+  }
 }
 function amBgFinished(out) {
   amBgBusy = false;
@@ -35238,11 +35348,17 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-11';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-12';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-12', items: [
+    'Opening an artist jukebox no longer freezes the tab. Chart trend lines used to load history for the whole catalogue in the background; they now load only the songs on that page.',
+    'After you import an artist, finishing the lyrics and dates lookup no longer rebuilds the whole jukebox under you. Release years update quietly if they changed.',
+    'Listening Party now uses its official header lockup (monkey + ListeningParty.stream + tagline in one image) and a proper wide social card, with the circular badge kept for favicons and app icons.',
+    'Import Music suggests a corrected artist name when Wikipedia and YouTube agree you mistyped it — for example “Electronic Light Orchestra” offers Electric Light Orchestra instead of a blank album list.',
+  ]},
   { date: '2026-09-11', items: [
     'Forms no longer close if you click outside them. Import Music, Settings, playlists and the rest stay open until you hit Close or the X.',
     'Paste a YouTube link into Add a song and it looks that video up directly instead of searching YouTube for the URL. That used to burn through the daily search budget even when you already knew the video.',
@@ -39550,71 +39666,77 @@ async function dbGetAllPages(url, hdrs, pageSize = 1000) {
   }
   return all;
 }
-async function loadDailyMetrics() {
+// Sparkline history for the tracks on THIS jukebox only. Used to pull the
+// entire yt_daily_snapshots table (~140k rows / ~40s of paging) on every
+// artist open — that is what froze the tab after importing Electric Light
+// Orchestra (enrichment toast still showing, Chrome "Page Unresponsive").
+async function loadDailyMetrics(trackIds) {
+  const ids = [...new Set((trackIds || []).filter(Boolean))];
+  if (!ids.length) return;
   const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
   const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  // Replace, do not append — a second loadData used to duplicate every point.
+  ids.forEach(id => {
+    delete dailyYtData[id];
+    delete dailyPlaysData[id];
+    delete dailyRatingData[id];
+  });
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 80) chunks.push(ids.slice(i, i + 80));
   try {
-    const ytRows = await dbGetAllPages(
-      `${REST}/yt_daily_snapshots?select=track_id,snapshot_date,view_count,video_id&snapshot_date=gte.${since}&order=track_id.asc,snapshot_date.asc`,
+    const ytRows = (await Promise.all(chunks.map(c => dbGetAllPages(
+      `${REST}/yt_daily_snapshots?select=track_id,snapshot_date,view_count,video_id&track_id=in.(${c.join(',')})&snapshot_date=gte.${since}&order=track_id.asc,snapshot_date.asc`,
       hdrs
-    );
-    if (Array.isArray(ytRows)) {
-      ytRows.forEach(r => {
-        const tid = r.track_id;
-        if (!tid) return;
-        (dailyYtData[tid] = dailyYtData[tid] || []).push({ date: r.snapshot_date, views: Number(r.view_count) || 0, videoId: r.video_id || null });
-      });
-    }
+    )))).flat();
+    ytRows.forEach(r => {
+      const tid = r.track_id;
+      if (!tid) return;
+      (dailyYtData[tid] = dailyYtData[tid] || []).push({ date: r.snapshot_date, views: Number(r.view_count) || 0, videoId: r.video_id || null });
+    });
   } catch (e) { console.warn('loadDailyMetrics yt error', e); }
   try {
-    const peRows = await dbGetAllPages(
-      `${REST}/play_events?select=track_id,played_at,source&played_at=gte.${since}T00:00:00Z&track_id=neq.test-verify&album_id=not.is.null&or=(source.is.null,source.in.(video,audio))`,
+    const peRows = (await Promise.all(chunks.map(c => dbGetAllPages(
+      `${REST}/play_events?select=track_id,played_at,source&track_id=in.(${c.join(',')})&played_at=gte.${since}T00:00:00Z&track_id=neq.test-verify&album_id=not.is.null&or=(source.is.null,source.in.(video,audio))`,
       hdrs
-    );
-    if (Array.isArray(peRows)) {
-      const _tmp = {};
-      peRows.forEach(r => {
-        if (!r.track_id || !r.played_at) return;
-        if (r.source === 'spotify') return; // personal history never inflates everyone else's trend
-        const day = r.played_at.slice(0, 10);
-        const key = r.track_id + '|' + day;
-        _tmp[key] = (_tmp[key] || 0) + 1;
-      });
-      Object.entries(_tmp).forEach(([key, count]) => {
-        const [tid, date] = key.split('|');
-        (dailyPlaysData[tid] = dailyPlaysData[tid] || []).push({ date, count });
-      });
-      Object.values(dailyPlaysData).forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
-    }
+    )))).flat();
+    const _tmp = {};
+    peRows.forEach(r => {
+      if (!r.track_id || !r.played_at) return;
+      if (r.source === 'spotify') return; // personal history never inflates everyone else's trend
+      const day = r.played_at.slice(0, 10);
+      const key = r.track_id + '|' + day;
+      _tmp[key] = (_tmp[key] || 0) + 1;
+    });
+    Object.entries(_tmp).forEach(([key, count]) => {
+      const [tid, date] = key.split('|');
+      (dailyPlaysData[tid] = dailyPlaysData[tid] || []).push({ date, count });
+    });
+    Object.values(dailyPlaysData).forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
   } catch (e) { console.warn('loadDailyMetrics plays error', e); }
   try {
-    const reRows = await dbGetAllPages(
-      `${REST}/rating_events?select=track_id,rated_at,new_rating&rated_at=gte.${since}T00:00:00Z&album_id=not.is.null`,
+    const reRows = (await Promise.all(chunks.map(c => dbGetAllPages(
+      `${REST}/rating_events?select=track_id,rated_at,new_rating&track_id=in.(${c.join(',')})&rated_at=gte.${since}T00:00:00Z&album_id=not.is.null`,
       hdrs
-    );
-    if (Array.isArray(reRows)) {
-      const _tmp = {};
-      reRows.forEach(r => {
-        if (!r.track_id || !r.rated_at || r.new_rating == null) return;
-        const day = r.rated_at.slice(0, 10);
-        const key = r.track_id + '|' + day;
-        if (!_tmp[key]) _tmp[key] = { sum: 0, count: 0 };
-        _tmp[key].sum += Number(r.new_rating) || 0;
-        _tmp[key].count++;
-      });
-      Object.entries(_tmp).forEach(([key, { sum, count }]) => {
-        const [tid, date] = key.split('|');
-        (dailyRatingData[tid] = dailyRatingData[tid] || []).push({ date, avg: sum / count, count });
-      });
-      Object.values(dailyRatingData).forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
-    }
+    )))).flat();
+    const _tmp = {};
+    reRows.forEach(r => {
+      if (!r.track_id || !r.rated_at || r.new_rating == null) return;
+      const day = r.rated_at.slice(0, 10);
+      const key = r.track_id + '|' + day;
+      if (!_tmp[key]) _tmp[key] = { sum: 0, count: 0 };
+      _tmp[key].sum += Number(r.new_rating) || 0;
+      _tmp[key].count++;
+    });
+    Object.entries(_tmp).forEach(([key, { sum, count }]) => {
+      const [tid, date] = key.split('|');
+      (dailyRatingData[tid] = dailyRatingData[tid] || []).push({ date, avg: sum / count, count });
+    });
+    Object.values(dailyRatingData).forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
   } catch (e) { console.warn('loadDailyMetrics ratings error', e); }
 }
 
-// loadDailyMetrics() pulls a 30 day window for every track on the page, which
-// is right for one jukebox and hopeless for Explore Songs - the whole
-// catalogue is tens of thousands of rows nobody is going to hover. So the
-// landing tables fetch the one song being pointed at instead, once, and
+// Explore Songs still must not call loadDailyMetrics for the whole catalogue —
+// the landing tables fetch the one song being pointed at instead, once, and
 // remember the miss as well as the hit so a song with no history is not
 // re-asked on every pass of the mouse.
 const _dailyOnePending = {};

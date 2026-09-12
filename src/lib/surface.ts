@@ -197,18 +197,15 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     keywords:
       "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
     tagline: "Join the Listening Party",
-    headerTitle: "ListeningParty.stream",
+    // The official horizontal artwork already contains the name and tagline.
+    // Keep the HTML companion copy off so the words are not rendered twice.
+    headerTitle: "",
     assetBase: "/brand/lp",
-    // The official mark from outlawapps.online/branding, trimmed of its
-    // transparent margin by capture/_lp_brand.mjs so it sits flush in the
-    // header. Listening Party has no official WORDMARK - that page offers one
-    // for Suffering Jukebox and only a square mark for this brand - so the
-    // header shows the mark plus headerTitle / tagline beside it.
+    // Official horizontal lockup: textless circular emblem plus the name and
+    // tagline in the artwork. The standalone badge is used for app icons.
     textLogo: "/brand/lp/header-mark.png",
-    // TODO(step 4): a proper 1200x630 social card. The app icon is a valid
-    // image and will not 404, but it is square and says nothing about the app.
-    ogImage: `${LP_URL}/brand/lp/favicon.png`,
-    ogImageSize: { w: 192, h: 192 },
+    ogImage: `${LP_URL}/brand/lp/og-image.png`,
+    ogImageSize: { w: 1200, h: 630 },
     themeColor: "#4A1B6D",
     accent: "#9D4EDD",
     accentHover: "#B57BEA",
