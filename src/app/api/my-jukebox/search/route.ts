@@ -6,6 +6,7 @@ import {
   fetchYouTubeVideoInfo,
   JUKEBOX_SCHEMA,
   parseYouTubePlaylistId,
+  parseYouTubeVideoId,
   searchYouTubePlaylists,
   searchYouTubeVideos,
 } from "@/lib/sj-admin-auth";
@@ -72,6 +73,39 @@ export async function GET(req: NextRequest) {
 
     const query = url.searchParams.get("q")?.trim() ?? "";
     if (query.length < 2) return NextResponse.json({ ok: true, results: [] });
+
+    // A pasted watch URL (or bare 11-char id) already names the upload. Looking
+    // it up with videos.list costs 1 quota unit; search.list costs 100 and is
+    // what burns the daily budget. Same pattern as sj-discover-versions.
+    const pastedId = parseYouTubeVideoId(query);
+    if (pastedId) {
+      const info = (await fetchYouTubeVideoInfo([pastedId]))[pastedId];
+      if (!info) return bad("That YouTube video could not be found.", 404);
+      if (!info.playable) {
+        return bad(
+          info.reason
+            ? `That video cannot play in the Jukebox (${info.reason}).`
+            : "That YouTube video cannot play in the Jukebox.",
+          409,
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        results: [
+          {
+            videoId: pastedId,
+            title: info.title || "Untitled video",
+            description: "",
+            channelTitle: info.channelTitle || "",
+            thumbnail: info.thumbnail,
+            durationMs: info.durationMs,
+            views: info.views,
+            publishedAt: info.publishedAt,
+          },
+        ],
+      });
+    }
+
     return NextResponse.json({ ok: true, results: await searchYouTubeVideos(query) });
   } catch (error) {
     console.error("[my-jukebox:search]", error);

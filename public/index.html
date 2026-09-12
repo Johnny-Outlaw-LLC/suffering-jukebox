@@ -35245,6 +35245,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-11';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-11', items: [
+    'Paste a YouTube link into Add a song and it looks that video up directly instead of searching YouTube for the URL. That used to burn through the daily search budget even when you already knew the video.',
     'Search engines can tell Suffering Jukebox the website apart from the Silver Jews song of the same name more clearly. Titles, the About page, and the site description now name sufferingjukebox.stream and say this is the app.',
     'Importing a big discography is more reliable. Songs on YouTube titled like “Love Me Do (Remastered 2009)” now match the official track, so albums stop vanishing when there is no ready-made playlist.',
     'If some albums in an import do not land, the wizard says so and keeps Import Discography available instead of pretending the artist is finished.',
@@ -43694,8 +43695,8 @@ function mjImportHTML() {
 }
 
 function mjSearchRowHTML() {
-  return '<div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube for a song"' +
-    ' onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Search</button></div>';
+  return '<div class="mj-search"><input id="mj-search-input" placeholder="Search YouTube, or paste a video link"' +
+    ' onkeydown="if(event.key===\'Enter\')mjSearchYouTube()"><button class="pl-btn" onclick="mjSearchYouTube()">Go</button></div>';
 }
 
 function mjLibraryHTML() {
@@ -43725,9 +43726,13 @@ async function mjSearchYouTube() {
   const query = (input?.value || '').trim();
   if (query.length < 2) { showToast('Type at least two characters to search YouTube.'); return; }
   const el = document.getElementById('my-jukebox-body');
+  // A watch URL already names the upload — the API looks it up directly and
+  // does not spend a YouTube search. The spinner wording follows that.
+  const pastedLink = /youtu\.?be|youtube\.com/i.test(query) || /^[a-zA-Z0-9_-]{11}$/.test(query);
   try {
     _mjSearchResults = [];
-    if (el) el.querySelector('.mj-search')?.insertAdjacentHTML('afterend', '<div id="mj-searching" class="sjj-empty">Searching YouTube…</div>');
+    if (el) el.querySelector('.mj-search')?.insertAdjacentHTML('afterend',
+      '<div id="mj-searching" class="sjj-empty">' + (pastedLink ? 'Looking up that video…' : 'Searching YouTube…') + '</div>');
     const data = await mjRequest('/api/my-jukebox/search?q=' + encodeURIComponent(query), 'GET');
     _mjSearchResults = data.results || [];
     mjRender();
