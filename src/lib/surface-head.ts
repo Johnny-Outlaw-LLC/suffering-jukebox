@@ -33,9 +33,9 @@ export interface HeadOverrides {
   /** Page URL for og:url. */
   url?: string;
   /**
-   * Emits <link rel="canonical"> when the page does not already carry one in
-   * HTML. Home keeps its canonical in public/index.html so the SJ rewrite
-   * stays an identity; artist pages pass one here.
+   * Replaces any existing <link rel="canonical"> (or inserts one). Home keeps
+   * its canonical in public/index.html and does not pass this; artist and
+   * playlist pages must, or Google consolidates them onto `/`.
    */
   canonical?: string;
   /** Absolute image URL for og:image / twitter:image. */
@@ -163,6 +163,19 @@ export function applySurfaceHead(
       : `<style>:root{--accent:${surface.accent};--accent-hover:${surface.accentHover};` +
         `--accent-rgb:${surface.accentRgb}}</style>\n`;
 
+  // Artist / playlist shells start as public/index.html, which already carries
+  // a home canonical. Leaving that in place and appending a second one made
+  // Google treat every /pavement and /p/… page as a duplicate of `/` — Search
+  // Console sat at six known URLs for months. Replace, never stack.
+  if (overrides.canonical) {
+    const tag = `<link rel="canonical" href="${esc(overrides.canonical)}">`;
+    if (/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i.test(head)) {
+      head = head.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, tag);
+    } else {
+      head += `${tag}\n`;
+    }
+  }
+
   // The dashboard is a classic script that reads this at startup, so it has to
   // be defined before it and JSON.stringify keeps it inert markup either way.
   const inject =
@@ -171,7 +184,6 @@ export function applySurfaceHead(
       /</g,
       "\\u003c"
     )}</script>\n` +
-    (overrides.canonical ? `<link rel="canonical" href="${esc(overrides.canonical)}">\n` : "") +
     (overrides.extraHead || "");
 
   return `${head}${inject}${rest}`;

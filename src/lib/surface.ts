@@ -39,10 +39,9 @@ export interface SurfaceFeatures {
    */
   welcomeHero: boolean;
   /**
-   * List public /p/<slug> playlist pages in the sitemap. Off for Suffering
-   * Jukebox not because the pages are worse there, but because switching them
-   * on is a real SEO change and deserves its own decision rather than arriving
-   * as a side effect of building the other brand.
+   * List public /p/<slug> playlist pages in the sitemap. On for both brands:
+   * the pages are real, indexable MusicPlaylist documents and Google will not
+   * find them without a listing (or a crawl path that reaches them).
    */
   sitemapPlaylists: boolean;
 }
@@ -168,7 +167,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       homeTab: false,
       defaultLandingTab: "explore",
       shareImages: true,
-      sitemapPlaylists: false,
+      sitemapPlaylists: true,
       welcomeHero: false,
     },
   },

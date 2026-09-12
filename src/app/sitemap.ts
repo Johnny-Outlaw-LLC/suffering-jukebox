@@ -141,10 +141,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   }
 
-  // Public playlist pages. Both brands serve /p/<slug> and both read the same
-  // pool, but only a playlist-led brand lists them: turning this on for
-  // Suffering Jukebox is a real SEO change and belongs to a decision of its
-  // own, not to a side effect of building the other brand.
+  // Public playlist pages (/p/<slug>). Both brands share the pool; the flag
+  // is how a surface opts into listing them.
   if (surface.features.sitemapPlaylists) {
     const seen = new Set<string>();
     for (const row of await fetchPublicPlaylistSlugs()) {

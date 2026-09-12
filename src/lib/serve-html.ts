@@ -19,7 +19,7 @@ function injectHeadExtras(html: string) {
  * existing #sj-seo-home CSS; left in the DOM for search engines.
  */
 function sjHomeSeoBlurb(surface: Surface): string {
-  if (surface.id !== "sj") return "";
+  if (!surface.artistHomeSeo) return "";
   const u = surface.url;
   return (
     `<section id="sj-seo-home" class="sj-seo-catalog" aria-label="About ${surface.name}">` +
@@ -31,7 +31,8 @@ function sjHomeSeoBlurb(surface: Surface): string {
     `not the track. No account is required to listen.</p>` +
     `<p>Start with the <a href="/about">About ${surface.name}</a> page, ` +
     `the <a href="/silver-jews">Silver Jews jukebox</a>, ` +
-    `or the <a href="/purple-mountains">Purple Mountains</a> player.</p>` +
+    `the <a href="/purple-mountains">Purple Mountains</a> player, ` +
+    `or the <a href="/share">album charts</a> (updated nightly).</p>` +
     `</section>\n`
   );
 }

@@ -38,6 +38,16 @@ test('serving Suffering Jukebox rewrites nothing but the injected surface', () =
   assert.equal(headWithoutInjection(out), headOf(indexHtml));
 });
 
+test('a page canonical replaces the home one instead of stacking a second', () => {
+  // Dual canonicals made Google consolidate every artist and playlist shell
+  // onto `/`, which is why Search Console sat at six known URLs.
+  const pageUrl = `${SJ.url}/silver-jews`;
+  const out = head.applySurfaceHead(indexHtml, SJ, { canonical: pageUrl });
+  const tags = headOf(out).match(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/gi) || [];
+  assert.equal(tags.length, 1, `expected one canonical, got ${tags.length}: ${tags.join(' | ')}`);
+  assert.equal(tags[0], `<link rel="canonical" href="${pageUrl}">`);
+});
+
 test('the home-page overrides are the copy already in the file', () => {
   // Every value the home route passes is what index.html was authored with, so
   // the rewrite is still an identity with the overrides applied. This is what
