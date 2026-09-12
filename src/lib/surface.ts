@@ -48,6 +48,11 @@ export interface SurfaceFeatures {
 
 export interface Surface {
   id: SurfaceId;
+  /**
+   * Inject the crawlable brand blurb on the home page (artist-jukebox brands
+   * only). Listening Party has no artist wall to point at, so it stays off.
+   */
+  artistHomeSeo: boolean;
   /** Product name as a person would say it. */
   name: string;
   /** Canonical origin, no trailing slash. */
@@ -126,6 +131,7 @@ const LP_URL = "https://listeningparty.stream";
 export const SURFACES: Record<SurfaceId, Surface> = {
   sj: {
     id: "sj",
+    artistHomeSeo: true,
     name: "Suffering Jukebox",
     url: SJ_URL,
     host: "sufferingjukebox.stream",
@@ -174,6 +180,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
 
   lp: {
     id: "lp",
+    artistHomeSeo: false,
     name: "Listening Party",
     url: LP_URL,
     host: "listeningparty.stream",
