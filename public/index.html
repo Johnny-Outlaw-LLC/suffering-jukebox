@@ -4881,7 +4881,7 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
   background:linear-gradient(100deg,#ffffff06 30%,#ffffff10 50%,#ffffff06 70%);
   background-size:220% 100%; animation:lphShine 1.4s linear infinite; }
 
-.lph-doors { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); border-top:1px solid var(--border);
+.lph-doors { display:grid; grid-template-columns:repeat(var(--doors, 3), minmax(0,1fr)); border-top:1px solid var(--border);
   border-bottom:1px solid var(--border); }
 .lph-door { display:grid; grid-template-columns:44px 1fr; gap:4px 16px; align-content:start; padding:24px 24px 24px 0;
   border:0; background:none; text-align:left; color:var(--text); cursor:pointer; }
@@ -5455,7 +5455,7 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
         <b>An artist</b><em>Their whole studio discography, album by album.</em></button>
       <button type="button" class="im-opt" onclick="importMusicPick('song')">
         <b>A song</b><em>Search YouTube and drop a single track into My Jukebox.</em></button>
-      <button type="button" class="im-opt" onclick="importMusicPick('spotify')">
+      <button type="button" class="im-opt" data-sj-feature="spotifyImport" onclick="importMusicPick('spotify')">
         <b>Import from My Spotify</b><em>Your Liked Songs or any of your playlists, brought into My Jukebox.</em></button>
     </div>
     <div class="modal-footer">
@@ -5581,7 +5581,7 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
       <div style="border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-muted);font-size:.52rem;padding:.55rem .7rem;border-radius:6px;line-height:1.6">
         Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
-      <div style="border-top:1px solid var(--border);padding-top:.7rem;font-size:.52rem;line-height:1.55;color:var(--text-muted)">
+      <div data-sj-feature="artistUpload" style="border-top:1px solid var(--border);padding-top:.7rem;font-size:.52rem;line-height:1.55;color:var(--text-muted)">
         YouTube remains the source for discovery and normal playback. Artists can separately license uploaded audio only for public mobile background play. <a href="/artist-upload" style="color:var(--accent);font-weight:700">Publish My Music for Public Background Mobile Play</a>.
       </div>
     </div>
@@ -5614,7 +5614,7 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
         </div>
         <div style="border-top:1px solid var(--border);margin-top:.75rem;padding-top:.75rem">
           <div style="font-size:.5rem;color:var(--text-muted);line-height:1.55;margin-bottom:.5rem">If you own and control this music, you can separately publish the uploaded audio so any listener can use it only for mobile background play. A signed license and manual approval are required.</div>
-          <button type="button" class="m-btn ghost" id="taBatchPublishBtn" onclick="taBatchPublish()" disabled>Publish My Music for Public Background Mobile Play</button>
+          <button type="button" class="m-btn ghost" id="taBatchPublishBtn" data-sj-feature="artistUpload" onclick="taBatchPublish()" disabled>Publish My Music for Public Background Mobile Play</button>
         </div>
       </div>
       <div id="taBatchQuota" style="font-family:var(--mono);font-size:.48rem;color:var(--text-muted)"></div>
@@ -6470,7 +6470,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', shareImages: true, welcomeHero: false, phoneMiniPlayer: false }
+  features: { artistPages: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', shareImages: true, welcomeHero: false, phoneMiniPlayer: false, spotifyImport: true, artistUpload: true }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -6790,13 +6790,13 @@ function landingHomeHTML() {
       ${listening}
       <section aria-labelledby="lp-home-import-title">
         <div class="lph-head"><h2 class="lph-rule" id="lp-home-import-title">Bring your music</h2></div>
-        <div class="lph-doors">
+        <div class="lph-doors" style="--doors:${SJ_BRAND.features.spotifyImport ? 3 : 2}">
           <button type="button" class="lph-door" onclick="openImportMusic()">
             <span class="lph-door-ico">${LPH_ICONS.record}</span><b>Import music</b><em>An artist, an album, or a single song.</em>
           </button>
-          <button type="button" class="lph-door" onclick="importMusicPick('spotify')">
+          ${SJ_BRAND.features.spotifyImport ? `<button type="button" class="lph-door" onclick="importMusicPick('spotify')">
             <span class="lph-door-ico">${LPH_ICONS.spotify}</span><b>Import from Spotify</b><em>Liked Songs, or a playlist you made yourself.</em>
-          </button>
+          </button>` : ''}
           <button type="button" class="lph-door" onclick="lphStartRoom()">
             <span class="lph-door-ico">${LPH_ICONS.tv}</span><b>Start a room</b><em>Put the party on a TV. Guests scan the code and add songs.</em>
           </button>
@@ -6957,7 +6957,22 @@ function sjApplyBrandToDom() {
       el.textContent = t ? t.split('{brand}').join(SJ_BRAND.name) : SJ_BRAND.name;
     });
     sjApplyHeaderBrand();
+    sjApplyFeatureGates();
   } catch (_) {}
+}
+/**
+ * Hide body markup that belongs to a feature this brand does not have. Static
+ * body copy cannot be rewritten server side, so it is marked
+ * data-sj-feature="<flag>" instead, the way data-sj-brand marks the name.
+ * Markup built in script should read SJ_BRAND.features rather than render and
+ * hide. style.display, not the hidden attribute: .im-opt and friends set their
+ * own display, which beats [hidden].
+ */
+function sjApplyFeatureGates() {
+  const f = SJ_BRAND.features || {};
+  document.querySelectorAll('[data-sj-feature]').forEach(function (el) {
+    if (f[el.getAttribute('data-sj-feature')] === false) el.style.display = 'none';
+  });
 }
 /** Header title + tagline beside the mark (Listening Party). Empty on SJ. */
 function sjApplyHeaderBrand() {
@@ -16191,6 +16206,7 @@ function taBatchSync() {
 }
 
 function taBatchPublish() {
+  if (!SJ_BRAND.features.artistUpload) return;
   if (_taBatchBusy) return;
   const hasUploadedAudio = !!(_taBatch && (
     (_taBatch.uploadedThisRun || []).length ||
@@ -35688,6 +35704,7 @@ const SJ_CHANGELOG = [
   { date: '2026-09-13', items: [
     'Listening Party has a new home page. Its colours and lettering now come from the logo, Start listening plays the playlist that is hot right now, every featured playlist shows its artwork with a play button, and a Start a room door sits beside the import options.',
     'On a phone, Listening Party now has a tab bar along the bottom (Home, Explore, Create, You), and the player rests above it as a slim bar with the artwork, the song and play/pause. Tap it or swipe up for the full player.',
+    'Listening Party has its own About, Privacy, Terms and Copyright pages now, instead of sending you to the Suffering Jukebox ones. Import from Spotify and Artist Upload are no longer offered there.',
   ]},
   { date: '2026-09-12', items: [
     'Opening an artist jukebox no longer freezes the tab. Chart trend lines used to load history for the whole catalogue in the background; they now load only the songs on that page.',
@@ -41771,7 +41788,7 @@ try { sjInstrumentRenders(); } catch (e) { console.warn('[SJ performance] Render
   · <a href="/privacy" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">Privacy</a>
   · <a href="/terms" style="color:var(--text-muted);text-decoration:none">Terms</a>
   · <a href="/dmca" style="color:var(--text-muted);text-decoration:none">Copyright</a>
-  · <a href="/artist-upload" style="color:var(--text-muted);text-decoration:none">Artist Upload</a>
+  <span data-sj-feature="artistUpload">· <a href="/artist-upload" style="color:var(--text-muted);text-decoration:none">Artist Upload</a></span>
 </footer>
 <!-- Lyrics edit history modal -->
 <div id="lyr-hist-modal">
@@ -44149,7 +44166,7 @@ function mjImportHTML() {
   return '<div class="sjj-h">Add a song</div>' +
     mjSearchRowHTML() +
     (_mjSearchResults.length ? mjResultsHTML() : '') +
-    spotify;
+    (SJ_BRAND.features.spotifyImport ? spotify : '');
 }
 
 function mjSearchRowHTML() {
@@ -44405,6 +44422,7 @@ let _spiCallbackChecked = false;
 
 // ── Shell ─────────────────────────────────────────────────────────────────
 async function openSpotifyImport(step) {
+  if (!SJ_BRAND.features.spotifyImport) return;
   if (!googleUser) { showToast('Sign in to import from Spotify.'); return; }
   _spiOpen = true; _spiMinimized = false;
   _spiVisibility = sjDefaultImportVisibility();

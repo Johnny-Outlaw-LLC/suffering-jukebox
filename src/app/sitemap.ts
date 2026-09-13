@@ -72,8 +72,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Artist-shaped pages. A playlist-first brand has no view behind these, so
   // listing them would send a crawler to a redirect.
   if (surface.features.artistJukebox) {
+    entries.push({ url: `${SITE_URL}/community`, lastModified, changeFrequency: "weekly", priority: 0.8 });
+  }
+  // Artist licensing for public background play. A brand without it redirects
+  // both pages home, so listing them would send a crawler to a redirect.
+  if (surface.features.artistUpload) {
     entries.push(
-      { url: `${SITE_URL}/community`, lastModified, changeFrequency: "weekly", priority: 0.8 },
       {
         url: `${SITE_URL}/artist-agreement`,
         lastModified,

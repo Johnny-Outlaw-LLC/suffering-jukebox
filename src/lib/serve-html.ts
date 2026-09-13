@@ -92,3 +92,16 @@ export function servePublicHtmlFor(
 export function servePublicHtml(...parts: string[]) {
   return servePublicHtmlFor(currentSurface(), parts);
 }
+
+/**
+ * A page written separately per brand: public/<page>/index.html for Suffering
+ * Jukebox, public/<page>/<surface id>/index.html for any other brand.
+ *
+ * Deliberately no fallback to the Suffering Jukebox copy. A missing brand page
+ * should fail loudly, not quietly hand one site's privacy policy to the other.
+ */
+export function serveSurfacePage(host: string | null | undefined, page: string) {
+  const surface = currentSurface(host);
+  const parts = surface.id === "sj" ? [page, "index.html"] : [page, surface.id, "index.html"];
+  return servePublicHtmlFor(surface, parts);
+}

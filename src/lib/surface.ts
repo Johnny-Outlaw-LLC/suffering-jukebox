@@ -46,6 +46,19 @@ export interface SurfaceFeatures {
    */
   phoneMiniPlayer: boolean;
   /**
+   * Import from Spotify: connect an account and bring Liked Songs or a
+   * playlist across. Off, every door to the wizard is hidden and
+   * openSpotifyImport() refuses, so a stale ?spotify= return cannot open it.
+   */
+  spotifyImport: boolean;
+  /**
+   * Artist licensing for public mobile background play: /artist-upload,
+   * /artist-agreement and the Publish My Music buttons. Off, both pages
+   * redirect home and the buttons are hidden. Personal audio uploads are a
+   * different feature and are not affected.
+   */
+  artistUpload: boolean;
+  /**
    * List public /p/<slug> playlist pages in the sitemap. On for both brands:
    * the pages are real, indexable MusicPlaylist documents and Google will not
    * find them without a listing (or a crawl path that reaches them).
@@ -190,6 +203,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       sitemapPlaylists: true,
       welcomeHero: false,
       phoneMiniPlayer: false,
+      spotifyImport: true,
+      artistUpload: true,
     },
   },
 
@@ -258,6 +273,8 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       sitemapPlaylists: true,
       welcomeHero: true,
       phoneMiniPlayer: true,
+      spotifyImport: false,
+      artistUpload: false,
     },
   },
 };
@@ -337,6 +354,8 @@ export function publicSurface(s: Surface) {
       shareImages: s.features.shareImages,
       welcomeHero: s.features.welcomeHero,
       phoneMiniPlayer: s.features.phoneMiniPlayer,
+      spotifyImport: s.features.spotifyImport,
+      artistUpload: s.features.artistUpload,
     },
   };
 }
