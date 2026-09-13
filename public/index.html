@@ -676,6 +676,8 @@ body:not(.light) .tt-num { color: var(--text); }
 .am-vis-opt b { font-size: .55rem; font-weight: 700; color: var(--text); }
 .am-vis-opt em { font-size: .46rem; font-style: normal; color: var(--text-muted); line-height: 1.35; }
 .am-vis-opt:has(input:checked) { border-color: var(--accent); background: rgba(var(--accent-rgb),.07); }
+.am-import-vis { display: none; align-items: center; gap: .45rem; margin-left: auto; font-size: .5rem; color: var(--text-muted); white-space: nowrap; }
+.am-import-vis select { min-height: 36px; max-width: 9rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: .55rem; padding: .35rem .5rem; }
 /* ── Community / Add Music ── */
 .am-bg-note { display: flex; align-items: center; gap: .45rem; font-size: .52rem; color: var(--text-muted); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .65rem; margin-bottom: .7rem; }
 .am-bg-note.done { color: #22c55e; border-color: rgba(34,197,94,.35); }
@@ -860,6 +862,8 @@ body:not(.light) .tt-num { color: var(--text); }
   /* Add Music wizard on phones: nothing clipped, everything thumb-sized */
   .am-steps { gap: .35rem; }
   .am-step { font-size: .5rem; padding: .26rem .55rem .26rem .3rem; }
+  .am-import-vis { flex: 1 0 100%; order: -1; margin-left: 0; justify-content: space-between; }
+  .am-import-vis select { min-height: 44px; max-width: 11rem; }
   .am-pane .m-fl { flex-wrap: wrap; }          /* label + Select All stack instead of squeezing */
   .am-pane .m-fl .m-btn { min-height: 34px; }
   .am-ident-card { padding: .65rem; gap: .6rem; }
@@ -5421,9 +5425,7 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
     <div class="modal-body">
       <div class="am-steps" id="amSteps">
         <div class="am-step"><span class="am-step-dot">1</span>Find the artist</div>
-        <div class="am-step"><span class="am-step-dot">2</span>Pick albums</div>
-        <div class="am-step"><span class="am-step-dot">3</span>Import</div>
-        <div class="am-step"><span class="am-step-dot">4</span>Fine-tune</div>
+        <div class="am-step"><span class="am-step-dot">2</span>Pick music</div>
       </div>
       <div class="am-step-status" id="amStepStatus" style="display:none"></div>
       <!-- STEP 1: artist search & identification -->
@@ -5436,13 +5438,6 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
             <button class="m-btn" id="amSearchBtn" onclick="amSearch()">Search</button>
           </div>
           <div style="font-size:.48rem;color:var(--text-muted);margin-top:.35rem">We’ll identify the artist and pull their studio discography automatically.</div>
-        </div>
-        <div class="am-vis">
-          <div class="m-fl">Who should see this music?</div>
-          <label class="am-vis-opt"><input type="radio" name="amVisibility" value="public" checked onchange="amSetVisibility('public')">
-            <span><b>Add to the public catalogue</b><em>Everyone finds it on Explore Artists. Play counts and charts are shared.</em></span></label>
-          <label class="am-vis-opt"><input type="radio" name="amVisibility" value="private" onchange="amSetVisibility('private')">
-            <span><b>Import into My Jukebox only</b><em>Only you see it listed. It stays out of Explore Artists and the public grids.</em></span></label>
         </div>
         <div class="am-ident-card" id="amIdentCard" style="display:none"></div>
         <div id="amManualLink" style="display:none;margin-top:.55rem">
@@ -5478,11 +5473,11 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
           <div class="am-albums" id="amAlbumsList"></div>
         </div>
       </div>
-      <!-- STEP 3: import + lyric discovery -->
+      <!-- Import progress, shown after the two choices are complete. -->
       <div class="am-pane" id="amPane3">
         <div class="m-log" id="amLog"></div>
       </div>
-      <!-- STEP 4: fine-tuning -->
+      <!-- Optional fine-tuning, offered only after the import has landed. -->
       <div class="am-pane" id="amPane4">
         <div class="am-bg-note" id="amBgNote" style="display:none"></div>
         <div id="amFtBody"></div>
@@ -5491,6 +5486,13 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
     <div class="modal-footer">
       <button class="m-btn ghost" id="amCancelBtn" onclick="amDismiss()">Cancel</button>
       <button class="m-btn ghost" id="amBackBtn" onclick="amBack()" style="display:none">‹ Back</button>
+      <label class="am-import-vis" id="amImportVisibility">Who should see this music?
+        <select id="amVisibilitySelect" onchange="amSetVisibility(this.value)">
+          <option value="public">Everyone</option>
+          <option value="private">Only me</option>
+        </select>
+      </label>
+      <button class="m-btn ghost" id="amFineTuneBtn" onclick="amGoFinetune()" style="display:none">Fine-tune (optional)</button>
       <button class="m-btn" id="amNextBtn" onclick="amNext()" disabled>Next: Choose Albums ›</button>
       <span class="mf-status" id="amFooterStatus"></span>
     </div>
@@ -28075,7 +28077,7 @@ async function setArtistVisibility(artistId, visibility, el) {
     if (row) row.visibility = visibility;
     showToast(visibility === 'private'
       ? 'Only you can see this now.'
-      : 'This is on Explore Artists for everyone now.');
+      : 'This is in the public catalogue for everyone now.');
     refreshLandingStats();
   } catch (e) {
     showToast('Could not change who can see this.');
@@ -32561,7 +32563,7 @@ let amChannel = null;      // selected channel
 let amAlbums  = [];        // playlists returned for the selected channel
 let amPicked  = new Set(); // playlist ids chosen for import
 let amBusy    = false;
-let amStep     = 1;     // wizard pane: 1 artist · 2 albums · 3 lyrics · 4 fine-tune
+let amStep     = 1;     // visible choices: 1 artist · 2 music; panes 3/4 are progress and optional fine-tuning
 let amArtistId = null;  // artist row id once the import lands
 let amImportOk = false; // import + lyric discovery finished
 // 'public' puts the artist in the shared catalogue, 'private' keeps it listed
@@ -33710,6 +33712,7 @@ async function admSave() {
   // row needs a track id. Same add_youtube import and the same courtesy pause
   // as the playlist builder's own YouTube import.
   const trackIds = [];
+  let imported = 0;
   let failed = 0;
   for (let n = 0; n < rows.length; n++) {
     const r = rows[n];
@@ -33725,7 +33728,7 @@ async function admSave() {
           userName: sjDisplayName(),
         });
         if (data.items && typeof _mjState !== 'undefined' && _mjState) _mjState.items = data.items;
-        if (data.catalogTrackId) { r.trackId = data.catalogTrackId; r.source = 'catalog'; }
+        if (data.catalogTrackId) { r.trackId = data.catalogTrackId; r.source = 'catalog'; imported++; }
         else failed++;
       } catch (e) {
         failed++;
@@ -33736,9 +33739,11 @@ async function admSave() {
   }
   const failNote = failed ? ' ' + admPlural(failed, 'song') + ' could not be added.' : '';
 
+  let createdPlaylist = null;
   try {
     if (a.dest === 'library') {
-      a.done = { msg: 'Added ' + admPlural(trackIds.length, 'song') + ' to the Jukebox.' + failNote };
+      if (!imported) throw new Error('None of the new songs could be added.');
+      a.done = { msg: 'Added ' + admPlural(imported, 'song') + ' to the Jukebox.' + failNote };
     } else {
       if (!trackIds.length) throw new Error('None of those songs could be added.');
       let plId = null, plName = '', start = 0, existing = new Set();
@@ -33758,17 +33763,21 @@ async function admSave() {
           context: _playlistContext(),
         });
         if (!pl?.id) throw new Error('The playlist was created but could not be read back.');
-        pl._tracks = [];
-        playlists.unshift(pl);
-        _savedPlaylists.unshift(pl);
+        createdPlaylist = pl;
         plId = pl.id; plName = name;
       }
       const credit = plTrackCredit();
       const add = trackIds.filter(t => !existing.has(t));
       const newRows = add.map((t, k) => Object.assign({ playlist_id: plId, track_id: t, position: start + PL_POS_STEP * (k + 1) }, credit));
       if (newRows.length) await dbPost('/playlist_tracks', newRows);
-      const p = playlists.find(x => x.id === plId);
-      if (p) p._tracks = (p._tracks || []).concat(newRows);
+      if (createdPlaylist) {
+        createdPlaylist._tracks = newRows.slice();
+        playlists.unshift(createdPlaylist);
+        _savedPlaylists.unshift(createdPlaylist);
+      } else {
+        const p = playlists.find(x => x.id === plId);
+        if (p) p._tracks = (p._tracks || []).concat(newRows);
+      }
       try { _sjmRefreshPlaylistView(); } catch (_) {}
       const already = trackIds.length - add.length;
       a.done = {
@@ -33779,6 +33788,14 @@ async function admSave() {
     }
     a.phase = 'done';
   } catch (e) {
+    // If the playlist row landed but its songs did not, remove the empty shell
+    // so Retry cannot create a trail of duplicate empty playlists.
+    if (createdPlaylist?.id) {
+      try {
+        await dbDelete('/playlist_tracks?playlist_id=eq.' + encodeURIComponent(createdPlaylist.id));
+        await dbDelete('/playlists?id=eq.' + encodeURIComponent(createdPlaylist.id));
+      } catch (_) {}
+    }
     a.err = e.message || 'Could not save that.';
   }
   a.busy = false; a.progress = '';
@@ -33928,7 +33945,7 @@ function amMiniSync() {
     amBusy ? 'Adding music \u2014 ' + (_amLastStatus || 'working\u2026')
     : amBgBusy ? (_amBgStatus || 'Adding lyrics & dates\u2026') + ' \u2014 click for details'
     : failed ? _amLastStatus + ' \u2014 click to reopen'
-    : amImportOk ? '\u2713 Music added \u2014 click to fine-tune'
+    : amImportOk ? '\u2713 Music added \u2014 click for details'
     : (_amLastStatus || 'Add Music \u2014 click to reopen');
 }
 document.getElementById('amSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') amSearch(); });
@@ -34179,22 +34196,35 @@ function amShowPane(n) {
     const p = document.getElementById('amPane' + i);
     if (p) p.classList.toggle('active', i === n);
   }
+  const visibility = document.getElementById('amImportVisibility');
+  if (visibility) visibility.style.display = n === 2 ? 'flex' : 'none';
 }
 function amSetFooter(backVisible, nextLabel, nextDisabled, cancelVisible = true) {
   const back = document.getElementById('amBackBtn'), next = document.getElementById('amNextBtn');
   if (back) back.style.display = backVisible ? '' : 'none';
-  if (next) { next.innerHTML = nextLabel; next.disabled = !!nextDisabled; }
+  if (next) { next.style.display = ''; next.innerHTML = nextLabel; next.disabled = !!nextDisabled; }
   const cancel = document.getElementById('amCancelBtn');
-  if (cancel) cancel.style.display = cancelVisible ? '' : 'none';   // once imported, Cancel can't undo it - only Finish belongs here
+  if (cancel) { cancel.style.display = cancelVisible ? '' : 'none'; cancel.textContent = 'Cancel'; }
+  const fineTune = document.getElementById('amFineTuneBtn');
+  if (fineTune) fineTune.style.display = 'none';
   const go = document.getElementById('amGoBtn');
   if (go) go.style.display = 'none';
+}
+function amSetPostImportFooter() {
+  const back = document.getElementById('amBackBtn'), next = document.getElementById('amNextBtn');
+  if (back) back.style.display = 'none';
+  if (next) next.style.display = 'none';
+  const cancel = document.getElementById('amCancelBtn');
+  if (cancel) { cancel.style.display = ''; cancel.textContent = 'Done'; }
+  const fineTune = document.getElementById('amFineTuneBtn');
+  if (fineTune) fineTune.style.display = '';
 }
 function amResetWizard() {
   amChannel = null; amAlbums = []; amPicked = new Set(); amBusy = false;
   amArtistId = null; amImportOk = false; amFt = null;
   amVisibility = sjDefaultImportVisibility();
-  const _vr = document.querySelector('input[name="amVisibility"][value="' + amVisibility + '"]');
-  if (_vr) _vr.checked = true;
+  const _vs = document.getElementById('amVisibilitySelect');
+  if (_vs) _vs.value = amVisibility;
   amMinimized = false; _amLastStatus = '';
   _amWizardDone = false; _amAudioUploaded = false; _amBgStatus = '';
   const mb = document.getElementById('am-minibar');
@@ -34488,7 +34518,7 @@ function amNewArtist() {
 }
 // Tuck the wizard away without cancelling the background lyrics/date work
 function amStowWizard() {
-  if (amBgBusy) { _amWizardDone = true; amShowPane(3); amSetFooter(false, 'Fine-tune ›', false, false); amMinimize(); amBgSync(); }
+  if (amBgBusy) { _amWizardDone = true; amShowPane(3); amSetPostImportFooter(); amMinimize(); amBgSync(); }
   else closeAddMusic();
 }
 function amShowGoBtn() {
@@ -35414,16 +35444,16 @@ async function amImport() {
       mainCatalogArtists = _rows3.filter(a => !a.is_community && /silver jews|purple mountains/i.test(a.name || ''));
       if (!IS_COMMUNITY) updateFilterHeader();
     } catch (_) {}
-    amLogLine('ok', IS_COMMUNITY
-      ? 'Added. Finish to open their jukebox.'
-      : 'Added. Find it under “Other Artists” in the filter bar.');
+    amLogLine('ok', 'Added. You can finish now or fine-tune the details.');
     refreshLandingStats();   // new artist card appears on the landing grid right away
     if (data.artist_id) delete communityAlbumsCache[data.artist_id];
     amImportOk = true;
     statusEl.textContent = `✓ ${data.tracks} track${data.tracks === 1 ? '' : 's'} live`; statusEl.style.color = '#22c55e';
-    // Slow work (lyrics + release dates) continues in the background while the user fine-tunes
+    // Slow work (lyrics + release dates) continues in the background. Fine-tuning
+    // is offered after the import, but it is no longer a required wizard step.
     amEnrichBg(data.albums_detail || []);
-    await amGoFinetune();
+    amStepDone(`Added ${data.tracks} track${data.tracks === 1 ? '' : 's'}.`);
+    amSetPostImportFooter();
   } catch (e) {
     amLogLine('err', `✗ ${e.message}`);
     amStepFail(e.message);
@@ -36517,6 +36547,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-13';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-13', items: [
+    'Importing a whole artist from YouTube is two steps now: find the artist, then choose the music and who can see it. Once the music is added you can finish immediately, with Fine-tune offered as an optional extra.',
+    'Reading a YouTube Music history screenshot now leaves out Mix, Radio, Supermix, playlist, album and podcast rows, reads the artist from Song · Artist labels, and still includes the song in the now-playing bar.',
     'Listening Party has a new home page. Its colours and lettering now come from the logo, Start listening plays the playlist that is hot right now, every featured playlist shows its artwork with a play button, and a Start a room door sits beside the import options.',
     'On a phone, Listening Party now has a tab bar along the bottom (Home, Explore, Create, You), and the player rests above it as a slim bar with the artwork, the song and play/pause. Tap it or swipe up for the full player.',
     'Listening Party has its own About, Privacy, Terms and Copyright pages now, instead of sending you to the Suffering Jukebox ones. Import from Spotify and Artist Upload are no longer offered there.',
@@ -45161,7 +45193,7 @@ async function mjAddSelected() {
   mjRender();
   showToast(added
     ? added + ' song' + (added === 1 ? '' : 's') + ' added'
-      + (artist ? ' \u2014 ' + artist.name + ' is in Explore Artists' : '')
+      + (artist ? '. ' + artist.name + (_mjVisibility === 'private' ? ' is in My Jukebox' : ' is in the public catalogue') : '')
       + (_mjVisibility === 'private' ? ', visible only to you.' : '.')
     : 'Those songs are already in your jukebox.');
   // The artist card is the point of all this, so go and fetch it.
@@ -45649,9 +45681,9 @@ function spiPane3HTML() {
   return throttleNote + '<div class="am-vis" style="margin-top:0">' +
       '<div class="m-fl">Who should see this music?</div>' +
       '<label class="am-vis-opt"><input type="radio" name="spiVis" value="private"' + (_spiVisibility === 'private' ? ' checked' : '') + ' onchange="_spiVisibility=\'private\'">' +
-        '<span><b>Import into My Jukebox only</b><em>Only you see it listed. It stays out of Explore Artists and the public grids.</em></span></label>' +
+        '<span><b>Import into My Jukebox only</b><em>Only you see it listed. It stays out of the public catalogue.</em></span></label>' +
       '<label class="am-vis-opt"><input type="radio" name="spiVis" value="public"' + (_spiVisibility === 'public' ? ' checked' : '') + ' onchange="_spiVisibility=\'public\'">' +
-        '<span><b>Add to the public catalogue</b><em>Everyone finds it on Explore Artists. Play counts and charts are shared.</em></span></label>' +
+        '<span><b>Add to the public catalogue</b><em>Everyone can find it. Play counts are shared.</em></span></label>' +
     '</div>' +
     '<div><div class="m-fl">Check what we found. The artist and song names are what get stored.</div>' +
     '<div class="spi-list spi-matches">' + rows + '</div></div>';
@@ -45724,7 +45756,7 @@ async function spiAddAll() {
   const summary = added + ' added' + (duplicate ? ' · ' + duplicate + ' already there' : '') + (failed ? ' · ' + failed + ' failed' : '');
   spiStatusLine(summary, failed && !added ? 'err' : 'ok');
   const note = document.getElementById('spiBgNote');
-  if (note) { note.className = 'am-bg-note done'; note.textContent = 'Done. ' + summary + (artist ? ' · ' + artist.name + ' is on Explore Artists.' : ''); }
+  if (note) { note.className = 'am-bg-note done'; note.textContent = 'Done. ' + summary + (artist ? ' · ' + artist.name + ' is in the public catalogue.' : ''); }
   spiMiniSync('Import finished · ' + summary, 'done');
   spiFooter();
   // Take the songs off the picker so a second pass through the wizard does not

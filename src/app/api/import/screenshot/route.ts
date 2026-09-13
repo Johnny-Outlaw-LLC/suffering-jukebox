@@ -48,6 +48,8 @@ Return every song the picture is clearly about, in the order shown:
 - A playlist, queue, album tracklist, chart or library screenshot from any app: every song row that is visible, with its artist.
 - A setlist, handwritten list, poster or back cover: every song. If the band's name appears once at the top, use it as the artist for each song.
 
+Music-app labels describe what a row is. Rows labelled "Mix", "Song mix", "Radio", "Supermix", "Playlist", "Album" or "Podcast" are collections or programs, not songs: leave them out even when their names look like song titles. In a subtitle formatted "Song • Artist", the text after the bullet is the artist. A separate now-playing bar is a real song row: include it, even when it sits outside the main list or repeats a song shown elsewhere.
+
 Put the artist in "artist" and only the song name in "title". Leave out "(Official Video)", "Remastered", track numbers and durations. Use "" for an artist you cannot see. Do not guess at songs that are not legible, and do not add songs that are not in the picture.
 If the picture shows no songs at all, answer what "no_music" with an empty list.`;
 
