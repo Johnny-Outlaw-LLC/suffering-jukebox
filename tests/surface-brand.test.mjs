@@ -143,6 +143,22 @@ test('the accent is a custom property, not a colour typed into rules', () => {
   assert.equal(bare.length, 4, `unexpected bare accent literals in the head: ${bare.length}`);
 });
 
+test('a brand with its own look gets its fonts and a data-surface stamp, SJ gets neither', () => {
+  // html[data-surface="lp"] rules in public/index.html only work if the stamp
+  // lands before first paint, so it is in the head, not set from the dashboard.
+  const lp = headOf(head.applySurfaceHead(indexHtml, LP));
+  assert.ok(LP.fontsHref, 'LP lost its fonts');
+  assert.ok(lp.includes('fonts.googleapis.com/css2?family=DM+Mono'), 'LP fonts not requested in the head');
+  assert.ok(lp.includes('setAttribute("data-surface","lp")'), 'LP head does not stamp data-surface');
+  assert.ok(indexHtml.includes('html[data-surface="lp"]'), 'the stamp has no rules to switch on');
+
+  const sj = headOf(head.applySurfaceHead(indexHtml, SJ));
+  assert.equal(SJ.fontsHref, null);
+  // The shared stylesheet mentions data-surface; only the stamp itself matters.
+  assert.ok(!sj.includes('setAttribute("data-surface"'), 'SJ must not be stamped');
+  assert.ok(!sj.includes(SJ.fontsHref ?? 'family=Lilita'), 'SJ must not load LP fonts');
+});
+
 test('a brand with its own accent gets it before the first paint', () => {
   // From script it would repaint after load, and the boot glyph renders before
   // any JS runs - a page that flashed orange then turned purple looks broken.

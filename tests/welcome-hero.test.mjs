@@ -8,6 +8,10 @@
 // public playlist, the one whose songs have the most YouTube views, and the one
 // played most on our own sites in the last 30 days.
 //
+// Since the 2026-09-13 makeover the Home tab spins the hot pick on a record in
+// the hero (lphFeatureHTML) and lays all three on a shelf beside a Create a
+// playlist card (lphShelfHTML).
+//
 // The hero belongs to one brand. Everything here also pins that Suffering
 // Jukebox never renders it - it opens on a wall of artists and needs no hero.
 import assert from 'node:assert/strict';
@@ -20,19 +24,21 @@ const LP = surface.SURFACES.lp;
 
 const indexHtml = readRepoFile('public/index.html');
 
-/** The LPH_PICKS table out of the dashboard, so the test cannot invent one. */
-function picksTable() {
-  const at = indexHtml.indexOf('const LPH_PICKS = {');
-  assert.ok(at >= 0, 'LPH_PICKS is gone from public/index.html');
+/** A `const NAME = {...};` table out of the dashboard, so the test cannot invent one. */
+function tableFromHtml(name) {
+  const at = indexHtml.indexOf(`const ${name} = {`);
+  assert.ok(at >= 0, `${name} is gone from public/index.html`);
   const end = indexHtml.indexOf('};', at);
-  const literal = indexHtml.slice(at + 'const LPH_PICKS = '.length, end + 1);
+  const literal = indexHtml.slice(at + `const ${name} = `.length, end + 1);
   return new Function(`return (${literal});`)();
 }
+const picksTable = () => tableFromHtml('LPH_PICKS');
 
 function hero(brand, state = {}) {
   const scope = {
     SJ_BRAND: surface.publicSurface(brand),
     LPH_PICKS: picksTable(),
+    LPH_ICONS: tableFromHtml('LPH_ICONS'),
     _lphPicks: state.picks ?? null,
     _lphLoading: state.loading ?? false,
     _lphFailed: state.failed ?? false,
@@ -42,7 +48,10 @@ function hero(brand, state = {}) {
     loadCalled: false,
   };
   const fns = loadHtmlFnsInScope(
-    ['lphCompact', 'lphAgo', 'lphStatFor', 'lphCardHTML', 'lphHeroHTML', 'lphOpen'],
+    [
+      'lphEsc', 'lphCompact', 'lphAgo', 'lphStatFor', 'lphSongs', 'lphSleeveHTML', 'lphCardHTML',
+      'lphFeaturePick', 'lphFeatureHTML', 'lphShelfHTML', 'lphOpen',
+    ],
     scope
   );
   return { ...fns, scope };
@@ -71,26 +80,27 @@ test('only the playlist-led brand has a welcome hero', () => {
 
 test('Suffering Jukebox renders nothing and does not even fetch the picks', () => {
   const h = hero(SJ);
-  assert.equal(h.lphHeroHTML(), '');
+  assert.equal(h.lphShelfHTML(), '');
+  assert.equal(h.lphFeatureHTML(), '');
   assert.equal(h.scope.loadCalled, false, 'SJ asked the server for picks it will not show');
 });
 
-test('the hero loads its picks once, on first render', () => {
+test('the shelf loads its picks once, on first render', () => {
   const h = hero(LP);
-  h.lphHeroHTML();
+  h.lphShelfHTML();
   assert.equal(h.scope.loadCalled, true);
 
   const loaded = hero(LP, { picks: [row()] });
-  loaded.lphHeroHTML();
+  loaded.lphShelfHTML();
   assert.equal(loaded.scope.loadCalled, false, 'refetched picks it already had');
 });
 
-// ── The collage ───────────────────────────────────────────────────────────
+// ── The sleeve ────────────────────────────────────────────────────────────
 
-test('a collage is 1, 2 or 4 tiles - never 3', () => {
+test('a sleeve is 1, 2 or 4 tiles - never 3', () => {
   // aspect-ratio pins the box, not the grid inside it. Three tiles in a two
-  // column grid make two rows, and before this the second row pushed the
-  // collage down through the card and over the title.
+  // column grid make two rows, and before the rows were stated the second row
+  // pushed the collage down through the card and over the title.
   const h = hero(LP);
   const tiles = (n) =>
     (h.lphCardHTML(row({ art_urls: Array.from({ length: n }, (_, i) => `${i}.jpg`) })).match(
@@ -104,23 +114,23 @@ test('a collage is 1, 2 or 4 tiles - never 3', () => {
   assert.equal(tiles(9), 4);
 });
 
-test('the collage class states its own shape, so the CSS can size the rows', () => {
+test('the sleeve class states its own shape, so the CSS can size the rows', () => {
   const h = hero(LP);
   for (const [n, cls] of [[1, 'n1'], [2, 'n2'], [3, 'n2'], [4, 'n4']]) {
     const html = h.lphCardHTML(row({ art_urls: Array.from({ length: n }, (_, i) => `${i}.jpg`) }));
-    assert.ok(html.includes(`lph-art ${cls}`), `${n} tiles should render as ${cls}`);
+    assert.ok(html.includes(`lph-sleeve ${cls}`), `${n} tiles should render as ${cls}`);
   }
   // A playlist whose albums have no art still gets a card, not a broken one.
-  assert.ok(h.lphCardHTML(row({ art_urls: [] })).includes('lph-art n1'));
+  assert.ok(h.lphCardHTML(row({ art_urls: [] })).includes('lph-sleeve n1'));
 });
 
-test('every shape the card can emit is sized in the stylesheet', () => {
+test('every shape the sleeve can emit is sized in the stylesheet', () => {
   for (const cls of ['n1', 'n2']) {
-    assert.ok(indexHtml.includes(`.lph-art.${cls}`), `.lph-art.${cls} has no rule`);
+    assert.ok(indexHtml.includes(`.lph-sleeve.${cls}`), `.lph-sleeve.${cls} has no rule`);
   }
-  // n4 is the default 2x2 declared on .lph-art itself.
-  assert.ok(/\.lph-art \{[^}]*grid-template-rows:1fr 1fr/s.test(indexHtml));
-  assert.ok(/\.lph-art \{[^}]*overflow:hidden/s.test(indexHtml), 'the collage must clip');
+  // n4 is the default 2x2 declared on .lph-sleeve itself.
+  assert.ok(/\.lph-sleeve \{[^}]*grid-template-rows:1fr 1fr/s.test(indexHtml));
+  assert.ok(/\.lph-sleeve \{[^}]*overflow:hidden/s.test(indexHtml), 'the sleeve must clip');
 });
 
 // ── What each pick says about itself ──────────────────────────────────────
@@ -132,10 +142,11 @@ test('each pick reports the number it was chosen for', () => {
   assert.match(h.lphStatFor(row({ pick: 'new' })), /^added /);
 });
 
-test('a pick the server can return always has a badge and a button', () => {
+test('a pick the server can return always has a badge', () => {
   // The three names are the function's own contract; a fourth added to the SQL
-  // without a label here would render "Featured / Play it" and look like a bug.
+  // without a label here would render "Featured" and look like a bug.
   assert.deepStrictEqual(Object.keys(picksTable()).sort(), ['hot', 'new', 'youtube']);
+  for (const v of Object.values(picksTable())) assert.ok(v.badge, 'a pick with no badge');
   const sql = readRepoFile('supabase/migrations/20260910160000_featured_playlists.sql');
   for (const pick of Object.keys(picksTable())) {
     assert.ok(sql.includes(`'${pick}'`), `the SQL never returns pick "${pick}"`);
@@ -164,56 +175,70 @@ test('"just added" is worded in days, not a timestamp', () => {
 
 // ── The page it renders on ────────────────────────────────────────────────
 
-test('the featured strip loads even before its picks arrive', () => {
+test('the shelf shows before its picks arrive, and always offers Create', () => {
   // A first paint with no data must still show the section, and a failed fetch
   // must not leave the page empty.
   for (const state of [{ picks: null }, { picks: [], failed: true }]) {
-    const html = hero(LP, state).lphHeroHTML();
-    assert.ok(html.includes('lph'), 'no featured section');
-    assert.ok(!html.includes('Put something on'), 'welcome blurb was removed');
-    assert.ok(!html.includes('lph-steps'), 'how-to steps were removed');
+    const html = hero(LP, state).lphShelfHTML();
+    assert.ok(html.includes('lph-shelf'), 'no featured section');
+    assert.ok(html.includes('openPlaylistImporter()'), 'the Create a playlist card is missing');
     assert.ok(!html.includes('undefined'));
   }
   // Loading shows placeholders; a failure shows none rather than empty frames.
-  assert.ok(hero(LP, { picks: null }).lphHeroHTML().includes('lph-skel'));
-  assert.ok(!hero(LP, { picks: [], failed: true }).lphHeroHTML().includes('lph-skel'));
+  assert.ok(hero(LP, { picks: null }).lphShelfHTML().includes('lph-skel'));
+  assert.ok(!hero(LP, { picks: [], failed: true }).lphShelfHTML().includes('lph-skel'));
 });
 
-test('a card carries the playlist name, size and credit', () => {
+test('a card carries the playlist name, size, badge and the number behind the pick', () => {
   const html = hero(LP).lphCardHTML(row());
   assert.ok(html.includes('Early Shellac'));
   assert.ok(html.includes('28 songs'));
-  assert.ok(html.includes('Johnny Outlaw'));
   assert.ok(html.includes('Just added'));
+  assert.ok(html.includes('added 2 days ago'));
+  assert.ok(html.includes('lph-play'), 'every card has a play button');
   // One song is not "1 songs".
   const one = hero(LP).lphCardHTML(row({ track_count: 1 }));
   assert.ok(one.includes('1 song '), 'singular count is wrong');
   assert.ok(!one.includes('1 songs'));
-  // A playlist by nobody drops the credit rather than trailing a bare "by".
-  assert.ok(!hero(LP).lphCardHTML(row({ user_name: null })).includes('· by'));
 });
 
-test('a playlist name cannot inject markup into the card', () => {
-  const html = hero(LP).lphCardHTML(row({ name: '<img src=x onerror=alert(1)>' }));
-  assert.ok(!html.includes('<img src=x'), 'playlist names are user input');
-  assert.ok(html.includes('&lt;img'));
+test('a playlist name cannot inject markup into the card or the record', () => {
+  const evil = row({ pick: 'hot', name: '<img src=x onerror=alert(1)>' });
+  const h = hero(LP, { picks: [evil] });
+  for (const html of [h.lphCardHTML(evil), h.lphFeatureHTML()]) {
+    assert.ok(!html.includes('<img src=x'), 'playlist names are user input');
+    assert.ok(html.includes('&lt;img'));
+  }
 });
 
-test('the hero is mounted on the Home tab and nowhere else', () => {
+test('the record spins the hot pick, and holds its space while loading', () => {
+  const h = hero(LP, { picks: [row({ pick: 'new', name: 'A' }), row({ pick: 'hot', name: 'B' })] });
+  assert.equal(h.lphFeaturePick().name, 'B');
+  assert.ok(h.lphFeatureHTML().includes('Hot right now'));
+  // No hot pick: whatever did load.
+  assert.equal(hero(LP, { picks: [row({ name: 'A' })] }).lphFeaturePick().name, 'A');
+  assert.ok(hero(LP, { picks: null }).lphFeatureHTML().includes('lph-feature-wait'));
+  assert.equal(hero(LP, { picks: [], failed: true }).lphFeatureHTML(), '');
+});
+
+test('the hero and shelf are mounted on the Home tab and nowhere else', () => {
   // Home is the playlist-led front door; Explore Playlists is the wall.
   assert.ok(
-    /function landingHomeHTML\(\)[\s\S]*?\$\{lphHeroHTML\(\)\}/.test(indexHtml),
+    /function landingHomeHTML\(\)[\s\S]*?\$\{lphFeatureHTML\(\)\}[\s\S]*?\$\{lphShelfHTML\(\)\}/.test(indexHtml),
     'the hero is not mounted on Home',
   );
-  assert.ok(
-    !indexHtml.includes(`landingTab === 'playlists' ? lphHeroHTML()`),
-    'the hero must not also sit on Explore Playlists',
-  );
-  assert.equal(
-    (indexHtml.match(/lphHeroHTML\(\)/g) || []).length,
-    2,
-    'expected the definition plus exactly one call site',
-  );
+  for (const fn of ['lphFeatureHTML', 'lphShelfHTML']) {
+    assert.equal(
+      (indexHtml.match(new RegExp(`${fn}\\(\\)`, 'g')) || []).length,
+      2,
+      `expected the ${fn} definition plus exactly one call site`,
+    );
+  }
+});
+
+test('the listening punchcard only appears signed in', () => {
+  // Signed out it had nothing to say but "sign in", which the hero already does.
+  assert.ok(/const listening = googleUser\s*\?/.test(indexHtml), 'the punchcard is no longer gated on sign-in');
 });
 
 test('clicking a card plays that playlist', () => {
@@ -228,6 +253,36 @@ test('clicking a card plays that playlist', () => {
   assert.deepStrictEqual(played, ['abc']);
   lphOpen('nothing-by-that-name');
   assert.deepStrictEqual(played, ['abc'], 'an unknown pick must not play something else');
+});
+
+test('Start listening plays the record, or opens the wall when there is none', () => {
+  const played = [];
+  const tabs = [];
+  const scope = {
+    _lphPicks: [row({ pick: 'new', playlist_id: 'n' }), row({ pick: 'hot', playlist_id: 'h' })],
+    playPlaylist: (id) => played.push(id),
+    setLandingTab: (t) => tabs.push(t),
+  };
+  const { lphStartListening } = loadHtmlFnsInScope(['lphFeaturePick', 'lphStartListening'], scope);
+  lphStartListening();
+  assert.deepStrictEqual(played, ['h']);
+  scope._lphPicks = [];
+  lphStartListening();
+  assert.deepStrictEqual(tabs, ['playlists']);
+});
+
+test('Start a room asks a signed-out visitor to sign in instead of alerting', () => {
+  const calls = [];
+  const scope = {
+    googleUser: null,
+    handleAuthClick: () => calls.push('auth'),
+    openJukeboxHost: () => calls.push('host'),
+  };
+  const { lphStartRoom } = loadHtmlFnsInScope(['lphStartRoom'], scope);
+  lphStartRoom();
+  scope.googleUser = { email: 'a@b.c' };
+  lphStartRoom();
+  assert.deepStrictEqual(calls, ['auth', 'host']);
 });
 
 // ── The function behind it ────────────────────────────────────────────────

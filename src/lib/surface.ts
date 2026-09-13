@@ -101,13 +101,19 @@ export interface Surface {
   /**
    * The UI accent, which is a different job from themeColor. Listening Party's
    * mark is a deep purple that works as a tile behind white artwork and would
-   * be nearly invisible as a highlight on a near-black page, so the accent is
-   * a brighter relative of it rather than the same value.
+   * be nearly invisible as a highlight on a near-black page, so its accent is
+   * the orange from the same logo instead.
    */
   accent: string;
   accentHover: string;
   /** The accent as "r,g,b" so CSS can build rgba() at any alpha. */
   accentRgb: string;
+  /**
+   * Extra Google Fonts stylesheet the brand's own lettering needs, loaded in
+   * the head before first paint. Null for Suffering Jukebox, which gets by on
+   * the fonts public/index.html already requests.
+   */
+  fontsHref: string | null;
   /** Custom URL scheme the native shell signs in through. */
   authScheme: string;
   /** Sentence used when sharing the site itself. */
@@ -157,6 +163,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     accent: "#ff6b35",
     accentHover: "#ff8555",
     accentRgb: "255,107,53",
+    fontsHref: null,
     authScheme: "com.johnnyoutlaw.sufferingjukebox",
     shareText:
       "Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, ratings, and lyrics.",
@@ -207,9 +214,13 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     ogImage: `${LP_URL}/brand/lp/og-image.png`,
     ogImageSize: { w: 1200, h: 630 },
     themeColor: "#4A1B6D",
-    accent: "#9D4EDD",
-    accentHover: "#B57BEA",
-    accentRgb: "157,78,221",
+    // The logo's orange. The plum ground and cream type that go with it live
+    // in the html[data-surface="lp"] block of public/index.html.
+    accent: "#FF5E14",
+    accentHover: "#FF7A3A",
+    accentRgb: "255,94,20",
+    fontsHref:
+      "https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600;700;800&family=Lilita+One&display=swap",
     authScheme: "com.johnnyoutlaw.listeningparty",
     shareText:
       "Listening Party - build a playlist from anything on YouTube, share it with a link, and listen together.",

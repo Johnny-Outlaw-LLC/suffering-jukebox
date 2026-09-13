@@ -163,6 +163,15 @@ export function applySurfaceHead(
       : `<style>:root{--accent:${surface.accent};--accent-hover:${surface.accentHover};` +
         `--accent-rgb:${surface.accentRgb}}</style>\n`;
 
+  // A brand's own look beyond the accent: its fonts, and a data-surface stamp
+  // on <html> so the html[data-surface="..."] rules in public/index.html apply
+  // from the first frame. Nothing at all for Suffering Jukebox.
+  const look =
+    surface.id === "sj"
+      ? ""
+      : (surface.fontsHref ? `<link rel="stylesheet" href="${esc(surface.fontsHref)}">\n` : "") +
+        `<script>document.documentElement.setAttribute("data-surface",${JSON.stringify(surface.id)})</script>\n`;
+
   // Artist / playlist shells start as public/index.html, which already carries
   // a home canonical. Leaving that in place and appending a second one made
   // Google treat every /pavement and /p/… page as a duplicate of `/` — Search
@@ -180,6 +189,7 @@ export function applySurfaceHead(
   // be defined before it and JSON.stringify keeps it inert markup either way.
   const inject =
     theme +
+    look +
     `<script>window.__SURFACE__=${JSON.stringify(publicSurface(surface)).replace(
       /</g,
       "\\u003c"
