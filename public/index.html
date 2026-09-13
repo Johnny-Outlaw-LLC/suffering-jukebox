@@ -4706,6 +4706,67 @@ html[data-surface="lp"] .landing-tab:not(.landing-tab-now):hover { color: var(--
 html[data-surface="lp"] .landing-tab.active:not(.landing-tab-now) { color: var(--text); border-bottom-color: var(--accent); }
 html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .02em !important; padding: 1.2rem 1.5rem 1.6rem !important; }
 
+/* ── Phone tab bar + mini player (lptb-, .dock-mini) ────────────────────────
+   html.lp-has-tabbar is set by lptbMount() only where phoneMiniPlayer is on.
+   The tab bar sits under the full screen player (z-index 2001) and under the
+   dock (4990), which rests on top of it. */
+#lp-tabbar { display: none; }
+@media (max-width: 640px) {
+  html.lp-has-tabbar { --lp-tabbar-h: calc(58px + env(safe-area-inset-bottom, 0px)); }
+  html.lp-has-tabbar body { padding-bottom: calc(var(--ytp-dock-height) + var(--lp-tabbar-h) + 8px); }
+  html.lp-has-tabbar .landing-nav .landing-tab:not(.landing-tab-now) { display: none; }
+  #lp-tabbar { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: 2000; height: var(--lp-tabbar-h); padding: 4px 6px env(safe-area-inset-bottom, 0px);
+    background: color-mix(in srgb, var(--bg) 94%, transparent); border-top: 1px solid var(--border);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .lptb-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    border: 0; background: none; color: var(--text-muted); font: 600 11px/1 var(--lp-body, var(--mono));
+    cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .lptb-tab svg { width: 22px; height: 22px; }
+  .lptb-tab.on { color: var(--accent); }
+  .lptb-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 10px; }
+
+  /* The dock parks above the tab bar, and when closed it slides fully out of
+     sight rather than stopping behind the bar. */
+  html.lp-has-tabbar #ytp-mini-footer { bottom: var(--lp-tabbar-h); transform: translateY(calc(100% + var(--lp-tabbar-h) + 24px)); }
+  html.lp-has-tabbar #ytp-mini-footer.open { transform: translateY(0); }
+
+  html.lp-has-tabbar #ytp-mini-footer.dock-mini { left: 8px; right: 8px; bottom: calc(var(--lp-tabbar-h) + 6px); gap: 0; padding: 8px;
+    border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elevated);
+    box-shadow: 0 -8px 26px -10px rgba(0,0,0,.7); cursor: pointer; }
+  #ytp-mini-footer.dock-mini .ytp-mf-main { grid-template-columns: minmax(0,1fr) auto; grid-template-rows: 1fr;
+    grid-template-areas: "now middle"; row-gap: 0; column-gap: 8px; height: 100%; }
+  #ytp-mini-footer.dock-mini .ytp-mf-lyr,
+  #ytp-mini-footer.dock-mini .ytp-mf-scrub,
+  #ytp-mini-footer.dock-mini .ytp-mf-up-next,
+  #ytp-mini-footer.dock-mini .ytp-mf-mobile-window,
+  #ytp-mini-footer.dock-mini .ytp-mf-feedback,
+  #ytp-mini-footer.dock-mini .ytp-mf-album,
+  #ytp-mini-footer.dock-mini .ytp-mf-font-row,
+  #ytp-mini-footer.dock-mini .ytp-mf-playlist,
+  #ytp-mini-footer.dock-mini .ytp-mf-ver-slot,
+  #ytp-mini-footer.dock-mini .ytp-mf-live-badge,
+  #ytp-mini-footer.dock-mini .ytp-mf-top,
+  #ytp-mini-footer.dock-mini #ytp-mf-comment,
+  #ytp-mini-footer.dock-mini #ytp-mf-shuffle,
+  #ytp-mini-footer.dock-mini #ytp-mf-prev,
+  #ytp-mini-footer.dock-mini #ytp-mf-repeat { display: none !important; }
+  #ytp-mini-footer.dock-mini .ytp-mf-now { display: flex; align-items: center; gap: 10px; min-width: 0; height: 100%; }
+  #ytp-mini-footer.dock-mini .ytp-mf-art-wrap { flex: 0 0 46px; width: 46px; height: 46px; max-height: none;
+    border-radius: 8px; overflow: hidden; }
+  #ytp-mini-footer.dock-mini .ytp-mf-art { width: 100%; height: 100%; object-fit: cover; }
+  #ytp-mini-footer.dock-mini .ytp-mf-side { flex: 1 1 auto; width: auto; min-width: 0; padding: 0; }
+  #ytp-mini-footer.dock-mini .ytp-mf-meta { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0; min-width: 0; }
+  #ytp-mini-footer.dock-mini .ytp-mf-song-row { order: 1; min-width: 0; }
+  #ytp-mini-footer.dock-mini .ytp-mf-song { font-size: 14px; font-weight: 700; line-height: 1.25; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #ytp-mini-footer.dock-mini .ytp-mf-artist { order: 2; font-size: 12px; line-height: 1.25; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #ytp-mini-footer.dock-mini .ytp-mf-middle { width: auto; justify-content: flex-end; gap: 2px !important; }
+  #ytp-mini-footer.dock-mini #ytp-mf-playpause { width: 42px; height: 42px; border-radius: 50%; }
+  #ytp-mini-footer.dock-mini #ytp-mf-next { width: 40px; height: 40px; border-color: transparent; background: none; }
+}
+
 /* ── Listening Party Home tab (lp-home-, lph-) ─────────────────────────────── */
 /* Only ever rendered where homeTab is on, so it styles through the tokens above
    and falls back to the shared ones. Sizes are px on purpose: rem is 20px here. */
@@ -6409,7 +6470,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', shareImages: true, welcomeHero: false }
+  features: { artistPages: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', shareImages: true, welcomeHero: false, phoneMiniPlayer: false }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -6747,6 +6808,89 @@ function landingHomeHTML() {
 /** The accent at an alpha, for canvas and anywhere CSS variables cannot reach. */
 function sjAccentRgba(a) { return 'rgba(' + SJ_BRAND.accentRgb + ',' + a + ')'; }
 
+// ── Phone tab bar (lptb*) ─────────────────────────────────────────────────
+// A brand with phoneMiniPlayer is navigated by thumb on a phone: Home, Explore,
+// Create and You along the bottom edge, with the mini player resting on it.
+// Built in script so the body markup stays brand-neutral; CSS only shows it
+// under 640px, where it also hides the top tab strip it replaces.
+const LPTB_ICONS = {
+  home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg>',
+  playlists: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></g></svg>',
+  create: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M12 5v14M5 12h14"/></svg>',
+  you: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20c1.2-3.6 4-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></g></svg>',
+};
+const LPTB_TABS = [
+  { id: 'home',      label: 'Home',    onclick: "lptbGo('home')" },
+  { id: 'playlists', label: 'Explore', onclick: "lptbGo('playlists')" },
+  { id: 'create',    label: 'Create',  onclick: 'openPlaylistImporter()' },
+  { id: 'you',       label: 'You',     onclick: 'lptbYou(event)' },
+];
+
+function lptbMount() {
+  if (!SJ_BRAND.features.phoneMiniPlayer || document.getElementById('lp-tabbar')) return;
+  document.documentElement.classList.add('lp-has-tabbar');
+  const nav = document.createElement('nav');
+  nav.id = 'lp-tabbar';
+  nav.setAttribute('aria-label', 'Main');
+  nav.innerHTML = LPTB_TABS.map(t =>
+    `<button type="button" class="lptb-tab" data-lptb="${t.id}" onclick="${t.onclick}">${LPTB_ICONS[t.id]}<span>${t.label}</span></button>`
+  ).join('');
+  document.body.appendChild(nav);
+  lptbWireDock();
+}
+
+/** Marks the tab for the sheet on screen, or none while a playlist wall is open. */
+function lptbSync() {
+  const bar = document.getElementById('lp-tabbar');
+  if (!bar) return;
+  let on = '';
+  try { on = isLandingMode && viewMode !== 'playlistchart' ? landingTab : ''; } catch (_) {}
+  bar.querySelectorAll('.lptb-tab').forEach(b => b.classList.toggle('on', b.dataset.lptb === on));
+}
+
+function lptbGo(tab) {
+  if (viewMode === 'playlistchart') {
+    returnToPlaylistExplorer(tab);
+  } else if (!isLandingMode) {
+    try { localStorage.setItem('sj_landing_tab_v2', tab); } catch (_) {}
+    window.location.href = '/';
+    return;
+  } else if (landingTab !== tab) {
+    setLandingTab(tab);
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  lptbSync();
+}
+
+/** You: the account menu when signed in, sign in when not. */
+function lptbYou(e) {
+  if (!googleUser) { handleAuthClick(); return; }
+  // The menu hangs off the header, so bring the header back before opening it.
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  toggleUserMenu(e);
+}
+
+/** In the mini bar the whole bar is the way into the full player, except its own buttons. */
+function lptbWireDock() {
+  const dock = document.getElementById('ytp-mini-footer');
+  if (!dock || dock.dataset.lptbWired) return;
+  dock.dataset.lptbWired = '1';
+  dock.addEventListener('click', e => {
+    if (!dock.classList.contains('dock-mini') || e.target.closest('button, input, a')) return;
+    ytpEnterFullscreen();
+  });
+  let y0 = null;
+  dock.addEventListener('touchstart', e => {
+    y0 = dock.classList.contains('dock-mini') && !e.target.closest('button, input') ? e.touches[0].clientY : null;
+  }, { passive: true });
+  dock.addEventListener('touchend', e => {
+    if (y0 == null) return;
+    const dy = e.changedTouches[0].clientY - y0;
+    y0 = null;
+    if (dy < -30) ytpEnterFullscreen();
+  }, { passive: true });
+}
+
 // ── Landing tabs ──────────────────────────────────────────────────────────
 // Which tabs exist is a property of the brand: Suffering Jukebox leads with
 // artists, Listening Party leads with Home + playlists and has no artist
@@ -6838,6 +6982,8 @@ sjApplyBrandToDom();
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', sjApplyBrandToDom);
 }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', lptbMount);
+else lptbMount();
 let amMaxPl = 50;   // playlists the edge function will accept in one import
 let amMaxTrk = 60;  // tracks it takes from any single playlist
 // Community mode: /community shows listener-added artists; main page shows the SJ/PM catalog
@@ -11497,6 +11643,20 @@ const YTP_DOCK_MAX_FRAC = 0.5;
 // absolute floor stops a short phone from producing an unusable sliver.
 const YTP_DOCK_MOB_MIN_FRAC = 0.25;
 const YTP_DOCK_MOB_ABS_MIN = 132;
+// A brand with phoneMiniPlayer rests the phone dock as one slim bar instead:
+// artwork, song and play/pause, sitting on that brand's bottom tab bar. A tap
+// or a swipe up opens the full screen player, which is unchanged. Both the
+// resting height and ytpDockMinimize() read the floor from ytpDockMobFloor(),
+// so the two cannot disagree about which dock a brand has.
+const YTP_DOCK_MOB_MINI_H = 64;
+function ytpDockMobMini() {
+  return !!(SJ_BRAND.features && SJ_BRAND.features.phoneMiniPlayer) && ytpIsMob();
+}
+/** How tall a resting phone dock is, for this brand, on this screen. */
+function ytpDockMobFloor(vh) {
+  if (ytpDockMobMini()) return YTP_DOCK_MOB_MINI_H;
+  return Math.max(YTP_DOCK_MOB_ABS_MIN, Math.round(vh * YTP_DOCK_MOB_MIN_FRAC));
+}
 // How far past half the screen the handle has to be pulled before letting go
 // opens the full screen player. Without the overshoot the dock could never
 // rest at its own maximum.
@@ -11847,7 +12007,7 @@ function ytpApplyDockHeight() {
   // the resting height is also the floor, so its controls cannot be crushed
   // below their own layout. On a phone the floor is a quarter of the screen
   // and the bar sheds content to reach it - see .dock-compact.
-  const min = mob ? Math.max(YTP_DOCK_MOB_ABS_MIN, Math.round(vh * YTP_DOCK_MOB_MIN_FRAC)) : rest;
+  const min = mob ? ytpDockMobFloor(vh) : rest;
   const max = Math.max(min, Math.floor(vh * YTP_DOCK_MAX_FRAC));
   // Opening still lands on the height the content wants, so widening the range
   // did not change what the dock looks like when it appears.
@@ -11870,6 +12030,8 @@ function ytpApplyDockHeight() {
   // Under its resting height there is no room for the lyric strip or the up
   // next line, so the phone dock drops them rather than clipping them.
   el.classList.toggle('dock-compact', mob && h < open - 8);
+  // The mini bar is a layout of its own, not a smaller sheet - see .dock-mini.
+  el.classList.toggle('dock-mini', mob && ytpDockMobMini());
   ytpDockPlaceLyricBtn();
   // Placed here as well as in the frame callback below. It is only a few
   // measurements, and it means the words follow the drag rather than waiting
@@ -11918,7 +12080,7 @@ function ytpDockMinimize() {
   const mob = ytpIsMob();
   const vh = ytpDockViewportH();
   const rest = ytpDockMinH();
-  const min = mob ? Math.max(YTP_DOCK_MOB_ABS_MIN, Math.round(vh * YTP_DOCK_MOB_MIN_FRAC)) : rest;
+  const min = mob ? ytpDockMobFloor(vh) : rest;
   _ytpDockH = min;
   try { localStorage.setItem('sj_dock_h', String(_ytpDockH)); } catch (_) {}
   ytpApplyDockHeight();
@@ -29475,6 +29637,7 @@ function esShowMore() {
 }
 
 function renderLanding() {
+  lptbSync();
   if (landingTab === 'playlists' && !_liveRoomPlaylistsLoading) loadLiveRoomPlaylists();
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const main = document.getElementById('main');
@@ -35524,6 +35687,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-13';
 const SJ_CHANGELOG = [
   { date: '2026-09-13', items: [
     'Listening Party has a new home page. Its colours and lettering now come from the logo, Start listening plays the playlist that is hot right now, every featured playlist shows its artwork with a play button, and a Start a room door sits beside the import options.',
+    'On a phone, Listening Party now has a tab bar along the bottom (Home, Explore, Create, You), and the player rests above it as a slim bar with the artwork, the song and play/pause. Tap it or swipe up for the full player.',
   ]},
   { date: '2026-09-12', items: [
     'Opening an artist jukebox no longer freezes the tab. Chart trend lines used to load history for the whole catalogue in the background; they now load only the songs on that page.',

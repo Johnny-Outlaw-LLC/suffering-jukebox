@@ -39,6 +39,13 @@ export interface SurfaceFeatures {
    */
   welcomeHero: boolean;
   /**
+   * On a phone: a Home / Explore / Create / You tab bar along the bottom edge,
+   * with the docked player resting on top of it as one slim bar (artwork, song,
+   * play/pause) that opens the full screen player on a tap or a swipe up.
+   * Off, the phone dock keeps its quarter-screen sheet and the top tab strip.
+   */
+  phoneMiniPlayer: boolean;
+  /**
    * List public /p/<slug> playlist pages in the sitemap. On for both brands:
    * the pages are real, indexable MusicPlaylist documents and Google will not
    * find them without a listing (or a crawl path that reaches them).
@@ -182,6 +189,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       shareImages: true,
       sitemapPlaylists: true,
       welcomeHero: false,
+      phoneMiniPlayer: false,
     },
   },
 
@@ -249,6 +257,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       shareImages: false,
       sitemapPlaylists: true,
       welcomeHero: true,
+      phoneMiniPlayer: true,
     },
   },
 };
@@ -327,6 +336,7 @@ export function publicSurface(s: Surface) {
       defaultLandingTab: s.features.defaultLandingTab,
       shareImages: s.features.shareImages,
       welcomeHero: s.features.welcomeHero,
+      phoneMiniPlayer: s.features.phoneMiniPlayer,
     },
   };
 }
