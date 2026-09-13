@@ -165,8 +165,16 @@ export function parseIntake(text: string): Intake {
   const lines = input.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return { kind: "empty", reason: "nothing" };
 
-  // One link, perhaps with the sentence a share sheet puts in front of it.
-  if (lines.length <= 2 && lines.filter((l) => parseYouTubeLink(l)).length === 1) {
+  // One link, perhaps with the sentence a share sheet puts in front of it. A
+  // line beside it that reads like a song ("Artist - Title") is a second song,
+  // not chatter, or pasting a two-song list would silently lose one.
+  const linkLines = lines.filter((l) => parseYouTubeLink(l));
+  const chatter = lines.filter((l) => !parseYouTubeLink(l));
+  if (
+    lines.length <= 2 &&
+    linkLines.length === 1 &&
+    !chatter.some((l) => SEPARATORS.some((sep) => cleanLine(l).indexOf(sep) > 0))
+  ) {
     const link = parseYouTubeLink(input);
     if (link) return { kind: "link", link };
   }

@@ -36,6 +36,12 @@ test('a link with share-sheet words around it is still one link', () => {
   assert.equal(r.link.videoId, 'dQw4w9WgXcQ');
 });
 
+test('a song line beside a link is a second song, not share-sheet chatter', () => {
+  const r = intake.parseIntake('Random Rules - Silver Jews\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(r.kind, 'songs');
+  assert.deepEqual(r.songs.map((s) => s.videoId || s.line), ['Random Rules - Silver Jews', 'dQw4w9WgXcQ']);
+});
+
 test('one line with no separator is a search, one with a separator is a song', () => {
   assert.deepEqual(intake.parseIntake('Silver Jews'), { kind: 'query', query: 'Silver Jews' });
   const r = intake.parseIntake('Pavement - Gold Soundz');
