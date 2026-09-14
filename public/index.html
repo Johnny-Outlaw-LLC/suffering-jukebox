@@ -653,6 +653,13 @@ body:not(.light) .tt-num { color: var(--text); }
 .adm-save select { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font: inherit; font-size: .64rem; padding: .5rem .6rem; max-width: 100%; min-width: 0; }
 .adm-vis { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; font-size: .58rem; color: var(--text-muted); }
 .adm-count { font-size: .58rem; color: var(--text-muted); margin-right: auto; }
+#admOverlay.adm-pl .modal { max-width: 760px; }
+.adm-n { min-width: 1.4rem; text-align: right; font-size: .56rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.adm-song.pl .adm-side { flex-direction: row; align-items: center; gap: .35rem; }
+.adm-rm { background: none; border: 0; color: var(--text-muted); font: inherit; font-size: .7rem; line-height: 1; cursor: pointer; padding: .25rem .35rem; border-radius: 6px; }
+.adm-rm:hover { color: var(--text); background: var(--bg-elevated); }
+#admOverlay .plb-results { max-height: min(46vh, 440px); }
+#admOverlay .plb-search-row input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text); font: inherit; font-size: .64rem; padding: .3rem 0; }
 @media (max-width: 640px) {
   #admOverlay { padding: .6rem; }
   .adm-song { grid-template-columns: auto 44px minmax(0,1fr); }
@@ -6386,46 +6393,6 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="closeManagePlaylists()">Close</button>
       <button class="pl-btn" onclick="openPlaylistBuilder('build')">＋ Build a Playlist</button>
-    </div>
-  </div>
-</div>
-
-<!-- BUILD / ADD SONGS TO PLAYLIST -->
-<div class="pl-modal-overlay" id="plBuilderOverlay">
-  <div class="pl-modal plb-modal">
-    <div class="pl-modal-header">
-      <span class="pl-modal-title" id="plb-title">Build a Playlist</span>
-      <button class="modal-close" onclick="closePlaylistBuilder()">✕</button>
-    </div>
-    <div class="pl-modal-body plb-body">
-      <div class="plb-top" id="plb-top"></div>
-      <div class="plb-search-row" id="plb-catalog-search-row">
-        <span class="plb-search-ic">🔍</span>
-        <input type="text" id="plb-search" placeholder="Search songs, artists, albums, or lyrics…" autocomplete="off"
-          oninput="plbDebounce(this.value)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();plbRunSearch(this.value)}if(event.key==='Escape')closePlaylistBuilder()">
-      </div>
-      <div class="plb-yt" id="plb-yt-section">
-        <button type="button" class="plb-yt-toggle" id="plb-yt-toggle" onclick="plbyToggle()">+ Can’t find it? Add from YouTube directly</button>
-        <div id="plb-yt-panel" style="display:none;margin-top:.5rem">
-          <div class="mj-search"><input type="text" id="plby-search-input" placeholder="Search YouTube for a song, or paste a YouTube playlist link" autocomplete="off"
-            onkeydown="if(event.key==='Enter'){event.preventDefault();plbySearch()}"><button class="pl-btn" onclick="plbySearch()">Search</button></div>
-          <div id="plby-results"></div>
-        </div>
-      </div>
-      <div class="plb-split" id="plb-split">
-        <div class="plb-results" id="plb-results"><div class="plb-empty">Search the catalogue to add artists, albums, or tracks.</div></div>
-        <div class="plb-basket">
-          <div class="plb-basket-hdr"><span id="plb-basket-lbl">Playlist · 0 songs</span><button type="button" class="plb-clear" id="plb-clear-btn" onclick="plbClearDraft()" style="display:none">Clear</button></div>
-          <div class="plb-basket-list" id="plb-basket-list"><div class="plb-empty">Nothing added yet.</div></div>
-        </div>
-      </div>
-      <div class="plb-confirm-panel" id="plb-confirm-panel" style="display:none"></div>
-    </div>
-    <div class="pl-modal-footer">
-      <button class="pl-btn ghost" onclick="closePlaylistBuilder()">Cancel</button>
-      <button class="pl-btn ghost" id="plb-back-btn" onclick="plbWizardBack()" style="display:none;margin-left:auto">Back</button>
-      <button class="pl-btn" id="plb-save-btn" onclick="plbPrimaryAction()" disabled>Create Playlist</button>
     </div>
   </div>
 </div>
@@ -22600,7 +22567,15 @@ let _plbImportDest = 'new'; // import mode: 'new' or an existing playlist id
 let _plbImportName = '';
 let _plbImportPublic = false;
 
+// Create a Playlist, Build a Playlist and Add Songs are all the Add music box
+// now, in its playlist mode (admOpenPlaylist). The wizard below is no longer
+// reachable; its browse and search helpers (plbRenderBrowse, plbRunSearch,
+// plbAdd*) still are, and plbPushTracks hands their songs to the box.
 function openPlaylistBuilder(mode, playlistId) {
+  admOpenPlaylist(mode === 'add' ? playlistId : null);
+}
+
+function plbOpenLegacyBuilder(mode, playlistId) {
   if (!googleUser) { showToast('Sign in to build playlists.'); return; }
   _plbMode = mode === 'add' ? 'add' : (mode === 'import' ? 'import' : 'build');
   _plbPlaylistId = playlistId || null;
@@ -22953,6 +22928,7 @@ function plbDebounce(val) {
 }
 
 function plbDraftHas(trackId) {
+  if (admBrowsing()) return _adm.rows.some(r => r.trackId === trackId);
   return _plbDraft.some(d => d.trackId === trackId);
 }
 
@@ -23043,6 +23019,7 @@ function plbRefreshAddButtons() {
 }
 
 function plbPushTracks(rows) {
+  if (admBrowsing()) return admAddCatalogRows(rows);
   let added = 0;
   rows.forEach(r => {
     if (!r?.trackId) return;
@@ -23062,7 +23039,7 @@ function plbPushTracks(rows) {
 
 function plbAddTrack(trackId, title, artist, album) {
   const n = plbPushTracks([{ trackId, title, artist, album }]);
-  if (!n) showToast(_plbExisting.has(trackId) ? 'Already on this playlist.' : 'Already in the draft.');
+  if (!n) showToast(_plbExisting.has(trackId) ? 'Already on this playlist.' : 'Already on the list.');
 }
 
 // ── Add from YouTube, from inside the playlist builder ───────────────
@@ -23487,7 +23464,7 @@ async function plbAddAlbum(albumId, btn) {
       trackId: t.id, title: t.name, artist: artistName, album: alb.name || '',
     })));
     if (btn) { btn.dataset.plbDone = '1'; btn.textContent = n ? `Added ${n}` : 'All added'; btn.classList.add('on'); }
-    showToast(n ? `Added ${n} song${n === 1 ? '' : 's'} from ${alb.name || 'album'}.` : 'Those songs are already in the draft.');
+    showToast(n ? `Added ${n} song${n === 1 ? '' : 's'} from ${alb.name || 'album'}.` : 'Those songs are already on the list.');
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '+ Add album'; }
     showToast('Could not add that album.');
@@ -23512,7 +23489,7 @@ async function plbAddArtist(artistId, btn) {
       trackId: t.id, title: t.name, artist: artist.name || '', album: albName[t.album_id] || '',
     })));
     if (btn) { btn.dataset.plbDone = '1'; btn.textContent = n ? `Added ${n}` : 'All added'; btn.classList.add('on'); }
-    showToast(n ? `Added ${n} song${n === 1 ? '' : 's'} by ${artist.name}.` : 'Those songs are already in the draft.');
+    showToast(n ? `Added ${n} song${n === 1 ? '' : 's'} by ${artist.name}.` : 'Those songs are already on the list.');
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '+ Add all songs'; }
     showToast('Could not add that artist.');
@@ -33138,11 +33115,14 @@ function admFresh(text) {
     rows: [], artists: [], playlistId: null, truncated: false, ytSearched: false,
     busy: false, progress: '', err: '', errSignIn: false,
     saveOpen: false, dest: 'new', name: '', plId: null, vis: sjDefaultImportVisibility(), done: null,
+    // Playlist mode: Create a Playlist / Add Songs. target is the playlist
+    // being added to (null makes a new one), pane is which door is open.
+    mode: 'music', target: null, pane: 'box', browseQ: '',
   };
 }
 
 function admOpen(text, opts) {
-  if (!_adm || _adm.phase === 'done' || typeof text === 'string') _adm = admFresh(text);
+  if (!_adm || _adm.phase === 'done' || _adm.mode === 'playlist' || typeof text === 'string') _adm = admFresh(text);
   document.getElementById('admOverlay')?.classList.add('open');
   admRender();
   if (_adm.phase === 'input') setTimeout(() => document.getElementById('adm-text')?.focus(), 60);
@@ -33159,6 +33139,13 @@ function admStartOver() {
 }
 
 function admTry(text, run) {
+  // A playlist being built keeps its list; the new songs join it.
+  if (_adm?.mode === 'playlist') {
+    _adm.text = text; _adm.phase = 'input'; _adm.pane = 'box';
+    admRender();
+    if (run) admFind();
+    return;
+  }
   _adm = admFresh(text);
   admRender();
   if (run) admFind();
@@ -33180,6 +33167,13 @@ function admRender() {
   const body = document.getElementById('adm-body');
   const foot = document.getElementById('adm-foot');
   if (!body || !foot || !_adm) return;
+  admPaintTitle();
+  if (_adm.mode === 'playlist' && (_adm.phase === 'input' || _adm.phase === 'reading')) {
+    body.innerHTML = admPlaylistInputHTML();
+    foot.innerHTML = admPlaylistInputFootHTML();
+    if (_adm.pane === 'browse') admBrowseRefresh(); else admWireDrop();
+    return;
+  }
   if (_adm.phase === 'input' || _adm.phase === 'reading') {
     body.innerHTML = admInputHTML();
     foot.innerHTML = '<button class="m-btn ghost" onclick="admClose()">Cancel</button>' +
@@ -33205,13 +33199,15 @@ function admErrHTML() {
     (_adm.errSignIn ? '<button type="button" class="pl-btn" onclick="admSignIn()">Sign in</button>' : '') + '</div>';
 }
 
-function admInputHTML() {
+function admInputHTML(forPlaylist) {
   const a = _adm;
   const working = a.phase === 'reading';
   const more = ['<button type="button" onclick="importMusicPick(\'artist\')">Import a whole discography</button>'];
   if (SJ_BRAND.features.spotifyImport) more.push('<button type="button" onclick="importMusicPick(\'spotify\')">Import from Spotify</button>');
-  return '<p class="adm-lede">Paste a YouTube link, type a song or an artist, or paste a list of songs. ' +
-      'A screenshot of a video, a playlist or a setlist works too.</p>' +
+  const lede = forPlaylist
+    ? 'Paste a YouTube link or playlist, type songs one per line, or add a screenshot of a playlist or a setlist. Songs already in the Jukebox are matched first.'
+    : 'Paste a YouTube link, type a song or an artist, or paste a list of songs. A screenshot of a video, a playlist or a setlist works too.';
+  return '<p class="adm-lede">' + lede + '</p>' +
     '<div class="adm-drop" id="adm-drop">' +
       '<textarea id="adm-text" class="adm-text" placeholder="Artist - Song&#10;a YouTube link&#10;or a whole list, one song per line"' +
         (working ? ' disabled' : '') +
@@ -33224,7 +33220,7 @@ function admInputHTML() {
       '</div>' +
     '</div>' +
     admErrHTML() +
-    '<div class="adm-more"><span>More ways in:</span>' + more.join('') + '</div>';
+    (forPlaylist ? '' : '<div class="adm-more"><span>More ways in:</span>' + more.join('') + '</div>');
 }
 
 function admCounts() {
@@ -33239,6 +33235,7 @@ function admPlural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
 
 function admResultsHTML() {
   const a = _adm;
+  if (a.mode === 'playlist') return admPlaylistResultsHTML();
   const rows = a.rows;
   const { ready, pending, missing } = admCounts();
   let head;
@@ -33298,6 +33295,7 @@ function admResultsHTML() {
 }
 
 function admRowHTML(r, i) {
+  if (_adm?.mode === 'playlist') return admPlaylistRowHTML(r, i);
   const img = r.thumbnail
     ? '<img class="adm-thumb" alt="" loading="lazy" src="' + escHtml(r.thumbnail) + '">'
     : '<span class="adm-thumb"></span>';
@@ -33316,6 +33314,7 @@ function admRowHTML(r, i) {
 }
 
 function admChipHTML(r, i) {
+  if (r._dupe) return '<span class="adm-chip">Already on it</span>';
   if (r.note) return '<span class="adm-chip warn">' + escHtml(r.note) + '</span>';
   if (r.source === 'catalog') {
     return r.weak
@@ -33333,6 +33332,7 @@ function admChipHTML(r, i) {
 }
 
 function admResultsFootHTML() {
+  if (_adm.mode === 'playlist') return admPlaylistFootHTML();
   const on = admSelected().length;
   const dis = !on || _adm.busy ? ' disabled' : '';
   return '<span class="adm-count" id="adm-count">' + on + ' selected</span>' +
@@ -33351,7 +33351,7 @@ function admPaintCount() {
   if (!_adm) return;
   const on = admSelected().length;
   const count = document.getElementById('adm-count');
-  if (count) count.textContent = on + ' selected';
+  if (count) count.textContent = _adm.mode === 'playlist' ? admPlural(on, 'song') + ' ready' : on + ' selected';
   document.querySelectorAll('#adm-foot [data-adm-act]').forEach(b => { b.disabled = !on || _adm.busy; });
   const go = document.getElementById('adm-save-go');
   if (go) go.disabled = !on || _adm.busy;
@@ -33371,7 +33371,9 @@ function admSelectAll(on) {
   admRender();
 }
 
-function admSelected() { return (_adm?.rows || []).filter(r => r._on && r.videoId); }
+// A playlist only needs the Jukebox track, so a browsed song counts before its
+// video id has come back.
+function admSelected() { return (_adm?.rows || []).filter(r => r._on && (r.videoId || (_adm.mode === 'playlist' && r.trackId))); }
 
 // ── Finding ───────────────────────────────────────────────────────────────
 async function admFind() {
@@ -33404,6 +33406,7 @@ function admTake(data) {
     return;
   }
   if (data.kind === 'channel') { a.phase = 'input'; admClose(); admOpenChannel(data.url); return; }
+  if (a.mode === 'playlist') { admTakeForPlaylist(data); return; }
   a.phase = 'results';
   a.kind = data.kind; a.source = data.source || null; a.title = data.title || ''; a.query = data.query || '';
   a.playlistId = data.playlistId || null; a.truncated = !!data.truncated;
@@ -33852,6 +33855,409 @@ async function admSave() {
   if (_adm === a) admRender();
 }
 
+// ── Create a Playlist (playlist mode) ─────────────────────────────────────
+// Create a Playlist, Build a Playlist and Add Songs are this same box. Two
+// doors fill one list: the box itself (links, lists, screenshots, matched
+// against the Jukebox before anything goes near YouTube) and Browse existing
+// songs, which is the old builder's artist / album / song browser. A single
+// typed artist or song opens Browse on that search, so what we already hold
+// is offered before a YouTube look-up. The list IS the playlist - no ticks,
+// just remove - and the playlist's visibility decides who can see songs new
+// to the Jukebox. There is no separate catalogue question.
+function admBrowsing() {
+  return _adm?.mode === 'playlist' && !!document.getElementById('admOverlay')?.classList.contains('open');
+}
+
+function admPlaylistVis(p) {
+  return (p?.visibility === 'public' || p?.is_public) ? 'public' : 'private';
+}
+
+function admRowKey(r) {
+  return r.trackId ? 't' + r.trackId : r.videoId ? 'v' + r.videoId : 'l' + String(r.line || r.title || '').toLowerCase();
+}
+
+function admOpenPlaylist(targetId) {
+  targetId = targetId || null;
+  const target = targetId ? plbPlaylistById(targetId) : null;
+  if (targetId && !target) { showToast('Playlist not found.'); return; }
+  document.getElementById('plModalOverlay')?.classList.remove('open');
+  if (!_adm || _adm.mode !== 'playlist' || _adm.target !== targetId) {
+    _adm = Object.assign(admFresh(), { mode: 'playlist', target: targetId });
+    if (target) _adm.vis = admPlaylistVis(target);
+    // A fresh session re-reads the artist list, so a new import shows up.
+    _plbBrowseArtists = null; _plbArtistAlbums = {}; _plbAlbumTracks = {};
+  }
+  _plbExisting = new Set((target?._tracks || []).map(r => r.track_id).filter(Boolean));
+  document.getElementById('admOverlay')?.classList.add('open');
+  admRender();
+  if (_adm.phase === 'input') {
+    setTimeout(() => document.getElementById(_adm?.pane === 'browse' ? 'plb-search' : 'adm-text')?.focus(), 60);
+  }
+}
+
+function admPaintTitle() {
+  const pl = _adm?.mode === 'playlist';
+  document.getElementById('admOverlay')?.classList.toggle('adm-pl', !!pl);
+  const el = document.getElementById('adm-title');
+  if (!el) return;
+  if (!pl) { el.textContent = 'Add music'; return; }
+  const t = _adm.target ? plbPlaylistById(_adm.target) : null;
+  el.textContent = !_adm.target ? 'Create a Playlist'
+    : _adm.target === '__dynamic_now_playing' ? 'Add to Now Playing'
+    : 'Add songs to ' + (t?.name || 'the playlist');
+}
+
+function admPlaylistInputHTML() {
+  const a = _adm;
+  const tab = (id, label) => '<button type="button" class="plb-src-tab' + (a.pane === id ? ' on' : '') +
+    '" onclick="admSetPane(\'' + id + '\')"' + (a.busy ? ' disabled' : '') + '>' + label + '</button>';
+  return '<div class="plb-src-row">' + tab('box', 'Paste, type or add a screenshot') + tab('browse', 'Browse existing songs') + '</div>' +
+    (a.pane === 'browse' ? admBrowseHTML() : admInputHTML(true));
+}
+
+function admPlaylistInputFootHTML() {
+  const a = _adm;
+  const n = a.rows.length;
+  let html = '<button class="m-btn ghost" onclick="admClose()">Cancel</button>';
+  if (n) {
+    html += '<button class="m-btn' + (a.pane === 'browse' ? '' : ' ghost') + '" onclick="admShowList()">' +
+      (a.pane === 'browse' ? 'Continue with ' : 'Back to the list · ') + admPlural(n, 'song') + '</button>';
+  }
+  if (a.pane === 'box') html += '<button class="m-btn" onclick="admFind()"' + (a.busy ? ' disabled' : '') + '>Find songs</button>';
+  return html;
+}
+
+function admPaintInputFoot() {
+  const foot = document.getElementById('adm-foot');
+  if (foot && _adm?.mode === 'playlist' && _adm.phase === 'input') foot.innerHTML = admPlaylistInputFootHTML();
+}
+
+function admSetPane(pane) {
+  const a = _adm;
+  if (!a || a.busy) return;
+  a.text = document.getElementById('adm-text')?.value ?? a.text;
+  a.pane = pane === 'browse' ? 'browse' : 'box';
+  a.err = '';
+  admRender();
+  setTimeout(() => document.getElementById(a.pane === 'browse' ? 'plb-search' : 'adm-text')?.focus(), 40);
+}
+
+function admBrowseHTML() {
+  const a = _adm;
+  return '<div class="plb-search-row"><span class="plb-search-ic">🔍</span>' +
+      '<input type="text" id="plb-search" placeholder="Search songs, artists or albums already in the Jukebox" autocomplete="off" value="' + escHtml(a.browseQ) + '"' +
+      ' oninput="_adm.browseQ=this.value;plbDebounce(this.value)"' +
+      ' onkeydown="if(event.key===\'Enter\'){event.preventDefault();plbRunSearch(this.value)}"></div>' +
+    '<div class="plb-results" id="plb-results"><div class="plb-empty">Loading…</div></div>' +
+    '<div class="adm-note">Not in the Jukebox yet?<button type="button" class="pl-btn ghost" onclick="admBrowseYouTube()">Look it up on YouTube</button></div>' +
+    admErrHTML();
+}
+
+function admBrowseRefresh() {
+  plbRunSearch((_adm?.browseQ || '').trim());
+}
+
+// Browsed songs land in the list straight away. Their video ids follow, for
+// the thumbnails and for Now Playing, which queues videos rather than tracks.
+function admAddCatalogRows(list) {
+  const a = _adm;
+  const have = new Set(a.rows.map(admRowKey));
+  const fresh = [];
+  (list || []).forEach(r => {
+    if (!r?.trackId || _plbExisting.has(r.trackId)) return;
+    const row = {
+      key: 't' + r.trackId, line: r.title || '', trackId: r.trackId, title: r.title || 'Track',
+      artist: r.artist || '', album: r.album || '', videoId: null, thumbnail: '',
+      source: 'catalog', weak: false, note: null, query: null, _on: true, _state: null,
+    };
+    const k = admRowKey(row);
+    if (have.has(k)) return;
+    have.add(k);
+    fresh.push(row);
+  });
+  if (fresh.length) {
+    a.rows = a.rows.concat(fresh);
+    loadYT(fresh.map(r => r.trackId)).then(v => {
+      fresh.forEach(r => {
+        const vid = v?.[r.trackId]?.video_id;
+        if (vid) { r.videoId = vid; r.thumbnail = 'https://i.ytimg.com/vi/' + vid + '/mqdefault.jpg'; }
+      });
+    }).catch(() => {});
+  }
+  plbRefreshAddButtons();
+  admPaintInputFoot();
+  return fresh.length;
+}
+
+function admBrowseYouTube() {
+  const a = _adm;
+  if (!a || a.busy) return;
+  const q = (document.getElementById('plb-search')?.value ?? a.browseQ).trim();
+  if (!q) { a.err = 'Type the song and the artist in the search box first.'; admRender(); return; }
+  const row = admPrepRow({ key: 'q' + Date.now(), line: q, title: q, artist: '', query: q, note: null, weak: false });
+  if (!a.rows.some(r => admRowKey(r) === admRowKey(row))) a.rows.push(row);
+  a.browseQ = ''; a.phase = 'results'; a.err = '';
+  admRender();
+  admAfterResults();
+}
+
+function admTakeForPlaylist(data) {
+  const a = _adm;
+  // One artist or one song: show what the Jukebox already has first.
+  if (data.kind === 'query') {
+    a.phase = 'input'; a.pane = 'browse'; a.browseQ = data.query || a.text; a.text = '';
+    return;
+  }
+  a.phase = 'results';
+  a.kind = data.kind; a.source = data.source || null;
+  a.playlistId = data.playlistId || null; a.truncated = !!data.truncated;
+  const have = new Set(a.rows.map(admRowKey));
+  const fresh = (data.rows || []).map(admPrepRow).filter(r => {
+    const k = admRowKey(r);
+    if (have.has(k)) return false;
+    have.add(k);
+    return true;
+  });
+  fresh.forEach(r => { if (r.trackId && _plbExisting.has(r.trackId)) { r._dupe = true; r._on = false; } });
+  if (!fresh.length && a.rows.length) a.err = 'Those songs are already on the list.';
+  a.rows = a.rows.concat(fresh);
+  a.text = '';
+  if (!a.name) a.name = data.title || (a.source === 'screenshot' ? 'From a screenshot' : '');
+}
+
+function admShowList() {
+  const a = _adm;
+  if (!a || a.busy) return;
+  a.text = document.getElementById('adm-text')?.value ?? a.text;
+  a.phase = 'results'; a.err = '';
+  admRender();
+  admAfterResults();
+}
+
+function admAddMore(pane) {
+  const a = _adm;
+  if (!a || a.busy) return;
+  a.phase = 'input'; a.pane = pane === 'browse' ? 'browse' : 'box'; a.err = '';
+  admRender();
+  setTimeout(() => document.getElementById(a.pane === 'browse' ? 'plb-search' : 'adm-text')?.focus(), 40);
+}
+
+function admRemoveRow(i) {
+  const a = _adm;
+  if (!a?.rows[i]) return;
+  // Look-ups walk the list by index; removing a row mid-walk would shift them.
+  if (a.busy) { showToast('One moment, still looking songs up.'); return; }
+  a.rows.splice(i, 1);
+  admRender();
+}
+
+function admClearRows() {
+  const a = _adm;
+  if (!a || a.busy || !a.rows.length) return;
+  if (a.rows.length > 3 && !confirm('Clear all ' + a.rows.length + ' songs from the list?')) return;
+  a.rows = []; a.err = '';
+  admRender();
+}
+
+function admPlaylistResultsHTML() {
+  const a = _adm;
+  const rows = a.rows;
+  const { pending, missing } = admCounts();
+  const dupes = rows.filter(r => r._dupe).length;
+  const bits = [admPlural(rows.length, 'song')];
+  if (pending) bits.push(pending + ' to look up');
+  if (missing) bits.push(missing + ' not found');
+  if (dupes) bits.push(dupes + ' already on it');
+  let html = '<div class="adm-head"><b>' + (a.target ? 'Songs to add' : 'Your playlist') + '</b><span>' + bits.join(' · ') + '</span></div>' +
+    '<div class="adm-head"><button type="button" class="adm-link" onclick="admAddMore(\'box\')">+ Paste or type more</button>' +
+    '<button type="button" class="adm-link" onclick="admAddMore(\'browse\')">+ Browse existing songs</button>' +
+    (rows.length ? '<button type="button" class="adm-link" onclick="admClearRows()">Clear</button>' : '') + '</div>';
+  if (a.source === 'video' && a.playlistId) {
+    html += '<div class="adm-note">That video is part of a playlist.<button type="button" class="pl-btn" onclick="admTry(\'https://www.youtube.com/playlist?list=' +
+      encodeURIComponent(a.playlistId) + '\', true)">Add the whole playlist</button></div>';
+  }
+  if (a.truncated) html += '<div class="adm-note">Only the first 200 songs were read.</div>';
+  const waiting = rows.filter(r => !r.videoId && r.query && ADM_WAITING.includes(r._state)).length;
+  if (waiting && !a.busy) {
+    html += googleUser
+      ? '<div class="adm-note">' + admPlural(waiting, 'song') + ' still to look up on YouTube.' +
+        '<button type="button" class="pl-btn" onclick="admLookUpMissing()">Look up ' + Math.min(ADM_LOOKUP_BATCH, waiting) + ' more</button></div>'
+      : '<div class="adm-note">' + (waiting === 1 ? '1 song is' : waiting + ' songs are') + ' not in the Jukebox yet. Sign in and we will find them on YouTube.' +
+        '<button type="button" class="pl-btn" onclick="admSignIn()">Sign in</button></div>';
+  }
+  if (a.busy && a.progress) html += '<div class="adm-note" id="adm-progress">' + escHtml(a.progress) + '</div>';
+  html += admErrHTML();
+  html += rows.length
+    ? '<div class="adm-list">' + rows.map(admRowHTML).join('') + '</div>'
+    : '<div class="adm-note">No songs yet. Paste some in, or browse the songs already in the Jukebox.</div>';
+  if (!a.target) {
+    html += '<div class="adm-save" id="adm-save">' +
+      '<input class="m-input" id="adm-name" maxlength="120" placeholder="Playlist name" value="' + escHtml(a.name) + '" oninput="_adm.name=this.value">' +
+      '<div class="adm-vis">Who can see it' +
+        '<button type="button" class="pl-btn' + (a.vis === 'public' ? '' : ' ghost') + '" onclick="admSetVis(\'public\')">Everyone</button>' +
+        '<button type="button" class="pl-btn' + (a.vis === 'private' ? '' : ' ghost') + '" onclick="admSetVis(\'private\')">Only me</button>' +
+      '</div>' +
+      '<div class="adm-lede">Songs new to the Jukebox can be seen by the same people as the playlist.</div></div>';
+  }
+  return html;
+}
+
+function admPlaylistRowHTML(r, i) {
+  const img = r.thumbnail
+    ? '<img class="adm-thumb" alt="" loading="lazy" src="' + escHtml(r.thumbnail) + '">'
+    : '<span class="adm-thumb"></span>';
+  const unmatched = !r.videoId && !r.trackId && !r.note;
+  const title = unmatched ? (r.line || r.title || 'Untitled') : (r.title || r.line || 'Untitled');
+  const sub = unmatched ? '' : (r.artist || '');
+  const dim = r._dupe || (!r.videoId && !r.trackId);
+  return '<div class="adm-song pl' + (dim ? ' off' : '') + '" id="adm-row-' + i + '">' +
+    '<span class="adm-n">' + (i + 1) + '</span>' + img +
+    '<div style="min-width:0"><div class="adm-t" title="' + escHtml(title) + '">' + escHtml(title) + '</div>' +
+      '<div class="adm-a">' + escHtml(sub) + '</div></div>' +
+    '<div class="adm-side">' + admChipHTML(r, i) +
+      '<button type="button" class="adm-rm" onclick="admRemoveRow(' + i + ')" title="Remove" aria-label="Remove ' + escHtml(title) + '">✕</button></div></div>';
+}
+
+function admPlaylistFootHTML() {
+  const a = _adm;
+  const n = admSelected().length;
+  const t = a.target ? plbPlaylistById(a.target) : null;
+  const label = !a.target ? 'Save playlist'
+    : a.target === '__dynamic_now_playing' ? 'Add to Now Playing'
+    : 'Add to ' + (t?.name || 'the playlist');
+  return '<span class="adm-count" id="adm-count">' + admPlural(n, 'song') + ' ready</span>' +
+    '<button class="m-btn ghost" onclick="admClose()">Cancel</button>' +
+    '<button class="m-btn" id="adm-save-go" data-adm-act onclick="admSavePlaylist()"' + (!n || a.busy ? ' disabled' : '') + '>' + escHtml(label) + '</button>';
+}
+
+// Songs that only exist on YouTube become Jukebox songs first: a playlist row
+// needs a track id. Same add_youtube import and courtesy pause as admSave.
+async function admImportYouTubeRows(rows, vis) {
+  let imported = 0, failed = 0;
+  for (let n = 0; n < rows.length; n++) {
+    const r = rows[n];
+    if (r.trackId || !r.videoId) continue;
+    admPaintProgress('Adding ' + (n + 1) + ' of ' + rows.length + ' to the Jukebox…');
+    try {
+      const data = await mjRequest('/api/my-jukebox', 'POST', {
+        action: 'add_youtube',
+        videoId: r.videoId,
+        artistName: (r.artist || '').trim() || null,
+        trackName: (r.title || '').trim() || null,
+        visibility: vis,
+        userName: sjDisplayName(),
+      });
+      if (data.items && typeof _mjState !== 'undefined' && _mjState) _mjState.items = data.items;
+      if (data.catalogTrackId) { r.trackId = data.catalogTrackId; r.source = 'catalog'; imported++; }
+      else failed++;
+    } catch (e) {
+      failed++;
+    }
+    await new Promise(res => setTimeout(res, 400));
+  }
+  return { imported, failed };
+}
+
+async function admSavePlaylist() {
+  const a = _adm;
+  if (!a || a.busy) return;
+  if (!googleUser) { admSignIn(); return; }
+  const rows = admSelected();
+  if (!rows.length) return;
+  const target = a.target ? plbPlaylistById(a.target) : null;
+  if (a.target && !target) { a.err = 'That playlist could not be found.'; admRender(); return; }
+  const name = (a.name || '').trim();
+  if (!a.target && !name) { a.err = 'Give the playlist a name.'; admRender(); document.getElementById('adm-name')?.focus(); return; }
+  a.busy = true; a.err = '';
+  admPaintProgress('Saving…');
+  admPaintCount();
+
+  // Now Playing is the queue, not a table: queue the videos and stop.
+  if (a.target === '__dynamic_now_playing') {
+    try {
+      const need = rows.filter(r => !r.videoId && r.trackId);
+      if (need.length) {
+        const v = await loadYT(need.map(r => r.trackId));
+        need.forEach(r => { r.videoId = v?.[r.trackId]?.video_id || null; });
+      }
+    } catch (_) {}
+    const additions = rows.filter(r => r.videoId && !(r.trackId && _plbExisting.has(r.trackId))).map(r => {
+      if (r.trackId) {
+        SJ_TRACK_META[r.trackId] = Object.assign({}, SJ_TRACK_META[r.trackId] || {}, { title: r.title || '', artist: r.artist || '', album: r.album || '' });
+      }
+      return ytQueueItem(r.videoId, r.title || r.ytTitle || 'Track', r.trackId || null, r.artist || '');
+    });
+    ytQueue.push(...additions);
+    updateYTQueueUI({ preserveScroll: true });
+    _adm = null;
+    admClose();
+    showToast('Added ' + admPlural(additions.length, 'song') + ' to Now Playing.');
+    await openPlaylistChart('__dynamic_now_playing');
+    return;
+  }
+
+  const vis = target ? admPlaylistVis(target) : a.vis;
+  let created = null, plId = null, msg = '';
+  try {
+    const { failed } = await admImportYouTubeRows(rows, vis);
+    const trackIds = [];
+    rows.forEach(r => { if (r.trackId && !trackIds.includes(r.trackId)) trackIds.push(r.trackId); });
+    if (!trackIds.length) throw new Error('None of those songs could be added.');
+    let plName = name, existing = new Set(), start = 0;
+    if (target) {
+      plId = target.id; plName = target.name || 'your playlist';
+      const cur = await dbGetAuth('/playlist_tracks?playlist_id=eq.' + plId + '&select=track_id,position');
+      existing = new Set(cur.map(x => x.track_id));
+      start = cur.reduce((m, x) => Math.max(m, Number(x.position) || 0), 0);
+    } else {
+      admPaintProgress('Saving the playlist…');
+      const [pl] = await dbPost('/playlists', {
+        name,
+        is_public: vis === 'public',
+        visibility: vis,
+        user_email: String(googleUser.email || '').trim().toLowerCase(),
+        user_name: sjDisplayName(),
+        context: _playlistContext(),
+      });
+      if (!pl?.id) throw new Error('The playlist was created but could not be read back.');
+      created = pl; plId = pl.id;
+    }
+    const credit = plTrackCredit();
+    const add = trackIds.filter(t => !existing.has(t));
+    const newRows = add.map((t, k) => Object.assign({ playlist_id: plId, track_id: t, position: start + PL_POS_STEP * (k + 1) }, credit));
+    if (newRows.length) await dbPostRows('/playlist_tracks', newRows);
+    if (created && vis === 'public') {
+      try {
+        const data = await playlistShareRequest({ action: 'settings', playlistId: created.id, visibility: 'public', publicPreset: 'listen' });
+        created.visibility = data.visibility || 'public';
+      } catch (_) {}
+    }
+    const already = trackIds.length - add.length;
+    msg = (target ? 'Added ' + admPlural(add.length, 'song') + ' to “' + plName + '”.' : 'Saved “' + plName + '” with ' + admPlural(add.length, 'song') + '.') +
+      (already ? ' ' + admPlural(already, 'song') + ' were already on it.' : '') +
+      (failed ? ' ' + admPlural(failed, 'song') + ' could not be added.' : '');
+  } catch (e) {
+    // A playlist row whose songs did not land is removed, so Retry cannot
+    // leave a trail of empty playlists behind it.
+    if (created?.id) {
+      try {
+        await dbDelete('/playlist_tracks?playlist_id=eq.' + encodeURIComponent(created.id));
+        await dbDelete('/playlists?id=eq.' + encodeURIComponent(created.id));
+      } catch (_) {}
+    }
+    a.err = e.message || 'Could not save that.';
+    a.busy = false; a.progress = '';
+    if (_adm === a) admRender();
+    return;
+  }
+  _adm = null;
+  admClose();
+  showToast(msg);
+  try { syncManagePlaylistsBtn(); } catch (_) {}
+  await loadPlaylists();
+  await openPlaylistChart(plId);
+}
+
 // ── Sign-in and the phone share sheet ─────────────────────────────────────
 function admSignIn(openSave) {
   if (!_adm) return;
@@ -33870,10 +34276,11 @@ function consumeAddMusicPending() {
     sessionStorage.removeItem(ADM_PENDING_KEY);
   } catch (_) {}
   if (!saved?.state || Date.now() - (saved.at || 0) > 30 * 60 * 1000) return;
-  _adm = Object.assign(admFresh(), saved.state, { busy: false, vis: sjDefaultImportVisibility() });
+  _adm = Object.assign(admFresh(), saved.state, { busy: false, vis: saved.state.mode === 'playlist' ? saved.state.vis : sjDefaultImportVisibility() });
   if (saved.openSave && _adm.phase === 'results') _adm.saveOpen = true;
   (_adm.rows || []).forEach(r => { if (r._state === 'searching') r._state = 'waiting'; });
-  admOpen();
+  if (_adm.mode === 'playlist') { document.getElementById('admOverlay')?.classList.add('open'); admRender(); }
+  else admOpen();
   admAfterResults();
 }
 
@@ -36600,6 +37007,7 @@ const SJ_CHANGELOG = [
     'Artist Jukebox is now called Artist Discography: the Explore Artist Discography button on an artist card, the song menu, the Other Artists list and the label on an artist page.',
     'Listening Party can now explore by artist and by song as well as by playlist. Explore Playlists stays the first tab and the one Explore opens on, with Explore Artists and Explore Songs beside it.',
     'An Artist Discography now keeps the Explore Playlists, Explore Artists, Explore Songs and Now Playing tabs at the top of the page, so getting back to them is one tap.',
+    'Create a Playlist is one simple screen now. Paste a YouTube link or playlist, type or paste a list of songs, add a screenshot, or browse the songs already in the Jukebox, and everything lands in the same list. Songs we already have are matched first and only the rest are looked up on YouTube. Remove anything with the ✕, name it, choose who can see it, and save. Add Songs on a playlist works the same way.',
   ] },
   { date: '2026-09-13', items: [
     'Importing a whole artist from YouTube is two steps now: find the artist, then choose the music and who can see it. Once the music is added you can finish immediately, with Fine-tune offered as an optional extra.',
