@@ -616,6 +616,17 @@ body:not(.light) .tt-num { color: var(--text); }
 .signin-or::before, .signin-or::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
 .signin-err { font-size: .6rem; color: #ef4444; line-height: 1.45; }
 #admOverlay .modal { max-width: 640px; }
+.adm-hdr-btns { display: flex; align-items: center; gap: 2px; }
+.adm-hdr-btns .modal-close svg { display: block; }
+.adm-prog { flex: 1 1 100%; display: grid; gap: .35rem; margin-bottom: .2rem; }
+.adm-prog-t { font-size: .58rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adm-prog-bar, .adm-mini-bar { display: block; position: relative; height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.adm-mini-bar { width: 64px; height: 4px; flex-shrink: 0; }
+.adm-prog-bar > span, .adm-mini-bar > span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .25s ease; }
+.adm-prog-bar.ind > span, .adm-mini-bar.ind > span { width: 35%; animation: adm-ind 1.1s ease-in-out infinite; }
+#adm-minibar.done .adm-mini-bar > span { background: #22c55e; }
+@keyframes adm-ind { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) { .adm-prog-bar.ind > span, .adm-mini-bar.ind > span { animation: none; width: 100%; opacity: .45; } }
 #admOverlay .modal-body { gap: .85rem; }
 #admOverlay .modal-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; }
 .adm-lede { font-size: .68rem; color: var(--text-muted); line-height: 1.5; margin: 0; }
@@ -787,12 +798,12 @@ body:not(.light) .tt-num { color: var(--text); }
 .am-swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid #333; box-sizing: border-box; padding: 0; }
 .am-swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px #ffffff33; }
 .am-swatch-custom { width: 26px; height: 26px; border-radius: 50%; border: 2px dashed #555; background: none; cursor: pointer; padding: 0; }
-#am-minibar, #ta-minibar, #sp-minibar { position: fixed; bottom: calc(var(--ytp-dock-height) + 16px); right: 16px; z-index: 5001; display: none; align-items: center; gap: 8px; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 999px; padding: .55rem .95rem; font-family: var(--mono); font-size: .55rem; color: var(--text); cursor: pointer; box-shadow: 0 4px 18px rgba(0,0,0,.55); max-width: min(430px, calc(100vw - 32px)); transition: background .15s; }
-#am-minibar:hover, #ta-minibar:hover, #sp-minibar:hover { background: var(--border); }
-#am-minibar.done, #ta-minibar.done, #sp-minibar.done { border-color: #22c55e; }
-#am-minibar.err, #ta-minibar.err, #sp-minibar.err { border-color: #ef4444; }
-#am-minibar .am-mini-txt, #ta-minibar .ta-mini-txt, #sp-minibar .am-mini-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 640px) { #am-minibar, #ta-minibar, #sp-minibar { bottom: calc(var(--ytp-dock-height) + 76px); right: 12px; } }
+#am-minibar, #ta-minibar, #sp-minibar, #adm-minibar { position: fixed; bottom: calc(var(--ytp-dock-height) + 16px); right: 16px; z-index: 5001; display: none; align-items: center; gap: 8px; background: var(--bg-elevated); border: 1px solid var(--accent); border-radius: 999px; padding: .55rem .95rem; font-family: var(--mono); font-size: .55rem; color: var(--text); cursor: pointer; box-shadow: 0 4px 18px rgba(0,0,0,.55); max-width: min(430px, calc(100vw - 32px)); transition: background .15s; }
+#am-minibar:hover, #ta-minibar:hover, #sp-minibar:hover, #adm-minibar:hover { background: var(--border); }
+#am-minibar.done, #ta-minibar.done, #sp-minibar.done, #adm-minibar.done { border-color: #22c55e; }
+#am-minibar.err, #ta-minibar.err, #sp-minibar.err, #adm-minibar.err { border-color: #ef4444; }
+#am-minibar .am-mini-txt, #ta-minibar .ta-mini-txt, #sp-minibar .am-mini-txt, #adm-minibar .am-mini-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { #am-minibar, #ta-minibar, #sp-minibar, #adm-minibar { bottom: calc(var(--ytp-dock-height) + 76px); right: 12px; } }
 /* stack above Add Music pill when both are up */
 #ta-minibar { bottom: calc(var(--ytp-dock-height) + 64px); }
 @media (max-width: 640px) { #ta-minibar { bottom: calc(var(--ytp-dock-height) + 124px); } }
@@ -5471,13 +5482,20 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adm-title">
     <div class="modal-header">
       <span class="modal-title" id="adm-title">Add music</span>
-      <button class="modal-close" onclick="admClose()" aria-label="Close">✕</button>
+      <div class="adm-hdr-btns">
+        <button class="modal-close" onclick="admMinimize()" title="Minimize. It keeps working in the background" aria-label="Minimize"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 10.5h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button class="modal-close" onclick="admClose()" aria-label="Close">✕</button>
+      </div>
     </div>
     <div class="modal-body" id="adm-body"></div>
     <div class="modal-footer" id="adm-foot"></div>
   </div>
 </div>
 <input type="file" id="adm-file" accept="image/*" hidden onchange="admPickedFile(this)">
+<!-- Add music / Create a Playlist, minimized: the work carries on behind it. -->
+<div id="adm-minibar" onclick="admRestore()" title="Click to reopen">
+  <span class="m-spin"></span><span class="am-mini-txt">Working…</span><span class="adm-mini-bar"><span></span></span>
+</div>
 
 <!-- Import from Spotify: the same four-step shape as Add Music, because
      bringing a library across is the same kind of job - find it, choose what
@@ -32104,6 +32122,9 @@ function importMusicPick(kind) {
 // a picture), never at the door. What was found rides through the Google
 // redirect in sessionStorage and comes back on screen (consumeAddMusicPending).
 let _adm = null;
+// Minimized: the overlay is hidden and #adm-minibar stands in for it while
+// look-ups or a save keep running on the same _adm.
+let _admMinimized = false;
 // /api/my-jukebox/search allows 20 a minute, and each search is 100 units of
 // a 10,000 unit day. Same reasoning as SPI_MAX.
 const ADM_LOOKUP_BATCH = 20;
@@ -32124,6 +32145,9 @@ function admFresh(text) {
 }
 
 function admOpen(text, opts) {
+  // A job still running behind the pill comes back rather than being replaced.
+  if (_admMinimized && _adm?.busy) { admRestore(); showToast('Finishing what is already running first.'); return; }
+  _admMinimized = false;
   if (!_adm || _adm.phase === 'done' || _adm.mode === 'playlist' || typeof text === 'string') _adm = admFresh(text);
   document.getElementById('admOverlay')?.classList.add('open');
   admRender();
@@ -32131,7 +32155,77 @@ function admOpen(text, opts) {
   if (opts?.run && _adm.text.trim()) admFind();
 }
 // Closing keeps what was found, so reopening lands back on the same results.
-function admClose() { document.getElementById('admOverlay')?.classList.remove('open'); }
+function admClose() {
+  _admMinimized = false;
+  document.getElementById('admOverlay')?.classList.remove('open');
+  admMiniSync();
+}
+
+// Minimize hides the box and leaves everything running: look-ups and saves all
+// work on _adm, never on what is on screen, and a row or footer that is not in
+// the DOM is simply skipped by the painters.
+function admMinimize() {
+  if (!_adm) { admClose(); return; }
+  _admMinimized = true;
+  document.getElementById('admOverlay')?.classList.remove('open');
+  admMiniSync();
+}
+
+function admRestore() {
+  _admMinimized = false;
+  admMiniSync();
+  if (!_adm) return;
+  document.getElementById('admOverlay')?.classList.add('open');
+  admRender();
+}
+
+function admPct(a) {
+  if (!a?.progTotal) return null;
+  return Math.max(0, Math.min(100, Math.round(((a.progDone || 0) / a.progTotal) * 100)));
+}
+
+function admPaintBar(bar, a) {
+  if (!bar) return;
+  const pct = admPct(a);
+  bar.classList.toggle('ind', pct == null);
+  const fill = bar.firstElementChild;
+  if (fill) fill.style.width = pct == null ? '' : pct + '%';
+}
+
+function admMiniSync() {
+  const bar = document.getElementById('adm-minibar');
+  if (!bar) return;
+  const a = _adm;
+  const show = _admMinimized && !!a;
+  bar.style.display = show ? 'flex' : 'none';
+  if (!show) return;
+  const working = !!a.busy;
+  bar.className = working ? '' : (a.err ? 'err' : 'done');
+  const spin = bar.querySelector('.m-spin');
+  if (spin) spin.style.display = working ? '' : 'none';
+  const label = bar.querySelector('.am-mini-txt');
+  if (label) {
+    label.textContent = working ? (a.progress || 'Working…')
+      : a.err ? a.err
+      : a.phase === 'done' ? (a.done?.msg || 'Done. Tap to see it')
+      : admPlural(admSelected().length, 'song') + ' ready. Tap to ' + (a.mode === 'playlist' ? 'finish' : 'see them');
+  }
+  const mini = bar.querySelector('.adm-mini-bar');
+  if (mini) {
+    if (working) admPaintBar(mini, a);
+    else { mini.classList.remove('ind'); if (mini.firstElementChild) mini.firstElementChild.style.width = '100%'; }
+  }
+}
+
+// The status line and bar live at the bottom of the box, above the buttons.
+function admProgressHTML() {
+  const a = _adm;
+  if (!a?.busy || !a.progress || (a.phase !== 'results' && a.phase !== 'done')) return '';
+  const pct = admPct(a);
+  return '<div class="adm-prog" role="status" aria-live="polite">' +
+    '<span class="adm-prog-t" id="adm-prog-t">' + escHtml(a.progress) + '</span>' +
+    '<span class="adm-prog-bar' + (pct == null ? ' ind' : '') + '" id="adm-prog-bar"><span style="width:' + (pct == null ? '' : pct + '%') + '"></span></span></div>';
+}
 
 function admStartOver() {
   const keep = _adm && _adm.phase !== 'done' ? _adm.text : '';
@@ -32170,6 +32264,7 @@ function admRender() {
   const foot = document.getElementById('adm-foot');
   if (!body || !foot || !_adm) return;
   admPaintTitle();
+  admMiniSync();
   if (_adm.mode === 'playlist' && (_adm.phase === 'input' || _adm.phase === 'reading')) {
     body.innerHTML = admPlaylistInputHTML();
     foot.innerHTML = admPlaylistInputFootHTML();
@@ -32285,7 +32380,6 @@ function admResultsHTML() {
       ? '<div class="adm-note">Not what you were after?<button type="button" class="pl-btn" onclick="admSearchYouTube()">Search YouTube for “' + escHtml(a.query) + '”</button></div>'
       : '<div class="adm-note">Not here? Sign in to search YouTube for it.<button type="button" class="pl-btn" onclick="admSignIn()">Sign in</button></div>';
   }
-  if (a.busy && a.progress) html += '<div class="adm-note" id="adm-progress">' + escHtml(a.progress) + '</div>';
   html += admErrHTML();
 
   if (rows.length) html += '<div class="adm-list">' + rows.map(admRowHTML).join('') + '</div>';
@@ -32337,7 +32431,7 @@ function admResultsFootHTML() {
   if (_adm.mode === 'playlist') return admPlaylistFootHTML();
   const on = admSelected().length;
   const dis = !on || _adm.busy ? ' disabled' : '';
-  return '<span class="adm-count" id="adm-count">' + on + ' selected</span>' +
+  return admProgressHTML() + '<span class="adm-count" id="adm-count">' + on + ' selected</span>' +
     '<button class="m-btn ghost" data-adm-act onclick="admQueue()"' + dis + '>Add to queue</button>' +
     '<button class="m-btn ghost" data-adm-act onclick="admToggleSave()"' + dis + '>' + (_adm.saveOpen ? 'Hide save' : 'Save') + '</button>' +
     '<button class="m-btn" data-adm-act onclick="admPlay()"' + dis + '>Play now</button>';
@@ -32490,9 +32584,13 @@ async function admLookUpMissing() {
     .slice(0, ADM_LOOKUP_BATCH);
   if (!todo.length) return;
   a.busy = true;
+  a.progress = 'Looking up 1 of ' + todo.length + ' on YouTube…'; a.progDone = 0; a.progTotal = todo.length;
   admRender();
+  let looked = 0;
   for (const i of todo) {
     if (_adm !== a) return;
+    admPaintProgress('Looking up ' + (looked + 1) + ' of ' + todo.length + ' on YouTube…', looked, todo.length);
+    looked++;
     const r = a.rows[i];
     r._state = 'searching';
     admPaintRow(i);
@@ -32507,7 +32605,7 @@ async function admLookUpMissing() {
     admPaintRow(i);
     admPaintCount();
   }
-  a.busy = false;
+  a.busy = false; a.progress = ''; a.progDone = null; a.progTotal = null;
   if (_adm === a) admRender();
 }
 
@@ -32744,12 +32842,26 @@ function admSaveHTML() {
   return html;
 }
 
-function admPaintProgress(text) {
-  if (!_adm) return;
-  _adm.progress = text;
-  const el = document.getElementById('adm-progress');
-  if (el) el.textContent = text;
-  else admRender();
+// done / total drive the bar; leave them out for a step with no count
+// ("Saving…") and the bar runs indeterminate instead.
+function admPaintProgress(text, done, total) {
+  const a = _adm;
+  if (!a) return;
+  a.progress = text;
+  a.progDone = Number.isFinite(done) ? done : null;
+  a.progTotal = Number.isFinite(total) && total > 0 ? total : null;
+  const label = document.getElementById('adm-prog-t');
+  const bar = document.getElementById('adm-prog-bar');
+  if (label && bar) {
+    label.textContent = text;
+    admPaintBar(bar, a);
+  } else if (a.phase === 'results' || a.phase === 'done') {
+    const foot = document.getElementById('adm-foot');
+    if (foot) foot.innerHTML = admResultsFootHTML(); else admRender();
+  } else {
+    admRender();
+  }
+  admMiniSync();
 }
 
 async function admSave() {
@@ -32772,7 +32884,7 @@ async function admSave() {
   for (let n = 0; n < rows.length; n++) {
     const r = rows[n];
     if (!r.trackId) {
-      admPaintProgress('Adding ' + (n + 1) + ' of ' + rows.length + ' to the Jukebox…');
+      admPaintProgress('Adding ' + (n + 1) + ' of ' + rows.length + ' to the Jukebox…', n, rows.length);
       try {
         const data = await mjRequest('/api/my-jukebox', 'POST', {
           action: 'add_youtube',
@@ -32879,6 +32991,8 @@ function admRowKey(r) {
 }
 
 function admOpenPlaylist(targetId) {
+  if (_admMinimized && _adm?.busy) { admRestore(); showToast('Finishing what is already running first.'); return; }
+  _admMinimized = false;
   targetId = targetId || null;
   const target = targetId ? plbPlaylistById(targetId) : null;
   if (targetId && !target) { showToast('Playlist not found.'); return; }
@@ -33087,7 +33201,6 @@ function admPlaylistResultsHTML() {
       : '<div class="adm-note">' + (waiting === 1 ? '1 song is' : waiting + ' songs are') + ' not in the Jukebox yet. Sign in and we will find them on YouTube.' +
         '<button type="button" class="pl-btn" onclick="admSignIn()">Sign in</button></div>';
   }
-  if (a.busy && a.progress) html += '<div class="adm-note" id="adm-progress">' + escHtml(a.progress) + '</div>';
   html += admErrHTML();
   html += rows.length
     ? '<div class="adm-list">' + rows.map(admRowHTML).join('') + '</div>'
@@ -33127,7 +33240,7 @@ function admPlaylistFootHTML() {
   const label = !a.target ? 'Save playlist'
     : a.target === '__dynamic_now_playing' ? 'Add to Now Playing'
     : 'Add to ' + (t?.name || 'the playlist');
-  return '<span class="adm-count" id="adm-count">' + admPlural(n, 'song') + ' ready</span>' +
+  return admProgressHTML() + '<span class="adm-count" id="adm-count">' + admPlural(n, 'song') + ' ready</span>' +
     '<button class="m-btn ghost" onclick="admClose()">Cancel</button>' +
     '<button class="m-btn" id="adm-save-go" data-adm-act onclick="admSavePlaylist()"' + (!n || a.busy ? ' disabled' : '') + '>' + escHtml(label) + '</button>';
 }
@@ -33139,7 +33252,7 @@ async function admImportYouTubeRows(rows, vis) {
   for (let n = 0; n < rows.length; n++) {
     const r = rows[n];
     if (r.trackId || !r.videoId) continue;
-    admPaintProgress('Adding ' + (n + 1) + ' of ' + rows.length + ' to the Jukebox…');
+    admPaintProgress('Adding ' + (n + 1) + ' of ' + rows.length + ' to the Jukebox…', n, rows.length);
     try {
       const data = await mjRequest('/api/my-jukebox', 'POST', {
         action: 'add_youtube',
@@ -36010,6 +36123,7 @@ const SJ_CHANGELOG = [
     'Listening Party can now explore by artist and by song as well as by playlist. Explore Playlists stays the first tab and the one Explore opens on, with Explore Artists and Explore Songs beside it.',
     'An Artist Discography now keeps the Explore Playlists, Explore Artists, Explore Songs and Now Playing tabs at the top of the page, so getting back to them is one tap.',
     'Sign in now offers an email and password as well as Google, for accounts that have a password.',
+    'Creating a playlist or adding music shows how far along it is at the bottom, with a progress bar. The new minimize button beside the X keeps it working in the background while you carry on, and the pill in the corner brings it back.',
     'Create a Playlist is one simple screen now. Paste a YouTube link or playlist, type or paste a list of songs, add a screenshot, or browse the songs already in the Jukebox, and everything lands in the same list. Songs we already have are matched first and only the rest are looked up on YouTube. Remove anything with the ✕, name it, choose who can see it, and save. Add Songs on a playlist works the same way.',
   ] },
   { date: '2026-09-13', items: [
