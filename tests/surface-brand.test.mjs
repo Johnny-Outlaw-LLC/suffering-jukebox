@@ -317,7 +317,7 @@ test('the two brands agree on shape, so neither can grow a field alone', () => {
  * way the functions can; it is parsed out of the same file instead, which is
  * what keeps this test honest about what actually ships.
  */
-function tabHelpersFor(s) {
+function tabHelpersFor(s, liveRooms = []) {
   const at = indexHtml.indexOf('const LANDING_TABS = [');
   assert.ok(at >= 0, 'LANDING_TABS is gone from public/index.html');
   const end = indexHtml.indexOf('];', at);
@@ -325,9 +325,10 @@ function tabHelpersFor(s) {
   const scope = {
     LANDING_TABS: new Function(`return (${literal});`)(),
     SJ_BRAND: surface.publicSurface(s),
+    liveRoomPlaylists: liveRooms,
   };
   return loadHtmlFnsInScope(
-    ['landingTabsAvailable', 'landingTabAllowed', 'landingDefaultTab', 'landingClampTab', 'landingTabsHTML'],
+    ['liveStationsJoinable', 'landingTabsAvailable', 'landingTabAllowed', 'landingDefaultTab', 'landingClampTab', 'landingTabsHTML'],
     scope,
   );
 }
@@ -351,6 +352,22 @@ test('Listening Party offers Home, then playlists ahead of artists and songs, an
   assert.equal(t.landingTabAllowed('explore'), true);
   assert.equal(t.landingTabAllowed('songs'), true);
   assert.equal(t.landingTabAllowed('home'), true);
+});
+
+test('Listening Party shows Live Stations only while a joinable room is on air', () => {
+  const empty = tabHelpersFor(LP, []);
+  assert.equal(empty.landingTabAllowed('live'), false);
+  const live = tabHelpersFor(LP, [{ id: 'live:ABC', _roomIsOwner: false }]);
+  assert.deepStrictEqual(
+    live.landingTabsAvailable().map((x) => x.id),
+    ['home', 'playlists', 'explore', 'songs', 'live'],
+  );
+  assert.equal(live.landingTabAllowed('live'), true);
+  // A host's own room is not a station they join, so it does not open the tab.
+  const own = tabHelpersFor(LP, [{ id: 'live:ABC', _roomIsOwner: true }]);
+  assert.equal(own.landingTabAllowed('live'), false);
+  // Suffering Jukebox keeps Live Now on Explore Playlists instead.
+  assert.equal(tabHelpersFor(SJ, [{ id: 'live:ABC', _roomIsOwner: false }]).landingTabAllowed('live'), false);
 });
 
 test('a tab remembered from the other brand does not strand the visitor', () => {

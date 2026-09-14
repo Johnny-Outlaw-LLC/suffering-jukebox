@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import styles from "./dashboard.module.css";
 import ImportMissing, { type MissingSong } from "./import-missing";
 
@@ -41,6 +41,7 @@ type HeatRow = Split & { dow: number; hour: number };
 type OptionRow = { artist: string; key?: string; title?: string; events: number; duration_ms: number };
 type FavoriteArtistRow = { artist: string; favorite_score: number; thumbs_up: number; reactions: number; songs: number };
 type FavoriteTrackRow = { key: string; title: string; artist: string; favorite_score: number; thumbs_up: number; reactions: number };
+type FavoritePlaylistRow = { id: string; name: string; favorite_score: number; thumbs_up: number; reactions: number; songs: number; trackKeys: string[] };
 
 export type AnalyticsPayload = {
   tz?: string;
@@ -66,6 +67,7 @@ export type AnalyticsPayload = {
   trackOptions?: OptionRow[];
   favoriteArtists?: FavoriteArtistRow[];
   favoriteTracks?: FavoriteTrackRow[];
+  favoritePlaylists?: FavoritePlaylistRow[];
 };
 
 const DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -438,6 +440,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const [customTo, setCustomTo] = useState("");
   const [artistSel, setArtistSel] = useState<Selection>(ALL);
   const [trackSel, setTrackSel] = useState<Selection>(ALL);
+  const [playlistSel, setPlaylistSel] = useState<Selection>(ALL);
   const [bucketMode, setBucketMode] = useState<BucketMode>("auto");
   const [hover, setHover] = useState<number | null>(null);
   const [calendarYear, setCalendarYear] = useState<number | null>(null);
@@ -567,10 +570,12 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   const topTracks = data?.topTracks || [];
   const favoriteArtists = data?.favoriteArtists || [];
   const favoriteTracks = data?.favoriteTracks || [];
+  const favoritePlaylists = data?.favoritePlaylists || [];
   const artistMax = Math.max(1, ...topArtists.map((row) => metricValue(row, metric)));
   const trackMax = Math.max(1, ...topTracks.map((row) => metricValue(row, metric)));
   const favoriteArtistMax = Math.max(1, ...favoriteArtists.map((row) => Number(row.favorite_score) || 0));
   const favoriteTrackMax = Math.max(1, ...favoriteTracks.map((row) => Number(row.favorite_score) || 0));
+  const favoritePlaylistMax = Math.max(1, ...favoritePlaylists.map((row) => Number(row.favorite_score) || 0));
 
   /* Everything on this chart the catalogue does not have yet, in the order the
      chart already put them - so the panel opens on the songs you play most,
@@ -642,22 +647,35 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     setSource("all");
     setArtistSel(ALL);
     setTrackSel(ALL);
+    setPlaylistSel(ALL);
     setPreset("all");
     setCustomFrom("");
     setCustomTo("");
     setBucketMode("auto");
   }
-  const anyFilter = source !== "all" || preset !== "all" || artistSel.mode !== "all" || trackSel.mode !== "all";
+  function onFavoritePlaylistClick(id: string) {
+    const next = selectionAfterBarClick(playlistSel, id);
+    setPlaylistSel(next);
+    if (next.mode === "include") {
+      const keys = [...new Set(
+        favoritePlaylists.filter((row) => next.keys.includes(row.id)).flatMap((row) => row.trackKeys || []),
+      )];
+      setTrackSel(keys.length ? { mode: "include", keys } : ALL);
+    } else {
+      setTrackSel(ALL);
+    }
+  }
+  const anyFilter = source !== "all" || preset !== "all" || artistSel.mode !== "all" || trackSel.mode !== "all" || playlistSel.mode !== "all";
   const readout = hover === null ? null : series[hover];
 
   function rankRows<T extends Split & { in_jukebox?: boolean }>(
     rows: T[],
     max: number,
     keyOf: (row: T) => string,
-    nameOf: (row: T) => React.ReactNode,
+    nameOf: (row: T) => ReactNode,
     selection: Selection,
     onClick: (key: string) => void,
-    actionOf: (row: T) => React.ReactNode,
+    actionOf: (row: T) => ReactNode,
   ) {
     return rows.map((row) => {
       const key = keyOf(row);
@@ -687,7 +705,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     rows: T[],
     max: number,
     keyOf: (row: T) => string,
-    nameOf: (row: T) => React.ReactNode,
+    nameOf: (row: T) => ReactNode,
     selection: Selection,
     onClick: (key: string) => void,
   ) {
@@ -1081,11 +1099,29 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                     (row) => `${row.artist}${TRACK_KEY_SEP}${row.title}`,
                     (row) => <>{row.title} <small>· {row.artist}</small></>,
                     trackSel,
-                    (key) => setTrackSel((current) => selectionAfterBarClick(current, key)),
+                    (key) => {
+                      setPlaylistSel(ALL);
+                      setTrackSel((current) => selectionAfterBarClick(current, key));
+                    },
                   ) : <p className={styles.favoriteEmpty}>No thumbs-up ratings or instant reactions yet.</p>}
                 </div>
               </section>
             </div>
+
+          <section className={styles.card}>
+            <div className={styles.cardHead}><h2>Favorite playlists</h2></div>
+            <p className={styles.cardNote}>Your playlists, scored from the thumbs-up ratings and instant reactions on the songs inside them. Click a bar to filter the page to those songs; click more to add them.</p>
+            <div className={styles.rankScroll}>
+              {favoritePlaylists.length ? favoriteRankRows(
+                favoritePlaylists,
+                favoritePlaylistMax,
+                (row) => row.id,
+                (row) => <>{row.name} <small>· {count(row.songs)} songs</small></>,
+                playlistSel,
+                onFavoritePlaylistClick,
+              ) : <p className={styles.favoriteEmpty}>No playlists with rated or reacted songs yet. Add songs you love to a playlist to see it here.</p>}
+            </div>
+          </section>
         </div>
       )}
 

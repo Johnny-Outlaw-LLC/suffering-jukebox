@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
+import type { PublicSurface } from "@/lib/surface";
 import AnalyticsDashboard from "./analytics-dashboard";
 import DataManager from "./data-manager";
 import DownloadData from "./download-data";
@@ -39,10 +40,13 @@ const TYPE_LABEL: Record<ContentType, string> = {
 const ANALYTICS_SESSION_REQUEST = "sj:analytics-session-request";
 const ANALYTICS_SESSION_DELIVERY = "sj:analytics-session-delivery";
 
-function isTrustedPlayerOrigin(origin: string) {
+function isTrustedPlayerOrigin(origin: string, brand: PublicSurface) {
   return origin === window.location.origin
+    || brand.origins.includes(origin)
     || origin === "https://sufferingjukebox.stream"
-    || origin === "https://www.sufferingjukebox.stream";
+    || origin === "https://www.sufferingjukebox.stream"
+    || origin === "https://listeningparty.stream"
+    || origin === "https://www.listeningparty.stream";
 }
 
 function number(value: number) { return new Intl.NumberFormat().format(value); }
@@ -339,7 +343,7 @@ function Wizard({ accessToken, onComplete }: { accessToken: string; onComplete: 
   </section>;
 }
 
-export default function AnalyticsClient() {
+export default function AnalyticsClient({ brand }: { brand: PublicSurface }) {
   const [sessionReady, setSessionReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [accessToken, setAccessToken] = useState("");
@@ -356,7 +360,7 @@ export default function AnalyticsClient() {
       setSessionReady(true);
     }
     const receiveSession = async (event: MessageEvent) => {
-      if (event.source !== window.opener || !isTrustedPlayerOrigin(event.origin)) return;
+      if (event.source !== window.opener || !isTrustedPlayerOrigin(event.origin, brand)) return;
       if (event.data?.type !== ANALYTICS_SESSION_DELIVERY) return;
       const nextAccess = String(event.data.accessToken || "");
       const refreshToken = String(event.data.refreshToken || "");
@@ -372,21 +376,28 @@ export default function AnalyticsClient() {
     const { data: { subscription } } = sjBrowserAuth.auth.onAuthStateChange((_event, session) => { void applySession(session); });
     try {
       const openerOrigin = document.referrer ? new URL(document.referrer).origin : "";
-      if (window.opener && isTrustedPlayerOrigin(openerOrigin)) {
+      if (window.opener && isTrustedPlayerOrigin(openerOrigin, brand)) {
         window.opener.postMessage({ type: ANALYTICS_SESSION_REQUEST }, openerOrigin);
       }
     } catch { /* No trusted opener session is available. */ }
     return () => { active = false; window.removeEventListener("message", receiveSession); subscription.unsubscribe(); };
-  }, []);
+  }, [brand]);
 
   async function signIn() { await sjBrowserAuth.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/analytics` } }); }
 
+  const pageStyle = {
+    ["--sj-accent" as string]: brand.accent,
+    ["--sj-accent-soft" as string]: `rgba(${brand.accentRgb},.14)`,
+    ["--sj-accent-rgb" as string]: brand.accentRgb,
+    ["--sj-accent-hover" as string]: brand.accentHover,
+  };
+
   return (
-    <main className={styles.page}>
+    <main className={styles.page} data-surface={brand.id} style={pageStyle}>
       <header className={styles.header}>
-        <a href="/" className={styles.back}>← Back to Jukebox</a>
+        <a href="/" className={styles.back}>← Back to {brand.name}</a>
         <div>
-          <p className={styles.eyebrow}>Suffering Jukebox</p>
+          <p className={styles.eyebrow}>{brand.name}</p>
           <h1>My Data <span>&amp; Analytics</span></h1>
         </div>
         {sessionReady && signedIn && (

@@ -53,6 +53,15 @@ function cleanFilterList(value: unknown): string[] | null {
 }
 
 type FavoriteRow = { key: string; title: string; artist: string; favorite_score: number; thumbs_up: number; reactions: number };
+type FavoritePlaylistRow = {
+  id: string;
+  name: string;
+  favorite_score: number;
+  thumbs_up: number;
+  reactions: number;
+  songs: number;
+  trackKeys: string[];
+};
 
 /* Favorites are read through the service client rather than a new database
    function, so the Analytics release is self-contained: production does not
@@ -76,7 +85,7 @@ async function loadFavorites(sb: ReturnType<typeof createSjServiceClient>, userI
     if (trackId) reactionsByTrack.set(trackId, (reactionsByTrack.get(trackId) || 0) + 1);
   }
   const ids = [...new Set([...ratingByTrack.keys(), ...reactionsByTrack.keys()])];
-  if (!ids.length) return { favoriteArtists: [], favoriteTracks: [] };
+  if (!ids.length) return { favoriteArtists: [], favoriteTracks: [], favoritePlaylists: [] };
 
   const { data: tracks, error: tracksError } = await sb.schema(JUKEBOX_SCHEMA).from("tracks").select("id,name,album_id").in("id", ids);
   if (tracksError) throw tracksError;
@@ -110,9 +119,67 @@ async function loadFavorites(sb: ReturnType<typeof createSjServiceClient>, userI
     favoriteArtists.set(track.artist, existing);
   }
   const sortFavorites = <T extends { favorite_score: number; reactions: number }>(a: T, b: T) => b.favorite_score - a.favorite_score || b.reactions - a.reactions;
+
+  // Favorite playlists: your own lists, scored the same way as songs — sum of
+  // thumbs-up and reactions on the songs that sit in each list.
+  const favoriteById = new Map(favoriteTracks.map((track) => [track.key, track]));
+  const trackKeySep = "\u001f";
+  let favoritePlaylists: FavoritePlaylistRow[] = [];
+  const { data: playlists, error: playlistsError } = await sb.schema(JUKEBOX_SCHEMA)
+    .from("playlists")
+    .select("id,name")
+    .ilike("user_email", email.replace(/[\\%_]/g, (char) => `\\${char}`))
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (playlistsError) throw playlistsError;
+  const playlistRows = playlists || [];
+  if (playlistRows.length) {
+    const playlistIds = playlistRows.map((row) => String(row.id));
+    const { data: membership, error: membershipError } = await sb.schema(JUKEBOX_SCHEMA)
+      .from("playlist_tracks")
+      .select("playlist_id,track_id")
+      .in("playlist_id", playlistIds)
+      .in("track_id", ids)
+      .limit(5000);
+    if (membershipError) throw membershipError;
+    const byPlaylist = new Map<string, FavoritePlaylistRow>();
+    for (const row of playlistRows) {
+      byPlaylist.set(String(row.id), {
+        id: String(row.id),
+        name: String(row.name || "Untitled playlist").trim() || "Untitled playlist",
+        favorite_score: 0,
+        thumbs_up: 0,
+        reactions: 0,
+        songs: 0,
+        trackKeys: [],
+      });
+    }
+    const seen = new Set<string>();
+    for (const item of membership || []) {
+      const playlistId = String(item.playlist_id || "");
+      const trackId = String(item.track_id || "");
+      const dedupe = `${playlistId}:${trackId}`;
+      if (!playlistId || !trackId || seen.has(dedupe)) continue;
+      seen.add(dedupe);
+      const track = favoriteById.get(trackId);
+      const bucket = byPlaylist.get(playlistId);
+      if (!track || !bucket) continue;
+      bucket.favorite_score += track.favorite_score;
+      bucket.thumbs_up += track.thumbs_up;
+      bucket.reactions += track.reactions;
+      bucket.songs += 1;
+      bucket.trackKeys.push(`${track.artist}${trackKeySep}${track.title}`);
+    }
+    favoritePlaylists = [...byPlaylist.values()]
+      .filter((row) => row.favorite_score > 0)
+      .sort((a, b) => sortFavorites(a, b) || a.name.localeCompare(b.name))
+      .slice(0, FAVORITES_MAX);
+  }
+
   return {
     favoriteArtists: [...favoriteArtists.values()].sort((a, b) => sortFavorites(a, b) || a.artist.localeCompare(b.artist)).slice(0, FAVORITES_MAX),
     favoriteTracks: favoriteTracks.sort((a, b) => sortFavorites(a, b) || a.title.localeCompare(b.title) || a.artist.localeCompare(b.artist)).slice(0, FAVORITES_MAX),
+    favoritePlaylists,
   };
 }
 

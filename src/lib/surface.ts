@@ -67,6 +67,13 @@ export interface SurfaceFeatures {
    */
   artistUpload: boolean;
   /**
+   * A Live Stations landing tab that appears next to Explore Songs whenever
+   * at least one Online Jukebox is on air. Listening Party only — Suffering
+   * Jukebox already surfaces the same rooms as Live Now cards on Explore
+   * Playlists.
+   */
+  liveStations: boolean;
+  /**
    * List public /p/<slug> playlist pages in the sitemap. On for both brands:
    * the pages are real, indexable MusicPlaylist documents and Google will not
    * find them without a listing (or a crawl path that reaches them).
@@ -214,6 +221,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       phoneMiniPlayer: false,
       spotifyImport: true,
       artistUpload: true,
+      liveStations: false,
     },
   },
 
@@ -236,13 +244,15 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     keywords:
       "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
     tagline: "Join the Listening Party",
-    // The official horizontal artwork already contains the name and tagline.
-    // Keep the HTML companion copy off so the words are not rendered twice.
-    headerTitle: "",
+    // Header uses the circular badge plus live HTML title/tagline. The wide
+    // lockup (header-mark.png) still paints both into one PNG, but at header
+    // height the baked-in tagline collapses to a few pixels and cannot be
+    // read. Live type stays legible at any size; keep the lockup for og cards.
+    headerTitle: "ListeningParty.stream",
     assetBase: "/brand/lp",
-    // Official horizontal lockup: textless circular emblem plus the name and
-    // tagline in the artwork. The standalone badge is used for app icons.
-    textLogo: "/brand/lp/header-mark.png",
+    // Circular badge for the header mark. Favicons and square cards use the
+    // same art; the wide lockup lives at header-mark.png for social cards.
+    textLogo: "/brand/lp/listening-party-icon.png",
     ogImage: `${LP_URL}/brand/lp/og-image.png`,
     ogImageSize: { w: 1200, h: 630 },
     themeColor: "#4A1B6D",
@@ -285,6 +295,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       phoneMiniPlayer: true,
       spotifyImport: false,
       artistUpload: false,
+      liveStations: true,
     },
   },
 };
@@ -367,6 +378,7 @@ export function publicSurface(s: Surface) {
       phoneMiniPlayer: s.features.phoneMiniPlayer,
       spotifyImport: s.features.spotifyImport,
       artistUpload: s.features.artistUpload,
+      liveStations: s.features.liveStations,
     },
   };
 }
