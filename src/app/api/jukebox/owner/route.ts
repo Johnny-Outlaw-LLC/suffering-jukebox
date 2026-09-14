@@ -117,7 +117,13 @@ export async function POST(req: NextRequest) {
         jukebox = await updateJukebox(sb, jukebox.id, {
           is_live: isLive,
           ...(isLive
-            ? { last_live_at: new Date().toISOString() }
+            ? {
+                last_live_at: new Date().toISOString(),
+                // Going live is the listing signal for Live Stations / Live Now.
+                // Rooms default to is_public false (legacy public-library column),
+                // so without this a Go Live room never appeared for other listeners.
+                is_public: true,
+              }
             : // Off air clears the mirror too. A guest who leaves the page open
               // should see the room go quiet, not keep watching a video nobody
               // is playing any more.

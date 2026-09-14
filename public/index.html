@@ -237,12 +237,12 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
   color: #f7f2fc;
 }
 .brand-copy .brand-tagline {
-  font-size: clamp(0.82rem, 1.7vw, 1.02rem);
+  font-size: clamp(0.55rem, 1.15vw, 0.7rem);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   line-height: 1.3;
-  white-space: normal;
+  white-space: nowrap;
   color: var(--accent);
 }
 .brand-title em { font-style: normal; color: var(--accent); font-weight: 800; }
@@ -4742,12 +4742,19 @@ html[data-surface="lp"] .brand-copy .brand-title {
   color: var(--lp-cream);
   text-shadow: 2px 2px 0 var(--accent);
 }
+/* Tagline sized to sit under ListeningParty.stream at roughly the same width. */
+html[data-surface="lp"] .brand-copy {
+  width: max-content;
+  max-width: min(100%, 22rem);
+}
 html[data-surface="lp"] .brand-copy .brand-tagline {
   font-family: var(--lp-body);
-  font-size: clamp(0.88rem, 1.8vw, 1.08rem);
+  font-size: clamp(0.52rem, 1.05vw, 0.66rem);
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.055em;
   color: var(--accent);
+  width: 100%;
+  box-sizing: border-box;
 }
 html[data-surface="lp"] .brand-title em {
   color: var(--accent);
@@ -6343,9 +6350,15 @@ html[data-surface="lp"] .brand-title em {
                     color:#0a0a0a; background:var(--accent); cursor:pointer; border:0; font-family:inherit; }
   .ytp-live-badge.on { display:inline-flex; }
   .ytp-live-badge .dot { width:.3rem; height:.3rem; border-radius:50%; background:#0a0a0a; animation:sjjPulse 1.6s ease-in-out infinite; }
-  /* Listening Party desktop: Go Live sits beside shuffle while music is playing. */
-  .ytp-golive-btn { display:none !important; font-size:.5rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:0 .55rem; white-space:nowrap; }
-  html[data-surface="lp"] .ytp-golive-btn.ready { display:inline-flex !important; }
+  /* Listening Party desktop: Go Live sits left of shuffle while music is playing.
+     Not a fixed 30px square — the label needs room, and a record dot marks it. */
+  .ytp-golive-btn { display:none !important; width:auto !important; min-width:0; height:30px; padding:0 .7rem !important;
+                    gap:5px; font-size:.55rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+                    white-space:nowrap; color:var(--accent); border-color:var(--accent); }
+  .ytp-golive-btn svg { width:11px; height:11px; flex-shrink:0; }
+  .ytp-golive-btn.live { background:rgba(var(--accent-rgb),.18); }
+  html[data-surface="lp"] .ytp-golive-btn.ready { display:inline-flex !important; align-items:center; justify-content:center; }
+  #yt-player-container.ytp-fs .ytp-golive-btn { width:auto !important; height:34px; padding:0 .75rem !important; }
   @media (max-width: 640px) {
     html[data-surface="lp"] .ytp-golive-btn { display:none !important; }
   }
@@ -8840,6 +8853,7 @@ const YTP_DECK_ICONS = {
   next:  '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="16.6" y="5.4" width="2.4" height="13.2" rx="1.2"/><path d="M5 6.9v10.2a1 1 0 0 0 1.55.83l7.65-5.1a1 1 0 0 0 0-1.66L6.55 6.07A1 1 0 0 0 5 6.9Z"/></svg>',
   shuffle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3.5h4.5V8"/><path d="M3.5 20.5 20.5 3.5"/><path d="M16 20.5h4.5V16"/><path d="m14.5 14.5 6 6"/><path d="m3.5 3.5 5 5"/></svg>',
   repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16.5 2.5 3.5 3.5-3.5 3.5"/><path d="M4 12v-2a4 4 0 0 1 4-4h12"/><path d="M7.5 21.5 4 18l3.5-3.5"/><path d="M20 12v2a4 4 0 0 1-4 4H4"/></svg>',
+  record: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="12" cy="12" r="4.1" fill="currentColor"/></svg>',
 };
 
 // The phone deck. Built for every player (desktop included) and shown by CSS
@@ -8988,8 +9002,8 @@ function openYTPlayer(videoId, title, trackId, ev) {
           <button class="ytp-btn" id="ytp-more-btn" onclick="sjmOpenForPlayer(this,event)" onmousedown="event.stopPropagation()" title="Add to playlist, never play again, report a problem">&#8943;</button>
         </div>
         <div class="ytp-toolbar-transport">
+          <button type="button" class="ytp-deck-btn ytp-golive-btn" id="ytp-golive-btn" title="Put this queue on air so others can listen and add songs" hidden onmousedown="event.stopPropagation()" onclick="sjjGoLiveFromPlayer();event.stopPropagation()"><span class="ytp-golive-ic">${YTP_DECK_ICONS.record}</span><span class="ytp-golive-lbl">Go Live</span></button>
           <button type="button" class="ytp-deck-btn" id="ytp-shuffle-tog" title="Shuffle queue" onmousedown="event.stopPropagation()" onclick="setYtShuffleEnabled(!ytShuffle);event.stopPropagation()">${YTP_DECK_ICONS.shuffle}</button>
-          <button type="button" class="ytp-deck-btn ytp-golive-btn" id="ytp-golive-btn" title="Put this queue on air so others can listen and add songs" hidden onmousedown="event.stopPropagation()" onclick="sjjGoLiveFromPlayer();event.stopPropagation()">Go Live</button>
           <button type="button" class="ytp-deck-btn" id="ytp-repeat-tog" title="Repeat queue" onmousedown="event.stopPropagation()" onclick="ytpSetRepeat(!ytRepeat);event.stopPropagation()">${YTP_DECK_ICONS.repeat}</button>
           <button type="button" class="ytp-deck-btn" id="ytp-awake-tog" title="Keep the screen on while a song is playing" style="display:none" onmousedown="event.stopPropagation()" onclick="wakeToggle(!_wakeWanted);event.stopPropagation()">${YTP_DECK_ICONS.awake}</button>
           <button class="ytp-deck-btn ytp-prev-btn" id="ytp-prev-btn" onclick="ytBackTrack();event.stopPropagation()" title="Previous song" style="display:none" onmousedown="event.stopPropagation()">${YTP_DECK_ICONS.prev}</button>
@@ -36274,6 +36288,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-14';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-14', items: [
+    'On Listening Party desktop, Go Live sits to the left of Shuffle with a record icon, and reads Broadcasting while you are on air instead of disappearing.',
+    'Join the Listening Party in the header is sized to match ListeningParty.stream above it, instead of stretching wider than the name.',
+    'When someone goes live, other listeners see the Live Stations tab again. Rooms that were already on air were being filtered out by mistake.',
     'Add to playlist now lists Public Playlists — other people’s public lists set to Anyone can add (or add and reorder) — under My Public Playlists, so you can contribute without hunting the playlist page.',
     'My Data & Analytics now wears Listening Party’s colours and name when you open it there, and Suffering Jukebox’s when you open it here — same charts, same data, each site’s own look.',
     'Favorite playlists joins Favorite artists and Favorite songs on Analytics. Each of your playlists is scored from the thumbs-up ratings and heart reactions on the songs inside it; click a bar to filter the page to those songs.',
@@ -44284,22 +44301,29 @@ function sjjSyncLiveBadge() {
 }
 
 // Listening Party desktop only: put this queue on air without opening Settings.
+// Stays visible while broadcasting so the host can see the state and jump to
+// the room controls; the label flips from Go Live to Broadcasting.
 function sjjSyncGoLiveBtn() {
   const btn = document.getElementById('ytp-golive-btn');
   if (!btn) return;
   const desktop = typeof window.matchMedia === 'function'
     ? window.matchMedia('(min-width: 641px)').matches
     : true;
+  const live = !!_sjjLive;
   const show = SJ_BRAND.id === 'lp'
     && desktop
     && !!ytPlayerEl
-    && ytQueue.length > 0
-    && !_sjjLive
-    && !_liveRoomListen;
+    && !_liveRoomListen
+    && (ytQueue.length > 0 || live);
   btn.hidden = !show;
   btn.classList.toggle('ready', show);
-  btn.textContent = 'Go Live';
-  btn.title = 'Put this queue on air so others can listen and add songs';
+  btn.classList.toggle('live', show && live);
+  const lbl = btn.querySelector('.ytp-golive-lbl');
+  if (lbl) lbl.textContent = live ? 'Broadcasting' : 'Go Live';
+  else btn.textContent = live ? 'Broadcasting' : 'Go Live';
+  btn.title = live
+    ? 'You are on air. Click for Online Jukebox settings.'
+    : 'Put this queue on air so others can listen and add songs';
 }
 
 async function sjjGoLiveFromPlayer() {

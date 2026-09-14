@@ -341,19 +341,24 @@ export async function setGuestBanned(
   if (error) throw error;
 }
 
-/** Public live rooms, shaped for the Explore Playlists Live Now collection. */
+/** Live rooms, shaped for the Explore Playlists Live Now / Live Stations wall. */
 /**
- * The rooms worth putting on the wall: open, public, and actually playing
- * music. `is_live` alone is not enough — it stays true until the host takes
- * the room off air or BROADCAST_EXPIRY_MS runs out six hours later, so a
- * station whose speakers went quiet at lunchtime was still advertising itself
- * as LIVE NOW at teatime. broadcastingNow() is the second half of the test.
+ * The rooms worth putting on the wall: open and actually playing music.
+ * `is_live` alone is not enough — it stays true until the host takes the room
+ * off air or BROADCAST_EXPIRY_MS runs out six hours later, so a station whose
+ * speakers went quiet at lunchtime was still advertising itself as LIVE NOW
+ * at teatime. broadcastingNow() is the second half of the test.
+ *
+ * `is_public` is deliberately not required. That column is a leftover from the
+ * retired public-library feature and defaults to false, so filtering on it
+ * hid every room that went live from Go Live / Start the jukebox. Going live
+ * is the listing signal; the wall asks "is music playing", not "was this row
+ * marked for a library that no longer exists".
  */
 export async function listLiveJukeboxes(sb: ServiceClient): Promise<JukeboxRow[]> {
   const { data, error } = await T(sb, "jukeboxes")
     .select(JUKEBOX_SELECT)
     .eq("is_live", true)
-    .eq("is_public", true)
     .order("last_live_at", { ascending: false })
     .limit(100);
   if (error) throw error;
