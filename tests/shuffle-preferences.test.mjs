@@ -22,6 +22,7 @@ test('a shuffle preference persists immediately and resets the active shuffle ba
     },
     ytShuffle: true,
     _ytShufflePreviewIdx: 42,
+    googleUser: null,
     ytPlayerEl: null,
     ytResetShufflePool: () => { resetCount++; },
     updateYTQueueUI() {},

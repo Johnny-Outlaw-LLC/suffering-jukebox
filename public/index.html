@@ -607,6 +607,14 @@ body:not(.light) .tt-num { color: var(--text); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)} }
 /* Add music (adm*): one box for a link, a song, an artist, a list or a screenshot. */
+#signInOverlay .modal { max-width: 420px; }
+#signInOverlay .modal-body { display: grid; gap: .8rem; }
+#signInOverlay .m-btn { width: 100%; justify-content: center; }
+#signin-form { display: grid; gap: .55rem; }
+#signin-form .m-input { width: 100%; box-sizing: border-box; font-family: inherit; font-size: .66rem; }
+.signin-or { display: flex; align-items: center; gap: .6rem; font-size: .56rem; color: var(--text-muted); }
+.signin-or::before, .signin-or::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+.signin-err { font-size: .6rem; color: #ef4444; line-height: 1.45; }
 #admOverlay .modal { max-width: 640px; }
 #admOverlay .modal-body { gap: .85rem; }
 #admOverlay .modal-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; }
@@ -5046,7 +5054,7 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
       </div>
       <a class="btn hdr-page-link" id="page-switch-link" href="/" style="display:none">♪ <span class="lbl">Silver Jews</span></a>
       <button class="btn hdr-add-music-btn" id="add-music-btn" onclick="openAddMusic()" style="display:none">＋<span class="lbl"> Add Music</span></button>
-      <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()" title="Sign in with Google"><span class="auth-label-full">Sign In to Remember Ratings and Play History</span><span class="auth-label-short">Sign In</span></button>
+      <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()" title="Sign in"><span class="auth-label-full">Sign In to Remember Ratings and Play History</span><span class="auth-label-short">Sign In</span></button>
       <div class="user-menu-wrap" id="user-menu-wrap" style="display:none">
         <button class="auth-btn signed-in" id="user-menu-btn" onclick="toggleUserMenu(event)" title="Account menu"></button>
         <div class="user-menu" id="user-menu">
@@ -5439,6 +5447,26 @@ html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .
 </div>
 
 <!-- Add music (adm*): one box for a link, a song, an artist, a list of songs or a screenshot. -->
+<!-- Sign in: Google, or an email and password for an account that has one. -->
+<div class="modal-overlay" id="signInOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="signin-title">
+    <div class="modal-header">
+      <span class="modal-title" id="signin-title">Sign in</span>
+      <button class="modal-close" onclick="closeSignIn()" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <button type="button" class="m-btn" id="signin-google" onclick="sjGoogleSignIn()">Continue with Google</button>
+      <div class="signin-or">or sign in with email</div>
+      <form id="signin-form" onsubmit="event.preventDefault();sjEmailSignIn()">
+        <input class="m-input" id="signin-email" type="email" autocomplete="username" placeholder="Email" required>
+        <input class="m-input" id="signin-password" type="password" autocomplete="current-password" placeholder="Password" required>
+        <div class="signin-err" id="signin-err" role="alert" hidden></div>
+        <button type="submit" class="m-btn" id="signin-submit">Sign in with email</button>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="admOverlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="adm-title">
     <div class="modal-header">
@@ -35981,6 +36009,7 @@ const SJ_CHANGELOG = [
     'Artist Jukebox is now called Artist Discography: the Explore Artist Discography button on an artist card, the song menu, the Other Artists list and the label on an artist page.',
     'Listening Party can now explore by artist and by song as well as by playlist. Explore Playlists stays the first tab and the one Explore opens on, with Explore Artists and Explore Songs beside it.',
     'An Artist Discography now keeps the Explore Playlists, Explore Artists, Explore Songs and Now Playing tabs at the top of the page, so getting back to them is one tap.',
+    'Sign in now offers an email and password as well as Google, for accounts that have a password.',
     'Create a Playlist is one simple screen now. Paste a YouTube link or playlist, type or paste a list of songs, add a screenshot, or browse the songs already in the Jukebox, and everything lands in the same list. Songs we already have are matched first and only the rest are looked up on YouTube. Remove anything with the ✕, name it, choose who can see it, and save. Add Songs on a playlist works the same way.',
   ] },
   { date: '2026-09-13', items: [
@@ -38175,7 +38204,33 @@ function sjAuthRedirectUrl() {
 // resolve to anything - ASWebAuthenticationSession intercepts it.
 const SJ_AUTH_SCHEME = SJ_BRAND.authScheme;
 
-async function handleAuthClick() {
+// Every Sign in button lands here and opens the panel: Google, or an email and
+// password. The email door is for accounts that already have a password on the
+// shared Outlaw Apps project - in practice the smoke-test account the live tests
+// use (testing@shutterfield.com, credited as Johnny D). There is deliberately no
+// sign-up, reset or change-password here: a password is set where its account
+// was made, and that account's password is Shutterfield's.
+function handleAuthClick() {
+  if (googleUser) return;
+  const overlay = document.getElementById('signInOverlay');
+  if (!overlay) { sjGoogleSignIn(); return; }
+  sjSignInErr('');
+  overlay.classList.add('open');
+  setTimeout(() => document.getElementById('signin-email')?.focus(), 60);
+}
+
+function closeSignIn() {
+  document.getElementById('signInOverlay')?.classList.remove('open');
+}
+
+function sjSignInErr(msg) {
+  const el = document.getElementById('signin-err');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.hidden = !msg;
+}
+
+async function sjGoogleSignIn() {
   if (googleUser) return;
   try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch(e) {}
   if (sjIsNative()) return sjNativeSignIn();
@@ -38183,6 +38238,30 @@ async function handleAuthClick() {
     provider: 'google',
     options: { redirectTo: sjAuthRedirectUrl() }
   });
+}
+
+async function sjEmailSignIn() {
+  const email = (document.getElementById('signin-email')?.value || '').trim().toLowerCase();
+  const pwEl = document.getElementById('signin-password');
+  const password = pwEl?.value || '';
+  if (!email || !password) { sjSignInErr('Enter your email and password.'); return; }
+  const btn = document.getElementById('signin-submit');
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+  sjSignInErr('');
+  try {
+    const { error } = await sbAuth.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    if (pwEl) pwEl.value = '';
+    try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch (e) {}
+    // Google comes back on a fresh page load, and everything that runs after
+    // signing in (restoring a queue, finishing an import that asked for an
+    // account) is wired to that load. Reload so email takes the same road.
+    window.location.reload();
+  } catch (e) {
+    const msg = String(e?.message || '');
+    sjSignInErr(/invalid login/i.test(msg) ? 'That email and password do not match.' : (msg || 'Could not sign in just now.'));
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign in with email'; }
+  }
 }
 
 // Google rejects OAuth inside an embedded web view, so in the shell the flow

@@ -84,7 +84,7 @@ export function loadFnsFrom(source, names) {
     const decl = `function ${name}(`;
     const at = source.indexOf(decl);
     assert.ok(at >= 0, `could not find function ${name}() in public/index.html`);
-    out[name] = extractFunction(source, at);
+    out[name] = extractFunction(source, withAsync(source, at));
   }
   const body = Object.values(out).join('\n');
   const factory = new Function(`${body}\nreturn {${names.join(',')}};`);
@@ -103,13 +103,22 @@ export function loadHtmlFnsInScope(names, scope) {
     const decl = `function ${name}(`;
     const at = html.indexOf(decl);
     assert.ok(at >= 0, `could not find function ${name}() in public/index.html`);
-    return extractFunction(html, at);
+    return extractFunction(html, withAsync(html, at));
   });
   const factory = new Function(
     '__scope',
     `with (__scope) {\n${fns.join('\n')}\nreturn {${names.join(',')}};\n}`,
   );
   return factory(scope);
+}
+
+/**
+ * Step back over a leading `async ` so an async function is lifted whole.
+ * Cutting at `function name(` dropped the keyword, and every `await` inside
+ * then failed to parse.
+ */
+function withAsync(source, at) {
+  return source.slice(Math.max(0, at - 6), at) === 'async ' ? at - 6 : at;
 }
 
 /** Read one function declaration by walking its braces. */
