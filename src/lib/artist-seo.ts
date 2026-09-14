@@ -260,7 +260,7 @@ export function buildArtistCatalogHtml(
     `</p>` +
     `<p><strong>Songs:</strong> ${titleList || "Catalog loading."}</p>` +
     `<p><a href="${esc(SITE_URL)}/share/${esc(artist.slug)}">${esc(name)} album charts</a> · ` +
-    `<a href="${esc(SITE_URL)}">Explore more free artist jukeboxes</a> · ` +
+    `<a href="${esc(SITE_URL)}">Explore more free artist discographies</a> · ` +
     `<a href="${esc(SITE_URL)}/about">About ${esc(SITE_NAME)}</a></p>` +
     albumBlocks +
     `</section>`

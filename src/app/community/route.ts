@@ -7,7 +7,7 @@ import { currentSurface } from "@/lib/surface";
 
 export async function GET() {
   const surface = currentSurface();
-  if (!surface.features.artistJukebox) {
+  if (!surface.features.artistPages) {
     return NextResponse.redirect(`${surface.url}/`, 302);
   }
   return servePublicHtml("index.html");

@@ -7,7 +7,7 @@ export default function robots(): MetadataRoute.Robots {
   // A brand with no artist jukebox has nothing behind these, and they would
   // otherwise offer a crawler the other brand's catalogue under this domain.
   if (!s.features.shareImages) disallow.push("/share");
-  if (!s.features.artistJukebox) disallow.push("/community");
+  if (!s.features.artistPages) disallow.push("/community");
 
   return {
     rules: {

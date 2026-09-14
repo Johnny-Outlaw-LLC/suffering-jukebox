@@ -341,12 +341,15 @@ test('Suffering Jukebox offers all three tabs and opens on artists', () => {
   assert.equal(t.landingDefaultTab(), 'explore');
 });
 
-test('Listening Party offers Home then playlists and opens on Home', () => {
+test('Listening Party offers Home, then playlists ahead of artists and songs, and opens on Home', () => {
   const t = tabHelpersFor(LP);
-  assert.deepStrictEqual(t.landingTabsAvailable().map((x) => x.id), ['home', 'playlists']);
+  assert.deepStrictEqual(
+    t.landingTabsAvailable().map((x) => x.id),
+    ['home', 'playlists', 'explore', 'songs'],
+  );
   assert.equal(t.landingDefaultTab(), 'home');
-  assert.equal(t.landingTabAllowed('explore'), false);
-  assert.equal(t.landingTabAllowed('songs'), false);
+  assert.equal(t.landingTabAllowed('explore'), true);
+  assert.equal(t.landingTabAllowed('songs'), true);
   assert.equal(t.landingTabAllowed('home'), true);
 });
 
@@ -355,10 +358,11 @@ test('a tab remembered from the other brand does not strand the visitor', () => 
   // Suffering Jukebox arrives at Listening Party still asking for Explore
   // Artists. Without the clamp that renders a tab strip with nothing selected.
   const lp = tabHelpersFor(LP);
-  assert.equal(lp.landingClampTab('explore'), 'home');
-  assert.equal(lp.landingClampTab('songs'), 'home');
+  assert.equal(lp.landingClampTab('explore'), 'explore');
+  assert.equal(lp.landingClampTab('songs'), 'songs');
   assert.equal(lp.landingClampTab('playlists'), 'playlists');
   assert.equal(lp.landingClampTab('home'), 'home');
+  assert.equal(lp.landingClampTab('nonsense'), 'home');
 
   const sj = tabHelpersFor(SJ);
   assert.equal(sj.landingClampTab('songs'), 'songs');
@@ -375,10 +379,13 @@ test('the tab strip marks the active tab and names its handler', () => {
   assert.ok(html.includes(`onclick="setLandingTab('explore')"`));
 
   const lpHtml = tabHelpersFor(LP).landingTabsHTML('home', 'setLandingTab');
-  assert.equal((lpHtml.match(/class="landing-tab/g) || []).length, 2);
-  assert.ok(!lpHtml.includes('Explore Artists'));
+  assert.equal((lpHtml.match(/class="landing-tab/g) || []).length, 4);
   assert.ok(lpHtml.includes(`class="landing-tab active" onclick="setLandingTab('home')"`));
-  assert.ok(lpHtml.includes(`onclick="setLandingTab('playlists')"`));
+  // Playlists first, then artists, then songs.
+  const pi = lpHtml.indexOf(`setLandingTab('playlists')`);
+  const ai = lpHtml.indexOf(`setLandingTab('explore')`);
+  const si = lpHtml.indexOf(`setLandingTab('songs')`);
+  assert.ok(pi >= 0 && pi < ai && ai < si, 'Listening Party tabs are out of order');
 });
 
 test('the tab strip is built in one place, not three', () => {
@@ -392,11 +399,15 @@ test('the tab strip is built in one place, not three', () => {
   );
 });
 
-test('Listening Party leads with Home and has no artist pages', () => {
+test('Listening Party leads with Home, then playlists, and has no artist pages', () => {
   assert.equal(LP.features.defaultLandingTab, 'home');
   assert.equal(LP.features.homeTab, true);
   assert.equal(LP.features.artistPages, false);
-  assert.equal(LP.features.artistJukebox, false);
+  // Artists and songs can be explored, but playlists come first.
+  assert.equal(LP.features.artistJukebox, true);
+  assert.equal(LP.features.exploreSongs, true);
+  assert.equal(LP.features.playlistsFirst, true);
+  assert.equal(SJ.features.playlistsFirst, false);
   assert.equal(SJ.features.defaultLandingTab, 'explore');
   assert.equal(SJ.features.homeTab, false);
   assert.equal(SJ.features.artistPages, true);

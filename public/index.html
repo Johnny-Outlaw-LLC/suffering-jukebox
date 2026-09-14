@@ -4699,7 +4699,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   .la-hero-name { font-size: 1.15rem; }
   .la-hero-stats { gap: 18px; }
   .la-albums { padding: 12px 12px 16px; }
-  /* Keep Play + Explore Artist Jukebox on one line on a narrow phone. */
+  /* Keep Play + Explore Artist Discography on one line on a narrow phone. */
   .la-hero-actions { flex-wrap: nowrap; gap: 8px; }
   .la-hero-actions .landing-play-btn,
   .la-hero-actions .landing-explore-btn { font-size: .5rem; letter-spacing: .02em; padding: .5rem .65rem; white-space: nowrap; }
@@ -6518,7 +6518,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', shareImages: true, welcomeHero: false, phoneMiniPlayer: false, spotifyImport: true, artistUpload: true }
+  features: { artistPages: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: false, spotifyImport: true, artistUpload: true }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -6893,6 +6893,8 @@ function lptbSync() {
   if (!bar) return;
   let on = '';
   try { on = isLandingMode && viewMode !== 'playlistchart' ? landingTab : ''; } catch (_) {}
+  // Explore on the bar covers all three explore sheets, not only playlists.
+  if (on === 'explore' || on === 'songs') on = 'playlists';
   bar.querySelectorAll('.lptb-tab').forEach(b => b.classList.toggle('on', b.dataset.lptb === on));
 }
 
@@ -6941,8 +6943,8 @@ function lptbWireDock() {
 
 // ── Landing tabs ──────────────────────────────────────────────────────────
 // Which tabs exist is a property of the brand: Suffering Jukebox leads with
-// artists, Listening Party leads with Home + playlists and has no artist
-// jukebox to send anyone to. Built in one place and called from all three headers.
+// artists, Listening Party leads with Home + playlists and keeps artists and
+// songs behind them. Built in one place and called from all three headers.
 const LANDING_TABS = [
   { id: 'home',      label: 'Home',              feature: 'homeTab' },
   { id: 'explore',   label: 'Explore Artists',   feature: 'artistJukebox' },
@@ -6950,7 +6952,14 @@ const LANDING_TABS = [
   { id: 'songs',     label: 'Explore Songs',     feature: 'exploreSongs' },
 ];
 function landingTabsAvailable() {
-  return LANDING_TABS.filter(t => !t.feature || SJ_BRAND.features[t.feature]);
+  // A playlist-led brand puts Explore Playlists straight after Home, ahead of
+  // Artists and Songs. Suffering Jukebox keeps artists first.
+  const order = SJ_BRAND.features.playlistsFirst
+    ? ['home', 'playlists', 'explore', 'songs']
+    : ['home', 'explore', 'playlists', 'songs'];
+  return order
+    .map(id => LANDING_TABS.find(t => t.id === id))
+    .filter(t => t && (!t.feature || SJ_BRAND.features[t.feature]));
 }
 function landingTabAllowed(tab) {
   return landingTabsAvailable().some(t => t.id === tab);
@@ -18879,7 +18888,7 @@ function sjmRenderRoot() {
       : '') +
     (SJ_BRAND.features.artistJukebox && navArtist && navArtist.slug && !(_SLUG_ARTIST && _SLUG_ARTIST.id === navArtist.id) && sjmArtistHasDiscography(navArtist.id)
       ? '<button class="sjm-item" onclick="sjmViewArtist()">' +
-          '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Jukebox</span></button>'
+          '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Discography</span></button>'
       : '') +
     '<button class="sjm-item" onclick="sjmDiscover()">' +
       '<span class="sjm-ic">⇄</span><span class="sjm-label">Discover alternative version</span>' +
@@ -18937,7 +18946,7 @@ function isSinglesOnlyRow(row) {
   return !!row && row.discography_complete === false && (row.album_count || 0) <= 1;
 }
 
-// Explore Artist Jukebox is only worth offering where there is a jukebox to
+// Explore Artist Discography is only worth offering where there is a discography to
 // explore. A singles-only artist is a handful of loose uploads, and their
 // page would be the row already on screen. An artist landing_stats has
 // nothing to say about is left alone rather than hidden.
@@ -29888,7 +29897,7 @@ function renderLanding() {
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
               ${r.discography_complete === false
                 ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>`}
+                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
               <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
             </div>
             </div>
@@ -30182,7 +30191,7 @@ function laExpandedCardHTML(r, i) {
       <div class="la-hero">
         <div class="la-hero-art${thumb ? '' : ' no-art'}"${thumb ? ` style="background-image:url('${thumb.replace(/'/g, '%27')}')"` : ''}>${thumb ? '' : '\u266a'}</div>
         <div class="la-hero-info">
-          <div class="la-hero-eyebrow">Artist Jukebox</div>
+          <div class="la-hero-eyebrow">Artist Discography</div>
           <div class="la-hero-name">${esc(r.name)}</div>
           <div class="la-hero-stats">
             <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_views)}</span><span class="landing-stat-lbl">YouTube Plays</span></div>
@@ -30195,7 +30204,7 @@ function laExpandedCardHTML(r, i) {
             <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
             ${r.discography_complete === false
                 ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore artist jukebox →</button>`}
+                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
             <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();laToggleSongView('${r.artist_id}')">${laSongViewIds.has(r.artist_id) ? 'View Albums' : 'View Songs'}</button>
             <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
           </div>
@@ -30947,7 +30956,10 @@ async function enterArtistJukebox(artist, opts) {
     if (_ln) { _ln.innerHTML = ''; _ln.style.display = 'none'; _ln.dataset.armed = '0'; }
     resetDashboardState();
     if (opts.pushHistory !== false) {
-      try { history.pushState({ slug: artist.slug }, '', '/' + artist.slug); } catch (e) {}
+      // A brand without artist pages redirects /<slug> home, so its address
+      // stays on the root. Back still returns to the explorer via popstate.
+      const url = SJ_BRAND.features.artistPages ? '/' + artist.slug : '/';
+      try { history.pushState({ slug: artist.slug }, '', url); } catch (e) {}
     }
     try { await loadArtistPageData(); } catch (e) { renderEmpty(`Error: ${e.message}`); }
     fadeMainIn();
@@ -30966,9 +30978,10 @@ async function goHome(opts) {
   }
   if (!IS_COMMUNITY) {
     // The logo is Home from every landing sheet too. Explore Playlists and
-    // Explore Songs share the root URL, so restore the artist landing sheet
+    // Explore Songs share the root URL, so restore the brand's front sheet
     // in place rather than attempting a no-op navigation to that same URL.
-    if (isLandingMode && landingTab !== 'explore') setLandingTab('explore');
+    const front = landingDefaultTab();
+    if (isLandingMode && landingTab !== front) setLandingTab(front);
     return;
   }
   if (_routeTransitionBusy) return;
@@ -32972,7 +32985,7 @@ function renderOtherArtistsBtn() {
           return `<button type="button" class="oa-act${inJuke ? ' in' : ''}${_part ? ' part' : ''}" onclick="event.stopPropagation();oaToggleJukebox('${a.id}')" title="${_tip}">${_lbl}</button>`;
         })() : ''}
         ${SJ_COMMENTS_ENABLED ? `<button type="button" class="cmt-btn" data-cmt-badge="artist:${a.id}" onclick="event.stopPropagation();openComments('artist','${a.id}')" title="Comment on this artist">Comment</button>` : ''}
-        <button type="button" class="oa-act go" onclick="event.stopPropagation();oaGoToArtist('${a.id}')" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open a jukebox with only this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Jukebox →'}</button>
+        <button type="button" class="oa-act go" onclick="event.stopPropagation();oaGoToArtist('${a.id}')" title="${a.is_community === false ? 'Open the main Silver Jews &amp; Purple Mountains jukebox' : 'Open the discography for just this artist'}">${a.is_community === false ? 'Main Jukebox →' : 'Artist Discography →'}</button>
       </div>
       ${isExp ? `<div class="oa-albs">${albRows}</div>` : ''}
     </div>`;
@@ -36541,11 +36554,15 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-13';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-14';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-14', items: [
+    'Artist Jukebox is now called Artist Discography: the Explore Artist Discography button on an artist card, the song menu, the Other Artists list and the label on an artist page.',
+    'Listening Party can now explore by artist and by song as well as by playlist. Explore Playlists stays the first tab and the one Explore opens on, with Explore Artists and Explore Songs beside it.',
+  ] },
   { date: '2026-09-13', items: [
     'Importing a whole artist from YouTube is two steps now: find the artist, then choose the music and who can see it. Once the music is added you can finish immediately, with Fine-tune offered as an optional extra.',
     'Reading a YouTube Music history screenshot now leaves out Mix, Radio, Supermix, playlist, album and podcast rows, reads the artist from Song · Artist labels, and still includes the song in the now-playing bar.',
@@ -41607,7 +41624,7 @@ let _sjExportPendingShare = false;
 
 function openSjExportModal() {
   if (SJ_EXPORT_SLAVE || _sjExportBusy) return;
-  if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
+  if (!selectedIds.size) { showToast('Open an artist discography first'); return; }
   _sjExportFiles = [];
   _sjExportSelectedScope = 'artist';
   const { name } = sjExportArtistMeta();
@@ -41952,7 +41969,7 @@ function plClearShareUrl() {
 
 function openSjShareHub() {
   if (SJ_EXPORT_SLAVE || _sjExportBusy) return;
-  if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
+  if (!selectedIds.size) { showToast('Open an artist discography first'); return; }
   const { name } = sjExportArtistMeta();
   const el = document.getElementById('sjhub-summary');
   if (el) el.textContent = 'Share the ' + name + ' jukebox.';
@@ -41979,7 +41996,7 @@ function sjJukeboxShareUrl() {
 
 // ── Share Jukebox / Playlist (link only - no image generation) ──
 function openSjShareModal() {
-  if (!selectedIds.size) { showToast('Load an artist jukebox first'); return; }
+  if (!selectedIds.size) { showToast('Open an artist discography first'); return; }
   _sjShareKind = 'artist';
   _plShareId = null;
   const { name } = sjExportArtistMeta();

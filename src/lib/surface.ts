@@ -18,7 +18,10 @@ export type SurfaceId = "sj" | "lp";
 export interface SurfaceFeatures {
   /** /<slug> serves an indexable artist page with catalog text and JSON-LD. */
   artistPages: boolean;
-  /** Clicking an artist opens the artist jukebox view (charts, albums, tracks). */
+  /**
+   * The Explore Artists landing tab, and clicking an artist opens the artist
+   * discography view (charts, albums, tracks).
+   */
   artistJukebox: boolean;
   /** The Explore Songs landing tab. */
   exploreSongs: boolean;
@@ -30,6 +33,11 @@ export interface SurfaceFeatures {
   homeTab: boolean;
   /** Which landing tab a first-time visitor lands on. */
   defaultLandingTab: "home" | "explore" | "playlists";
+  /**
+   * Explore Playlists comes before Explore Artists and Explore Songs in the tab
+   * strip. Listening Party leads with playlists; Suffering Jukebox with artists.
+   */
+  playlistsFirst: boolean;
   /** The nightly per-artist share-image pipeline and the /share pages. */
   shareImages: boolean;
   /**
@@ -199,6 +207,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       exploreSongs: true,
       homeTab: false,
       defaultLandingTab: "explore",
+      playlistsFirst: false,
       shareImages: true,
       sitemapPlaylists: true,
       welcomeHero: false,
@@ -265,10 +274,11 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     },
     features: {
       artistPages: false,
-      artistJukebox: false,
-      exploreSongs: false,
+      artistJukebox: true,
+      exploreSongs: true,
       homeTab: true,
       defaultLandingTab: "home",
+      playlistsFirst: true,
       shareImages: false,
       sitemapPlaylists: true,
       welcomeHero: true,
@@ -351,6 +361,7 @@ export function publicSurface(s: Surface) {
       exploreSongs: s.features.exploreSongs,
       homeTab: s.features.homeTab,
       defaultLandingTab: s.features.defaultLandingTab,
+      playlistsFirst: s.features.playlistsFirst,
       shareImages: s.features.shareImages,
       welcomeHero: s.features.welcomeHero,
       phoneMiniPlayer: s.features.phoneMiniPlayer,
