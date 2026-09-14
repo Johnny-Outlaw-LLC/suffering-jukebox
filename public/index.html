@@ -1026,6 +1026,10 @@ body:not(.light) .tt-num { color: var(--text); }
   .user-menu-meta { font-size: .48rem; padding: .6rem .95rem .25rem; }
   .user-menu-date { font-size: .56rem; padding: 0 .95rem .7rem; }
   .clog-link { font-size: .52rem; padding: 0 .95rem .7rem; }
+  /* .hdr-r2 is a wrapping column here, so the desktop flex-basis of 100% is a
+     height and pushes the other slots into columns off the right edge. The
+     landing tabs lead the stack on an Artist Discography. */
+  #landing-nav-header { order: -2; flex: 0 0 auto; }
   #lwytb-header { order: -1; width: 100%; }
   #lwytb-header .lwytb-row {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem; width: 100%;
@@ -31749,8 +31753,38 @@ function updateViewControlsHeader() {
   el.innerHTML = renderViewToggle();
   el.style.display = '';
   el.dataset.armed = '1';
+  try { updateArtistNavHeader(); } catch (e) { console.warn('updateArtistNavHeader', e); }
   updateToolbarToggle();
   sjFitLwytbRow();
+}
+
+// An Artist Discography keeps the landing tabs above its own toolbar, so the
+// way back to the explorers and to Now Playing is one tap from any artist.
+// No tab is marked active: the page under it is the artist, not a sheet.
+function updateArtistNavHeader() {
+  const nav = document.getElementById('landing-nav-header');
+  if (!nav || isLandingMode || !IS_COMMUNITY || viewMode === 'playlistchart') return;
+  const _np = nowPlayingDynamicRow();
+  nav.style.display = 'block';
+  nav.innerHTML = `<nav class="landing-nav" aria-label="Browse ${SJ_BRAND.name}">
+    ${landingTabsHTML('', 'artistNavToLanding')}
+    <button type="button" class="landing-tab landing-tab-now" id="landing-now-playing-tab" onclick="artistNavNowPlaying()" title="Open the queue that is playing right now"${_np ? '' : ' hidden'}>♪ Now Playing${_np && _np._tracks.length > 1 ? ' (' + _np._tracks.length.toLocaleString() + ')' : ''}</button>
+  </nav>`;
+  nav.dataset.armed = '1';
+}
+
+// Leaving an artist goes through goHome() so its header slots, history and
+// the landing data are handled the one way they already are.
+async function artistNavToLanding(tab) {
+  landingTab = landingClampTab(tab);
+  try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
+  await goHome();
+}
+
+async function artistNavNowPlaying() {
+  if (!nowPlayingDynamicRow()) { showToast('Nothing is playing yet.'); return; }
+  await goHome();
+  if (isLandingMode) openNowPlayingChart();
 }
 
 // Direct artist-page loads have several independent startup jobs (catalogue,
@@ -31760,6 +31794,9 @@ function updateViewControlsHeader() {
 function ensureViewControlsHeader() {
   if (isLandingMode || viewMode === 'playlists' || viewMode === 'playlistchart' || !selectedIds.size) return;
   const el = document.getElementById('view-controls-header');
+  if (el && el.querySelector('.view-seg') && !document.querySelector('#landing-nav-header .landing-nav')) {
+    try { updateArtistNavHeader(); } catch (e) { console.warn('ensureArtistNavHeader', e); }
+  }
   if (!el || el.querySelector('.view-seg')) return;
   try { updateViewControlsHeader(); }
   catch (e) { console.warn('ensureViewControlsHeader', e); }
@@ -36562,6 +36599,7 @@ const SJ_CHANGELOG = [
   { date: '2026-09-14', items: [
     'Artist Jukebox is now called Artist Discography: the Explore Artist Discography button on an artist card, the song menu, the Other Artists list and the label on an artist page.',
     'Listening Party can now explore by artist and by song as well as by playlist. Explore Playlists stays the first tab and the one Explore opens on, with Explore Artists and Explore Songs beside it.',
+    'An Artist Discography now keeps the Explore Playlists, Explore Artists, Explore Songs and Now Playing tabs at the top of the page, so getting back to them is one tap.',
   ] },
   { date: '2026-09-13', items: [
     'Importing a whole artist from YouTube is two steps now: find the artist, then choose the music and who can see it. Once the music is added you can finish immediately, with Fine-tune offered as an optional extra.',
