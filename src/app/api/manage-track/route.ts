@@ -23,9 +23,23 @@ type TrackCtx = {
     track_number: number | null;
     visibility: string | null;
     duration_ms: number | null;
+    created_at: string | null;
   };
-  album: { id: string; name: string; artist_id: string; added_by: string | null };
-  artist: { id: string; name: string; slug: string | null; added_by: string | null; is_community: boolean | null };
+  album: {
+    id: string;
+    name: string;
+    artist_id: string;
+    added_by: string | null;
+    added_by_name: string | null;
+  };
+  artist: {
+    id: string;
+    name: string;
+    slug: string | null;
+    added_by: string | null;
+    added_by_name: string | null;
+    is_community: boolean | null;
+  };
 };
 
 function bad(msg: string, status = 400) {
@@ -41,21 +55,21 @@ async function loadTrackCtx(trackId: string): Promise<TrackCtx | null> {
   const { data: track } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("tracks")
-    .select("id,name,album_id,track_number,visibility,duration_ms")
+    .select("id,name,album_id,track_number,visibility,duration_ms,created_at")
     .eq("id", trackId)
     .maybeSingle();
   if (!track?.album_id) return null;
   const { data: album } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("albums")
-    .select("id,name,artist_id,added_by")
+    .select("id,name,artist_id,added_by,added_by_name")
     .eq("id", track.album_id)
     .maybeSingle();
   if (!album?.artist_id) return null;
   const { data: artist } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("artists")
-    .select("id,name,slug,added_by,is_community")
+    .select("id,name,slug,added_by,added_by_name,is_community")
     .eq("id", album.artist_id)
     .maybeSingle();
   if (!artist) return null;
@@ -64,6 +78,21 @@ async function loadTrackCtx(trackId: string): Promise<TrackCtx | null> {
     album: album as TrackCtx["album"],
     artist: artist as TrackCtx["artist"],
   };
+}
+
+function importedBy(ctx: TrackCtx) {
+  // Album credit wins when present (a singles import stamps the album);
+  // otherwise the artist row is who brought the catalogue in.
+  const name =
+    (ctx.album.added_by_name || "").trim() ||
+    (ctx.artist.added_by_name || "").trim() ||
+    null;
+  const email =
+    (ctx.album.added_by || "").trim().toLowerCase() ||
+    (ctx.artist.added_by || "").trim().toLowerCase() ||
+    null;
+  if (!name && !email) return null;
+  return { name, email };
 }
 
 async function canManage(email: string, ctx: TrackCtx): Promise<boolean> {
@@ -122,6 +151,7 @@ export async function GET(req: NextRequest) {
     track: ctx.track,
     album: { id: ctx.album.id, name: ctx.album.name },
     artist: { id: ctx.artist.id, name: ctx.artist.name, slug: ctx.artist.slug },
+    imported_by: importedBy(ctx),
     albums: albums || [],
     videos: videos || [],
     links: links || [],
