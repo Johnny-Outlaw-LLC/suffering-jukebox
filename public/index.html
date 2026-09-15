@@ -20712,7 +20712,7 @@ async function adNext() {
   }
 }
 
-// ── Manage song (ms*) — name, album, privacy, YouTube versions, links ─────
+// ── Manage song (ms*) — name, album, privacy, YouTube versions ─────────────
 let _msTrackId = null;
 let _msData = null;
 let _msBusy = false;
@@ -20837,14 +20837,6 @@ function msRender() {
         (isPlay ? '' : '<button type="button" class="pl-btn ghost" onclick="msRemoveVideo(\'' + msQ(v.video_id) + '\')">Remove</button>') +
       '</div></div>';
   }).join('') || '<div class="plb-empty small">No YouTube versions on file.</div>';
-  const links = (d.links || []).map(l =>
-    '<div class="ms-row">' +
-      '<div class="ms-row-body">' +
-        '<div class="ms-row-title">' + escHtml(l.link_name || 'Link') + '</div>' +
-        '<div class="ms-row-meta"><a href="' + msQ(l.url) + '" target="_blank" rel="noopener">' + escHtml(l.url) + '</a></div>' +
-      '</div>' +
-      '<div class="ms-row-acts"><button type="button" class="pl-btn ghost" onclick="msDeleteLink(\'' + msQ(l.id) + '\')">Remove</button></div>' +
-    '</div>').join('') || '<div class="plb-empty small">No external links yet.</div>';
 
   const prim = msPrimaryVideo(d);
   const art = prim?.thumbnail || (prim?.video_id ? ('https://i.ytimg.com/vi/' + prim.video_id + '/mqdefault.jpg') : '');
@@ -20901,22 +20893,10 @@ function msRender() {
       '<div class="ms-col ms-col-right">' +
         '<div class="ms-sec">' +
           '<div class="ms-sec-h">YouTube versions</div>' +
-          '<div style="font-size:.46rem;color:var(--text-muted);margin:-.2rem 0 .55rem;line-height:1.4">' +
-            'Playback is what starts when someone hits play. Stats is the upload whose view count feeds the charts — they can be different videos.' +
-          '</div>' +
           '<div id="ms-videos">' + videos + '</div>' +
           '<div class="ms-add-row">' +
             '<input id="ms-yt-url" type="text" placeholder="Paste a YouTube link to add a version…">' +
             '<button type="button" class="pl-btn" onclick="msAddVideo()">Add</button>' +
-          '</div>' +
-        '</div>' +
-        '<div class="ms-sec">' +
-          '<div class="ms-sec-h">Links</div>' +
-          '<div id="ms-links">' + links + '</div>' +
-          '<div class="ms-add-row">' +
-            '<input id="ms-link-name" type="text" placeholder="Name (Spotify, Bandcamp…)" style="flex:0 1 140px">' +
-            '<input id="ms-link-url" type="url" placeholder="https://…">' +
-            '<button type="button" class="pl-btn" onclick="msAddLink()">Add</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -21274,41 +21254,6 @@ async function msSetStats(videoId) {
 // Kept for any leftover onclick — playback only now.
 async function msSetPrimary(videoId) {
   return msSetPlayback(videoId);
-}
-
-async function msAddLink() {
-  if (_msBusy || !_msTrackId) return;
-  const name = document.getElementById('ms-link-name')?.value?.trim() || '';
-  const url = document.getElementById('ms-link-url')?.value?.trim() || '';
-  if (!name || !url) { msStatus('Give the link a name and a URL.', true); return; }
-  _msBusy = true;
-  try {
-    const data = await msRequest('POST', {
-      action: 'add_link', track_id: _msTrackId, link_name: name, url,
-    });
-    if (data.link) _msData.links = (_msData.links || []).concat([data.link]);
-    msRender();
-    msStatus('Link added.');
-  } catch (e) {
-    msStatus(e.message || 'Could not add that link.', true);
-  } finally {
-    _msBusy = false;
-  }
-}
-
-async function msDeleteLink(linkId) {
-  if (_msBusy || !_msTrackId || !linkId) return;
-  _msBusy = true;
-  try {
-    await msRequest('POST', { action: 'delete_link', track_id: _msTrackId, link_id: linkId });
-    _msData.links = (_msData.links || []).filter(l => l.id !== linkId);
-    msRender();
-    msStatus('Link removed.');
-  } catch (e) {
-    msStatus(e.message || 'Could not remove that link.', true);
-  } finally {
-    _msBusy = false;
-  }
 }
 
 async function msDelete() {
@@ -36660,7 +36605,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-15';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-15', items: [
-    'Manage song is wider on a desktop: details and playlists on the left, YouTube versions and links on the right, with who imported the song shown at the top.',
+    'Manage song no longer has per-song external links. Articles and interviews belong with an album or artist, not a single track.',
+    'Manage song is wider on a desktop: details and playlists on the left, YouTube versions on the right, with who imported the song shown at the top.',
     'From Manage song you can add the track to playlists, create a new playlist, share it, or copy a jukebox or YouTube link.',
     'Scrolling the Add to playlist list (wheel or scrollbar) no longer closes the ⋯ menu.',
   ]},
@@ -42180,6 +42126,7 @@ function openSjShareModal() {
   if (!selectedIds.size) { showToast('Open an artist discography first'); return; }
   _sjShareKind = 'artist';
   _plShareId = null;
+  _sjShareSong = null;
   const { name } = sjExportArtistMeta();
   const title = document.getElementById('sjs-title');
   if (title) title.textContent = 'Share Jukebox';
@@ -42207,6 +42154,7 @@ async function openPlShareModal(playlistId) {
   }
   _sjShareKind = 'playlist';
   _plShareId = id;
+  _sjShareSong = null;
   // Mint a vanity slug if the owner has never shared this list before.
   if (!p.slug && googleUser && p.user_email === googleUser.email) {
     try {

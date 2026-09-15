@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
   const { ctx } = gate;
   const sb = createSjServiceClient();
 
-  const [{ data: albums }, { data: videos }, { data: links }] = await Promise.all([
+  const [{ data: albums }, { data: videos }] = await Promise.all([
     sb
       .schema(JUKEBOX_SCHEMA)
       .from("albums")
@@ -138,12 +138,6 @@ export async function GET(req: NextRequest) {
       )
       .eq("track_id", trackId)
       .order("view_count", { ascending: false, nullsFirst: false }),
-    sb
-      .schema(JUKEBOX_SCHEMA)
-      .from("links")
-      .select("id,link_name,url,link_priority")
-      .eq("track_id", trackId)
-      .order("link_priority", { ascending: true }),
   ]);
 
   return NextResponse.json({
@@ -154,7 +148,6 @@ export async function GET(req: NextRequest) {
     imported_by: importedBy(ctx),
     albums: albums || [],
     videos: videos || [],
-    links: links || [],
   });
 }
 
@@ -282,48 +275,6 @@ export async function POST(req: NextRequest) {
           .eq("id", row.id);
       }
     }
-    return NextResponse.json({ ok: true });
-  }
-
-  if (action === "add_link") {
-    const linkName = String(body.link_name || body.name || "")
-      .trim()
-      .slice(0, 80);
-    const url = String(body.url || "")
-      .trim()
-      .slice(0, 500);
-    if (!linkName || !url) return bad("Name and URL required.");
-    if (!/^https?:\/\//i.test(url)) return bad("Link must start with http:// or https://");
-    const { data: pri } = await sb
-      .schema(JUKEBOX_SCHEMA)
-      .from("links")
-      .select("link_priority")
-      .eq("track_id", trackId)
-      .order("link_priority", { ascending: false })
-      .limit(1);
-    const priority = ((pri?.[0]?.link_priority as number) || 0) + 1;
-    const { data, error } = await sb
-      .schema(JUKEBOX_SCHEMA)
-      .from("links")
-      .insert({ track_id: trackId, link_name: linkName, url, link_priority: priority })
-      .select("id,link_name,url,link_priority")
-      .single();
-    if (error) return bad(error.message || "Could not add link.", 500);
-    return NextResponse.json({ ok: true, link: data });
-  }
-
-  if (action === "delete_link") {
-    const linkId = uuid(body.link_id);
-    if (!linkId) return bad("link_id required.");
-    const { data: link } = await sb
-      .schema(JUKEBOX_SCHEMA)
-      .from("links")
-      .select("id,track_id")
-      .eq("id", linkId)
-      .maybeSingle();
-    if (!link || link.track_id !== trackId) return bad("Link not found.", 404);
-    const { error } = await sb.schema(JUKEBOX_SCHEMA).from("links").delete().eq("id", linkId);
-    if (error) return bad(error.message || "Could not remove link.", 500);
     return NextResponse.json({ ok: true });
   }
 
