@@ -250,9 +250,10 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     // read. Live type stays legible at any size; keep the lockup for og cards.
     headerTitle: "ListeningParty.stream",
     assetBase: "/brand/lp",
-    // Circular badge for the header mark. Favicons and square cards use the
-    // same art; the wide lockup lives at header-mark.png for social cards.
-    textLogo: "/brand/lp/listening-party-icon.png",
+    // Header mark is the monkey alone (no ring text). The full badge with
+    // ListeningParty.Stream / JOIN THE LISTENING PARTY stays on favicons and
+    // square cards; the wide lockup lives at header-mark.png for social cards.
+    textLogo: "/brand/lp/listening-party-mark.png",
     ogImage: `${LP_URL}/brand/lp/og-image.png`,
     ogImageSize: { w: 1200, h: 630 },
     themeColor: "#4A1B6D",

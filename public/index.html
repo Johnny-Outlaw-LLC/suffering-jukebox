@@ -4742,6 +4742,16 @@ html[data-surface="lp"] .brand-copy .brand-title {
   color: var(--lp-cream);
   text-shadow: 2px 2px 0 var(--accent);
 }
+/* Light mode: cream-on-cream vanishes. Use plum fill with the same orange
+   offset as dark mode so the mark still reads as this brand. */
+html[data-surface="lp"] body.light .brand-copy .brand-title {
+  color: #24102B;
+  text-shadow: 2px 2px 0 var(--accent);
+}
+html[data-surface="lp"] body.light .brand-title em {
+  color: var(--accent);
+  text-shadow: none;
+}
 /* Tagline sized to sit under ListeningParty.stream at roughly the same width. */
 html[data-surface="lp"] .brand-copy {
   width: max-content;
@@ -4749,12 +4759,15 @@ html[data-surface="lp"] .brand-copy {
 }
 html[data-surface="lp"] .brand-copy .brand-tagline {
   font-family: var(--lp-body);
-  font-size: clamp(0.52rem, 1.05vw, 0.66rem);
+  font-size: clamp(0.48rem, 0.95vw, 0.62rem);
   font-weight: 800;
-  letter-spacing: 0.055em;
+  letter-spacing: 0.04em;
   color: var(--accent);
   width: 100%;
   box-sizing: border-box;
+}
+html[data-surface="lp"] body.light .brand-copy .brand-tagline {
+  color: #C44A0A;
 }
 html[data-surface="lp"] .brand-title em {
   color: var(--accent);
@@ -8638,7 +8651,27 @@ function findTrackById(tid) {
     if (t) return t;
   }
   const pcRow = (playlistChartRows || []).find(r => r.trackId === tid);
-  if (pcRow) return { id: tid, name: pcRow.title, album_id: pcRow.albumId, duration_ms: pcRow.duration || 0 };
+  if (pcRow) return {
+    id: tid,
+    name: pcRow.title,
+    artist_id: pcRow.artistId || null,
+    album_id: pcRow.albumId,
+    duration_ms: pcRow.duration || 0,
+  };
+  // Playlist / Now Playing listens often never load the artist catalogue, so
+  // fall back to whatever meta the queue and search index already carry.
+  const meta = (typeof SJ_TRACK_META !== 'undefined' && SJ_TRACK_META[tid]) || null;
+  const psm = (typeof playlistSearchMetaByTrack !== 'undefined' && playlistSearchMetaByTrack[tid]) || null;
+  const q = (typeof ytQueue !== 'undefined' ? ytQueue : []).find(i => i && i.trackId === tid);
+  if (meta || psm || q) {
+    return {
+      id: tid,
+      name: (meta && meta.title) || (psm && psm.title) || (q && q.title) || '',
+      artist_id: (meta && meta.artistId) || (psm && psm.artistId) || (q && q.artistId) || null,
+      album_id: (meta && meta.albumId) || (psm && psm.albumId) || (q && q.albumId) || null,
+      duration_ms: (q && q.durationMs) || 0,
+    };
+  }
   return null;
 }
 
@@ -19460,7 +19493,9 @@ function sjLhRenderHTML(trackId, s, rows) {
           '<div class="sj-lh-tags">' + tags.join('') + '</div>' +
         '</div>';
       }).join('') + '</div>'
-    : '<p class="sj-lh-note">No plays recorded yet. A song counts as played once it actually starts.</p>';
+    : (hearts > 0 || rating > 0)
+      ? '<p class="sj-lh-note">No counted plays yet — but your hearts and rating above still count. A play is recorded after about 10 seconds of listening; shorter listens only leave the reaction.</p>'
+      : '<p class="sj-lh-note">No plays recorded yet. A song counts as played once it has been listening for about 10 seconds.</p>';
 
   const notes = [];
   if (rows.length && rows.length < plays) {
@@ -23002,6 +23037,7 @@ let isLandingMode       = false;  // true once initLanding() takes over root ("/
 // a remembered Live Stations tab on a cold load.
 let liveRoomPlaylists = [];
 let _liveRoomPlaylistsLoading = null;
+let _liveRoomDiscoverTimer = null;
 let landingTab          = landingClampTab(localStorage.getItem('sj_landing_tab_v2') || landingDefaultTab()); // home | explore | playlists | songs | live
 // Old My Jukebox tab id is retired; "My Artists" is a filter on Explore Artists.
 // A stored 'home' on Suffering Jukebox (which has no Home tab) is clamped above.
@@ -23120,6 +23156,7 @@ function liveRoomTakePlayback(roomOrPlayback, settings) {
 
 async function loadLiveRoomPlaylists() {
   if (_liveRoomPlaylistsLoading) return _liveRoomPlaylistsLoading;
+  liveRoomEnsureDiscoverPoll();
   _liveRoomPlaylistsLoading = Promise.resolve(typeof sjAuthHeaders === 'function' ? sjAuthHeaders() : {})
     .catch(() => ({}))
     .then(headers => fetch('/api/jukebox/live', { cache: 'no-store', headers }))
@@ -23159,6 +23196,19 @@ async function loadLiveRoomPlaylists() {
     .catch(() => {})
     .finally(() => { _liveRoomPlaylistsLoading = null; });
   return _liveRoomPlaylistsLoading;
+}
+
+// Live Stations appears and vanishes with the room list. Without a light poll
+// a listener who already had Explore open would never see a station that
+// went live after their first paint.
+function liveRoomEnsureDiscoverPoll() {
+  if (!SJ_BRAND.features.liveStations) return;
+  if (_liveRoomDiscoverTimer) return;
+  _liveRoomDiscoverTimer = setInterval(() => {
+    if (!isLandingMode || document.hidden) return;
+    if (_liveRoomPlaylistsLoading) return;
+    loadLiveRoomPlaylists();
+  }, 10000);
 }
 
 async function openLiveRoomFromUrl() {
@@ -36288,6 +36338,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-14';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-14', items: [
+    'Listening Party’s header looks right in light mode: ListeningParty.stream is plum with an orange offset instead of cream-on-cream, and Join the Listening Party sits under the name at matching width.',
+    'The header logo is just the monkey now — the ring text around it is gone, because the name and tagline already sit beside it as real type.',
+    'Playing a song from a playlist or Now Playing now counts in listening history even when the artist catalogue was not loaded. Hearts could land while plays stayed at zero; that is fixed going forward.',
     'On Listening Party desktop, Go Live sits to the left of Shuffle with a record icon, and reads Broadcasting while you are on air instead of disappearing.',
     'Join the Listening Party in the header is sized to match ListeningParty.stream above it, instead of stretching wider than the name.',
     'When someone goes live, other listeners see the Live Stations tab again. Rooms that were already on air were being filtered out by mistake.',
@@ -40569,9 +40622,13 @@ function patchYTPlayDuration() {
 
 // ── Log actual YouTube play or queue event ──────────────────────────────────
 async function logYTPlay(videoId, trackId, eventType, source) {
-  const track = findTrackById(trackId);
-  if (!track) return;
+  if (!trackId) return;
   try {
+    // Do not bail when the catalogue row is not loaded. Playlist and Now
+    // Playing listens on Listening Party often have only a track id — hearts
+    // still landed, but play history stayed empty because findTrackById
+    // returned null and this function returned before writing anything.
+    const track = findTrackById(trackId) || { id: trackId };
     const eventId = await dbRpcAuth('/rpc/log_play_event', {
       p_track_id:       trackId,
       p_artist_id:      track.artist_id || null,
