@@ -6964,6 +6964,12 @@ const LANDING_TABS = [
 function liveStationsJoinable() {
   return (liveRoomPlaylists || []).filter(p => !p._roomIsOwner);
 }
+/** Suffering Jukebox lists live rooms as Live Now cards on Explore Playlists.
+ *  Listening Party has its own Live Stations tab, so those rooms stay off the
+ *  playlist wall and off the Live filter chip. */
+function liveRoomsOnPlaylistWall() {
+  return !SJ_BRAND.features.liveStations;
+}
 function landingTabsAvailable() {
   // A playlist-led brand puts Explore Playlists straight after Home, ahead of
   // Artists and Songs. Live Stations sits after Explore Songs when the brand
@@ -23462,7 +23468,9 @@ function playlistExploreRowsAll() {
   // somebody else's room is neither.
   // Signed out there is one shelf and no chips to change it with, so a room
   // on air has to be on it.
-  const live = (scope === 'all' || scope === 'live' || !googleUser)
+  // Listening Party does not put rooms on this wall at all - Live Stations is
+  // its own tab (see liveRoomsOnPlaylistWall).
+  const live = liveRoomsOnPlaylistWall() && (scope === 'all' || scope === 'live' || !googleUser)
     ? liveRoomPlaylists.filter(p => !p._roomIsOwner && (!q || playlistMatchesSearch(p, q)))
     : [];
   const shelf = live.concat(dynamic.filter(p => !q || playlistMatchesSearch(p, q)), sorted);
@@ -23790,6 +23798,12 @@ function setPlaylistExploreFilter(mode) {
     showToast('Sign in to see your playlists.');
     return;
   }
+  // Listening Party keeps live rooms on the Live Stations tab, not as a
+  // playlist filter.
+  if (mode === 'live' && !liveRoomsOnPlaylistWall()) {
+    setLandingTab('live');
+    return;
+  }
   playlistExploreFilter = ['mine', 'public', 'all', 'live'].includes(mode) ? mode : 'all';
   try { localStorage.setItem('sj_pl_explore_filter', playlistExploreFilter); } catch (_) {}
   // On this shelf the live rooms are the whole shelf, so refresh them first.
@@ -24010,7 +24024,14 @@ function setPlaylistCardSizeIdx(i) {
 // visited signed in must not come back to an empty My Playlists with no
 // control on screen to explain it.
 function artistScope() { return googleUser ? artistExploreFilter : 'public'; }
-function plScope() { return googleUser ? playlistExploreFilter : 'public'; }
+function plScope() {
+  // A remembered Live filter from Suffering Jukebox must not empty the LP
+  // playlist wall - rooms live on the Live Stations tab there.
+  if (!liveRoomsOnPlaylistWall() && playlistExploreFilter === 'live') {
+    return googleUser ? 'all' : 'public';
+  }
+  return googleUser ? playlistExploreFilter : 'public';
+}
 
 function exploreViewToggleHTML(mode, setFn) {
   const isDetail = mode === 'detail';
@@ -30916,7 +30937,7 @@ function updateLandingActionsHeader() {
         <button type="button" class="playlist-explore-filter${plScope() === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
         <button type="button" class="playlist-explore-filter${plScope() === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
         <button type="button" class="playlist-explore-filter${plScope() === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
-        ${liveScopeCount ? `<button type="button" class="playlist-explore-filter${plScope() === 'live' ? ' active' : ''}" onclick="setPlaylistExploreFilter('live')">Live (${liveScopeCount})</button>` : ''}
+        ${liveRoomsOnPlaylistWall() && liveScopeCount ? `<button type="button" class="playlist-explore-filter${plScope() === 'live' ? ' active' : ''}" onclick="setPlaylistExploreFilter('live')">Live (${liveScopeCount})</button>` : ''}
         ${sjBgFilterOffered() ? `<button type="button" class="playlist-explore-filter${homeBgOnly ? ' active' : ''}" onclick="setSjBgOnly(${homeBgOnly ? 'false' : 'true'})" title="Only what keeps playing with the screen off or the app in the background">Background Enabled</button>` : ''}
       </span>`
     : '';
@@ -36338,6 +36359,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-14';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-14', items: [
+    'On Listening Party, live rooms stay on the Live Stations tab and no longer appear as Live Now cards mixed into Explore Playlists. Suffering Jukebox still shows them as playlists with a Live Now badge.',
     'Listening Party’s header looks right in light mode: ListeningParty.stream is plum with an orange offset instead of cream-on-cream, and Join the Listening Party sits under the name at matching width.',
     'The header logo is just the monkey now — the ring text around it is gone, because the name and tagline already sit beside it as real type.',
     'Playing a song from a playlist or Now Playing now counts in listening history even when the artist catalogue was not loaded. Hearts could land while plays stayed at zero; that is fixed going forward.',
@@ -40625,9 +40647,9 @@ async function logYTPlay(videoId, trackId, eventType, source) {
   if (!trackId) return;
   try {
     // Do not bail when the catalogue row is not loaded. Playlist and Now
-    // Playing listens on Listening Party often have only a track id — hearts
-    // still landed, but play history stayed empty because findTrackById
-    // returned null and this function returned before writing anything.
+    // Playing listens often have only a track id — hearts still landed, but
+    // play history stayed empty because findTrackById returned null and this
+    // function returned before writing anything.
     const track = findTrackById(trackId) || { id: trackId };
     const eventId = await dbRpcAuth('/rpc/log_play_event', {
       p_track_id:       trackId,
