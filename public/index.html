@@ -3861,6 +3861,9 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-size-slider::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); cursor:pointer; box-shadow:0 0 10px rgba(var(--accent-rgb),0.4); }
 .pl-wall-size-slider::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--accent); border:none; box-shadow:0 0 10px rgba(var(--accent-rgb),0.4); }
 .pl-wall-scroll { overflow:auto; max-height:calc(100vh - 180px); scrollbar-width:thin; scrollbar-color:var(--border) transparent; padding:28px; }
+/* Detail mode: no top padding so the sticky column header sits flush at the
+   top of the scroller instead of floating below a blank band. */
+.pl-wall-page.pl-wall-detail-mode .pl-wall-scroll { padding-top:0; }
 .pl-wall-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--pl-cell,120px),1fr)); gap:2px; }
 /* content-visibility lets the browser skip layout and paint for every cover
    that is not on screen. On a 231 song wall this took a repaint from about
@@ -4148,7 +4151,10 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
 .pl-wall-fallback { display:flex; align-items:center; justify-content:center; width:100%; height:100%; font-size:2rem; color:var(--text-muted); background:var(--bg-elevated); }
 .pl-wall-exp-actions .sc-link:disabled { opacity:.35; cursor:not-allowed; pointer-events:none; }
 .pl-wall-page.pl-wall-detail-mode .pl-wall-size { display:none; }
-.pl-detail-tbl { width:100%; border-collapse:collapse; min-width:860px; table-layout:auto; }
+.pl-detail-tbl { width:100%; border-collapse:separate; border-spacing:0; min-width:860px; table-layout:auto; }
+/* separate (not collapse) is load-bearing: Chrome drops position:sticky on
+   thead cells when border-collapse is collapse, which left the Order / Track
+   header floating in the middle of the list. */
 .pl-detail-tbl th { font-size:.48rem; letter-spacing:.14em; text-transform:uppercase; color:var(--text-muted); padding:.45rem .65rem; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:500; position:sticky; top:0; background:var(--bg); z-index:2; }
 .pl-detail-tbl th.num { text-align:right; }
 .pl-detail-tbl th.rxn { text-align:center; width:52px; }
@@ -24228,17 +24234,17 @@ function playlistChartPaintTransport() {
   const startBtn = document.getElementById('pl-wall-start-btn');
   if (startBtn) {
     startBtn.disabled = !playlistChartBaseQueue.length;
-    const playingThisPlaylist = playlistChartIsLive();
-    // Restart stays a quiet secondary pill (same as Manage). Add Songs is the
-    // orange CTA on the right, the same job Import has on Explore.
-    startBtn.classList.toggle('on', playingThisPlaylist);
+    // Restart is only for Now Playing - you are restarting the queue you are
+    // already in. A saved playlist you are browsing always says Start, even
+    // when one of its songs happens to be what is playing.
+    const isNowPlaying = playlistChartId === '__dynamic_now_playing';
+    const restart = isNowPlaying && playlistChartIsLive();
+    startBtn.classList.toggle('on', restart);
     if (startBtn.classList.contains('playlist-explore-action-btn')) startBtn.classList.remove('primary');
-    // Saved playlists use the Settings-style pill; Now Playing uses the same
-    // wording without the play icon so both pages stay readable.
     if (startBtn.classList.contains('pl-wall-back') || startBtn.classList.contains('playlist-explore-action-btn')) {
-      startBtn.textContent = (playingThisPlaylist ? 'Restart' : 'Start') + ' Playlist';
+      startBtn.textContent = (restart ? 'Restart' : 'Start') + ' Playlist';
     } else {
-      startBtn.innerHTML = `<span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>${playingThisPlaylist ? 'Restart' : 'Start'} Playlist`;
+      startBtn.innerHTML = `<span class="sj-tr-ic">${YTP_DECK_ICONS.play}</span>${restart ? 'Restart' : 'Start'} Playlist`;
     }
   }
   const sh = document.getElementById('pl-wall-shuffle');
@@ -36359,6 +36365,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-14';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-14', items: [
+    'On a playlist’s Details view, the Order / Track / Album header stays at the top of the list while you scroll, instead of floating in the middle of the songs.',
+    'Start Playlist only reads Restart Playlist on Now Playing. Opening Favorites or any other saved list while something is already playing no longer says Restart.',
     'On Listening Party, live rooms stay on the Live Stations tab and no longer appear as Live Now cards mixed into Explore Playlists. Suffering Jukebox still shows them as playlists with a Live Now badge.',
     'Listening Party’s header looks right in light mode: ListeningParty.stream is plum with an orange offset instead of cream-on-cream, and Join the Listening Party sits under the name at matching width.',
     'The header logo is just the monkey now — the ring text around it is gone, because the name and tagline already sit beside it as real type.',
