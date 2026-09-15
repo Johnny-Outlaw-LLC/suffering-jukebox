@@ -4996,28 +4996,39 @@ html[data-surface="lp"] .brand-title em {
 .lph-door em { font-style:normal; font-size:14px; line-height:1.45; color:var(--text-muted); }
 .lph-door:hover b { color:var(--accent); }
 
-/* Live stations on Home — LP only; these rules sit inside the LP home block. */
-.lph-live { margin:0; }
-.lph-live-track {
-  display:grid; grid-auto-flow:column; grid-auto-columns:minmax(280px, 340px); gap:18px;
-  overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:thin;
-  margin:0 -4px; padding:4px 4px 10px; scroll-padding-inline:4px;
+/* Live stations in the hero feature slot (Hot right now). */
+.lph-live.lph-feature-live {
+  position:relative; display:flex; flex-direction:column; gap:12px;
+  height:400px; min-width:0; margin:0; padding:0;
 }
-.lph-live-track.multi { grid-auto-columns:minmax(260px, min(340px, 78%)); }
+.lph-live-top {
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-shrink:0;
+}
+.lph-live-kicker {
+  font-size:12px; font-weight:800; letter-spacing:.22em; text-transform:uppercase; color:var(--text);
+}
+.lph-live-track {
+  flex:1 1 auto; min-height:0; display:grid; grid-auto-flow:column;
+  grid-auto-columns:100%; gap:14px;
+  overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:thin;
+  margin:0; padding:0 0 4px; scroll-padding-inline:0;
+}
+.lph-live-track.multi { grid-auto-columns:minmax(88%, 100%); }
 .lph-live-track::-webkit-scrollbar { height:6px; }
 .lph-live-track::-webkit-scrollbar-thumb { background:rgba(var(--accent-rgb),.35); border-radius:999px; }
 .lph-live-card {
-  scroll-snap-align:start; display:grid; gap:14px; align-content:start;
+  scroll-snap-align:start; display:grid; grid-template-rows:1fr auto; gap:12px; align-content:stretch;
+  height:100%; min-height:0; box-sizing:border-box;
   padding:14px; border-radius:18px; border:1px solid var(--border);
   background:linear-gradient(165deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)), var(--bg-card) 55%);
   box-shadow:0 18px 40px -28px rgba(0,0,0,.85);
 }
 .lph-live-hit {
-  display:grid; gap:12px; padding:0; border:0; background:none; text-align:left;
-  color:inherit; cursor:pointer; font:inherit;
+  display:grid; grid-template-rows:minmax(0,1fr) auto; gap:10px; min-height:0; padding:0; border:0;
+  background:none; text-align:left; color:inherit; cursor:pointer; font:inherit;
 }
 .lph-live-art-wrap {
-  position:relative; aspect-ratio:16/9; border-radius:12px; overflow:hidden;
+  position:relative; min-height:0; aspect-ratio:auto; height:100%; border-radius:12px; overflow:hidden;
   background:linear-gradient(160deg, #9B4DBA, #2B0F33);
 }
 .lph-live-art {
@@ -5084,12 +5095,14 @@ html[data-surface="lp"] .brand-title em {
   .lph-name { font-size:15px; }
   .lph-doors { grid-template-columns:1fr; border-bottom:0; }
   .lph-door, .lph-door + .lph-door { padding:16px 0; border-left:0; border-bottom:1px solid var(--border); }
+  .lph-live.lph-feature-live { height:auto; min-height:0; }
   .lph-live-track, .lph-live-track.multi {
-    grid-auto-columns:minmax(240px, 88%); gap:12px;
-    margin:0 -14px; padding:0 14px 8px; scrollbar-width:none;
+    flex:none; height:auto; grid-auto-columns:100%; gap:12px;
+    margin:0; padding:0 0 4px; scrollbar-width:none;
   }
   .lph-live-track::-webkit-scrollbar { display:none; }
-  .lph-live-card { padding:12px; border-radius:14px; }
+  .lph-live-card { height:auto; padding:12px; border-radius:14px; }
+  .lph-live-art-wrap { aspect-ratio:16/9; height:auto; }
   .lph-live-name { font-size:16px; }
   .lph-live-join { width:100%; justify-self:stretch; }
 }
@@ -6773,6 +6786,10 @@ function lphStartRoom() {
 
 function lphFeatureHTML() {
   if (!SJ_BRAND.features.welcomeHero) return '';
+  // Live rooms take the hero feature slot (where Hot right now sits). When
+  // nobody is on air, fall back to the featured playlist vinyl.
+  const live = lphLiveHTML();
+  if (live) return live;
   const r = lphFeaturePick();
   if (!r) {
     // Hold the space while the picks load so the headline does not jump.
@@ -6820,8 +6837,9 @@ function lphShelfHTML() {
 }
 
 // ── Listening Party Home: live stations carousel (lphLive*) ───────────────
-// Up to three joinable rooms, between the hero and the featured shelf. Hidden
-// when nobody is on air. Suffering Jukebox never reaches this (no homeTab).
+// Lives in the hero feature slot (Hot right now). Up to three joinable rooms;
+// when none are on air, lphFeatureHTML falls back to the playlist vinyl.
+// Suffering Jukebox never reaches this (no homeTab).
 let _lphLiveAdvanceTimer = null;
 
 function lphLiveStations() {
@@ -6911,15 +6929,15 @@ function lphLiveHTML() {
   const multi = rooms.length > 1;
   // Paint first, then arm the gentle advance so the track exists in the DOM.
   setTimeout(() => { try { lphLiveStartAdvance(); } catch (_) {} }, 0);
-  return `<section class="lph-live" aria-labelledby="lph-live-title">
-      <div class="lph-head">
-        <h2 class="lph-rule" id="lph-live-title">On air right now</h2>
+  return `<div class="lph-live lph-feature-live" aria-label="On air right now">
+      <div class="lph-live-top">
+        <span class="lph-live-kicker">On air right now</span>
         <button type="button" class="lph-link" onclick="setLandingTab('live')">See all →</button>
       </div>
       <div class="lph-live-track${multi ? ' multi' : ''}" id="lph-live-track"${multi ? ' tabindex="0"' : ''}>
         ${rooms.map(lphLiveCardHTML).join('')}
       </div>
-    </section>`;
+    </div>`;
 }
 
 // ── Listening Party Home tab ──────────────────────────────────────────────
@@ -7064,7 +7082,6 @@ function landingHomeHTML() {
         </div>
         ${lphFeatureHTML()}
       </section>
-      ${lphLiveHTML()}
       ${lphShelfHTML()}
       ${listening}
       <section aria-labelledby="lp-home-import-title">
@@ -28622,6 +28639,7 @@ function setLandingTab(tab) {
   if (nextTab !== landingTab) resetLandingSheetFilters();
   landingTab = nextTab;
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
+  if (landingTab !== 'home') try { lphLiveStopAdvance(); } catch (_) {}
   if (tab === 'explore') sjTrackProductEvent('bg_home_explore_click');
   if (landingTab === 'home' && googleUser) lpHomeLoadListening();
   if (tab === 'playlists') {
@@ -37274,7 +37292,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-15';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-15', items: [
-    'On Listening Party, when a station is on air it shows on Home as a live card with the song that is playing and a Join Now button. Up to three stations scroll side to side.',
+    'On Listening Party, when a station is on air it takes the Hot right now spot on Home — live art, the song playing, and Join Now. Up to three stations scroll there; when nobody is live, Hot right now comes back.',
     'Now Playing no longer has an Auto Size checkbox. Cover size is just the Size slider.',
     'On Listening Party desktop, Go Live also sits left of Shuffle in the docked player, so you can put the queue on air without opening the full player.',
     'Connect Spotify Premium in Settings → Playback to play matched songs through Spotify. On a desktop the sound stays in this browser; on a phone it goes to the Spotify app so the screen can lock. Unmatched songs and anyone without Premium still use YouTube. Uploaded MP3 background play still works when you have a file.',
