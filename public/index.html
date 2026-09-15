@@ -5343,6 +5343,11 @@ html[data-surface="lp"] .brand-title em {
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats" onchange="sjSetShufflePreference(this.value)"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none" onchange="sjSetShufflePreference(this.value)"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
             </div>
+            <div class="set-block" id="set-spotify-playback">
+              <div class="set-h">Play through Spotify</div>
+              <p class="set-sub">Connect a full Spotify Premium account to play matched songs through Spotify — background play and lock-screen controls without uploading MP3s. Discovery and unmatched songs still use YouTube. Spotify Lite or Mini do not work.</p>
+              <div id="set-sp-body"><div class="set-status">Checking Spotify…</div></div>
+            </div>
           </div>
         </section>
 
@@ -9067,6 +9072,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
           <button class="ytp-btn" id="ytp-comment-btn" onclick="ytpOpenComments();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Comment on the track that is playing">Comment</button>
           <button type="button" class="ytp-tog ytp-lyrics-chk-wrap" id="ytp-lyrics-tog" title="Show lyrics" onmousedown="event.stopPropagation()" onclick="ytpToggleLyrics(!_ytpLyricsOpen, {user:true});event.stopPropagation()">Lyrics</button>
           <button class="ytp-btn" id="ytp-ver-btn" style="display:none;color:var(--accent);border-color:var(--accent)" onclick="ytpToggleVersionMenu();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Switch version">&#8644; Versions &#9662;</button>
+          <button class="ytp-btn" id="ytp-sp-btn" style="display:none" onclick="spToggleWantedFromPlayer();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Play matched songs through Spotify Premium">Spotify</button>
           <button class="ytp-btn" id="ytp-audio-btn" style="display:none" onclick="taToggleAudioMode();event.stopPropagation()" onmousedown="event.stopPropagation()" title="Audio-only mode - keeps playing with the screen off or in the background">Enable Background Play</button>
           <label class="ytp-btn ytp-vol-wrap" title="Volume" onmousedown="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;cursor:default;padding:2px 6px">
             <span style="font-size:.5rem;letter-spacing:.02em">Vol</span>
@@ -9449,6 +9455,22 @@ function ytPlayNow(videoId, title, trackId) {
     taPlayBgIdx(0);
     try { ytAPIPlayer?.cueVideoById?.(videoId); } catch (_) {}
     ytpSetPlayPauseIcon(true);
+  } else if (typeof spShouldTry === 'function' && spShouldTry(trackId)) {
+    _ytUserWantsPlay = true;
+    try { ytAPIPlayer?.cueVideoById?.(videoId); } catch (_) {}
+    ytpSetPlayPauseIcon(true);
+    void spTryPlayCurrent({ videoId, title, trackId }).then((ok) => {
+      if (ok || ytQueue[ytQueueIdx]?.trackId !== trackId) return;
+      if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
+        ytAPIPlayer.loadVideoById(videoId);
+        ytKickMobilePlay();
+      } else {
+        const iframe = ytPlayerEl && ytPlayerEl.querySelector('iframe');
+        const frame  = ytPlayerEl && ytPlayerEl.querySelector('.yt-player-frame');
+        if (iframe) { iframe.src = ytpEmbedSrc(videoId); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
+        else if (frame) { ytpMountFrameContent(frame, videoId, frame.offsetHeight); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
+      }
+    });
   } else if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
     ytAPIPlayer.loadVideoById(videoId);
     ytKickMobilePlay();
@@ -9522,6 +9544,22 @@ function ytPlayQueueIdx(idx, opts) {
       taPlayBgIdx(idx);
       try { ytAPIPlayer?.cueVideoById?.(item.videoId); } catch (_) {}
       ytpSetPlayPauseIcon(true);
+    } else if (typeof spShouldTry === 'function' && spShouldTry(item.trackId)) {
+      _ytUserWantsPlay = true;
+      try { ytAPIPlayer?.cueVideoById?.(item.videoId); } catch (_) {}
+      ytpSetPlayPauseIcon(true);
+      void spTryPlayCurrent(item).then((ok) => {
+        if (ok || ytQueueIdx !== idx) return;
+        if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
+          ytAPIPlayer.loadVideoById(item.videoId);
+          ytKickMobilePlay();
+        } else {
+          const iframe = ytPlayerEl.querySelector('#yt-embed-iframe') || ytPlayerEl.querySelector('iframe');
+          const frame  = ytPlayerEl.querySelector('.yt-player-frame');
+          if (iframe) { iframe.src = ytpEmbedSrc(item.videoId); }
+          else if (frame) { ytpMountFrameContent(frame, item.videoId, frame.offsetHeight); setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400); }
+        }
+      });
     } else if (ytAPIPlayer && typeof ytAPIPlayer.loadVideoById === 'function') {
       ytAPIPlayer.loadVideoById(item.videoId);
       ytKickMobilePlay();
@@ -9876,6 +9914,20 @@ function ytTogglePlayPause() {
     // Audio-only mode: toggle the audio element, not the embed
     if (_taAudioEl.paused) { _ytUserWantsPlay = true; _taAudioEl.play().catch(() => {}); ytpSetPlayPauseIcon(true); ytpSetMediaPlaybackState('playing'); }
     else { _ytUserWantsPlay = false; _taAudioEl.pause(); ytpSetPlayPauseIcon(false); ytpSetMediaPlaybackState('paused'); }
+    return;
+  }
+  if (typeof _spActive !== 'undefined' && _spActive) {
+    if (_ytUserWantsPlay) {
+      _ytUserWantsPlay = false;
+      void spPauseTransport();
+      ytpSetPlayPauseIcon(false);
+      ytpSetMediaPlaybackState('paused');
+    } else {
+      _ytUserWantsPlay = true;
+      void spResumeTransport();
+      ytpSetPlayPauseIcon(true);
+      ytpSetMediaPlaybackState('playing');
+    }
     return;
   }
   if (!ytAPIPlayer || typeof ytAPIPlayer.getPlayerState !== 'function') return;
@@ -14562,6 +14614,7 @@ function ytpInitMediaSession() {
     navigator.mediaSession.setActionHandler('play', () => {
       _ytUserWantsPlay = true;
       if (_taBgActive) { _taAudioEl?.play?.().catch(() => {}); ytpSetMediaPlaybackState('playing'); return; }
+      if (typeof _spActive !== 'undefined' && _spActive) { void spResumeTransport(); ytpSetPlayPauseIcon(true); ytpSetMediaPlaybackState('playing'); return; }
       if (document.visibilityState === 'hidden' && taEnterBgAudio()) return;
       ytAPIPlayer?.playVideo?.();
       ytpStartBgKeepalive();
@@ -14569,6 +14622,7 @@ function ytpInitMediaSession() {
     navigator.mediaSession.setActionHandler('pause', () => {
       _ytUserWantsPlay = false;
       if (_taBgActive) { try { _taAudioEl?.pause(); } catch (_) {} ytpSetMediaPlaybackState('paused'); return; }
+      if (typeof _spActive !== 'undefined' && _spActive) { void spPauseTransport(); ytpSetPlayPauseIcon(false); ytpSetMediaPlaybackState('paused'); return; }
       ytAPIPlayer?.pauseVideo?.();
       ytpStopBgKeepalive();
     });
@@ -14577,6 +14631,7 @@ function ytpInitMediaSession() {
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       if (details.seekTime == null) return;
       if (_taBgActive) { try { _taAudioEl.currentTime = details.seekTime; } catch (_) {} return; }
+      if (typeof _spActive !== 'undefined' && _spActive) { void spSeekTransport(details.seekTime * 1000); return; }
       if (ytAPIPlayer?.seekTo) {
         ytAPIPlayer.seekTo(details.seekTime, true);
         if (_ytUserWantsPlay) ytAPIPlayer.playVideo();
@@ -14845,6 +14900,481 @@ function taSyncAudioBtn() {
                     ? 'Background play stays on for tracks with audio - tap to turn off'
                     : 'Audio-only mode - keeps playing with the screen off or in the background');
   ytpMobSyncDeck();
+}
+
+// ── Play through Spotify Premium (sp*) ───────────────────────────────────
+// YouTube stays the default open player. When the listener connects full
+// Premium and turns this on, matched songs play through Spotify (Web Playback
+// on desktop, Connect to the phone app on mobile) so background / lock screen
+// works without an MP3 upload.
+let _spStatus = {
+  connected: false, canStream: false, isPremium: false, product: null,
+  displayName: null, missingPlaybackScopes: [], spotifyUserId: null,
+};
+let _spWanted = false;
+try { _spWanted = localStorage.getItem('sj_spotify_playback') === '1'; } catch (_) {}
+let _spPlayer = null;
+let _spDeviceId = null;
+let _spRemoteDeviceId = null;
+let _spActive = false;
+let _spSdkReady = false;
+let _spSdkLoading = null;
+let _spUriCache = Object.create(null);
+let _spPollTimer = null;
+let _spPosMs = 0;
+let _spDurationMs = 0;
+let _spEnding = false;
+
+function spShouldTry(trackId) {
+  return !!(trackId && _spWanted && spCanUse() && !(_taManualAudio && taTrackAudio(trackId)));
+}
+
+function spSetWanted(on) {
+  _spWanted = !!on;
+  try { localStorage.setItem('sj_spotify_playback', _spWanted ? '1' : '0'); } catch (_) {}
+  spSyncPlayerBtn();
+  settingsPaintSpotifyPlayback();
+}
+
+function spCanUse() {
+  return !!(googleUser && _spStatus.connected && _spStatus.canStream && _spStatus.isPremium);
+}
+
+async function spRequest(path, opts) {
+  const method = (opts && opts.method) || 'GET';
+  const headers = method === 'GET'
+    ? { Authorization: 'Bearer ' + (await _sjjToken() || '') }
+    : await sjAuthHeaders();
+  if (opts && opts.body) {
+    if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(sjApiUrl(path), {
+    method,
+    headers,
+    body: opts && opts.body ? JSON.stringify(opts.body) : undefined,
+    cache: 'no-store',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) {
+    const err = new Error(data.error || 'Spotify request failed.');
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+async function spRefreshStatus() {
+  if (!googleUser) {
+    _spStatus = {
+      connected: false, canStream: false, isPremium: false, product: null,
+      displayName: null, missingPlaybackScopes: [], spotifyUserId: null,
+    };
+    spSyncPlayerBtn();
+    return _spStatus;
+  }
+  try {
+    const data = await spRequest('/api/spotify/status');
+    _spStatus = {
+      connected: !!data.connected,
+      canStream: !!data.canStream,
+      isPremium: !!data.isPremium,
+      product: data.product || null,
+      displayName: data.displayName || null,
+      missingPlaybackScopes: Array.isArray(data.missingPlaybackScopes) ? data.missingPlaybackScopes : [],
+      spotifyUserId: data.spotifyUserId || null,
+    };
+  } catch (_) {
+    _spStatus = {
+      connected: false, canStream: false, isPremium: false, product: null,
+      displayName: null, missingPlaybackScopes: [], spotifyUserId: null,
+    };
+  }
+  spSyncPlayerBtn();
+  return _spStatus;
+}
+
+function settingsPaintSpotifyPlayback() {
+  const body = document.getElementById('set-sp-body');
+  if (!body) return;
+  if (!googleUser) {
+    body.innerHTML = '<div class="set-status">Sign in to connect Spotify for playback.</div>';
+    return;
+  }
+  const s = _spStatus;
+  if (!s.connected) {
+    body.innerHTML =
+      '<button type="button" class="pl-btn" onclick="spConnectForPlayback()">Connect Spotify Premium</button>' +
+      '<div class="set-status" style="margin-top:.45rem">Uses the same Spotify link as Import Music. You will be asked for playback permission.</div>';
+    return;
+  }
+  const who = escHtml(s.displayName || s.spotifyUserId || 'Spotify');
+  let state = '';
+  if (!s.canStream) {
+    state = '<div class="set-status" style="color:#ef4444">Reconnect to grant playback permission (streaming).</div>' +
+      '<button type="button" class="pl-btn" style="margin-top:.45rem" onclick="spConnectForPlayback()">Reconnect for playback</button>';
+  } else if (!s.isPremium) {
+    state = '<div class="set-status" style="color:#ef4444">This account is ' +
+      escHtml(s.product || 'not Premium') +
+      '. Full Spotify Premium is required — Free, Lite and Mini cannot play here.</div>' +
+      '<a class="pl-btn ghost" style="margin-top:.45rem;display:inline-block" href="https://www.spotify.com/premium/" target="_blank" rel="noopener">Get Premium</a>';
+  } else {
+    state =
+      '<label class="set-opt" style="margin-top:.35rem">' +
+        '<input type="checkbox" id="set-sp-wanted" ' + (_spWanted ? 'checked' : '') +
+          ' onchange="spSetWanted(this.checked);if(this.checked)spEnsureTransport()">' +
+        '<span><b>Use Spotify when a song matches</b>' +
+        '<span class="set-sub" style="display:block">Desktop plays in this browser. On a phone, playback goes to the Spotify app so the screen can lock.</span></span>' +
+      '</label>';
+  }
+  body.innerHTML =
+    '<div class="set-status">Connected as <b>' + who + '</b>' +
+      (s.isPremium ? ' · Premium' : '') +
+      (s.canStream ? '' : ' · needs reconnect') +
+    '</div>' + state +
+    '<div style="margin-top:.7rem;display:flex;flex-wrap:wrap;gap:6px">' +
+      '<button type="button" class="pl-btn ghost" onclick="spConnectForPlayback()">Reconnect</button>' +
+      '<button type="button" class="pl-btn ghost" onclick="spDisconnectPlayback()">Disconnect</button>' +
+    '</div>';
+}
+
+async function spConnectForPlayback() {
+  try {
+    try { sessionStorage.setItem('sj_spotify_playback_return', '1'); } catch (_) {}
+    const data = await mjRequest('/api/spotify/connect', 'POST');
+    window.location.assign(data.authorizationUrl);
+  } catch (e) {
+    showToast(e.message || 'Could not start Spotify sign-in.');
+  }
+}
+
+async function spDisconnectPlayback() {
+  if (!confirm('Disconnect Spotify?\n\nImport Music and Play through Spotify both use this connection. Songs already imported stay.')) return;
+  try {
+    await mjRequest('/api/spotify/disconnect', 'POST');
+    spSetWanted(false);
+    await spTeardown();
+    await spRefreshStatus();
+    settingsPaintSpotifyPlayback();
+    showToast('Spotify disconnected.');
+  } catch (e) {
+    showToast(e.message || 'Could not disconnect Spotify.');
+  }
+}
+
+function spSyncPlayerBtn() {
+  const btn = document.getElementById('ytp-sp-btn');
+  if (!btn) return;
+  const show = spCanUse();
+  btn.style.display = show ? '' : 'none';
+  const on = _spWanted && show;
+  btn.textContent = on ? (_spActive ? 'Spotify ✓' : 'Spotify') : 'Spotify';
+  btn.style.color = on ? 'var(--accent)' : '';
+  btn.style.borderColor = on ? 'var(--accent)' : '';
+  btn.title = on
+    ? (_spActive ? 'Playing through Spotify — tap to use YouTube again' : 'Spotify playback on — tap to turn off')
+    : 'Play matched songs through Spotify Premium';
+}
+
+function spToggleWantedFromPlayer() {
+  if (!spCanUse()) {
+    openSettings('playback');
+    spRefreshStatus().then(settingsPaintSpotifyPlayback);
+    return;
+  }
+  spSetWanted(!_spWanted);
+  if (_spWanted) {
+    spEnsureTransport().then(() => {
+      const item = ytQueue[ytQueueIdx];
+      if (item) spTryPlayCurrent(item, { resume: true });
+    });
+  } else {
+    spStopActive({ resumeYoutube: true });
+  }
+}
+
+function spLoadSdk() {
+  if (_spSdkReady) return Promise.resolve();
+  if (_spSdkLoading) return _spSdkLoading;
+  _spSdkLoading = new Promise((resolve, reject) => {
+    if (window.Spotify) { _spSdkReady = true; resolve(); return; }
+    window.onSpotifyWebPlaybackSDKReady = () => { _spSdkReady = true; resolve(); };
+    const s = document.createElement('script');
+    s.src = 'https://sdk.scdn.co/spotify-player.js';
+    s.async = true;
+    s.onerror = () => reject(new Error('Could not load Spotify player.'));
+    document.head.appendChild(s);
+  });
+  return _spSdkLoading;
+}
+
+async function spFetchToken(cb) {
+  try {
+    const data = await spRequest('/api/spotify/token');
+    if (cb) cb(data.access_token);
+    return data.access_token;
+  } catch (e) {
+    if (e.data && e.data.reconnect) showToast('Reconnect Spotify for playback.');
+    if (cb) cb('');
+    throw e;
+  }
+}
+
+async function spEnsureWebPlayer() {
+  if (taIsMobileDevice()) return null;
+  await spLoadSdk();
+  if (_spPlayer && _spDeviceId) return _spDeviceId;
+  return new Promise((resolve, reject) => {
+    const player = new Spotify.Player({
+      name: (SJ_BRAND && SJ_BRAND.name) ? (SJ_BRAND.name + ' Player') : 'Suffering Jukebox',
+      getOAuthToken: (cb) => { spFetchToken(cb).catch(() => cb('')); },
+      volume: 0.85,
+    });
+    player.addListener('ready', ({ device_id }) => {
+      _spDeviceId = device_id;
+      resolve(device_id);
+    });
+    player.addListener('not_ready', () => { _spDeviceId = null; });
+    player.addListener('initialization_error', ({ message }) => reject(new Error(message || 'Spotify init failed')));
+    player.addListener('authentication_error', ({ message }) => {
+      showToast('Spotify auth failed — reconnect in Settings → Playback.');
+      reject(new Error(message || 'Spotify auth failed'));
+    });
+    player.addListener('account_error', ({ message }) => {
+      showToast(message || 'Spotify Premium is required.');
+      reject(new Error(message || 'Premium required'));
+    });
+    player.addListener('player_state_changed', (state) => {
+      if (!state) return;
+      _spPosMs = state.position || 0;
+      _spDurationMs = state.duration || 0;
+      const playing = !state.paused;
+      if (_spActive) {
+        ytpSetPlayPauseIcon(playing);
+        ytpSetMediaPlaybackState(playing ? 'playing' : 'paused');
+      }
+      if (state.paused && state.duration > 0 && state.position >= state.duration - 800 && _spActive) {
+        spOnTrackEnded();
+      }
+    });
+    _spPlayer = player;
+    player.connect().then((ok) => {
+      if (!ok) reject(new Error('Spotify player could not connect.'));
+    });
+  });
+}
+
+async function spPickRemoteDevice() {
+  const data = await spRequest('/api/spotify/player');
+  const devices = data.devices || [];
+  const phone = devices.find((d) => d.type === 'Smartphone' && !d.is_restricted)
+    || devices.find((d) => d.type === 'Tablet' && !d.is_restricted)
+    || devices.find((d) => !d.is_restricted && d.id !== _spDeviceId);
+  return phone || null;
+}
+
+function spActiveDeviceId() {
+  return taIsMobileDevice() ? _spRemoteDeviceId : _spDeviceId;
+}
+
+async function spEnsureTransport() {
+  if (!spCanUse() || !_spWanted) return false;
+  if (taIsMobileDevice()) {
+    const remote = await spPickRemoteDevice();
+    if (!remote) {
+      showToast('Open the Spotify app on this phone, start any song once, then try again.');
+      return false;
+    }
+    _spRemoteDeviceId = remote.id;
+    await spRequest('/api/spotify/player', {
+      method: 'POST',
+      body: { action: 'transfer', device_id: remote.id },
+    });
+    return true;
+  }
+  await spEnsureWebPlayer();
+  if (_spDeviceId) {
+    await spRequest('/api/spotify/player', {
+      method: 'POST',
+      body: { action: 'transfer', device_id: _spDeviceId },
+    }).catch(() => null);
+  }
+  return !!_spDeviceId;
+}
+
+async function spMatchUri(trackId) {
+  if (!trackId) return null;
+  if (trackId in _spUriCache) return _spUriCache[trackId] || null;
+  try {
+    const data = await spRequest('/api/spotify/match-track', {
+      method: 'POST',
+      body: { track_id: trackId },
+    });
+    _spUriCache[trackId] = data.matched && data.uri ? data.uri : '';
+    return _spUriCache[trackId] || null;
+  } catch (_) {
+    _spUriCache[trackId] = '';
+    return null;
+  }
+}
+
+function spPauseYoutube() {
+  try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+}
+
+async function spPauseTransport() {
+  try {
+    await spRequest('/api/spotify/player', {
+      method: 'POST',
+      body: { action: 'pause', device_id: spActiveDeviceId() },
+    });
+  } catch (_) {}
+  try { await _spPlayer?.pause?.(); } catch (_) {}
+}
+
+async function spResumeTransport() {
+  try {
+    if (_spPlayer && !taIsMobileDevice()) {
+      await _spPlayer.resume();
+      return;
+    }
+  } catch (_) {}
+  const item = ytQueue[ytQueueIdx];
+  if (item) await spTryPlayCurrent(item, { resume: true, positionMs: _spPosMs });
+}
+
+async function spSeekTransport(ms) {
+  _spPosMs = Math.max(0, Math.floor(ms || 0));
+  try {
+    await spRequest('/api/spotify/player', {
+      method: 'POST',
+      body: { action: 'seek', position_ms: _spPosMs, device_id: spActiveDeviceId() },
+    });
+  } catch (_) {}
+}
+
+async function spStopActive(opts) {
+  const resumeYoutube = !!(opts && opts.resumeYoutube);
+  if (_spActive) {
+    await spPauseTransport();
+  }
+  _spActive = false;
+  spStopPosPoll();
+  spSyncPlayerBtn();
+  if (resumeYoutube && ytAPIPlayer && ytVideoId && _ytUserWantsPlay) {
+    try { ytAPIPlayer.playVideo(); } catch (_) {}
+  }
+}
+
+function spStartPosPoll() {
+  spStopPosPoll();
+  _spPollTimer = setInterval(() => {
+    if (!_spActive) return;
+    if (_spPlayer && !taIsMobileDevice()) {
+      _spPlayer.getCurrentState().then((state) => {
+        if (!state) return;
+        _spPosMs = state.position || 0;
+        _spDurationMs = state.duration || 0;
+      }).catch(() => {});
+    } else {
+      // Mobile Connect: extrapolate while we believe we are playing.
+      if (_ytUserWantsPlay) _spPosMs += 500;
+    }
+  }, 500);
+}
+
+function spStopPosPoll() {
+  if (_spPollTimer) { clearInterval(_spPollTimer); _spPollTimer = null; }
+}
+
+function spOnTrackEnded() {
+  if (_spEnding || !_spActive) return;
+  _spEnding = true;
+  setTimeout(() => { _spEnding = false; }, 1500);
+  if (typeof ytNextTrack === 'function') ytNextTrack();
+}
+
+async function spTryPlayCurrent(item, opts) {
+  if (!_spWanted || !spCanUse() || !item?.trackId) {
+    if (_spActive) await spStopActive({ resumeYoutube: false });
+    return false;
+  }
+  if (_taManualAudio && taTrackAudio(item.trackId)) {
+    if (_spActive) await spStopActive({ resumeYoutube: false });
+    return false;
+  }
+  const uri = await spMatchUri(item.trackId);
+  if (!uri) {
+    if (_spActive) {
+      await spStopActive({ resumeYoutube: false });
+      showToast('No Spotify match — playing on YouTube.');
+    }
+    return false;
+  }
+  try {
+    const ready = await spEnsureTransport();
+    if (!ready) return false;
+    const deviceId = spActiveDeviceId();
+    const positionMs = opts && opts.resume && Number.isFinite(opts.positionMs) ? opts.positionMs : 0;
+    await spRequest('/api/spotify/player', {
+      method: 'POST',
+      body: { action: 'play', uri, device_id: deviceId, position_ms: positionMs },
+    });
+    _spActive = true;
+    _spPosMs = positionMs || 0;
+    _ytUserWantsPlay = true;
+    spPauseYoutube();
+    ytpSetPlayPauseIcon(true);
+    ytpSetMediaPlaybackState('playing');
+    spStartPosPoll();
+    spSyncPlayerBtn();
+    return true;
+  } catch (e) {
+    console.warn('[sp]', e);
+    if (e.status === 404) {
+      showToast(taIsMobileDevice()
+        ? 'Open Spotify on your phone, then try Play through Spotify again.'
+        : 'Spotify player is not ready yet — try again in a moment.');
+    } else {
+      showToast(e.message || 'Could not play on Spotify.');
+    }
+    _spActive = false;
+    spSyncPlayerBtn();
+    return false;
+  }
+}
+
+async function spTeardown() {
+  await spStopActive({ resumeYoutube: false });
+  try { _spPlayer?.disconnect?.(); } catch (_) {}
+  _spPlayer = null;
+  _spDeviceId = null;
+  _spRemoteDeviceId = null;
+  _spUriCache = Object.create(null);
+}
+
+function spConsumeReturn() {
+  try {
+    if (sessionStorage.getItem('sj_spotify_playback_return') !== '1') return false;
+    sessionStorage.removeItem('sj_spotify_playback_return');
+  } catch (_) { return false; }
+  const outcome = new URLSearchParams(window.location.search).get('spotify');
+  if (outcome) {
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('spotify');
+    window.history.replaceState({}, '', clean.pathname + clean.search + clean.hash);
+  }
+  openSettings('playback');
+  spRefreshStatus().then(() => {
+    settingsPaintSpotifyPlayback();
+    if (outcome === 'connected' && spCanUse()) {
+      spSetWanted(true);
+      showToast('Spotify Premium connected. Play through Spotify is on.');
+    } else if (outcome && outcome !== 'connected') {
+      showToast('Spotify connection was not completed.');
+    }
+  });
+  return true;
 }
 
 // ── Background Play set-up sheet ───────────────────────────────────────
@@ -21827,6 +22357,7 @@ function lyrSyncTick() {
   if (!_lyrSyncEnabled && !stripOn) return;
   let t;
   if (_taBgActive && _taAudioEl) { t = _taAudioEl.currentTime || 0; }
+  else if (typeof _spActive !== 'undefined' && _spActive) { t = (_spPosMs || 0) / 1000; }
   else {
     if (!ytAPIPlayer || typeof ytAPIPlayer.getCurrentTime !== 'function') return;
     try { t = ytAPIPlayer.getCurrentTime(); } catch(e) { return; }
@@ -36605,6 +37136,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-15';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-15', items: [
+    'Connect Spotify Premium in Settings → Playback to play matched songs through Spotify. On a desktop the sound stays in this browser; on a phone it goes to the Spotify app so the screen can lock. Unmatched songs and anyone without Premium still use YouTube. Uploaded MP3 background play still works when you have a file.',
     'Manage song no longer has per-song external links. Articles and interviews belong with an album or artist, not a single track.',
     'Manage song is wider on a desktop: details and playlists on the left, YouTube versions on the right, with who imported the song shown at the top.',
     'From Manage song you can add the track to playlists, create a new playlist, share it, or copy a jukebox or YouTube link.',
@@ -37771,6 +38303,10 @@ function settingsShow(section) {
   else settingsStopJukeboxPoll();
   if (section === 'audio') setAudioLoad();
   if (section === 'integrations') settingsPaintIntegrations();
+  if (section === 'playback') {
+    settingsPaintSpotifyPlayback();
+    spRefreshStatus().then(settingsPaintSpotifyPlayback);
+  }
 }
 
 function settingsSay(msg) {
@@ -38632,7 +39168,7 @@ async function savePlaybackState() {
     const { data: { session } } = await sjGetSession();
     if (!session?.user) return;
     let posSec = 0;
-    try { if (_taBgActive && _taAudioEl) posSec = Math.floor(_taAudioEl.currentTime || 0); else if (ytAPIPlayer && typeof ytAPIPlayer.getCurrentTime === 'function') posSec = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
+    try { if (_taBgActive && _taAudioEl) posSec = Math.floor(_taAudioEl.currentTime || 0); else if (typeof _spActive !== 'undefined' && _spActive) posSec = Math.floor((_spPosMs || 0) / 1000); else if (ytAPIPlayer && typeof ytAPIPlayer.getCurrentTime === 'function') posSec = Math.floor(ytAPIPlayer.getCurrentTime()); } catch (e) {}
     await dbUpsert('/playback_state', 'user_id', {
       user_id: session.user.id,
       user_email: session.user.email,
@@ -38743,7 +39279,8 @@ function initGoogleAuth() {
         refreshBgUnlock().then(() => { if (isLandingMode) renderLanding(); });
         restorePlaybackState();
         sjjResumeBroadcast();
-        spiConsumeReturn();
+        if (!spConsumeReturn()) spiConsumeReturn();
+        spRefreshStatus();
         consumeGuestImport();
         consumeAnalyticsImport();
         consumeAddMusicPending();
@@ -38758,6 +39295,7 @@ function initGoogleAuth() {
       }
     } else {
       googleUser = null;
+      try { spTeardown(); } catch (_) {}
       _myArtistIds = null;
       _myArtistIdsLoading = false;
       _myVotesLoaded = false;
@@ -38802,7 +39340,8 @@ function initGoogleAuth() {
       });
       restorePlaybackState();
       sjjResumeBroadcast();
-      spiConsumeReturn();
+      if (!spConsumeReturn()) spiConsumeReturn();
+      spRefreshStatus();
       consumeGuestImport();
       consumeAnalyticsImport();
       consumeAddMusicPending();
@@ -44825,6 +45364,10 @@ function sjjPlaybackSnapshot() {
     positionMs = Math.round((_taAudioEl.currentTime || 0) * 1000);
     durationMs = Math.round((_taAudioEl.duration || 0) * 1000) || 0;
     isPlaying  = !_taAudioEl.paused;
+  } else if (typeof _spActive !== 'undefined' && _spActive) {
+    positionMs = Math.round(_spPosMs || 0);
+    durationMs = Math.round(_spDurationMs || 0);
+    isPlaying  = !!_ytUserWantsPlay;
   } else if (ytAPIPlayer && typeof ytAPIPlayer.getCurrentTime === 'function') {
     try {
       positionMs = Math.round((ytAPIPlayer.getCurrentTime() || 0) * 1000);
@@ -45643,8 +46186,13 @@ function spiPane1HTML() {
 
 async function spiCheck() {
   try {
-    const data = await mjRequest('/api/spotify/status', 'GET');
+    const data = await mjRequest('/api/spotify/status?lite=1', 'GET');
     _spiStatus = { connected: !!data.connected, spotifyUserId: data.spotifyUserId || null, canReadPlaylists: !!data.canReadPlaylists };
+    _spStatus.connected = !!data.connected;
+    _spStatus.canStream = !!data.canStream;
+    _spStatus.spotifyUserId = data.spotifyUserId || null;
+    _spStatus.missingPlaybackScopes = Array.isArray(data.missingPlaybackScopes) ? data.missingPlaybackScopes : [];
+    spSyncPlayerBtn();
   } catch (e) {
     _spiStatus = { connected: false, spotifyUserId: null, canReadPlaylists: false };
   }
@@ -45999,6 +46547,9 @@ async function spiAddAll() {
 // went.
 function spiConsumeReturn() {
   if (_spiCallbackChecked || !googleUser) return;
+  try {
+    if (sessionStorage.getItem('sj_spotify_playback_return') === '1') return;
+  } catch (_) {}
   const outcome = new URLSearchParams(window.location.search).get('spotify');
   if (!outcome) return;
   _spiCallbackChecked = true;

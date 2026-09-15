@@ -31,9 +31,26 @@ export type SpotifyConfig = {
   redirectUri: string;
 };
 
-// Saved songs plus the two playlist reads. Nothing here touches playback, the
-// account email, or anything we do not put on screen.
-export const SPOTIFY_SCOPES = ["user-library-read", "playlist-read-private", "playlist-read-collaborative"];
+// Saved songs plus the two playlist reads. Playback scopes are separate so
+// Import Music can still reconnect for playlists without implying streaming,
+// but a full Connect (and Connect for playback) asks for both sets at once.
+export const SPOTIFY_IMPORT_SCOPES = [
+  "user-library-read",
+  "playlist-read-private",
+  "playlist-read-collaborative",
+];
+
+export const SPOTIFY_PLAYBACK_SCOPES = [
+  "streaming",
+  "user-read-email",
+  "user-read-private",
+  "user-read-playback-state",
+  "user-modify-playback-state",
+];
+
+// Default authorize list: import + playback. One consent covers My Jukebox
+// import and Play through Spotify. Older cookies may lack playback scopes.
+export const SPOTIFY_SCOPES = [...SPOTIFY_IMPORT_SCOPES, ...SPOTIFY_PLAYBACK_SCOPES];
 
 export function sessionScopes(session: SpotifySession) {
   return (session.scopes || "user-library-read").split(/\s+/).filter(Boolean);
@@ -43,6 +60,16 @@ export function sessionScopes(session: SpotifySession) {
 // just cannot see playlists. Say so rather than failing the whole panel.
 export function canReadPlaylists(session: SpotifySession) {
   return sessionScopes(session).includes("playlist-read-private");
+}
+
+export function canStream(session: SpotifySession) {
+  const s = new Set(sessionScopes(session));
+  return SPOTIFY_PLAYBACK_SCOPES.every((scope) => s.has(scope));
+}
+
+export function missingPlaybackScopes(session: SpotifySession) {
+  const s = new Set(sessionScopes(session));
+  return SPOTIFY_PLAYBACK_SCOPES.filter((scope) => !s.has(scope));
 }
 
 type SpotifyState = {
@@ -211,9 +238,19 @@ export async function refreshSpotifySession(session: SpotifySession, config: Spo
 export async function spotifyProfile(accessToken: string) {
   const res = await fetch("https://api.spotify.com/v1/me", { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" });
   if (!res.ok) throw new Error("Spotify could not read your profile.");
-  const data = (await res.json()) as { id?: string };
+  const data = (await res.json()) as { id?: string; product?: string; display_name?: string | null };
   if (!data.id) throw new Error("Spotify did not identify the connected account.");
-  return data.id;
+  return data;
+}
+
+/** Spotify user id only — keeps older call sites working. */
+export async function spotifyProfileId(accessToken: string) {
+  return (await spotifyProfile(accessToken)).id as string;
+}
+
+export function isSpotifyPremiumProduct(product: string | null | undefined) {
+  // Full Premium only. Lite / mini / free cannot use Web Playback.
+  return String(product || "").toLowerCase() === "premium";
 }
 
 

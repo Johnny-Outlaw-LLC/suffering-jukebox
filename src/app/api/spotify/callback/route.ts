@@ -79,12 +79,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const token = await exchangeSpotifyCode(code, config);
-    const spotifyUserId = await spotifyProfile(token.accessToken);
+    const profile = await spotifyProfile(token.accessToken);
     const response = returnHome(req, "connected");
     response.cookies.set(SPOTIFY_STATE_COOKIE, "", spotifyCookieOptions(req, 0));
     response.cookies.set(
       SPOTIFY_SESSION_COOKIE,
-      sealSpotifySession({ ownerId: saved.ownerId, spotifyUserId, ...token }, sealSecret),
+      sealSpotifySession({ ownerId: saved.ownerId, spotifyUserId: profile.id!, ...token }, sealSecret),
       spotifyCookieOptions(req, 180 * 24 * 60 * 60),
     );
     return response;
