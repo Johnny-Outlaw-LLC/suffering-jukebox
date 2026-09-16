@@ -25621,7 +25621,12 @@ function playlistChartTipMeta(row, i, isCurrent, played, skipped) {
 
 // Repaint current / blocked on the cells already on screen. Never rebuilds
 // the wall — if the grid is gone the listener left, so leave them alone.
-function playlistChartRefreshPlayback() {
+// Normal player updates only need to touch the old and new current cells.
+// A full sweep is reserved for blocked-track changes, where every drawn cell
+// may have changed state. Keeping that distinction matters on a long queue:
+// updateYTQueueUI() runs on the playback hot path.
+function playlistChartRefreshPlayback(opts) {
+  const full = !!(opts && opts.full);
   if (viewMode !== 'playlistchart') return;
   const grid = document.getElementById('pl-wall-grid');
   const detail = document.getElementById('pl-detail-tbl');
@@ -25647,10 +25652,24 @@ function playlistChartRefreshPlayback() {
       }
     }
   };
-  if (grid) grid.querySelectorAll('.pl-wall-cell[data-pc-index]').forEach(paint);
-  if (detail) detail.querySelectorAll('.pl-detail-row[data-pc-index]').forEach(paint);
-  if (curIdx !== _plWallLastCurrentIdx) _plWallLastCurrentIdx = curIdx;
-  playlistChartSyncToCurrent();
+  const previousIdx = _plWallLastCurrentIdx;
+  if (full) {
+    if (grid) grid.querySelectorAll('.pl-wall-cell[data-pc-index]').forEach(paint);
+    if (detail) detail.querySelectorAll('.pl-detail-row[data-pc-index]').forEach(paint);
+  } else {
+    // Queue indices are unique in each rendered host, so two point lookups
+    // replace a scan of every visible cover/row on every player update.
+    const touched = new Set([previousIdx, curIdx]);
+    touched.forEach(i => {
+      if (i < 0) return;
+      const selector = `[data-pc-index="${i}"]`;
+      if (grid) grid.querySelectorAll(`.pl-wall-cell${selector}`).forEach(paint);
+      if (detail) detail.querySelectorAll(`.pl-detail-row${selector}`).forEach(paint);
+    });
+  }
+  const currentChanged = curIdx !== previousIdx;
+  if (currentChanged) _plWallLastCurrentIdx = curIdx;
+  if (full || currentChanged) playlistChartSyncToCurrent();
   playlistChartPaintTransport();
 }
 
@@ -37213,11 +37232,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-15';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-16';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-16', items: [
+    'Now Playing stays responsive with a large live queue. As playback moves, only the songs that changed are refreshed instead of repainting the whole queue each time.',
+  ]},
   { date: '2026-09-15', items: [
     'On Listening Party, a live station takes the Hot right now vinyl on Home — same spinning record, with that station’s playlist covers on the sleeve (not the song that is playing). The card says On air, shows what is playing, and Join Now opens the room. Up to three stations scroll there.',
     'Now Playing no longer has an Auto Size checkbox. Cover size is just the Size slider.',
@@ -40664,7 +40686,7 @@ function refreshBlockedUI(trackId) {
     b.textContent = on ? '↺ Unblock' : '⊘ Never Again';
   });
   ytpSyncBlockBtn(nowPlayingTrackId);
-  if (viewMode === 'playlistchart') playlistChartRefreshPlayback();
+  if (viewMode === 'playlistchart') playlistChartRefreshPlayback({ full: true });
 }
 
 function unblockTrack(trackId) {
