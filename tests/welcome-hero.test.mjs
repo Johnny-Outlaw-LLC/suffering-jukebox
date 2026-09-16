@@ -42,6 +42,11 @@ function hero(brand, state = {}) {
     _lphPicks: state.picks ?? null,
     _lphLoading: state.loading ?? false,
     _lphFailed: state.failed ?? false,
+    // Live rooms take the hero vinyl when any are joinable. Default empty so
+    // the playlist / Hot right now path stays the one under test unless a
+    // case opts in via state.rooms.
+    liveStationsJoinable: () => state.rooms ?? [],
+    _lphLiveAdvanceTimer: null,
     lphLoad() {
       scope.loadCalled = true;
     },
@@ -51,6 +56,9 @@ function hero(brand, state = {}) {
     [
       'lphEsc', 'lphCompact', 'lphAgo', 'lphStatFor', 'lphSongs', 'lphSleeveHTML', 'lphCardHTML',
       'lphFeaturePick', 'lphFeatureHTML', 'lphShelfHTML', 'lphOpen',
+      // lphFeatureHTML asks these first; without them the harness throws.
+      'lphLiveStationName', 'lphLiveCardHTML', 'lphLiveStations',
+      'lphLiveStopAdvance', 'lphLiveHTML',
     ],
     scope
   );
@@ -219,6 +227,26 @@ test('the record spins the hot pick, and holds its space while loading', () => {
   assert.equal(hero(LP, { picks: [row({ name: 'A' })] }).lphFeaturePick().name, 'A');
   assert.ok(hero(LP, { picks: null }).lphFeatureHTML().includes('lph-feature-wait'));
   assert.equal(hero(LP, { picks: [], failed: true }).lphFeatureHTML(), '');
+});
+
+test('a live station takes the hero vinyl ahead of Hot right now', () => {
+  const evil = '<img src=x onerror=alert(1)>';
+  const h = hero(LP, {
+    picks: [row({ pick: 'hot', name: 'Should not show' })],
+    rooms: [{
+      id: 'room-1',
+      name: evil + ' · Live Now',
+      _nowPlayingLabel: 'Song · Artist',
+      _listenerCount: 3,
+      _artUrls: ['a.jpg'],
+    }],
+  });
+  const html = h.lphFeatureHTML();
+  assert.ok(html.includes('On air'), 'live rooms own the feature slot');
+  assert.ok(html.includes('Join Now'));
+  assert.ok(!html.includes('Hot right now'));
+  assert.ok(!html.includes('<img src=x'), 'station names are user input');
+  assert.ok(html.includes('&lt;img'));
 });
 
 test('the hero and shelf are mounted on the Home tab and nowhere else', () => {

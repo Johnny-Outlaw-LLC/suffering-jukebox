@@ -260,7 +260,11 @@ test('every brand-bearing string in the dashboard reads through SJ_BRAND', () =>
     .split('\n')
     .map((line, i) => [i, line])
     .filter(([, line]) => /Suffering Jukebox|sufferingjukebox/.test(line))
-    .filter(([, line]) => !line.trimStart().startsWith('//') && !line.trimStart().startsWith('*'))
+    // // line comments, * continuations, and /** JSDoc openers — not live code.
+    .filter(([, line]) => {
+      const t = line.trimStart();
+      return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/**');
+    })
     .filter(([, line]) => !allowed.some((a) => line.includes(a)))
     // Inside the SJ_BRAND literal, which the previous test pins against the server.
     .filter(([, line]) => !/^\s{2}(name|url|host|origins|authScheme|shareText|redditSub|textLogo):/.test(line));
