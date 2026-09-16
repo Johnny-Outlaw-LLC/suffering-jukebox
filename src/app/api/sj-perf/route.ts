@@ -77,6 +77,7 @@ function cleanDetail(entry: IncomingEntry): Record<string, unknown> {
   if (typeof entry.label === "string" && entry.label.trim()) {
     detail.label = entry.label.slice(0, 80);
   }
+  if (entry.surface === "sj" || entry.surface === "lp") detail.surface = entry.surface;
   return detail;
 }
 
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
     userAgent?: string;
     path?: string;
     viewport?: { width?: unknown; height?: unknown; dpr?: unknown };
+    surface?: unknown;
     entries?: IncomingEntry[];
   };
   try {
@@ -130,7 +132,7 @@ export async function POST(req: NextRequest) {
         duration_ms: num(entry.durationMs),
         heap_used_mb: int(entry.heapUsedMB),
         heap_total_mb: int(entry.heapTotalMB),
-        detail: cleanDetail(entry),
+        detail: cleanDetail({ ...entry, surface: body.surface }),
         user_agent: userAgent || null,
         viewport,
         path: path || null,
