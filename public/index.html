@@ -7437,7 +7437,12 @@ function sjPerfRecoverLastSession() {
 
   window.sjLastSessionReport = saved;
   const worst = saved.entries.filter(e => /^browser\.(long-task|event-loop-stall|error|unhandled-rejection)$/.test(e.event || ''));
-  if (!worst.length) return saved;
+  // A menu that started and never finished is the other common hard-freeze
+  // fingerprint: the open-start beacon may already be in the table, and this
+  // recovers whatever was still only in localStorage when the tab died.
+  const lastEv = saved.entries[saved.entries.length - 1];
+  const hungOnMenu = !!(lastEv && lastEv.event === 'browser.menu-open-start');
+  if (!worst.length && !hungOnMenu) return saved;
 
   // Only the tail matters - the entries immediately before the tab went quiet.
   _sjPerfPost(_sjPerfBody(
@@ -7445,9 +7450,32 @@ function sjPerfRecoverLastSession() {
     'prev-' + String(saved.sessionId || 'unknown').slice(0, 40),
     saved,
   ), false);
-  console.warn('[SJ performance] Last session ended with ' + worst.length +
-    ' stall/error entries. window.sjLastSessionReport has the detail.');
+  console.warn('[SJ performance] Last session ended with ' +
+    (worst.length ? (worst.length + ' stall/error entries') : 'a menu open that never finished') +
+    '. window.sjLastSessionReport has the detail.');
   return saved;
+}
+
+// ⋯ menus (album / artist / playlist / track) are a common freeze trigger.
+// Stamp open-start synchronously to localStorage and sendBeacon it immediately
+// so a hard lock still leaves a row even when the completion event never runs.
+function sjPerfMenuOpenStart(kind, detail) {
+  try {
+    sjPerf('browser.menu-open-start', { label: String(kind || 'menu').slice(0, 40), ...(detail || {}) });
+    sjPerfPersistNow();
+    sjPerfFlush(true);
+  } catch (_) { /* telemetry never breaks the page */ }
+}
+
+function sjPerfMenuOpenDone(kind, t0, detail) {
+  try {
+    const durationMs = typeof t0 === 'number' ? sjPerfDuration(t0) : null;
+    sjPerf('browser.menu-open', {
+      label: String(kind || 'menu').slice(0, 40),
+      ...(durationMs != null ? { durationMs } : {}),
+      ...(detail || {}),
+    });
+  } catch (_) { /* telemetry never breaks the page */ }
 }
 
 // Off the boot path deliberately: reading and posting the post-mortem must not
@@ -18750,6 +18778,8 @@ function sjmOpen(trackId, anchorEl, ev) {
   const already = _sjmTrackId === trackId && document.getElementById('sjm-menu');
   sjmClose();
   if (already) return;   // second tap on the same button closes it
+  const t0 = performance.now();
+  sjPerfMenuOpenStart('sjm', { count: 1 });
   _sjmTrackId = trackId;
   _sjmAnchor  = anchorEl || null;
   _sjmBreakScope = 'song';
@@ -18773,6 +18803,7 @@ function sjmOpen(trackId, anchorEl, ev) {
     window.addEventListener('scroll', _sjmScroll, true);
     window.addEventListener('resize', sjmClose);
   }, 0);
+  sjPerfMenuOpenDone('sjm', t0, { count: 1 });
 }
 
 // Open for whatever the player is playing right now.
@@ -19066,6 +19097,9 @@ function plmOpen(playlistId, anchorEl, ev) {
   const p = (_savedPlaylists || []).find(x => x.id === playlistId)
     || (playlists || []).find(x => x.id === playlistId);
   if (!p || p._liveRoom || p._dynamic) return;
+  const t0 = performance.now();
+  const n = (p._tracks || []).length;
+  sjPerfMenuOpenStart('plm', { tracks: n });
   _plmPlaylistId = playlistId;
   _plmAnchor = anchorEl || null;
   const menu = document.createElement('div');
@@ -19082,6 +19116,7 @@ function plmOpen(playlistId, anchorEl, ev) {
     window.addEventListener('scroll', plmClose, true);
     window.addEventListener('resize', plmClose);
   }, 0);
+  sjPerfMenuOpenDone('plm', t0, { tracks: n });
 }
 
 function plmRender(p) {
@@ -19198,6 +19233,9 @@ function lamOpen(artistId, anchorEl, ev) {
   if (already) return;
   const row = (landingStats || []).find(r => r.artist_id === artistId);
   if (!row) return;
+  const t0 = performance.now();
+  const n = Number(row.track_count) || 0;
+  sjPerfMenuOpenStart('lam', { tracks: n, artists: 1 });
   _lamArtistId = artistId;
   _lamAnchor = anchorEl || null;
   _lamFavIds = null;
@@ -19221,6 +19259,7 @@ function lamOpen(artistId, anchorEl, ev) {
     lamRender(row);
     sjmPosition();
   });
+  sjPerfMenuOpenDone('lam', t0, { tracks: n, artists: 1 });
 }
 
 function lamCanManage(row) {
@@ -20294,11 +20333,36 @@ function almAlbumTracks(albumId) {
     .sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
 }
 
+// Artist name for every track on one album - looked up once from the album's
+// artist_id. Do NOT call ytpTrackMeta() per track here: that walks the whole
+// loaded catalogue, and on Listening Party (shared pool, thousands of tracks)
+// opening the album ⋯ menu paid that cost for every song on the record.
+function almArtistName(artistId) {
+  if (!artistId) return '';
+  const a = (typeof allArtists !== 'undefined' && allArtists)
+    ? allArtists.find(x => x.id === artistId) : null;
+  if (a && a.name) return a.name;
+  const row = (landingStats || []).find(r => r.artist_id === artistId);
+  if (row && row.name) return row.name;
+  if (typeof communityArtists !== 'undefined' && communityArtists) {
+    const c = communityArtists.find(x => x.id === artistId);
+    if (c && c.name) return c.name;
+  }
+  return '';
+}
+
 function almAlbumQueueItems(albumId) {
+  const alb = almFindAlbum(albumId);
+  const artistName = almArtistName(alb && alb.artist_id);
   return sjNoBlocked(almAlbumTracks(albumId).map(t => {
     const vid = ytData[t.id]?.video_id || tvPrimary(t.id)?.video_id;
-    const meta = ytpTrackMeta(t.id, t.name);
-    return { videoId: vid, title: t.name, trackId: t.id, artist: meta.artist || '' };
+    const cached = (typeof SJ_TRACK_META !== 'undefined' && SJ_TRACK_META[t.id]) || null;
+    return {
+      videoId: vid,
+      title: t.name,
+      trackId: t.id,
+      artist: artistName || (cached && cached.artist) || '',
+    };
   }).filter(x => x.videoId));
 }
 
@@ -20347,6 +20411,8 @@ function almOpen(albumId, anchorEl, ev) {
   try { sjmClose(); } catch (_) {}
   almClose();
   if (already) return;
+  const t0 = performance.now();
+  sjPerfMenuOpenStart('alm', { albums: 1 });
   _almAlbumId = albumId;
   _almAnchor = anchorEl || null;
   const menu = document.createElement('div');
@@ -20372,6 +20438,7 @@ function almOpen(albumId, anchorEl, ev) {
     window.addEventListener('scroll', _almScroll, true);
     window.addEventListener('resize', almClose);
   }, 0);
+  sjPerfMenuOpenDone('alm', t0, { albums: 1, tracks: almAlbumTracks(albumId).length });
 }
 
 function almRenderRoot() {
@@ -37233,11 +37300,15 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-16';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-17';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-17', items: [
+    'Opening the ⋯ menu on an album cover is snappier, especially on Listening Party where the shared catalogue is large. The menu no longer rescans every loaded song just to name the artist.',
+    'If the site ever freezes while opening a ⋯ menu (album, artist, playlist, or song), that click is logged so we can see it on the next visit — the freeze itself used to leave no trail.',
+  ]},
   { date: '2026-09-16', items: [
     'Now Playing stays responsive with a large live queue. As playback moves, only the songs that changed are refreshed instead of repainting the whole queue each time.',
     'Automated performance checks now watch both sites for long tasks, event-loop stalls and slow renders, and open one tracked problem when production crosses the threshold.',
