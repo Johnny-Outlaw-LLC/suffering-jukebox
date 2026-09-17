@@ -27530,6 +27530,15 @@ function liveRoomListeningHere() {
   return !!(liveRoomMode && _liveRoomListen && _liveRoomListen.code === liveRoomMode._roomCode);
 }
 
+// _sjjLive only means "this device is feeding SOME jukebox" - it says nothing
+// about which one. Without this check, browsing a stranger's live room while
+// your own jukebox happens to be on air from the same browser read as if you
+// were standing in THEIR room: Join Now hid itself and request permission was
+// granted on a room you do not own.
+function liveRoomBroadcastingHere() {
+  return !!(_sjjLive && _sjjRoom && liveRoomMode && _sjjRoom.code === liveRoomMode._roomCode);
+}
+
 /**
  * Requesting a song is for people in the room.
  *
@@ -27540,7 +27549,7 @@ function liveRoomListeningHere() {
  * The host's own device is in the room by definition.
  */
 function liveRoomCanRequest() {
-  return !!(liveRoomMode && (liveRoomListeningHere() || liveRoomMode._roomIsOwner || _sjjLive));
+  return !!(liveRoomMode && (liveRoomListeningHere() || liveRoomMode._roomIsOwner || liveRoomBroadcastingHere()));
 }
 
 /** Send somebody who is not in the room to the door rather than refusing. */
@@ -28125,7 +28134,7 @@ function renderPlaylistChart(error) {
       ? `<button type="button" class="pl-wall-back" onclick="openLiveRoomAddSongs()">Add Songs</button>` +
         `<button type="button" class="pl-wall-back" onclick="liveRoomRequests()">My Requests</button>`
       : '') +
-      (!listeningHere && !liveRoomMode._roomIsOwner && !_sjjLive
+      (!listeningHere && !liveRoomMode._roomIsOwner && !liveRoomBroadcastingHere()
         ? `<button type="button" class="pl-wall-join-now" onclick="liveRoomOpenJoinModal()">Join Now</button>`
         : '') +
       (listeningHere
@@ -37308,6 +37317,8 @@ const SJ_CHANGELOG = [
   { date: '2026-09-17', items: [
     'Opening the ⋯ menu on an album cover is snappier, especially on Listening Party where the shared catalogue is large. The menu no longer rescans every loaded song just to name the artist.',
     'If the site ever freezes while opening a ⋯ menu (album, artist, playlist, or song), that click is logged so we can see it on the next visit — the freeze itself used to leave no trail.',
+    'Browsing a live jukebox with a very large queue (like Church Street Studio’s) no longer freezes the page while play counts load.',
+    'Join Now shows up correctly when browsing someone else’s live room, even if your own jukebox happens to be on air at the same time.',
   ]},
   { date: '2026-09-16', items: [
     'Now Playing stays responsive with a large live queue. As playback moves, only the songs that changed are refreshed instead of repainting the whole queue each time.',
@@ -41682,24 +41693,38 @@ async function loadPlayCounts(trackIds) {
   if (!trackIds.length) return;
   const startedAt = performance.now();
   const diagnostics = viewMode === 'playlistchart';
-  if (diagnostics) sjPerf('playlist-wall.play-counts.start', { run: sjPerformanceRun, tracks: trackIds.length, chunks: Math.ceil(trackIds.length / 50) });
+  const chunks = [];
+  for (let i = 0; i < trackIds.length; i += 50) chunks.push(trackIds.slice(i, i + 50));
+  if (diagnostics) sjPerf('playlist-wall.play-counts.start', { run: sjPerformanceRun, tracks: trackIds.length, chunks: chunks.length });
   const hdrs = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' };
   try {
-    for (let i = 0; i < trackIds.length; i += 50) {
+    // Chunks used to run one at a time - a big wall (Church Street Studio's
+    // combined queue is thousands of tracks) meant dozens of round trips back
+    // to back, each waiting on the last, and the wait showed up as a real
+    // "Page Unresponsive" freeze. Running them together, same as
+    // plWallLoadReactionCounts, turns that serial chain into one wave bounded
+    // by the browser's own per-origin connection limit instead of the network
+    // round-trip count.
+    let permissionDenied = false;
+    await Promise.all(chunks.map(async chunk => {
+      if (permissionDenied) return;
       const chunkAt = performance.now();
-      const chunk = trackIds.slice(i, i + 50);
       const rows = await fetch(
         `${REST}/track_play_counts?track_id=in.(${chunk.join(',')})&select=track_id,play_count`,
         { headers: hdrs }
       ).then(r => r.json());
       if (rows?.code === '42501' || rows?.message?.includes('permission denied')) {
-        await _loadPlayCountsFromEvents();
-        if (diagnostics) sjPerf('playlist-wall.play-counts.fallback', { run: sjPerformanceRun, durationMs: sjPerfDuration(startedAt) });
+        permissionDenied = true;
         return;
       }
-      if (!Array.isArray(rows)) continue;
+      if (!Array.isArray(rows)) return;
       rows.forEach(r => { if (r.track_id) inAppPlays[r.track_id] = Number(r.play_count) || 0; });
       if (diagnostics) sjPerf('playlist-wall.play-counts.chunk', { run: sjPerformanceRun, tracks: chunk.length, rows: rows.length, durationMs: sjPerfDuration(chunkAt) });
+    }));
+    if (permissionDenied) {
+      await _loadPlayCountsFromEvents();
+      if (diagnostics) sjPerf('playlist-wall.play-counts.fallback', { run: sjPerformanceRun, durationMs: sjPerfDuration(startedAt) });
+      return;
     }
     _afterPlayCountsLoaded();
     if (diagnostics) sjPerf('playlist-wall.play-counts.complete', { run: sjPerformanceRun, tracks: trackIds.length, durationMs: sjPerfDuration(startedAt) });
