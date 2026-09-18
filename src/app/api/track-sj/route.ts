@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { SJ_SUPABASE_ANON_KEY } from "@/lib/sj-admin-auth";
+import { SURFACES, currentSurface } from "@/lib/surface";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ function getReferrerHost(ref: string) {
   try {
     const u = new URL(ref);
     const h = u.hostname.replace(/^www\./, "");
-    if (h === "sufferingjukebox.stream" || h === "www.sufferingjukebox.stream") return "(internal)";
+    if (Object.values(SURFACES).some((s) => h === s.host)) return "(internal)";
     if (h === "mail.google.com" || h === "gmail.com") return "Gmail";
     if (h === "google.com" && u.pathname.startsWith("/url")) return "Gmail";
     if (h.includes("outlook.")) return "Outlook";
@@ -148,6 +149,8 @@ export async function POST(req: NextRequest) {
       device_type: getDeviceType(ua), browser: getBrowser(ua), os: getOS(ua),
       ip_address: ip !== "unknown" ? ip : null, city: geo.city, country: geo.country,
       user_email: email,
+      // Both brands write here; the traffic dashboard splits them on this.
+      surface: currentSurface(req.headers.get("host")).id,
     }).select("id").single();
     if (insertErr) console.error("[track-sj:insert]", insertErr.message);
     return NextResponse.json({ ok: !insertErr, id: data?.id ?? null });
