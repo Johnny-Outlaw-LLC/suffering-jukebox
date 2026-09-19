@@ -9,11 +9,12 @@
  *    no track_audio row points at it (an unreferenced leftover from a
  *    re-upload). A referenced object missing from B2 is never touched.
  *
- * Needs SUPABASE_SERVICE_ROLE_KEY. B2_KEY_ID / B2_APP_KEY / B2_BUCKET are read
- * from the environment, or from the share-images Render cron when RENDER_API_KEY
- * is set (Vercel holds them as sensitive, and the Bitwarden B2 key is Big Sky's).
+ * Needs SUPABASE_SERVICE_ROLE_KEY plus B2_KEY_ID / B2_APP_KEY / B2_BUCKET. The
+ * Jukebox B2 key is in Bitwarden, mapped into the repo's profile. The root
+ * profile's B2 key is Big Sky's, so the repo profile has to come second. With
+ * no B2_* set it falls back to the share-images Render cron's copy.
  *
- *   python "C:\AI Projects\bitwarden-run.py" --env-file env.local -- node scripts/clear-legacy-supabase-audio.mjs [--apply] [--include-orphans]
+ *   python "C:\AI Projects\bitwarden-run.py" --env-file env.local --env-file "Projects/Suffering Jukebox/suffering-jukebox-fresh/.env.local" -- node scripts/clear-legacy-supabase-audio.mjs [--apply] [--include-orphans]
  */
 import { HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
