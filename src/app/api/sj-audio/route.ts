@@ -15,7 +15,6 @@ export const dynamic = "force-dynamic";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const AUDIO_CONTENT_TYPE = /^audio\/[a-z0-9.+-]+$/i;
 const LEGACY_AUDIO_BUCKET = "jukebox-audio";
-const PLAYBACK_URL_SECONDS = 6 * 60 * 60;
 
 function noStore(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -74,30 +73,14 @@ export async function GET(req: NextRequest) {
     const ownRows = (data || []).filter((row) =>
       Boolean(row.storage_path) && isAuthorizedStoredPath(row.storage_path!, user.id, row.track_id),
     );
-    // Signing used to be one call per row, all in flight at once. Asking for a
-    // whole artist made Supabase Storage answer 429 "Too many connections
-    // issued to the database" and the request failed entirely. Legacy paths are
-    // now signed in a single batched call, and B2 presigning is bounded.
-    const legacyRows = ownRows.filter((row) => isLegacyUploadPath(row.storage_path!, row.track_id));
-    const b2Rows = ownRows.filter((row) => !isLegacyUploadPath(row.storage_path!, row.track_id));
-
+    // Every file plays from B2, legacy `trackId/file` keys included: the
+    // 2026-09-18 run of scripts/migrate-sj-audio-to-b2.mjs copied each one
+    // across under the same key and verified its size. Presigning is local
+    // (no request per row), but stays bounded anyway.
     const urlByPath = new Map<string, string>();
-
-    if (legacyRows.length) {
-      // The source bucket stays private and was retained during the B2 move.
-      // Serve old uploads from it until their legacy keys are migrated.
-      const { data: signed, error: signedError } = await sb.storage
-        .from(LEGACY_AUDIO_BUCKET)
-        .createSignedUrls(legacyRows.map((row) => row.storage_path!), PLAYBACK_URL_SECONDS);
-      if (signedError) throw signedError;
-      for (const entry of signed || []) {
-        if (entry?.path && entry?.signedUrl) urlByPath.set(entry.path, entry.signedUrl);
-      }
-    }
-
     const B2_CONCURRENCY = 8;
-    for (let i = 0; i < b2Rows.length; i += B2_CONCURRENCY) {
-      const chunk = b2Rows.slice(i, i + B2_CONCURRENCY);
+    for (let i = 0; i < ownRows.length; i += B2_CONCURRENCY) {
+      const chunk = ownRows.slice(i, i + B2_CONCURRENCY);
       const urls = await Promise.all(chunk.map((row) => createB2DownloadUrl(row.storage_path!)));
       chunk.forEach((row, j) => { if (urls[j]) urlByPath.set(row.storage_path!, urls[j]!); });
     }
@@ -227,11 +210,11 @@ export async function DELETE(req: NextRequest) {
     if (rowError) throw rowError;
     if (!row) return noStore({ ok: true });
     if (row.storage_path && isAuthorizedStoredPath(row.storage_path, user.id, trackId)) {
+      await deleteB2AudioObject(row.storage_path);
       if (isLegacyUploadPath(row.storage_path, trackId)) {
-        const { error: removeError } = await sb.storage.from(LEGACY_AUDIO_BUCKET).remove([row.storage_path]);
-        if (removeError) throw removeError;
-      } else {
-        await deleteB2AudioObject(row.storage_path);
+        // The Supabase original may still exist until the old bucket is
+        // cleared. Best effort: B2 is what plays, so a miss here is harmless.
+        await sb.storage.from(LEGACY_AUDIO_BUCKET).remove([row.storage_path]).then(() => undefined, () => undefined);
       }
     }
     const { error: deleteError } = await sb
