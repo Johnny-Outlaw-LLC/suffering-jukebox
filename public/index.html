@@ -20463,11 +20463,19 @@ function almRenderRoot() {
   const name = (alb && alb.name) || 'Album';
   const n = almAlbumQueueItems(_almAlbumId).length;
   const canManage = almCanManage(_almAlbumId);
+  const siblings = canManage ? almSiblingAlbums(_almAlbumId) : [];
   menu.innerHTML =
     _sjmHeader(name) +
     (canManage
       ? '<button class="sjm-item" onclick="almManage()">' +
-          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Album</span></button>'
+          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Album</span></button>' +
+        (siblings.length
+          ? '<button class="sjm-item" data-sjm-submenu="merge" onclick="almOpenMerge()">' +
+              '<span class="sjm-ic">=></span><span class="sjm-label">Merge into another album</span>' +
+              '<span class="sjm-sub">›</span></button>'
+          : '') +
+        '<button class="sjm-item sjm-danger" onclick="almDeleteAlbum()">' +
+          '<span class="sjm-ic">✕</span><span class="sjm-label">Delete album</span></button>'
       : '') +
     '<button class="sjm-item" data-sjm-submenu="playlists" onclick="almOpenPlaylists()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add Album to Playlist</span>' +
@@ -20486,10 +20494,87 @@ function almRenderRoot() {
   try { sjmPosition(); } catch (_) {}
 }
 
+function almSiblingAlbums(albumId) {
+  const alb = almFindAlbum(albumId);
+  if (!alb) return [];
+  return (albums[alb.artist_id] || [])
+    .filter(a => a.id !== albumId)
+    .slice()
+    .sort((a, b) => String(a.release_date || '').localeCompare(String(b.release_date || '')) ||
+      String(a.name || '').localeCompare(String(b.name || '')));
+}
+
 function almManage() {
   const id = _almAlbumId;
   almClose();
   if (id) openManageAlbum(id);
+}
+
+function almOpenMerge() {
+  const menu = document.getElementById('sjm-menu');
+  if (!menu || !_almAlbumId) return;
+  const drop = almFindAlbum(_almAlbumId);
+  const siblings = almSiblingAlbums(_almAlbumId);
+  const head = _sjmHeader('Merge into...', 'sjmCloseSubmenu()');
+  if (!siblings.length) {
+    sjmOpenSubmenu('merge', head + '<div class="sjm-empty">No other albums to merge into.</div>');
+    return;
+  }
+  const rows = siblings.map(a => {
+    const yr = (a.release_date || '').slice(0, 4);
+    const sub = yr || '';
+    return '<button class="sjm-item" onclick="almMergeInto(\'' + a.id + '\')">' +
+      '<span class="sjm-ic">=></span>' +
+      '<span class="sjm-label">' + escHtml(a.name || 'Album') + '</span>' +
+      (sub ? '<span class="sjm-sub">' + escHtml(sub) + '</span>' : '') +
+      '</button>';
+  }).join('');
+  sjmOpenSubmenu('merge', head +
+    '<div class="sjm-empty">Move songs from "' + escHtml((drop && drop.name) || 'this album') +
+    '" into the album you pick. Matching songs keep their history; this album is then removed.</div>' +
+    '<div class="sjm-scroll">' + rows + '</div>');
+}
+
+async function almMergeInto(keepAlbumId) {
+  const dropId = _almAlbumId;
+  const drop = almFindAlbum(dropId);
+  const keep = almFindAlbum(keepAlbumId);
+  if (!dropId || !keepAlbumId || !drop || !keep) return;
+  if (!confirm('Merge “' + (drop.name || 'album') + '” into “' + (keep.name || 'album') +
+      '”? Matching songs keep their play history. “' + (drop.name || 'This album') + '” will be removed.')) return;
+  almClose();
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-merge-albums'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+      body: JSON.stringify({ keep_album_id: keepAlbumId, drop_album_id: dropId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Merge failed');
+    try { expandedAlbumIds.delete(dropId); } catch (_) {}
+    showToast('Merged into “' + (keep.name || 'album') + '”', 'ok');
+    await loadData();
+    try { if (typeof updateView === 'function') updateView(); } catch (_) {}
+  } catch (e) {
+    showToast(e.message || 'Merge failed');
+  }
+}
+
+async function almDeleteAlbum() {
+  const id = _almAlbumId;
+  const alb = almFindAlbum(id);
+  if (!id || !alb) return;
+  if (!confirm('Delete “' + (alb.name || 'album') + '” and all its tracks? This cannot be undone.')) return;
+  almClose();
+  try {
+    await amFetch('?action=delete_album', { method: 'POST', body: JSON.stringify({ album_id: id }) });
+    try { expandedAlbumIds.delete(id); } catch (_) {}
+    showToast('Album deleted');
+    await loadData();
+    try { if (typeof updateView === 'function') updateView(); } catch (_) {}
+  } catch (e) {
+    showToast(e.message || 'Delete failed');
+  }
 }
 
 async function almOpenPlaylists() {
@@ -37329,6 +37414,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-18';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-18', items: [
+    'If you manage an artist, the album ⋯ menu can merge one album into another (duplicate Cardinal / Marigold rows) or delete a bad album. Matching songs keep their play history.',
+    'Re-importing an artist no longer creates a second copy of an album that is already there under a different YouTube playlist.',
     'Suffering Jukebox now also counts visits with PostHog, an analytics service, next to our own visit counter. It does not record your screen and does not know who you are. The Privacy Policy has the details.',
   ]},
   { date: '2026-09-17', items: [
