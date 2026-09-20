@@ -132,3 +132,40 @@ test('scrolling a long cover wall measures only nearby placeholders', () => {
   assert.ok(upgraded < 300);
   assert.ok(measured < 350, `measured ${measured} of 5000 cells`);
 });
+
+test('bulk personal play counts refresh a long wall once', async () => {
+  const rows = Array.from({ length: 510 }, (_, i) => ({
+    track_id: `track-${i}`, plays: i + 1, last_played: '2026-09-19',
+  }));
+  let wallRefreshes = 0;
+  let counterLookups = 0;
+  const inlineCounter = { getAttribute: () => 'track-17', style: {}, textContent: '' };
+  const cardCounter = { id: 'sc-myplays-track-42', textContent: '' };
+  const scope = {
+    googleUser: { email: 'listener@example.test' },
+    viewMode: 'playlistchart',
+    myInAppPlays: {},
+    myLastPlayed: {},
+    dbRpcAuth: async () => rows,
+    document: {
+      querySelectorAll(selector) {
+        counterLookups++;
+        if (selector === '[data-myplays]') return [inlineCounter];
+        if (selector === '[id^="sc-myplays-"]') return [cardCounter];
+        return [];
+      },
+      getElementById() { return null; },
+    },
+    fmtV: n => String(n),
+    sjCarPushShuffleProfile() {},
+    plWallRefreshStats() { wallRefreshes++; },
+  };
+  const { loadMyPlayCounts } = loadHtmlFnsInScope(['loadMyPlayCounts'], scope);
+
+  await loadMyPlayCounts();
+
+  assert.equal(counterLookups, 2);
+  assert.equal(inlineCounter.textContent, '18');
+  assert.equal(cardCounter.textContent, '43');
+  assert.equal(wallRefreshes, 1);
+});

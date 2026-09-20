@@ -26262,7 +26262,7 @@ async function openPlaylistChart(playlistId) {
     // placeholder on the track card of a song with no artwork - so that one
     // album is now measured when the card opens instead. See plWallToggleExpand().
     loadPlayCounts(ids);
-    if (googleUser) loadMyPlayCounts().then(() => { if (viewMode === 'playlistchart') plWallRefreshStats(); });
+    if (googleUser) void loadMyPlayCounts();
     stageAt = performance.now();
     const rows = ordered.map((pt, index) => {
       const t = tById[pt.track_id], alb = t && albById[t.album_id], artist = alb && artistById[alb.artist_id];
@@ -26405,9 +26405,7 @@ async function plWallHydrateNowPlaying(perfRun) {
       });
     }
     loadPlayCounts(ids.slice(0, 400));
-    if (googleUser) loadMyPlayCounts().then(() => {
-      if (viewMode === 'playlistchart' && playlistChartId === '__dynamic_now_playing') plWallRefreshStats();
-    });
+    if (googleUser) void loadMyPlayCounts();
     plWallLoadReactionCounts(ids.slice(0, 600));
     sjPerf('playlist-wall.now-playing-hydrate', {
       run: perfRun,
@@ -37439,6 +37437,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-19';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-09-19', items: [
+    'A signed-in listener with a long Now Playing queue no longer repeats the same play-count update for every song, which could leave the page unresponsive for a minute or more.',
     'Now Playing stays smoother when you scroll through a long queue of covers. It also loads fewer covers in the background while you browse the song details.',
   ]},
   { date: '2026-09-18', items: [
@@ -42145,7 +42144,17 @@ async function loadMyPlayCounts() {
       myInAppPlays[r.track_id] = Number(r.plays) || 0;
       if (r.last_played) myLastPlayed[r.track_id] = r.last_played;
     });
-    Object.keys(myInAppPlays).forEach(tid => refreshMyPlayUI(tid));
+    // A signed-in listener can have hundreds of played tracks. Walk the
+    // counters that actually exist on this page once instead of querying the
+    // whole document for every track in the account.
+    document.querySelectorAll('[data-myplays]').forEach(el => {
+      const count = myInAppPlays[el.getAttribute('data-myplays')] || 0;
+      el.textContent = count ? fmtV(count) : '-';
+      el.style.color = count ? 'var(--accent)' : 'var(--text-muted)';
+    });
+    document.querySelectorAll('[id^="sc-myplays-"]').forEach(el => {
+      el.textContent = fmtV(myInAppPlays[el.id.slice('sc-myplays-'.length)] || 0) || '0';
+    });
     // Play counts and last-played stamps are half of every weighted mode.
     void sjCarPushShuffleProfile();
     if (viewMode === 'playlistchart') plWallRefreshStats();
