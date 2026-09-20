@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
 
-export const ARTIST_AGREEMENT_VERSION = "2026-08-16.1";
+export const ARTIST_AGREEMENT_VERSION = "2026-09-19.1";
 export const ARTIST_OPERATOR = "Johnny Outlaw, LLC";
 export const ARTIST_RIGHTS_EMAIL = "support@outlawapps.online";
 
@@ -15,8 +15,8 @@ export const ARTIST_AGREEMENT_SECTIONS = [
     body: "You represent that you control the sound recording and the underlying music and lyrics, including the authority to directly license the digital performances, reproductions, and displays described here. You have disclosed and cleared every label, publisher, administrator, performing-rights organization, collective, performer, producer, writer, featured artist, artwork owner, and other contributor whose rights or agreement could affect this grant. You will promptly tell Suffering Jukebox if that changes.",
   },
   {
-    title: "Nonexclusive mobile background-play license",
-    body: "You grant Suffering Jukebox and its hosting and delivery vendors a worldwide, nonexclusive license to host, reproduce, encode, transcode, cache, publicly perform by digital audio transmission, and make incidental delivery copies of the submitted recordings solely when a listener deliberately uses mobile background play. Music discovery and normal playback continue to use the artist's YouTube links, not these uploaded audio files.",
+    title: "Nonexclusive on-demand streaming license",
+    body: "You grant Suffering Jukebox, Listening Party, and their hosting and delivery vendors a worldwide, nonexclusive license to host, reproduce, encode, transcode, cache, display supplied artwork and credits, and stream the submitted recordings and underlying compositions on demand through these services, including normal listening and mobile background play. This includes reasonable technical copies needed to deliver streams. You may submit released and unreleased original music. Unreleased means it has not been commercially released elsewhere; once approved here it becomes publicly streamable on these services.",
   },
   {
     title: "No ownership transfer",
@@ -24,11 +24,11 @@ export const ARTIST_AGREEMENT_SECTIONS = [
   },
   {
     title: "Current compensation",
-    body: "As between you and Suffering Jukebox, this license is royalty-free and neither party owes the other a fee for current mobile background-play streams unless both parties enter a separate written payment program. This does not waive, transfer, or excuse any payment, reporting, or consent obligation owed to a publisher, performing-rights organization, collective, label, contributor, or other third party. You may submit only if those obligations have been disclosed and do not prevent this direct grant.",
+    body: "As between you and Suffering Jukebox and Listening Party, this license is royalty-free and neither party owes the other a fee for current streams unless both parties enter a separate written payment program. This does not waive, transfer, or excuse any payment, reporting, or consent obligation owed to a publisher, performing-rights organization, collective, label, contributor, or other third party. You may submit only if those obligations have been disclosed and do not prevent this direct grant.",
   },
   {
     title: "Review, removal, and termination",
-    body: "Nothing is available for public mobile background play until Suffering Jukebox approves it. Either party may end the license for future use. Your withdrawal disables new public background-play access promptly; reasonable time may be needed to clear temporary caches and backups. Suffering Jukebox may suspend or remove material immediately for a rights dispute, legal request, security issue, policy violation, or risk to the service.",
+    body: "Nothing is available for public streaming until Suffering Jukebox approves it. Either party may end the license for future use. Your withdrawal disables new public streaming access promptly; reasonable time may be needed to clear temporary caches and backups. Suffering Jukebox may suspend or remove material immediately for a rights dispute, legal request, security issue, policy violation, or risk to the service.",
   },
   {
     title: "Notices and cooperation",

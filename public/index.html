@@ -5738,7 +5738,7 @@ posthog.init('phc_zBzybgMHiDdDzxvxW53xd37bNgy4sm4sfdJB4ueVbZuF', {
         Audio is stored in a private bucket and can only be loaded by the account that uploaded it. It is never used for another listener.
       </div>
       <div data-sj-feature="artistUpload" style="border-top:1px solid var(--border);padding-top:.7rem;font-size:.52rem;line-height:1.55;color:var(--text-muted)">
-        YouTube remains the source for discovery and normal playback. Artists can separately license uploaded audio only for public mobile background play. <a href="/artist-upload" style="color:var(--accent);font-weight:700">Publish My Music for Public Background Mobile Play</a>.
+        Publish your full discography, including unreleased music, for listeners here. <a href="/artist-upload" style="color:var(--accent);font-weight:700">Publish My Music</a>.
       </div>
     </div>
     <div class="modal-footer">
@@ -5769,8 +5769,8 @@ posthog.init('phc_zBzybgMHiDdDzxvxW53xd37bNgy4sm4sfdJB4ueVbZuF', {
           This upload stays private to your account. YouTube remains the source for discovery and normal playback.
         </div>
         <div style="border-top:1px solid var(--border);margin-top:.75rem;padding-top:.75rem">
-          <div style="font-size:.5rem;color:var(--text-muted);line-height:1.55;margin-bottom:.5rem">If you own and control this music, you can separately publish the uploaded audio so any listener can use it only for mobile background play. A signed license and manual approval are required.</div>
-          <button type="button" class="m-btn ghost" id="taBatchPublishBtn" data-sj-feature="artistUpload" onclick="taBatchPublish()" disabled>Publish My Music for Public Background Mobile Play</button>
+          <div style="font-size:.5rem;color:var(--text-muted);line-height:1.55;margin-bottom:.5rem">If you own and control this music, you can publish it for all listeners. A signed license and manual approval are required.</div>
+          <button type="button" class="m-btn ghost" id="taBatchPublishBtn" data-sj-feature="artistUpload" onclick="taBatchPublish()" disabled>Publish My Music</button>
         </div>
       </div>
       <div id="taBatchQuota" style="font-family:var(--mono);font-size:.48rem;color:var(--text-muted)"></div>
@@ -11006,6 +11006,11 @@ function playAlbum(albumId, e) {
   let alb = null;
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { if (a.id === albumId) alb = a; }));
   if (!alb) return;
+  if ((tracks[alb.artist_id] || []).some(t => t.album_id === albumId && t.artist_audio_only)) {
+    const artist = allArtists.find(a => a.id === alb.artist_id);
+    if (artist?.slug) window.location.href = '/artist-music/' + encodeURIComponent(artist.slug);
+    return;
+  }
   const albTracks = (tracks[alb.artist_id] || [])
     .filter(t => t.album_id === albumId && ytData[t.id]?.video_id)
     .sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
@@ -31740,6 +31745,8 @@ function renderTrackLines(alb, mode = 'inline') {
     const sc     = trackVoteScores[t.id] || 0;
     const vid    = ytData[t.id]?.video_id;
     const safeN  = (t.name||'').replace(/'/g, "\\'");
+    const artistSlug = allArtists.find(a => a.id === alb.artist_id)?.slug;
+    const directUrl = artistSlug ? '/artist-music/' + encodeURIComponent(artistSlug) : '';
     const ytLink = vid ? `<a href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)">▶</a>` : '';
 
     const showBar = barChartMode !== 'hidden';
@@ -31783,7 +31790,7 @@ function renderTrackLines(alb, mode = 'inline') {
       <span class="trk-block-until">${untilLbl}</span>
       <button class="trk-unblock" onclick="unblockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
-      ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ <span class="trk-play-lbl">Play</span></button>` : `<span class="trk-play-spacer"></span>`}
+      ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ <span class="trk-play-lbl">Play</span></button>` : t.artist_audio_only && directUrl ? `<a class="trk-play-inline" href="${directUrl}" onclick="event.stopPropagation()" title="Play artist audio">▶ <span class="trk-play-lbl">Play</span></a>` : `<span class="trk-play-spacer"></span>`}
       <button class="trk-more" onclick="sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button>
     </div>
     <div class="trk-accordion" data-acc="${t.id}"></div>`;
@@ -44758,7 +44765,8 @@ async function _runSearch(query) {
     const meta = [artist?.name, album?.name, album?.year].filter(Boolean).join(' · ');
     const snipHtml = snippet
       ? `<div class="srch-lyr-panel">${hl(snippet)}</div>` : '';
-    const canPlay = !!ytData[t.id]?.video_id;
+    const directUrl = t.artist_audio_only && artist?.slug ? '/artist-music/' + encodeURIComponent(artist.slug) : '';
+    const canPlay = !!ytData[t.id]?.video_id || !!directUrl;
     return `<div class="srch-card" data-track-id="${t.id}">
       ${art}
       <div class="srch-info">
@@ -44767,7 +44775,7 @@ async function _runSearch(query) {
         ${snipHtml}
       </div>
       <div class="srch-actions">
-        <button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${canPlay ? '' : 'disabled title=\"No video available\"'}>▶ Play</button>
+        ${directUrl ? `<a class="srch-btn play" href="${directUrl}">▶ Play artist audio</a>` : `<button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${canPlay ? '' : 'disabled title=\"No audio available\"'}>▶ Play</button>`}
         ${SJ_COMMENTS_ENABLED ? `<button class="srch-btn cmt-btn" data-cmt-badge="track:${t.id}" onclick="event.stopPropagation();openComments('track','${t.id}')" title="Comment on this track">Comment</button>` : ''}
         <button class="srch-btn" onclick="event.stopPropagation();sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯ More</button>
       </div>

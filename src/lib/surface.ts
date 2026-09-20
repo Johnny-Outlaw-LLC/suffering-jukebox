@@ -60,7 +60,7 @@ export interface SurfaceFeatures {
    */
   spotifyImport: boolean;
   /**
-   * Artist licensing for public mobile background play: /artist-upload,
+   * Artist licensing for public on-demand streaming: /artist-upload,
    * /artist-agreement and the Publish My Music buttons. Off, both pages
    * redirect home and the buttons are hidden. Personal audio uploads are a
    * different feature and are not affected.
@@ -295,7 +295,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       welcomeHero: true,
       phoneMiniPlayer: true,
       spotifyImport: false,
-      artistUpload: false,
+      artistUpload: true,
       liveStations: true,
     },
   },

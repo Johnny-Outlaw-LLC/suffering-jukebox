@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cleanText, isUuid } from "@/lib/artist-rights";
 import { createSjServiceClient, JUKEBOX_SCHEMA, verifySjAdmin } from "@/lib/sj-admin-auth";
+import { prepareDirectArtistCatalog, setDirectArtistCatalogVisible } from "@/lib/direct-artist-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,13 @@ export async function GET(req: NextRequest) {
           .in("id", trackIds)
       : { data: [], error: null };
     if (namesError) throw namesError;
+    const { data: draftTracks, error: draftsError } = trackIds.length
+      ? await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_tracks")
+          .select("id,name,release_id,track_number,duration_ms").in("id", trackIds)
+      : { data: [], error: null };
+    if (draftsError) throw draftsError;
     const artistMap = new Map((artists ?? []).map((row) => [row.id, row]));
-    const trackMap = new Map((tracks ?? []).map((row) => [row.id, row]));
+    const trackMap = new Map([...(draftTracks ?? []), ...(tracks ?? [])].map((row) => [row.id, row]));
     return NextResponse.json({
       ok: true,
       applications: agreements.map((agreement) => ({
@@ -67,13 +73,13 @@ export async function PATCH(req: NextRequest) {
     const agreementId = String(body.agreementId || "");
     const action = String(body.action || "");
     const reviewNote = cleanText(body.reviewNote, 2000, true) as string;
-    if (!isUuid(agreementId) || !["approve", "reject", "suspend", "restore", "revoke"].includes(action)) {
+    if (!isUuid(agreementId) || !["approve", "reject", "suspend", "restore", "revoke", "publish"].includes(action)) {
       return NextResponse.json({ ok: false, error: "Invalid review action." }, { status: 400 });
     }
     if (reviewNote.length < 12) {
       return NextResponse.json({ ok: false, error: "Record a meaningful verification or review note." }, { status: 400 });
     }
-    if (action === "approve" && body.verifiedAuthority !== true) {
+    if (["approve", "publish"].includes(action) && body.verifiedAuthority !== true) {
       return NextResponse.json(
         { ok: false, error: "Confirm that the artist's authority was independently verified." },
         { status: 400 },
@@ -84,7 +90,7 @@ export async function PATCH(req: NextRequest) {
     const { data: current, error: currentError } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("artist_rights_agreements")
-      .select("id,status,user_id,user_email,artist_id")
+      .select("id,status,user_id,user_email,artist_id,agreement_version")
       .eq("id", agreementId)
       .single();
     if (currentError || !current) {
@@ -96,6 +102,7 @@ export async function PATCH(req: NextRequest) {
       suspend: { from: ["approved"], to: "suspended", track: "suspended" },
       restore: { from: ["suspended"], to: "approved", track: "approved" },
       revoke: { from: ["pending", "approved", "suspended"], to: "revoked", track: "withdrawn" },
+      publish: { from: ["approved"], to: "approved", track: "approved" },
     };
     const transition = transitions[action];
     if (!transition.from.includes(current.status)) {
@@ -105,6 +112,12 @@ export async function PATCH(req: NextRequest) {
       );
     }
     const now = new Date().toISOString();
+    if (["approve", "publish"].includes(action)) {
+      await prepareDirectArtistCatalog(sb, agreementId, current.user_email);
+    }
+    if (["suspend", "revoke"].includes(action)) {
+      await setDirectArtistCatalogVisible(sb, agreementId, false);
+    }
     const agreementUpdate: Record<string, unknown> = {
       status: transition.to,
       review_note: reviewNote,
@@ -121,7 +134,7 @@ export async function PATCH(req: NextRequest) {
       .eq("status", current.status);
     if (updateError) throw updateError;
     const trackUpdate: Record<string, unknown> = { status: transition.track, updated_at: now };
-    if (["approve", "restore"].includes(action)) {
+    if (["approve", "restore", "publish"].includes(action)) {
       trackUpdate.approved_by = auth.user.id;
       trackUpdate.approved_at = now;
     }
@@ -131,6 +144,9 @@ export async function PATCH(req: NextRequest) {
       .update(trackUpdate)
       .eq("agreement_id", agreementId);
     if (trackError) throw trackError;
+    if (["approve", "restore", "publish"].includes(action)) {
+      await setDirectArtistCatalogVisible(sb, agreementId, true);
+    }
     await sb.schema(JUKEBOX_SCHEMA).from("artist_rights_events").insert({
       agreement_id: agreementId,
       actor_user_id: auth.user.id,
@@ -150,4 +166,3 @@ export async function PATCH(req: NextRequest) {
     );
   }
 }
-

@@ -21,6 +21,7 @@ export type EligibleArtistAudio = {
 export async function approvedArtistAudioTracks(
   sb: SupabaseClient,
   trackIds?: string[],
+  agreementVersion?: string,
 ): Promise<EligibleArtistAudio[]> {
   // An explicit empty list means "these zero tracks", not "the whole catalogue".
   if (trackIds && !trackIds.length) return [];
@@ -40,11 +41,13 @@ export async function approvedArtistAudioTracks(
   const { data: agreements, error: agreementError } = await sb
     .schema(JUKEBOX_SCHEMA)
     .from("artist_rights_agreements")
-    .select("id")
+    .select("id,agreement_version")
     .in("id", [...new Set(candidates.map((row) => row.agreement_id))])
     .eq("status", "approved");
   if (agreementError) throw agreementError;
-  const live = new Set((agreements ?? []).map((row) => row.id));
+  const live = new Set((agreements ?? [])
+    .filter((row) => !agreementVersion || row.agreement_version === agreementVersion)
+    .map((row) => row.id));
 
   // Newest approval wins per track - the order above is what makes this a
   // "most recent" pick rather than an arbitrary one.

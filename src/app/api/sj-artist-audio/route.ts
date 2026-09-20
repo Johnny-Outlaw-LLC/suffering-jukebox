@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
-import { isUuid } from "@/lib/artist-rights";
+import { ARTIST_AGREEMENT_VERSION, isUuid } from "@/lib/artist-rights";
 import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
 import { createB2DownloadUrl } from "@/lib/b2-audio";
 
 export const dynamic = "force-dynamic";
-// Approved artist audio is available only for the explicit mobile Background
-// Play path. Discovery and normal listening continue to use YouTube.
-// The storage bucket remains private and delivery uses expiring URLs.
+// New artist agreements also allow normal on-demand listening to original
+// uploads with no YouTube video. Older agreements remain background-only.
 const PUBLIC_SIGNED_URL_SECONDS = 6 * 60 * 60;
 
 export async function GET(req: NextRequest) {
-  if (req.nextUrl.searchParams.get("purpose") !== "mobile-background") {
+  const purpose = req.nextUrl.searchParams.get("purpose");
+  if (purpose !== "mobile-background" && purpose !== "normal-playback") {
     return NextResponse.json(
-      { ok: false, error: "Artist audio is only available for mobile background play." },
+      { ok: false, error: "Invalid audio purpose." },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -28,7 +28,24 @@ export async function GET(req: NextRequest) {
   }
   try {
     const sb = createSjServiceClient();
-    const selected = await approvedArtistAudioTracks(sb, trackIds);
+    let selected = await approvedArtistAudioTracks(
+      sb, trackIds, purpose === "normal-playback" ? ARTIST_AGREEMENT_VERSION : undefined,
+    );
+    if (purpose === "normal-playback" && selected.length) {
+      const { data: catalogTracks, error: trackError } = await sb.schema(JUKEBOX_SCHEMA)
+        .from("tracks").select("id,album_id,artist_audio_only,artist_audio_visible")
+        .in("id", selected.map((row) => row.track_id));
+      if (trackError) throw trackError;
+      const permitted = (catalogTracks ?? []).filter((row) => row.artist_audio_only && row.artist_audio_visible);
+      const { data: albums, error: albumError } = permitted.length
+        ? await sb.schema(JUKEBOX_SCHEMA).from("albums")
+            .select("id,artist_audio_visible").in("id", permitted.map((row) => row.album_id))
+        : { data: [], error: null };
+      if (albumError) throw albumError;
+      const liveAlbums = new Set((albums ?? []).filter((row) => row.artist_audio_visible).map((row) => row.id));
+      const liveTracks = new Set(permitted.filter((row) => liveAlbums.has(row.album_id)).map((row) => row.id));
+      selected = selected.filter((row) => liveTracks.has(row.track_id));
+    }
     if (!selected.length) {
       return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
     }
@@ -57,7 +74,7 @@ export async function GET(req: NextRequest) {
         url,
         duration: audio.duration_seconds,
         artist: artist ? { name: artist.name, slug: artist.slug } : null,
-        license: "artist-approved-mobile-background",
+        license: purpose === "normal-playback" ? "artist-approved-on-demand" : "artist-approved-mobile-background",
         expiresIn: PUBLIC_SIGNED_URL_SECONDS,
       };
     }));

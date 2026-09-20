@@ -131,7 +131,7 @@ export function generateCode(random: () => number = Math.random): string {
  */
 export const RESERVED_SLUGS = new Set([
   "about", "account", "admin", "api", "artist", "artists", "artist-agreement",
-  "artist-rights-admin", "artist-upload", "assets", "auth", "album", "albums",
+  "artist-rights-admin", "artist-upload", "artist-music", "artist-release-art", "artist-discography-upload", "assets", "auth", "album", "albums",
   "blog", "community", "contact", "cookies", "dmca", "embed", "explore",
   "faq", "favicon", "feed", "help", "home", "images", "img", "index", "j",
   "join", "jukebox", "jukeboxes", "legal", "live", "login", "logout", "me",

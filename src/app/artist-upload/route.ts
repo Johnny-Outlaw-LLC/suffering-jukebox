@@ -1,4 +1,4 @@
-// Artist licensing for public mobile background play. A brand without it sends
+// Artist licensing for public on-demand streaming. A brand without it sends
 // the visitor to its own front door rather than to a licence it does not offer.
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";

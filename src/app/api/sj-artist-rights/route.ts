@@ -9,6 +9,7 @@ import {
   requestAuditMeta,
 } from "@/lib/artist-rights";
 import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
+import { setDirectArtistCatalogVisible } from "@/lib/direct-artist-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -141,13 +142,26 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    const draftReleaseIds = [...new Set(selected.tracks
+      .filter((track: any) => track.isDirectAudioDraft)
+      .map((track: any) => track.albumId))];
+    if (draftReleaseIds.length) {
+      const { data: draftTracks, error: draftError } = await sb.schema(JUKEBOX_SCHEMA)
+        .from("artist_upload_tracks").select("id,release_id")
+        .eq("user_id", user.id).in("release_id", draftReleaseIds);
+      if (draftError) throw draftError;
+      const readyIds = new Set(selected.tracks.map((track: any) => track.trackId));
+      if ((draftTracks ?? []).some((track) => !readyIds.has(track.id))) {
+        return NextResponse.json({ ok: false, error: "Finish every audio file in each selected release before signing." }, { status: 409 });
+      }
+    }
     const { data: existing } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("artist_rights_agreements")
       .select("id,status")
       .eq("user_id", user.id)
       .eq("artist_id", artistId)
-      .in("status", ["pending", "approved", "suspended"])
+      .in("status", ["pending", "suspended"])
       .maybeSingle();
     if (existing) {
       return NextResponse.json(
@@ -237,6 +251,13 @@ export async function POST(req: NextRequest) {
       await sb.schema(JUKEBOX_SCHEMA).from("artist_rights_agreements").delete().eq("id", agreement.id);
       throw trackError;
     }
+    if (draftReleaseIds.length) {
+      const { error: lockError } = await sb.schema(JUKEBOX_SCHEMA)
+        .from("artist_upload_releases")
+        .update({ submitted_at: new Date().toISOString() })
+        .eq("user_id", user.id).in("id", draftReleaseIds);
+      if (lockError) throw lockError;
+    }
     await sb.schema(JUKEBOX_SCHEMA).from("artist_rights_events").insert({
       agreement_id: agreement.id,
       actor_user_id: user.id,
@@ -287,6 +308,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Active application not found." }, { status: 404 });
     }
     const now = new Date().toISOString();
+    await setDirectArtistCatalogVisible(sb, agreementId, false);
     const { error } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("artist_rights_agreements")
@@ -313,4 +335,3 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Could not withdraw the application." }, { status: 500 });
   }
 }
-

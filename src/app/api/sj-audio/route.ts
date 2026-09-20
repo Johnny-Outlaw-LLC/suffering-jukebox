@@ -13,6 +13,7 @@ import { recalcStorageUsed } from "@/lib/bg-entitlement";
 export const dynamic = "force-dynamic";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_VERIFIED_ARTIST_UPLOAD_BYTES = 250 * 1024 * 1024;
 const AUDIO_CONTENT_TYPE = /^audio\/[a-z0-9.+-]+$/i;
 const LEGACY_AUDIO_BUCKET = "jukebox-audio";
 
@@ -53,6 +54,28 @@ function isNewUploadPath(path: string, userId: string, trackId: string): boolean
 
 function isLegacyUploadPath(path: string, trackId: string): boolean {
   return isSafeAudioPath(path) && path.startsWith(`${trackId}/`);
+}
+
+async function artistUploadLimits(
+  sb: ReturnType<typeof createSjServiceClient>, userId: string, email: string | undefined, trackId: string,
+) {
+  if (!email) return null;
+  const { data: draft, error: draftError } = await sb.schema(JUKEBOX_SCHEMA)
+    .from("artist_upload_tracks").select("release_id,user_id").eq("id", trackId).maybeSingle();
+  if (draftError) throw draftError;
+  if (!draft || draft.user_id !== userId) return null;
+  const { data: release, error: releaseError } = await sb.schema(JUKEBOX_SCHEMA)
+    .from("artist_upload_releases").select("artist_id,user_id,submitted_at,published_album_id")
+    .eq("id", draft.release_id).maybeSingle();
+  if (releaseError) throw releaseError;
+  if (!release || release.user_id !== userId) return null;
+  if (release.submitted_at || release.published_album_id) return { fileLimit: 0, accountLimit: null };
+  const { data: grant, error: grantError } = await sb.schema(JUKEBOX_SCHEMA)
+    .from("artist_upload_grants").select("limit_bytes")
+    .eq("artist_id", release.artist_id).eq("user_email", email.toLowerCase()).maybeSingle();
+  if (grantError) throw grantError;
+  return { fileLimit: grant ? MAX_VERIFIED_ARTIST_UPLOAD_BYTES : MAX_UPLOAD_BYTES,
+    accountLimit: grant ? Number(grant.limit_bytes) : null };
 }
 
 export async function GET(req: NextRequest) {
@@ -121,13 +144,15 @@ export async function POST(req: NextRequest) {
       const fileName = String(body.fileName || "");
       const contentType = String(body.contentType || "audio/mpeg").toLowerCase();
       const fileBytes = Number(body.fileBytes);
-      if (!Number.isSafeInteger(fileBytes) || fileBytes <= 0 || fileBytes > MAX_UPLOAD_BYTES) {
+      const artistLimits = await artistUploadLimits(sb, user.id, user.email, trackId);
+      const fileLimit = artistLimits?.fileLimit ?? MAX_UPLOAD_BYTES;
+      if (!Number.isSafeInteger(fileBytes) || fileBytes <= 0 || fileBytes > fileLimit) {
         return noStore({ ok: false, error: "Invalid audio file size." }, 400);
       }
       if (!AUDIO_CONTENT_TYPE.test(contentType)) return noStore({ ok: false, error: "Audio files only." }, 400);
 
       const level = await getUserLevel(user.email);
-      const limit = USER_STORAGE_LIMITS[level];
+      const limit = Math.max(USER_STORAGE_LIMITS[level], artistLimits?.accountLimit ?? 0);
       const { data: existing, error: existingError } = await sb
         .schema(JUKEBOX_SCHEMA)
         .from("track_audio")
@@ -151,16 +176,25 @@ export async function POST(req: NextRequest) {
       const durationSeconds = Number(body.durationSeconds);
       if (!isNewUploadPath(path, user.id, trackId)) return noStore({ ok: false, error: "Invalid audio path." }, 400);
       const fileBytes = await getB2AudioObjectSize(path);
-      if (fileBytes <= 0 || fileBytes > MAX_UPLOAD_BYTES) return noStore({ ok: false, error: "Invalid uploaded audio." }, 400);
+      const artistLimits = await artistUploadLimits(sb, user.id, user.email, trackId);
+      if (fileBytes <= 0 || fileBytes > (artistLimits?.fileLimit ?? MAX_UPLOAD_BYTES)) {
+        return noStore({ ok: false, error: "Invalid uploaded audio." }, 400);
+      }
 
       const { data: previous, error: previousError } = await sb
         .schema(JUKEBOX_SCHEMA)
         .from("track_audio")
-        .select("storage_path")
+        .select("storage_path,file_bytes")
         .eq("track_id", trackId)
         .eq("uploaded_by", user.id)
         .maybeSingle();
       if (previousError) throw previousError;
+      const level = await getUserLevel(user.email);
+      const limit = Math.max(USER_STORAGE_LIMITS[level], artistLimits?.accountLimit ?? 0);
+      const used = await recalcStorageUsed(sb, user.id);
+      if (used - Number(previous?.file_bytes || 0) + fileBytes > limit) {
+        return noStore({ ok: false, error: "Not enough storage in your account." }, 409);
+      }
       const { error: saveError } = await sb.schema(JUKEBOX_SCHEMA).from("track_audio").upsert({
         track_id: trackId,
         storage_path: path,
