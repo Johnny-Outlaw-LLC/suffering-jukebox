@@ -10,6 +10,18 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
   try {
     const sb = createSjServiceClient();
+    // The account menu asks only whether anything is waiting. That question
+    // should not drag every agreement and its whole catalog across the wire
+    // on each sign-in, so it gets a head count of its own.
+    if (req.nextUrl.searchParams.get("pending") === "count") {
+      const { count, error: pendingError } = await sb
+        .schema(JUKEBOX_SCHEMA)
+        .from("artist_rights_agreements")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      if (pendingError) throw pendingError;
+      return NextResponse.json({ ok: true, pending: count ?? 0 });
+    }
     const { data: agreements, error } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("artist_rights_agreements")
@@ -72,12 +84,16 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
     const agreementId = String(body.agreementId || "");
     const action = String(body.action || "");
-    const reviewNote = cleanText(body.reviewNote, 2000, true) as string;
+    // The note is the reviewer's own record, not a gate. Demanding twelve
+    // characters on every action only taught the reviewer to type filler,
+    // which is weaker evidence than an empty field beside a signed actor id
+    // and a timestamp. A rejection is the exception: the artist reads it.
+    const reviewNote = (cleanText(body.reviewNote, 2000) as string | null) ?? "";
     if (!isUuid(agreementId) || !["approve", "reject", "suspend", "restore", "revoke", "publish"].includes(action)) {
       return NextResponse.json({ ok: false, error: "Invalid review action." }, { status: 400 });
     }
-    if (reviewNote.length < 12) {
-      return NextResponse.json({ ok: false, error: "Record a meaningful verification or review note." }, { status: 400 });
+    if (action === "reject" && reviewNote.length < 12) {
+      return NextResponse.json({ ok: false, error: "Tell the artist why the submission was rejected." }, { status: 400 });
     }
     if (["approve", "publish"].includes(action) && body.verifiedAuthority !== true) {
       return NextResponse.json(
@@ -120,7 +136,7 @@ export async function PATCH(req: NextRequest) {
     }
     const agreementUpdate: Record<string, unknown> = {
       status: transition.to,
-      review_note: reviewNote,
+      review_note: reviewNote || null,
       reviewed_by: auth.user.id,
       reviewed_at: now,
       updated_at: now,
@@ -154,7 +170,7 @@ export async function PATCH(req: NextRequest) {
       event_type: action,
       from_status: current.status,
       to_status: transition.to,
-      note: reviewNote,
+      note: reviewNote || `${action} recorded with no note.`,
       details: { independentlyVerified: action === "approve" ? true : undefined },
     });
     return NextResponse.json({ ok: true, agreementId, status: transition.to });

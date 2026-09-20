@@ -280,6 +280,9 @@ header { padding: 0.45rem 2.5rem 0 1rem; display: flex; flex-direction: column; 
 .user-menu-item:hover { background: var(--bg-elevated); }
 .user-menu-item.admin-only { display: none; color: #a78bfa; }
 .user-menu-item.admin-only.visible { display: block; }
+.user-menu-badge { display: none; margin-left: .4rem; background: #ef4444; color: #fff; font-size: .46rem; font-weight: 700; letter-spacing: .03em; padding: .08rem .34rem; border-radius: 999px; vertical-align: middle; }
+.user-menu-dot { display: none; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: #ef4444; pointer-events: none; }
+.user-menu-dot.visible { display: block; }
 .user-menu-item.danger { color: #ef4444; border-top: 1px solid var(--border); margin-top: .2rem; padding-top: .65rem; }
 .user-menu-item.cta { color: var(--accent); font-weight: 600; border-bottom: 1px solid var(--border); margin-bottom: .2rem; padding-bottom: .75rem; }
 .user-menu-meta { padding: .45rem .85rem .2rem; font-size: .44rem; color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase; }
@@ -5187,6 +5190,7 @@ posthog.init('phc_zBzybgMHiDdDzxvxW53xd37bNgy4sm4sfdJB4ueVbZuF', {
       <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()" title="Sign in"><span class="auth-label-full">Sign In to Remember Ratings and Play History</span><span class="auth-label-short">Sign In</span></button>
       <div class="user-menu-wrap" id="user-menu-wrap" style="display:none">
         <button class="auth-btn signed-in" id="user-menu-btn" onclick="toggleUserMenu(event)" title="Account menu"></button>
+        <span class="user-menu-dot" id="user-menu-rights-dot" aria-hidden="true"></span>
         <div class="user-menu" id="user-menu">
           <div class="user-menu-meta">App Last Updated</div>
           <div class="user-menu-date" id="user-menu-updated">-</div>
@@ -5202,7 +5206,7 @@ posthog.init('phc_zBzybgMHiDdDzxvxW53xd37bNgy4sm4sfdJB4ueVbZuF', {
           <button type="button" class="user-menu-item admin-only" id="user-menu-metrics" onclick="userMenuAction('metrics')">Page Metrics</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-users" onclick="userMenuAction('users')">User Management</button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-issues" onclick="userMenuAction('issues')">Issue Reports</button>
-          <button type="button" class="user-menu-item admin-only" id="user-menu-rights-review" onclick="userMenuAction('rights-review')">Rights &amp; DMCA Review</button>
+          <button type="button" class="user-menu-item admin-only" id="user-menu-rights-review" onclick="userMenuAction('rights-review')">Artist Submissions<span class="user-menu-badge" id="user-menu-rights-badge"></span></button>
           <button type="button" class="user-menu-item admin-only" id="user-menu-tests" onclick="userMenuAction('tests')">Test Coverage</button>
           <button type="button" class="user-menu-item danger" onclick="userMenuAction('logout')">Log Out</button>
         </div>
@@ -5917,6 +5921,23 @@ posthog.init('phc_zBzybgMHiDdDzxvxW53xd37bNgy4sm4sfdJB4ueVbZuF', {
     <div class="modal-footer">
       <button class="m-btn" id="ai-autoresolve-btn" onclick="runIssueAutoResolve()">Auto Resolve Issues Now</button>
       <button class="m-btn ghost" onclick="closeAdminIssues()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ARTIST RIGHTS REVIEW MODAL -->
+<div class="modal-overlay" id="adminRightsOverlay">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <span class="modal-title">Artist Submissions</span>
+      <button class="modal-close" onclick="closeAdminRights()">✕</button>
+    </div>
+    <div class="modal-body" id="admin-rights-body">
+      <div class="admin-metrics-loading">Loading submissions…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeAdminRights();window.location.href='/artist-rights-admin'">DMCA &amp; Grants</button>
+      <button class="m-btn ghost" onclick="closeAdminRights()">Close</button>
     </div>
   </div>
 </div>
@@ -38574,7 +38595,7 @@ async function userMenuAction(action) {
   }
   if (action === 'rights-review') {
     if (!sjIsAdmin) return;
-    window.location.href = '/artist-rights-admin';
+    openAdminRights();
     return;
   }
   if (action === 'tests') {
@@ -38584,6 +38605,137 @@ async function userMenuAction(action) {
     window.open('/test-coverage', '_blank', 'noopener');
     return;
   }
+}
+
+// ── Admin: artist rights submissions ───────────────────────────────────────
+// The full review page still owns DMCA notices and upload-capacity grants.
+// This is the half of it that actually gets opened: who is waiting, what they
+// uploaded, approve or reject, without leaving the jukebox.
+let _adminRights = [];
+let _rightsPendingAt = 0;
+let _rightsPendingAlerted = false;
+
+function closeAdminRights() { document.getElementById('adminRightsOverlay')?.classList.remove('open'); }
+
+function openAdminRights() {
+  if (!sjIsAdmin) return;
+  document.getElementById('adminRightsOverlay')?.classList.add('open');
+  loadAdminRights();
+}
+
+async function loadAdminRights() {
+  const body = document.getElementById('admin-rights-body');
+  if (!body) return;
+  body.innerHTML = '<div class="admin-metrics-loading">Loading submissions…</div>';
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-admin-artist-rights'), {
+      headers: await sjAuthHeaders(), cache: 'no-store',
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load submissions.');
+    _adminRights = data.applications || [];
+    renderAdminRights();
+    paintRightsBadge(_adminRights.filter(a => a.status === 'pending').length);
+  } catch (_) {
+    body.innerHTML = '<div class="admin-metrics-loading">Could not load submissions.</div>';
+  }
+}
+
+function renderAdminRights() {
+  const body = document.getElementById('admin-rights-body');
+  if (!body) return;
+  // Everything below is artist-supplied, so it is escaped for text and, for
+  // the website, for an attribute and a protocol as well.
+  const esc = v => (v == null ? '' : String(v)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escA = v => esc(v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const link = v => (/^https?:\/\//i.test(String(v || '')) ? escA(v) : '');
+  const fmt = v => { try { return new Date(v).toLocaleDateString(); } catch (_) { return v || ''; } };
+  const rank = { pending: 0, approved: 1, suspended: 2, rejected: 3, revoked: 4 };
+  const rows = [..._adminRights].sort((a, b) =>
+    (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || String(b.signed_at).localeCompare(String(a.signed_at)));
+  if (!rows.length) { body.innerHTML = '<div class="admin-metrics-loading">No artist submissions yet.</div>'; return; }
+  body.innerHTML = '<div class="ai-list">' + rows.map(a => {
+    const n = (a.tracks || []).length;
+    const acts = [];
+    if (a.status === 'pending') acts.push(
+      '<button class="ai-play" onclick="adminRightsAction(\'' + a.id + '\',\'approve\')">Approve</button>',
+      '<button class="ai-del" onclick="adminRightsAction(\'' + a.id + '\',\'reject\')">Reject</button>');
+    if (a.status === 'approved') acts.push(
+      '<button class="ai-resolve" onclick="adminRightsAction(\'' + a.id + '\',\'suspend\')">Suspend</button>');
+    if (a.status === 'suspended') acts.push(
+      '<button class="ai-play" onclick="adminRightsAction(\'' + a.id + '\',\'restore\')">Restore</button>');
+    const site = link(a.website);
+    return '<div class="ai-card' + (a.status === 'pending' ? '' : ' resolved') + '">' +
+      '<div class="ai-card-top"><span class="ai-cat">' + esc(a.status) + '</span>' +
+      '<strong style="font-size:.66rem">' + esc(a.artist?.name || a.stage_name) + '</strong>' +
+      '<span class="ai-date">' + n + ' track' + (n === 1 ? '' : 's') + ' · signed ' + fmt(a.signed_at) + '</span>' +
+      (acts.length ? '<div class="ai-acts">' + acts.join('') + '</div>' : '') + '</div>' +
+      '<div class="ai-ctx">' + esc(a.legal_name) + ' · ' + esc(a.authority_role) + ' · ' + esc(a.country) + '</div>' +
+      '<div class="ai-who">' + esc(a.user_email) +
+        (site ? ' · <a href="' + site + '" target="_blank" rel="noopener noreferrer">' + esc(a.website) + '</a>' : '') + '</div>' +
+      (a.catalog_description ? '<div class="ai-desc">' + esc(a.catalog_description) + '</div>' : '') +
+      (a.review_note ? '<div class="ai-who">Note: ' + esc(a.review_note) + '</div>' : '') +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+async function adminRightsAction(id, action) {
+  const app = _adminRights.find(a => a.id === id);
+  const who = app?.artist?.name || app?.stage_name || 'this artist';
+  let note = '';
+  if (action === 'approve') {
+    // One question, and it is the one that matters: their checkbox is
+    // evidence, not verification.
+    if (!confirm('Approve ' + who + '? This publishes the artist and every track on the signed submission.\n\nYou are confirming you independently verified they control both the recordings and the songs.')) return;
+  } else {
+    const asked = prompt(action === 'reject' ? 'Tell ' + who + ' why this was rejected:' : 'Optional note for the audit log:');
+    if (asked === null) return;
+    note = asked;
+    if (action === 'reject' && note.trim().length < 12) { alert('A rejection needs a reason the artist can read.'); return; }
+  }
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-admin-artist-rights'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+      body: JSON.stringify({ agreementId: id, action, reviewNote: note, verifiedAuthority: action === 'approve' }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Action failed.');
+    showToast(action === 'approve' ? who + ' is live.' : who + ' is now ' + data.status + '.');
+    await loadAdminRights();
+  } catch (e) {
+    alert(e?.message || 'Action failed.');
+  }
+}
+
+function paintRightsBadge(count) {
+  const badge = document.getElementById('user-menu-rights-badge');
+  if (badge) {
+    badge.textContent = count ? String(count) : '';
+    badge.style.display = count ? 'inline-block' : 'none';
+  }
+  document.getElementById('user-menu-rights-dot')?.classList.toggle('visible', !!count);
+}
+
+// A submission sits in the queue until somebody looks, and nothing else on the
+// page says one arrived. The dot rides the avatar so a closed menu still shows
+// it; the toast fires once a session so it cannot become wallpaper.
+async function refreshPendingRights() {
+  if (!sjIsAdmin) { paintRightsBadge(0); return; }
+  if (Date.now() - _rightsPendingAt < 60000) return;
+  _rightsPendingAt = Date.now();
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-admin-artist-rights?pending=count'), {
+      headers: await sjAuthHeaders(), cache: 'no-store',
+    });
+    const data = await res.json();
+    if (!data?.ok) return;
+    paintRightsBadge(data.pending);
+    if (data.pending && !_rightsPendingAlerted) {
+      _rightsPendingAlerted = true;
+      showToast(data.pending + ' artist submission' + (data.pending === 1 ? '' : 's') + ' waiting for review.');
+    }
+  } catch (_) {}
 }
 
 // ── Settings ───────────────────────────────────────────────────────────────
@@ -39822,6 +39974,7 @@ function updateAuthBtn() {
   document.querySelectorAll('.user-menu-item.admin-only').forEach(el => {
     el.classList.toggle('visible', !!sjIsAdmin);
   });
+  refreshPendingRights();
   if (updatedEl) {
     try {
       const hasTime = /\d{2}:\d{2}/.test(sjLastUpdated);
