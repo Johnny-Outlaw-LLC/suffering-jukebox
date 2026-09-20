@@ -43,13 +43,14 @@ test('clicking an individual artist song starts there, with its album in order',
 });
 
 const id = '251afba8-68d5-481a-b5de-d93366ad6b6b';
-function signer({ visible = true, approved = true } = {}) {
+function signer({ visible = true, approved = true, surface = 'sj' } = {}) {
   const tables = { tracks: [{id, album_id:'album', artist_audio_only:true, artist_audio_visible:visible}],
     albums: [{id:'album',artist_audio_visible:true}], track_audio:[{id:'audio',storage_path:'private/song.wav'}], artists:[{id:'artist',name:'Victim Weight'}] };
   let signed = 0;
   const route = loadTs('src/app/api/sj-artist-audio/route.ts', {
     'next/server': { NextResponse: { json: (body, init) => ({body,...init}), redirect: (url, init) => ({url,...init}) } },
     'sj-admin-auth': { JUKEBOX_SCHEMA: 'jukebox', createSjServiceClient: () => ({ schema: () => ({ from: table => ({select: () => ({in: async () => ({ data:tables[table],error:null })})}) }) }) },
+    'surface': { currentSurface: () => ({id:surface}), SURFACES: {sj:{url:'https://www.sufferingjukebox.stream'}} },
     'artist-rights': { ARTIST_AGREEMENT_VERSION:'current', isUuid: value => /^[\da-f-]{36}$/.test(value) },
     'bg-audio-eligibility': { approvedArtistAudioTracks: async () => approved ? [{track_id:id,track_audio_id:'audio',artist_id:'artist'}] : [] },
     'b2-audio': { createB2DownloadUrl: async () => { signed++; return 'https://audio.example/signed'; } },
@@ -82,3 +83,17 @@ test('Explore Songs plays the selected upload rather than the next YouTube song'
   await loadHtmlFnsInScope(['esRowPlay'], scope).esRowPlay('artist-song');
   assert.equal(played,'artist-song');
 });
+
+for (const format of ['', '&format=stream']) {
+  test(`Listening Party without B2 keys uses the shared authorized signer ${format}`, async () => {
+    const api = signer({surface:'lp'});
+    const r = await api.get(`purpose=normal-playback&track_ids=${id}${format}`);
+    assert.equal(r.status,307);
+    assert.equal(r.url.origin,'https://www.sufferingjukebox.stream');
+    assert.equal(r.url.pathname,'/api/sj-artist-audio');
+    assert.equal(r.url.searchParams.get('purpose'),'normal-playback');
+    assert.equal(r.url.searchParams.get('track_ids'),id);
+    assert.equal(r.url.searchParams.get('format'),format ? 'stream' : null);
+    assert.equal(api.signed(),0);
+  });
+}
