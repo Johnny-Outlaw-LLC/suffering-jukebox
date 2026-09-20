@@ -44,9 +44,11 @@ export async function GET(req: NextRequest) {
       // in parallel, artist/album first so the band they asked for leads.
       const pattern = `%${safe}%`;
       const trackSelect =
-        "id,name,duration_ms,explicit,albums!inner(id,name,art_url,release_date,artists!inner(id,name,slug))";
+        "id,name,duration_ms,explicit,visibility,artist_audio_visible,albums!inner(id,name,art_url,release_date,visibility,artist_audio_visible,artists!inner(id,name,slug,visibility,artist_audio_visible))";
       const base = () =>
-        sb.schema(JUKEBOX_SCHEMA).from("tracks").select(trackSelect).order("name", { ascending: true }).limit(SEARCH_LIMIT);
+        sb.schema(JUKEBOX_SCHEMA).from("tracks").select(trackSelect)
+          .eq("visibility", "public").eq("artist_audio_visible", true)
+          .order("name", { ascending: true }).limit(SEARCH_LIMIT);
 
       const [byArtist, byAlbum, byTitle] = await Promise.all([
         base().ilike("albums.artists.name", pattern),
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
       const seen = new Set<string>();
       const merged: any[] = [];
       for (const row of [...(byArtist.data ?? []), ...(byAlbum.data ?? []), ...(byTitle.data ?? [])]) {
-        if (!row?.id || seen.has(row.id)) continue;
+        if (!isPublicTrack(row) || seen.has(row.id)) continue;
         seen.add(row.id);
         merged.push(row);
         if (merged.length >= SEARCH_LIMIT) break;
@@ -72,13 +74,16 @@ export async function GET(req: NextRequest) {
       const { data, error } = await sb
         .schema(JUKEBOX_SCHEMA)
         .from("albums")
-        .select("id,name,art_url,release_date,color,artists!inner(id,name,slug),tracks(id,name,track_number,disc_number,duration_ms,explicit)")
+        .select("id,name,art_url,release_date,color,visibility,artist_audio_visible,artists!inner(id,name,slug,visibility,artist_audio_visible),tracks(id,name,track_number,disc_number,duration_ms,explicit,visibility,artist_audio_visible)")
         .eq("artist_id", artistId)
+        .eq("visibility", "public").eq("artist_audio_visible", true)
         .order("release_date", { ascending: true })
         .limit(100);
       if (error) throw error;
 
-      const albums = (data ?? []).map((a: any) => ({
+      const albums = (data ?? []).filter((a: any) =>
+        a.artists?.visibility === "public" && a.artists?.artist_audio_visible === true,
+      ).map((a: any) => ({
         id: a.id,
         name: a.name,
         art: a.art_url,
@@ -86,6 +91,7 @@ export async function GET(req: NextRequest) {
         color: a.color,
         artistName: a.artists?.name ?? null,
         tracks: (a.tracks ?? [])
+          .filter((t: any) => t.visibility === "public" && t.artist_audio_visible === true)
           .sort(
             (x: any, y: any) =>
               (x.disc_number ?? 1) - (y.disc_number ?? 1) ||
@@ -109,17 +115,19 @@ export async function GET(req: NextRequest) {
       const { data, error } = await sb
         .schema(JUKEBOX_SCHEMA)
         .from("tracks")
-        .select("id,name,duration_ms,explicit,albums!inner(id,name,art_url,release_date,artists!inner(id,name,slug))")
+        .select("id,name,duration_ms,explicit,visibility,artist_audio_visible,albums!inner(id,name,art_url,release_date,visibility,artist_audio_visible,artists!inner(id,name,slug,visibility,artist_audio_visible))")
+        .eq("visibility", "public").eq("artist_audio_visible", true)
         .order("name", { ascending: true })
         .limit(PLAYLIST_LIMIT);
       if (error) throw error;
-      return NextResponse.json({ ok: true, mode: "playlist", tracks: (data ?? []).map(shapeTrack) });
+      return NextResponse.json({ ok: true, mode: "playlist", tracks: (data ?? []).filter(isPublicTrack).map(shapeTrack) });
     }
 
     const { data, error } = await sb
       .schema(JUKEBOX_SCHEMA)
       .from("artists")
       .select("id,name,slug,color")
+      .eq("visibility", "public").eq("artist_audio_visible", true)
       .order("name", { ascending: true })
       .limit(500);
     if (error) throw error;
@@ -128,6 +136,12 @@ export async function GET(req: NextRequest) {
     console.error("[jukebox:catalog]", err);
     return bad("Could not load the collection.", 500);
   }
+}
+
+function isPublicTrack(t: any): boolean {
+  return !!t?.id && t.visibility === "public" && t.artist_audio_visible === true &&
+    t.albums?.visibility === "public" && t.albums?.artist_audio_visible === true &&
+    t.albums?.artists?.visibility === "public" && t.albums?.artists?.artist_audio_visible === true;
 }
 
 function shapeTrack(t: any) {
