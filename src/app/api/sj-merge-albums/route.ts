@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createSjServiceClient,
-  getAuthUser,
-  isSjAdmin,
-  JUKEBOX_SCHEMA,
-} from "@/lib/sj-admin-auth";
+import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { planAlbumMerge, type MergeTrack } from "@/lib/album-merge";
+import { canManageArtist } from "@/lib/artist-manage";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const OFFICIAL_MANAGE_SLUGS = new Set(["silver-jews", "purple-mountains"]);
-const OFFICIAL_OWNER = "johnnyoutlawllc@gmail.com";
 
 const TRACK_CHILD_TABLES = [
   "metrics",
@@ -30,32 +24,6 @@ const TRACK_CHILD_TABLES = [
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
-}
-
-async function canManageArtist(
-  sb: ReturnType<typeof createSjServiceClient>,
-  email: string,
-  artistId: string,
-): Promise<boolean> {
-  const e = email.toLowerCase();
-  if (await isSjAdmin(email)) return true;
-  const { data: artist } = await sb
-    .schema(JUKEBOX_SCHEMA)
-    .from("artists")
-    .select("id, added_by, slug, is_community")
-    .eq("id", artistId)
-    .maybeSingle();
-  if (!artist) return false;
-  if ((artist.added_by || "").toLowerCase() === e) return true;
-  if (OFFICIAL_MANAGE_SLUGS.has(artist.slug || "") && e === OFFICIAL_OWNER) return true;
-  const { data: access } = await sb
-    .schema(JUKEBOX_SCHEMA)
-    .from("content_access")
-    .select("artist_id")
-    .eq("artist_id", artistId)
-    .eq("user_email", e)
-    .maybeSingle();
-  return !!access;
 }
 
 async function deleteTrackRows(
