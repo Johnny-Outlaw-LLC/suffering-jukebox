@@ -56,6 +56,21 @@ const apiCorsHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Album covers are stored under SJ paths in the shared catalog. LP does not
+  // own the Backblaze bucket, so its local art handlers cannot serve them.
+  // Resolve those paths through SJ before matching LP's filesystem routes.
+  async rewrites() {
+    return {
+      beforeFiles: process.env.SURFACE_ID?.trim().toLowerCase() === "lp"
+        ? ["album-art", "artist-release-art"].map((segment) => ({
+            source: `/${segment}/:path*`,
+            destination: `https://www.sufferingjukebox.stream/${segment}/:path*`,
+          }))
+        : [],
+      afterFiles: [],
+      fallback: [],
+    };
+  },
   // The admin Test Coverage page reads test-results.json off disk through
   // /api/sj-admin-tests. It is deliberately not under public/ (that page is
   // restricted, and the report names every gap in the app), so tracing has to
