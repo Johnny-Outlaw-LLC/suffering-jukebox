@@ -24355,7 +24355,13 @@ function plWallPrepCovers() {
   const token = ++_plCoverPrepToken;
   const seen = new Set();
   const urls = [];
-  for (const r of (playlistChartRows || [])) {
+  // Warming an entire live queue can schedule hundreds of image decodes while
+  // playback and the wall are active. The first covers are enough for a quick
+  // mode switch; the rest load lazily when the listener scrolls to them.
+  const prepRows = playlistChartId === '__dynamic_now_playing'
+    ? (playlistChartRows || []).slice(0, 80)
+    : (playlistChartRows || []).slice(0, 160);
+  for (const r of prepRows) {
     const u = r && r.artwork;
     if (!u || u === '/favicon.png' || seen.has(u)) continue;
     seen.add(u);
@@ -27347,6 +27353,7 @@ const PL_FILL_REAL_WINDOW = 48;
 let _plFillToken = 0;
 let _plFillState = null;
 let _plFillTowardRaf = 0;
+let _plFillScrollRaf = 0;
 
 function plWallFillChunkSize(isDetail) {
   return isDetail ? PL_DETAIL_FILL_MORE : PL_FILL_MORE;
@@ -27360,6 +27367,7 @@ function plWallFillList(host, q, curIdx, isDetail, scrollToCurrent, keepDrawn) {
   const startedAt = performance.now();
   const token = ++_plFillToken;
   if (_plFillTowardRaf) { cancelAnimationFrame(_plFillTowardRaf); _plFillTowardRaf = 0; }
+  if (_plFillScrollRaf) { cancelAnimationFrame(_plFillScrollRaf); _plFillScrollRaf = 0; }
   const order = plWallVisibleOrder(q, isDetail);
   _plFillState = { token, host, q, order, curIdx, isDetail, at: 0 };
   host.innerHTML = '';
@@ -27509,12 +27517,16 @@ function plWallWatchFillScroll() {
   if (!scroll || scroll._plFillBound) return;
   scroll._plFillBound = true;
   scroll.addEventListener('scroll', () => {
-    const st = _plFillState;
-    if (!st) return;
-    plWallUpgradeVisiblePlaceholders();
-    if (st.at >= st.order.length) return;
-    if (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > PL_FILL_TRIGGER_PX) return;
-    plWallFillMore();
+    if (_plFillScrollRaf) return;
+    _plFillScrollRaf = requestAnimationFrame(() => {
+      _plFillScrollRaf = 0;
+      const st = _plFillState;
+      if (!st || st.host !== (document.getElementById('pl-wall-grid') || document.querySelector('#pl-detail-tbl tbody'))) return;
+      plWallUpgradeVisiblePlaceholders();
+      if (st.at >= st.order.length) return;
+      if (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > PL_FILL_TRIGGER_PX) return;
+      plWallFillMore();
+    });
   }, { passive: true });
 }
 
@@ -27526,11 +27538,24 @@ function plWallUpgradeVisiblePlaceholders() {
   if (!scroll) return;
   const top = scroll.getBoundingClientRect().top - 600;
   const bot = scroll.getBoundingClientRect().bottom + 900;
-  const ph = st.host.querySelectorAll('.pl-wall-cell[data-pc-ph]');
-  if (!ph.length) return;
-  ph.forEach(el => {
+  const cells = st.host.children;
+  // Grid children stay in visual order, including an expanded card. Find the
+  // first nearby child by binary search instead of measuring every placeholder
+  // on each scroll event (thousands of forced layout reads on long queues).
+  let lo = 0, hi = cells.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (cells[mid].getBoundingClientRect().bottom < top) lo = mid + 1;
+    else hi = mid;
+  }
+  const visible = [];
+  for (let pos = lo; pos < cells.length; pos++) {
+    const el = cells[pos];
     const r = el.getBoundingClientRect();
-    if (r.bottom < top || r.top > bot) return;
+    if (r.top > bot) break;
+    if (el.hasAttribute('data-pc-ph')) visible.push(el);
+  }
+  visible.forEach(el => {
     const idx = Number(el.getAttribute('data-pc-index'));
     if (!Number.isFinite(idx) || idx < 0 || idx >= st.q.length) return;
     el.outerHTML = plWallCellHTML(st.q[idx], idx, st.curIdx);
@@ -37408,11 +37433,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-18';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-19';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-19', items: [
+    'Now Playing stays smoother when you scroll through a long queue of covers. It also loads fewer covers in the background while you browse the song details.',
+  ]},
   { date: '2026-09-18', items: [
     'If you manage an artist, the album ⋯ menu can merge one album into another (duplicate Cardinal / Marigold rows) or delete a bad album. Matching songs keep their play history.',
     'Re-importing an artist no longer creates a second copy of an album that is already there under a different YouTube playlist.',

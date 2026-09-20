@@ -99,3 +99,36 @@ test('full repaint remains available for blocked-track changes', () => {
   assert.equal(fixture.state.syncs, 1);
   assert.equal(fixture.state.paints, 1);
 });
+
+test('scrolling a long cover wall measures only nearby placeholders', () => {
+  let measured = 0;
+  let upgraded = 0;
+  const children = Array.from({ length: 5000 }, (_, i) => ({
+    getBoundingClientRect() {
+      measured++;
+      const top = Math.floor(i / 10) * 100;
+      return { top, bottom: top + 100 };
+    },
+    hasAttribute(name) { return name === 'data-pc-ph'; },
+    getAttribute(name) { return name === 'data-pc-index' ? String(i) : null; },
+    set outerHTML(_html) { upgraded++; },
+  }));
+  const host = { children, isConnected: true };
+  const scroll = { getBoundingClientRect: () => ({ top: 25000, bottom: 25500 }) };
+  const scope = {
+    _plFillState: {
+      host, isDetail: false, q: Array.from({ length: 5000 }), curIdx: 0,
+    },
+    document: { getElementById: () => scroll },
+    plWallCellHTML: () => '<div></div>',
+  };
+  const { plWallUpgradeVisiblePlaceholders } = loadHtmlFnsInScope(
+    ['plWallUpgradeVisiblePlaceholders'], scope,
+  );
+
+  plWallUpgradeVisiblePlaceholders();
+
+  assert.ok(upgraded > 0);
+  assert.ok(upgraded < 300);
+  assert.ok(measured < 350, `measured ${measured} of 5000 cells`);
+});
