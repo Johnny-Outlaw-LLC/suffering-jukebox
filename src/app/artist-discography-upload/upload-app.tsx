@@ -145,11 +145,25 @@ export default function UploadApp() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!artistId || !name.trim() || !files.length) return;
+    if (!files.length) {
+      setMessage("Choose at least one audio file before saving this release.");
+      return;
+    }
+    if (!artistId && !newArtistName.trim()) {
+      setMessage("Choose an artist, or enter a new artist name above.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
-      const created = await post("create-release", { artistId, name, releaseDate: unreleased ? null : date || null,
+      let releaseArtistId = artistId;
+      if (!releaseArtistId) {
+        const createdArtist = await post("create-artist", { name: newArtistName });
+        releaseArtistId = createdArtist.artistId;
+        setArtistId(releaseArtistId);
+        setNewArtistName("");
+      }
+      const created = await post("create-release", { artistId: releaseArtistId, name, releaseDate: unreleased ? null : date || null,
         isUnreleased: unreleased });
       let success = 0;
       const failures: string[] = [];
@@ -164,7 +178,7 @@ export default function UploadApp() {
           const duration = await durationOf(row.file);
           const track = await post("create-track", { releaseId: created.releaseId, name: row.name,
             trackNumber: row.number, discNumber: 1, durationMs: duration ? Math.round(duration * 1000) : null });
-          await uploadAudio(track.trackId, row.file, grants.some((grant) => grant.artist_id === artistId));
+          await uploadAudio(track.trackId, row.file, grants.some((grant) => grant.artist_id === releaseArtistId));
           success++;
         } catch (error) { failures.push(`${row.name}: ${(error as Error).message}`); }
       }
@@ -202,12 +216,13 @@ export default function UploadApp() {
       : <>
         <form className={styles.card} onSubmit={submit}>
           <h2>New release</h2>
-          <label>Artist<select required value={artistId} onChange={(e) => setArtistId(e.target.value)}>
+          <label>Artist<select value={artistId} onChange={(e) => setArtistId(e.target.value)}>
             <option value="">Choose an artist</option>{artists.map((artist) => <option key={artist.id} value={artist.id}>{artist.name}</option>)}
           </select></label>
           <div className={styles.newArtist}><input aria-label="New artist name" maxLength={160} value={newArtistName}
             onChange={(e) => setNewArtistName(e.target.value)} placeholder="Artist not listed? Enter the name" />
             <button type="button" disabled={busy || !newArtistName.trim()} onClick={createArtist}>Create private artist draft</button></div>
+          <p className={styles.hint}>If the artist is not listed, enter the name above. Saving the release will create its private artist draft.</p>
           <label>Release title<input required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} placeholder="Album, EP, single, or collection" /></label>
           <div className={styles.row}><label>Original release date<input type="date" disabled={unreleased} value={date} onChange={(e) => setDate(e.target.value)} /></label>
             <label className={styles.check}><input type="checkbox" checked={unreleased} onChange={(e) => setUnreleased(e.target.checked)} /> Unreleased collection</label></div>
@@ -224,7 +239,7 @@ export default function UploadApp() {
           <p className={styles.hint}>{grants.some((grant) => grant.artist_id === artistId)
             ? `Verified artist capacity: 250 MB per file, ${Math.round(Number(grants.find((grant) => grant.artist_id === artistId)?.limit_bytes || 0) / 1024 ** 3)} GB total.`
             : "50 MB per file and 500 MB total until the team verifies your artist account."} Upload one release at a time. You can retry a failed file below.</p>
-          <button disabled={busy || !files.length || !artistId}>{busy ? "Uploading…" : "Save private release"}</button>
+          <button disabled={busy}>{busy ? "Uploading…" : "Save private release"}</button>
         </form>
         {message && <p role="status" className={styles.message}>{message}</p>}
         <section className={styles.drafts}><div className={styles.draftsHead}><h2>Your release drafts</h2>
