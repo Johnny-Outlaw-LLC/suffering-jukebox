@@ -31,7 +31,7 @@ async function applicationsForUser(userId: string) {
     .schema(JUKEBOX_SCHEMA)
     .from("artist_rights_agreements")
     .select(
-      "id,artist_id,legal_name,stage_name,organization,authority_role,country,website,catalog_description,agreement_version,agreement_sha256,signed_name,signed_at,status,review_note,reviewed_at,revoked_at,created_at,updated_at",
+      "id,artist_id,legal_name,stage_name,organization,authority_role,country,website,contact_phone,catalog_description,agreement_version,agreement_sha256,signed_name,signed_at,status,review_note,reviewed_at,revoked_at,created_at,updated_at",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -64,6 +64,37 @@ async function applicationsForUser(userId: string) {
   });
 }
 
+/**
+ * What a returning artist should not have to type a second time. The
+ * declarations and the signature are deliberately missing: those are affirmed
+ * per submission, not remembered. Ownership lives on the catalog tracks rather
+ * than the agreement, so it comes off the last row that carried any.
+ */
+function previousSubmission(applications: Array<Record<string, any>>) {
+  const last = applications[0];
+  if (!last) return null;
+  const owned = (last.tracks ?? []).find(
+    (row: any) => row.master_owner || row.composition_owner || row.writers,
+  ) ?? null;
+  return {
+    legalName: last.legal_name ?? "",
+    stageName: last.stage_name ?? "",
+    organization: last.organization ?? "",
+    authorityRole: last.authority_role ?? "",
+    country: last.country ?? "",
+    contactPhone: last.contact_phone ?? "",
+    website: last.website ?? "",
+    catalogDescription: last.catalog_description ?? "",
+    masterOwner: owned?.master_owner ?? "",
+    compositionOwner: owned?.composition_owner ?? "",
+    writers: owned?.writers ?? "",
+    publishers: owned?.publishers ?? "",
+    rightsNotes: owned?.rights_notes ?? "",
+    signedAt: last.signed_at ?? null,
+    artistName: last.artist?.name ?? last.stage_name ?? "",
+  };
+}
+
 export async function GET(req: NextRequest) {
   if (req.nextUrl.searchParams.get("agreement") === "1") {
     return NextResponse.json({ ok: true, agreement: artistAgreementPayload() });
@@ -83,6 +114,7 @@ export async function GET(req: NextRequest) {
       account: { id: user.id, email: user.email ?? null },
       catalog,
       applications,
+      lastSubmission: previousSubmission(applications),
       agreement: artistAgreementPayload(),
     });
   } catch (error) {
