@@ -23,6 +23,11 @@ export async function GET(req: NextRequest) {
     .filter(isUuid)
     .slice(0, 50);
   const trackIds = [...new Set(requested)];
+  const stream = req.nextUrl.searchParams.get("format") === "stream";
+  if (stream && (purpose !== "normal-playback" || trackIds.length !== 1)) {
+    return NextResponse.json({ ok: false, error: "Streaming requires one on-demand track." },
+      { status: 400, headers: { "Cache-Control": "no-store" } });
+  }
   if (!trackIds.length) {
     return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
   }
@@ -78,6 +83,11 @@ export async function GET(req: NextRequest) {
         expiresIn: PUBLIC_SIGNED_URL_SECONDS,
       };
     }));
+    if (stream && tracks.length === 1) {
+      return NextResponse.redirect(tracks[0].url, {
+        status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
+      });
+    }
     return NextResponse.json(
       { ok: true, tracks },
       { headers: { "Cache-Control": "private, no-store, max-age=0" } },

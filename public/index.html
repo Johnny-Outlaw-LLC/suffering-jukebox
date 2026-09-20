@@ -5050,6 +5050,11 @@ html[data-surface="lp"] .brand-title em {
   .lph-btn, .lph-card .lph-sleeve, .lph-feature .lph-sleeve, .lph-play { transition:none; }
 }
 
+
+#sj-artist-player{position:fixed;z-index:8200;bottom:0;left:0;right:0;display:flex;align-items:center;gap:18px;padding:16px 24px calc(16px + env(safe-area-inset-bottom));background:var(--bg-elevated,#17101d);border-top:2px solid var(--accent);color:var(--text);box-shadow:0 -8px 30px #0006}
+.sj-artist-info{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}.sj-artist-info strong{color:var(--accent)}.sj-artist-info span{font-size:12px;color:var(--text-muted)}
+#sj-artist-audio{width:min(420px,45vw);height:42px}.sj-artist-controls{display:flex;gap:8px}.sj-artist-controls button{background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);min-width:44px;min-height:44px;cursor:pointer}.sj-artist-controls button:disabled{opacity:.35}
+@media(max-width:640px){#sj-artist-player{flex-wrap:wrap;gap:10px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));bottom:60px}.sj-artist-info{flex-basis:calc(100% - 160px)}#sj-artist-audio{order:3;width:100%}.sj-artist-controls{order:2}}
 </style>
 <script src="https://outlawdata.com/outlaw-owner.js" defer></script>
 <script>document.documentElement.classList.add('sj-js');</script>
@@ -9171,7 +9176,126 @@ function ytpMobDeckHTML(trackId) {
     </div>`;
 }
 
+// Artist uploads have no YouTube video ID. Keep their player on this page,
+// with one reusable audio element so phone gestures and automatic next work.
+let _sjArtistAudio = null;
+let _sjArtistQueue = [];
+let _sjArtistIndex = 0;
+function sjArtistPrime() {
+  if (_sjArtistAudio) return _sjArtistAudio;
+  const audio = document.createElement('audio');
+  audio.id = 'sj-artist-audio';
+  audio.controls = true;
+  audio.preload = 'auto';
+  audio.setAttribute('playsinline', '');
+  audio.addEventListener('ended', () => {
+    if (_sjArtistIndex + 1 < _sjArtistQueue.length) sjArtistStart(_sjArtistIndex + 1);
+  });
+  audio.addEventListener('error', () => sjArtistStatus('Audio could not load. Press Retry to try again.'));
+  audio.addEventListener('play', () => {
+    if (!_sjArtistQueue.length) return;
+    sjArtistStatus('');
+    if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing';
+  });
+  audio.addEventListener('pause', () => {
+    if (_sjArtistQueue.length && navigator.mediaSession) navigator.mediaSession.playbackState = 'paused';
+  });
+  _sjArtistAudio = audio;
+  // Unlock this element within the original tap, before catalog requests.
+  audio.src = 'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+  audio.play().catch(() => {});
+  return audio;
+}
+function sjArtistStatus(message) {
+  const el = document.getElementById('sj-artist-status');
+  if (el) el.textContent = message;
+  const retry = document.getElementById('sj-artist-retry');
+  if (retry) retry.hidden = !message || message === 'Loading audio…';
+}
+function sjArtistStop() {
+  _sjArtistQueue = [];
+  if (_sjArtistAudio) {
+    _sjArtistAudio.pause();
+    _sjArtistAudio.removeAttribute('src');
+    _sjArtistAudio.load();
+    _sjArtistAudio.remove();
+    _sjArtistAudio = null;
+  }
+  document.getElementById('sj-artist-player')?.remove();
+  if (navigator.mediaSession) {
+    navigator.mediaSession.metadata = null;
+    navigator.mediaSession.playbackState = 'none';
+    for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'seekto']) {
+      try { navigator.mediaSession.setActionHandler(action, null); } catch (_) {}
+    }
+  }
+}
+function sjArtistPlayRows(rows, startId) {
+  const queue = sjNoBlocked(rows.filter(t => t.artist_audio_only).map(t => ({ ...t, trackId: t.id })));
+  if (!queue.length) { showToast('No playable artist recordings in this selection.'); return; }
+  const audio = sjArtistPrime();
+  closeYTPlayer();
+  _sjArtistQueue = queue;
+  let panel = document.getElementById('sj-artist-player');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.id = 'sj-artist-player';
+    panel.setAttribute('aria-label', 'Artist audio player');
+    panel.innerHTML = '<div class="sj-artist-info"><strong id="sj-artist-title"></strong><span id="sj-artist-credit"></span><span id="sj-artist-status" role="status"></span><button type="button" id="sj-artist-retry" hidden onclick="sjArtistStart(_sjArtistIndex)">Retry</button></div><div class="sj-artist-controls"><button type="button" id="sj-artist-prev" aria-label="Previous artist track" onclick="sjArtistStart(_sjArtistIndex-1)">⏮</button><button type="button" id="sj-artist-next" aria-label="Next artist track" onclick="sjArtistStart(_sjArtistIndex+1)">⏭</button><button type="button" aria-label="Close artist player" onclick="sjArtistStop()">✕</button></div>';
+    panel.insertBefore(audio, panel.lastElementChild);
+    document.body.appendChild(panel);
+  }
+  sjArtistStart(Math.max(0, queue.findIndex(t => t.id === startId)));
+}
+function sjArtistStart(index) {
+  const track = _sjArtistQueue[index];
+  if (!track || !_sjArtistAudio) return;
+  _sjArtistIndex = index;
+  const meta = SJ_TRACK_META[track.id] || {};
+  document.getElementById('sj-artist-title').textContent = track.name;
+  document.getElementById('sj-artist-credit').textContent = [meta.artist, meta.album, `${index + 1} of ${_sjArtistQueue.length}`].filter(Boolean).join(' · ');
+  document.getElementById('sj-artist-prev').disabled = index === 0;
+  document.getElementById('sj-artist-next').disabled = index === _sjArtistQueue.length - 1;
+  sjArtistStatus('Loading audio…');
+  // The server checks the same artist approval and visibility rules as the
+  // JSON signer, then redirects. Calling play now retains the phone gesture.
+  const audio = _sjArtistAudio;
+  audio.src = sjApiUrl('/api/sj-artist-audio?purpose=normal-playback&format=stream&track_ids=' + encodeURIComponent(track.id));
+  audio.play().then(() => {
+    if (audio !== _sjArtistAudio || _sjArtistQueue[_sjArtistIndex]?.id !== track.id) return;
+    sjArtistStatus('');
+    logYTPlay(null, track.id, 'play', 'audio');
+  }).catch(() => {
+    if (audio === _sjArtistAudio && _sjArtistQueue[_sjArtistIndex]?.id === track.id) sjArtistStatus(audio.error ? 'Audio could not load. Press Retry to try again.' : 'Press Play in the audio controls to start.');
+  });
+  if (navigator.mediaSession) {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: track.name, artist: meta.artist || '', album: meta.album || '',
+      artwork: meta.artwork ? [{ src: new URL(meta.artwork, location.href).href }] : [] });
+    const handlers = { play: () => audio.play().catch(() => sjArtistStatus('Press Play to retry.')), pause: () => audio.pause(),
+      previoustrack: index > 0 ? () => sjArtistStart(_sjArtistIndex - 1) : null,
+      nexttrack: index + 1 < _sjArtistQueue.length ? () => sjArtistStart(_sjArtistIndex + 1) : null,
+      seekto: e => { if (Number.isFinite(e.seekTime)) audio.currentTime = e.seekTime; } };
+    for (const [action, handler] of Object.entries(handlers)) {
+      try { navigator.mediaSession.setActionHandler(action, handler); } catch (_) {}
+    }
+  }
+}
+async function sjArtistPlayTrack(trackId, ev) {
+  ev?.preventDefault(); ev?.stopPropagation();
+  sjArtistPrime();
+  let track = Object.values(tracks).flat().find(t => t.id === trackId);
+  if (!track) {
+    try { track = (await dbGet('/tracks?id=eq.' + encodeURIComponent(trackId) + '&select=id,name,album_id,artist_audio_only'))[0]; }
+    catch (_) { showToast('Could not load this song. Please try again.'); return; }
+  }
+  if (!track?.artist_audio_only) { showToast('Artist audio is unavailable.'); return; }
+  const record = Object.values(tracks).flat().filter(t => t.album_id === track.album_id && t.artist_audio_only)
+    .sort((a,b) => (a.disc_number || 1) - (b.disc_number || 1) || (a.track_number || 0) - (b.track_number || 0));
+  sjArtistPlayRows(record.length ? record : [track], trackId);
+}
+
 function openYTPlayer(videoId, title, trackId, ev) {
+  if (_sjArtistQueue.length) sjArtistStop();
   loadYTAPI(); // ensure YT iframe API is loading
   ytVideoId = videoId;
   const safeTitle = (title||'').replace(/</g,'&lt;');
@@ -11042,8 +11166,8 @@ function playAlbum(albumId, e) {
   [...selectedIds].forEach(aid => (albums[aid] || []).forEach(a => { if (a.id === albumId) alb = a; }));
   if (!alb) return;
   if ((tracks[alb.artist_id] || []).some(t => t.album_id === albumId && t.artist_audio_only)) {
-    const artist = allArtists.find(a => a.id === alb.artist_id);
-    if (artist?.slug) window.location.href = '/artist-music/' + encodeURIComponent(artist.slug);
+    sjArtistPlayRows((tracks[alb.artist_id] || []).filter(t => t.album_id === albumId)
+      .sort((a,b) => (a.disc_number || 1) - (b.disc_number || 1) || (a.track_number || 0) - (b.track_number || 0)));
     return;
   }
   const albTracks = (tracks[alb.artist_id] || [])
@@ -13185,7 +13309,7 @@ async function ytpEnsureTrackMeta(trackId) {
   if (_ytpMetaFetch[trackId]) return;
   _ytpMetaFetch[trackId] = true;
   try {
-    const rows = await dbGet('/tracks?id=eq.' + trackId + '&select=id,name,album_id&limit=1');
+    const rows = await dbGet('/tracks?id=eq.' + trackId + '&select=id,name,album_id,artist_audio_only&limit=1');
     const t = rows[0];
     if (!t?.album_id) return;
     const albs = await dbGet('/albums?id=eq.' + t.album_id + '&select=id,name,artist_id,release_date,art_url&limit=1');
@@ -25124,7 +25248,7 @@ async function ensurePlaylistSearchMeta(trackIds) {
     const chunks = [];
     for (let i = 0; i < ids.length; i += 70) chunks.push(ids.slice(i, i + 70));
     const tRows = (await Promise.all(chunks.map(c =>
-      dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id`)))).flat();
+      dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only`)))).flat();
     const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
     const albChunks = [];
     for (let i = 0; i < albumIds.length; i += 70) albChunks.push(albumIds.slice(i, i + 70));
@@ -29364,7 +29488,7 @@ async function esEnsureCatalog(force) {
       dbGetAllPages(REST + '/albums?select=*&order=release_date.asc', hdrs),
       // Deliberately not select=* - that dragged every track's full .lrc text
       // along (about 7 MB across the catalogue) for a column nobody read here.
-      dbGetAllPages(REST + '/tracks?select=id,album_id,name,track_number,disc_number,duration_ms,explicit,created_at,yt_snapshot_enabled,visibility&order=album_id,track_number', hdrs),
+      dbGetAllPages(REST + '/tracks?select=id,album_id,name,track_number,disc_number,duration_ms,explicit,created_at,yt_snapshot_enabled,visibility,artist_audio_only&order=album_id,track_number', hdrs),
       dbGetAllPages(REST + '/track_videos?select=track_id,video_id,title,channel,thumbnail,view_count,like_count,lyric_offset_seconds,lyric_offset_updated_by_name,lyric_offset_updated_at,is_primary,is_playable,label,counts_for_charts&order=view_count.desc.nullslast', hdrs),
       dbGetAllPages(REST + '/track_play_counts?select=track_id,play_count&order=track_id.asc', hdrs),
     ]);
@@ -29702,6 +29826,10 @@ function esRowClick(trackId) {
 }
 
 async function esRowPlay(trackId) {
+  if (findTrackById(trackId)?.artist_audio_only) {
+    void sjArtistPlayTrack(trackId);
+    return;
+  }
   const ids = _esDrawn && _esDrawn.length ? _esDrawn : [trackId];
   const start = ids.indexOf(trackId);
   const ordered = start === -1 ? [trackId] : ids.slice(start).concat(ids.slice(0, start));
@@ -30313,7 +30441,7 @@ async function resolvePlaylistTracks(trackIds) {
   for (let i = 0; i < ids.length; i += 50) tChunks.push(ids.slice(i, i + 50));
   // Names + video ids in parallel — playback does not need YouTube stats.
   const [tChunkRows, yt] = await Promise.all([
-    Promise.all(tChunks.map(c => dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id`))),
+    Promise.all(tChunks.map(c => dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only`))),
     loadYTVideoIds(ids),
   ]);
   const tRows = tChunkRows.flat();
@@ -30373,7 +30501,7 @@ async function landingShuffleAll() {
     const chunks = [];
     for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
     const trackRows = filterTracksForHomeBg((await Promise.all(chunks.map(c =>
-      dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id`)))).flat());
+      dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only`)))).flat());
     trackRows.forEach(t => {
       const alb = albById[t.album_id];
       const art = alb && artById[alb.artist_id];
@@ -30622,7 +30750,7 @@ function laAlbumHTML(alb, idx) {
   const yr        = (alb.release_date || '').slice(0, 4);
   const albTracks = (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id);
   const views     = albTracks.reduce((s, t) => s + (ytData[t.id]?.views || 0), 0);
-  const hasVids   = albTracks.some(t => ytData[t.id]?.video_id);
+  const hasVids   = albTracks.some(t => ytData[t.id]?.video_id || t.artist_audio_only);
   const isOpen    = laOpenAlbumIds.has(alb.id);
   return `<div class="la-alb" style="animation-delay:${Math.min(idx * 50, 500)}ms">
     <div class="list-album-row la-alb-row${isOpen ? ' expanded' : ''}" data-la-alb="${alb.id}" style="border-left:3px solid ${color}" onclick="laToggleAlbum('${alb.id}')">
@@ -31116,6 +31244,7 @@ function openFaq() {
 }
 
 async function landingPlayArtist(artistId, ev) {
+  sjArtistPrime();
   const row = landingStats.find(r => r.artist_id === artistId);
   if (!row) return;
   const cardBtn = document.querySelector(`.landing-card[data-artist-id="${artistId}"] .landing-play-btn`);
@@ -31130,6 +31259,11 @@ async function landingPlayArtist(artistId, ev) {
     const okAlbIds = new Set(albRows.map(a => a.id));
     let trackRows = memberIds.flatMap(aid => tracks[aid] || []).filter(t => okAlbIds.has(t.album_id));
     trackRows = filterTracksForHomeBg(trackRows);
+    const artistAudio = trackRows.filter(t => t.artist_audio_only);
+    if (artistAudio.length && !trackRows.some(t => ytData[t.id]?.video_id)) {
+      sjArtistPlayRows(artistAudio);
+      return;
+    }
     let playable = trackRows.filter(t => ytData[t.id]?.video_id);
     if (!playable.length) {
       if (homeJukeboxBgFilterOn()) showToast('No background-play tracks for this artist yet.');
@@ -31793,7 +31927,7 @@ function renderTrackLines(alb, mode = 'inline') {
       <span class="trk-block-until">${untilLbl}</span>
       <button class="trk-unblock" onclick="unblockTrack('${t.id}');event.stopPropagation()" title="Unblock - let this song play again">↺ Unblock</button>
       <div class="trk-metrics"${!showBar?' style="flex:0 0 auto;min-width:0"':''}>${barHTML}</div>
-      ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ <span class="trk-play-lbl">Play</span></button>` : t.artist_audio_only && directUrl ? `<a class="trk-play-inline" href="${directUrl}" onclick="event.stopPropagation()" title="Play artist audio">▶ <span class="trk-play-lbl">Play</span></a>` : `<span class="trk-play-spacer"></span>`}
+      ${vid ? `<button class="trk-play-inline" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeN}','${t.id}',event)" title="Play this track now">▶ <span class="trk-play-lbl">Play</span></button>` : t.artist_audio_only ? `<button class="trk-play-inline" onclick="sjArtistPlayTrack('${t.id}',event)" title="Play artist audio">▶ <span class="trk-play-lbl">Play</span></button>` : `<span class="trk-play-spacer"></span>`}
       <button class="trk-more" onclick="sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button>
     </div>
     <div class="trk-accordion" data-acc="${t.id}"></div>`;
@@ -32719,7 +32853,7 @@ function renderTopTracks(trackList, opts) {
         <td><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${viewsPct}%;background:${color}"></div></div><div class="tt-num">${fmtV(t._views)}</div></div></td>
         ${googleUser ? `<td data-myplays="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._myPlays/maxMyPlays*100).toFixed(1)}%;background:${color}88"></div></div><div class="tt-num" style="${t._myPlays?'color:var(--accent)':''}">${t._myPlays ? fmtV(t._myPlays) : '-'}</div></div></td>` : ''}
         <td data-inapp="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._plays/maxTotalPlays*100).toFixed(1)}%;background:${color}66"></div></div><div class="tt-num" style="${t._plays?'color:var(--accent)':''}">${t._plays ? fmtV(t._plays) : '-'}</div></div></td>
-        <td class="td-yt">${vid ? `<a href="#" title="Play YouTube Video" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${(t.name||'').replace(/'/g,"\\'")}',null,event)">▶</a>` : ''}</td>
+        <td class="td-yt">${vid ? `<a href="#" title="Play YouTube Video" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${(t.name||'').replace(/'/g,"\\'")}',null,event)">▶</a>` : t.artist_audio_only ? `<a href="#" title="Play artist audio" onclick="sjArtistPlayTrack('${t.id}',event)">▶</a>` : ''}</td>
         <td class="td-more" onclick="event.stopPropagation()"><button class="tt-more" onclick="event.stopPropagation();sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button></td>
       </tr>`;
     }).join('')}
@@ -45042,7 +45176,7 @@ async function catalogueSearch(query, isCancelled) {
   let trackNameRows = [], albumNameRows = [], artistNameRows = [], lyricsRows = [];
   try {
     [trackNameRows, albumNameRows, artistNameRows, lyricsRows] = await Promise.all([
-      dbGet(`/tracks?name=ilike.*${qEnc}*&select=id,name,album_id&limit=200`).catch(() => []),
+      dbGet(`/tracks?name=ilike.*${qEnc}*&select=id,name,album_id,artist_audio_only&limit=200`).catch(() => []),
       dbGet(`/albums?name=ilike.*${qEnc}*&select=id,name,artist_id,release_date,art_url&limit=100`).catch(() => []),
       dbGet(`/artists?name=ilike.*${qEnc}*&select=id,name,slug,color,is_community,added_by_name&limit=50`).catch(() => []),
       dbGet(`/lyrics?lyrics=ilike.*${qEnc}*&select=track_id,lyrics&limit=200`).catch(() => []),
@@ -45071,7 +45205,7 @@ async function catalogueSearch(query, isCancelled) {
     for (let i = 0; i < albIds.length; i += 50) chunks.push(albIds.slice(i, i + 50));
     try {
       albumHitTracks = (await Promise.all(chunks.map(c =>
-        dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id&limit=200`)))).flat();
+        dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only&limit=200`)))).flat();
       albumHitTracks.forEach(t => bump(t.id, { albumMatch: true }));
     } catch (_) {}
   }
@@ -45089,7 +45223,7 @@ async function catalogueSearch(query, isCancelled) {
         const chunks = [];
         for (let i = 0; i < albIds.length; i += 50) chunks.push(albIds.slice(i, i + 50));
         artistHitTracks = (await Promise.all(chunks.map(c =>
-          dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id&limit=200`)))).flat();
+          dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only&limit=200`)))).flat();
         const albArt = {};
         artAlbums.forEach(a => { albArt[a.id] = a.artist_id; });
         const perArtist = {};
@@ -45114,7 +45248,7 @@ async function catalogueSearch(query, isCancelled) {
       const chunks = [];
       for (let i = 0; i < missingTrackIds.length; i += 50) chunks.push(missingTrackIds.slice(i, i + 50));
       const rows = (await Promise.all(chunks.map(c =>
-        dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id`)))).flat();
+        dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only`)))).flat();
       rows.forEach(t => { trackById[t.id] = t; });
     } catch (_) {}
   }
@@ -45289,7 +45423,7 @@ async function _runSearch(query) {
         ${snipHtml}
       </div>
       <div class="srch-actions">
-        ${directUrl ? `<a class="srch-btn play" href="${directUrl}">▶ Play artist audio</a>` : `<button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${canPlay ? '' : 'disabled title=\"No audio available\"'}>▶ Play</button>`}
+        ${t.artist_audio_only ? `<button class="srch-btn play" onclick="sjArtistPlayTrack('${t.id}',event)">▶ Play artist audio</button>` : `<button class="srch-btn play" onclick="srchPlayTrack('${t.id}', this)" ${canPlay ? '' : 'disabled title=\"No audio available\"'}>▶ Play</button>`}
         ${SJ_COMMENTS_ENABLED ? `<button class="srch-btn cmt-btn" data-cmt-badge="track:${t.id}" onclick="event.stopPropagation();openComments('track','${t.id}')" title="Comment on this track">Comment</button>` : ''}
         <button class="srch-btn" onclick="event.stopPropagation();sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯ More</button>
       </div>
