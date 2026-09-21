@@ -87,6 +87,7 @@ export async function prepareDirectArtistCatalog(sb: Client, agreementId: string
         .update({ published_album_id: albumId }).eq("id", release.id).eq("user_id", release.user_id);
       if (saveError) throw saveError;
     }
+    if (!albumId) throw new Error("The submitted release has no catalog album.");
     const artUrl = await catalogCoverUrl(release, albumId);
     if (artUrl && artUrl !== release.art_url) {
       const { error: artError } = await T(sb, "albums").update({ art_url: artUrl }).eq("id", albumId);
