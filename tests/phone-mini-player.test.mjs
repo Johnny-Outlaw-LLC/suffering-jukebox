@@ -1,12 +1,11 @@
 // @suite Phone mini player
-// @area Listening Party
+// @area Player
 // @covers public/index.html lptb*, ytpDockMobFloor, .dock-mini
 // @covers src/lib/surface.ts phoneMiniPlayer
 //
-// On a phone, Listening Party navigates by a bottom tab bar and rests its
-// player on top of it as one slim bar. Suffering Jukebox keeps its quarter
-// screen dock and its top tab strip. Both run the same dock code, so what is
-// pinned here is that the brand flag is the only thing that tells them apart.
+// On a phone, both brands navigate by a bottom tab bar and rest the player on
+// top of it as one slim bar. They run the same dock and tab bar code; the
+// brand decides only the tab labels and where each tab goes.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadTs, loadHtmlFnsInScope, readRepoFile } from './_load.mjs';
@@ -27,19 +26,65 @@ function floorFor(brand, { mob = true } = {}) {
   return loadHtmlFnsInScope(['ytpDockMobMini', 'ytpDockMobFloor'], scope);
 }
 
-test('only Listening Party has the phone mini player, and the browser is told', () => {
+test('both brands have the phone mini player, and the browser is told', () => {
   assert.equal(LP.features.phoneMiniPlayer, true);
-  assert.equal(SJ.features.phoneMiniPlayer, false);
+  assert.equal(SJ.features.phoneMiniPlayer, true);
   assert.equal(surface.publicSurface(LP).features.phoneMiniPlayer, true);
+  assert.equal(surface.publicSurface(SJ).features.phoneMiniPlayer, true);
+  // The native app ships index.html without the server's brand injection, so
+  // the page's own Suffering Jukebox fallback has to agree with surface.ts.
+  assert.match(indexHtml, /welcomeHero: false, phoneMiniPlayer: true, spotifyImport/);
 });
 
-test('the resting phone dock is a slim bar for LP and a quarter screen for SJ', () => {
+test('the resting phone dock is a 64px bar for both brands', () => {
   assert.equal(floorFor(LP).ytpDockMobFloor(812), 64);
-  assert.equal(floorFor(SJ).ytpDockMobFloor(812), 203);
-  // A short phone still gets the absolute floor, not a sliver.
-  assert.equal(floorFor(SJ).ytpDockMobFloor(400), 132);
+  assert.equal(floorFor(SJ).ytpDockMobFloor(812), 64);
+  assert.equal(floorFor(SJ).ytpDockMobFloor(568), 64);
   // Off a phone the mini bar never applies, whatever the brand.
   assert.equal(floorFor(LP, { mob: false }).ytpDockMobMini(), false);
+  assert.equal(floorFor(SJ, { mob: false }).ytpDockMobMini(), false);
+  // A brand without the flag still gets the quarter screen sheet.
+  const off = { ...surface.publicSurface(SJ), features: { ...SJ.features, phoneMiniPlayer: false } };
+  assert.equal(floorFor(off).ytpDockMobFloor(812), 203);
+  assert.equal(floorFor(off).ytpDockMobFloor(400), 132);
+});
+
+function tabsFor(brand) {
+  const { lptbTabs } = loadHtmlFnsInScope(['lptbTabs'], {
+    SJ_BRAND: surface.publicSurface(brand),
+    LPTB_TABS_BY_BRAND: loadConst('LPTB_TABS_BY_BRAND'),
+  });
+  return lptbTabs();
+}
+function loadConst(name) {
+  const at = indexHtml.indexOf('const ' + name + ' = ');
+  const src = indexHtml.slice(at + ('const ' + name + ' = ').length);
+  const body = src.slice(0, src.indexOf('\n};') + 2);
+  return Function('"use strict"; return (' + body + ');')();
+}
+
+test('tab labels are per brand: SJ leads with artists, LP keeps Home and Create', () => {
+  assert.deepStrictEqual(tabsFor(SJ).map(t => t.label), ['Artists', 'Playlists', 'Songs', 'You']);
+  assert.deepStrictEqual(tabsFor(SJ).map(t => t.id), ['explore', 'playlists', 'songs', 'you']);
+  assert.deepStrictEqual(tabsFor(LP).map(t => t.label), ['Home', 'Explore', 'Create', 'You']);
+  // LP's Explore stands for all three explore sheets.
+  assert.deepStrictEqual(tabsFor(LP)[1].also, ['explore', 'songs', 'live']);
+});
+
+test('a tab tapped on an artist page goes home in place instead of reloading', () => {
+  const calls = [];
+  const scope = {
+    viewMode: 'byyear', isLandingMode: false, landingTab: 'explore',
+    artistNavToLanding: tab => { calls.push(tab); return Promise.resolve(); },
+    returnToPlaylistExplorer: () => calls.push('wall'),
+    setLandingTab: () => calls.push('set'),
+    lptbSync: () => {},
+    localStorage: { setItem() {} },
+    window: { scrollTo() {}, location: { set href(v) { calls.push('reload:' + v); } } },
+  };
+  const { lptbGo } = loadHtmlFnsInScope(['lptbGo'], scope);
+  lptbGo('songs');
+  assert.deepStrictEqual(calls, ['songs']);
 });
 
 test('both places that size the phone dock read the same floor', () => {
@@ -53,6 +98,8 @@ test('both places that size the phone dock read the same floor', () => {
 
 test('the tab bar is gated on the flag and mounted once', () => {
   assert.ok(/function lptbMount\(\) \{\s*if \(!SJ_BRAND\.features\.phoneMiniPlayer \|\| document\.getElementById\('lp-tabbar'\)\) return;/.test(indexHtml));
+  assert.ok(indexHtml.includes("document.documentElement.classList.add('has-phone-tabbar');"));
+  assert.ok(!indexHtml.includes('lp-has-tabbar'), 'the old brand-specific class name is back');
   assert.ok(/function renderLanding\(\) \{\s*lptbSync\(\);/.test(indexHtml), 'the active tab does not follow renders');
 });
 

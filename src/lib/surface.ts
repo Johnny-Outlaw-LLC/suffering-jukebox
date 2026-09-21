@@ -47,10 +47,11 @@ export interface SurfaceFeatures {
    */
   welcomeHero: boolean;
   /**
-   * On a phone: a Home / Explore / Create / You tab bar along the bottom edge,
-   * with the docked player resting on top of it as one slim bar (artwork, song,
-   * play/pause) that opens the full screen player on a tap or a swipe up.
-   * Off, the phone dock keeps its quarter-screen sheet and the top tab strip.
+   * On a phone: a tab bar along the bottom edge (labels are per brand, see
+   * LPTB_TABS in public/index.html), with the docked player resting on top of
+   * it as one slim bar (artwork, song, play/pause, progress hairline) that
+   * opens the full screen player on a tap or a swipe up. Off, the phone dock
+   * keeps its quarter-screen sheet and the top tab strip.
    */
   phoneMiniPlayer: boolean;
   /**
@@ -218,7 +219,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       shareImages: true,
       sitemapPlaylists: true,
       welcomeHero: false,
-      phoneMiniPlayer: false,
+      phoneMiniPlayer: true,
       spotifyImport: true,
       artistUpload: true,
       liveStations: false,
