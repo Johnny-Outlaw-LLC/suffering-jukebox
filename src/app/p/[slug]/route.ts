@@ -50,7 +50,9 @@ export async function GET(
   const by = (seoPl.user_name || "").trim();
   const title = `${seoPl.name} Playlist — ${surface.name}`;
   const desc = playlistPageDescription(seoPl.name, by, tracks.length);
-  const pageUrl = `${surface.url}/p/${seoPl.slug}`;
+  const pageUrl = surface.features.artistPages
+    ? `${surface.url}/p/${seoPl.slug}`
+    : `${surface.url}/${seoPl.slug}`;
 
   let html = applySurfaceHead(readPublicHtml("index.html"), surface, {
     title,

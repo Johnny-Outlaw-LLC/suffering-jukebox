@@ -26337,6 +26337,11 @@ async function openPlaylistChart(playlistId) {
   });
   updateToolbarToggle();
 
+  // Change the visible address as soon as the playlist view opens. Hydration
+  // can take a while for a large playlist, and the URL is part of the view's
+  // identity rather than a side effect of finishing that work.
+  void plEnsureShareUrl(p);
+
   // Now Playing is already in memory as ytQueue. Painting from that skips the
   // multi-thousand-row catalog fetch that was freezing 1,000+ song queues
   // before the first cover appeared. Missing art / duration hydrate after.
@@ -26462,7 +26467,6 @@ async function openPlaylistChart(playlistId) {
     _fetchLyricsForTracks(rows.slice(0, PL_LYRIC_PREFETCH).map(r => r.trackId));
     stageAt = performance.now();
     renderPlaylistChart();
-    plEnsureShareUrl(p);
     sjPerf('playlist-wall.open-complete', {
       run: perfRun,
       rows: rows.length,
@@ -26592,7 +26596,8 @@ async function plWallHydrateNowPlaying(perfRun) {
   }
 }
 
-function returnToPlaylistExplorer(tab) {
+function returnToPlaylistExplorer(tab, opts) {
+  opts = opts || {};
   plWallClosePop();
   liveRoomStopWatching();
   liveRoomCloseJoinModal();
@@ -26612,7 +26617,7 @@ function returnToPlaylistExplorer(tab) {
   // the playlist explorer, whatever tab the caller asked for.
   landingTab = landingClampTab(tab, 'playlists');
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
-  plClearShareUrl();
+  plClearShareUrl(opts.pushHistory !== false);
   renderLanding();
 }
 
@@ -31467,7 +31472,7 @@ async function goHome(opts) {
   // The playlist wall is an in-place landing-page view. Its own back button
   // returns to Explore Playlists, so the logo should do the same.
   if (viewMode === 'playlistchart') {
-    returnToPlaylistExplorer();
+    returnToPlaylistExplorer(null, opts);
     return;
   }
   if (!IS_COMMUNITY) {
@@ -31517,6 +31522,24 @@ window.addEventListener('popstate', () => {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
   if (path === '/') { goHome({ pushHistory: false }); return; }
   if (path === '/community') { window.location.reload(); return; }
+  const playlistMatch = path.match(/^\/p\/([a-z0-9][a-z0-9-]{1,47})$/i)
+    || (!SJ_BRAND.features.artistPages && path.match(/^\/([a-z0-9][a-z0-9-]{1,47})$/i));
+  if (playlistMatch) {
+    const playlistSlug = playlistMatch[1].toLowerCase();
+    const known = (_savedPlaylists || []).find(p => String(p.slug || '').toLowerCase() === playlistSlug)
+      || (playlists || []).find(p => String(p.slug || '').toLowerCase() === playlistSlug);
+    if (known) { openPlaylistChart(known.id); return; }
+    dbGet(`/playlists?slug=ilike.${encodeURIComponent(playlistSlug)}&limit=1`)
+      .then(async rows => {
+        const p = rows[0];
+        if (!p) { window.location.reload(); return; }
+        p._tracks = await dbGet(`/playlist_tracks?playlist_id=eq.${p.id}&order=position.asc`);
+        if (!(_savedPlaylists || []).find(x => x.id === p.id)) _savedPlaylists.push(p);
+        openPlaylistChart(p.id);
+      })
+      .catch(() => window.location.reload());
+    return;
+  }
   const slug = path.slice(1);
   if (IS_COMMUNITY && _SLUG_ARTIST && _SLUG_ARTIST.slug === slug) return;
   dbGet(`/artists?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug,is_community,added_by_name`)
@@ -43634,12 +43657,14 @@ function plShareLookup(id) {
 
 function plShareUrl(slug) {
   if (!slug) return location.origin + '/';
-  return new URL('/p/' + String(slug).toLowerCase(), location.origin).toString();
+  const prefix = SJ_BRAND.features.artistPages ? '/p/' : '/';
+  return new URL(prefix + String(slug).toLowerCase(), location.origin).toString();
 }
 
 function plPushShareUrl(p) {
   if (!p?.slug || p._liveRoom || p._dynamic) return;
-  const path = '/p/' + String(p.slug).toLowerCase();
+  const prefix = SJ_BRAND.features.artistPages ? '/p/' : '/';
+  const path = prefix + String(p.slug).toLowerCase();
   if (location.pathname.replace(/\/+$/, '') === path) return;
   try { history.pushState({ playlistSlug: p.slug, playlistId: p.id }, '', path); } catch (_) {}
 }
@@ -43668,9 +43693,12 @@ async function plEnsureShareUrl(p) {
   } catch (_) {}
 }
 
-function plClearShareUrl() {
-  if (!/^\/p\//i.test(location.pathname)) return;
-  try { history.pushState(null, '', '/'); } catch (_) {}
+function plClearShareUrl(pushHistory) {
+  if (location.pathname === '/') return;
+  try {
+    if (pushHistory === false) history.replaceState(null, '', '/');
+    else history.pushState(null, '', '/');
+  } catch (_) {}
 }
 
 function openSjShareHub() {

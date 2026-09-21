@@ -154,7 +154,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       if (!slug || seen.has(slug)) continue;
       seen.add(slug);
       entries.push({
-        url: `${SITE_URL}/p/${slug}`,
+        url: surface.features.artistPages
+          ? `${SITE_URL}/p/${slug}`
+          : `${SITE_URL}/${slug}`,
         lastModified: row.updated_at ? new Date(row.updated_at) : lastModified,
         changeFrequency: "weekly",
         priority: 0.8,

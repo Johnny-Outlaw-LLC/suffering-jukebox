@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { RESERVED_SLUGS } from "@/lib/jukebox";
+import { currentSurface } from "@/lib/surface";
 
 // ── Vanity jukebox addresses ──────────────────────────────────────────────
 // A host who has claimed one gets sufferingjukebox.stream/outlaw, not
@@ -82,12 +83,20 @@ export async function proxy(request: NextRequest) {
     response.cookies.set("sj_live_room", codeMatch[1], { maxAge: 120, path: "/", sameSite: "lax", secure: true });
   }
   const slug = request.method === "GET" ? slugCandidate(pathname) : null;
-  if (slug && (await vanitySlugs()).has(slug)) {
+  const isVanityRoom = !!slug && (await vanitySlugs()).has(slug);
+  if (slug && isVanityRoom) {
     const to = request.nextUrl.clone();
     to.pathname = "/";
     to.searchParams.set("live", slug);
     response = NextResponse.rewrite(to);
     response.cookies.set("sj_live_room", slug, { maxAge: 120, path: "/", sameSite: "lax", secure: true });
+  } else if (slug && currentSurface(request.headers.get("host")).id === "lp") {
+    // Listening Party owns no /<artist> pages, so playlists can use the clean
+    // root namespace. Rewrite internally to the shared playlist route while
+    // leaving /nouns-group in the browser address bar.
+    const to = request.nextUrl.clone();
+    to.pathname = `/p/${slug}`;
+    response = NextResponse.rewrite(to);
   }
 
   const navRef = request.headers.get("referer") || request.headers.get("referrer");
