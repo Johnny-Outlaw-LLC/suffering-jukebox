@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ARTIST_AGREEMENT_VERSION, isUuid } from "@/lib/artist-rights";
 import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
-import { createB2DownloadUrl } from "@/lib/b2-audio";
+import { createB2DownloadUrl, sisterB2RedirectUrl } from "@/lib/b2-audio";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ releaseId: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ releaseId: string }> }) {
   const { releaseId } = await params;
   if (!isUuid(releaseId)) return new NextResponse(null, { status: 404 });
+  const sister = sisterB2RedirectUrl(req.nextUrl.host, `/artist-release-art/${releaseId}`);
+  if (sister) {
+    return NextResponse.redirect(sister, {
+      status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
+    });
+  }
   try {
     const sb = createSjServiceClient();
     const { data: release, error } = await sb.schema(JUKEBOX_SCHEMA)

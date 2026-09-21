@@ -1,7 +1,7 @@
 // Public album covers uploaded via Manage Album. Bucket is private; this
 // route is the only way out, keyed by album id (never an arbitrary B2 path).
 import { NextRequest, NextResponse } from "next/server";
-import { createB2DownloadUrl } from "@/lib/b2-audio";
+import { createB2DownloadUrl, sisterB2RedirectUrl } from "@/lib/b2-audio";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 
 export const runtime = "nodejs";
@@ -9,13 +9,19 @@ export const runtime = "nodejs";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ albumId: string }> },
 ) {
   const { albumId: raw } = await params;
   const albumId = (raw || "").replace(/\.jpe?g$/i, "").toLowerCase();
   if (!UUID.test(albumId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const sister = sisterB2RedirectUrl(req.nextUrl.host, req.nextUrl.pathname + req.nextUrl.search);
+  if (sister) {
+    return NextResponse.redirect(sister, {
+      status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
+    });
   }
 
   const sb = createSjServiceClient();

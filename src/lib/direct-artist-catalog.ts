@@ -1,4 +1,5 @@
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
+import { createB2DownloadUrl, putB2Object } from "@/lib/b2-audio";
 
 type Client = ReturnType<typeof createSjServiceClient>;
 const T = (sb: Client, table: string) => sb.schema(JUKEBOX_SCHEMA).from(table);
@@ -27,7 +28,7 @@ async function draftsForAgreement(sb: Client, agreementId: string) {
   if (draftError) throw draftError;
   if (!drafts?.length) return { drafts: [] as DraftTrack[], releases: [] as any[] };
   const { data: releases, error: releaseError } = await T(sb, "artist_upload_releases")
-    .select("id,user_id,artist_id,name,release_date,is_unreleased,art_url,published_album_id")
+    .select("id,user_id,artist_id,name,release_date,is_unreleased,art_url,art_storage_path,published_album_id")
     .in("id", [...new Set(drafts.map((row) => row.release_id))]);
   if (releaseError) throw releaseError;
   const rightById = new Map((rights ?? []).map((row) => [row.track_id, row]));
@@ -51,6 +52,22 @@ async function draftsForAgreement(sb: Client, agreementId: string) {
   return { drafts: drafts as DraftTrack[], releases: releases ?? [] };
 }
 
+async function catalogCoverUrl(release: { id: string; art_url?: string | null; art_storage_path?: string | null }, albumId: string) {
+  if (release.art_storage_path) {
+    try {
+      const signed = await createB2DownloadUrl(release.art_storage_path, 60);
+      const upstream = await fetch(signed, { signal: AbortSignal.timeout(20000) });
+      if (upstream.ok) {
+        await putB2Object(`album-art/${albumId}.jpg`, Buffer.from(await upstream.arrayBuffer()), "image/jpeg");
+        return `/album-art/${albumId}`;
+      }
+    } catch (error) {
+      console.error("[direct-artist-catalog] cover copy", error);
+    }
+  }
+  return release.art_url || null;
+}
+
 /** Prepare hidden catalog rows before the rights decision changes to approved. */
 export async function prepareDirectArtistCatalog(sb: Client, agreementId: string, uploaderEmail: string) {
   const { drafts, releases } = await draftsForAgreement(sb, agreementId);
@@ -69,6 +86,11 @@ export async function prepareDirectArtistCatalog(sb: Client, agreementId: string
       const { error: saveError } = await T(sb, "artist_upload_releases")
         .update({ published_album_id: albumId }).eq("id", release.id).eq("user_id", release.user_id);
       if (saveError) throw saveError;
+    }
+    const artUrl = await catalogCoverUrl(release, albumId);
+    if (artUrl && artUrl !== release.art_url) {
+      const { error: artError } = await T(sb, "albums").update({ art_url: artUrl }).eq("id", albumId);
+      if (artError) throw artError;
     }
     for (const draft of drafts.filter((row) => row.release_id === release.id)) {
       const { data: existing, error: existingError } = await T(sb, "tracks")

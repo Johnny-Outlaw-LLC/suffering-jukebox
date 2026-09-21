@@ -2159,6 +2159,8 @@ textarea.report-input { resize:vertical; }
 .yt-player-frame { flex: 1; background: var(--bg); min-height: 170px; position: relative; cursor: pointer; overflow: hidden; }
 .yt-player-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; z-index: 1; }
 .yt-player-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ytp-art-frame { position:absolute; inset:0; background:#111; }
+.ytp-art-frame img { width:100%; height:100%; object-fit:cover; display:block; }
 /* Minimized player: album art + who/what on the left, the lines being sung in
    the middle, transport on the right. One bar, fixed height, so the page never
    reflows underneath it when the lyric font size changes. */
@@ -5051,10 +5053,6 @@ html[data-surface="lp"] .brand-title em {
 }
 
 
-#sj-artist-player{position:fixed;z-index:8200;bottom:0;left:0;right:0;display:flex;align-items:center;gap:18px;padding:16px 24px calc(16px + env(safe-area-inset-bottom));background:var(--bg-elevated,#17101d);border-top:2px solid var(--accent);color:var(--text);box-shadow:0 -8px 30px #0006}
-.sj-artist-info{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}.sj-artist-info strong{color:var(--accent)}.sj-artist-info span{font-size:12px;color:var(--text-muted)}
-#sj-artist-audio{width:min(420px,45vw);height:42px}.sj-artist-controls{display:flex;gap:8px}.sj-artist-controls button{background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text);min-width:44px;min-height:44px;cursor:pointer}.sj-artist-controls button:disabled{opacity:.35}
-@media(max-width:640px){#sj-artist-player{flex-wrap:wrap;gap:10px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));bottom:60px}.sj-artist-info{flex-basis:calc(100% - 160px)}#sj-artist-audio{order:3;width:100%}.sj-artist-controls{order:2}}
 </style>
 <script src="https://outlawdata.com/outlaw-owner.js" defer></script>
 <script>document.documentElement.classList.add('sj-js');</script>
@@ -8524,7 +8522,7 @@ function buildSinglePanelHTML(alb, L) {
   const _albMetricFmt = barChartMode === 'score' ? (_albMetricVal > 0 ? '+' + _albMetricVal : String(_albMetricVal || 0)) : fmtV(_albMetricVal);
   const trkAreaH      = albTracks.length * PANEL_TRK_H;
   const name          = alb.name;
-  const hasVideos     = albTracks.some(t => ytData[t.id]?.video_id);
+  const hasVideos     = albTracks.some(t => ytData[t.id]?.video_id || t.artist_audio_only);
   const albX          = xOf(parseInt((alb.release_date || '2000-01-01').slice(0, 4)), alb.id);
   const panelCX    = pp.left + pp.w / 2;
   const albDx      = Math.round(albX - panelCX);
@@ -9176,116 +9174,135 @@ function ytpMobDeckHTML(trackId) {
     </div>`;
 }
 
-// Artist uploads have no YouTube video ID. Keep their player on this page,
-// with one reusable audio element so phone gestures and automatic next work.
-let _sjArtistAudio = null;
-let _sjArtistQueue = [];
-let _sjArtistIndex = 0;
-function sjArtistPrime() {
-  if (_sjArtistAudio) return _sjArtistAudio;
-  const audio = document.createElement('audio');
-  audio.id = 'sj-artist-audio';
-  audio.controls = true;
-  audio.preload = 'auto';
-  audio.setAttribute('playsinline', '');
-  audio.addEventListener('ended', () => {
-    if (_sjArtistIndex + 1 < _sjArtistQueue.length) sjArtistStart(_sjArtistIndex + 1);
-  });
-  audio.addEventListener('error', () => sjArtistStatus('Audio could not load. Press Retry to try again.'));
-  audio.addEventListener('play', () => {
-    if (!_sjArtistQueue.length) return;
-    sjArtistStatus('');
-    if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing';
-  });
-  audio.addEventListener('pause', () => {
-    if (_sjArtistQueue.length && navigator.mediaSession) navigator.mediaSession.playbackState = 'paused';
-  });
-  _sjArtistAudio = audio;
-  // Unlock this element within the original tap, before catalog requests.
-  audio.src = 'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
-  audio.play().catch(() => {});
-  return audio;
+// Artist uploads have no YouTube video ID. Play them in the same docked
+// player as everything else: cover in the frame, hidden audio element,
+// shared transport and queue.
+function ytpIsArtistAudio(item) {
+  if (!item) return false;
+  if (item.artistAudio) return true;
+  if (item.videoId) return false;
+  const t = item.trackId && typeof findTrackById === 'function' ? findTrackById(item.trackId) : null;
+  return !!(t && t.artist_audio_only);
 }
-function sjArtistStatus(message) {
-  const el = document.getElementById('sj-artist-status');
-  if (el) el.textContent = message;
-  const retry = document.getElementById('sj-artist-retry');
-  if (retry) retry.hidden = !message || message === 'Loading audio…';
-}
-function sjArtistStop() {
-  _sjArtistQueue = [];
-  if (_sjArtistAudio) {
-    _sjArtistAudio.pause();
-    _sjArtistAudio.removeAttribute('src');
-    _sjArtistAudio.load();
-    _sjArtistAudio.remove();
-    _sjArtistAudio = null;
+
+function sjArtistQueueItem(t) {
+  if (!t) return null;
+  let alb = null;
+  for (const list of Object.values(albums || {})) {
+    alb = (list || []).find(a => a.id === t.album_id);
+    if (alb) break;
   }
-  document.getElementById('sj-artist-player')?.remove();
-  if (navigator.mediaSession) {
-    navigator.mediaSession.metadata = null;
-    navigator.mediaSession.playbackState = 'none';
-    for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'seekto']) {
-      try { navigator.mediaSession.setActionHandler(action, null); } catch (_) {}
+  const artist = alb ? (allArtists || []).find(a => a.id === alb.artist_id) : null;
+  const meta = (typeof SJ_TRACK_META !== 'undefined' && SJ_TRACK_META[t.id]) || {};
+  const artwork = meta.artwork || (alb && typeof albumThumb === 'function' ? albumThumb(alb) : alb?.art_url) || '';
+  return {
+    videoId: (typeof ytData !== 'undefined' && ytData[t.id]?.video_id) || null,
+    title: t.name,
+    trackId: t.id,
+    artist: meta.artist || (artist && artist.name) || '',
+    album: meta.album || (alb && alb.name) || '',
+    year: meta.year || (alb && (alb.release_date || '').slice(0, 4)) || '',
+    artwork,
+    artistAudio: !!t.artist_audio_only,
+  };
+}
+
+function ytpShowArtFrame(artwork) {
+  const frame = ytPlayerEl && ytPlayerEl.querySelector('.yt-player-frame');
+  if (!frame) return;
+  const src = (artwork && artwork !== '/favicon.png') ? artwork : '/favicon.png';
+  const h = frame.offsetHeight || Math.round((frame.offsetWidth || 320) * 9 / 16);
+  frame.style.height = h + 'px';
+  frame.innerHTML = '<div class="ytp-art-frame"><img src="' + String(src).replace(/"/g, '&quot;') + '" alt=""></div>';
+  ytpWireFrameInteraction(frame);
+}
+
+function sjUnlockAudioEl() {
+  const a = taEnsureAudioEl();
+  if (!a.getAttribute('src')) {
+    a.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  }
+  a.play().catch(() => {});
+}
+
+async function loadArtistOnDemandAudio(trackIds) {
+  const ids = [...new Set((trackIds || []).filter(id => id && !taData[id]))];
+  if (!ids.length) return;
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+  const responses = await Promise.all(chunks.map(async c => {
+    const res = await fetch(sjApiUrl('/api/sj-artist-audio?purpose=normal-playback&track_ids=' + encodeURIComponent(c.join(','))), { cache: 'no-store' });
+    if (!res.ok) return [];
+    const body = await res.json().catch(() => ({}));
+    return body.ok ? (body.tracks || []) : [];
+  }));
+  responses.flat().forEach(r => {
+    if (!r.trackId || !r.url || taData[r.trackId]) return;
+    taData[r.trackId] = {
+      url: r.url,
+      path: null,
+      duration: Number(r.duration) || null,
+      isPublic: true,
+      artistLicensed: true,
+      licensedArtist: r.artist || null,
+      uploadedBy: null,
+    };
+  });
+}
+
+function ytpStartArtistAudio(item) {
+  if (!item?.trackId) return;
+  _taManualAudio = true;
+  _ytUserWantsPlay = true;
+  const art = item.artwork || (typeof ytpTrackMeta === 'function' ? ytpTrackMeta(item.trackId, item.title).artwork : '') || '';
+  ytpShowArtFrame(art);
+  const start = () => {
+    if (ytQueue[ytQueueIdx]?.trackId !== item.trackId) return;
+    if (!taTrackAudio(item.trackId)) {
+      showToast('Artist audio is unavailable.');
+      return;
     }
-  }
+    _taBgActive = true;
+    taPlayBgIdx(ytQueueIdx);
+    ytpSetPlayPauseIcon(true);
+  };
+  if (taTrackAudio(item.trackId)) { start(); return; }
+  loadArtistOnDemandAudio([item.trackId]).then(start).catch(() => showToast('Artist audio is unavailable.'));
 }
+
+function sjPlayArtistQueue(queue, startId) {
+  const items = sjNoBlocked(queue.filter(Boolean));
+  if (!items.length) { showToast('No playable artist recordings in this selection.'); return; }
+  const found = items.findIndex(q => q.trackId === startId);
+  const start = found < 0 ? 0 : found;
+  if (ytPlayerEl) {
+    ytQueue = items;
+    ytQueueIdx = start;
+    ytPlayQueueIdx(start);
+  } else {
+    const first = items[start] || items[0];
+    openYTPlayer(first.videoId, first.title, first.trackId);
+    ytQueue = items;
+    ytQueueIdx = start;
+    if (start !== 0) ytPlayQueueIdx(start);
+  }
+  updateYTQueueUI();
+}
+
 function sjArtistPlayRows(rows, startId) {
-  const queue = sjNoBlocked(rows.filter(t => t.artist_audio_only).map(t => ({ ...t, trackId: t.id })));
-  if (!queue.length) { showToast('No playable artist recordings in this selection.'); return; }
-  const audio = sjArtistPrime();
-  closeYTPlayer();
-  _sjArtistQueue = queue;
-  let panel = document.getElementById('sj-artist-player');
-  if (!panel) {
-    panel = document.createElement('section');
-    panel.id = 'sj-artist-player';
-    panel.setAttribute('aria-label', 'Artist audio player');
-    panel.innerHTML = '<div class="sj-artist-info"><strong id="sj-artist-title"></strong><span id="sj-artist-credit"></span><span id="sj-artist-status" role="status"></span><button type="button" id="sj-artist-retry" hidden onclick="sjArtistStart(_sjArtistIndex)">Retry</button></div><div class="sj-artist-controls"><button type="button" id="sj-artist-prev" aria-label="Previous artist track" onclick="sjArtistStart(_sjArtistIndex-1)">⏮</button><button type="button" id="sj-artist-next" aria-label="Next artist track" onclick="sjArtistStart(_sjArtistIndex+1)">⏭</button><button type="button" aria-label="Close artist player" onclick="sjArtistStop()">✕</button></div>';
-    panel.insertBefore(audio, panel.lastElementChild);
-    document.body.appendChild(panel);
-  }
-  sjArtistStart(Math.max(0, queue.findIndex(t => t.id === startId)));
+  const items = (rows || []).filter(t => t.artist_audio_only).map(t => sjArtistQueueItem(t)).filter(Boolean);
+  if (!items.length) { showToast('No playable artist recordings in this selection.'); return; }
+  sjUnlockAudioEl();
+  loadArtistOnDemandAudio(items.map(q => q.trackId)).then(() => sjPlayArtistQueue(items, startId))
+    .catch(() => sjPlayArtistQueue(items, startId));
 }
-function sjArtistStart(index) {
-  const track = _sjArtistQueue[index];
-  if (!track || !_sjArtistAudio) return;
-  _sjArtistIndex = index;
-  const meta = SJ_TRACK_META[track.id] || {};
-  document.getElementById('sj-artist-title').textContent = track.name;
-  document.getElementById('sj-artist-credit').textContent = [meta.artist, meta.album, `${index + 1} of ${_sjArtistQueue.length}`].filter(Boolean).join(' · ');
-  document.getElementById('sj-artist-prev').disabled = index === 0;
-  document.getElementById('sj-artist-next').disabled = index === _sjArtistQueue.length - 1;
-  sjArtistStatus('Loading audio…');
-  // The server checks the same artist approval and visibility rules as the
-  // JSON signer, then redirects. Calling play now retains the phone gesture.
-  const audio = _sjArtistAudio;
-  audio.src = sjApiUrl('/api/sj-artist-audio?purpose=normal-playback&format=stream&track_ids=' + encodeURIComponent(track.id));
-  audio.play().then(() => {
-    if (audio !== _sjArtistAudio || _sjArtistQueue[_sjArtistIndex]?.id !== track.id) return;
-    sjArtistStatus('');
-    logYTPlay(null, track.id, 'play', 'audio');
-  }).catch(() => {
-    if (audio === _sjArtistAudio && _sjArtistQueue[_sjArtistIndex]?.id === track.id) sjArtistStatus(audio.error ? 'Audio could not load. Press Retry to try again.' : 'Press Play in the audio controls to start.');
-  });
-  if (navigator.mediaSession) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: track.name, artist: meta.artist || '', album: meta.album || '',
-      artwork: meta.artwork ? [{ src: new URL(meta.artwork, location.href).href }] : [] });
-    const handlers = { play: () => audio.play().catch(() => sjArtistStatus('Press Play to retry.')), pause: () => audio.pause(),
-      previoustrack: index > 0 ? () => sjArtistStart(_sjArtistIndex - 1) : null,
-      nexttrack: index + 1 < _sjArtistQueue.length ? () => sjArtistStart(_sjArtistIndex + 1) : null,
-      seekto: e => { if (Number.isFinite(e.seekTime)) audio.currentTime = e.seekTime; } };
-    for (const [action, handler] of Object.entries(handlers)) {
-      try { navigator.mediaSession.setActionHandler(action, handler); } catch (_) {}
-    }
-  }
-}
+
 async function sjArtistPlayTrack(trackId, ev) {
   ev?.preventDefault(); ev?.stopPropagation();
-  sjArtistPrime();
+  sjUnlockAudioEl();
   let track = Object.values(tracks).flat().find(t => t.id === trackId);
   if (!track) {
-    try { track = (await dbGet('/tracks?id=eq.' + encodeURIComponent(trackId) + '&select=id,name,album_id,artist_audio_only'))[0]; }
+    try { track = (await dbGet('/tracks?id=eq.' + encodeURIComponent(trackId) + '&select=id,name,album_id,artist_audio_only,disc_number,track_number'))[0]; }
     catch (_) { showToast('Could not load this song. Please try again.'); return; }
   }
   if (!track?.artist_audio_only) { showToast('Artist audio is unavailable.'); return; }
@@ -9295,7 +9312,6 @@ async function sjArtistPlayTrack(trackId, ev) {
 }
 
 function openYTPlayer(videoId, title, trackId, ev) {
-  if (_sjArtistQueue.length) sjArtistStop();
   loadYTAPI(); // ensure YT iframe API is loading
   ytVideoId = videoId;
   const safeTitle = (title||'').replace(/</g,'&lt;');
@@ -9413,7 +9429,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
     </div>
     <div id="ytp-up-next-slot"></div>
     <div class="yt-player-frame" style="height:${cH}px">
-      ${ytpIframeHTML(videoId, cH, !restorePaused)}
+      ${videoId ? ytpIframeHTML(videoId, cH, !restorePaused) : ''}
     </div>
     ${ytpMobDeckHTML(trackId)}`;
   _ytpContainerEl.appendChild(ytPlayerEl);
@@ -9424,6 +9440,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
 
   // Initialize queue with this first track
   ytQueue = [ytQueueItem(videoId, title, trackId)];
+  if (!videoId && trackId) ytQueue[0].artistAudio = true;
   ytQueueIdx = 0;
   refreshQuickPlaylistNowPlaying();
   ytpSyncVoteBtn(trackId || null);
@@ -9437,14 +9454,15 @@ function openYTPlayer(videoId, title, trackId, ev) {
   // container that holds the real player only ever shows for Full Screen.
   _ytpContainerEl.style.display = 'none';
   _ytpMinimized = true;
-  setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
+  if (videoId) setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
   ytpOnTrackChange(videoId, trackId, title);
   showYtpMiniFooter();
   // Mobile still opens straight to Full Screen; Docked is what it falls back
   // to when minimized from there.
   if (_isMobPlayer) requestAnimationFrame(() => ytpEnterFullscreen());
-  // Sticky background-play preference: start audio mode when this track has a file.
-  if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused) {
+  if (!videoId && trackId) {
+    ytpStartArtistAudio(ytQueue[0]);
+  } else if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused) {
     _taManualAudio = true;
     _ytUserWantsPlay = true;
     setTimeout(() => { if (_taManualAudio) taEnterBgAudio(); taSyncAudioBtn(); }, 500);
@@ -9757,6 +9775,15 @@ function ytPlayNow(videoId, title, trackId) {
   ytVideoId = videoId;
   // play will be logged by onStateChange after 10 seconds
   if (!ytPlayerEl) { openYTPlayer(videoId, title, trackId); return; }
+  if (ytpIsArtistAudio({ videoId, trackId })) {
+    _ytUserWantsPlay = true;
+    _taManualAudio = true;
+    ytpStartArtistAudio(ytQueue[0]);
+    ytpSetPlayPauseIcon(true);
+    ytpOnTrackChange(videoId, trackId, title);
+    updateYTQueueUI();
+    return;
+  }
   if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId)) _taManualAudio = true;
   const _useTa = _taManualAudio && !!taTrackAudio(trackId);
   if (_taBgActive && !_useTa) {
@@ -9853,7 +9880,12 @@ function ytPlayQueueIdx(idx, opts) {
   if (!_useTa) taPrimeAudioEl(item);
   // play will be logged by onStateChange after 10 seconds
   if (!opts?.skipLoad) {
-    if (_useTa) {
+    if (ytpIsArtistAudio(item)) {
+      _ytUserWantsPlay = true;
+      _taManualAudio = true;
+      ytpStartArtistAudio(item);
+      ytpSetPlayPauseIcon(true);
+    } else if (_useTa) {
       // Audio-only mode: the audio element keeps the sound; just cue the video
       _ytUserWantsPlay = true;
       _taBgActive = true;
@@ -16024,10 +16056,15 @@ function taWaitAudioReady(a, timeoutMs) {
 }
 
 function taFailBgAudio(reason) {
+  const item = ytQueue[ytQueueIdx];
   _taBgActive = false;
   _taManualAudio = false;
   taSyncAudioBtn();
   try { _taAudioEl?.pause(); } catch (_) {}
+  if (ytpIsArtistAudio(item)) {
+    if (reason) showToast(reason);
+    return;
+  }
   try {
     if (_ytUserWantsPlay) ytAPIPlayer?.playVideo?.();
   } catch (_) {}
@@ -31244,7 +31281,6 @@ function openFaq() {
 }
 
 async function landingPlayArtist(artistId, ev) {
-  sjArtistPrime();
   const row = landingStats.find(r => r.artist_id === artistId);
   if (!row) return;
   const cardBtn = document.querySelector(`.landing-card[data-artist-id="${artistId}"] .landing-play-btn`);
@@ -31259,17 +31295,19 @@ async function landingPlayArtist(artistId, ev) {
     const okAlbIds = new Set(albRows.map(a => a.id));
     let trackRows = memberIds.flatMap(aid => tracks[aid] || []).filter(t => okAlbIds.has(t.album_id));
     trackRows = filterTracksForHomeBg(trackRows);
-    const artistAudio = trackRows.filter(t => t.artist_audio_only);
-    if (artistAudio.length && !trackRows.some(t => ytData[t.id]?.video_id)) {
-      sjArtistPlayRows(artistAudio);
-      return;
-    }
-    let playable = trackRows.filter(t => ytData[t.id]?.video_id);
+    let playable = trackRows.filter(t => ytData[t.id]?.video_id || t.artist_audio_only);
     if (!playable.length) {
       if (homeJukeboxBgFilterOn()) showToast('No background-play tracks for this artist yet.');
       return;
     }
-    const queue = shuffleInPlace([...playable]).map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
+    const artistAudioIds = playable.filter(t => t.artist_audio_only && !ytData[t.id]?.video_id).map(t => t.id);
+    if (artistAudioIds.length) {
+      sjUnlockAudioEl();
+      await loadArtistOnDemandAudio(artistAudioIds);
+    }
+    const queue = shuffleInPlace([...playable]).map(t => t.artist_audio_only && !ytData[t.id]?.video_id
+      ? sjArtistQueueItem(t)
+      : { videoId: ytData[t.id].video_id, title: t.name, trackId: t.id });
     // Wait for background-play audio so the Enable Background Play button can appear.
     await loadTrackAudio(queue.slice(0, 80).map(x => x.trackId));
     // If music is already playing, let the user choose Play Now vs Add All to Queue
@@ -32652,7 +32690,7 @@ function renderListView(albList, sortOverride) {
       ? (alb._ddGroupItems || []).some(id => { const i = ddItemById(id); return i && (i.externalId || i.audioUrl); })
       : alb._ddResearch
       ? !!(ddItem?.externalId || ddItem?.audioUrl)
-      : albTracks.some(t => ytData[t.id]?.video_id);
+      : albTracks.some(t => ytData[t.id]?.video_id || t.artist_audio_only);
     const _listMetricVal = albumViews(alb);
     const _listMetricLbl = barChartMode === 'mine' ? 'my juke plays' : barChartMode === 'total' ? 'juke plays' : barChartMode === 'score' ? 'score' : 'yt views';
     const _listMetricFmt = barChartMode === 'score' ? (_listMetricVal > 0 ? '+' + _listMetricVal : String(_listMetricVal || 0)) : fmtV(_listMetricVal);
@@ -44487,7 +44525,7 @@ function getVisibleTracksWithVideo(shuffle) {
   let tks = [];
   visAlbs.forEach(alb => {
     const albTracks = (tracks[alb.artist_id] || [])
-      .filter(t => t.album_id === alb.id && ytData[t.id]?.video_id)
+      .filter(t => t.album_id === alb.id && (ytData[t.id]?.video_id || t.artist_audio_only))
       .sort((a, b) => (a.track_number || 0) - (b.track_number || 0));
     tks = tks.concat(albTracks);
   });
@@ -44497,7 +44535,9 @@ function getVisibleTracksWithVideo(shuffle) {
       [tks[i], tks[j]] = [tks[j], tks[i]];
     }
   }
-  return sjNoBlocked(tks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
+  return sjNoBlocked(tks.map(t => t.artist_audio_only && !ytData[t.id]?.video_id
+    ? sjArtistQueueItem(t)
+    : { videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
 }
 
 function setYtShuffleEnabled(on) {
@@ -44555,10 +44595,12 @@ function shuffleFavorites() {
   if (!favIds.size) { alert('No favorites yet - give tracks a thumbs up!'); return; }
   const allTks = [];
   Object.values(tracks).forEach(arr => arr.forEach(t => {
-    if (favIds.has(t.id) && ytData[t.id]?.video_id) allTks.push(t);
+    if (favIds.has(t.id) && (ytData[t.id]?.video_id || t.artist_audio_only)) allTks.push(t);
   }));
   if (!allTks.length) { alert('No favorited tracks have YouTube videos.'); return; }
-  const q = sjNoBlocked(allTks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
+  const q = sjNoBlocked(allTks.map(t => t.artist_audio_only && !ytData[t.id]?.video_id
+    ? sjArtistQueueItem(t)
+    : { videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
   if (!q.length) { alert('Every favorited track is blocked.'); return; }
   loadQueueForShuffle(q);
 }
@@ -44578,7 +44620,7 @@ function playFavorites(shuffle = ytShuffle) {
   if (!favIds.size) { alert('No favorites yet - give tracks a thumbs up!'); return; }
   const allTks = [];
   Object.values(tracks).forEach(arr => arr.forEach(t => {
-    if (favIds.has(t.id) && ytData[t.id]?.video_id) allTks.push(t);
+    if (favIds.has(t.id) && (ytData[t.id]?.video_id || t.artist_audio_only)) allTks.push(t);
   }));
   if (!allTks.length) { alert('No favorited tracks have YouTube videos.'); return; }
   if (shuffle) {
@@ -44587,7 +44629,9 @@ function playFavorites(shuffle = ytShuffle) {
       [allTks[i], allTks[j]] = [allTks[j], allTks[i]];
     }
   }
-  const q = sjNoBlocked(allTks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
+  const q = sjNoBlocked(allTks.map(t => t.artist_audio_only && !ytData[t.id]?.video_id
+    ? sjArtistQueueItem(t)
+    : { videoId: ytData[t.id].video_id, title: t.name, trackId: t.id }));
   if (!q.length) { alert('Every favorited track is blocked.'); return; }
   _queueHasAdditions = false;
   if (!ytPlayerEl) openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);

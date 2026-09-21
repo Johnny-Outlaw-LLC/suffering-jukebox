@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { currentSurface, SURFACES } from "@/lib/surface";
 
 type B2ApiInfo = {
   s3ApiUrl?: string;
@@ -106,4 +107,11 @@ export async function getB2AudioObjectSize(key: string): Promise<number> {
 export async function deleteB2AudioObject(key: string): Promise<void> {
   const client = await getClient();
   await client.send(new DeleteObjectCommand({ Bucket: getB2AudioBucket(), Key: key }));
+}
+
+/** Listening Party may ship without B2 keys; the sister surface still signs. */
+export function sisterB2RedirectUrl(host: string | null | undefined, pathAndQuery: string): string | null {
+  if (currentSurface(host).id !== "lp") return null;
+  if (process.env.B2_KEY_ID?.trim() && process.env.B2_APP_KEY?.trim()) return null;
+  return new URL(pathAndQuery, SURFACES.sj.url).toString();
 }

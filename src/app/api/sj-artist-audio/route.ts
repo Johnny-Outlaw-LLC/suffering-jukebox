@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { ARTIST_AGREEMENT_VERSION, isUuid } from "@/lib/artist-rights";
 import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
-import { createB2DownloadUrl } from "@/lib/b2-audio";
-import { currentSurface, SURFACES } from "@/lib/surface";
+import { createB2DownloadUrl, sisterB2RedirectUrl } from "@/lib/b2-audio";
 
 export const dynamic = "force-dynamic";
 // New artist agreements also allow normal on-demand listening to original
@@ -32,16 +31,9 @@ export async function GET(req: NextRequest) {
   if (!trackIds.length) {
     return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
   }
-  // Both brands share the same approved artist catalog. Listening Party's
-  // deployment may not carry the B2 signing keys; use the configured sister
-  // service's public signer in that case, keeping every approval check there.
-  if (currentSurface(req.nextUrl.host).id === "lp"
-      && (!process.env.B2_KEY_ID?.trim() || !process.env.B2_APP_KEY?.trim())) {
-    const signer = new URL("/api/sj-artist-audio", SURFACES.sj.url);
-    signer.searchParams.set("purpose", purpose);
-    signer.searchParams.set("track_ids", trackIds.join(","));
-    if (stream) signer.searchParams.set("format", "stream");
-    return NextResponse.redirect(signer, {
+  const sister = sisterB2RedirectUrl(req.nextUrl.host, req.nextUrl.pathname + req.nextUrl.search);
+  if (sister) {
+    return NextResponse.redirect(new URL(sister), {
       status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
     });
   }
