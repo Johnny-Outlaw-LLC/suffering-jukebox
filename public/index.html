@@ -37911,6 +37911,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-09-25';
 const SJ_CHANGELOG = [
   { date: '2026-09-25', items: [
     'Add Songs in a live jukebox finds songs again. Searching for any artist or song was coming back with No songs found.',
+    'When a guest asks for a song that is already somewhere in the host\'s queue, and the jukebox is set to play guest songs first, that song now moves up to play next instead of staying where it was.',
     'The Listening bar you get after joining a live jukebox is now one slim line, and on a phone it sits above the player instead of over it. With the player full screen it tucks into the top corner.',
   ]},
   { date: '2026-09-23', items: [
@@ -46768,15 +46769,23 @@ async function sjjAdopt(items, announceNew = true) {
   const info = await resolvePlaylistTracks(items.map(i => i.trackId)).catch(() => ({}));
   const add = [];
   const announce = [];
+  const promote = [];
   items.forEach(i => {
     // After a refresh the host re-sends its whole queue with no ids, so the
     // room hands the same songs back as if they were new. Claim the local row
-    // instead of appending a second copy of a song already waiting.
-    const mine = ytQueue.find(q => !q.jbItemId && q.trackId === i.trackId);
+    // instead of appending a second copy of a song already waiting. A copy
+    // still to come is preferred over one that has already played.
+    const unclaimed = (q, n) => !q.jbItemId && q.trackId === i.trackId;
+    const mine = ytQueue.find((q, n) => n > ytQueueIdx && unclaimed(q, n))
+      || ytQueue.find(unclaimed);
     if (mine) {
       mine.jbItemId = i.id;
       mine.addedBy = i.addedByName || null;
       mine.addedByOwner = !!i.addedByOwner;
+      // A guest asked for a song the host already had queued (or had already
+      // played). With requests first, it still has to jump to Up Next -
+      // claiming the row where it sat left it 400 songs away, or behind us.
+      if (!i.addedByOwner) promote.push(mine);
       return;
     }
     announce.push(i);
@@ -46810,6 +46819,7 @@ async function sjjAdopt(items, announceNew = true) {
     }
     updateYTQueueUI();
   }
+  if (promote.length && _sjjRoom?.settings?.guestsFirst) promote.forEach(sjjPromoteRequest);
   // Only songs that are genuinely new to this device are announced; a
   // reclaimed row is not somebody walking up to the jukebox.
   if (announceNew) announce.forEach(sjjAddToast);
@@ -46827,6 +46837,20 @@ function sjjRequestInsertAt() {
   let at = Math.max(0, ytQueueIdx) + (ytQueue.length ? 1 : 0);
   while (at < ytQueue.length && ytQueue[at].addedBy && !ytQueue[at].addedByOwner) at++;
   return at;
+}
+
+// Move a claimed request into the request block behind the song on screen,
+// unless it is already there (a host reload re-claims waiting requests in
+// place, and shuffling those again would reorder who asked first).
+function sjjPromoteRequest(row) {
+  const idx = ytQueue.indexOf(row);
+  if (idx < 0 || idx === ytQueueIdx) return;
+  let end = Math.max(0, ytQueueIdx) + (ytQueue.length ? 1 : 0);
+  const start = end;
+  while (end < ytQueue.length && ytQueue[end].addedBy && !ytQueue[end].addedByOwner) end++;
+  if (idx >= start && idx < end) return;
+  const at = sjjRequestInsertAt();
+  ytMoveToIndex(idx, idx < at ? at - 1 : at);
 }
 
 // Songs the room no longer has: removed from the console, or pulled back by
