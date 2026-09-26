@@ -95,8 +95,15 @@ export async function POST(req: NextRequest) {
         .from("artists").select("id").eq("slug", prefix).maybeSingle();
       if (slugError) throw slugError;
       const slug = slugUsed ? `${prefix}-${crypto.randomUUID().slice(0, 8)}` : prefix;
+      // added_by_name is what "Added by" and the Submitted By filter read.
+      // Same name the rest of the app credits: the chosen public name, else
+      // whatever Google said.
+      const { data: me } = await sb.schema(JUKEBOX_SCHEMA).from("app_users")
+        .select("public_name,user_name").ilike("email", user.email).maybeSingle();
+      const addedByName = (me?.public_name || "").trim() || (me?.user_name || "").trim()
+        || (user.user_metadata?.full_name as string | undefined) || null;
       const { data: artist, error } = await sb.schema(JUKEBOX_SCHEMA).from("artists")
-        .insert({ name, slug, is_community: true, added_by: user.email,
+        .insert({ name, slug, is_community: true, added_by: user.email, added_by_name: addedByName,
           visibility: "private", discography_complete: false,
           artist_audio_visible: false, artist_upload_created_by: user.id })
         .select("id").single();
