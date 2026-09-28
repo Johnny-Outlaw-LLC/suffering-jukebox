@@ -245,16 +245,14 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     keywords:
       "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
     tagline: "Join the Listening Party",
-    // Header uses the circular badge plus live HTML title/tagline. The wide
-    // lockup (header-mark.png) still paints both into one PNG, but at header
-    // height the baked-in tagline collapses to a few pixels and cannot be
-    // read. Live type stays legible at any size; keep the lockup for og cards.
-    headerTitle: "ListeningParty.stream",
+    // Name is painted into the album-grid wordmark, same as Suffering Jukebox.
+    // Empty headerTitle hides the live HTML title so it is not drawn twice.
+    headerTitle: "",
     assetBase: "/brand/lp",
-    // Header mark is the monkey alone (no ring text). The full badge with
-    // ListeningParty.Stream / JOIN THE LISTENING PARTY stays on favicons and
-    // square cards; the wide lockup lives at header-mark.png for social cards.
-    textLogo: "/brand/lp/listening-party-mark.png",
+    // Header is the 3×3 album grid + LISTENING PARTY. The gorilla badge stays
+    // on favicons and app icons; header-mark.png is the same wordmark for
+    // static /about /help /privacy pages.
+    textLogo: "/brand/lp/listening-party-text-logo.png",
     ogImage: `${LP_URL}/brand/lp/og-image.png`,
     ogImageSize: { w: 1200, h: 630 },
     themeColor: "#4A1B6D",
