@@ -1209,7 +1209,7 @@ body:not(.light) .tt-num { color: var(--text); }
   .ytp-vol-wrap { display: none !important; }
   /* Bigger, readable lyrics on phones */
   #ytp-lyr-text, .sc-lyrics-text, [data-acc-lyric], #ytp-lyr-text .lyr-line {
-    font-size: 1.05rem !important;
+    font-size: calc(1.05rem * var(--sj-lyr-scale, 1)) !important;
     line-height: 1.55 !important;
   }
   #ytp-lyr-text .lyr-line { opacity: .78; padding: 5px 8px; margin: 0 -8px; }
@@ -2872,6 +2872,21 @@ textarea.report-input { resize:vertical; }
   #yt-player-container.ytp-mob-fs .yt-queue-moves { display: none; }
 }
 
+/* Lyrics size on phones: A− / A+ in the lyrics header. Sync is not offered
+   there - the sung line is simply highlighted when timing exists. */
+.ytp-lyr-size-btns { display: none; }
+@media (max-width: 640px) {
+  #ytp-lyr-sync-wrap { display: none !important; }
+  .ytp-lyr-size-btns { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
+  .ytp-lyr-size-btns button { display: flex; align-items: baseline; justify-content: center; gap: 1px;
+    min-width: 44px; height: 32px; padding: 0 10px; border: 0; border-radius: 16px;
+    background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text);
+    font: 600 15px/32px var(--phone-ui-font); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .ytp-lyr-size-btns button:active { transform: scale(.94); }
+  .ytp-lyr-size-btns small { font-size: 13px; }
+  .ytp-lyr-size-btns big { font-size: 17px; }
+}
+
 /* ── Phone player, shaped like Spotify / YouTube Music ─────────────────────
    People arrive knowing those apps, so the sheet borrows their grammar rather
    than inventing its own: ⋯ top right, a full-width scrubber with the times
@@ -2895,7 +2910,21 @@ textarea.report-input { resize:vertical; }
   .ytp-md-play { background: var(--text); color: var(--bg-card); }
   .ytp-md-play svg { width: 32px; height: 32px; }
 
-  /* Up Next / Lyrics as text tabs with an underline, not a boxed switch. */
+  /* What plays next, with Skip to pick another - one quiet line. */
+  .ytp-md-up-next:empty { display: none; }
+  .ytp-md-up-next .yt-queue-up-next { gap: 10px; padding: 0; background: none; border: 0; }
+  .ytp-md-up-next .yt-queue-up-next-lbl { font-family: var(--phone-ui-font); font-size: 11px; letter-spacing: .08em; }
+  .ytp-md-up-next .yt-queue-up-next-title { font-family: var(--phone-ui-font); font-size: 14px; font-weight: 500;
+    color: var(--text-muted); }
+  .ytp-md-up-next .yt-queue-up-next-skip { order: 1; font-family: var(--phone-ui-font); font-size: 13px; font-weight: 600;
+    text-transform: none; letter-spacing: 0; min-height: 32px; padding: 0 14px; border-radius: 16px;
+    border: 0; background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+
+  /* Up Next / Lyrics as text tabs with an underline, not a boxed switch.
+     Lyrics drops out for a song without any, and Up Next spans the row. */
+  .ytp-md-tabs { display: flex; }
+  .ytp-md-tab { flex: 1 1 0; }
+  .ytp-md-tab[hidden] { display: none; }
   .ytp-md-tabs { gap: 0; padding: 0; background: none; border-radius: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--text) 12%, transparent); }
   .ytp-md-tab { min-height: 40px; border-radius: 0; font-size: 13px; font-weight: 700;
@@ -9575,11 +9604,27 @@ function ytpMobDeckHTML(trackId) {
         <button class="ytp-md-btn" id="ytp-md-next" onclick="ytNextTrack();event.stopPropagation()" title="Next" aria-label="Next track">${YTP_DECK_ICONS.next}</button>
         <button class="ytp-md-btn ytp-md-mode" id="ytp-md-repeat" onclick="ytpMobToggleRepeat();event.stopPropagation()" title="Repeat" aria-label="Repeat">${YTP_DECK_ICONS.repeat}</button>
       </div>
+      <div class="ytp-md-up-next" id="ytp-md-up-next"></div>
       <div class="ytp-md-tabs" role="tablist">
         <button class="ytp-md-tab" id="ytp-md-tab-playlist" role="tab" onclick="ytpMobSetTab('playlist',true);event.stopPropagation()">Up Next</button>
         <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics',true);event.stopPropagation()">Lyrics</button>
       </div>
     </div>`;
+}
+
+// The Lyrics tab is only offered for a song that has lyrics. Up Next takes
+// over the panel when the tab goes away, unless the listener is mid-choice.
+let _ytpLyrTabFor = null;
+async function ytpMobPaintLyricsTab() {
+  const tab = document.getElementById('ytp-md-tab-lyrics');
+  if (!tab) return;
+  const trackId = ytQueue[ytQueueIdx]?.trackId || null;
+  if (trackId === _ytpLyrTabFor) return;
+  _ytpLyrTabFor = trackId;
+  const has = trackId ? await ytpTrackHasLyrics(trackId) : false;
+  if (_ytpLyrTabFor !== trackId) return;   // moved on while we looked
+  tab.hidden = !has;
+  if (!has && _ytpMobTab === 'lyrics') ytpMobSetTab('playlist', false);
 }
 
 /** The deck's title row: song over artist, from the same metadata as the dock. */
@@ -9593,6 +9638,7 @@ function ytpMobPaintTitle() {
   titleEl.title = title;
   const artistEl = document.getElementById('ytp-md-artist');
   if (artistEl) artistEl.textContent = meta?.artist || item?.artist || '';
+  void ytpMobPaintLyricsTab();
 }
 
 // ── Phone sheet: pull down to dock ───────────────────────────────────────
@@ -9851,6 +9897,10 @@ function openYTPlayer(videoId, title, trackId, ev) {
       '<span class="ytp-lyr-font-ctrl" style="font-size:.5rem;color:var(--text-muted)">A</span>' +
       '<button id="ytp-lyr-time-btn" class="tv-time-btn" style="display:none" onmousedown="event.stopPropagation()" onclick="tvToggleOffsetEditor()" title="Shift the karaoke timing for this version of the video">Timing</button>' +
       '<span id="ytp-lyr-btns" style="display:flex;gap:4px;flex-shrink:0;align-items:center"></span>' +
+      '<span class="ytp-lyr-size-btns" onmousedown="event.stopPropagation()">' +
+        '<button type="button" onclick="sjLyricScaleStep(-1);event.stopPropagation()" title="Smaller lyrics" aria-label="Smaller lyrics">A<small>−</small></button>' +
+        '<button type="button" onclick="sjLyricScaleStep(1);event.stopPropagation()" title="Larger lyrics" aria-label="Larger lyrics">A<big>+</big></button>' +
+      '</span>' +
     '</div>' +
     '<div id="tv-offset-row" style="display:none">' +
       '<span class="tv-offset-lbl">Lyrics start</span>' +
@@ -18109,6 +18159,9 @@ let _lyrSyncActiveIdx = -1;
 let _lyrSyncScrollHold = 0;     // pause auto-scroll until this timestamp after manual scroll
 let _lyrSyncEnabled = true;
 try { _lyrSyncEnabled = localStorage.getItem('sj_lyric_sync') !== '0'; } catch(e) {}
+// Phones have no Sync switch, so a switch-off saved on this device must not
+// leave the sung line unhighlighted with no way back.
+try { if (window.matchMedia('(max-width:640px)').matches) _lyrSyncEnabled = true; } catch(e) {}
 
 // Subtracted from player time before matching LRC timestamps, so a music video
 // with a long instrumental intro still highlights the right line. The number
@@ -42977,6 +43030,29 @@ function applyGlobalLyricSize(size) {
   if (djSl && Number(djSl.value) !== globalLyricSize) djSl.value = String(globalLyricSize);
   try { localStorage.setItem('sj_lyric_size', size); } catch(e) {}
 }
+// Phones set lyric size with A− / A+ rather than the desktop slider: a scale on
+// the phone's own reading size, remembered on this device.
+const SJ_LYR_SCALES = [0.75, 0.85, 1, 1.15, 1.3, 1.5, 1.75];
+function sjLyricScale() {
+  let v = 1;
+  try { v = parseFloat(localStorage.getItem('sj_lyric_scale_mob')) || 1; } catch (_) {}
+  return v;
+}
+function sjApplyLyricScale(v) {
+  document.documentElement.style.setProperty('--sj-lyr-scale', String(v));
+}
+function sjLyricScaleStep(dir) {
+  const cur = sjLyricScale();
+  let i = SJ_LYR_SCALES.findIndex(x => x >= cur - 0.001);
+  if (i < 0) i = SJ_LYR_SCALES.length - 1;
+  const next = SJ_LYR_SCALES[Math.max(0, Math.min(SJ_LYR_SCALES.length - 1, i + dir))];
+  try { localStorage.setItem('sj_lyric_scale_mob', String(next)); } catch (_) {}
+  sjApplyLyricScale(next);
+  // Keep the sung line in view after the text reflows.
+  requestAnimationFrame(() => document.querySelector('#ytp-lyr-text .lyr-active')?.scrollIntoView({ block: 'center' }));
+}
+sjApplyLyricScale(sjLyricScale());
+
 (function restoreLyricSize() {
   try {
     const ls = localStorage.getItem('sj_lyric_size');

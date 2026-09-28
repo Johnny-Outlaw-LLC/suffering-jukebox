@@ -50,8 +50,10 @@ test('the phone Now Playing deck is title row, scrubber, transport and Up Next /
     at = i;
   }
   assert.match(html, /class="ytp-fs-more-btn" id="ytp-md-more" data-sheet-ignore/);
-  // No chip row, no window buttons and no Up Next strip repeating Next.
-  assert.doesNotMatch(deck, /ytp-md-up-next/);
+  // The Up Next line (with Skip) sits between transport and the tabs.
+  assert.ok(deck.indexOf('ytp-md-playpause') < deck.indexOf('ytp-md-up-next') &&
+    deck.indexOf('ytp-md-up-next') < deck.indexOf('ytp-md-tab-playlist'), 'Up Next line is misplaced');
+  // No chip row and no window buttons: those moved into ⋯ or became the gesture.
   assert.doesNotMatch(deck, /ytp-md-chip|ytp-md-window|ytpCloseToMini|ytpToggleFullscreen/);
   // ⋯ carries Background Play and Versions for the track that is playing.
   assert.match(html, /function sjmPlayerSectionHTML\(tid\) \{[\s\S]*taToggleAudioMode\(\)[\s\S]*ytpToggleVersionMenu\(\)/);
