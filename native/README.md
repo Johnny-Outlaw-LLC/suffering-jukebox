@@ -12,18 +12,42 @@ The split is deliberate:
 | Layer   | Owns |
 |---------|------|
 | WebView | Catalog, rooms, lyrics, ratings, YouTube playback (foreground only) |
-| Native  | Locker files: offline downloads, background audio, lock screen, CarPlay |
+| Native  | Real audio files: streaming and offline downloads, background audio, lock screen, CarPlay |
 
-Only **locker tracks** — a file the signed-in user uploaded to `jukebox-audio` —
-reach the native engine. YouTube-backed tracks have no file to hand the OS, so
-they never appear in CarPlay and cannot be downloaded. That is a hard
-constraint from both CarPlay and YouTube's terms, not a first cut.
+Only **real audio files** reach the native engine: the signed-in user's own
+uploads, and songs an artist has licensed (`artist_rights_agreements`).
+YouTube-backed tracks have no file to hand the OS, so they never appear in
+CarPlay and cannot be downloaded. That is a hard constraint from both CarPlay
+and YouTube's terms, not a first cut.
 
-## Getting songs into the car
+## Streaming in the car (no download needed) - 2026-09-28
 
-CarPlay can only play files that are already on the phone, and picking a drive's
-worth of music on a phone is miserable. So the picking and the downloading are
-split across devices:
+CarPlay lists everything in `SJCarLibrary`: downloads, plus the streamable list
+from `GET /api/sj-carplay-library` (your uploads + every artist-licensed song).
+Uploading an MP3 for background play is therefore enough to hear it in the car.
+
+- **The car key.** The car cannot sign in and the web view is asleep on a drive,
+  so the signed-in page asks `POST /api/sj-carplay-key` for a key once per device
+  per account (`sjCarEnsureAccess()`), and native keeps it in the Keychain
+  (`SJStreamLibrary`). Only its sha256 is stored (`jukebox.carplay_keys`,
+  service role only). It reads its owner's locker and nothing else. Sign-out
+  revokes it.
+- **URLs are resolved as each song starts** (`GET /api/sj-carplay-stream`),
+  never handed over in advance: a presigned URL from before the drive would
+  have expired. A downloaded file always wins, so offline play is unchanged.
+- **Artist-licensed songs need no key**, so they are in the car for everyone,
+  signed in or not. They follow the mobile-background rule in
+  `approvedArtistAudioTracks()`, the same one `/api/sj-artist-audio` uses.
+- The list and covers are cached on disk, and refresh on launch, on return to
+  the foreground, when CarPlay connects, and after an upload or removal.
+- A queue the car cannot reach (no signal, streamed songs only) stops after one
+  pass instead of skipping round forever (`skipUnplayable()`).
+
+## Taking songs offline
+
+Streaming needs signal. For a drive without it, download to the phone. Picking a
+drive's worth of music on a phone is miserable, so the picking and the
+downloading are split across devices:
 
 1. **Anywhere else** (usually a desktop) — Settings → Audio Storage, `＋ Send to
    iPhone` on a song or `＋ Send all to iPhone` on an artist. That writes track

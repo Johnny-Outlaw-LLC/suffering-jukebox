@@ -5,9 +5,11 @@ import UIKit
 /// The CarPlay app.
 ///
 /// CarPlay cannot render the web UI, and it will not stream YouTube, so what
-/// the car sees is the offline locker: tracks the listener downloaded, browsable
-/// by artist, playlist or song. That is a hard constraint, not a first cut - a
-/// CarPlay audio app may only present its own playable content.
+/// the car sees is real audio files only: songs downloaded to the phone, the
+/// listener's own uploads, and every artist-licensed song (SJCarLibrary). The
+/// last two stream, so uploading an MP3 is enough to hear it in the car.
+/// YouTube-only songs never appear - a CarPlay audio app may only present its
+/// own playable content.
 ///
 /// The three tabs deliberately mirror the site's Explore Artists / Explore
 /// Playlists / Explore Songs, so the car is a narrower view of a familiar shape
@@ -58,6 +60,11 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
         }
         refreshNowPlayingButtons()
+
+        // Streamable songs come from the server; the list on disk shows
+        // immediately and this repaints once a fresh one lands.
+        SJStreamLibrary.shared.onChange = { [weak self] in self?.refreshTabs() }
+        SJStreamLibrary.shared.refresh()
     }
 
     func templateApplicationScene(_ scene: CPTemplateApplicationScene,
@@ -70,6 +77,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         SJAudioEngine.shared.onQueueChanged = nil
         SJAudioEngine.shared.onTrackChanged = nil
         SJAudioEngine.shared.onModeChanged = nil
+        SJStreamLibrary.shared.onChange = nil
     }
 
     // MARK: - Now Playing: Up Next
@@ -148,8 +156,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     }
 
     private static let nothingDownloaded = (
-        "Nothing downloaded yet",
-        "Pick songs on sufferingjukebox.stream, then accept them in the app."
+        "Nothing to play yet",
+        "Upload music or download songs on sufferingjukebox.stream."
     )
 
     // MARK: - Artists
@@ -158,7 +166,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// under a header, which is what the single list used to be. A locker of any
     /// size is unreadable in a car if the first screen is 400 titles.
     private func artistSections() -> [CPListSection] {
-        let downloads = SJDownloadStore.shared.all()
+        let downloads = SJCarLibrary.all()
         guard !downloads.isEmpty else {
             return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
@@ -183,9 +191,9 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         guard !playable.isEmpty else {
             return emptySection(
                 "No playlists on this iPhone",
-                SJDownloadStore.shared.all().isEmpty
+                SJCarLibrary.all().isEmpty
                     ? Self.nothingDownloaded.1
-                    : "Download some of a playlist's songs and it will appear here."
+                    : "Add songs you uploaded or downloaded to a playlist and it will appear here."
             )
         }
         let items = playable.prefix(itemLimit).map { entry -> CPListItem in
@@ -227,7 +235,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func songSections() -> [CPListSection] {
         let counts = UserDefaults.standard.dictionary(forKey: "sj.carplay.playCounts") as? [String: Int] ?? [:]
-        let downloads = SJDownloadStore.shared.all().sorted { a, b in
+        let downloads = SJCarLibrary.all().sorted { a, b in
             if songSort == "By Plays", counts[a.trackId, default: 0] != counts[b.trackId, default: 0] {
                 return counts[a.trackId, default: 0] > counts[b.trackId, default: 0]
             }
@@ -253,7 +261,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     // MARK: - Shared list plumbing
 
     private func pushSongList(title: String,
-                              entries: [SJDownloadStore.Entry],
+                              entries: [SJCarEntry],
                               preserveOrder: Bool = false) {
         let ordered = preserveOrder ? entries : sorted(entries)
         let section = CPListSection(items: [shuffleItem(for: ordered)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
@@ -263,7 +271,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
 
-    private func shuffleItem(for entries: [SJDownloadStore.Entry]) -> CPListItem {
+    private func shuffleItem(for entries: [SJCarEntry]) -> CPListItem {
         let item = CPListItem(text: "Shuffle All", detailText: songCount(entries.count))
         item.setImage(UIImage(systemName: "shuffle"))
         item.isEnabled = !entries.isEmpty
@@ -272,7 +280,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             // at random - otherwise Shuffle All ignores the preference for
             // exactly the song they are most likely to notice.
             let profile = SJShuffleProfile.shared
-            let first: SJDownloadStore.Entry?
+            let first: SJCarEntry?
             if profile.isWeighted, !entries.isEmpty {
                 let total = entries.reduce(0.0) { $0 + profile.weight(for: $1.trackId) }
                 var roll = Double.random(in: 0..<max(total, .leastNonzeroMagnitude))
@@ -297,8 +305,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         return item
     }
 
-    private func listItems(for shown: [SJDownloadStore.Entry],
-                           in queue: [SJDownloadStore.Entry],
+    private func listItems(for shown: [SJCarEntry],
+                           in queue: [SJCarEntry],
                            showArtist: Bool) -> [CPListItem] {
         shown.map { entry in
             let detail = showArtist
@@ -314,7 +322,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
     }
 
-    private func sorted(_ entries: [SJDownloadStore.Entry]) -> [SJDownloadStore.Entry] {
+    private func sorted(_ entries: [SJCarEntry]) -> [SJCarEntry] {
         entries.sorted { ($0.album ?? "", $0.title) < ($1.album ?? "", $1.title) }
     }
 
@@ -325,10 +333,10 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// the image is scaled down to the row size CarPlay actually draws.
     private var artworkCache: [String: UIImage] = [:]
 
-    private func artwork(for entry: SJDownloadStore.Entry?) -> UIImage? {
+    private func artwork(for entry: SJCarEntry?) -> UIImage? {
         guard let entry else { return nil }
         if let cached = artworkCache[entry.trackId] { return cached }
-        guard let url = SJDownloadStore.shared.artworkURL(for: entry),
+        guard let url = SJCarLibrary.artworkFileURL(for: entry.trackId),
               let data = try? Data(contentsOf: url),
               let image = UIImage(data: data) else { return nil }
         let side: CGFloat = 60
@@ -351,10 +359,10 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         return scaled
     }
 
-    /// Up Next works from the live queue (SJTrack), not the download index, so
-    /// it needs its cover by id rather than by SJDownloadStore.Entry.
+    /// Up Next works from the live queue (SJTrack), not the library, so it
+    /// needs its cover by id rather than by SJCarEntry.
     private func artwork(forTrackId trackId: String) -> UIImage? {
-        artwork(for: SJDownloadStore.shared.entry(for: trackId))
+        artwork(for: SJCarLibrary.entry(for: trackId))
     }
 
     // MARK: - Rating and reactions
@@ -487,15 +495,16 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     // MARK: - Playback
 
-    private func play(startingAt entry: SJDownloadStore.Entry,
-                      in entries: [SJDownloadStore.Entry]) {
+    private func play(startingAt entry: SJCarEntry,
+                      in entries: [SJCarEntry]) {
         let tracks = entries.map { e in
             SJTrack(id: e.trackId,
                     title: e.title,
                     artist: e.artist,
                     album: e.album,
                     artworkURL: nil,          // artwork is on disk; the engine finds it
-                    url: nil,                 // downloaded only - no network in the car
+                    url: nil,                 // a download plays from disk; a stream is
+                                              // resolved by the engine as it starts
                     durationSeconds: e.durationSeconds)
         }
         let start = entries.firstIndex { $0.trackId == entry.trackId } ?? 0

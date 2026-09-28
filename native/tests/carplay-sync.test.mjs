@@ -83,10 +83,9 @@ test('native partial playlists include one available song and preserve running o
   const method = source.slice(source.indexOf('    func playable()'), source.lastIndexOf('}'));
   const script = `
 import Foundation
-class SJDownloadStore {
-  struct Entry { let trackId: String }
-  static let shared = SJDownloadStore()
-  func entry(for id: String) -> Entry? { ["a", "b"].contains(id) ? Entry(trackId: id) : nil }
+struct SJCarEntry { let trackId: String }
+enum SJCarLibrary {
+  static func entry(for id: String) -> SJCarEntry? { ["a", "b"].contains(id) ? SJCarEntry(trackId: id) : nil }
 }
 class Store {
   struct Playlist { let id: String; let trackIds: [String] }
@@ -119,7 +118,7 @@ class CPListItem {
   init(text: String, detailText: String?) {}
   func setImage(_ image: UIImage?) {}
 }
-class SJDownloadStore { struct Entry { let trackId: String } }
+struct SJCarEntry { let trackId: String }
 class SJShuffleProfile {
   static let shared = SJShuffleProfile()
   var isWeighted = true
@@ -136,17 +135,17 @@ class SJAudioEngine {
   func setShuffle(_ value: Bool) { shuffle = value }
 }
 class Subject {
-  var played: [SJDownloadStore.Entry] = []
+  var played: [SJCarEntry] = []
   var first: String?
   func songCount(_ n: Int) -> String { String(n) }
-  func play(startingAt entry: SJDownloadStore.Entry, in entries: [SJDownloadStore.Entry]) {
+  func play(startingAt entry: SJCarEntry, in entries: [SJCarEntry]) {
     first = entry.trackId
     played = entries
   }
 ${method}
 }
 let subject = Subject()
-let entries = (0..<1000).map { SJDownloadStore.Entry(trackId: String($0)) }
+let entries = (0..<1000).map { SJCarEntry(trackId: String($0)) }
 let item = subject.shuffleItem(for: entries)
 var completed = false
 item.handler?(item, { completed = true })

@@ -10781,6 +10781,7 @@ async function sjDlInit() {
     // Load saved playlists even if the phone never opens Explore Playlists.
     // Native keeps its last snapshot until this fetch succeeds.
     void loadPlaylists();
+    void sjCarEnsureAccess();
   } catch (_) {}
   try {
     // Fired by the car the moment something is tapped, so a rating reaches the
@@ -10835,6 +10836,51 @@ async function sjCarPushPlaylists() {
       }));
     await p.setPlaylists({ playlists, preserveSaved: !_sjCarPlaylistsLoaded, preserveFavorites: !_myVotesLoaded });
   } catch (_) {}
+}
+
+// ── CarPlay streaming: the car key ─────────────────────────────────────
+// Uploaded songs and artist-licensed songs stream in CarPlay with no download.
+// The car cannot sign in and this page is asleep during a drive, so the phone
+// holds a car key issued here while the listener is signed in, and native
+// trades it for a fresh signed URL as each song starts (/api/sj-carplay-stream).
+// One key per device per account: carAccessStatus says whether the phone
+// already holds one for this email, so this is a no-op on every later launch.
+// Older app builds lack setCarAccess and simply skip all of it.
+let _sjCarAccessBusy = false;
+async function sjCarEnsureAccess() {
+  const p = sjDlPlugin();
+  if (!p || !p.setCarAccess || !googleUser?.email || _sjCarAccessBusy) return;
+  _sjCarAccessBusy = true;
+  try {
+    const st = await p.carAccessStatus();
+    if (st?.hasKey && String(st.email || '').toLowerCase() === googleUser.email.toLowerCase()) return;
+    const res = await fetch(sjApiUrl('/api/sj-carplay-key'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+      body: JSON.stringify({ deviceId: getDeviceId() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok || !data.key) return;
+    await p.setCarAccess({ baseUrl: SJ_FRAME_ORIGIN, key: data.key, email: data.email || googleUser.email });
+  } catch (_) {
+  } finally {
+    _sjCarAccessBusy = false;
+  }
+}
+
+// Sign-out revokes the key and takes this account's own songs out of the car.
+// Artist-licensed songs stay: they never needed an account.
+async function sjCarClearAccess() {
+  const p = sjDlPlugin();
+  if (!p || !p.clearCarAccess) return;
+  try { await p.clearCarAccess(); } catch (_) {}
+}
+
+// An upload or a removal should be in the car on the next drive, not after the
+// next launch.
+function sjCarRefreshLibrary() {
+  const p = sjDlPlugin();
+  if (p && p.refreshCarLibrary) p.refreshCarLibrary().catch(() => {});
 }
 
 let _sjCarRatingsTimer = null;
@@ -16612,6 +16658,7 @@ async function taUploadOneFile(trackId, file, expectMs) {
     const signedUrl = completeData.audio.url;
     taData[trackId] = { url: signedUrl, path, duration: dur, isPublic: false, uploadedBy: session.user.id };
     _homeLibLoaded = false;
+    sjCarRefreshLibrary();
     await refreshBgUnlock();
     taSyncQuotaLabel('taBatchQuota');
     taSyncAudioBtn();
@@ -17287,6 +17334,7 @@ async function taDeleteUploaded(trackId, path) {
     delete taData[trackId];
   }
   _homeLibLoaded = false;
+  sjCarRefreshLibrary();
   taSyncAudioBtn();
 }
 
@@ -40385,6 +40433,7 @@ async function setAudioLoad() {
 }
 
 async function handleLogout() {
+  await sjCarClearAccess();
   await sbAuth.auth.signOut();
   googleUser = null;
   sjIsAdmin = false;
@@ -40548,7 +40597,7 @@ function initGoogleAuth() {
         loadMyBlockedTracks();
         // On the phone this is the moment to offer whatever was queued
         // elsewhere; everywhere else it just makes the Send buttons honest.
-        if (sjIsNative()) sjCpNativeCheck({ auto: true });
+        if (sjIsNative()) { sjCpNativeCheck({ auto: true }); void sjCarEnsureAccess(); }
         else sjCpRefresh();
         refreshSjAdminState().then(updateAuthBtn);
         refreshBgUnlock().then(() => { if (isLandingMode) renderLanding(); });
