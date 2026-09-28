@@ -190,7 +190,7 @@ function rower(queue, idx) {
     VOTE_LABELS: { 0: '-' },
     ytpTrackMeta: () => ({ artist: 'From Catalogue', title: 'Resolved' }),
   };
-  const fns = loadHtmlFnsInScope(['ytQueueRowHTML', 'ytQueueLabelAt'], scope);
+  const fns = loadHtmlFnsInScope(['ytQueueRowHTML', 'ytQueueLabelAt', 'ytQueueThumbHTML', 'ytQueueTwoLineHTML'], scope);
   return { ...fns, scope };
 }
 
