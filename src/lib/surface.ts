@@ -249,9 +249,9 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     // Empty headerTitle hides the live HTML title so it is not drawn twice.
     headerTitle: "",
     assetBase: "/brand/lp",
-    // Header is the 3×3 album grid + LISTENING PARTY. The gorilla badge stays
-    // on favicons and app icons; header-mark.png is the same wordmark for
-    // static /about /help /privacy pages.
+    // Header is the 3×3 album grid + LISTENING PARTY. Favicons and app icons
+    // use the same 3×3 (no type). header-mark.png is the wordmark for static
+    // /about /help /privacy pages.
     textLogo: "/brand/lp/listening-party-text-logo.png",
     ogImage: `${LP_URL}/brand/lp/og-image.png`,
     ogImageSize: { w: 1200, h: 630 },

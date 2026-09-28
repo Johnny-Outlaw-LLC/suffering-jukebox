@@ -6,19 +6,25 @@
 //       Official horizontal lockup (emblem + name + tagline). Used as the
 //       site header mark (surface.textLogo) — companion HTML title stays empty
 //       so the words are not drawn twice.
-//   logo.png / listening-party-icon.png / listening-party-badge (on OA)
-//       Standalone circular badge. Source for favicon.png / favicon-32.png
-//       and app icons.
+//   logo.png / listening-party-icon.png
+//       Gorilla badge, kept as a download extra. Not the tab icon.
+//   favicon.png / favicon-32.png
+//       3x3 album grid (no type), matching Suffering Jukebox. Rebuild from
+//       outlawapps listening-party-square.png — do not regenerate these
+//       from logo.png.
 //   og-image.png
 //       1200x630 social card (surface.ogImage).
 //
-// This script only rebuilds the favicons from logo.png (the badge). It does
-// NOT touch header-mark.png — an earlier version cropped the badge into a
-// square "header" and that is wrong now that the wide lockup exists.
+// Favicons are no longer generated here. Use the album-grid square from
+// outlawapps branding. This file is kept so nobody re-crops the header.
 //
 //   cd capture && node _lp_brand.mjs
 import { readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+
+throw new Error(
+  'Do not rebuild LP favicons from the gorilla badge. Copy 32/192 from outlawapps listening-party-square.png.',
+);
 
 const DIR = new URL('../public/brand/lp/', import.meta.url);
 const srcPath = new URL('logo.png', DIR);
