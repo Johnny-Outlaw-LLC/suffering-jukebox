@@ -315,21 +315,67 @@ final class SJAudioEngine: NSObject {
         SJDownloadStore.shared.localURL(for: track.id) ?? track.url
     }
 
+    /// Songs in a row that could not be started. Reset by any song that loads.
+    /// A queue of streamed songs in a car with no signal would otherwise skip
+    /// round and round forever with Repeat All on.
+    private var consecutiveFailures = 0
+    /// Bumped on every load, so a stream URL that arrives after the listener
+    /// has already moved on is dropped instead of hijacking the player.
+    private var loadGeneration = 0
+
+    private func skipUnplayable() {
+        consecutiveFailures += 1
+        if consecutiveFailures >= max(1, queue.count) {
+            consecutiveFailures = 0
+            player.pause()
+            publish(state: .paused)
+            return
+        }
+        advance(honorRepeatOne: false)
+    }
+
     private func load(at newIndex: Int, autoPlay: Bool) {
         guard newIndex >= 0 && newIndex < queue.count else { return }
         index = newIndex
+        loadGeneration += 1
+        let generation = loadGeneration
         let track = queue[newIndex]
-        guard let url = playableURL(for: track) else {
-            // No file and no signed URL: skip rather than stall the queue.
-            advance()
+        if let url = playableURL(for: track) {
+            start(track, url: url, autoPlay: autoPlay)
             return
         }
+        // Not on the phone and no URL handed in: an uploaded or artist-licensed
+        // song the car streams. Ask for a fresh signed URL now, not earlier -
+        // one fetched before the drive would have expired.
+        guard SJStreamLibrary.shared.contains(track.id) else {
+            skipUnplayable()
+            return
+        }
+        endPlayRun()
+        player.replaceCurrentItem(with: nil)
+        updateNowPlaying()
+        publish(state: .buffering)
+        SJStreamLibrary.shared.resolve(trackId: track.id) { [weak self] url in
+            DispatchQueue.main.async {
+                guard let self, generation == self.loadGeneration else { return }
+                guard let url else { self.skipUnplayable(); return }
+                self.start(track, url: url, autoPlay: autoPlay)
+            }
+        }
+    }
+
+    private func start(_ track: SJTrack, url: URL, autoPlay: Bool) {
         beginPlayRun(track.id)
         let item = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: item)
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] obs, _ in
             guard let self else { return }
-            if obs.status == .failed { self.advance(honorRepeatOne: false) } else { self.publish() }
+            if obs.status == .failed {
+                DispatchQueue.main.async { self.skipUnplayable() }
+            } else {
+                if obs.status == .readyToPlay { self.consecutiveFailures = 0 }
+                self.publish()
+            }
         }
         if autoPlay { player.play() }
         updateNowPlaying()
@@ -525,10 +571,9 @@ final class SJAudioEngine: NSObject {
     }
 
     private func loadArtwork(for track: SJTrack) {
-        // A downloaded track carries its artwork locally so the car shows a
-        // cover with no network at all.
-        if let entry = SJDownloadStore.shared.entry(for: track.id),
-           let artURL = SJDownloadStore.shared.artworkURL(for: entry),
+        // Downloads and streamable songs both keep their cover on disk, so the
+        // car shows one with no network at all.
+        if let artURL = SJCarLibrary.artworkFileURL(for: track.id),
            let data = try? Data(contentsOf: artURL),
            let image = UIImage(data: data) {
             cacheArtwork(image, for: track)

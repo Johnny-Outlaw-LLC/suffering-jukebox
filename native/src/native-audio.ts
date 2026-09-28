@@ -8,10 +8,11 @@ import { registerPlugin } from '@capacitor/core';
  * Auto. The web UI keeps the catalog, rooms, lyrics and YouTube playback; it
  * hands a queue to this plugin and then only listens for state.
  *
- * Only locker tracks (a file the signed-in user uploaded to jukebox-audio)
- * can go through here. YouTube-backed tracks have no file to hand the OS, so
- * they never reach the native engine, never appear in CarPlay, and cannot be
- * downloaded.
+ * Only real audio files can go through here: the signed-in user's own
+ * uploads and artist-licensed songs. CarPlay streams both without a download
+ * (see setCarAccess); a downloaded file is used first when there is one.
+ * YouTube-backed tracks have no file to hand the OS, so they never reach the
+ * native engine, never appear in CarPlay, and cannot be downloaded.
  */
 export interface SJTrack {
   /** jukebox.tracks.id */
@@ -86,6 +87,19 @@ export interface SJNativeAudioPlugin {
   download(options: { track: SJTrack }): Promise<SJDownload>;
   removeDownload(options: { trackId: string }): Promise<void>;
   listDownloads(): Promise<{ downloads: SJDownload[]; bytesUsed: number }>;
+
+  /**
+   * Hand the phone a car key from /api/sj-carplay-key, so CarPlay can stream
+   * this account's uploads with the web view asleep. Stored in the Keychain.
+   */
+  setCarAccess(options: { baseUrl: string; key: string; email: string | null }): Promise<void>;
+  /** Sign-out: revoke and forget the key. Artist-licensed songs stay. */
+  clearCarAccess(): Promise<void>;
+  carAccessStatus(): Promise<{
+    hasKey: boolean; email: string | null; baseUrl: string; streamable: number; mine: number;
+  }>;
+  /** Re-read the streamable list now, e.g. right after an upload. */
+  refreshCarLibrary(): Promise<{ ok: boolean; count: number }>;
 
   addListener(
     event: 'statusChange',

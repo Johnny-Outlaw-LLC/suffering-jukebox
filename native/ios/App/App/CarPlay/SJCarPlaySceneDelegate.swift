@@ -5,11 +5,11 @@ import UIKit
 /// The CarPlay app.
 ///
 /// CarPlay cannot render the web UI, and it will not stream YouTube, so what
-/// the car sees is audio Suffering Jukebox holds itself: songs downloaded to the
-/// phone, plus approved artist uploads and the listener's own uploads streamed
-/// straight from storage (SJStreamLibrary), browsable by artist, playlist or
-/// song. A download always wins over a stream, so a drive with no signal plays
-/// exactly what it did before.
+/// the car sees is real audio files only: songs downloaded to the phone, the
+/// listener's own uploads, and every artist-licensed song (SJCarLibrary). The
+/// last two stream, so uploading an MP3 is enough to hear it in the car.
+/// YouTube-only songs never appear - a CarPlay audio app may only present its
+/// own playable content.
 ///
 /// The three tabs deliberately mirror the site's Explore Artists / Explore
 /// Playlists / Explore Songs, so the car is a narrower view of a familiar shape
@@ -32,12 +32,6 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         interfaceController = controller
         controller.setRootTemplate(makeTabBar(), animated: false, completion: nil)
 
-        // The artist catalogue needs no session, so the car can top it up
-        // itself rather than waiting for the phone app to be opened.
-        SJStreamLibrary.shared.refreshArtistsIfStale { [weak self] changed in
-            if changed { self?.refreshTabs() }
-        }
-
         CPNowPlayingTemplate.shared.add(self)
         CPNowPlayingTemplate.shared.isUpNextButtonEnabled = true
         refreshUpNextTitle()
@@ -55,7 +49,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                 self?.refreshUpNextTitle()
             }
         }
-        // Shuffle, repeat, or a fresh heart count all redraw the
+        // Shuffle, repeat, a fresh rating or a fresh heart count all redraw the
         // same button row without the track changing underneath it. Shuffle and
         // repeat also change what plays next, so the Up Next button's own
         // label needs the same refresh.
@@ -66,6 +60,11 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
         }
         refreshNowPlayingButtons()
+
+        // Streamable songs come from the server; the list on disk shows
+        // immediately and this repaints once a fresh one lands.
+        SJStreamLibrary.shared.onChange = { [weak self] in self?.refreshTabs() }
+        SJStreamLibrary.shared.refresh()
     }
 
     func templateApplicationScene(_ scene: CPTemplateApplicationScene,
@@ -78,6 +77,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         SJAudioEngine.shared.onQueueChanged = nil
         SJAudioEngine.shared.onTrackChanged = nil
         SJAudioEngine.shared.onModeChanged = nil
+        SJStreamLibrary.shared.onChange = nil
     }
 
     // MARK: - Now Playing: Up Next
@@ -92,9 +92,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         guard !queue.isEmpty else { return }
         let items = queue.enumerated().prefix(itemLimit).map { (i, track) -> CPListItem in
             let item = CPListItem(text: track.title, detailText: track.artist)
-            if let known = SJCarLibrary.track(for: track.id) {
-                setArtwork(on: item, from: [known])
-            }
+            item.setImage(artwork(forTrackId: track.id))
             item.isPlaying = (i == engine.index)
             item.handler = { [weak self] _, completion in
                 SJAudioEngine.shared.play(index: i)
@@ -157,20 +155,10 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         return [CPListSection(items: [item])]
     }
 
-    private static let nothingToPlay = (
+    private static let nothingDownloaded = (
         "Nothing to play yet",
-        "Open Suffering Jukebox on your iPhone to load your library."
+        "Upload music or download songs on sufferingjukebox.stream."
     )
-
-    /// Streamed personal songs vanish from the lists once their week-long URLs
-    /// run out. Say so, rather than letting half a library quietly disappear.
-    private func staleHint() -> CPListItem? {
-        guard SJStreamLibrary.shared.hasExpiredPersonal() else { return nil }
-        let item = CPListItem(text: "Some songs need refreshing",
-                              detailText: "Open Suffering Jukebox on your iPhone.")
-        item.isEnabled = false
-        return item
-    }
 
     // MARK: - Artists
 
@@ -178,24 +166,22 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// under a header, which is what the single list used to be. A locker of any
     /// size is unreadable in a car if the first screen is 400 titles.
     private func artistSections() -> [CPListSection] {
-        let library = SJCarLibrary.all()
-        guard !library.isEmpty else {
-            return emptySection(Self.nothingToPlay.0, Self.nothingToPlay.1)
+        let downloads = SJCarLibrary.all()
+        guard !downloads.isEmpty else {
+            return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
-        let byArtist = Dictionary(grouping: library) { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }
-        let hint = staleHint()
-        let names = byArtist.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        let items = names.prefix(itemLimit - (hint == nil ? 0 : 1)).map { artist -> CPListItem in
+        let byArtist = Dictionary(grouping: downloads) { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }
+        let items = byArtist.keys.sorted().prefix(itemLimit).map { artist -> CPListItem in
             let entries = sorted(byArtist[artist] ?? [])
             let item = CPListItem(text: artist, detailText: songCount(entries.count))
-            setArtwork(on: item, from: entries)
+            item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
                 self?.pushSongList(title: artist, entries: entries)
                 completion()
             }
             return item
         }
-        return [CPListSection(items: (hint.map { [$0] } ?? []) + Array(items))]
+        return [CPListSection(items: Array(items))]
     }
 
     // MARK: - Playlists
@@ -206,8 +192,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             return emptySection(
                 "No playlists on this iPhone",
                 SJCarLibrary.all().isEmpty
-                    ? Self.nothingToPlay.1
-                    : "Save a playlist on sufferingjukebox.stream and it will appear here."
+                    ? Self.nothingDownloaded.1
+                    : "Add songs you uploaded or downloaded to a playlist and it will appear here."
             )
         }
         let items = playable.prefix(itemLimit).map { entry -> CPListItem in
@@ -215,7 +201,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             // Kept in the saved running order, not re-sorted: a playlist is a
             // sequence, and alphabetising it would quietly destroy the point.
             let item = CPListItem(text: playlist.name, detailText: songCount(entries.count))
-            setArtwork(on: item, from: entries)
+            item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
                 self?.pushSongList(title: playlist.name, entries: entries, preserveOrder: true)
                 completion()
@@ -261,7 +247,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             return title == .orderedSame ? a.trackId < b.trackId : title == .orderedAscending
         }
         guard !downloads.isEmpty else {
-            return emptySection(Self.nothingToPlay.0, Self.nothingToPlay.1)
+            return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
         let sort = CPListItem(text: "Sort: " + songSort, detailText: nil)
         sort.handler = { [weak self] _, completion in
@@ -275,7 +261,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     // MARK: - Shared list plumbing
 
     private func pushSongList(title: String,
-                              entries: [SJCarTrack],
+                              entries: [SJCarEntry],
                               preserveOrder: Bool = false) {
         let ordered = preserveOrder ? entries : sorted(entries)
         let section = CPListSection(items: [shuffleItem(for: ordered)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
@@ -285,7 +271,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
 
-    private func shuffleItem(for entries: [SJCarTrack]) -> CPListItem {
+    private func shuffleItem(for entries: [SJCarEntry]) -> CPListItem {
         let item = CPListItem(text: "Shuffle All", detailText: songCount(entries.count))
         item.setImage(UIImage(systemName: "shuffle"))
         item.isEnabled = !entries.isEmpty
@@ -294,7 +280,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             // at random - otherwise Shuffle All ignores the preference for
             // exactly the song they are most likely to notice.
             let profile = SJShuffleProfile.shared
-            let first: SJCarTrack?
+            let first: SJCarEntry?
             if profile.isWeighted, !entries.isEmpty {
                 let total = entries.reduce(0.0) { $0 + profile.weight(for: $1.trackId) }
                 var roll = Double.random(in: 0..<max(total, .leastNonzeroMagnitude))
@@ -319,15 +305,15 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         return item
     }
 
-    private func listItems(for shown: [SJCarTrack],
-                           in queue: [SJCarTrack],
+    private func listItems(for shown: [SJCarEntry],
+                           in queue: [SJCarEntry],
                            showArtist: Bool) -> [CPListItem] {
         shown.map { entry in
             let detail = showArtist
                 ? [entry.artist, entry.album ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
                 : (entry.album ?? "")
             let item = CPListItem(text: entry.title, detailText: detail.isEmpty ? nil : detail)
-            setArtwork(on: item, from: [entry])
+            item.setImage(artwork(for: entry))
             item.handler = { [weak self] _, completion in
                 self?.play(startingAt: entry, in: queue)
                 completion()
@@ -336,65 +322,25 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
     }
 
-    private func sorted(_ entries: [SJCarTrack]) -> [SJCarTrack] {
+    private func sorted(_ entries: [SJCarEntry]) -> [SJCarEntry] {
         entries.sorted { ($0.album ?? "", $0.title) < ($1.album ?? "", $1.title) }
     }
 
     private func songCount(_ n: Int) -> String { "\(n) song\(n == 1 ? "" : "s")" }
 
-    /// A download's cover comes off disk, fetched at download time; a streamed
-    /// song's comes over the network, once per album, and lands on the row
-    /// when it arrives. Decoding on the main thread is what makes a long list
-    /// stutter, so results are cached and scaled down to the row size CarPlay
-    /// actually draws.
+    /// Covers come off disk, already fetched at download time. Decoding on the
+    /// main thread is what makes a long list stutter, so results are cached and
+    /// the image is scaled down to the row size CarPlay actually draws.
     private var artworkCache: [String: UIImage] = [:]
-    /// Remote covers, keyed by URL: a whole album shares one, and they survive
-    /// a tab refresh because nothing on disk changed underneath them.
-    private var remoteArtworkCache: [URL: UIImage] = [:]
-    private var remoteArtworkWaiting: [URL: [CPListItem]] = [:]
 
-    private func setArtwork(on item: CPListItem, from tracks: [SJCarTrack]) {
-        if let local = tracks.lazy.compactMap({ self.artwork(for: $0) }).first {
-            item.setImage(local)
-            return
-        }
-        guard let remote = tracks.lazy.compactMap(\.artworkURL).first else { return }
-        if let cached = remoteArtworkCache[remote] {
-            item.setImage(cached)
-            return
-        }
-        if remoteArtworkWaiting[remote] != nil {
-            remoteArtworkWaiting[remote]?.append(item)
-            return
-        }
-        remoteArtworkWaiting[remote] = [item]
-        URLSession.shared.dataTask(with: remote) { [weak self] data, response, _ in
-            let ok = ((response as? HTTPURLResponse)?.statusCode ?? 200) < 400
-            let image = ok ? data.flatMap(UIImage.init(data:)).map(Self.rowImage) : nil
-            DispatchQueue.main.async {
-                guard let self else { return }
-                let waiting = self.remoteArtworkWaiting.removeValue(forKey: remote) ?? []
-                guard let image else { return }
-                self.remoteArtworkCache[remote] = image
-                waiting.forEach { $0.setImage(image) }
-            }
-        }.resume()
-    }
-
-    private func artwork(for entry: SJCarTrack?) -> UIImage? {
-        guard let entry, let download = entry.download else { return nil }
+    private func artwork(for entry: SJCarEntry?) -> UIImage? {
+        guard let entry else { return nil }
         if let cached = artworkCache[entry.trackId] { return cached }
-        guard let url = SJDownloadStore.shared.artworkURL(for: download),
+        guard let url = SJCarLibrary.artworkFileURL(for: entry.trackId),
               let data = try? Data(contentsOf: url),
               let image = UIImage(data: data) else { return nil }
-        let scaled = Self.rowImage(image)
-        artworkCache[entry.trackId] = scaled
-        return scaled
-    }
-
-    private static func rowImage(_ image: UIImage) -> UIImage {
         let side: CGFloat = 60
-        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
+        let scaled = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
             // Not every stored cover is square. Scale to fill the row's square
             // slot and let the longer side run off the edges (object-fit:
             // cover), rather than stretching the source into a square, which
@@ -409,16 +355,25 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let h = size.height * fillScale
             image.draw(in: CGRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h))
         }
+        artworkCache[entry.trackId] = scaled
+        return scaled
     }
 
-    // MARK: - Reactions
+    /// Up Next works from the live queue (SJTrack), not the library, so it
+    /// needs its cover by id rather than by SJCarEntry.
+    private func artwork(forTrackId trackId: String) -> UIImage? {
+        artwork(for: SJCarLibrary.entry(for: trackId))
+    }
 
-    /// Three buttons on the Now Playing screen: shuffle and repeat for the
-    /// queue, and a heart that stamps the moment being listened to (drawn red
-    /// with a count once the track has any).
+    // MARK: - Rating and reactions
+
+    /// Four buttons on the Now Playing screen: shuffle and repeat for the
+    /// queue, a thumbs-up that toggles the track's rating (drawn green once
+    /// awarded), and a heart that stamps the moment being listened to (drawn
+    /// red with a count once the track has any).
     ///
     /// A tap goes to disk before anything else (SJFeedbackOutbox). The web layer
-    /// sends the reaction, but in a car it may
+    /// owns what a rating means and does the actual sending, but in a car it may
     /// be suspended and is often offline, so a straight bridge call would drop
     /// presses silently. The button redraws from the outbox immediately, so it
     /// reflects the tap whether or not anything has been sent yet.
@@ -437,6 +392,15 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
         shuffle.isSelected = engine.shuffleEnabled
 
+        let rated = isRated(trackId)
+        let thumb = CPNowPlayingImageButton(
+            image: symbol(rated ? "hand.thumbsup.fill" : "hand.thumbsup", color: rated ? .systemGreen : nil)
+        ) { [weak self] _ in
+            self?.tapRating(trackId: trackId)
+        }
+
+        thumb.isSelected = rated
+
         let heart = CPNowPlayingImageButton(image: heartImage(count: heartCount(trackId))) { [weak self] _ in
             self?.tapHeart(trackId: trackId)
         }
@@ -450,7 +414,14 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
 
         repeatBtn.isSelected = repeatMode != .off
-        CPNowPlayingTemplate.shared.updateNowPlayingButtons([shuffle, heart, repeatBtn])
+        CPNowPlayingTemplate.shared.updateNowPlayingButtons([shuffle, thumb, heart, repeatBtn])
+    }
+
+    /// What the web layer last told us, overlaid with anything tapped in the car
+    /// that it has not absorbed yet - so the car's own taps always win on screen.
+    private func isRated(_ trackId: String) -> Bool {
+        if let pending = SJFeedbackOutbox.shared.pendingRatings()[trackId] { return pending > 0 }
+        return SJCarPlayFeedback.shared.ratedTrackIds.contains(trackId)
     }
 
     /// The server's count, plus anything hearted in the car this session that
@@ -460,6 +431,13 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         let pending = SJFeedbackOutbox.shared.pending()
             .filter { $0.kind == "heart" && $0.trackId == trackId }.count
         return SJCarPlayFeedback.shared.heartCount(for: trackId) + pending
+    }
+
+    private func tapRating(trackId: String) {
+        let next = isRated(trackId) ? 0 : 1
+        SJFeedbackOutbox.shared.add(kind: "rate", trackId: trackId, value: next, positionMs: 0)
+        refreshNowPlayingButtons()
+        SJCarPlayFeedback.shared.onChange?()
     }
 
     private func tapHeart(trackId: String) {
@@ -517,19 +495,16 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     // MARK: - Playback
 
-    private func play(startingAt entry: SJCarTrack,
-                      in entries: [SJCarTrack]) {
+    private func play(startingAt entry: SJCarEntry,
+                      in entries: [SJCarEntry]) {
         let tracks = entries.map { e in
             SJTrack(id: e.trackId,
                     title: e.title,
                     artist: e.artist,
                     album: e.album,
-                    // A download's cover is on disk and the engine finds it;
-                    // a stream's comes from here.
-                    artworkURL: e.artworkURL,
-                    // Nil for a download: the engine always prefers the file,
-                    // so a song on the phone never touches cellular data.
-                    url: e.streamURL,
+                    artworkURL: nil,          // artwork is on disk; the engine finds it
+                    url: nil,                 // a download plays from disk; a stream is
+                                              // resolved by the engine as it starts
                     durationSeconds: e.durationSeconds)
         }
         let start = entries.firstIndex { $0.trackId == entry.trackId } ?? 0

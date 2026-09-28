@@ -1209,7 +1209,7 @@ body:not(.light) .tt-num { color: var(--text); }
   .ytp-vol-wrap { display: none !important; }
   /* Bigger, readable lyrics on phones */
   #ytp-lyr-text, .sc-lyrics-text, [data-acc-lyric], #ytp-lyr-text .lyr-line {
-    font-size: 1.05rem !important;
+    font-size: calc(1.05rem * var(--sj-lyr-scale, 1)) !important;
     line-height: 1.55 !important;
   }
   #ytp-lyr-text .lyr-line { opacity: .78; padding: 5px 8px; margin: 0 -8px; }
@@ -1283,6 +1283,8 @@ body:not(.light) .tt-num { color: var(--text); }
 /* ── MODAL ── */
 .modal-overlay { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,.78); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; padding: 2rem; }
 .modal-overlay.open { display: flex; }
+/* Opened from inside other modals (Save playlist signed out), so it must sit above them. */
+#signInOverlay { z-index: 5100; }
 .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; color: var(--text); max-height: 90vh; max-width: 780px; width: 100%; overflow: hidden; display: flex; flex-direction: column; animation: slideUp .2s ease; }
 @keyframes slideUp { from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)} }
 .modal-header { padding: 1.2rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
@@ -2869,6 +2871,107 @@ textarea.report-input { resize:vertical; }
      menu, which leaves the row readable and the actions tappable. */
   #yt-player-container.ytp-mob-fs .yt-queue-moves { display: none; }
 }
+
+/* Lyrics size on phones: A− / A+ in the lyrics header. Sync is not offered
+   there - the sung line is simply highlighted when timing exists. */
+.ytp-lyr-size-btns { display: none; }
+@media (max-width: 640px) {
+  #ytp-lyr-sync-wrap { display: none !important; }
+  .ytp-lyr-size-btns { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
+  .ytp-lyr-size-btns button { display: flex; align-items: baseline; justify-content: center; gap: 1px;
+    min-width: 44px; height: 32px; padding: 0 10px; border: 0; border-radius: 16px;
+    background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text);
+    font: 600 15px/32px var(--phone-ui-font); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .ytp-lyr-size-btns button:active { transform: scale(.94); }
+  .ytp-lyr-size-btns small { font-size: 13px; }
+  .ytp-lyr-size-btns big { font-size: 17px; }
+}
+
+/* ── Phone player, shaped like Spotify / YouTube Music ─────────────────────
+   People arrive knowing those apps, so the sheet borrows their grammar rather
+   than inventing its own: ⋯ top right, a full-width scrubber with the times
+   underneath, a white play button, Up Next / Lyrics as text tabs, and a
+   queue of cover + song + artist rows with one ⋯ each. */
+.yt-queue-icon, .yt-queue-thumb, .yt-queue-2l { display: none; }
+@media (max-width: 640px) {
+  .ytp-fs-more-btn { position: absolute; right: 8px; bottom: 0; width: 44px; height: 40px; display: flex;
+    align-items: center; justify-content: center; border: 0; background: none; color: var(--text-muted);
+    cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .ytp-fs-more-btn svg { width: 24px; height: 24px; }
+  .ytp-fs-more-btn:active { transform: scale(.9); }
+
+  /* Scrubber across the full width, times in small type beneath it. */
+  .ytp-md-scrub { flex-wrap: wrap; row-gap: 4px; column-gap: 0; }
+  .ytp-md-seek { order: -1; flex: 1 1 100%; }
+  .ytp-md-time { font-size: 11px; min-width: 0; }
+  .ytp-md-time.dur { margin-left: auto; }
+
+  /* Play is a white disc with a dark glyph, as in both apps. */
+  .ytp-md-play { background: var(--text); color: var(--bg-card); }
+  .ytp-md-play svg { width: 32px; height: 32px; }
+
+  /* What plays next, with Skip to pick another - one quiet line. */
+  .ytp-md-up-next:empty { display: none; }
+  .ytp-md-up-next .yt-queue-up-next { gap: 10px; padding: 0; background: none; border: 0; }
+  .ytp-md-up-next .yt-queue-up-next-lbl { font-family: var(--phone-ui-font); font-size: 11px; letter-spacing: .08em; }
+  .ytp-md-up-next .yt-queue-up-next-title { font-family: var(--phone-ui-font); font-size: 14px; font-weight: 500;
+    color: var(--text-muted); }
+  .ytp-md-up-next .yt-queue-up-next-skip { order: 1; font-family: var(--phone-ui-font); font-size: 13px; font-weight: 600;
+    text-transform: none; letter-spacing: 0; min-height: 32px; padding: 0 14px; border-radius: 16px;
+    border: 0; background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+
+  /* Up Next / Lyrics as text tabs with an underline, not a boxed switch.
+     Lyrics drops out for a song without any, and Up Next spans the row. */
+  .ytp-md-tabs { display: flex; }
+  .ytp-md-tab { flex: 1 1 0; }
+  .ytp-md-tab[hidden] { display: none; }
+  .ytp-md-tabs { gap: 0; padding: 0; background: none; border-radius: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--text) 12%, transparent); }
+  .ytp-md-tab { min-height: 40px; border-radius: 0; font-size: 13px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase; box-shadow: none !important;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .ytp-md-tab.on { background: none; color: var(--text); border-bottom-color: var(--text); }
+
+  /* ── Queue ── */
+  /* Loading and saving playlists is the Playlists tab's job; Save is an icon. */
+  #yt-player-container.ytp-mob-fs .yt-playlist-bar { display: none !important; }
+  #yt-player-container.ytp-mob-fs .yt-queue-sticky { border-bottom: 0; }
+  #yt-player-container.ytp-mob-fs .yt-queue-head { font-family: var(--phone-ui-font); font-size: 13px;
+    letter-spacing: 0; text-transform: none; font-weight: 600; padding: 12px 8px 8px 16px; gap: 2px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-icon { display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--text-muted);
+    cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  #yt-player-container.ytp-mob-fs .yt-queue-icon svg { width: 21px; height: 21px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-icon.on { color: var(--text); }
+  #yt-player-container.ytp-mob-fs .yt-queue-clear { font-family: var(--phone-ui-font); font-size: 14px;
+    font-weight: 600; letter-spacing: 0; text-transform: none; padding: 8px; border: 0; background: none;
+    color: var(--accent); }
+  #yt-player-container.ytp-mob-fs .yt-queue-find { display: none; padding: 0 16px 10px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-section.find-open .yt-queue-find,
+  #yt-player-container.ytp-mob-fs .yt-queue-find:has(input:not(:placeholder-shown)) { display: flex; }
+
+  #yt-player-container.ytp-mob-fs .yt-queue-row { padding: 8px 6px 8px 16px; gap: 12px; min-height: 64px;
+    box-sizing: border-box; border-left: 0; }
+  #yt-player-container.ytp-mob-fs .yt-queue-row:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  #yt-player-container.ytp-mob-fs .yt-queue-num,
+  #yt-player-container.ytp-mob-fs .yt-queue-title,
+  #yt-player-container.ytp-mob-fs .yt-queue-row .tvb-cycle,
+  #yt-player-container.ytp-mob-fs .yt-queue-remove { display: none; }
+  #yt-player-container.ytp-mob-fs .yt-queue-thumb { display: block; flex: 0 0 48px; width: 48px; height: 48px;
+    border-radius: 6px; overflow: hidden; background: color-mix(in srgb, var(--text) 10%, transparent); }
+  #yt-player-container.ytp-mob-fs .yt-queue-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #yt-player-container.ytp-mob-fs .yt-queue-2l { display: flex; flex-direction: column; justify-content: center;
+    flex: 1 1 auto; min-width: 0; gap: 3px; font-family: var(--phone-ui-font); }
+  #yt-player-container.ytp-mob-fs .yt-queue-song { font-size: 15px; line-height: 1.2; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #yt-player-container.ytp-mob-fs .yt-queue-artist { font-size: 13px; line-height: 1.2; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #yt-player-container.ytp-mob-fs .yt-queue-row.active .yt-queue-song { color: var(--accent); font-weight: 600; }
+  #yt-player-container.ytp-mob-fs .yt-queue-by { font-size: 11px; }
+  #yt-player-container.ytp-mob-fs .yt-queue-more { width: 44px; height: 44px; flex: 0 0 44px;
+    color: var(--text-muted); font-size: 20px; opacity: 1; }
+}
+
 .ytp-play-overlay {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -3809,9 +3912,18 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .playlist-broadcasting-now { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:linear-gradient(135deg,rgba(13,10,16,.72),rgba(106,49,126,.82)); color:#fff; text-align:center; text-transform:uppercase; font-size:.9rem; font-weight:900; letter-spacing:.12em; text-shadow:0 2px 8px #000; }
 .playlist-broadcasting-now::before { content:''; width:.8em; height:.8em; margin-right:.55em; border-radius:50%; background:#ff593d; box-shadow:0 0 0 5px rgba(255,89,61,.22),0 0 18px rgba(255,89,61,.9); animation:playlist-live-pulse 1.4s ease-in-out infinite; }
 @keyframes playlist-live-pulse { 50% { transform:scale(.72); opacity:.58; } }
-.live-room-listening-overlay { position:fixed; z-index:5200; left:50%; bottom:calc(var(--ytp-dock-height, 0px) + 14px); transform:translateX(-50%); display:flex; align-items:center; gap:12px; max-width:calc(100vw - 28px); padding:10px 14px; border:1px solid #9a5bc4; border-radius:999px; background:rgba(20,12,26,.95); box-shadow:0 10px 28px #0009; color:#fff; font-size:.62rem; font-weight:700; }
+.live-room-listening-overlay { position:fixed; z-index:5200; left:50%; bottom:calc(var(--ytp-dock-height, 0px) + var(--lp-tabbar-h, 0px) + 10px); transform:translateX(-50%); display:flex; align-items:center; gap:8px; max-width:calc(100vw - 24px); padding:5px 6px 5px 12px; white-space:nowrap; border:1px solid #9a5bc4; border-radius:999px; background:rgba(20,12,26,.95); box-shadow:0 10px 28px #0009; color:#fff; font-size:.62rem; font-weight:700; }
 .live-room-listening-overlay::before { content:''; width:9px; height:9px; flex:none; border-radius:50%; background:#ff593d; box-shadow:0 0 0 4px rgba(255,89,61,.18); animation:playlist-live-pulse 1.4s ease-in-out infinite; }
-.live-room-listening-overlay button { border:1px solid #a66aca; border-radius:999px; background:transparent; color:#fff; padding:5px 9px; font:inherit; cursor:pointer; }
+.live-room-listening-overlay button { flex:none; border:1px solid #a66aca; border-radius:999px; background:transparent; color:#fff; padding:4px 9px; font:inherit; cursor:pointer; }
+.live-room-listening-overlay .lrl-name { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+@media (max-width: 640px) {
+  .live-room-listening-overlay { font-size:.55rem; gap:6px; padding:4px 5px 4px 10px; box-shadow:0 4px 14px #0008; }
+  .live-room-listening-overlay::before { width:7px; height:7px; box-shadow:none; }
+  .live-room-listening-overlay .lrl-name { max-width:42vw; }
+  .live-room-listening-overlay button { padding:3px 8px; }
+}
+/* Full screen player: keep the pill out of the queue, tucked at the top right. */
+body:has(.ytp-fs) .live-room-listening-overlay { bottom:auto; top:calc(env(safe-area-inset-top, 0px) + 8px); left:auto; right:10px; transform:none; max-width:calc(100vw - 90px); }
 .live-room-listening-overlay button.on { border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),.14); }
 .pl-wall-join-now {
   background:var(--accent); border:1px solid var(--accent); color:#0a0a0a;
@@ -5135,6 +5247,530 @@ posthog.init('phc_zBzybgMHiDdDzxvxW53xd37bNgy4sm4sfdJB4ueVbZuF', {
   person_profiles: 'identified_only',
   disable_session_recording: true,
 });
+}
+</script>
+<style id="sj-ios-css">
+/* ── iPhone app: platform look ────────────────────────────────────────────
+   html.sj-ios is set in <head> only inside the native shell on an iPhone
+   (or with ?ios=1 for previewing in a browser; ?ios=0 turns the preview off).
+   Everything here is scoped to it, so the website and Android are untouched.
+   Colors are the iOS system palette; the brand orange stays as the tint. */
+html.sj-ios {
+  --ios-font: -apple-system, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
+  --bg: #000; --bg-card: #1c1c1e; --bg-elevated: #2c2c2e;
+  --border: #38383a; --text: #fff; --text-muted: #8e8e93;
+  --ios-fill: rgba(118,118,128,.24); --ios-fill-strong: rgba(118,118,128,.36);
+  --ios-sep: rgba(84,84,88,.65); --ios-material: rgba(22,22,24,.78);
+  --ios-tint-bg: rgba(var(--accent-rgb), .16);
+  --mono: var(--ios-font); --phone-ui-font: var(--ios-font); --lp-body: var(--ios-font);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+html.sj-ios body.light {
+  --bg: #f2f2f7; --bg-card: #fff; --bg-elevated: #fff;
+  --border: #c6c6c8; --text: #000; --text-muted: #8a8a8e;
+  --ios-fill: rgba(118,118,128,.12); --ios-fill-strong: rgba(118,118,128,.2);
+  --ios-sep: rgba(60,60,67,.29); --ios-material: rgba(249,249,249,.8);
+}
+html.sj-ios body { font-family: var(--ios-font); -webkit-font-smoothing: antialiased; }
+
+/* Controls don't select or call out like text, and dim on touch like UIKit. */
+html.sj-ios :is(button, .m-btn, select, label, [role=tab]) {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+html.sj-ios :is(button, .m-btn):not(.lptb-tab):not(:disabled):active { opacity: .55; transition: opacity 0s; }
+html.sj-ios :is(button, .m-btn) { transition: opacity .2s; }
+
+/* Headings: SF Display, tight tracking, no shouting. */
+html.sj-ios :is(h2, .modal-header h2, .modal-title) {
+  font-family: var(--ios-font); font-weight: 700; letter-spacing: -.02em; text-transform: none;
+}
+html.sj-ios main h2 { font-size: 28px; line-height: 1.15; }
+
+/* Form labels read as iOS footnotes, not caps-locked mono. */
+html.sj-ios :is(.landing-control-lbl, .ctrl-row-meta) {
+  font-family: var(--ios-font); font-size: 13px; font-weight: 400;
+  letter-spacing: 0; text-transform: none; color: var(--text-muted);
+}
+
+html.sj-ios .landing-totals { font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--text-muted); }
+html.sj-ios .landing-singles-only-lbl { font-size: 15px; letter-spacing: -.01em; display: inline-flex; align-items: center; gap: 4px; }
+
+/* Buttons: filled (primary), tinted and gray, in sentence case. */
+html.sj-ios :is(.m-btn, .landing-shuffle-btn, .playlist-explore-action-btn, .landing-tab.landing-tab-now) {
+  font-family: var(--ios-font); font-size: 15px; font-weight: 600; letter-spacing: -.01em;
+  text-transform: none; border: none; border-radius: 12px; min-height: 44px;
+  padding: 0 16px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+html.sj-ios :is(.m-btn, .playlist-explore-action-btn.primary, .landing-tab.landing-tab-now,
+               .landing-shuffle-btn:not(.standard)) {
+  background: var(--accent); color: #fff;
+}
+html.sj-ios :is(.m-btn, .playlist-explore-action-btn.primary, .landing-tab.landing-tab-now,
+               .landing-shuffle-btn:not(.standard)):hover { background: var(--accent); filter: none; }
+html.sj-ios .landing-shuffle-btn.standard { background: var(--ios-tint-bg); color: var(--accent); }
+html.sj-ios .playlist-explore-action-btn:not(.primary),
+html.sj-ios .m-btn.ghost { background: var(--ios-fill); color: var(--text); border: none; }
+html.sj-ios #signInOverlay .m-btn { min-height: 50px; font-size: 17px; border-radius: 14px; }
+
+/* Text and search fields: filled, borderless, 17px so focus never zooms. */
+html.sj-ios :is(input[type=text], input[type=search], input[type=email], input[type=password],
+               input[type=url], input[type=number], input:not([type]), textarea, .m-input) {
+  font-family: var(--ios-font); font-size: 17px; letter-spacing: -.01em;
+  background: var(--ios-fill); border: none; border-radius: 10px; color: var(--text);
+  min-height: 40px; padding: 8px 12px; outline: none; box-shadow: none;
+}
+html.sj-ios :is(input, textarea, .m-input)::placeholder { color: var(--text-muted); opacity: 1; }
+html.sj-ios :is(input, textarea, .m-input):focus { border: none; box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .55); }
+html.sj-ios .landing-search-input {
+  padding-left: 34px; min-height: 38px;
+  background: var(--ios-fill) no-repeat 10px 50% / 17px 17px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='m20 20-4.8-4.8'/%3E%3C/svg%3E");
+}
+
+/* Pop-up buttons (selects and filter menus) with the up/down chevron. */
+html.sj-ios :is(select, .landing-sort-select, .landing-submitter-btn) {
+  -webkit-appearance: none; appearance: none;
+  font-family: var(--ios-font); font-size: 15px; font-weight: 400; letter-spacing: 0; text-transform: none;
+  color: var(--text); background: var(--ios-fill) no-repeat right 10px center / 10px 16px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16' fill='none' stroke='%238e8e93' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2 6 3-3 3 3M2 10l3 3 3-3'/%3E%3C/svg%3E");
+  border: none; border-radius: 10px; min-height: 40px; padding: 0 28px 0 12px;
+}
+html.sj-ios .landing-submitter-btn .lsb-caret { display: none; }
+
+/* Covers / Details as a segmented control. */
+html.sj-ios .explore-view-tog {
+  gap: 0; padding: 2px; border-radius: 9px; background: var(--ios-fill);
+}
+html.sj-ios .explore-view-tog .pl-wall-back {
+  font-family: var(--ios-font); font-size: 13px; font-weight: 500; min-height: 30px; min-width: 84px;
+  padding: 0 14px; border: none; border-radius: 7px; background: none; color: var(--text);
+}
+html.sj-ios .explore-view-tog .pl-wall-back.on {
+  background: #636366; color: #fff; font-weight: 600; box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 3px 1px rgba(0,0,0,.04);
+}
+html.sj-ios body.light .explore-view-tog .pl-wall-back.on { background: #fff; color: #000; }
+
+/* Checkboxes become switches. */
+html.sj-ios input[type=checkbox] {
+  -webkit-appearance: none; appearance: none; flex-shrink: 0; cursor: pointer;
+  width: 51px; height: 31px; min-height: 0; padding: 0; margin: 0 6px 0 0; border: none; border-radius: 16px;
+  background: var(--ios-fill-strong); position: relative; vertical-align: middle;
+  transition: background .25s;
+}
+html.sj-ios input[type=checkbox]::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
+  background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 3px 1px rgba(0,0,0,.06);
+  transition: transform .25s cubic-bezier(.3,.7,.4,1.1);
+}
+html.sj-ios input[type=checkbox]:checked { background: #34c759; }
+html.sj-ios input[type=checkbox]:checked::after { transform: translateX(20px); }
+html.sj-ios input[type=checkbox]:focus { box-shadow: none; }
+/* Dense lists (song table rows, the lyrics Sync toggle) keep a small round check. */
+html.sj-ios :is(table, .ytp-lyr-sync-wrap) input[type=checkbox] {
+  width: 22px; height: 22px; border-radius: 50%; margin: 0;
+  background: none; box-shadow: inset 0 0 0 1.5px var(--text-muted);
+}
+html.sj-ios :is(table, .ytp-lyr-sync-wrap) input[type=checkbox]::after {
+  top: 0; left: 0; width: 22px; height: 22px; box-shadow: none; transform: none;
+  background: transparent no-repeat center / 12px 12px;
+}
+html.sj-ios :is(table, .ytp-lyr-sync-wrap) input[type=checkbox]:checked { background: var(--accent); box-shadow: none; }
+html.sj-ios :is(table, .ytp-lyr-sync-wrap) input[type=checkbox]:checked::after {
+  transform: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2.5 6.2 2.3 2.3 4.7-5'/%3E%3C/svg%3E");
+}
+
+/* Sliders: thin tinted track, white thumb with the system shadow. */
+html.sj-ios input[type=range]:not(.ytp-md-seek) { -webkit-appearance: none; appearance: none; height: 28px; background: none; }
+html.sj-ios input[type=range]:not(.ytp-md-seek)::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px; background: var(--ios-fill-strong);
+}
+html.sj-ios input[type=range]:not(.ytp-md-seek)::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 28px; height: 28px; margin-top: -12px; border: none; border-radius: 50%;
+  background: #fff; box-shadow: 0 .5px 4px rgba(0,0,0,.12), 0 6px 13px rgba(0,0,0,.12);
+}
+
+/* Tab bar: system material, hairline, 10pt labels. */
+html.sj-ios.has-phone-tabbar { --lp-tabbar-h: calc(50px + env(safe-area-inset-bottom, 0px)); }
+html.sj-ios #lp-tabbar {
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  background: var(--ios-material); border-top: .5px solid var(--ios-sep);
+  backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+html.sj-ios .lptb-tab { gap: 2px; padding-top: 5px; justify-content: flex-start; font: 500 10px/1.2 var(--ios-font); color: #8e8e93; }
+html.sj-ios .lptb-tab svg { width: 25px; height: 25px; }
+html.sj-ios .lptb-tab.on { color: var(--accent); }
+
+/* The docked mini player is a floating material pill above the tab bar. */
+html.sj-ios.has-phone-tabbar #ytp-mini-footer.dock-mini {
+  background: var(--ios-material); border: .5px solid var(--ios-sep); border-radius: 14px;
+  backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* Modals are bottom sheets: large corner radius, grabber, no border. */
+html.sj-ios .modal-overlay { background: rgba(0,0,0,.4); backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media (max-width: 640px) {
+  html.sj-ios .modal {
+    border: none; border-radius: 12px 12px 0 0; background: var(--bg-card);
+    padding-bottom: env(safe-area-inset-bottom, 0px); position: relative;
+    animation: sjIosSheetUp .38s cubic-bezier(.2,.9,.25,1);
+  }
+  html.sj-ios .modal::before {
+    content: ''; position: absolute; top: 5px; left: 50%; width: 36px; height: 5px; margin-left: -18px;
+    border-radius: 3px; background: var(--ios-fill-strong); z-index: 1;
+  }
+}
+@keyframes sjIosSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+html.sj-ios .modal-header { border-bottom: .5px solid var(--ios-sep); padding-top: 18px; }
+html.sj-ios .modal-header :is(h2, h3) { font-size: 17px; font-weight: 600; letter-spacing: -.02em; }
+html.sj-ios .modal-close {
+  width: 30px; height: 30px; min-width: 30px; padding: 0; border-radius: 50%;
+  background: var(--ios-fill); color: var(--text-muted); font-size: 14px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* Context menus (⋯): iOS menu material, 17pt rows, hairline separators. */
+html.sj-ios .sjm-menu {
+  background: var(--ios-material); border: none; border-radius: 14px; padding: 0; overflow: hidden;
+  backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px);
+  box-shadow: 0 10px 40px rgba(0,0,0,.35); font-family: var(--ios-font);
+}
+html.sj-ios .sjm-item {
+  font-size: 17px; letter-spacing: -.02em; border-radius: 0; padding: 11px 16px; min-height: 44px;
+  border-bottom: .5px solid var(--ios-sep);
+}
+html.sj-ios .sjm-item:last-child { border-bottom: none; }
+html.sj-ios .sjm-hd { font-family: var(--ios-font); font-size: 13px; font-weight: 400; letter-spacing: 0;
+  text-transform: none; color: var(--text-muted); text-align: center; padding: 10px 16px; border-bottom: .5px solid var(--ios-sep); }
+html.sj-ios .sjm-sep { height: 8px; margin: 0; background: rgba(0,0,0,.18); border: none; }
+html.sj-ios .sjm-item.sjm-danger { color: #ff453a; }
+html.sj-ios .user-menu { border: none; border-radius: 14px; background: var(--ios-material);
+  backdrop-filter: saturate(180%) blur(30px); -webkit-backdrop-filter: saturate(180%) blur(30px); }
+html.sj-ios .user-menu .user-menu-item { font-family: var(--ios-font); font-size: 17px; letter-spacing: -.02em; text-transform: none; }
+
+/* Cards: continuous-looking corners, no outlines. */
+html.sj-ios :is(.landing-card, .ex-detail-artist, .pe-detail-pl) { border: none; border-radius: 12px; }
+html.sj-ios .landing-card-art { border-radius: 10px; }
+
+/* ── Explore pages, shaped like Spotify's Library ─────────────────────────
+   One swipeable row of chips, a compact action row, then search, sort and
+   the view switch. Everything else sits behind Filters. */
+.sj-filters-btn { display: none; }
+
+/* The status bar gets a backdrop, so content scrolling under the clock and
+   battery does not collide with them. */
+html.sj-ios body::before {
+  content: ''; position: fixed; top: 0; left: 0; right: 0; z-index: 900;
+  height: env(safe-area-inset-top, 0px); pointer-events: none;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* The mini player above the tab bar already opens Now Playing. */
+html.sj-ios #landing-now-playing-tab { display: none !important; }
+html.sj-ios .landing-nav:not(:has(> :not(#landing-now-playing-tab))) { display: none; }
+
+/* Chips: one row, swiped sideways, filled when on. */
+html.sj-ios .landing-nav-scope {
+  display: flex; flex: 0 0 calc(100% + 32px); max-width: calc(100% + 32px); box-sizing: border-box;
+  flex-wrap: nowrap; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 2px 16px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+html.sj-ios .landing-nav-scope::-webkit-scrollbar { display: none; }
+html.sj-ios .landing-nav-scope .playlist-explore-filter {
+  flex: 0 0 auto; min-height: 32px; padding: 0 14px; border: 0; border-radius: 16px;
+  background: var(--ios-fill); color: var(--text); white-space: nowrap;
+  font: 500 14px/32px var(--ios-font); letter-spacing: 0; text-transform: none;
+}
+html.sj-ios .landing-nav-scope .playlist-explore-filter.active { background: var(--text); color: var(--bg); }
+
+/* Totals on the left, Shuffle on the right; the page's actions under them
+   as one swipeable row of small buttons. */
+html.sj-ios .landing-nav-row2 { gap: 10px; row-gap: 10px; }
+html.sj-ios .landing-nav-row2 .landing-totals { flex: 1 1 0; min-width: 0; font-size: 13px; line-height: 1.3; }
+html.sj-ios .landing-nav-row2 .landing-shuffle-btn {
+  flex: 0 0 auto; min-height: 36px; padding: 0 16px; border-radius: 18px; font-size: 15px;
+  background: var(--accent); color: #fff;
+}
+html.sj-ios .landing-nav-row2 .playlist-explore-actions {
+  flex: 0 0 calc(100% + 32px); max-width: calc(100% + 32px); box-sizing: border-box;
+  flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 0 16px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+html.sj-ios .landing-nav-row2 .playlist-explore-actions::-webkit-scrollbar { display: none; }
+html.sj-ios .landing-nav-row2 .playlist-explore-actions .playlist-explore-action-btn {
+  flex: 0 0 auto; min-height: 34px; padding: 0 14px; border-radius: 17px; white-space: nowrap;
+  font-size: 14px; font-weight: 600; width: auto;
+}
+html.sj-ios .landing-nav-row2 .playlist-explore-actions .playlist-explore-action-btn:not(.primary) {
+  background: var(--ios-fill); color: var(--text);
+}
+html.sj-ios .landing-nav-row2 .playlist-explore-actions .playlist-explore-action-btn.primary {
+  background: var(--ios-tint-bg); color: var(--accent);
+}
+
+/* Controls: search across the top, then sort, view and Filters on one row. */
+html.sj-ios :is(.landing-controls, .playlist-explore-filters, .es-controls) {
+  display: flex !important; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px;
+}
+html.sj-ios :is(.landing-controls, .playlist-explore-filters, .es-controls) .landing-control-lbl,
+html.sj-ios .es-controls .ctrl-row-meta { display: none; }
+html.sj-ios :is(.landing-controls, .playlist-explore-filters) .landing-control-group:has(.landing-search-wrap),
+html.sj-ios .es-controls > .landing-search-wrap { order: -1; flex: 1 1 100%; min-width: 0; }
+html.sj-ios .landing-search-wrap .landing-search-input { width: 100%; box-sizing: border-box; }
+html.sj-ios :is(.landing-controls, .playlist-explore-filters) .landing-control-group:has(.landing-sort-select:not(#playlist-explore-contributor)),
+html.sj-ios .es-controls .es-sorts { flex: 1 1 0; min-width: 120px; }
+html.sj-ios :is(.landing-sort-select, .es-sort-select) { width: 100%; min-height: 36px; border-radius: 18px; font-size: 14px; }
+html.sj-ios .landing-control-group.landing-view-group { display: contents; }
+html.sj-ios :is(.landing-controls, .playlist-explore-filters) .explore-view-tog .pl-wall-back { min-width: 0; }
+html.sj-ios .sj-filters-btn {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 36px; padding: 0 14px;
+  border: 0; border-radius: 18px; background: var(--ios-fill); color: var(--text);
+  font: 500 14px/1 var(--ios-font); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+html.sj-ios .sj-filters-btn svg { width: 17px; height: 17px; }
+html.sj-ios .sj-filters-btn.on { background: var(--text); color: var(--bg); }
+html.sj-ios .sj-more-filter { display: none !important; }
+html.sj-ios.sj-filters-open .sj-more-filter { display: flex !important; flex: 1 1 100%; flex-direction: column;
+  align-items: stretch; gap: 6px; order: 10; }
+html.sj-ios.sj-filters-open .sj-more-filter .landing-control-lbl { display: block; }
+html.sj-ios.sj-filters-open :is(.explore-view-tog, .playlist-explore-hide-shared).sj-more-filter { flex-direction: row; align-items: center; }
+
+/* Details cards: name and counts stacked, a round play button beside them,
+   and the secondary action as a small link underneath. */
+html.sj-ios .ex-detail-artist-hd {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 2px;
+  align-items: center; padding: 14px 16px;
+}
+html.sj-ios .ex-detail-artist-hd .ex-detail-name { grid-column: 1; grid-row: 1; font-size: 19px; font-weight: 700;
+  line-height: 1.2; letter-spacing: -.01em; overflow-wrap: anywhere; }
+html.sj-ios .ex-detail-artist-hd .ex-detail-artist-meta { grid-column: 1; grid-row: 2; font-family: var(--ios-font);
+  font-size: 13px; letter-spacing: 0; }
+html.sj-ios .ex-detail-artist-hd .landing-play-btn {
+  grid-column: 2; grid-row: 1 / span 2; width: 48px; height: 48px; min-height: 0; padding: 0;
+  border-radius: 50%; font-size: 0; background: var(--accent); color: #fff; border: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+html.sj-ios .ex-detail-artist-hd .landing-play-btn::before {
+  content: ''; width: 18px; height: 20px; margin-left: 3px; background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+html.sj-ios .ex-detail-artist-hd .landing-explore-btn {
+  grid-column: 1 / -1; grid-row: 3; justify-self: start; margin-top: 6px; padding: 0; min-height: 0;
+  border: 0; background: none; color: var(--accent); font: 500 14px/1.4 var(--ios-font);
+  letter-spacing: 0; text-transform: none;
+}
+
+/* Covers / Details as grid and list icons, so the whole control row fits. */
+html.sj-ios :is(.landing-controls, .playlist-explore-filters) .explore-view-tog:not(.sj-more-filter) { flex: 0 0 auto; border-radius: 18px; }
+html.sj-ios :is(.landing-controls, .playlist-explore-filters) .explore-view-tog:not(.sj-more-filter) .pl-wall-back {
+  width: 40px; min-width: 0; min-height: 32px; padding: 0; font-size: 0; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+html.sj-ios :is(.landing-controls, .playlist-explore-filters) .explore-view-tog:not(.sj-more-filter) .pl-wall-back::before {
+  content: ''; width: 18px; height: 18px; background: currentColor;
+  -webkit-mask: var(--sj-view-icon) center / contain no-repeat; mask: var(--sj-view-icon) center / contain no-repeat;
+}
+html.sj-ios .explore-view-tog .pl-wall-back:first-child {
+  --sj-view-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='3' width='8' height='8' rx='2'/%3E%3Crect x='13' y='3' width='8' height='8' rx='2'/%3E%3Crect x='3' y='13' width='8' height='8' rx='2'/%3E%3Crect x='13' y='13' width='8' height='8' rx='2'/%3E%3C/svg%3E");
+}
+html.sj-ios .explore-view-tog .pl-wall-back:last-child {
+  --sj-view-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='18' height='3' rx='1.5'/%3E%3Crect x='3' y='10.5' width='18' height='3' rx='1.5'/%3E%3Crect x='3' y='17' width='18' height='3' rx='1.5'/%3E%3C/svg%3E");
+}
+
+/* Cover cards: sentence-case buttons in the system font, not mono caps. */
+html.sj-ios .landing-card-actions .landing-play-btn {
+  min-height: 36px; padding: 0 16px; border: 0; border-radius: 18px; background: var(--accent); color: #fff;
+  font: 600 14px/1 var(--ios-font); letter-spacing: 0; text-transform: none;
+}
+html.sj-ios .landing-card-actions .landing-explore-btn {
+  min-height: 36px; padding: 0 14px; border: 0; border-radius: 18px; background: var(--ios-fill); color: var(--text);
+  font: 500 14px/1 var(--ios-font); letter-spacing: 0; text-transform: none;
+}
+html.sj-ios .landing-card-actions .landing-card-more { border: 0; background: none; color: var(--text-muted); }
+html.sj-ios .landing-stat-lbl { font-family: var(--ios-font); font-size: 11px; letter-spacing: 0; text-transform: none; }
+
+/* Same order on every page: sort, Filters, then the view switch. */
+html.sj-ios .sj-filters-btn { order: 1; }
+html.sj-ios :is(.landing-controls, .playlist-explore-filters) .explore-view-tog:not(.sj-more-filter) { order: 2; }
+
+/* Playlist cards: the whole card opens it, so no "Open playlist" line;
+   the name gets two lines before it truncates, as in Spotify's grid. */
+html.sj-ios .playlist-explore-action { display: none; }
+html.sj-ios .playlist-explore-name { font-family: var(--ios-font); font-size: 15px; font-weight: 600; line-height: 1.25;
+  letter-spacing: -.01em; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+html.sj-ios :is(.pl-meta-n, .pl-meta-by, .playlist-explore-artists) { font-family: var(--ios-font); font-size: 12px; letter-spacing: 0; text-transform: none; }
+
+/* Songs: rows, not a table. Title over "artist · album", ⋯ on the right -
+   the shape of every track list in Spotify and YouTube Music. Tapping a row
+   still plays it; the checkbox, rank and stat columns stay on desktop. */
+html.sj-ios .es-head h2 { display: none; }
+html.sj-ios .es-head #es-count { font-family: var(--ios-font); font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--text-muted); }
+html.sj-ios #es-body .tt-scroll { overflow: visible; max-height: none !important; border: 0; background: none; }
+html.sj-ios #es-body .top-tracks-tbl { display: block; width: 100%; min-width: 0; border: 0; }
+html.sj-ios #es-body .top-tracks-tbl thead { display: none; }
+html.sj-ios #es-body .top-tracks-tbl tbody { display: block; }
+html.sj-ios #es-body tr.tt-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) 44px; grid-template-areas: "name name more" "artist album more";
+  align-items: center; column-gap: 0; row-gap: 3px; padding: 9px 0 9px 2px; background: none;
+  border-bottom: .5px solid var(--ios-sep);
+}
+html.sj-ios #es-body tr.tt-row:active { background: var(--ios-fill); }
+html.sj-ios #es-body tr.tt-row > td { display: none; padding: 0 !important; border: 0 !important; background: none !important; }
+html.sj-ios #es-body tr.tt-row > td.tt-name-c { display: block; grid-area: name; min-width: 0; font: 400 16px/1.25 var(--ios-font);
+  letter-spacing: -.01em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.sj-ios #es-body tr.tt-row > td.tt-name-c .artist-dot { display: none; }
+html.sj-ios #es-body tr.tt-row.tt-row-open > td.tt-name-c { color: var(--accent); }
+html.sj-ios #es-body tr.tt-row > td.tt-artist-c { display: block; grid-area: artist; max-width: 60vw; overflow: hidden; text-overflow: ellipsis;
+  font: 400 13px/1.25 var(--ios-font) !important; color: var(--text-muted) !important; }
+html.sj-ios #es-body tr.tt-row > td.tt-artist-c .es-artist { color: inherit; }
+html.sj-ios #es-body tr.tt-row > td.tt-album-c { display: block; grid-area: album; min-width: 0; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; font: 400 13px/1.25 var(--ios-font) !important; color: var(--text-muted) !important; }
+html.sj-ios #es-body tr.tt-row > td.tt-album-c::before { content: ' · '; white-space: pre; }
+html.sj-ios #es-body tr.tt-row > td.td-more { display: flex; grid-area: more; align-items: center; justify-content: center; }
+html.sj-ios #es-body tr.tt-row > td.td-more .tt-more { width: 44px; height: 44px; border: 0; background: none; color: var(--text-muted); font-size: 20px; }
+html.sj-ios #es-body .top-tracks-tbl tr:not(.tt-row) { display: block; }
+html.sj-ios #es-body .top-tracks-tbl tr:not(.tt-row) > td { display: block; }
+
+/* Import Discography is a desktop job - a wizard over many albums - so the
+   phone's artist cards don't offer it. */
+html.sj-ios .landing-explore-btn[onclick*="openImportDiscography"] { display: none !important; }
+
+/* Artist list: albums folded until the artist is tapped. */
+.ex-detail-artist-chev { display: none; }
+html.sj-ios .ex-detail-artist:not(.open) .ex-detail-albs { display: none; }
+html.sj-ios .ex-detail-artist:not(.open) .ex-detail-artist-hd { border-bottom: 0; }
+html.sj-ios .ex-detail-artist-hd { cursor: pointer; grid-template-columns: minmax(0, 1fr) auto auto; -webkit-tap-highlight-color: transparent; }
+html.sj-ios .ex-detail-artist-hd .ex-detail-artist-chev {
+  display: block; grid-column: 3; grid-row: 1 / span 2; width: 12px; height: 12px; margin-left: 4px;
+  border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted);
+  transform: rotate(-45deg); transition: transform .2s;
+}
+html.sj-ios .ex-detail-artist.open .ex-detail-artist-chev { transform: rotate(45deg); }
+
+/* ── Artist discography page ──────────────────────────────────────────────
+   Spotify's artist page is a play/shuffle row, a simple view switch and a
+   list of albums as cover + title + one line of detail. The boxed "Playlist
+   Controls" / "Jukebox Controls" panels and mono caps give way to that. */
+html.sj-ios .ctrl-group { border: 0; padding: 0; gap: 8px; background: none; }
+html.sj-ios .ctrl-group-hd--static { display: none; }
+html.sj-ios #lwytb-header, html.sj-ios #view-controls-header { margin-top: 10px; }
+html.sj-ios .lwytb-row { display: flex; gap: 8px; flex-wrap: wrap; }
+html.sj-ios .lwytb-row .ctrl-btn, html.sj-ios .hdr-r1-filters .ctrl-btn {
+  min-height: 36px; padding: 0 16px; border: 0; border-radius: 18px; background: var(--ios-fill); color: var(--text);
+  font: 600 14px/1 var(--ios-font); letter-spacing: 0; text-transform: none;
+}
+html.sj-ios .lwytb-row > .ctrl-btn:first-child { background: var(--accent); color: #fff; }
+html.sj-ios #filter-header-mobile { gap: 8px; }
+html.sj-ios .hdr-r1-filters .ctrl-btn { min-height: 32px; padding: 0 14px; border-radius: 16px; font-weight: 500; }
+html.sj-ios .hdr-r1-filters .ctrl-btn:is(.active, .on) { background: var(--text); color: var(--bg); }
+html.sj-ios #view-extras-header .ctrl-row-meta { font-family: var(--ios-font); font-size: 12px; letter-spacing: 0; text-transform: none; }
+html.sj-ios #view-extras-header .sort-btn { font-family: var(--ios-font); font-size: 12px; letter-spacing: 0; text-transform: none;
+  border: 0; border-radius: 12px; background: var(--ios-fill); color: var(--text); padding: 3px 10px; }
+html.sj-ios #view-extras-header .sort-btn.active { background: var(--text); color: var(--bg); }
+
+/* By Year / By Views / Albums / Tracks as an iOS segmented control. */
+html.sj-ios .view-seg { border: 0; border-radius: 9px; padding: 2px; background: var(--ios-fill); width: 100%; }
+html.sj-ios .view-seg > .vdd-wrap { flex: 1 1 0; display: flex; border: 0 !important; min-width: 0; }
+html.sj-ios .view-seg .vseg-btn { flex: 1 1 auto; min-width: 0; min-height: 32px; padding: 0 4px; border-radius: 7px !important;
+  font: 500 13px/1 var(--ios-font); letter-spacing: 0; text-transform: none; color: var(--text); }
+html.sj-ios .view-seg .vseg-btn.active { background: #636366; color: #fff; font-weight: 600; }
+html.sj-ios .view-seg .vseg-caret-btn { padding: 0 4px; border: 0; background: none; color: var(--text-muted); font-size: 10px; }
+
+/* Albums: cover, title on up to two lines, then year · tracks · views. */
+html.sj-ios .list-album-row {
+  display: grid; grid-template-columns: 56px minmax(0, 1fr) auto auto; grid-template-areas: "art name play more" "art meta play more" "art views play more";
+  column-gap: 12px; row-gap: 2px; align-items: center; padding: 10px 6px 10px 10px; border: 0; border-radius: 12px;
+}
+html.sj-ios .list-album-row.expanded { border-radius: 12px 12px 0 0; }
+html.sj-ios .list-album-row .list-art { grid-area: art; width: 56px; height: 56px; border-radius: 6px; object-fit: cover; }
+html.sj-ios .list-album-row .list-info { display: contents; }
+html.sj-ios .list-album-row .list-name { grid-area: name; font: 600 16px/1.25 var(--ios-font); letter-spacing: -.01em; word-break: normal;
+  overflow-wrap: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+html.sj-ios .list-album-row .list-meta { grid-area: meta; font: 400 13px/1.3 var(--ios-font); letter-spacing: 0; color: var(--text-muted); }
+html.sj-ios .list-album-row .list-views-block { grid-area: views; display: flex; align-items: baseline; gap: 4px; text-align: left; }
+html.sj-ios .list-album-row .list-views { font: 400 13px/1.3 var(--ios-font); color: var(--text-muted) !important; }
+html.sj-ios .list-album-row .list-views-lbl { font: 400 13px/1.3 var(--ios-font); letter-spacing: 0; text-transform: none; margin: 0; }
+html.sj-ios .list-album-row > .ctrl-btn {
+  grid-area: play; width: 40px; height: 40px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 0; display: flex; align-items: center; justify-content: center;
+}
+html.sj-ios .list-album-row > .ctrl-btn::before { content: ''; width: 14px; height: 16px; margin-left: 2px; background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%); }
+html.sj-ios .list-album-row .alb-more { grid-area: more; width: 36px; height: 40px; border: 0; background: none; color: var(--text-muted); font-size: 18px; }
+html.sj-ios .list-album-row .list-chevron { display: none; }
+
+/* Track lines under an album: number, title, views, then play and ⋯. */
+html.sj-ios .trk-line { min-height: 48px; gap: 10px; font-family: var(--ios-font); }
+html.sj-ios .trk-line .trk-n { font: 400 14px/1 var(--ios-font); color: var(--text-muted); min-width: 18px; text-align: right; }
+html.sj-ios .trk-line .trk-name { font: 400 15px/1.3 var(--ios-font); letter-spacing: -.01em; }
+html.sj-ios .trk-line .trk-bar-group .trk-bar-bg,
+html.sj-ios .trk-line .trk-bar-group [class*="bar-bg"] { display: none; }
+html.sj-ios .trk-line .trk-metrics { font: 400 12px/1 var(--ios-font); color: var(--text-muted); }
+html.sj-ios .trk-line .trk-play-inline {
+  width: 32px; height: 32px; min-height: 0; padding: 0; border: 0; border-radius: 50%; font-size: 0;
+  background: var(--ios-fill); color: var(--text); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+html.sj-ios .trk-line .trk-play-inline::before { content: ''; width: 11px; height: 12px; margin-left: 2px; background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%); }
+html.sj-ios .trk-line .trk-more { border: 0; background: none; color: var(--text-muted); font-size: 18px; }
+
+/* ── Playlist page ────────────────────────────────────────────────────────
+   Title, one line of detail, Play first, then cover + song + artist rows -
+   Spotify's playlist page - instead of a twelve-column table 1,600px wide. */
+html.sj-ios .pl-wall-title { font: 700 28px/1.15 var(--ios-font); letter-spacing: -.02em; }
+html.sj-ios .pl-wall-title-row { justify-content: space-between; }
+html.sj-ios .pl-wall-summary, html.sj-ios .pl-wall-stat { font: 400 13px/1.3 var(--ios-font); letter-spacing: 0; color: var(--text-muted); }
+html.sj-ios .pl-wall-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+html.sj-ios .pl-wall-header .pl-wall-back {
+  min-height: 34px; padding: 0 14px; border: 0; border-radius: 17px; background: var(--ios-fill); color: var(--text);
+  font: 500 14px/1 var(--ios-font); letter-spacing: 0; text-transform: none;
+}
+html.sj-ios .pl-wall-header .pl-wall-back.on { background: var(--text); color: var(--bg); }
+html.sj-ios .pl-wall-header #pl-wall-start-btn { order: -1; background: var(--accent); color: #fff; font-weight: 600; }
+html.sj-ios .pl-caps-banner { border: 0; background: none; padding: 0 16px; margin: 0 0 8px;
+  font: 400 13px/1.35 var(--ios-font); color: var(--text-muted); }
+
+html.sj-ios #playlist-chart-scroll.pl-wall-scroll { overflow: visible; max-height: none; }
+html.sj-ios .pl-detail-tbl { display: block; min-width: 0; width: 100%; }
+html.sj-ios .pl-detail-tbl thead { display: none; }
+html.sj-ios .pl-detail-tbl tbody { display: block; }
+html.sj-ios .pl-detail-tbl tr.pl-detail-row {
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "artist";
+  row-gap: 0; padding: 8px 12px; border-bottom: .5px solid var(--ios-sep); box-shadow: none;
+}
+html.sj-ios .pl-detail-tbl tr.pl-detail-row:active { background: var(--ios-fill); }
+html.sj-ios .pl-detail-tbl tr.pl-detail-row > td { display: none; padding: 0; border: 0; }
+html.sj-ios .pl-detail-tbl tr.pl-detail-row > td.pl-c-title { display: block; grid-area: title; min-width: 0; }
+html.sj-ios .pl-detail-tbl tr.pl-detail-row > td.pl-c-artist { display: block; grid-area: artist; min-width: 0; padding-left: 60px;
+  margin-top: -22px; margin-bottom: 4px; }
+html.sj-ios .pl-detail-tbl .pl-detail-track { gap: 12px; align-items: flex-start; }
+html.sj-ios .pl-detail-tbl .pl-detail-art { width: 48px; height: 48px; border-radius: 6px; }
+html.sj-ios .pl-detail-tbl .pl-detail-title { font: 400 16px/1.25 var(--ios-font); letter-spacing: -.01em; padding-top: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+html.sj-ios .pl-detail-tbl .pl-c-artist .pl-detail-muted { font: 400 13px/1.25 var(--ios-font); color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.sj-ios .pl-detail-tbl tr.pl-detail-row.current .pl-detail-title { color: var(--accent); font-weight: 600; }
+html.sj-ios .pl-detail-tbl tr.tt-acc-row { display: block; }
+html.sj-ios .pl-detail-tbl tr.tt-acc-row > td { display: block; }
+</style>
+<script>
+(function () {
+  var el = document.documentElement;
+  try {
+    var q = /[?&]ios=([01])/.exec(location.search);
+    if (q) localStorage.setItem('sj-ios-preview', q[1]);
+    if (localStorage.getItem('sj-ios-preview') === '1') { el.classList.add('sj-ios'); return; }
+  } catch (_) {}
+  if (window.__SJ_NATIVE__ === true && /iPhone|iPod/.test(navigator.userAgent)) el.classList.add('sj-ios');
+})();
+// Inside the app, a page that zooms when a text field is focused - and then
+// stays zoomed - reads as broken, not as a web page. Pinning the scale stops
+// that. Only in the native shell: on the website, Android honours
+// maximum-scale and it would take pinch-zoom away from people who need it.
+if (window.__SJ_NATIVE__ === true) {
+  var vp = document.querySelector('meta[name=viewport]');
+  if (vp) vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover');
 }
 </script>
 </head>
@@ -7921,10 +8557,32 @@ async function sjGetSession() {
   } finally { clearTimeout(timer); }
 }
 
+// Covers are often stored site-relative (/album-art/..., /artist-release-art/...).
+// The website resolves those against its own origin; the iPhone app serves the
+// page from its bundle, where they 404 and show a "?" instead. So in the app,
+// every URL-ish field that comes back from the database is made absolute once,
+// here, rather than in each of the dozens of places that draw a cover.
+const SJ_URL_KEY = /(url|artwork|thumb|thumbnail|image|cover|avatar)$/i;
+function sjAbsSiteUrls(data) {
+  if (!data || typeof sjIsNative !== 'function' || !sjIsNative()) return data;
+  const walk = v => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== 'object') return;
+    for (const k in v) {
+      const x = v[k];
+      if (typeof x === 'string') {
+        if (x[0] === '/' && x[1] !== '/' && SJ_URL_KEY.test(k)) v[k] = SJ_FRAME_ORIGIN + x;
+      } else if (x && typeof x === 'object') walk(x);
+    }
+  };
+  walk(data);
+  return data;
+}
+
 const dbGet = async (path) => {
   const r = await sjFetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } });
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return sjAbsSiteUrls(await r.json());
 };
 
 const dbRpc = async (path, body) => {
@@ -7935,7 +8593,7 @@ const dbRpc = async (path, body) => {
     body: JSON.stringify(body || {})
   });
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return sjAbsSiteUrls(await r.json());
 };
 
 // Same as dbRpc, but sends the signed-in user's access token. SECURITY DEFINER
@@ -7960,7 +8618,7 @@ const dbGetAuth = async (path) => {
   const tok = session?.access_token || ANON;
   const r = await sjFetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Accept-Profile': 'jukebox' } });
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return sjAbsSiteUrls(await r.json());
 };
 
 const dbPost = async (path, body) => {
@@ -9249,7 +9907,6 @@ function ytpMobDeckHTML(trackId) {
           <div class="ytp-md-artist" id="ytp-md-artist"></div>
         </div>
         <div class="ytp-md-reactions">${ytpReactionRailHTML(trackId, 'ytp-md-reaction-rail', true)}</div>
-        <button type="button" class="ytp-md-icon" id="ytp-md-more" onclick="sjmOpenForPlayer(this,event)" title="Background Play, versions, add to playlist, never play, report" aria-label="More options">${YTP_DECK_ICONS.more}</button>
       </div>
       <div class="ytp-md-scrub ytp-scrub-zone" data-scrub-prefix="md" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">
         <div class="ytp-scrub-rxn-wrap" aria-hidden="true"><div class="ytp-scrub-rxn-track"></div></div>
@@ -9269,11 +9926,27 @@ function ytpMobDeckHTML(trackId) {
         <button class="ytp-md-btn" id="ytp-md-next" onclick="ytNextTrack();event.stopPropagation()" title="Next" aria-label="Next track">${YTP_DECK_ICONS.next}</button>
         <button class="ytp-md-btn ytp-md-mode" id="ytp-md-repeat" onclick="ytpMobToggleRepeat();event.stopPropagation()" title="Repeat" aria-label="Repeat">${YTP_DECK_ICONS.repeat}</button>
       </div>
+      <div class="ytp-md-up-next" id="ytp-md-up-next"></div>
       <div class="ytp-md-tabs" role="tablist">
-        <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics',true);event.stopPropagation()">Lyrics</button>
         <button class="ytp-md-tab" id="ytp-md-tab-playlist" role="tab" onclick="ytpMobSetTab('playlist',true);event.stopPropagation()">Up Next</button>
+        <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics',true);event.stopPropagation()">Lyrics</button>
       </div>
     </div>`;
+}
+
+// The Lyrics tab is only offered for a song that has lyrics. Up Next takes
+// over the panel when the tab goes away, unless the listener is mid-choice.
+let _ytpLyrTabFor = null;
+async function ytpMobPaintLyricsTab() {
+  const tab = document.getElementById('ytp-md-tab-lyrics');
+  if (!tab) return;
+  const trackId = ytQueue[ytQueueIdx]?.trackId || null;
+  if (trackId === _ytpLyrTabFor) return;
+  _ytpLyrTabFor = trackId;
+  const has = trackId ? await ytpTrackHasLyrics(trackId) : false;
+  if (_ytpLyrTabFor !== trackId) return;   // moved on while we looked
+  tab.hidden = !has;
+  if (!has && _ytpMobTab === 'lyrics') ytpMobSetTab('playlist', false);
 }
 
 /** The deck's title row: song over artist, from the same metadata as the dock. */
@@ -9287,6 +9960,7 @@ function ytpMobPaintTitle() {
   titleEl.title = title;
   const artistEl = document.getElementById('ytp-md-artist');
   if (artistEl) artistEl.textContent = meta?.artist || item?.artist || '';
+  void ytpMobPaintLyricsTab();
 }
 
 // ── Phone sheet: pull down to dock ───────────────────────────────────────
@@ -9316,6 +9990,7 @@ function ytpWireSheetDrag(handle, { tapDismisses } = {}) {
   let y0 = null, dy = 0, lastY = 0, lastT = 0, vel = 0, moved = false, pid = null;
   handle.addEventListener('pointerdown', e => {
     if (!ytpMobFsOn() || (e.button && e.button > 0)) return;
+    if (e.target.closest('[data-sheet-ignore]')) return;
     if (!tapDismisses && e.target.closest('button, input, a')) return;
     y0 = lastY = e.clientY; lastT = performance.now(); dy = 0; vel = 0; moved = false; pid = e.pointerId;
     try { handle.setPointerCapture(pid); } catch (_) {}
@@ -9523,7 +10198,11 @@ function openYTPlayer(videoId, title, trackId, ev) {
   // ── Phone sheet grab bar (CSS shows it only in the phone full screen player)
   const _ytpGrabEl = document.createElement('div');
   _ytpGrabEl.className = 'ytp-fs-grab';
-  _ytpGrabEl.innerHTML = `<button type="button" class="ytp-fs-grab-btn" onclick="ytpSheetDismiss()" title="Minimize player" aria-label="Minimize player">${YTP_DECK_ICONS.down}</button>`;
+  // ⋯ sits top right, where Spotify and YouTube Music both keep it. It opts
+  // out of the bar's pull-to-dismiss, which would otherwise treat the tap as
+  // a tap on the bar and close the sheet.
+  _ytpGrabEl.innerHTML = `<button type="button" class="ytp-fs-grab-btn" onclick="ytpSheetDismiss()" title="Minimize player" aria-label="Minimize player">${YTP_DECK_ICONS.down}</button>` +
+    `<button type="button" class="ytp-fs-more-btn" id="ytp-md-more" data-sheet-ignore onclick="sjmOpenForPlayer(this,event)" title="Background Play, versions, add to playlist, never play, report" aria-label="More options">${YTP_DECK_ICONS.more}</button>`;
   _ytpContainerEl.appendChild(_ytpGrabEl);
   ytpWireSheetDrag(_ytpGrabEl, { tapDismisses: true });
 
@@ -9540,6 +10219,10 @@ function openYTPlayer(videoId, title, trackId, ev) {
       '<span class="ytp-lyr-font-ctrl" style="font-size:.5rem;color:var(--text-muted)">A</span>' +
       '<button id="ytp-lyr-time-btn" class="tv-time-btn" style="display:none" onmousedown="event.stopPropagation()" onclick="tvToggleOffsetEditor()" title="Shift the karaoke timing for this version of the video">Timing</button>' +
       '<span id="ytp-lyr-btns" style="display:flex;gap:4px;flex-shrink:0;align-items:center"></span>' +
+      '<span class="ytp-lyr-size-btns" onmousedown="event.stopPropagation()">' +
+        '<button type="button" onclick="sjLyricScaleStep(-1);event.stopPropagation()" title="Smaller lyrics" aria-label="Smaller lyrics">A<small>−</small></button>' +
+        '<button type="button" onclick="sjLyricScaleStep(1);event.stopPropagation()" title="Larger lyrics" aria-label="Larger lyrics">A<big>+</big></button>' +
+      '</span>' +
     '</div>' +
     '<div id="tv-offset-row" style="display:none">' +
       '<span class="tv-offset-lbl">Lyrics start</span>' +
@@ -10361,6 +11044,10 @@ function ytpPaintUpNext() {
   }
   const dockSlot = document.getElementById('ytp-mf-up-next');
   if (dockSlot) dockSlot.innerHTML = html;
+  // The phone sheet hides the desktop slot above the video, so it carries its
+  // own copy in the deck, between the transport and the Lyrics / Up Next switch.
+  const deckSlot = document.getElementById('ytp-md-up-next');
+  if (deckSlot) deckSlot.innerHTML = html;
 }
 
 function ytpPaintTogs() {
@@ -10770,7 +11457,7 @@ async function sjDlInit() {
     // Load saved playlists even if the phone never opens Explore Playlists.
     // Native keeps its last snapshot until this fetch succeeds.
     void loadPlaylists();
-    void sjCarPushStreamLibrary();
+    void sjCarEnsureAccess();
   } catch (_) {}
   try {
     // Fired by the car the moment something is tapped, so a rating reaches the
@@ -10829,42 +11516,49 @@ async function sjCarPushPlaylists() {
   } catch (_) {}
 }
 
-// What the car can stream with no download: approved artist uploads for
-// anyone, plus this account's own uploads. CarPlay used to be downloads only,
-// so a car with good signal still said "Nothing downloaded yet". Only this web
-// view holds a session, so the list - with URLs signed for a week - is handed
-// over whenever the app is awake; native tops up the artist half by itself.
-// A failed fetch pushes nothing, so the car keeps its last good list offline.
-let _sjCarLibraryAt = 0;
-let _sjCarLibraryFor = null;
-let _sjCarStreamIds = [];
-async function sjCarPushStreamLibrary(force) {
+// ── CarPlay streaming: the car key ─────────────────────────────────────
+// Uploaded songs and artist-licensed songs stream in CarPlay with no download.
+// The car cannot sign in and this page is asleep during a drive, so the phone
+// holds a car key issued here while the listener is signed in, and native
+// trades it for a fresh signed URL as each song starts (/api/sj-carplay-stream).
+// One key per device per account: carAccessStatus says whether the phone
+// already holds one for this email, so this is a no-op on every later launch.
+// Older app builds lack setCarAccess and simply skip all of it.
+let _sjCarAccessBusy = false;
+async function sjCarEnsureAccess() {
   const p = sjDlPlugin();
-  if (!p || !p.setStreamLibrary) return;
-  const who = googleUser?.email || '';
-  // Coming back to the app every few minutes is not worth re-signing a
-  // whole library; a change of account always is.
-  if (!force && who === _sjCarLibraryFor && Date.now() - _sjCarLibraryAt < 30 * 60 * 1000) return;
+  if (!p || !p.setCarAccess || !googleUser?.email || _sjCarAccessBusy) return;
+  _sjCarAccessBusy = true;
   try {
-    const res = await fetch(sjApiUrl('/api/sj-carplay-library'), { headers: await sjAuthHeaders(), cache: 'no-store' });
+    const st = await p.carAccessStatus();
+    if (st?.hasKey && String(st.email || '').toLowerCase() === googleUser.email.toLowerCase()) return;
+    const res = await fetch(sjApiUrl('/api/sj-carplay-key'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+      body: JSON.stringify({ deviceId: getDeviceId() }),
+    });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) return;
-    // A session that was still loading would answer the artist half only and
-    // wipe the listener's own songs from the car. Wait for the real one.
-    if (googleUser && !data.signedIn) return;
-    await p.setStreamLibrary({ tracks: data.tracks || [], expiresAt: data.expiresAt, signedIn: !!data.signedIn });
-    _sjCarStreamIds = (data.tracks || []).map(t => t.trackId).filter(Boolean);
-    _sjCarLibraryAt = Date.now();
-    _sjCarLibraryFor = who;
-    // Streamed songs get the same heart counts and weights as downloaded ones.
-    sjCarSchedulePushRatings();
-  } catch (_) {}
+    if (!res.ok || !data.ok || !data.key) return;
+    await p.setCarAccess({ baseUrl: SJ_FRAME_ORIGIN, key: data.key, email: data.email || googleUser.email });
+  } catch (_) {
+  } finally {
+    _sjCarAccessBusy = false;
+  }
 }
 
-// Songs the car can play, downloaded or streamed - what the heart and
-// shuffle-weight pushes have to cover.
-function sjCarTrackIds() {
-  return [...new Set([..._sjDownloads.keys(), ..._sjCarStreamIds])];
+// Sign-out revokes the key and takes this account's own songs out of the car.
+// Artist-licensed songs stay: they never needed an account.
+async function sjCarClearAccess() {
+  const p = sjDlPlugin();
+  if (!p || !p.clearCarAccess) return;
+  try { await p.clearCarAccess(); } catch (_) {}
+}
+
+// An upload or a removal should be in the car on the next drive, not after the
+// next launch.
+function sjCarRefreshLibrary() {
+  const p = sjDlPlugin();
+  if (p && p.refreshCarLibrary) p.refreshCarLibrary().catch(() => {});
 }
 
 let _sjCarRatingsTimer = null;
@@ -11622,11 +12316,13 @@ function updateYTQueueUI(opts) {
 
   const queueHTML = `<div class="yt-queue-wrap" style="display:flex;flex-direction:column;flex-shrink:0">
     ${ytPlaylistBarHTML()}
-    <div class="yt-queue-section" onscroll="ytQueueOnScroll()">
+    <div class="yt-queue-section${_ytQueueFindOpen ? ' find-open' : ''}" onscroll="ytQueueOnScroll()">
       <div class="yt-queue-sticky">
         <div class="yt-queue-head">
           <span>Queue · ${ytQueue.length} track${ytQueue.length === 1 ? '' : 's'}</span>
-          <button onclick="ytClearQueue()" class="yt-queue-clear" style="margin-left:auto">Clear Playlist</button>
+          <button type="button" class="yt-queue-icon${_ytQueueFindOpen ? ' on' : ''}" style="margin-left:auto" onclick="ytQueueToggleFind(this)" title="Search this playlist" aria-label="Search this playlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></button>
+          ${googleUser ? '<button type="button" class="yt-queue-icon" onclick="openSavePlaylistDialog()" title="Save as playlist" aria-label="Save as playlist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>' : ''}
+          <button onclick="ytClearQueue()" class="yt-queue-clear">Clear Playlist</button>
         </div>
         <div class="yt-queue-find">
           <input type="text" id="yt-queue-find" placeholder="Search this playlist"
@@ -11891,6 +12587,39 @@ function ytQueueVisibleIdx() {
   return out;
 }
 
+// Phone rows read like Spotify's and YouTube Music's: cover, song, and the
+// artist on a line of its own. The one-line "Artist - Song" label stays for
+// the desktop list, and CSS picks between them.
+function ytQueueThumbHTML(item) {
+  let src = (item.artwork && item.artwork !== '/favicon.png') ? item.artwork : '';
+  if (!src && item.videoId) src = 'https://i.ytimg.com/vi/' + encodeURIComponent(item.videoId) + '/mqdefault.jpg';
+  return '<span class="yt-queue-thumb">' +
+    (src ? '<img src="' + escHtml(src) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>';
+}
+
+function ytQueueTwoLineHTML(i) {
+  const item = ytQueue[i] || {};
+  const m = (item.trackId && !item.artist) ? ytpTrackMeta(item.trackId, item.title, null, item) : null;
+  const song = item.title || (m && m.title) || '';
+  const artist = (m && m.artist) || item.artist || '';
+  return '<span class="yt-queue-2l"><span class="yt-queue-song">' + escHtml(song) + '</span>' +
+    (artist ? '<span class="yt-queue-artist">' + escHtml(artist) + '</span>' : '') + '</span>';
+}
+
+// The search field is folded away behind an icon on the phone, but a filter
+// that is already doing something always stays visible. Remembered across
+// redraws: the queue is rebuilt on every track change.
+let _ytQueueFindOpen = false;
+function ytQueueToggleFind(btn) {
+  const sec = btn && btn.closest('.yt-queue-section');
+  if (!sec) return;
+  const open = _ytQueueFindOpen = sec.classList.toggle('find-open');
+  btn.classList.toggle('on', open);
+  const input = sec.querySelector('#yt-queue-find');
+  if (open && input) input.focus();
+  else if (input && input.value) { input.value = ''; ytQueueFilter(''); }
+}
+
 function ytQueueRowHTML(i) {
   const item  = ytQueue[i] || {};
   const label = escHtml(ytQueueLabelAt(i).label);
@@ -11898,7 +12627,9 @@ function ytQueueRowHTML(i) {
   return '<div class="yt-queue-row' + (i === ytQueueIdx ? ' active' : '') +
       '" data-queue-idx="' + i + '" onclick="ytPlayQueueIdx(' + i + ')">' +
     '<span class="yt-queue-num">' + (i + 1) + '</span>' +
+    ytQueueThumbHTML(item) +
     '<span class="yt-queue-title">' + label + '</span>' +
+    ytQueueTwoLineHTML(i) +
     ((item.addedBy && !item.addedByOwner)
       ? '<span class="yt-queue-by" title="Queued from the Online Jukebox by ' +
         escHtml(item.addedBy) + '">Added by ' + escHtml(item.addedBy) + '</span>' : '') +
@@ -16636,6 +17367,7 @@ async function taUploadOneFile(trackId, file, expectMs) {
     const signedUrl = completeData.audio.url;
     taData[trackId] = { url: signedUrl, path, duration: dur, isPublic: false, uploadedBy: session.user.id };
     _homeLibLoaded = false;
+    sjCarRefreshLibrary();
     await refreshBgUnlock();
     taSyncQuotaLabel('taBatchQuota');
     taSyncAudioBtn();
@@ -17311,6 +18043,7 @@ async function taDeleteUploaded(trackId, path) {
     delete taData[trackId];
   }
   _homeLibLoaded = false;
+  sjCarRefreshLibrary();
   taSyncAudioBtn();
 }
 
@@ -17745,6 +18478,9 @@ let _lyrSyncActiveIdx = -1;
 let _lyrSyncScrollHold = 0;     // pause auto-scroll until this timestamp after manual scroll
 let _lyrSyncEnabled = true;
 try { _lyrSyncEnabled = localStorage.getItem('sj_lyric_sync') !== '0'; } catch(e) {}
+// Phones have no Sync switch, so a switch-off saved on this device must not
+// leave the sung line unhighlighted with no way back.
+try { if (window.matchMedia('(max-width:640px)').matches) _lyrSyncEnabled = true; } catch(e) {}
 
 // Subtracted from player time before matching LRC timestamps, so a music video
 // with a long instrumental intro still highlights the right line. The number
@@ -25434,6 +26170,22 @@ function plScope() {
   return googleUser ? playlistExploreFilter : 'public';
 }
 
+// On the iPhone app the explore pages lead with search, sort and the view
+// switch - what Spotify's Library shows - and fold the rest behind Filters.
+// The open state lives on <html>, so it survives every re-render of the page.
+function sjFiltersBtnHTML() {
+  const open = document.documentElement.classList.contains('sj-filters-open');
+  return `<button type="button" class="sj-filters-btn${open ? ' on' : ''}" onclick="sjToggleFilters(this)" aria-expanded="${open}">` +
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M7 12h10M10 17h4"/></svg>Filters</button>`;
+}
+function sjToggleFilters(btn) {
+  const open = document.documentElement.classList.toggle('sj-filters-open');
+  document.querySelectorAll('.sj-filters-btn').forEach(b => {
+    b.classList.toggle('on', open);
+    b.setAttribute('aria-expanded', String(open));
+  });
+}
+
 function exploreViewToggleHTML(mode, setFn) {
   const isDetail = mode === 'detail';
   return `<span class="explore-view-tog" role="group" aria-label="View mode">` +
@@ -27643,9 +28395,9 @@ function plWallDetailRowHTML(item, i, curIdx) {
     : '<span class="pl-detail-art-ph">♫</span>';
   return `<tr class="pl-detail-row${isCurrent ? ' current' : ''}${blocked ? ' blocked' : ''}${rowEditable ? ' editable' : ''}" data-pc-index="${i}" data-pc-track="${row.trackId}"${dragAttrs} onclick="togglePlDetailAccordion(${i},event)">` +
     `<td class="num" data-pl-order>${i + 1}</td>` +
-    `<td><div class="pl-detail-track">${art}<span class="pl-detail-title">${esc(row.title)}</span></div></td>` +
-    `<td><div class="pl-detail-muted" title="${esc(row.album)}">${esc(row.album) || '—'}</div></td>` +
-    `<td><div class="pl-detail-muted" title="${esc(row.artist)}">${esc(row.artist) || '—'}</div></td>` +
+    `<td class="pl-c-title"><div class="pl-detail-track">${art}<span class="pl-detail-title">${esc(row.title)}</span></div></td>` +
+    `<td class="pl-c-album"><div class="pl-detail-muted" title="${esc(row.album)}">${esc(row.album) || '—'}</div></td>` +
+    `<td class="pl-c-artist"><div class="pl-detail-muted" title="${esc(row.artist)}">${esc(row.artist) || '—'}</div></td>` +
     `<td><div class="pl-detail-muted" title="${esc(uploaded)}">${esc(uploaded) || '—'}</div></td>` +
     `<td><div class="pl-detail-muted" title="${esc(row.addedByEmail)}">${esc(addedByLbl) || '—'}</div></td>` +
     `<td class="num" data-pl-last>${esc(last)}</td>` +
@@ -28169,8 +28921,9 @@ function liveRoomPaintOverlay() {
     el.setAttribute('role', 'status');
     document.body.appendChild(el);
   }
-  const name = escHtml(_liveRoomListen.name || 'Live Jukebox');
-  el.innerHTML = '<span>Listening to ' + name + '\'s Jukebox</span>'
+  const raw = String(_liveRoomListen.name || 'Live Jukebox').replace(/\s*·\s*Live Now\s*$/i, '');
+  const label = /jukebox$/i.test(raw) ? raw : raw + '\'s Jukebox';
+  el.innerHTML = '<span class="lrl-name" title="Listening to ' + escHtml(label) + '">' + escHtml(label) + '</span>'
     + '<button type="button" class="' + (_liveRoomMuted ? 'on' : '') + '" onclick="liveRoomToggleMute()" title="'
     + (_liveRoomMuted ? 'Unmute speakers' : 'Mute speakers') + '">'
     + (_liveRoomMuted ? 'Unmute' : 'Mute') + '</button>'
@@ -28460,7 +29213,8 @@ async function openLiveRoomAddSongs() {
     timer = setTimeout(async () => {
       out.textContent = 'Searching…';
       try {
-        const data = await fetch('/api/jukebox/catalog?q=' + encodeURIComponent(q)).then(r => r.json());
+        const data = await fetch('/api/jukebox/catalog?code=' + encodeURIComponent(liveRoomMode?._roomCode || '') + '&q=' + encodeURIComponent(q)).then(r => r.json());
+        if (data && data.ok === false) throw new Error(data.error || 'search failed');
         const rows = data.results || [];
         out.innerHTML = rows.length ? rows.map(t => '<div class="pl-detail-row" style="display:flex;align-items:center;gap:10px;padding:9px 0"><span style="flex:1"><b>' + escHtml(t.name) + '</b><br><small>' + escHtml(t.artistName || '') + '</small></span><button class="pl-wall-back" onclick="liveRoomAddTrack(\'' + t.id + '\',\'' + escHtml(t.name).replace(/'/g, '&#39;') + '\')">Add</button></div>').join('') : 'No songs found.';
       } catch (_) { out.textContent = 'Could not search the catalogue.'; }
@@ -29807,7 +30561,7 @@ function esFiltersHTML() {
   const subAllOn = landingSubmitterFilter.size === 0;
   const subAllRow = `<label class="lsm-item lsm-all"><input type="checkbox"${subAllOn ? ' checked' : ''} onchange="selectAllSubmitters()"><span class="lsm-name">All</span></label>`;
   const subItems = subOpts.map((o, i) => `<label class="lsm-item"><input type="checkbox"${!subNone && (subAllOn || landingSubmitterFilter.has(o[0])) ? ' checked' : ''} onchange="toggleSubmitterFilter(${i})"><span class="lsm-name">${esc(o[1])}</span><span class="lsm-count">${o[2]} artist${o[2] === 1 ? '' : 's'}</span></label>`).join('');
-  return `<div class="landing-control-group">
+  return `<div class="landing-control-group sj-more-filter">
       <span class="landing-control-lbl">Artists</span>
       <div class="landing-artists-dd">
         <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -29816,7 +30570,7 @@ function esFiltersHTML() {
         </div>
       </div>
     </div>` +
-    (artistScope() === 'mine' ? '' : `<div class="landing-control-group">
+    (artistScope() === 'mine' ? '' : `<div class="landing-control-group sj-more-filter">
       <span class="landing-control-lbl">Submitted By</span>
       <div class="landing-submitter-dd">
         <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -29826,7 +30580,7 @@ function esFiltersHTML() {
         </div>
       </div>
     </div>`) +
-    `<div class="landing-control-group">
+    `<div class="landing-control-group sj-more-filter">
       <span class="landing-control-lbl">Lyrics</span>
       <div class="landing-submitter-dd es-lyrics-dd">
         <button type="button" class="landing-submitter-btn" id="es-lyrics-btn" onclick="toggleLyricsDD(event)">${esc(esLyricBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -29853,6 +30607,7 @@ function esSongsPageHTML() {
           sorts.map(o => '<option value="' + o.col + '"' + (ttSortCol === o.col ? ' selected' : '') + '>' + o.lbl + '</option>').join('') +
         '</select>' +
       '</span>' +
+      sjFiltersBtnHTML() +
     '</div>' +
     '<div class="es-selbar" id="es-selbar">' + esSelBarHTML() + '</div>' +
     '<div id="es-body">' + esBodyHTML() + '</div>' +
@@ -29860,11 +30615,13 @@ function esSongsPageHTML() {
 }
 
 function esCountLabel() {
-  if (!_esLoaded) return 'Click column headers to sort';
+  // The iPhone app draws songs as rows, not columns, so there are no headers to click.
+  const hint = document.documentElement.classList.contains('sj-ios') ? '' : 'click column headers to sort';
+  if (!_esLoaded) return hint ? hint[0].toUpperCase() + hint.slice(1) : '';
   const n = esSongRows().length;
   const shown = Math.min(n, _esLimit);
   return n.toLocaleString() + ' song' + (n === 1 ? '' : 's') +
-    (shown < n ? ' · showing ' + shown.toLocaleString() : '') + ' · click column headers to sort';
+    (shown < n ? ' · showing ' + shown.toLocaleString() : '') + (hint ? ' · ' + hint : '');
 }
 
 function esBodyHTML() {
@@ -30417,7 +31174,7 @@ function renderLanding() {
               : (plScope() === 'public' ? 'No public playlists yet.' : 'No playlists to show yet.')));
         const _contribOpts = playlistContributorOptions();
         return `<div class="playlist-explore-filters">
-            <div class="landing-control-group" style="margin:0">
+            <div class="landing-control-group sj-more-filter" style="margin:0">
               <span class="landing-control-lbl">Playlists</span>
               <div class="playlist-explore-dd">
                 <button type="button" class="landing-submitter-btn" onclick="togglePlaylistsDD(event)">${esc(playlistsBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -30426,7 +31183,7 @@ function renderLanding() {
                 </div>
               </div>
             </div>
-            ${plScope() === 'mine' || plScope() === 'live' ? '' : `<div class="landing-control-group" style="margin:0">
+            ${plScope() === 'mine' || plScope() === 'live' ? '' : `<div class="landing-control-group sj-more-filter" style="margin:0">
               <span class="landing-control-lbl">Contributor</span>
               <select class="landing-sort-select" id="playlist-explore-contributor" onchange="setPlaylistExploreContributor(this.value)">
                 <option value="">All Contributors</option>
@@ -30453,16 +31210,17 @@ function renderLanding() {
                 ${plSortOpt('tracks_asc', 'Fewest Tracks')}
               </select>
             </div>`}
-            ${explorePlaylistsView === 'covers' ? `<div class="landing-control-group" style="margin:0">
+            ${explorePlaylistsView === 'covers' ? `<div class="landing-control-group sj-more-filter" style="margin:0">
               <span class="landing-control-lbl">Card Size</span>
               ${sjSizeSliderHTML('playlist', SJ_PL_SIZES.indexOf(playlistCardSize))}
             </div>` : ''}
             ${exploreViewToggleHTML(explorePlaylistsView, 'setExplorePlaylistsView')}
-            ${explorePlaylistsView === 'detail' ? `<span class="explore-view-tog" role="group" aria-label="Track order">
+            ${explorePlaylistsView === 'detail' ? `<span class="explore-view-tog sj-more-filter" role="group" aria-label="Track order">
               <button type="button" class="pl-wall-back${playlistExploreDetailGroup === 'order' ? ' on' : ''}" onclick="setPlaylistExploreDetailGroup('order')">Playlist order</button>
               <button type="button" class="pl-wall-back${playlistExploreDetailGroup === 'artist' ? ' on' : ''}" onclick="setPlaylistExploreDetailGroup('artist')">By artist</button>
             </span>` : ''}
-            ${plScope() === 'mine' && googleUser ? `<label class="playlist-explore-hide-shared"><input type="checkbox"${playlistExploreHideShared ? ' checked' : ''} onchange="setPlaylistExploreHideShared(this.checked)"><span>Hide shared</span></label>` : ''}
+            ${sjFiltersBtnHTML()}
+            ${plScope() === 'mine' && googleUser ? `<label class="playlist-explore-hide-shared sj-more-filter"><input type="checkbox"${playlistExploreHideShared ? ' checked' : ''} onchange="setPlaylistExploreHideShared(this.checked)"><span>Hide shared</span></label>` : ''}
           </div>
           ${(() => {
             if (explorePlaylistsView === 'detail') {
@@ -30498,7 +31256,7 @@ function renderLanding() {
           })()}`;
       })() : landingTab === 'songs' ? esSongsPageHTML() : `
       <div class="landing-controls">
-        ${artistScope() === 'mine' ? '' : `<div class="landing-control-group">
+        ${artistScope() === 'mine' ? '' : `<div class="landing-control-group sj-more-filter">
           <span class="landing-control-lbl">Submitted By</span>
           <div class="landing-submitter-dd">
             <button type="button" class="landing-submitter-btn" onclick="toggleSubmitterDD(event)">${esc(submitterBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -30529,7 +31287,7 @@ function renderLanding() {
             ${sortOpt('score_desc', 'Hearts')}
           </select>
         </div>
-        <div class="landing-control-group landing-artists-group">
+        <div class="landing-control-group landing-artists-group sj-more-filter">
           <span class="landing-control-lbl">Artists</span>
           <div class="landing-artists-dd">
             <button type="button" class="landing-submitter-btn" onclick="toggleArtistsDD(event)">${esc(artistsBtnLabel())} <span class="lsb-caret">▾</span></button>
@@ -30541,10 +31299,11 @@ function renderLanding() {
         </div>
         <div class="landing-control-group landing-view-group">
           ${exploreViewToggleHTML(exploreArtistsView, 'setExploreArtistsView')}
-          ${exploreArtistsView === 'covers' ? `<div class="landing-card-size-row">
+          ${exploreArtistsView === 'covers' ? `<div class="landing-card-size-row sj-more-filter">
             <span class="landing-control-lbl">Card Size</span>
             ${sjSizeSliderHTML('landing', SJ_LANDING_SIZES.indexOf(landingDetailLevel))}
           </div>` : ''}
+          ${sjFiltersBtnHTML()}
         </div>
       </div>
       ${rows.length ? '' : `<div class="landing-no-results">No artists match ${landingSearchQ ? '“' + esc(landingSearchQ) + '”' : 'the current filters'}.</div>`}
@@ -31088,19 +31847,31 @@ function eaToggleAlbumDetail(albumId, artistId) {
   }
 }
 
+// On the iPhone app an artist's albums start folded, so the list reads as a
+// list of artists; tapping the artist opens them. Remembered across re-renders.
+const eaOpenArtistIds = new Set();
+function eaToggleArtistDetail(hd) {
+  const card = hd && hd.closest('.ex-detail-artist');
+  if (!card) return;
+  const id = card.dataset.artistId;
+  const open = card.classList.toggle('open');
+  if (open) eaOpenArtistIds.add(id); else eaOpenArtistIds.delete(id);
+}
+
 function eaDetailArtistHTML(r) {
   const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const memberIds = (r.member_ids && r.member_ids.length) ? r.member_ids : [r.artist_id];
   const albList = memberIds.flatMap(aid => albums[aid] || [])
     .sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
-  return `<div class="ex-detail-artist" data-artist-id="${r.artist_id}">
-    <div class="ex-detail-artist-hd">
+  return `<div class="ex-detail-artist${eaOpenArtistIds.has(r.artist_id) ? ' open' : ''}" data-artist-id="${r.artist_id}">
+    <div class="ex-detail-artist-hd" onclick="eaToggleArtistDetail(this)">
       <span class="ex-detail-name">${esc(r.name)}</span>
+      <span class="ex-detail-artist-chev" aria-hidden="true"></span>
       <span class="ex-detail-artist-meta">${r.album_count || albList.length} albums · ${r.track_count || 0} tracks</span>
       <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
       ${r.discography_complete === false
         ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')">Import Discography</button>`
-        : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore jukebox →</button>`}
+        : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Discography →</button>`}
     </div>
     <div class="ex-detail-albs">${albList.map(alb => eaDetailAlbumHTML(alb, r.artist_id)).join('')}</div>
   </div>`;
@@ -33084,11 +33855,11 @@ function renderTopTracks(trackList, opts) {
         ${showSel ? `<td class="tt-selc" onclick="event.stopPropagation()"><input type="checkbox"${_esSel.has(t.id) ? ' checked' : ''} aria-label="Select ${(t.name||'').replace(/"/g,'&quot;')}" onclick="event.stopPropagation();esSelToggle('${t.id}',this.checked,event)"></td>` : ''}
         <td class="tt-rank">${i + 1}</td>
         ${showArtist
-          ? `<td style="font-size:.55rem;color:var(--text-muted);white-space:nowrap"><span class="es-artist" onclick="event.stopPropagation();esGoArtist('${(t._alb?.artist_id)||''}')">${(t._artist || '-').replace(/</g,'&lt;')}</span></td>`
+          ? `<td class="tt-artist-c" style="font-size:.55rem;color:var(--text-muted);white-space:nowrap"><span class="es-artist" onclick="event.stopPropagation();esGoArtist('${(t._alb?.artist_id)||''}')">${(t._artist || '-').replace(/</g,'&lt;')}</span></td>`
           : `<td style="text-align:center;font-size:.48rem;color:var(--text-muted);font-family:var(--mono);letter-spacing:0;white-space:nowrap">${t._albIdx !== 999 ? t._albIdx + '.' + String(t._trkNum||'?').padStart(2,'0') : '-'}</td>`}
-        <td style="font-weight:500"><span class="artist-dot" style="background:${color}"></span>${t.name}</td>
+        <td class="tt-name-c" style="font-weight:500"><span class="artist-dot" style="background:${color}"></span>${t.name}</td>
         <td style="text-align:right;color:var(--text-muted);font-size:.58rem;white-space:nowrap">${durStr}</td>
-        <td style="color:var(--text-muted);font-size:.58rem">${t._alb?.name || '-'}</td>
+        <td class="tt-album-c" style="color:var(--text-muted);font-size:.58rem">${t._alb?.name || '-'}</td>
         ${showAlts ? `<td style="text-align:center">${altCell}</td>` : ''}
         ${showLyric && !replaceAlts ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
         ${replaceAlts ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
@@ -37864,11 +38635,19 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-20';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-25';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-25', items: [
+    'Add Songs in a live jukebox finds songs again. Searching for any artist or song was coming back with No songs found.',
+    'When a guest asks for a song that is already somewhere in the host\'s queue, and the jukebox is set to play guest songs first, that song now moves up to play next instead of staying where it was.',
+    'The Listening bar you get after joining a live jukebox is now one slim line, and on a phone it sits above the player instead of over it. With the player full screen it tucks into the top corner.',
+  ]},
+  { date: '2026-09-23', items: [
+    'Pressing Save playlist while signed out now shows the sign in box in front of Create a Playlist. Before, it opened behind the window, so the button seemed to do nothing. Your list is kept while you sign in.',
+  ]},
   { date: '2026-09-20', items: [
     'On a phone, Suffering Jukebox now has a tab bar along the bottom (Artists, Playlists, Songs and You), and the player rests on it as one slim bar with a thin progress line. The catalogue stays on screen while a song plays. Tap the bar or swipe it up to open the player.',
     'The full screen player on a phone is simpler on both sites: the video, then the song and artist with rating, heart and ⋯, the timeline, one row of controls, and Lyrics or Up Next. Pull the grab bar down, or tap the arrow, to put it away. Background Play and switching versions are in ⋯.',
@@ -40333,6 +41112,7 @@ async function setAudioLoad() {
 }
 
 async function handleLogout() {
+  await sjCarClearAccess();
   await sbAuth.auth.signOut();
   googleUser = null;
   sjIsAdmin = false;
@@ -40496,7 +41276,7 @@ function initGoogleAuth() {
         loadMyBlockedTracks();
         // On the phone this is the moment to offer whatever was queued
         // elsewhere; everywhere else it just makes the Send buttons honest.
-        if (sjIsNative()) sjCpNativeCheck({ auto: true });
+        if (sjIsNative()) { sjCpNativeCheck({ auto: true }); void sjCarEnsureAccess(); }
         else sjCpRefresh();
         // Your own uploads join the car's streamable library with your session.
         void sjCarPushStreamLibrary(true);
@@ -42527,6 +43307,29 @@ function applyGlobalLyricSize(size) {
   if (djSl && Number(djSl.value) !== globalLyricSize) djSl.value = String(globalLyricSize);
   try { localStorage.setItem('sj_lyric_size', size); } catch(e) {}
 }
+// Phones set lyric size with A− / A+ rather than the desktop slider: a scale on
+// the phone's own reading size, remembered on this device.
+const SJ_LYR_SCALES = [0.75, 0.85, 1, 1.15, 1.3, 1.5, 1.75];
+function sjLyricScale() {
+  let v = 1;
+  try { v = parseFloat(localStorage.getItem('sj_lyric_scale_mob')) || 1; } catch (_) {}
+  return v;
+}
+function sjApplyLyricScale(v) {
+  document.documentElement.style.setProperty('--sj-lyr-scale', String(v));
+}
+function sjLyricScaleStep(dir) {
+  const cur = sjLyricScale();
+  let i = SJ_LYR_SCALES.findIndex(x => x >= cur - 0.001);
+  if (i < 0) i = SJ_LYR_SCALES.length - 1;
+  const next = SJ_LYR_SCALES[Math.max(0, Math.min(SJ_LYR_SCALES.length - 1, i + dir))];
+  try { localStorage.setItem('sj_lyric_scale_mob', String(next)); } catch (_) {}
+  sjApplyLyricScale(next);
+  // Keep the sung line in view after the text reflows.
+  requestAnimationFrame(() => document.querySelector('#ytp-lyr-text .lyr-active')?.scrollIntoView({ block: 'center' }));
+}
+sjApplyLyricScale(sjLyricScale());
+
 (function restoreLyricSize() {
   try {
     const ls = localStorage.getItem('sj_lyric_size');
@@ -42768,7 +43571,7 @@ async function dbGetAllPages(url, hdrs, pageSize = 1000) {
     // A failed page used to fall through as a non-array and break the loop, so
     // a 500 halfway through a sweep returned partial data and reported success.
     if (!r.ok) throw new Error(await r.text());
-    const page = await r.json();
+    const page = sjAbsSiteUrls(await r.json());
     if (!Array.isArray(page) || !page.length) break;
     all = all.concat(page);
     if (page.length < pageSize) break;
@@ -46650,15 +47453,23 @@ async function sjjAdopt(items, announceNew = true) {
   const info = await resolvePlaylistTracks(items.map(i => i.trackId)).catch(() => ({}));
   const add = [];
   const announce = [];
+  const promote = [];
   items.forEach(i => {
     // After a refresh the host re-sends its whole queue with no ids, so the
     // room hands the same songs back as if they were new. Claim the local row
-    // instead of appending a second copy of a song already waiting.
-    const mine = ytQueue.find(q => !q.jbItemId && q.trackId === i.trackId);
+    // instead of appending a second copy of a song already waiting. A copy
+    // still to come is preferred over one that has already played.
+    const unclaimed = (q, n) => !q.jbItemId && q.trackId === i.trackId;
+    const mine = ytQueue.find((q, n) => n > ytQueueIdx && unclaimed(q, n))
+      || ytQueue.find(unclaimed);
     if (mine) {
       mine.jbItemId = i.id;
       mine.addedBy = i.addedByName || null;
       mine.addedByOwner = !!i.addedByOwner;
+      // A guest asked for a song the host already had queued (or had already
+      // played). With requests first, it still has to jump to Up Next -
+      // claiming the row where it sat left it 400 songs away, or behind us.
+      if (!i.addedByOwner) promote.push(mine);
       return;
     }
     announce.push(i);
@@ -46692,6 +47503,7 @@ async function sjjAdopt(items, announceNew = true) {
     }
     updateYTQueueUI();
   }
+  if (promote.length && _sjjRoom?.settings?.guestsFirst) promote.forEach(sjjPromoteRequest);
   // Only songs that are genuinely new to this device are announced; a
   // reclaimed row is not somebody walking up to the jukebox.
   if (announceNew) announce.forEach(sjjAddToast);
@@ -46709,6 +47521,20 @@ function sjjRequestInsertAt() {
   let at = Math.max(0, ytQueueIdx) + (ytQueue.length ? 1 : 0);
   while (at < ytQueue.length && ytQueue[at].addedBy && !ytQueue[at].addedByOwner) at++;
   return at;
+}
+
+// Move a claimed request into the request block behind the song on screen,
+// unless it is already there (a host reload re-claims waiting requests in
+// place, and shuffling those again would reorder who asked first).
+function sjjPromoteRequest(row) {
+  const idx = ytQueue.indexOf(row);
+  if (idx < 0 || idx === ytQueueIdx) return;
+  let end = Math.max(0, ytQueueIdx) + (ytQueue.length ? 1 : 0);
+  const start = end;
+  while (end < ytQueue.length && ytQueue[end].addedBy && !ytQueue[end].addedByOwner) end++;
+  if (idx >= start && idx < end) return;
+  const at = sjjRequestInsertAt();
+  ytMoveToIndex(idx, idx < at ? at - 1 : at);
 }
 
 // Songs the room no longer has: removed from the console, or pulled back by

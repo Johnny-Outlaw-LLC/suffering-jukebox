@@ -190,7 +190,7 @@ function rower(queue, idx) {
     VOTE_LABELS: { 0: '-' },
     ytpTrackMeta: () => ({ artist: 'From Catalogue', title: 'Resolved' }),
   };
-  const fns = loadHtmlFnsInScope(['ytQueueRowHTML', 'ytQueueLabelAt'], scope);
+  const fns = loadHtmlFnsInScope(['ytQueueRowHTML', 'ytQueueLabelAt', 'ytQueueThumbHTML', 'ytQueueTwoLineHTML'], scope);
   return { ...fns, scope };
 }
 
@@ -275,7 +275,7 @@ test('the cached labels are dropped before either list paints, not after', () =>
 });
 
 test('the scroll handler is wired to both lists and throttled to a frame', () => {
-  assert.match(dashboardHtml, /class="yt-queue-section" onscroll="ytQueueOnScroll\(\)"/);
+  assert.match(dashboardHtml, /class="yt-queue-section[^"]*" onscroll="ytQueueOnScroll\(\)"/);
   assert.match(dashboardHtml, /id="ytp-mf-playlist"[^>]*onscroll="ytpDockPlaylistOnScroll\(\)"/);
   for (const fn of ['ytQueueOnScroll', 'ytpDockPlaylistOnScroll']) {
     const src = htmlSlice(`function ${fn}()`, '\nfunction ');

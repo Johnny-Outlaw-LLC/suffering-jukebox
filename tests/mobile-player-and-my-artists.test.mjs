@@ -37,17 +37,22 @@ test('artist menu can add a public, non-owned artist to My Artists', () => {
   assert.doesNotMatch(block, /saveArtistFeedback\(artistId/);
 });
 
-test('the phone Now Playing deck is title row, scrubber, transport and Lyrics / Up Next only', () => {
+test('the phone Now Playing deck is title row, scrubber, transport and Up Next / Lyrics only', () => {
   const from = html.indexOf('function ytpMobDeckHTML(trackId) {');
   const deck = html.slice(from, html.indexOf('\n}\n', from));
   assert.ok(from > 0, 'could not locate the phone deck');
-  const order = ['ytp-md-head', 'ytp-md-title', 'ytp-md-reaction-rail', 'ytp-md-more', 'ytp-md-seek', 'ytp-md-playpause', 'ytp-md-tab-lyrics', 'ytp-md-tab-playlist'];
+  // Up Next leads, as in YouTube Music. ⋯ lives in the sheet's top bar.
+  const order = ['ytp-md-head', 'ytp-md-title', 'ytp-md-reaction-rail', 'ytp-md-seek', 'ytp-md-playpause', 'ytp-md-tab-playlist', 'ytp-md-tab-lyrics'];
   let at = -1;
   for (const id of order) {
     const i = deck.indexOf(id);
     assert.ok(i > at, id + ' is missing or out of order');
     at = i;
   }
+  assert.match(html, /class="ytp-fs-more-btn" id="ytp-md-more" data-sheet-ignore/);
+  // The Up Next line (with Skip) sits between transport and the tabs.
+  assert.ok(deck.indexOf('ytp-md-playpause') < deck.indexOf('ytp-md-up-next') &&
+    deck.indexOf('ytp-md-up-next') < deck.indexOf('ytp-md-tab-playlist'), 'Up Next line is misplaced');
   // No chip row and no window buttons: those moved into ⋯ or became the gesture.
   assert.doesNotMatch(deck, /ytp-md-chip|ytp-md-window|ytpCloseToMini|ytpToggleFullscreen/);
   // ⋯ carries Background Play and Versions for the track that is playing.

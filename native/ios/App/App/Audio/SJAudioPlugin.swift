@@ -29,6 +29,10 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "setShuffleProfile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "drainFeedback",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "ackFeedback",    returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCarAccess",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearCarAccess", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "carAccessStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "refreshCarLibrary", returnType: CAPPluginReturnPromise),
     ]
 
     private var engine: SJAudioEngine { SJAudioEngine.shared }
@@ -40,6 +44,12 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         SJCarPlayFeedback.shared.onChange = { [weak self] in
             self?.notifyListeners("carplayFeedback", data: ["pending": SJFeedbackOutbox.shared.pending().count])
         }
+        // Streamable songs: fetch on launch and on every return to the
+        // foreground, so a song uploaded on the desktop is in the car next drive.
+        SJStreamLibrary.shared.refresh()
+        _ = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { _ in SJStreamLibrary.shared.refresh() }
     }
 
     // MARK: - Transport
@@ -292,6 +302,45 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         let ids = (call.getArray("ids") as? [String]) ?? []
         SJFeedbackOutbox.shared.acknowledge(ids: ids)
         call.resolve(["remaining": SJFeedbackOutbox.shared.pending().count])
+    }
+
+    // MARK: - Streaming in the car
+
+    /// The signed-in page hands over a car key (see /api/sj-carplay-key) and the
+    /// site it came from. The key lives in the Keychain; nothing else about the
+    /// session crosses the bridge.
+    @objc func setCarAccess(_ call: CAPPluginCall) {
+        SJStreamLibrary.shared.setAccess(baseURL: call.getString("baseUrl"),
+                                         key: call.getString("key"),
+                                         email: call.getString("email"))
+        call.resolve()
+    }
+
+    @objc func clearCarAccess(_ call: CAPPluginCall) {
+        SJStreamLibrary.shared.clearAccess()
+        call.resolve()
+    }
+
+    /// Whether this phone already holds a key, and for which account, so the
+    /// page only issues a new one on first sign-in or an account switch.
+    @objc func carAccessStatus(_ call: CAPPluginCall) {
+        let lib = SJStreamLibrary.shared
+        let all = lib.all()
+        call.resolve([
+            "hasKey": lib.hasKey,
+            "email": lib.keyEmail ?? NSNull(),
+            "baseUrl": lib.baseURL,
+            "streamable": all.count,
+            "mine": all.filter { $0.source == "mine" }.count,
+        ])
+    }
+
+    /// After an upload or removal, so the car does not wait for the next launch.
+    @objc func refreshCarLibrary(_ call: CAPPluginCall) {
+        SJStreamLibrary.shared.refresh { ok in
+            DispatchQueue.main.async { SJAudioEngine.shared.onQueueChanged?() }
+            call.resolve(["ok": ok, "count": SJStreamLibrary.shared.all().count])
+        }
     }
 
     // MARK: - Engine delegate
