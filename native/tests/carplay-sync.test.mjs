@@ -13,7 +13,7 @@ function extract(name) {
 function setup(extra = {}) {
   const pushed = [];
   const ctx = vm.createContext({
-    _myVotesLoaded: false, _sjCarPlaylistsLoaded: false, _savedPlaylists: [], playlists: [], pubPlaylists: [],
+    _myVotesLoaded: false, _myReactionTracksLoaded: false, _sjCarPlaylistsLoaded: false, _savedPlaylists: [], playlists: [], pubPlaylists: [],
     googleUser: { email: 'me@example.com' },
     sjGetSession: async () => ({ data: { session: { access_token: 'test' } } }),
     sjApiUrl: path => 'https://sufferingjukebox.stream' + path,
@@ -57,13 +57,13 @@ test('Silver Jews artwork repair uses the same album override as the web', async
 });
 
 test('Favorites sync even when saved playlists have not loaded', async () => {
-  const { ctx, pushed } = setup({ _myVotesLoaded: true });
+  const { ctx, pushed } = setup({ _myReactionTracksLoaded: true });
   await ctx.sjCarPushPlaylists();
   assert.equal(pushed[0].preserveSaved, true);
   assert.equal(pushed[0].preserveFavorites, false);
   assert.equal(pushed[0].playlists[0].trackIds.join(','), 'fav');
 });
-test('saved playlist refresh preserves Favorites until votes load', async () => {
+test('saved playlist refresh preserves Favorites until hearts load', async () => {
   const { ctx, pushed } = setup({ _sjCarPlaylistsLoaded: true });
   await ctx.sjCarPushPlaylists();
   assert.equal(pushed[0].preserveFavorites, true);
@@ -83,11 +83,9 @@ test('native partial playlists include one available song and preserve running o
   const method = source.slice(source.indexOf('    func playable()'), source.lastIndexOf('}'));
   const script = `
 import Foundation
-class SJDownloadStore {
-  struct Entry { let trackId: String }
-  static let shared = SJDownloadStore()
-  func entry(for id: String) -> Entry? { ["a", "b"].contains(id) ? Entry(trackId: id) : nil }
-}
+struct SJCarTrack { let trackId: String }
+// "a" is downloaded and "b" only streams: both count as playable in the car.
+enum SJCarLibrary { static func all() -> [SJCarTrack] { ["a", "b"].map(SJCarTrack.init(trackId:)) } }
 class Store {
   struct Playlist { let id: String; let trackIds: [String] }
   func all() -> [Playlist] { [
@@ -119,7 +117,7 @@ class CPListItem {
   init(text: String, detailText: String?) {}
   func setImage(_ image: UIImage?) {}
 }
-class SJDownloadStore { struct Entry { let trackId: String } }
+struct SJCarTrack { let trackId: String }
 class SJShuffleProfile {
   static let shared = SJShuffleProfile()
   var isWeighted = true
@@ -136,17 +134,17 @@ class SJAudioEngine {
   func setShuffle(_ value: Bool) { shuffle = value }
 }
 class Subject {
-  var played: [SJDownloadStore.Entry] = []
+  var played: [SJCarTrack] = []
   var first: String?
   func songCount(_ n: Int) -> String { String(n) }
-  func play(startingAt entry: SJDownloadStore.Entry, in entries: [SJDownloadStore.Entry]) {
+  func play(startingAt entry: SJCarTrack, in entries: [SJCarTrack]) {
     first = entry.trackId
     played = entries
   }
 ${method}
 }
 let subject = Subject()
-let entries = (0..<1000).map { SJDownloadStore.Entry(trackId: String($0)) }
+let entries = (0..<1000).map { SJCarTrack(trackId: String($0)) }
 let item = subject.shuffleItem(for: entries)
 var completed = false
 item.handler?(item, { completed = true })

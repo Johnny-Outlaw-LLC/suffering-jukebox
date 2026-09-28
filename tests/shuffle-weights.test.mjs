@@ -19,14 +19,14 @@ const DAY = 86400000;
 const iso = daysAgo => new Date(Date.now() - daysAgo * DAY).toISOString();
 
 /** The weighting engine, with whatever listening history the test hands it. */
-function engine({ preference, queue = [], plays = {}, lastPlayed = {}, votes = {}, recent = [] }) {
+function engine({ preference, queue = [], plays = {}, lastPlayed = {}, favorites = [], recent = [] }) {
   const context = vm.createContext({
     sjShufflePreference: preference,
     ytQueue: queue.map(id => ({ trackId: id })),
     _ytShuffleRecent: recent.slice(),
     myInAppPlays: plays,
     myLastPlayed: lastPlayed,
-    getMyVote: id => votes[id] || 0,
+    myReactionTrackIds: favorites,
     Math, Date, Number, isFinite,
   });
   vm.runInContext(
@@ -90,7 +90,7 @@ test('Favorites First still puts a favorite ahead, even a recent one', () => {
   const ctx = engine({
     preference: 'favorites',
     queue: ['fav', 'plain'],
-    votes: { fav: 1 },
+    favorites: ['fav'],
     lastPlayed: { fav: iso(0.01) },
   });
   // The damping is floored on purpose: hearing the same six favourites all
@@ -105,7 +105,7 @@ test('No Preferences weighs nothing at all', () => {
     queue: ['a', 'b'],
     plays: { a: 500 },
     lastPlayed: { a: iso(0) },
-    votes: { b: 1 },
+    favorites: ['b'],
   });
   assert.equal(ctx._ytShuffleWeightFor('a'), 1);
   assert.equal(ctx._ytShuffleWeightFor('b'), 1);

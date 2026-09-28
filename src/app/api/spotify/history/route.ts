@@ -52,12 +52,11 @@ function cleanFilterList(value: unknown): string[] | null {
   return [...seen];
 }
 
-type FavoriteRow = { key: string; title: string; artist: string; favorite_score: number; thumbs_up: number; reactions: number };
+type FavoriteRow = { key: string; title: string; artist: string; favorite_score: number; reactions: number };
 type FavoritePlaylistRow = {
   id: string;
   name: string;
   favorite_score: number;
-  thumbs_up: number;
   reactions: number;
   songs: number;
   trackKeys: string[];
@@ -67,24 +66,20 @@ type FavoritePlaylistRow = {
    function, so the Analytics release is self-contained: production does not
    need a separately coordinated schema deployment. */
 async function loadFavorites(sb: ReturnType<typeof createSjServiceClient>, userId: string, email: string) {
-  const [{ data: ratings, error: ratingsError }, { data: reactionRows, error: reactionsError }] = await Promise.all([
-    sb.schema(JUKEBOX_SCHEMA).from("rating_events").select("track_id,new_rating,rated_at").eq("user_email", email).order("rated_at", { ascending: false }).limit(1000),
-    sb.schema(JUKEBOX_SCHEMA).from("track_reactions").select("track_id").eq("user_id", userId).in("reaction", ["heart", "sad"]).limit(1000),
-  ]);
-  if (ratingsError) throw ratingsError;
+  const { data: reactionRows, error: reactionsError } = await sb.schema(JUKEBOX_SCHEMA)
+    .from("track_reactions")
+    .select("track_id")
+    .eq("user_id", userId)
+    .eq("reaction", "heart")
+    .limit(1000);
   if (reactionsError) throw reactionsError;
 
-  const ratingByTrack = new Map<string, number>();
-  for (const row of ratings || []) {
-    const trackId = String(row.track_id || "");
-    if (trackId && !ratingByTrack.has(trackId)) ratingByTrack.set(trackId, Number(row.new_rating) || 0);
-  }
   const reactionsByTrack = new Map<string, number>();
   for (const row of reactionRows || []) {
     const trackId = String(row.track_id || "");
     if (trackId) reactionsByTrack.set(trackId, (reactionsByTrack.get(trackId) || 0) + 1);
   }
-  const ids = [...new Set([...ratingByTrack.keys(), ...reactionsByTrack.keys()])];
+  const ids = [...reactionsByTrack.keys()];
   if (!ids.length) return { favoriteArtists: [], favoriteTracks: [], favoritePlaylists: [] };
 
   const { data: tracks, error: tracksError } = await sb.schema(JUKEBOX_SCHEMA).from("tracks").select("id,name,album_id").in("id", ids);
@@ -104,24 +99,20 @@ async function loadFavorites(sb: ReturnType<typeof createSjServiceClient>, userI
   const albumById = new Map((albums || []).map((row) => [String(row.id), String(row.artist_id)]));
   const favoriteTracks: FavoriteRow[] = (tracks || []).map((track) => {
     const key = String(track.id);
-    const rating = ratingByTrack.get(key) || 0;
-    const thumbs_up = rating === 2 ? 12 : rating === 1 ? 5 : 0;
     const reactions = reactionsByTrack.get(key) || 0;
-    return { key, title: String(track.name || "Unknown track"), artist: artistNameById.get(albumById.get(String(track.album_id)) || "") || "Unknown artist", thumbs_up, reactions, favorite_score: thumbs_up + reactions };
+    return { key, title: String(track.name || "Unknown track"), artist: artistNameById.get(albumById.get(String(track.album_id)) || "") || "Unknown artist", reactions, favorite_score: reactions };
   }).filter((track) => track.favorite_score > 0);
-  const favoriteArtists = new Map<string, { artist: string; favorite_score: number; thumbs_up: number; reactions: number; songs: number }>();
+  const favoriteArtists = new Map<string, { artist: string; favorite_score: number; reactions: number; songs: number }>();
   for (const track of favoriteTracks) {
-    const existing = favoriteArtists.get(track.artist) || { artist: track.artist, favorite_score: 0, thumbs_up: 0, reactions: 0, songs: 0 };
+    const existing = favoriteArtists.get(track.artist) || { artist: track.artist, favorite_score: 0, reactions: 0, songs: 0 };
     existing.favorite_score += track.favorite_score;
-    existing.thumbs_up += track.thumbs_up;
     existing.reactions += track.reactions;
     existing.songs += 1;
     favoriteArtists.set(track.artist, existing);
   }
   const sortFavorites = <T extends { favorite_score: number; reactions: number }>(a: T, b: T) => b.favorite_score - a.favorite_score || b.reactions - a.reactions;
 
-  // Favorite playlists: your own lists, scored the same way as songs — sum of
-  // thumbs-up and reactions on the songs that sit in each list.
+  // Favorite playlists: your own lists, scored by the hearts on their songs.
   const favoriteById = new Map(favoriteTracks.map((track) => [track.key, track]));
   const trackKeySep = "\u001f";
   let favoritePlaylists: FavoritePlaylistRow[] = [];
@@ -148,7 +139,6 @@ async function loadFavorites(sb: ReturnType<typeof createSjServiceClient>, userI
         id: String(row.id),
         name: String(row.name || "Untitled playlist").trim() || "Untitled playlist",
         favorite_score: 0,
-        thumbs_up: 0,
         reactions: 0,
         songs: 0,
         trackKeys: [],
@@ -165,7 +155,6 @@ async function loadFavorites(sb: ReturnType<typeof createSjServiceClient>, userI
       const bucket = byPlaylist.get(playlistId);
       if (!track || !bucket) continue;
       bucket.favorite_score += track.favorite_score;
-      bucket.thumbs_up += track.thumbs_up;
       bucket.reactions += track.reactions;
       bucket.songs += 1;
       bucket.trackKeys.push(`${track.artist}${trackKeySep}${track.title}`);

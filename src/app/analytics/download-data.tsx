@@ -27,13 +27,13 @@ const FILES: Array<{ dataset: Dataset; name: string; file: string; note: string 
     dataset: "playlists",
     name: "My Playlists",
     file: "my-playlists",
-    note: "Your saved playlists, Favorites (liked songs), and Favorites Plus (liked songs and playback reactions), one row per song with its YouTube link.",
+    note: "Your saved playlists and Favorites (songs you hearted while listening), one row per song with its YouTube link.",
   },
   {
     dataset: "songs",
     name: "My Songs",
     file: "my-songs",
-    note: "Every song in your My Jukebox library, with where it came from, your rating and its YouTube link.",
+    note: "Every song in your My Jukebox library, with where it came from, your heart count and its YouTube link.",
   },
   {
     dataset: "history",

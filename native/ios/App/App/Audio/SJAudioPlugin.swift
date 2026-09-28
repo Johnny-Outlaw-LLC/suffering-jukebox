@@ -23,6 +23,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "backfillArtwork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPlayCounts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPlaylists",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setStreamLibrary", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRatedTracks", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHeartCounts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShuffleProfile", returnType: CAPPluginReturnPromise),
@@ -172,6 +173,23 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         }
     }
 
+    // MARK: - Stream library
+
+    /// Hand CarPlay what it can stream without a download: the reply from
+    /// /api/sj-carplay-library, as is. `signedIn: false` means the listener has
+    /// no personal half (signed out), so it is cleared rather than kept.
+    @objc func setStreamLibrary(_ call: CAPPluginCall) {
+        let raw = call.getArray("tracks", JSObject.self) ?? []
+        let expiresAt = call.getDouble("expiresAt") ?? 0
+        let signedIn = call.getBool("signedIn") ?? false
+        let parsed = SJStreamLibrary.parse(tracks: raw.map { $0 as [String: Any] }, expiresAt: expiresAt)
+        SJStreamLibrary.shared.replace(artist: parsed.artist, personal: signedIn ? parsed.personal : [])
+        DispatchQueue.main.async {
+            SJAudioEngine.shared.onQueueChanged?()   // repaint the car's lists
+            call.resolve(["count": parsed.artist.count + parsed.personal.count])
+        }
+    }
+
     // MARK: - Playlists
 
     /// Hand CarPlay the running orders. The car cannot reach the web layer once
@@ -212,8 +230,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
 
     // MARK: - Car feedback
 
-    /// Which downloaded tracks are already rated, so the car's thumb draws
-    /// filled. Pushed from the web layer, which owns what a rating means.
+    /// Compatibility bridge used once to clear thumbs cached by older builds.
     @objc func setRatedTracks(_ call: CAPPluginCall) {
         let ids = (call.getArray("trackIds") as? [String]) ?? []
         SJCarPlayFeedback.shared.setRated(ids)

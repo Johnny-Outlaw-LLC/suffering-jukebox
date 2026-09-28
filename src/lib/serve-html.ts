@@ -26,7 +26,7 @@ function sjHomeSeoBlurb(surface: Surface): string {
     `<h1>${surface.name}</h1>` +
     `<p>${surface.name} is the free website and online music player at ` +
     `<a href="${u}/">${surface.host}</a>. ` +
-    `Stream 170+ artists with lyrics, ratings, and playlists. The name comes from ` +
+    `Stream 170+ artists with lyrics, hearts, and playlists. The name comes from ` +
     `the Silver Jews song &ldquo;Suffering Jukebox&rdquo;; this site is the app, ` +
     `not the track. No account is required to listen.</p>` +
     `<p>Start with the <a href="/about">About ${surface.name}</a> page, ` +

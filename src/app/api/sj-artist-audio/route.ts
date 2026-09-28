@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { ARTIST_AGREEMENT_VERSION, isUuid } from "@/lib/artist-rights";
-import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
+import { approvedArtistAudioTracks, onDemandArtistAudioTracks } from "@/lib/bg-audio-eligibility";
 import { createB2DownloadUrl, sisterB2RedirectUrl } from "@/lib/b2-audio";
 
 export const dynamic = "force-dynamic";
@@ -39,24 +39,9 @@ export async function GET(req: NextRequest) {
   }
   try {
     const sb = createSjServiceClient();
-    let selected = await approvedArtistAudioTracks(
-      sb, trackIds, purpose === "normal-playback" ? ARTIST_AGREEMENT_VERSION : undefined,
-    );
-    if (purpose === "normal-playback" && selected.length) {
-      const { data: catalogTracks, error: trackError } = await sb.schema(JUKEBOX_SCHEMA)
-        .from("tracks").select("id,album_id,artist_audio_only,artist_audio_visible")
-        .in("id", selected.map((row) => row.track_id));
-      if (trackError) throw trackError;
-      const permitted = (catalogTracks ?? []).filter((row) => row.artist_audio_only && row.artist_audio_visible);
-      const { data: albums, error: albumError } = permitted.length
-        ? await sb.schema(JUKEBOX_SCHEMA).from("albums")
-            .select("id,artist_audio_visible").in("id", permitted.map((row) => row.album_id))
-        : { data: [], error: null };
-      if (albumError) throw albumError;
-      const liveAlbums = new Set((albums ?? []).filter((row) => row.artist_audio_visible).map((row) => row.id));
-      const liveTracks = new Set(permitted.filter((row) => liveAlbums.has(row.album_id)).map((row) => row.id));
-      selected = selected.filter((row) => liveTracks.has(row.track_id));
-    }
+    const selected = purpose === "normal-playback"
+      ? await onDemandArtistAudioTracks(sb, ARTIST_AGREEMENT_VERSION, trackIds)
+      : await approvedArtistAudioTracks(sb, trackIds);
     if (!selected.length) {
       return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
     }

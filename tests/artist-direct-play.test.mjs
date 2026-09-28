@@ -123,13 +123,25 @@ test('the docked player, not a native audio bar, is what artist uploads open', (
 const id = '251afba8-68d5-481a-b5de-d93366ad6b6b';
 function signer({ visible = true, approved = true, surface = 'sj' } = {}) {
   const tables = { tracks: [{id, album_id:'album', artist_audio_only:true, artist_audio_visible:visible}],
-    albums: [{id:'album',artist_audio_visible:true}], track_audio:[{id:'audio',storage_path:'private/song.wav'}], artists:[{id:'artist',name:'Victim Weight'}] };
+    albums: [{id:'album',artist_audio_visible:true}], track_audio:[{id:'audio',storage_path:'private/song.wav'}], artists:[{id:'artist',name:'Victim Weight'}],
+    artist_catalog_tracks: approved ? [{agreement_id:'agreement',track_audio_id:'audio',track_id:id,artist_id:'artist',approved_at:'2026-09-20'}] : [],
+    artist_rights_agreements: [{id:'agreement',agreement_version:'current'}] };
+  // Every PostgREST chain resolves to the whole table: the filters that matter
+  // (visibility, approval) are applied in code, which is what is under test.
+  const query = table => {
+    const q = { then: (ok, fail) => Promise.resolve({ data: tables[table], error: null }).then(ok, fail) };
+    for (const m of ['select', 'eq', 'in', 'order', 'not', 'limit']) q[m] = () => q;
+    return q;
+  };
+  const sb = { schema: () => ({ from: query }) };
+  // The real eligibility rules, so publication and approval are not mocked away.
+  const eligibility = loadTs('src/lib/bg-audio-eligibility.ts', { 'sj-admin-auth': { JUKEBOX_SCHEMA: 'jukebox' } });
   let signed = 0;
   const route = loadTs('src/app/api/sj-artist-audio/route.ts', {
     'next/server': { NextResponse: { json: (body, init) => ({body,...init}), redirect: (url, init) => ({url,...init}) } },
-    'sj-admin-auth': { JUKEBOX_SCHEMA: 'jukebox', createSjServiceClient: () => ({ schema: () => ({ from: table => ({select: () => ({in: async () => ({ data:tables[table],error:null })})}) }) }) },
+    'sj-admin-auth': { JUKEBOX_SCHEMA: 'jukebox', createSjServiceClient: () => sb },
     'artist-rights': { ARTIST_AGREEMENT_VERSION:'current', isUuid: value => /^[\da-f-]{36}$/.test(value) },
-    'bg-audio-eligibility': { approvedArtistAudioTracks: async () => approved ? [{track_id:id,track_audio_id:'audio',artist_id:'artist'}] : [] },
+    'bg-audio-eligibility': eligibility,
     'b2-audio': {
       createB2DownloadUrl: async () => { signed++; return 'https://audio.example/signed'; },
       sisterB2RedirectUrl: (host, pathAndQuery) => surface === 'lp'

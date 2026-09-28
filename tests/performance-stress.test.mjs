@@ -10,6 +10,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadHtmlFnsInScope } from './_load.mjs';
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
 function cell(index) {
   const classes = new Set();
   return {
@@ -168,4 +175,58 @@ test('bulk personal play counts refresh a long wall once', async () => {
   assert.equal(inlineCounter.textContent, '18');
   assert.equal(cardCounter.textContent, '43');
   assert.equal(wallRefreshes, 1);
+});
+
+test('track menu library checks never feed guarded promises back into a render loop', async () => {
+  let artistReads = 0;
+  let libraryReads = 0;
+  let renders = 0;
+  const scope = {
+    googleUser: { email: 'listener@example.test' },
+    _myArtistIds: null,
+    _esLibTrackIds: null,
+    sjLandingRowFor: () => null,
+    oaIsMine: () => false,
+    ensureMyArtistIds: async () => { artistReads++; },
+    esEnsureLibrary: async () => { libraryReads++; },
+    sjmRenderRoot: () => { renders++; },
+  };
+  const { sjmAlreadyInMyLibrary } = loadHtmlFnsInScope(['sjmAlreadyInMyLibrary'], scope);
+
+  for (let i = 0; i < 20; i++) sjmAlreadyInMyLibrary('artist-1', 'track-1');
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(artistReads, 20);
+  assert.equal(libraryReads, 20);
+  assert.equal(renders, 0, 'resolved loader guards must not schedule another menu render');
+});
+
+test('My Artists refresh repaints an open track menu once when the real request settles', async () => {
+  const request = deferred();
+  let renders = 0;
+  const scope = {
+    googleUser: { email: 'listener@example.test' },
+    _myArtistIds: null,
+    _myArtistIdsLoading: false,
+    isLandingMode: false,
+    artistScope: () => 'all',
+    renderLanding() {},
+    _sjmTrackId: 'track-1',
+    document: { getElementById: id => id === 'sjm-menu' ? {} : null },
+    sjmRenderRoot: () => { renders++; },
+    mjRequest: () => request.promise,
+    console,
+  };
+  const { ensureMyArtistIds } = loadHtmlFnsInScope(['ensureMyArtistIds'], scope);
+
+  const first = ensureMyArtistIds();
+  await ensureMyArtistIds(); // guarded call resolves, but owns no repaint callback
+  await Promise.resolve();
+  assert.equal(renders, 0);
+
+  request.resolve({ ok: true, artistIds: ['artist-1'] });
+  await first;
+  assert.equal(renders, 1);
+  assert.deepEqual([...scope._myArtistIds], ['artist-1']);
 });

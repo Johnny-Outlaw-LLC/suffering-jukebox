@@ -2,12 +2,7 @@
 // @area Analytics
 // @covers sjLhStat, sjLhIcon, sjLhSparkline, sjLhRenderHTML, sjLhAgo, sjLhDur in public/index.html
 //
-// The card is the one place outside the player that names a thumb and a heart,
-// and it used to draw them as emoji - which meant the site showed two different
-// thumbs depending on which screen you were on, and the platform decided what
-// they looked like. It reads the player's own constants now, so the two cannot
-// drift. "Playback reaction" is the term /help publishes for a heart, and the
-// card has to use the same word the help page teaches.
+// Ratings are retired; the card uses the player's heart icon and heart wording.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadHtmlFnsInScope, dashboardHtml, readRepoFile } from './_load.mjs';
@@ -78,69 +73,54 @@ function tiles(html) {
 
 // ── The two marks come from the player, not from an emoji font ────────────
 
-test('the icon constants the card reads are the ones the player draws', () => {
-  // If either of these moves, the card silently falls back to nothing.
-  assert.ok(dashboardHtml.includes(THUMB_PATH), '_SVG_TH_UP still draws this thumb');
+test('the heart icon constant the card reads is the one the player draws', () => {
   assert.ok(dashboardHtml.includes(HEART_PATH), 'SJ_REACTION_ICONS.heart still draws this heart');
-  const icon = dashboardHtml.slice(dashboardHtml.indexOf('function sjLhIcon(kind, on)'));
+  const icon = dashboardHtml.slice(dashboardHtml.indexOf('function sjLhIcon('));
   assert.match(icon.slice(0, 400), /SJ_REACTION_ICONS\.heart/);
-  assert.match(icon.slice(0, 400), /_SVG_TH_UP/);
 });
 
-test('the card draws the dock thumb and the dock heart, and no emoji', () => {
+test('the card draws the dock heart and no legacy thumb', () => {
   const { sjLhRenderHTML } = card();
   const html = sjLhRenderHTML('t1', summary(), plays(9, { hearts: 1 }));
-  assert.ok(html.includes(THUMB_PATH), 'the thumb is the player svg');
   assert.ok(html.includes(HEART_PATH), 'the heart is the player svg');
-  assert.doesNotMatch(html, /\u{1F44D}/u, 'no emoji thumb');
+  assert.doesNotMatch(html, new RegExp(THUMB_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(html, /♥/, 'no typographic heart');
 });
 
-test('a mark that has not been given is drawn switched off, not left out', () => {
+test('a heart that has not been given is drawn switched off, not left out', () => {
   const { sjLhIcon } = card();
-  assert.match(sjLhIcon('up', true), /class="sj-lh-ic up"/);
-  assert.match(sjLhIcon('up', false), /class="sj-lh-ic off"/);
   assert.match(sjLhIcon('heart', true), /class="sj-lh-ic heart"/);
   assert.ok(sjLhIcon('heart', false).includes(HEART_PATH), 'still the same shape when off');
 });
 
 // ── The word the help page publishes ──────────────────────────────────────
 
-test('hearts are called playback reactions, the term /help teaches', () => {
+test('hearts use the plain label taught by help', () => {
   const help = readRepoFile('public/help/index.html');
   assert.match(help, /playback reaction/,
     'if /help renames this, the card has to be renamed with it');
   const { sjLhRenderHTML } = card();
   const html = sjLhRenderHTML('t1', summary(), plays(9));
-  assert.match(html, /playback reactions<\/span>/);
-  assert.doesNotMatch(html, />hearts<\/span>/, 'the old label is gone');
+  assert.match(html, />hearts<\/span>/);
 });
 
-test('one reaction is a playback reaction, not playback reactions', () => {
+test('one heart is singular', () => {
   const { sjLhRenderHTML } = card();
   const html = sjLhRenderHTML('t1', summary({ hearts_total: 1 }), plays(9));
-  assert.match(html, /playback reaction<\/span>/);
-  assert.doesNotMatch(html, /playback reactions<\/span>/);
+  assert.match(html, />heart<\/span>/);
+  assert.doesNotMatch(html, />hearts<\/span>/);
 });
 
-test('the top bar reads as five counters and a shape', () => {
+test('the top bar omits the retired rating counter', () => {
   const { sjLhRenderHTML } = card();
   const html = sjLhRenderHTML('t1', summary(), plays(9));
   assert.deepStrictEqual(tiles(html), [
     '9 | plays',
     '1 | last 7 days',
     '3 | last 30 days',
-    '2 | playback reactions',
-    ' | your rating',
+    '2 | hearts',
     ' | listens over time &middot; Jun 2026 - Aug 2026',
   ]);
-});
-
-test('an unrated song says so rather than showing a lit thumb', () => {
-  const { sjLhRenderHTML } = card();
-  const html = sjLhRenderHTML('t1', summary({ rating_now: 0 }), plays(9));
-  assert.match(html, /class="sj-lh-ic off"/);
-  assert.match(html, /–<\/b>/, 'a dash stands in for the count');
 });
 
 // ── Listens over time ─────────────────────────────────────────────────────
@@ -229,13 +209,12 @@ test('a play row names the reaction the same way the counter does', () => {
   assert.match(one, /1 reaction<\/span>/);
 });
 
-test('a thumb given during a play is marked with the player thumb', () => {
+test('legacy rating changes during a play are not shown', () => {
   const { sjLhRenderHTML } = card();
   const given = sjLhRenderHTML('t1', summary(), plays(1, { rating_before: 0, rating_after: 1 }));
-  assert.match(given, /sj-lh-tag up/);
-  assert.ok(given.includes(THUMB_PATH));
+  assert.doesNotMatch(given, /sj-lh-tag up|thumbs up/);
   const taken = sjLhRenderHTML('t1', summary(), plays(1, { rating_before: 1, rating_after: 0 }));
-  assert.match(taken, /thumbs up taken back/);
+  assert.doesNotMatch(taken, /thumbs up taken back/);
 });
 
 test('a song nobody has played says so', () => {

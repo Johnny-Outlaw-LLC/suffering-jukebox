@@ -33,6 +33,7 @@ const SOURCES = [
   'Audio/SJDownloader.swift',
   'Audio/SJAuthPlugin.swift',
   'Audio/SJPlaylistStore.swift',
+  'Audio/SJStreamLibrary.swift',
   'Audio/SJFeedbackOutbox.swift',
   'Audio/SJCarPlayFeedback.swift',
   'CarPlay/SJCarPlaySceneDelegate.swift',

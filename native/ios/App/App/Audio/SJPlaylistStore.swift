@@ -8,8 +8,9 @@ import Foundation
 /// Playlists tab is populated on a cold start in a car park with no signal.
 ///
 /// Only ids are stored. Which of those songs is actually playable is decided at
-/// render time against SJDownloadStore, so a playlist can never promise a track
-/// the car cannot play, and removing a download does not need a write here.
+/// render time against SJCarLibrary (downloads plus streamable songs), so a
+/// playlist can never promise a track the car cannot play, and removing a
+/// download does not need a write here.
 final class SJPlaylistStore {
 
     struct Playlist: Codable {
@@ -49,15 +50,16 @@ final class SJPlaylistStore {
 
     /// Playlists with at least one song on the device, each narrowed to the
     /// songs that will actually play, in the running order the listener saved.
-    func playable() -> [(playlist: Playlist, entries: [SJDownloadStore.Entry])] {
+    func playable() -> [(playlist: Playlist, entries: [SJCarTrack])] {
         // Pin Favorites first while preserving every other playlist's order.
         let ordered = all().enumerated().sorted { left, right in
             let leftFavorite = left.element.id == "__dynamic_favorites"
             let rightFavorite = right.element.id == "__dynamic_favorites"
             return leftFavorite != rightFavorite ? leftFavorite : left.offset < right.offset
         }.map { $0.element }
+        let byId = Dictionary(SJCarLibrary.all().map { ($0.trackId, $0) }, uniquingKeysWith: { a, _ in a })
         return ordered.compactMap { playlist in
-            let entries = playlist.trackIds.compactMap { SJDownloadStore.shared.entry(for: $0) }
+            let entries = playlist.trackIds.compactMap { byId[$0] }
             return entries.isEmpty ? nil : (playlist, entries)
         }
     }

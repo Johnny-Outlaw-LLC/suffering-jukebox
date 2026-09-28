@@ -62,3 +62,37 @@ export async function approvedArtistAudioTracks(
   }
   return [...chosen.values()];
 }
+
+/// The artist tracks anyone may play on demand, with no YouTube video behind
+/// them: approved under the current agreement, and switched on for listening
+/// at both the track and the album. /api/sj-artist-audio signs one of these
+/// and the CarPlay library lists all of them, so the rule lives here once -
+/// a car offering a song the signer then refuses would just skip in silence.
+export async function onDemandArtistAudioTracks(
+  sb: SupabaseClient,
+  agreementVersion: string,
+  trackIds?: string[],
+): Promise<EligibleArtistAudio[]> {
+  const selected = await approvedArtistAudioTracks(sb, trackIds, agreementVersion);
+  if (!selected.length) return [];
+
+  const catalogTracks: { id: string; album_id: string | null; artist_audio_only: boolean; artist_audio_visible: boolean }[] = [];
+  for (let i = 0; i < selected.length; i += 100) {
+    const { data, error } = await sb.schema(JUKEBOX_SCHEMA)
+      .from("tracks").select("id,album_id,artist_audio_only,artist_audio_visible")
+      .in("id", selected.slice(i, i + 100).map((row) => row.track_id));
+    if (error) throw error;
+    catalogTracks.push(...(data ?? []));
+  }
+  const permitted = catalogTracks.filter((row) => row.artist_audio_only && row.artist_audio_visible);
+  const albumIds = [...new Set(permitted.map((row) => row.album_id).filter(Boolean))] as string[];
+  const liveAlbums = new Set<string>();
+  for (let i = 0; i < albumIds.length; i += 100) {
+    const { data, error } = await sb.schema(JUKEBOX_SCHEMA)
+      .from("albums").select("id,artist_audio_visible").in("id", albumIds.slice(i, i + 100));
+    if (error) throw error;
+    (data ?? []).forEach((row) => { if (row.artist_audio_visible) liveAlbums.add(row.id); });
+  }
+  const liveTracks = new Set(permitted.filter((row) => row.album_id && liveAlbums.has(row.album_id)).map((row) => row.id));
+  return selected.filter((row) => liveTracks.has(row.track_id));
+}

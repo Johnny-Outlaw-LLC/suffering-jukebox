@@ -5,6 +5,8 @@ import {
   createB2UploadUrl,
   deleteB2AudioObject,
   getB2AudioObjectSize,
+  isOwnedAudioKey,
+  isSafeAudioKey,
 } from "@/lib/b2-audio";
 import { getAuthUser, createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { getUserLevel, USER_STORAGE_LIMITS } from "@/lib/user-levels";
@@ -32,28 +34,12 @@ function extensionFrom(name: string): string {
   return ["mp3", "m4a", "aac", "ogg", "oga", "opus", "wav", "flac", "webm"].includes(ext) ? ext : "mp3";
 }
 
-function isSafeAudioPath(path: string): boolean {
-  return !path.includes("\\")
-    && !path.includes("..")
-    && path.split("/").every(Boolean);
-}
-
-// B2 preserves the original key when moving an object. Existing personal
-// uploads therefore use the legacy `trackId/file` layout, whereas all new
-// uploads use `userId/trackId/file`. The database ownership predicate is the
-// authority in both cases; this check only makes sure the stored key belongs
-// to the requested track and cannot escape its expected prefix.
-function isAuthorizedStoredPath(path: string, userId: string, trackId: string): boolean {
-  if (!isSafeAudioPath(path)) return false;
-  return path.startsWith(`${userId}/${trackId}/`) || path.startsWith(`${trackId}/`);
-}
-
 function isNewUploadPath(path: string, userId: string, trackId: string): boolean {
-  return isSafeAudioPath(path) && path.startsWith(`${userId}/${trackId}/`);
+  return isSafeAudioKey(path) && path.startsWith(`${userId}/${trackId}/`);
 }
 
 function isLegacyUploadPath(path: string, trackId: string): boolean {
-  return isSafeAudioPath(path) && path.startsWith(`${trackId}/`);
+  return isSafeAudioKey(path) && path.startsWith(`${trackId}/`);
 }
 
 async function artistUploadLimits(
@@ -94,7 +80,7 @@ export async function GET(req: NextRequest) {
       .in("track_id", trackIds);
     if (error) throw error;
     const ownRows = (data || []).filter((row) =>
-      Boolean(row.storage_path) && isAuthorizedStoredPath(row.storage_path!, user.id, row.track_id),
+      Boolean(row.storage_path) && isOwnedAudioKey(row.storage_path!, user.id, row.track_id),
     );
     // Every file plays from B2, legacy `trackId/file` keys included: the
     // 2026-09-18 run of scripts/migrate-sj-audio-to-b2.mjs copied each one
@@ -243,7 +229,7 @@ export async function DELETE(req: NextRequest) {
       .maybeSingle();
     if (rowError) throw rowError;
     if (!row) return noStore({ ok: true });
-    if (row.storage_path && isAuthorizedStoredPath(row.storage_path, user.id, trackId)) {
+    if (row.storage_path && isOwnedAudioKey(row.storage_path, user.id, trackId)) {
       await deleteB2AudioObject(row.storage_path);
       if (isLegacyUploadPath(row.storage_path, trackId)) {
         // The Supabase original may still exist until the old bucket is

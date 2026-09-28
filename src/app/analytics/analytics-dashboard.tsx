@@ -39,9 +39,9 @@ type ArtistRow = Split & { artist: string; tracks?: number; in_jukebox?: boolean
 type TrackRow = Split & { key: string; title: string; artist: string; in_jukebox?: boolean };
 type HeatRow = Split & { dow: number; hour: number };
 type OptionRow = { artist: string; key?: string; title?: string; events: number; duration_ms: number };
-type FavoriteArtistRow = { artist: string; favorite_score: number; thumbs_up: number; reactions: number; songs: number };
-type FavoriteTrackRow = { key: string; title: string; artist: string; favorite_score: number; thumbs_up: number; reactions: number };
-type FavoritePlaylistRow = { id: string; name: string; favorite_score: number; thumbs_up: number; reactions: number; songs: number; trackKeys: string[] };
+type FavoriteArtistRow = { artist: string; favorite_score: number; reactions: number; songs: number };
+type FavoriteTrackRow = { key: string; title: string; artist: string; favorite_score: number; reactions: number };
+type FavoritePlaylistRow = { id: string; name: string; favorite_score: number; reactions: number; songs: number; trackKeys: string[] };
 
 export type AnalyticsPayload = {
   tz?: string;
@@ -701,7 +701,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     });
   }
 
-  function favoriteRankRows<T extends { favorite_score: number; thumbs_up: number; reactions: number }>(
+  function favoriteRankRows<T extends { favorite_score: number; reactions: number }>(
     rows: T[],
     max: number,
     keyOf: (row: T) => string,
@@ -713,10 +713,10 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
       const key = keyOf(row);
       const on = selection.mode !== "all" && selection.mode === "include" && selection.keys.includes(key);
       const score = Number(row.favorite_score) || 0;
-      const detail = `${count(row.thumbs_up)} thumb points · ${count(row.reactions)} instant ${row.reactions === 1 ? "reaction" : "reactions"}`;
+      const detail = `${count(row.reactions)} ${row.reactions === 1 ? "heart" : "hearts"}`;
       return (
         <div className={`${styles.rankRow} ${on ? styles.rankRowOn : ""}`} key={key}>
-          <button type="button" className={styles.rankHit} aria-pressed={on} title={`${detail} · ${count(score)} favorite points`} onClick={() => onClick(key)}>
+          <button type="button" className={styles.rankHit} aria-pressed={on} title={detail} onClick={() => onClick(key)}>
             <span className={styles.rankName}>{nameOf(row)}</span>
             <span className={`${styles.rankTrack} ${styles.favoriteTrack}`}><i style={{ width: `${(score / max) * 100}%` }} /></span>
           </button>
@@ -1076,7 +1076,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
           <div className={styles.pair}>
               <section className={styles.card}>
                 <div className={styles.cardHead}><h2>Favorite artists</h2></div>
-                <p className={styles.cardNote}>Based on your thumbs-up ratings and instant reactions. Click a bar to filter the dashboard; click more to add them.</p>
+                <p className={styles.cardNote}>Based on the hearts you sent while listening. Click a bar to filter the dashboard; click more to add them.</p>
                 <div className={styles.rankScroll}>
                   {favoriteArtists.length ? favoriteRankRows(
                     favoriteArtists,
@@ -1085,13 +1085,13 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                     (row) => <>{row.artist} <small>· {count(row.songs)} songs</small></>,
                     artistSel,
                     (key) => setArtistSel((current) => selectionAfterBarClick(current, key)),
-                  ) : <p className={styles.favoriteEmpty}>No thumbs-up ratings or instant reactions yet.</p>}
+                  ) : <p className={styles.favoriteEmpty}>No hearts yet.</p>}
                 </div>
               </section>
 
               <section className={styles.card}>
                 <div className={styles.cardHead}><h2>Favorite songs</h2></div>
-                <p className={styles.cardNote}>Based on your thumbs-up ratings and instant reactions. Click a bar to filter the dashboard; click more to add them.</p>
+                <p className={styles.cardNote}>Based on the hearts you sent while listening. Click a bar to filter the dashboard; click more to add them.</p>
                 <div className={styles.rankScroll}>
                   {favoriteTracks.length ? favoriteRankRows(
                     favoriteTracks,
@@ -1103,14 +1103,14 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                       setPlaylistSel(ALL);
                       setTrackSel((current) => selectionAfterBarClick(current, key));
                     },
-                  ) : <p className={styles.favoriteEmpty}>No thumbs-up ratings or instant reactions yet.</p>}
+                  ) : <p className={styles.favoriteEmpty}>No hearts yet.</p>}
                 </div>
               </section>
             </div>
 
           <section className={styles.card}>
             <div className={styles.cardHead}><h2>Favorite playlists</h2></div>
-            <p className={styles.cardNote}>Your playlists, scored from the thumbs-up ratings and instant reactions on the songs inside them. Click a bar to filter the page to those songs; click more to add them.</p>
+            <p className={styles.cardNote}>Your playlists, ranked by hearts on the songs inside them. Click a bar to filter the page to those songs; click more to add them.</p>
             <div className={styles.rankScroll}>
               {favoritePlaylists.length ? favoriteRankRows(
                 favoritePlaylists,
@@ -1119,7 +1119,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                 (row) => <>{row.name} <small>· {count(row.songs)} songs</small></>,
                 playlistSel,
                 onFavoritePlaylistClick,
-              ) : <p className={styles.favoriteEmpty}>No playlists with rated or reacted songs yet. Add songs you love to a playlist to see it here.</p>}
+              ) : <p className={styles.favoriteEmpty}>No playlists with hearted songs yet. Add songs you love to a playlist to see it here.</p>}
             </div>
           </section>
         </div>

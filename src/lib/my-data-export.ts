@@ -337,20 +337,20 @@ export const COLUMNS: Record<Dataset, string[]> = {
     "YouTube URL",
   ],
   songs: [
-    "Song", "Artist", "Album", "Duration", "Added From", "Your Rating", "Has Lyrics",
+    "Song", "Artist", "Album", "Duration", "Added From", "Your Hearts", "Has Lyrics",
     "Background Audio", "Added To Library", "YouTube Video ID", "YouTube URL", "YouTube Views",
   ],
   history: [
     "Played At (UTC)", "Played On", "Type", "Artist", "Song", "Album", "Listened",
-    "Listened (ms)", "Skipped", "Rating At Play", "Background Audio", "YouTube Video ID",
+    "Listened (ms)", "Skipped", "Background Audio", "YouTube Video ID",
     "YouTube URL", "Imported From",
   ],
 };
 
 export const DATASET_NOTE: Record<Dataset, string> = {
   music: "Every song under an artist or album you imported into the Jukebox catalogue.",
-  playlists: "Your saved playlists, Favorites (liked songs), and Favorites Plus (liked songs and playback reactions), one row per song.",
-  songs: "Every song in your personal My Jukebox library, with your rating.",
+  playlists: "Your saved playlists and Favorites (songs you hearted while listening), one row per song.",
+  songs: "Every song in your personal My Jukebox library, with your heart count.",
   history: "Every play from the Jukebox, plus any Spotify or YouTube history you imported.",
 };
 
@@ -363,14 +363,6 @@ function clock(ms: number | null | undefined) {
 function yesNo(value: unknown) {
   return value === true ? "Yes" : value === false ? "No" : "";
 }
-function ratingLabel(rating: number | null | undefined) {
-  const value = Number(rating);
-  if (value === 2) return "Love";
-  if (value === 1) return "Like";
-  if (value === -1) return "Dislike";
-  return "";
-}
-
 export type Cell = string | number | null;
 export type Row = Cell[];
 
@@ -407,22 +399,13 @@ async function* musicRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> 
 type PlaylistRow = { id: string; name: string | null; visibility: string | null; is_public: boolean | null; created_at: string | null };
 type PlaylistTrackRow = { playlist_id: string; track_id: string; position: number | null; added_at: string | null; added_by_name: string | null; added_by_email: string | null };
 
-// Read the same current votes and account reactions used by the Jukebox's
-// computed playlists. Repeated reactions produce one song, even without a like.
+// Favorites are the songs this account hearted while listening. Repeated
+// hearts still produce one playlist row for the song.
 async function favoritePlaylists(sb: Sb, user: { id: string; email: string }) {
-  const [votes, reactions] = await Promise.all([
-    pageAll<{ track_id: string | null }>((from, to) => T(sb, "feedback")
-      .select("track_id").ilike("user_email", likeSafe(user.email))
-      .eq("target_type", "track").gt("vote", 0).order("id").range(from, to)),
-    pageAll<{ track_id: string | null }>((from, to) => T(sb, "track_reactions")
-      .select("track_id").eq("user_id", user.id).order("id").range(from, to)),
-  ]);
-  const favorites = [...new Set(votes.map(row => row.track_id).filter((id): id is string => !!id))];
-  const plus = [...new Set([...favorites, ...reactions.map(row => row.track_id).filter((id): id is string => !!id)])];
-  return [
-    { id: "__dynamic_favorites", name: "Favorites", trackIds: favorites },
-    { id: "__dynamic_favorites_plus", name: "Favorites Plus", trackIds: plus },
-  ];
+  const reactions = await pageAll<{ track_id: string | null }>((from, to) => T(sb, "track_reactions")
+    .select("track_id").eq("user_id", user.id).eq("reaction", "heart").order("id").range(from, to));
+  const favorites = [...new Set(reactions.map(row => row.track_id).filter((id): id is string => !!id))];
+  return [{ id: "__dynamic_favorites", name: "Favorites", trackIds: favorites }];
 }
 
 async function* playlistRows(sb: Sb, email: string, userId: string, ctx: Ctx): AsyncGenerator<Row> {
@@ -497,7 +480,7 @@ type LibraryRow = {
   source: string | null; youtube_view_count: number | null; lyrics: string | null; created_at: string | null;
 };
 
-async function* songRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> {
+async function* songRows(sb: Sb, email: string, userId: string, ctx: Ctx): AsyncGenerator<Row> {
   const jukeboxes = await pageAll<{ id: string }>((from, to) => T(sb, "jukeboxes").select("id").ilike("owner_email", likeSafe(email)).order("id").range(from, to));
   if (!jukeboxes.length) return;
   const catalog = await loadCatalog(sb);
@@ -508,16 +491,16 @@ async function* songRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> {
     .order("id")
     .range(from, to));
 
-  const ratings = await pageAll<{ track_id: string; new_rating: number | null }>((from, to) => T(sb, "rating_events")
-    .select("track_id,new_rating,rated_at")
-    .ilike("user_email", likeSafe(email))
-    .order("rated_at", { ascending: false })
+  const reactions = await pageAll<{ track_id: string }>((from, to) => T(sb, "track_reactions")
+    .select("track_id,id")
+    .eq("user_id", userId)
+    .eq("reaction", "heart")
     .order("id")
     .range(from, to), 20_000);
-  const ratingByTrack = new Map<string, number>();
-  for (const row of ratings) {
+  const heartsByTrack = new Map<string, number>();
+  for (const row of reactions) {
     const key = String(row.track_id || "");
-    if (key && !ratingByTrack.has(key)) ratingByTrack.set(key, Number(row.new_rating) || 0);
+    if (key) heartsByTrack.set(key, (heartsByTrack.get(key) || 0) + 1);
   }
 
   for (const item of items) {
@@ -526,19 +509,19 @@ async function* songRows(sb: Sb, email: string, ctx: Ctx): AsyncGenerator<Row> {
       || track?.videoId
       || catalog.byName.get(nameKey(String(item.artist_name || ""), String(item.title || "")))?.videoId
       || null;
-    const rating = item.catalog_track_id ? ratingByTrack.get(String(item.catalog_track_id)) : undefined;
+    const hearts = item.catalog_track_id ? heartsByTrack.get(String(item.catalog_track_id)) || 0 : 0;
     const background = !!item.catalog_track_id && ctx.background.has(String(item.catalog_track_id));
     if (!keepRow(ctx.filters, item.artist_name, background)) continue;
     yield [
       item.title || "", item.artist_name || "", item.album_name || "", clock(item.duration_ms),
-      item.source || "", ratingLabel(rating), yesNo(!!item.lyrics), yesNo(background),
+      item.source || "", hearts, yesNo(!!item.lyrics), yesNo(background),
       item.created_at || "", videoId || "", watchUrl(videoId),
       item.youtube_view_count ?? track?.videoViews ?? "",
     ];
   }
 }
 
-type PlayRow = { track_id: string; played_at: string | null; duration_played_ms: number | null; rating_at_play: number | null; source: string | null };
+type PlayRow = { track_id: string; played_at: string | null; duration_played_ms: number | null; source: string | null };
 type ImportedRow = {
   history_source: string | null; content_type: string | null; title: string | null; artist: string | null;
   album: string | null; played_at: string | null; duration_played_ms: number | null; skipped: boolean | null;
@@ -549,7 +532,7 @@ async function* historyRows(sb: Sb, email: string, userId: string, ctx: Ctx): As
   const catalog = await loadCatalog(sb);
 
   const plays = await pageAll<PlayRow>((from, to) => T(sb, "play_events")
-    .select("track_id,played_at,duration_played_ms,rating_at_play,source")
+    .select("track_id,played_at,duration_played_ms,source")
     .ilike("user_email", likeSafe(email))
     .or("deleted.is.null,deleted.eq.false")
     .order("played_at", { ascending: false })
@@ -564,7 +547,7 @@ async function* historyRows(sb: Sb, email: string, userId: string, ctx: Ctx): As
       play.played_at || "", "Suffering Jukebox", "Music",
       track?.artistName || "", track?.name || "", track?.albumName || "",
       clock(play.duration_played_ms), play.duration_played_ms ?? "", "",
-      ratingLabel(play.rating_at_play), yesNo(background),
+      yesNo(background),
       track?.videoId || "", watchUrl(track?.videoId),
       play.source || "jukebox",
     ];
@@ -595,7 +578,7 @@ async function* historyRows(sb: Sb, email: string, userId: string, ctx: Ctx): As
       type.charAt(0).toUpperCase() + type.slice(1),
       event.artist || "", event.title || "", event.album || "",
       clock(event.duration_played_ms), event.duration_played_ms ?? "",
-      yesNo(!!event.skipped), "", yesNo(background),
+      yesNo(!!event.skipped), yesNo(background),
       videoId || "", event.youtube_url || watchUrl(videoId),
       event.source_file_name || "",
     ];
@@ -615,7 +598,7 @@ export async function* exportRows(
   const ctx: Ctx = { filters: prepare(filters), background: await backgroundAudioTracks(sb, user.id) };
   if (dataset === "music") yield* musicRows(sb, email, ctx);
   else if (dataset === "playlists") yield* playlistRows(sb, email, user.id, ctx);
-  else if (dataset === "songs") yield* songRows(sb, email, ctx);
+  else if (dataset === "songs") yield* songRows(sb, email, user.id, ctx);
   else yield* historyRows(sb, email, user.id, ctx);
 }
 

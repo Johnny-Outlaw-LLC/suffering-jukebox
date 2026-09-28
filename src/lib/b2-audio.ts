@@ -115,3 +115,23 @@ export function sisterB2RedirectUrl(host: string | null | undefined, pathAndQuer
   if (process.env.B2_KEY_ID?.trim() && process.env.B2_APP_KEY?.trim()) return null;
   return new URL(pathAndQuery, SURFACES.sj.url).toString();
 }
+
+export function isSafeAudioKey(path: string): boolean {
+  return !path.includes("\\")
+    && !path.includes("..")
+    && path.split("/").every(Boolean);
+}
+
+/**
+ * Whether a stored key belongs to this user's upload of this track.
+ *
+ * B2 preserves the original key when moving an object. Existing personal
+ * uploads therefore use the legacy `trackId/file` layout, whereas all new
+ * uploads use `userId/trackId/file`. The database ownership predicate is the
+ * authority in both cases; this check only makes sure the stored key belongs
+ * to the requested track and cannot escape its expected prefix.
+ */
+export function isOwnedAudioKey(path: string, userId: string, trackId: string): boolean {
+  if (!isSafeAudioKey(path)) return false;
+  return path.startsWith(`${userId}/${trackId}/`) || path.startsWith(`${trackId}/`);
+}

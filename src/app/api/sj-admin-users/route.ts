@@ -13,7 +13,6 @@ type AdminUserRow = {
   first_seen_at: string;
   last_seen_at: string;
   visit_count: number;
-  rating_count: number;
   play_count: number;
   upload_count: number;
   storage_bytes_used: number;
@@ -36,7 +35,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Could not load users." }, { status: 500 });
   }
 
-  const users = (data as AdminUserRow[] | null) ?? [];
+  const users = ((data as Array<AdminUserRow & { rating_count?: number }> | null) ?? [])
+    .map(({ rating_count: _legacyRatingCount, ...user }) => user);
   return NextResponse.json({
     ok: true,
     users,

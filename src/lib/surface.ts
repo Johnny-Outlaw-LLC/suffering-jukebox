@@ -180,13 +180,13 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     origins: ["https://sufferingjukebox.stream", SJ_URL],
     title: "Suffering Jukebox | Free Online Music Player (sufferingjukebox.stream)",
     description:
-      "Suffering Jukebox is the free website and online music player at sufferingjukebox.stream. Stream 170+ artists with lyrics, ratings, and playlists — including Silver Jews and Purple Mountains. Named after the Silver Jews song; this page is the app, not the track. No account needed to listen.",
+      "Suffering Jukebox is the free website and online music player at sufferingjukebox.stream. Stream 170+ artists with lyrics, hearts, and playlists — including Silver Jews and Purple Mountains. Named after the Silver Jews song; this page is the app, not the track. No account needed to listen.",
     ogDescription:
       "The free Suffering Jukebox website at sufferingjukebox.stream. Stream 170+ artists, read lyrics, rate tracks, and build playlists — including Silver Jews and Purple Mountains.",
     twitterDescription:
       "The free Suffering Jukebox website and music player at sufferingjukebox.stream. Stream artists, read lyrics, build playlists — no account required.",
     manifestDescription:
-      "Stream Silver Jews and Purple Mountains. A David Berman music player with ratings, lyrics, and playlists.",
+      "Stream Silver Jews and Purple Mountains. A David Berman music player with hearts, lyrics, and playlists.",
     keywords:
       "Suffering Jukebox, sufferingjukebox.stream, Suffering Jukebox website, Suffering Jukebox app, Suffering Jukebox online, free online music player, free jukebox, online jukebox, free music player with lyrics, Silver Jews, Purple Mountains, David Berman, stream music free, artist jukebox, lyrics",
     tagline: "Explore an artist, one song at a time.",
@@ -202,7 +202,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     fontsHref: null,
     authScheme: "com.johnnyoutlaw.sufferingjukebox",
     shareText:
-      "Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, ratings, and lyrics.",
+      "Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, hearts, and lyrics.",
     redditSub: "sufferingjukebox",
     sisterName: "Listening Party",
     sisterUrl: `${LP_URL}/`,
@@ -237,7 +237,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     description:
       "Listening Party is a free online playlist player. Build a playlist from anything on YouTube, share it with a link, read the words as they play, and listen together in a room. No account needed to listen.",
     ogDescription:
-      "Build a playlist from anything on YouTube, share it with a link, and listen together. Free, with lyrics, ratings and listening stats.",
+      "Build a playlist from anything on YouTube, share it with a link, and listen together. Free, with lyrics, hearts and listening stats.",
     twitterDescription:
       "Build a playlist, share it with a link, listen together. No account required to listen.",
     manifestDescription:

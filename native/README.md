@@ -12,7 +12,7 @@ The split is deliberate:
 | Layer   | Owns |
 |---------|------|
 | WebView | Catalog, rooms, lyrics, ratings, YouTube playback (foreground only) |
-| Native  | Locker files: offline downloads, background audio, lock screen, CarPlay |
+| Native  | Locker files: offline downloads, streaming library, background audio, lock screen, CarPlay |
 
 Only **locker tracks** — a file the signed-in user uploaded to `jukebox-audio` —
 reach the native engine. YouTube-backed tracks have no file to hand the OS, so
@@ -21,9 +21,19 @@ constraint from both CarPlay and YouTube's terms, not a first cut.
 
 ## Getting songs into the car
 
-CarPlay can only play files that are already on the phone, and picking a drive's
-worth of music on a phone is miserable. So the picking and the downloading are
-split across devices:
+**Streaming (no download needed).** CarPlay lists everything
+`/api/sj-carplay-library` returns: approved artist uploads for anyone, plus the
+signed-in listener's own uploads, each with a B2 URL signed for 7 days (B2's
+maximum). The web layer pushes the list to native (`setStreamLibrary`) on launch,
+on sign-in/out and when the app returns to the foreground (throttled to every 30
+minutes). Only the web view holds a session, so native refreshes the **artist**
+half itself when the car connects; **personal** songs drop out of the car once
+their URLs expire, with a "Some songs need refreshing" row, until the app is next
+opened on the phone. A download always wins over a stream (`SJCarLibrary`), so a
+drive with no signal plays exactly what is on the phone.
+
+**Downloading for offline.** Picking a drive's worth of music on a phone is
+miserable, so the picking and the downloading are split across devices:
 
 1. **Anywhere else** (usually a desktop) — Settings → Audio Storage, `＋ Send to
    iPhone` on a song or `＋ Send all to iPhone` on an artist. That writes track
