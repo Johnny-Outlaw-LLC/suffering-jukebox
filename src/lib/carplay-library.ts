@@ -74,7 +74,7 @@ async function inChunks<T>(ids: string[], fetch: (part: string[]) => Promise<T[]
 
 /// Track ids -> car rows. Tracks the catalogue no longer holds are dropped.
 async function describe(sb: SupabaseClient, sourceById: Map<string, CarplaySource>,
-  durationById: Map<string, number | null>): Promise<CarplayTrack[]> {
+  durationById: Map<string, number | null>, origin: string): Promise<CarplayTrack[]> {
   const ids = [...sourceById.keys()];
   if (!ids.length) return [];
   const tracks = await inChunks(ids, async (part) => {
@@ -102,7 +102,9 @@ async function describe(sb: SupabaseClient, sourceById: Map<string, CarplaySourc
 
   return tracks.map((t) => {
     const album = albumMap.get(t.album_id);
-    const art = album?.art_url && /^https:\/\//i.test(album.art_url) ? album.art_url : null;
+    // Uploaded covers are stored site-relative (/album-art/..., /artist-release-art/...).
+    const raw = album?.art_url || "";
+    const art = /^https:\/\//i.test(raw) ? raw : raw.startsWith("/") && !raw.startsWith("//") ? origin + raw : null;
     const fileSeconds = durationById.get(t.id);
     return {
       id: t.id,
@@ -116,7 +118,9 @@ async function describe(sb: SupabaseClient, sourceById: Map<string, CarplaySourc
   });
 }
 
-export async function carplayLibrary(sb: SupabaseClient, userId: string | null): Promise<CarplayTrack[]> {
+export async function carplayLibrary(
+  sb: SupabaseClient, userId: string | null, origin: string,
+): Promise<CarplayTrack[]> {
   const sourceById = new Map<string, CarplaySource>();
   const durationById = new Map<string, number | null>();
 
@@ -134,7 +138,7 @@ export async function carplayLibrary(sb: SupabaseClient, userId: string | null):
       durationById.set(r.track_id, Number(r.duration_seconds) || null);
     });
   }
-  return describe(sb, sourceById, durationById);
+  return describe(sb, sourceById, durationById, origin);
 }
 
 /// The B2 key to sign for one track, applying the same two rules as the

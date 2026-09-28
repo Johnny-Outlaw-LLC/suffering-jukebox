@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   try {
     const sb = createSjServiceClient();
     const userId = await carKeyUser(sb, req);
-    const tracks = await carplayLibrary(sb, userId);
+    const tracks = await carplayLibrary(sb, userId, req.nextUrl.origin);
     return NextResponse.json(
       { ok: true, signedIn: Boolean(userId), tracks },
       { headers: { "Cache-Control": "private, no-store, max-age=0" } },
