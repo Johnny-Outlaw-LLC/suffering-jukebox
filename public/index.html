@@ -2222,7 +2222,7 @@ textarea.report-input { resize:vertical; }
   #ytp-mini-footer.dock-compact .ytp-mf-lyr,
   #ytp-mini-footer.dock-compact .ytp-mf-up-next,
   #ytp-mini-footer.dock-compact .ytp-mf-album,
-  #ytp-mini-footer.dock-compact .ytp-mf-font-row { display: none !important; }
+  #ytp-mini-footer.dock-compact .ytp-mf-volume-row { display: none !important; }
   #ytp-mini-footer.dock-compact {
     gap: 6px;
     padding: 24px calc(14px + env(safe-area-inset-right, 0px))
@@ -2321,11 +2321,19 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-reactions .ytp-mf-btn { position: relative; width: var(--mf-btn); height: var(--mf-btn); border-radius: 8px; }
 .ytp-mf-reactions .sj-reaction-count { right: -2px; bottom: -2px; z-index: 1; pointer-events: none; }
 .ytp-mf-font-row {
-  display: none; align-items: center; margin-top: 6px; min-height: 22px;
+  display: none; align-items: center; justify-content: center;
+  position: absolute; left: 0; right: 0; top: 0; z-index: 2;
 }
-/* Last line of the left column, under the lyric size slider. .ytp-mf-meta is
-   a flex column, so without align-self the pill would stretch the full width
-   of the track details. */
+.ytp-mf-volume-row { display: flex; align-items: center; margin-top: 6px; min-height: 22px; }
+.ytp-mf-volume-row .ytp-mf-volume-ctrl {
+  display: flex; align-items: center; gap: 5px; line-height: 1;
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+  color: var(--text-muted); font-size: .44rem;
+}
+.ytp-mf-volume-ctrl input { width: 72px; height: 4px; accent-color: var(--accent); cursor: pointer; }
+@media (max-width: 640px) { .ytp-mf-volume-row { display: none; } }
+/* The live badge stays sized to its label inside the details column. */
 .ytp-mf-meta > .ytp-mf-live-badge { align-self: flex-start; margin-top: 6px; flex-shrink: 0; }
 .ytp-mf-font-row.show { display: flex; }
 .ytp-mf-font-row .mf-lyr-font-ctrl {
@@ -2400,7 +2408,7 @@ textarea.report-input { resize:vertical; }
     transform: none;
     bottom: var(--mf-lyr-bottom);
   }
-  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: var(--mf-body); }
+  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: calc(var(--mf-body) - 26px); }
 }
 .ytp-mf-scrub-time {
   font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
@@ -2462,7 +2470,7 @@ textarea.report-input { resize:vertical; }
    scrolling rather than flashing. */
 .ytp-mf-lyr {
   grid-area: lyr; min-width: 0; display: none; align-items: center; justify-content: center; gap: 10px;
-  height: var(--mf-body); cursor: default;
+  height: var(--mf-body); cursor: default; position: relative;
 }
 .ytp-mf-lyr.show { display: flex; }
 .ytp-mini-footer.dock-grown .ytp-mf-lyr {
@@ -2470,7 +2478,7 @@ textarea.report-input { resize:vertical; }
   padding: 0 8px;
 }
 .ytp-mf-lyr-view {
-  flex: 1; min-width: 0; height: var(--mf-body); overflow: hidden;
+  flex: 1; min-width: 0; min-height: 0; height: calc(var(--mf-body) - 26px); margin-top: 26px; overflow: hidden;
   text-align: center;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
           mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
@@ -2552,8 +2560,7 @@ textarea.report-input { resize:vertical; }
 #ytp-mini-footer #ytp-mf-restore,
 #ytp-mini-footer #ytp-mf-close { display: flex !important; visibility: visible !important; }
 #ytp-mini-footer #ytp-mf-repeat { display: none; }
-/* Font-size slider lives under the thumbs / hearts on the left. */
-.ytp-mf-lyr .mf-lyr-font-ctrl { display: none; }
+/* The lyric size slider sits immediately above the lyric window. */
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-right {
   display: grid; grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: "upnext win" "controls win";
@@ -2641,6 +2648,7 @@ textarea.report-input { resize:vertical; }
      Tying it to --mf-body meant a drag grew the artwork AND the lyrics, so
      the content outgrew the dock and the bottom row was clipped away. */
   .ytp-mf-lyr, .ytp-mf-lyr-view { height: 56px; }
+  .ytp-mf-lyr-view { margin-top: 0; }
   /* The scrubber is in the flow on a phone, so the band the desktop dock
      reserves underneath it is dead space here. */
   .ytp-mf-main { padding-bottom: 0; }
@@ -4988,7 +4996,7 @@ html[data-surface="lp"] .brand-title em {
   #ytp-mini-footer.dock-mini .ytp-mf-mobile-window,
   #ytp-mini-footer.dock-mini .ytp-mf-feedback,
   #ytp-mini-footer.dock-mini .ytp-mf-album,
-  #ytp-mini-footer.dock-mini .ytp-mf-font-row,
+  #ytp-mini-footer.dock-mini .ytp-mf-volume-row,
   #ytp-mini-footer.dock-mini .ytp-mf-playlist,
   #ytp-mini-footer.dock-mini .ytp-mf-ver-slot,
   #ytp-mini-footer.dock-mini .ytp-mf-live-badge,
@@ -5811,14 +5819,17 @@ if (window.__SJ_NATIVE__ === true) {
           </span>
           <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
         </div>
-        <div class="ytp-mf-font-row" id="ytp-mf-font-row">
-          <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
+        <div class="ytp-mf-volume-row">
+          <label class="ytp-mf-volume-ctrl" title="Volume" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">Vol <input id="ytp-mf-vol-slider" type="range" min="0" max="100" step="5" value="100" aria-label="Volume" oninput="ytpSetVolume(this.valueAsNumber)"></label>
         </div>
         <button type="button" class="ytp-mf-live-badge" id="ytp-mf-live-badge" title="This player is broadcasting live. Click to see who is listening." onclick="event.stopPropagation();sjjToggleListeners()"><span class="dot"></span>Broadcasting Live</button>
       </div>
       </div>
     </div>
     <div class="ytp-mf-lyr" id="ytp-mf-lyrics-pane" onclick="event.stopPropagation()">
+      <div class="ytp-mf-font-row" id="ytp-mf-font-row">
+        <span class="ytp-lyr-font-ctrl mf-lyr-font-ctrl" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"><span style="font-size:.38rem;color:var(--text-muted)">A</span><input class="mf-lyr-font-slider" type="range" min="9" max="28" value="11" aria-label="Lyric size" oninput="applyGlobalLyricSize(this.value)" style="-webkit-appearance:none;appearance:none;width:50px;height:3px;background:var(--border);border-radius:2px;cursor:pointer;outline:none"><span style="font-size:.5rem;color:var(--text-muted)">A</span></span>
+      </div>
       <div class="ytp-mf-lyr-view" id="ytp-mf-lyr-view"><div class="ytp-mf-lyr-track" id="ytp-mf-lyr-track"></div></div>
     </div>
     <div class="ytp-mf-right">
@@ -10167,7 +10178,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
   ytVideoId = videoId;
   const safeTitle = (title||'').replace(/</g,'&lt;');
 
-  // If player already exists, offer Play Now or Add to Queue
+  // If player already exists, offer playback and queue placement choices
   if (ytPlayerEl) {
     const triggerEl = ev instanceof Event ? (ev.currentTarget || ev.target) : (ev instanceof Element ? ev : null);
     showYTQueueChoice(videoId, title, trackId, triggerEl);
@@ -10517,7 +10528,7 @@ function closeYTPlayer() {
   }, 140);
 }
 
-// ── Queue: Play Now / Add to Queue popup ─────────────────────
+// ── Queue: Play Now / Play Next / Add to Queue popup ──────────
 let _ytQueueChoiceCloser = null;
 
 function dismissYTQueueChoice() {
@@ -10561,7 +10572,7 @@ function showYTQueueChoice(videoId, title, trackId, triggerEl) {
     popLeft = rightX + popW > window.innerWidth - 10
       ? Math.max(tr.left - popW - 6, 10)
       : rightX;
-    popTop  = Math.min(Math.max(tr.top - 8, 10), window.innerHeight - 120);
+    popTop  = Math.min(Math.max(tr.top - 8, 10), window.innerHeight - 155);
   } else {
     const pr = ytPlayerEl.getBoundingClientRect();
     popLeft = Math.min(pr.left, window.innerWidth - popW - 10);
@@ -10582,6 +10593,9 @@ function showYTQueueChoice(videoId, title, trackId, triggerEl) {
     <button data-qaction="play"  style="${btnStyle}" onmouseover="this.style.background='#2a2a2a'" onmouseout="this.style.background='none'">
       <span style="color:#ff4444;font-size:.8rem">▶</span> Play Now
     </button>
+    <button data-qaction="next" style="${btnStyle}" onmouseover="this.style.background='#2a2a2a'" onmouseout="this.style.background='none'">
+      <span style="color:#888;font-size:.8rem;line-height:1">⏭</span> Play Next
+    </button>
     <button data-qaction="queue" style="${btnStyle}" onmouseover="this.style.background='#2a2a2a'" onmouseout="this.style.background='none'">
       <span style="color:#888;font-size:.9rem;line-height:1">+</span> Add to Queue
     </button>`;
@@ -10594,6 +10608,9 @@ function showYTQueueChoice(videoId, title, trackId, triggerEl) {
       const existingIdx = ytQueue.findIndex(item => trackId ? item.trackId === trackId : item.videoId === videoId);
       if (existingIdx !== -1) ytPlayQueueIdx(existingIdx);
       else ytPlayNow(videoId, title, trackId);
+    } else if (btn.dataset.qaction === 'next') {
+      ytInsertNextQueueItems([{videoId, title, trackId: trackId || null}]);
+      if (trackId) logYTPlay(videoId, trackId, 'queue');
     } else {
       ytAddToQueue(videoId, title, trackId);
     }
@@ -10703,6 +10720,16 @@ function ytAddToQueue(videoId, title, trackId) {
   ytAppendQueueItems([{videoId, title, trackId: trackId || null}]);
   if (trackId) logYTPlay(videoId, trackId, 'queue');
   updateYTQueueUI();
+}
+
+function ytInsertNextQueueItems(items) {
+  const added = ytNormalizeQueue(items);
+  if (!added.length) return;
+  ytQueue.splice(Math.max(0, ytQueueIdx + 1), 0, ...added);
+  ytResetShufflePool();
+  ytSetPlayNext(added[0]);
+  _queueHasAdditions = true;
+  updateYTQueueUI({ preserveScroll: true });
 }
 
 function _ytCaptureLastPlayed() {
@@ -10929,13 +10956,15 @@ function ytSetPlayNext(item) {
   _ytPlayNext = item
     ? { jbItemId: item.jbItemId || null, trackId: item.trackId || null, videoId: item.videoId || null }
     : null;
+  if (_ytPlayNext) Object.defineProperty(_ytPlayNext, 'itemRef', { value: item });
 }
 
 /** Index of the forced next song, or -1. Self-clearing once it is unreachable. */
 function ytPlayNextIndex() {
   const w = _ytPlayNext;
   if (!w) return -1;
-  const idx = ytQueue.findIndex(q =>
+  const refIdx = w.itemRef ? ytQueue.indexOf(w.itemRef) : -1;
+  const idx = refIdx >= 0 ? refIdx : ytQueue.findIndex(q =>
     w.jbItemId ? q.jbItemId === w.jbItemId
       : w.trackId ? q.trackId === w.trackId
         : q.videoId === w.videoId);
@@ -11201,6 +11230,8 @@ function ytpFadeTo(toVol, ms) {
 function ytpSetVolume(val) {
   ytpSetSlotVolume(_ytActiveSlot, val);
   if (_taAudioEl) { try { _taAudioEl.volume = Math.max(0, Math.min(1, val / 100)); } catch (_) {} }
+  const volume = String(Math.max(0, Math.min(100, val)));
+  document.querySelectorAll('#ytp-vol-slider, #ytp-mf-vol-slider').forEach(slider => { slider.value = volume; });
 }
 
 function ytpSlotIframeId(slot) { return slot === 'b' ? 'yt-embed-iframe-b' : 'yt-embed-iframe'; }
@@ -11256,6 +11287,7 @@ function ytpAttachSlotPlayer(slot, onReadyCb) {
         _ytSlotPlayers[slot] = player;
         if (slot === _ytActiveSlot) {
           ytpSyncAPIPointer();
+          ytpSyncVolumeSlider();
           if (_ytpDockVideoOn) ytpDockRevealVideoWhenReady();
         }
         if (typeof onReadyCb === 'function') onReadyCb(player);
@@ -11349,9 +11381,11 @@ function ytpPlayNow() {
 }
 
 function ytpSyncVolumeSlider() {
-  const slider = document.getElementById('ytp-vol-slider');
-  if (!slider || !ytAPIPlayer || typeof ytAPIPlayer.getVolume !== 'function') return;
-  try { slider.value = ytAPIPlayer.getVolume(); } catch(e) {}
+  if (!ytAPIPlayer || typeof ytAPIPlayer.getVolume !== 'function') return;
+  try {
+    const volume = String(ytAPIPlayer.getVolume());
+    document.querySelectorAll('#ytp-vol-slider, #ytp-mf-vol-slider').forEach(slider => { slider.value = volume; });
+  } catch(e) {}
 }
 
 function ytpSetPlayPauseIcon(playing) {
@@ -12146,12 +12180,12 @@ function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
   let popLeft, popTop;
   if (triggerEl && triggerEl.clientX !== undefined) {
     popLeft = Math.min(triggerEl.clientX + 8, window.innerWidth - popW - 10);
-    popTop  = Math.min(Math.max(triggerEl.clientY - 8, 10), window.innerHeight - 130);
+    popTop  = Math.min(Math.max(triggerEl.clientY - 8, 10), window.innerHeight - 155);
   } else if (triggerEl && triggerEl.getBoundingClientRect) {
     const tr = triggerEl.getBoundingClientRect();
     const rightX = tr.right + 6;
     popLeft = rightX + popW > window.innerWidth - 10 ? Math.max(tr.left - popW - 6, 10) : rightX;
-    popTop  = Math.min(Math.max(tr.top - 8, 10), window.innerHeight - 130);
+    popTop  = Math.min(Math.max(tr.top - 8, 10), window.innerHeight - 155);
   } else {
     popLeft = Math.max(10, (window.innerWidth - popW) / 2);
     popTop  = 80;
@@ -12171,6 +12205,9 @@ function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
     <button data-albaction="play" style="${btnStyle}" onmouseover="this.style.background='#2a2a2a'" onmouseout="this.style.background='none'">
       <span style="color:#ff4444;font-size:.8rem">▶</span> Play Now
     </button>
+    <button data-albaction="next" style="${btnStyle}" onmouseover="this.style.background='#2a2a2a'" onmouseout="this.style.background='none'">
+      <span style="color:#888;font-size:.8rem;line-height:1">⏭</span> Play Next
+    </button>
     <button data-albaction="queue" style="${btnStyle}" onmouseover="this.style.background='#2a2a2a'" onmouseout="this.style.background='none'">
       <span style="color:#888;font-size:.9rem;line-height:1">+</span> Add All to Queue
     </button>`;
@@ -12184,6 +12221,8 @@ function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
       ytQueue = fullQueue;
       ytQueueIdx = 0;
       updateYTQueueUI();
+    } else if (btn.dataset.albaction === 'next') {
+      ytInsertNextQueueItems(fullQueue);
     } else {
       fullQueue.forEach(item => ytQueue.push(item));
       updateYTQueueUI();
@@ -13732,8 +13771,8 @@ function ytpMfToggleLyricStrip() {
 // Font size decides how much fits. The window is --mf-body tall; anything that
 // would leave less than a whole line of headroom drops to the next count down.
 function ytpMfLineCount() {
-  const pane = document.getElementById('ytp-mf-lyrics-pane');
-  const h = pane ? (pane.getBoundingClientRect().height || 76) : 76;
+  const view = document.getElementById('ytp-mf-lyr-view');
+  const h = view ? (view.getBoundingClientRect().height || 76) : 76;
   const lh = Math.max(1, globalLyricSize * 1.4);
   return Math.max(1, Math.min(4, Math.floor(h / lh)));
 }
@@ -38634,11 +38673,15 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-25';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-29';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-29', items: [
+    'Play Next is now in the menu between Play Now and Add to Queue. It puts a song or album right after the song playing now.',
+    'The docked player has a volume slider under the song details. The lyric size slider sits above the lyrics.',
+  ]},
   { date: '2026-09-28', items: [
     'Listening Party’s header is a 3×3 of album covers with LISTENING PARTY in Lilita One beside it, and Join the Listening Party underneath — not Impact stacked on top of the grid.',
     'The browser tab icon on Listening Party is that album grid now, instead of the monkey badge.',
