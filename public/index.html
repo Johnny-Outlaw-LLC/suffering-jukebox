@@ -2322,7 +2322,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-reactions .sj-reaction-count { right: -2px; bottom: -2px; z-index: 1; pointer-events: none; }
 .ytp-mf-font-row {
   display: none; align-items: center; justify-content: center;
-  position: absolute; left: 0; right: 0; top: 0; z-index: 2;
+  position: absolute; left: 0; right: 0; top: var(--mf-font-top, 0px); z-index: 2;
 }
 .ytp-mf-volume-row { display: flex; align-items: center; margin-top: 6px; min-height: 22px; }
 .ytp-mf-volume-row .ytp-mf-volume-ctrl {
@@ -13841,6 +13841,13 @@ function ytpMfPlaceLyrics() {
   const pane = document.getElementById('ytp-mf-lyrics-pane');
   if (!dock || !pane) return;
   dock.classList.remove('dock-lyr-fit', 'dock-lyr-over-controls');
+  // Measure after the dock chooses its lyric lane; that choice can change the
+  // pane's top edge when the lines move above the transport controls.
+  if (pane.classList.contains('show')) requestAnimationFrame(() => {
+    const artist = dock.querySelector('.ytp-mf-artist');
+    if (!artist || !pane.isConnected || !pane.classList.contains('show')) return;
+    pane.style.setProperty('--mf-font-top', Math.round(artist.getBoundingClientRect().top - pane.getBoundingClientRect().top) + 'px');
+  });
   // Small dock and phones keep the plain centred rule: there is no second
   // column to avoid, and the handle is the thing to sit under.
   if (!pane.classList.contains('show') || ytpIsMob()) return;
@@ -20362,6 +20369,10 @@ function plmRender(p) {
       '<span class="sjm-ic">▶</span><span class="sjm-label">Start Playlist</span>' +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
     '</button>' +
+    '<button class="sjm-item" onclick="plmAddToPlaylist()"' + (n ? '' : ' disabled') + '>' +
+      '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span></button>' +
+    '<button class="sjm-item" onclick="plmPlayNext()"' + (n ? '' : ' disabled') + '>' +
+      '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play Next</span></button>' +
     '<button class="sjm-item" onclick="plmAddToQueue()">' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add playlist to queue</span></button>' +
     '<button class="sjm-item" onclick="plmEnableBgPlay()">' +
@@ -20385,6 +20396,41 @@ function plmStart() {
   const id = _plmPlaylistId;
   plmClose();
   if (id) playPlaylist(id);
+}
+
+async function plmTrackIds(playlistId) {
+  const rows = await dbGetAuth('/playlist_tracks?playlist_id=eq.' + playlistId + '&order=position.asc&select=track_id');
+  return rows.map(row => row.track_id).filter(Boolean);
+}
+
+async function plmAddToPlaylist() {
+  const id = _plmPlaylistId;
+  const anchor = _plmAnchor;
+  const p = (_savedPlaylists || []).find(x => x.id === id) || (playlists || []).find(x => x.id === id);
+  plmClose();
+  if (!id) return;
+  try {
+    const ids = await plmTrackIds(id);
+    if (!ids.length) { showToast('This playlist has no songs to add.'); return; }
+    openAddTracksToPlaylist(ids, p?.name || 'playlist', anchor, null);
+  } catch (e) { showToast('Could not load this playlist’s songs.'); }
+}
+
+async function plmPlayNext() {
+  const id = _plmPlaylistId;
+  plmClose();
+  if (!id) return;
+  try {
+    const ids = await plmTrackIds(id);
+    const info = await resolvePlaylistTracks(ids);
+    const items = sjNoBlocked(ids.map(tid => info[tid]?.videoId
+      ? { videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }
+      : null));
+    if (!items.length) { showToast('This playlist has no playable songs.'); return; }
+    if (!ytPlayerEl || !ytQueue.length) landingPlayQueue(items);
+    else ytInsertNextQueueItems(items);
+    showToast('Playlist queued to play next (' + items.length + ').');
+  } catch (e) { showToast('Could not load this playlist’s songs.'); }
 }
 
 function plmAddToQueue() {
@@ -20519,6 +20565,9 @@ function lamRender(row) {
       '<span class="sjm-ic">+</span><span class="sjm-label">Add all to playlist</span>' +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
     '</button>' +
+    '<button class="sjm-item" onclick="lamPlayNext()"' + (n ? '' : ' disabled') + '>' +
+      '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play Next</span>' +
+      (n ? '<span class="sjm-sub">' + n + '</span>' : '') + '</button>' +
     favBtn +
     '<div class="sjm-sep"></div>' +
     '<button class="sjm-item" onclick="lamDeepDive()">' +
@@ -20749,6 +20798,23 @@ async function lamAddAll() {
   openAddTracksToPlaylist(ids, (row && row.name) || (ids.length + ' songs'), anchor, null);
 }
 
+async function lamPlayNext() {
+  const id = _lamArtistId;
+  lamClose();
+  if (!id) return;
+  try {
+    const ids = await lamAllTrackIds(id);
+    const info = await resolvePlaylistTracks(ids);
+    const items = sjNoBlocked(ids.map(tid => info[tid]?.videoId
+      ? { videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }
+      : null));
+    if (!items.length) { showToast('This artist has no playable songs.'); return; }
+    if (!ytPlayerEl || !ytQueue.length) landingPlayQueue(items);
+    else ytInsertNextQueueItems(items);
+    showToast('Artist queued to play next (' + items.length + ').');
+  } catch (e) { showToast('Could not load this artist’s songs.'); }
+}
+
 async function lamAddFavorites() {
   const ids = (_lamFavIds || []).slice();
   const row = (landingStats || []).find(r => r.artist_id === _lamArtistId);
@@ -20880,7 +20946,7 @@ function sjmRenderRoot() {
     '</button>' +
     (ytQueue[ytQueueIdx]?.trackId === tid ? '' :
       '<button class="sjm-item" onclick="sjmPlayNext()">' +
-        '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play this song next</span></button>') +
+        '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play Next</span></button>') +
     // Only offered on music that is not already in My Library. Own imports
     // and anything claimed via Add to My Library both count — in_my_library
     // tracks claimed songs; oaIsMine covers artists you imported.
@@ -21693,7 +21759,8 @@ function almRenderRoot() {
       '<span class="sjm-ic">+</span><span class="sjm-label">Add Album to Playlist</span>' +
       '<span class="sjm-sub">›</span></button>' +
     '<button class="sjm-item" onclick="almQueuePlayNext()"' + (n ? '' : ' disabled') + '>' +
-      '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Queue Album to Play Next</span></button>' +
+      '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play Next</span>' +
+      (n ? '<span class="sjm-sub">' + n + '</span>' : '') + '</button>' +
     '<button class="sjm-item" onclick="almAddToQueue()"' + (n ? '' : ' disabled') + '>' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add Album to Queue</span>' +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') + '</button>' +
@@ -38681,6 +38748,7 @@ const SJ_CHANGELOG = [
   { date: '2026-09-29', items: [
     'Play Next is now in the menu between Play Now and Add to Queue. It puts a song or album right after the song playing now.',
     'The docked player has a volume slider under the song details. The lyric size slider sits above the lyrics.',
+    'The ⋯ menus now offer Play Next for artists and playlists, and Add to playlist for playlists. Songs and albums keep those choices in their menus too.',
   ]},
   { date: '2026-09-28', items: [
     'Listening Party’s header is a 3×3 of album covers with LISTENING PARTY in Lilita One beside it, and Join the Listening Party underneath — not Impact stacked on top of the grid.',
