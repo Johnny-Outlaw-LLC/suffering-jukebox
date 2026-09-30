@@ -20,6 +20,21 @@ import { currentSurface } from "@/lib/surface";
 
 const REST = "https://ntyvtpimesfoesuykuyi.supabase.co/rest/v1";
 const SLUG_TTL_MS = 60_000;
+const NATIVE_ORIGINS = new Set([
+  "capacitor://www.sufferingjukebox.stream",
+  "https://app.listeningparty.stream",
+]);
+
+function withNativeCors(request: NextRequest, response: NextResponse): NextResponse {
+  const origin = request.headers.get("origin");
+  if (!origin || !NATIVE_ORIGINS.has(origin)) return response;
+  response.headers.set("Access-Control-Allow-Origin", origin);
+  response.headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "authorization, content-type, apikey, x-client-info");
+  response.headers.set("Access-Control-Max-Age", "86400");
+  response.headers.set("Vary", "Origin");
+  return response;
+}
 
 let slugCache: Set<string> | null = null;
 let slugCacheAt = 0;
@@ -70,6 +85,10 @@ function slugCandidate(pathname: string): string | null {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname.startsWith("/api/") && request.method === "OPTIONS") {
+    return withNativeCors(request, new NextResponse(null, { status: 204 }));
+  }
+
   let response = NextResponse.next();
   // A room is rendered by the main application in its restricted room mode.
   // Keep the old printed /j/CODE cards working, but never send a visitor to a
@@ -108,9 +127,9 @@ export async function proxy(request: NextRequest) {
       secure: true,
     });
   }
-  return response;
+  return pathname.startsWith("/api/") ? withNativeCors(request, response) : response;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
