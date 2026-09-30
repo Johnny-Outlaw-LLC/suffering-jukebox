@@ -29,7 +29,7 @@ const framableHeaders = [
   {
     key: "Content-Security-Policy",
     value: [
-      "frame-ancestors 'self' capacitor: https://www.sufferingjukebox.stream",
+      "frame-ancestors 'self' capacitor: https://www.sufferingjukebox.stream https://app.listeningparty.stream",
       "object-src 'none'",
       "base-uri 'self'",
     ].join("; "),

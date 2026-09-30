@@ -12,3 +12,9 @@ test('API CORS admits both native apps and handles preflight dynamically', () =>
   assert.match(proxy, /Access-Control-Allow-Origin/);
   assert.doesNotMatch(config, /const NATIVE_ORIGIN/);
 });
+
+test('Listening Party can frame the player route without a playlist rewrite', () => {
+  const jukebox = readFileSync(new URL('../src/lib/jukebox.ts', import.meta.url), 'utf8');
+  assert.match(jukebox, /"yt-frame"/);
+  assert.match(config, /frame-ancestors[^\n]+https:\/\/app\.listeningparty\.stream/);
+});
