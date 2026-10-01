@@ -101,17 +101,18 @@ test('native artist-audio authorization bypasses WebKit CORS through Capacitor H
   const taData = {};
   const scope = {
     taData,
+    SJ_FETCH_TIMEOUT_MS: 45000,
     sjIsNative: () => true,
     sjApiUrl: path => 'https://listeningparty.stream' + path,
+    sjFetch: async () => { throw new Error('native playback must not use WebKit fetch'); },
     window: { Capacitor: { Plugins: { CapacitorHttp: { get: async request => {
       requested = request;
       return { status: 200, data: { ok: true, tracks: [
         { trackId: 'nouns', url: 'https://audio.example/nouns.m4a', duration: 123, artist: 'Nouns Group' },
       ] } };
     } } } } },
-    fetch: async () => { throw new Error('native playback must not use WebKit fetch'); },
   };
-  await loadHtmlFnsInScope(['loadArtistOnDemandAudio'], scope).loadArtistOnDemandAudio(['nouns']);
+  await loadHtmlFnsInScope(['sjGetJson', 'loadArtistOnDemandAudio'], scope).loadArtistOnDemandAudio(['nouns']);
   assert.match(requested.url, /purpose=normal-playback/);
   assert.equal(taData.nouns.url, 'https://audio.example/nouns.m4a');
   assert.equal(taData.nouns.artistLicensed, true);

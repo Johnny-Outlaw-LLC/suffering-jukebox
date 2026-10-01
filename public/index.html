@@ -6310,7 +6310,7 @@ if (window.__SJ_NATIVE__ === true) {
           <div class="set-body" id="set-audio-body">
             <div class="set-block">
               <div class="set-h">Your audio storage</div>
-              <p class="set-sub">Private audio files you upload power Background Play on your phone. They stay on your account only — normal listening still uses YouTube. Everyone gets 500&nbsp;MB.</p>
+              <p class="set-sub">Private audio files you upload power Background Play on your phone. Importing songs from YouTube creates their listings, but iOS still needs a matching audio file here to keep them playing when the screen locks. Your files stay on your account only; normal listening still uses YouTube. Everyone gets 500&nbsp;MB.</p>
               <div class="set-audio-meter">
                 <div class="bgs-meter-track"><span class="bgs-meter-fill" id="setAudioMeterFill"></span></div>
                 <div class="bgs-meter-txt" id="setAudioQuotaTxt"><span>Loading…</span><span></span></div>
@@ -8819,7 +8819,7 @@ function sjAbsSiteUrls(data) {
 // already uses that path). Keep one GET transport for every PostgREST read so
 // opening a playlist cannot discover its ids successfully and then hang while
 // hydrating the track, album, artist, metric, and video rows.
-async function sjDbGetJson(url, headers) {
+async function sjGetJson(url, headers) {
   const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
   if (typeof sjIsNative === 'function' && sjIsNative() && nativeHttp?.get) {
     const response = await nativeHttp.get({
@@ -8848,7 +8848,7 @@ async function sjDbGetJson(url, headers) {
 }
 
 const dbGet = async (path) => {
-  const data = await sjDbGetJson(`${REST}${path}`, {
+  const data = await sjGetJson(`${REST}${path}`, {
     apikey: ANON,
     Authorization: `Bearer ${ANON}`,
     'Accept-Profile': 'jukebox',
@@ -8887,7 +8887,7 @@ const dbRpcAuth = async (path, body) => {
 const dbGetAuth = async (path) => {
   const { data: { session } } = await sjGetSession();
   const tok = session?.access_token || ANON;
-  const data = await sjDbGetJson(`${REST}${path}`, {
+  const data = await sjGetJson(`${REST}${path}`, {
     apikey: ANON,
     Authorization: `Bearer ${tok}`,
     'Accept-Profile': 'jukebox',
@@ -10361,21 +10361,10 @@ async function loadArtistOnDemandAudio(trackIds) {
   for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
   const responses = await Promise.all(chunks.map(async c => {
     const url = sjApiUrl('/api/sj-artist-audio?purpose=normal-playback&track_ids=' + encodeURIComponent(c.join(',')));
-    const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
-    let body;
-    if (typeof sjIsNative === 'function' && sjIsNative() && nativeHttp?.get) {
-      // The app's bundled WebView is a different origin from the live API.
-      // Capacitor HTTP follows the Listening Party -> shared signer redirect
-      // without WebKit CORS blocking the signed artist-upload response.
-      const response = await nativeHttp.get({ url });
-      body = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-      if (response.status < 200 || response.status >= 300) return [];
-    } else {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) return [];
-      body = await res.json().catch(() => ({}));
-    }
-    return body.ok ? (body.tracks || []) : [];
+    try {
+      const body = await sjGetJson(url, {});
+      return body.ok ? (body.tracks || []) : [];
+    } catch (_) { return []; }
   }));
   responses.flat().forEach(r => {
     if (!r.trackId || !r.url || taData[r.trackId]) return;
@@ -16458,12 +16447,11 @@ function ytpOpenInYouTube() {
 async function taOwnAudioUrls(trackIds) {
   const ids = [...new Set((trackIds || []).filter(Boolean))].slice(0, 50);
   if (!ids.length) return [];
-  const res = await fetch(sjApiUrl('/api/sj-audio?track_ids=' + encodeURIComponent(ids.join(','))), {
-    headers: { ...(await sjAuthHeaders()) },
-    cache: 'no-store',
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) throw new Error(data.error || 'Could not authorize private playback');
+  const data = await sjGetJson(
+    sjApiUrl('/api/sj-audio?track_ids=' + encodeURIComponent(ids.join(','))),
+    { ...(await sjAuthHeaders()) },
+  );
+  if (!data.ok) throw new Error(data.error || 'Could not authorize private playback');
   return data.tracks || [];
 }
 
@@ -27911,6 +27899,11 @@ async function openPlaylistChart(playlistId) {
     const chartYT = await loadYT(ids);
     sjPerf('playlist-wall.data-media', { run: perfRun, requested: ids.length, rows: Object.keys(chartYT).length, durationMs: sjPerfDuration(stageAt) });
     Object.assign(ytData, chartYT);
+    // This dynamic playlist is made specifically from uploaded audio. Wait for
+    // its signed URLs before building the queue; otherwise eight perfectly
+    // valid audio-only songs produce zero YouTube queue rows and the renderer
+    // mistakes "no videos" for "still loading" forever.
+    if (playlistId === '__dynamic_background') await loadTrackAudio(ids);
     // extractArtColors() used to run here over every album on the playlist:
     // one CORS <img> plus a canvas scan each, on a different cache key from
     // the grid's own thumbnails so nothing was shared, and a full re-render
@@ -27935,8 +27928,14 @@ async function openPlaylistChart(playlistId) {
     }
     playlistChartRows = rows;
     plWallIndexRows();
-    playlistChartBaseQueue = rows.filter(r => chartYT[r.trackId]?.video_id).map(r =>
-      ytQueueItem(chartYT[r.trackId].video_id, r.title, r.trackId, r.artist));
+    playlistChartBaseQueue = rows.map(r => {
+      const videoId = chartYT[r.trackId]?.video_id || null;
+      if (videoId) return ytQueueItem(videoId, r.title, r.trackId, r.artist);
+      if (!taTrackAudio(r.trackId)) return null;
+      const item = ytQueueItem(null, r.title, r.trackId, r.artist);
+      item.artistAudio = true;
+      return item;
+    }).filter(Boolean);
     // Prefetched so the track card opens with words already in hand. It used
     // to redraw the whole wall when it landed, which was pure waste: no cell
     // and no detail row shows a lyric.
@@ -33363,10 +33362,13 @@ async function loadTrackAudio(trackIds) {
     if (!taIsMobileDevice()) { taSyncAudioBtn(); return; }
     const missingChunks = chunks.map(c => c.filter(id => !taData[id])).filter(c => c.length);
     const licensedResponses = await Promise.all(missingChunks.map(async c => {
-      const res = await fetch(sjApiUrl('/api/sj-artist-audio?purpose=mobile-background&track_ids=' + encodeURIComponent(c.join(','))), { cache: 'no-store' });
-      if (!res.ok) return [];
-      const body = await res.json();
-      return body.ok ? (body.tracks || []) : [];
+      try {
+        const body = await sjGetJson(
+          sjApiUrl('/api/sj-artist-audio?purpose=mobile-background&track_ids=' + encodeURIComponent(c.join(','))),
+          {},
+        );
+        return body.ok ? (body.tracks || []) : [];
+      } catch (_) { return []; }
     }));
     licensedResponses.flat().forEach(r => {
       if (!r.trackId || !r.url || taData[r.trackId]) return;
@@ -33423,7 +33425,11 @@ function sjBgArtistOn(r) {
 }
 
 function sjBgPlaylistOn(pl) {
-  return ((pl && pl._tracks) || []).some(r => _homeBgTrackIds.has(r.track_id));
+  const rows = ((pl && pl._tracks) || []).filter(r => r && r.track_id);
+  // A playlist labelled Background Enabled must be safe to start as a whole.
+  // Keeping a 53-song YouTube playlist because one song has uploaded audio
+  // makes the filter promise something the other 52 songs cannot deliver.
+  return !!rows.length && rows.every(r => _homeBgTrackIds.has(r.track_id));
 }
 
 async function setSjBgOnly(on) {
@@ -33814,11 +33820,13 @@ function updateLandingActionsHeader() {
     ? `<div class="playlist-explore-actions">
         ${playlistHiddenIds.size ? `<button type="button" class="playlist-explore-action-btn" onclick="showAllPlaylists(event)" title="Bring every hidden playlist back">Show All (${playlistHiddenIds.size} hidden)</button>` : ''}
         ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : ''}
+        ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openSettings('audio')" title="Upload audio for YouTube catalogue songs so they can keep playing when the screen locks">Enable Background Play</button>` : ''}
         <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Create Playlist</button>
       </div>`
     : (landingTab === 'explore' || landingTab === 'songs')
     ? `<div class="playlist-explore-actions">
         <button type="button" class="playlist-explore-action-btn" onclick="userMenuAction('myartists')">Manage My Artists</button>
+        ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openSettings('audio')" title="Upload audio for YouTube catalogue songs so they can keep playing when the screen locks">Enable Background Play</button>` : ''}
         <button type="button" class="playlist-explore-action-btn primary" onclick="openImportMusic()">＋ Import Music</button>
       </div>`
     : '';

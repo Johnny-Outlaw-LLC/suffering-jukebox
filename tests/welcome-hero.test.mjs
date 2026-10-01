@@ -340,6 +340,19 @@ test('artist-uploaded audio is a public cross-surface dynamic collection', () =>
   assert.match(indexHtml, /scope === 'public'[\s\S]*?allDynamic\.filter\(p => p\._publicDynamic\)/);
 });
 
+test('background playlist filtering requires every song to be background enabled', () => {
+  const scope = { _homeBgTrackIds: new Set(['ready-1', 'ready-2']) };
+  const { sjBgPlaylistOn } = loadHtmlFnsInScope(['sjBgPlaylistOn'], scope);
+  assert.equal(sjBgPlaylistOn({ _tracks: [{ track_id: 'ready-1' }, { track_id: 'ready-2' }] }), true);
+  assert.equal(sjBgPlaylistOn({ _tracks: [{ track_id: 'ready-1' }, { track_id: 'youtube-only' }] }), false);
+  assert.equal(sjBgPlaylistOn({ _tracks: [] }), false);
+});
+
+test('signed-in Explore exposes background audio setup and explains YouTube imports', () => {
+  assert.match(indexHtml, />Enable Background Play<\/button>/);
+  assert.match(indexHtml, /Importing songs from YouTube creates their listings, but iOS still needs a matching audio file/);
+});
+
 test('native signed-out sessions load the artist-audio catalog through Capacitor HTTP', async () => {
   let requested;
   const scope = {

@@ -83,13 +83,13 @@ test('native catalogue reads bypass WKWebView fetch and preserve PostgREST heade
       return { status: 200, data: '[{"id":"track-1"}]' };
     } } } } },
   };
-  const { sjDbGetJson } = loadHtmlFnsInScope(['sjDbGetJson'], scope);
+  const { sjGetJson } = loadHtmlFnsInScope(['sjGetJson'], scope);
   const headers = {
     apikey: 'public-key',
     Authorization: 'Bearer public-key',
     'Accept-Profile': 'jukebox',
   };
-  const result = await sjDbGetJson(
+  const result = await sjGetJson(
     'https://example.supabase.co/rest/v1/tracks?id=in.(track-1)',
     headers,
   );
@@ -102,7 +102,14 @@ test('native catalogue reads bypass WKWebView fetch and preserve PostgREST heade
 });
 
 test('playlist hydration uses the native-safe catalogue reader at every metadata stage', () => {
-  assert.match(dashboard, /const dbGet = async \(path\) => \{[\s\S]*?sjDbGetJson/);
-  assert.match(dashboard, /const dbGetAuth = async \(path\) => \{[\s\S]*?sjDbGetJson/);
+  assert.match(dashboard, /const dbGet = async \(path\) => \{[\s\S]*?sjGetJson/);
+  assert.match(dashboard, /const dbGetAuth = async \(path\) => \{[\s\S]*?sjGetJson/);
   assert.match(dashboard, /async function openPlaylistChart[\s\S]*?dbGet\(`\/tracks[\s\S]*?dbGet\(`\/albums[\s\S]*?dbGet\(`\/artists[\s\S]*?loadYT\(ids\)/);
+});
+
+test('native background-audio signing uses the same native-safe GET transport', () => {
+  assert.match(dashboard, /async function taOwnAudioUrls[\s\S]*?sjGetJson\([\s\S]*?\/api\/sj-audio/);
+  assert.match(dashboard, /async function loadTrackAudio[\s\S]*?sjGetJson\([\s\S]*?\/api\/sj-artist-audio\?purpose=mobile-background/);
+  assert.match(dashboard, /if \(playlistId === '__dynamic_background'\) await loadTrackAudio\(ids\)/);
+  assert.match(dashboard, /item\.artistAudio = true/);
 });
