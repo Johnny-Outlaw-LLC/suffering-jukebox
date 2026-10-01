@@ -14215,10 +14215,22 @@ function ytpMfPlaceLyrics() {
   dock.classList.remove('dock-lyr-fit', 'dock-lyr-over-controls');
   // Measure after the dock chooses its lyric lane; that choice can change the
   // pane's top edge when the lines move above the transport controls.
+  // Desktop anchors the lyric size slider to the top of the dock, just under
+  // the resize handle; lined up with the artist it floated into the middle of
+  // the words once the dock was grown. Phones keep the artist line.
   if (pane.classList.contains('show')) requestAnimationFrame(() => {
-    const artist = dock.querySelector('.ytp-mf-artist');
-    if (!artist || !pane.isConnected || !pane.classList.contains('show')) return;
-    pane.style.setProperty('--mf-font-top', Math.round(artist.getBoundingClientRect().top - pane.getBoundingClientRect().top) + 'px');
+    if (!pane.isConnected || !pane.classList.contains('show')) return;
+    let anchor;
+    if (ytpIsMob()) {
+      const artist = dock.querySelector('.ytp-mf-artist');
+      if (!artist) return;
+      anchor = artist.getBoundingClientRect().top;
+    } else {
+      const handle = document.getElementById('ytp-mf-resize');
+      const hb = handle && handle.getBoundingClientRect();
+      anchor = (hb && hb.height ? hb.bottom : dock.getBoundingClientRect().top) + 4;
+    }
+    pane.style.setProperty('--mf-font-top', Math.round(anchor - pane.getBoundingClientRect().top) + 'px');
   });
   // Small dock and phones keep the plain centred rule: there is no second
   // column to avoid, and the handle is the thing to sit under.
@@ -42410,6 +42422,12 @@ async function sjEmailSignIn() {
     // Google comes back on a fresh page load, and everything that runs after
     // signing in (restoring a queue, finishing an import that asked for an
     // account) is wired to that load. Reload so email takes the same road.
+    // In the iOS app, reloading while the keyboard is still up left the top
+    // of the next page unpainted until something re-rendered it, so put the
+    // keyboard and the sheet away first and let them finish leaving.
+    if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
+    closeSignIn();
+    if (sjIsNative()) await new Promise(r => setTimeout(r, 450));
     window.location.reload();
   } catch (e) {
     const msg = String(e?.message || '');
