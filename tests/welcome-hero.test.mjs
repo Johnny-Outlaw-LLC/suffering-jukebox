@@ -86,6 +86,19 @@ test('only the playlist-led brand has a welcome hero', () => {
   assert.equal(SJ.features.welcomeHero, false);
 });
 
+test('the signed-out Home CTA uses the compact mobile label', () => {
+  const scope = { googleUser: null, lpHomeMusicPlaying: () => false };
+  const { lpHomeCtaHTML } = loadHtmlFnsInScope(['lpHomeCtaHTML'], scope);
+  const html = lpHomeCtaHTML();
+  assert.match(html, />Sign In<\/button>/);
+  assert.ok(!html.includes('Google'));
+});
+
+test('the native phone Home collapses its empty header band', () => {
+  assert.match(indexHtml, /header:has\(\+ #main \.lp-home\) \.hdr-r2\s*\{[^}]*min-height:0/s);
+  assert.match(indexHtml, /#main\.main-landing:has\(\.lp-home\) \.lph-hero\s*\{[^}]*padding-top:10px/s);
+});
+
 test('Suffering Jukebox renders nothing and does not even fetch the picks', () => {
   const h = hero(SJ);
   assert.equal(h.lphShelfHTML(), '');
