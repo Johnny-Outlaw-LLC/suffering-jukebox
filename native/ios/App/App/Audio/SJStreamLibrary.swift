@@ -36,7 +36,7 @@ final class SJStreamLibrary {
 
     /// Used until the web layer has told us which site it is, so a phone that
     /// has never signed in still finds the artist-licensed songs.
-    static let defaultBaseURL = "https://www.sufferingjukebox.stream"
+    static let defaultBaseURL = "https://www.listeningparty.stream"
 
     private let queue = DispatchQueue(label: "sj.stream", attributes: .concurrent)
     private var entries: [String: Entry] = [:]

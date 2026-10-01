@@ -82,6 +82,41 @@ for (const [name, count] of [['Victim Weight', 1], ['Nouns Group', 7]]) {
   });
 }
 
+test('artist-card Play unlocks iPhone audio before its first async request', async () => {
+  const order = [];
+  const scope = {
+    landingStats: [{ artist_id: 'artist', name: 'Nouns Group' }],
+    document: { querySelector: () => null },
+    sjUnlockAudioEl: () => order.push('unlock'),
+    homeJukeboxBgFilterOn: () => false,
+    laEnsureArtistData: async () => { order.push('request'); return ['artist']; },
+    albums: { artist: [] }, tracks: { artist: [] },
+  };
+  await loadHtmlFnsInScope(['landingPlayArtist'], scope).landingPlayArtist('artist');
+  assert.deepEqual(order, ['unlock', 'request']);
+});
+
+test('native artist-audio authorization bypasses WebKit CORS through Capacitor HTTP', async () => {
+  let requested;
+  const taData = {};
+  const scope = {
+    taData,
+    sjIsNative: () => true,
+    sjApiUrl: path => 'https://listeningparty.stream' + path,
+    window: { Capacitor: { Plugins: { CapacitorHttp: { get: async request => {
+      requested = request;
+      return { status: 200, data: { ok: true, tracks: [
+        { trackId: 'nouns', url: 'https://audio.example/nouns.m4a', duration: 123, artist: 'Nouns Group' },
+      ] } };
+    } } } } },
+    fetch: async () => { throw new Error('native playback must not use WebKit fetch'); },
+  };
+  await loadHtmlFnsInScope(['loadArtistOnDemandAudio'], scope).loadArtistOnDemandAudio(['nouns']);
+  assert.match(requested.url, /purpose=normal-playback/);
+  assert.equal(taData.nouns.url, 'https://audio.example/nouns.m4a');
+  assert.equal(taData.nouns.artistLicensed, true);
+});
+
 test('YouTube artist playback continues through the original queue', async () => {
   let played;
   const scope = {
@@ -95,6 +130,7 @@ test('YouTube artist playback continues through the original queue', async () =>
     ytPlayerEl: null,
     filterTracksForHomeBg: (rows) => rows,
     shuffleInPlace: (rows) => rows,
+    sjUnlockAudioEl: () => {},
     loadTrackAudio: async () => {},
     landingPlayQueue: (rows) => { played = rows; },
     taSyncAudioBtn: () => {},

@@ -10,6 +10,7 @@ import DownloadData from "./download-data";
 import ImportMissing, { type MissingSong } from "./import-missing";
 import styles from "./analytics.module.css";
 import { parseYouTubeTakeoutHtml, type YouTubeMusicConfidence } from "@/lib/youtube-history";
+import { consumeNativeSessionHandoff } from "@/lib/native-session-handoff";
 
 type ContentType = "music" | "podcast" | "audiobook" | "other";
 type HistoryEvent = {
@@ -350,6 +351,7 @@ export default function AnalyticsClient({ brand }: { brand: PublicSurface }) {
   const [view, setView] = useState<"dashboard" | "import" | "download" | "manage">("dashboard");
   const [dashKey, setDashKey] = useState(0);
   const [error, setError] = useState("");
+  const [fromNativeApp, setFromNativeApp] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -372,7 +374,11 @@ export default function AnalyticsClient({ brand }: { brand: PublicSurface }) {
       }
     };
     window.addEventListener("message", receiveSession);
-    sjBrowserAuth.auth.getSession().then(({ data: { session } }) => { void applySession(session); });
+    consumeNativeSessionHandoff().then((handoff) => {
+      if (handoff?.fromNativeApp) setFromNativeApp(true);
+      if (handoff) void applySession(handoff.session);
+      else sjBrowserAuth.auth.getSession().then(({ data: { session } }) => { void applySession(session); });
+    });
     const { data: { subscription } } = sjBrowserAuth.auth.onAuthStateChange((_event, session) => { void applySession(session); });
     try {
       const openerOrigin = document.referrer ? new URL(document.referrer).origin : "";
@@ -395,7 +401,9 @@ export default function AnalyticsClient({ brand }: { brand: PublicSurface }) {
   return (
     <main className={styles.page} data-surface={brand.id} style={pageStyle}>
       <header className={styles.header}>
-        <a href="/" className={styles.back}>← Back to {brand.name}</a>
+        {fromNativeApp
+          ? <button type="button" className={styles.backButton} onClick={() => window.history.back()}>‹ Back to {brand.name}</button>
+          : <a href="/" className={styles.back}>← Back to {brand.name}</a>}
         <div>
           <p className={styles.eyebrow}>{brand.name}</p>
           <h1>My Data <span>&amp; Analytics</span></h1>

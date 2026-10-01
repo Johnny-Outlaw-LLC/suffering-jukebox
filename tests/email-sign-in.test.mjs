@@ -1,11 +1,11 @@
-// Signing in with an email and a password beside Google, and the rule that
+// Signing in with Apple, Google, or an email and password, and the rule that
 // nothing here can change a password - the shared smoke-test account
 // (testing@shutterfield.com, credited as Johnny D) signs in with Shutterfield's
 // password, and a site that reset it would break Shutterfield's tests too.
 //
 // @suite email-sign-in
 // @area Accounts
-// @covers handleAuthClick, sjGoogleSignIn, sjEmailSignIn, sjSignInErr, jukebox.ensure_test_account
+// @covers handleAuthClick, sjAppleSignIn, sjGoogleSignIn, sjEmailSignIn, sjSignInErr, jukebox.ensure_test_account
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -64,14 +64,48 @@ test('the header Sign In opens the sign-in panel rather than going straight to G
   assert.match(dashboardHtml, /id="auth-btn" onclick="handleAuthClick\(\)"/);
 });
 
-test('the panel offers Google and an email and password form a password manager recognises', () => {
+test('the panel offers native Apple, Google, and an email/password form a password manager recognises', () => {
   const at = dashboardHtml.indexOf('id="signInOverlay"');
   assert.ok(at >= 0, 'no sign-in panel in the page');
   const panel = dashboardHtml.slice(at, dashboardHtml.indexOf('</form>', at));
+  assert.match(panel, /id="signin-apple"[^>]*onclick="sjAppleSignIn\(\)"[^>]*hidden/);
   assert.match(panel, /onclick="sjGoogleSignIn\(\)"/);
   assert.match(panel, /id="signin-email"[^>]*type="email"[^>]*autocomplete="username"/);
   assert.match(panel, /id="signin-password"[^>]*type="password"[^>]*autocomplete="current-password"/);
   assert.match(panel, /onsubmit="event\.preventDefault\(\);sjEmailSignIn\(\)"/);
+});
+
+test('the Listening Party native shell has a distinct secure origin from its API', () => {
+  const config = JSON.parse(readFileSync(join(root, 'native', 'capacitor.config.json'), 'utf8'));
+  assert.equal(config.server.iosScheme, 'https');
+  assert.equal(config.server.hostname, 'app.listeningparty.stream');
+  assert.match(readFileSync(join(root, 'native', 'scripts', 'build-web.mjs'), 'utf8'),
+    /url:\s*'https:\/\/listeningparty\.stream'/);
+});
+
+test('native Apple sign-in exchanges a nonce-bound identity token and preserves the first name', async () => {
+  const { page, calls, scope } = signInScope({ error: null });
+  const tokens = [];
+  const profiles = [];
+  Object.assign(scope, {
+    sjIsNative: () => true,
+    window: {
+      location: { pathname: '/silver-jews', search: '', reload: () => { calls.reloads++; } },
+      Capacitor: { Plugins: { SJAuth: {
+        signInWithApple: async () => ({ identityToken: 'apple.jwt', nonce: 'raw-nonce', fullName: 'Johnny D' }),
+      } } },
+    },
+    sbAuth: { auth: {
+      signInWithIdToken: async (payload) => { tokens.push(payload); return { error: null }; },
+      updateUser: async (payload) => { profiles.push(payload); return { error: null }; },
+    } },
+  });
+  const { sjAppleSignIn } = loadHtmlFnsInScope(['sjAppleSignIn', 'sjSignInErr'], scope);
+  await sjAppleSignIn();
+  assert.deepEqual(tokens, [{ provider: 'apple', token: 'apple.jwt', nonce: 'raw-nonce' }]);
+  assert.deepEqual(profiles, [{ data: { full_name: 'Johnny D' } }]);
+  assert.equal(calls.reloads, 1);
+  assert.equal(page.els['signin-err'].hidden, true);
 });
 
 test('Google is still one tap from the panel', async () => {
@@ -157,4 +191,13 @@ test('the test account migration names it Johnny D and never writes to auth', ()
   // A name somebody already chose is kept, rather than reset on every run.
   assert.match(sql, /coalesce\(nullif\(btrim\(jukebox\.app_users\.public_name\), ''\), excluded\.public_name\)/);
   assert.match(sql, /revoke all on function jukebox\.ensure_test_account\(text, text\) from public, anon, authenticated/);
+});
+
+test('the second fixed-password ShutterField account is also seeded for Listening Party', () => {
+  const dir = join(root, 'supabase', 'migrations');
+  const file = readdirSync(dir).find((f) => /_second_test_account\.sql$/.test(f));
+  assert.ok(file, 'no second test account migration');
+  const sql = readFileSync(join(dir, file), 'utf8');
+  assert.match(sql, /ensure_test_account\('testing2@shutterfield\.com',\s*'Johnny D Two'\)/i);
+  assert.doesNotMatch(sql, /(insert\s+into|update|delete\s+from)\s+auth\./i);
 });

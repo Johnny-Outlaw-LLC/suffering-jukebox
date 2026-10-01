@@ -23,12 +23,54 @@ await rm(resolve(www, 'og-image.png'), { force: true });
 const indexPath = resolve(www, 'index.html');
 let html = await readFile(indexPath, 'utf8');
 
+// The native product is the Listening Party surface. On the web, Next stamps
+// this object into the shared HTML according to the request hostname. The
+// bundled shell never passes through Next, so publish the same surface here.
+const LISTENING_PARTY = {
+  id: 'lp',
+  name: 'Listening Party',
+  url: 'https://listeningparty.stream',
+  host: 'listeningparty.stream',
+  origins: ['https://listeningparty.stream', 'https://www.listeningparty.stream'],
+  tagline: 'Join the Listening Party',
+  headerTitle: '',
+  textLogo: '/brand/lp/listening-party-text-logo.png',
+  icon: '/brand/lp/favicon.png',
+  themeColor: '#4A1B6D',
+  accent: '#FF5E14',
+  accentHover: '#FF7A3A',
+  accentRgb: '255,94,20',
+  authScheme: 'com.johnnyoutlaw.listeningparty',
+  shareText: 'Listening Party - build a playlist from anything on YouTube, share it with a link, and listen together.',
+  redditSub: null,
+  sisterName: 'Suffering Jukebox',
+  sisterUrl: 'https://sufferingjukebox.stream/',
+  features: {
+    artistPages: false,
+    artistJukebox: true,
+    exploreSongs: true,
+    homeTab: true,
+    defaultLandingTab: 'home',
+    playlistsFirst: true,
+    shareImages: false,
+    sitemapPlaylists: true,
+    welcomeHero: true,
+    phoneMiniPlayer: true,
+    spotifyImport: false,
+    artistUpload: true,
+    liveStations: true,
+  },
+};
+
 // Marker must be distinct from the app's own reads of window.__SJ_NATIVE__ -
 // the web source references that name, so testing for the bare name matched
 // the app's own code and silently skipped the injection, leaving the shell
 // running in web mode.
 const MARKER = 'sj-native-flag';
-const FLAG = `<script id="${MARKER}">window.__SJ_NATIVE__ = true;</script>`;
+const FLAG = `<style>:root{--accent:#FF5E14;--accent-hover:#FF7A3A;--accent-rgb:255,94,20}</style>` +
+  `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600;700;800&family=Lilita+One&display=swap">` +
+  `<script id="${MARKER}">document.documentElement.setAttribute('data-surface','lp');` +
+  `window.__SJ_NATIVE__=true;window.__SURFACE__=${JSON.stringify(LISTENING_PARTY).replace(/</g, '\\u003c')};</script>`;
 if (!html.includes(`id="${MARKER}"`)) {
   html = html.replace('<head>', `<head>\n${FLAG}`);
   if (!html.includes(`id="${MARKER}"`)) {

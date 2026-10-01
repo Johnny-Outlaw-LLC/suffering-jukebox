@@ -37,6 +37,39 @@ test('artist menu can add a public, non-owned artist to My Artists', () => {
   assert.doesNotMatch(block, /saveArtistFeedback\(artistId/);
 });
 
+test('mobile artist cards move Explore Artist Discography into the more menu', () => {
+  const from = html.indexOf('function lamRender(row)');
+  const to = html.indexOf('// Every song this artist has', from);
+  const menu = html.slice(from, to);
+  assert.match(menu, /onclick="lamExplore\(\)"[\s\S]*Explore Artist Discography/);
+  assert.match(menu, /function lamExplore\(\)[\s\S]*landingExploreArtist\(row\.slug, row\.artist_id\)/);
+  assert.match(html, /@media \(max-width: 640px\)[\s\S]*?\.landing-discography-btn \{ display: none !important; \}/);
+  assert.match(html, /class="landing-explore-btn landing-discography-btn"/);
+});
+
+test('full-detail mobile artist stats use a readable two-by-two grid', () => {
+  assert.match(html, /\.landing-grid\.detail-full \.landing-card-stats \{\s*display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(html, /\.landing-grid\.detail-full \.landing-card-stats \.landing-stat-lbl \{[\s\S]*?white-space: normal/);
+});
+
+test('native account tools stay in the app navigation stack', () => {
+  assert.match(html, /function openFaq\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*window\.location\.assign\('\/help\/lp\/index\.html'\)/);
+  assert.match(html, /async function openAnalyticsInNewTab\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*sjOpenHostedTool\('\/analytics'\)/);
+  assert.match(html, /action === 'studio'[\s\S]*sjOpenHostedTool\('\/artist-discography-upload'\)/);
+  assert.match(html, /#sj-app-session=/, 'hosted tools need the native session handoff');
+});
+
+test('playlist and artist management share the iOS sheet treatment', () => {
+  assert.match(html, /html\.sj-ios \.pl-modal-overlay/);
+  assert.match(html, /html\.sj-ios #plModalOverlay \.pl-row-hdr/);
+  assert.match(html, /html\.sj-ios #myArtistsOverlay \.ma-list-row/);
+  assert.match(html, /html\.sj-ios #myArtistsOverlay :is\(\.oa-act,\.ma-artist-tools \.oa-act\)/);
+});
+
+test('What’s New calls the shipped feed APP UPDATES', () => {
+  assert.match(html, /\['updates',\s+'APP UPDATES'\]/);
+});
+
 test('the phone Now Playing deck is title row, scrubber, transport and Up Next / Lyrics only', () => {
   const from = html.indexOf('function ytpMobDeckHTML(trackId) {');
   const deck = html.slice(from, html.indexOf('\n}\n', from));

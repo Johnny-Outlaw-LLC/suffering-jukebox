@@ -23,7 +23,6 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "backfillArtwork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPlayCounts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPlaylists",   returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setStreamLibrary", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRatedTracks", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHeartCounts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setShuffleProfile", returnType: CAPPluginReturnPromise),
@@ -183,23 +182,6 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         }
     }
 
-    // MARK: - Stream library
-
-    /// Hand CarPlay what it can stream without a download: the reply from
-    /// /api/sj-carplay-library, as is. `signedIn: false` means the listener has
-    /// no personal half (signed out), so it is cleared rather than kept.
-    @objc func setStreamLibrary(_ call: CAPPluginCall) {
-        let raw = call.getArray("tracks", JSObject.self) ?? []
-        let expiresAt = call.getDouble("expiresAt") ?? 0
-        let signedIn = call.getBool("signedIn") ?? false
-        let parsed = SJStreamLibrary.parse(tracks: raw.map { $0 as [String: Any] }, expiresAt: expiresAt)
-        SJStreamLibrary.shared.replace(artist: parsed.artist, personal: signedIn ? parsed.personal : [])
-        DispatchQueue.main.async {
-            SJAudioEngine.shared.onQueueChanged?()   // repaint the car's lists
-            call.resolve(["count": parsed.artist.count + parsed.personal.count])
-        }
-    }
-
     // MARK: - Playlists
 
     /// Hand CarPlay the running orders. The car cannot reach the web layer once
@@ -332,6 +314,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
             "baseUrl": lib.baseURL,
             "streamable": all.count,
             "mine": all.filter { $0.source == "mine" }.count,
+            "trackIds": all.map(\.trackId),
         ])
     }
 
@@ -339,7 +322,8 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
     @objc func refreshCarLibrary(_ call: CAPPluginCall) {
         SJStreamLibrary.shared.refresh { ok in
             DispatchQueue.main.async { SJAudioEngine.shared.onQueueChanged?() }
-            call.resolve(["ok": ok, "count": SJStreamLibrary.shared.all().count])
+            let all = SJStreamLibrary.shared.all()
+            call.resolve(["ok": ok, "count": all.count, "trackIds": all.map(\.trackId)])
         }
     }
 

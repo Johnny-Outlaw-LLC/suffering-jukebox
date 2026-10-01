@@ -197,6 +197,22 @@ test('the shelf shows before its picks arrive, and always offers Create', () => 
   assert.ok(!hero(LP, { picks: [], failed: true }).lphShelfHTML().includes('lph-skel'));
 });
 
+test('Create Playlist asks visitors to sign in before opening the builder', () => {
+  const calls = [];
+  const scope = {
+    googleUser: null,
+    showToast: msg => calls.push('toast:' + msg),
+    handleAuthClick: () => calls.push('auth'),
+    openPlaylistBuilder: mode => calls.push('open:' + mode),
+  };
+  const { openPlaylistImporter } = loadHtmlFnsInScope(['openPlaylistImporter'], scope);
+  openPlaylistImporter();
+  assert.deepStrictEqual(calls, ['toast:Sign in to create a playlist.', 'auth']);
+  scope.googleUser = { email: 'listener@example.com' };
+  openPlaylistImporter();
+  assert.deepStrictEqual(calls, ['toast:Sign in to create a playlist.', 'auth', 'open:import']);
+});
+
 test('a card carries the playlist name, size, badge and the number behind the pick', () => {
   const html = hero(LP).lphCardHTML(row());
   assert.ok(html.includes('Early Shellac'));
@@ -297,6 +313,68 @@ test('Start listening plays the record, or opens the wall when there is none', (
   scope._lphPicks = [];
   lphStartListening();
   assert.deepStrictEqual(tabs, ['playlists']);
+});
+
+test('the mobile Home shortcut opens Background Play enabled playlists', () => {
+  assert.match(indexHtml, /class="lph-door lph-bg-shortcut"/);
+  assert.match(indexHtml, /@media \(max-width:640px\)[\s\S]*?\.lph-bg-shortcut \{ display:grid; \}/);
+  assert.match(indexHtml, /async function lphOpenBackgroundEnabled\(\)[\s\S]*?homeBgOnly = true;[\s\S]*?ensureHomeLibrary\(\)[\s\S]*?setLandingTab\('playlists'\)[\s\S]*?openPlaylistChart\('__dynamic_background'\)/);
+});
+
+test('Explore filters include Background Play Enabled content on every device', () => {
+  assert.match(indexHtml, /class="landing-control-group sj-more-filter sj-bg-explore-filter"/);
+  assert.match(indexHtml, /Background Play Enabled only/);
+  assert.match(indexHtml, /onchange="setSjBgOnly\(this\.checked\)"/);
+  assert.doesNotMatch(indexHtml, /taIsMobileDevice\(\) && sjBgFilterOffered\(\) \? `<div class="landing-control-group sj-more-filter sj-bg-explore-filter"/);
+  assert.match(indexHtml, /function sjBgFilterOffered\(\) \{\s*return true;/);
+  assert.match(indexHtml, /async function setSjBgOnly\(on\)[\s\S]*?await ensureHomeLibrary\(\)/);
+  assert.doesNotMatch(indexHtml, /const scopeChips = !googleUser \? ''/);
+  assert.match(indexHtml, /const scopeChips = \(landingTab === 'explore' \|\| landingTab === 'songs'\)[\s\S]*?Background Enabled/);
+  assert.match(indexHtml, /\$\{googleUser \? `<button[^`]*My Playlists/);
+});
+
+test('artist-uploaded audio is a public cross-surface dynamic collection', () => {
+  assert.match(indexHtml, /function backgroundEnabledDynamicRow\(\)[\s\S]*?id:'__dynamic_background'[\s\S]*?name:'Background Enabled Content'[\s\S]*?_publicDynamic:true[\s\S]*?is_public:true/);
+  assert.match(indexHtml, /artist-uploaded music from the shared catalog/);
+  assert.match(indexHtml, /function dynamicPlaylistRows\(\)[\s\S]*?backgroundEnabledDynamicRow\(\)[\s\S]*?if \(background\) rows\.push\(background\)[\s\S]*?if \(!googleUser \|\| !_myReactionTracksLoaded\) return rows/);
+  assert.match(indexHtml, /scope === 'public'[\s\S]*?allDynamic\.filter\(p => p\._publicDynamic\)/);
+});
+
+test('native signed-out sessions load the artist-audio catalog through Capacitor HTTP', async () => {
+  let requested;
+  const scope = {
+    _homeLibLoaded: false,
+    _homeLibLoading: false,
+    _homeLibError: false,
+    _homeBgTrackIds: new Set(),
+    _homeBgArtistIds: new Set(),
+    sjAuthHeaders: async () => ({}),
+    sjApiUrl: path => 'https://listeningparty.stream' + path,
+    sjIsNative: () => true,
+    window: { Capacitor: { Plugins: { CapacitorHttp: { get: async request => {
+      requested = request;
+      return { status: 200, data: { ok: true, trackIds: ['nouns-track'], artistIds: ['nouns-group'] } };
+    } } } } },
+    fetch: async () => { throw new Error('native catalog load must not use WebKit fetch'); },
+    console,
+  };
+  const { ensureHomeLibrary } = loadHtmlFnsInScope(['ensureHomeLibrary'], scope);
+  await ensureHomeLibrary();
+  assert.equal(requested.url, 'https://listeningparty.stream/api/sj-bg-available');
+  assert.equal(scope._homeBgTrackIds.has('nouns-track'), true);
+  assert.equal(scope._homeBgArtistIds.has('nouns-group'), true);
+  assert.equal(scope._homeLibError, false);
+});
+
+test('an unavailable background catalog never blanks ordinary public content', () => {
+  const scope = {
+    homeBgOnly: true,
+    _homeLibLoaded: true,
+    _homeLibError: true,
+    sjBgFilterOffered: () => true,
+  };
+  const { sjBgActive } = loadHtmlFnsInScope(['sjBgActive'], scope);
+  assert.equal(sjBgActive(), false);
 });
 
 test('Start a room asks a signed-out visitor to sign in instead of alerting', () => {

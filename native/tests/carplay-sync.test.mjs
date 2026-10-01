@@ -24,6 +24,22 @@ function setup(extra = {}) {
   vm.runInContext(extract('sjCarPushPlaylists') + '\n' + extract('loadPlaylists'), ctx);
   return { ctx, pushed };
 }
+test('native playlist loading bypasses WebKit CORS through Capacitor HTTP', async () => {
+  let requested;
+  const { ctx } = setup({
+    window: { Capacitor: { Plugins: { CapacitorHttp: { get: async request => {
+      requested = request;
+      return { status: 200, data: { ok: true, playlists: [
+        { id: 'public', name: 'Public', is_public: true, user_email: 'other@example.com', _tracks: [] },
+      ] } };
+    } } } } },
+    sjIsNative: () => true,
+    fetch: async () => { throw new Error('native load must not use WebKit fetch'); },
+  });
+  await ctx.loadPlaylists();
+  assert.equal(requested.url, 'https://sufferingjukebox.stream/api/playlist-share');
+  assert.equal(ctx.pubPlaylists.length, 1);
+});
 test('saved playlists use live API and sync before JS download index is ready', async () => {
   const { ctx, pushed } = setup({ fetch: async url => {
     assert.equal(url, 'https://sufferingjukebox.stream/api/playlist-share');
@@ -76,6 +92,27 @@ test('play counts cross the native bridge without requiring downloads to load', 
   await ctx.sjCarPushPlayCounts();
   assert.equal(received.counts.a, 12);
   assert.equal(received.counts.b, 3);
+});
+
+test('authentication lifecycle always has a stream-library refresh function', () => {
+  assert.match(html, /function sjCarPushStreamLibrary\(\)/);
+  assert.match(html, /async function sjCarRefreshLibrary\(\)/);
+  assert.match(html, /function sjCarTrackIds\(\)/);
+});
+
+test('stream refresh keeps native track ids available to ratings and shuffle', async () => {
+  const ctx = vm.createContext({
+    _sjDownloads: new Map([['downloaded', 'done']]),
+    sjCarPushShuffleProfile() {},
+    sjCarSchedulePushRatings() {},
+    sjDlPlugin: () => ({ refreshCarLibrary: async () => ({ trackIds: ['streamed', 'downloaded'] }) }),
+    Set,
+  });
+  const trackIdsStart = html.indexOf('function sjCarTrackIds(');
+  const trackIdsEnd = html.indexOf('\n}', trackIdsStart) + 2;
+  vm.runInContext('let _sjCarStreamIds = [];\n' + extract('sjCarRefreshLibrary') + '\n' + html.slice(trackIdsStart, trackIdsEnd), ctx);
+  await ctx.sjCarRefreshLibrary();
+  assert.deepEqual(Array.from(ctx.sjCarTrackIds()).sort(), ['downloaded', 'streamed']);
 });
 
 test('native partial playlists include one available song and preserve running order', { skip: process.platform !== 'darwin' }, () => {

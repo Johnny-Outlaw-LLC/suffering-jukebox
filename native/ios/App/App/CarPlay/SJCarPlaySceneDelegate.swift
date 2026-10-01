@@ -157,7 +157,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private static let nothingDownloaded = (
         "Nothing to play yet",
-        "Upload music or download songs on sufferingjukebox.stream."
+        "Upload music or download songs on listeningparty.stream."
     )
 
     // MARK: - Artists

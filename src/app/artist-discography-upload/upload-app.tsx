@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
+import { consumeNativeSessionHandoff } from "@/lib/native-session-handoff";
 import styles from "./upload.module.css";
 
 type Artist = { id: string; name: string; slug: string | null };
@@ -93,6 +94,7 @@ export default function UploadApp() {
   const [cover, setCover] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [fromNativeApp, setFromNativeApp] = useState(false);
 
   async function refresh() {
     const [artistResult, draftResponse] = await Promise.all([
@@ -112,8 +114,10 @@ export default function UploadApp() {
 
   useEffect(() => {
     let active = true;
-    sjBrowserAuth.auth.getSession().then(async ({ data }) => {
+    consumeNativeSessionHandoff().then(async (handoff) => {
+      const data = handoff ? { session: handoff.session } : (await sjBrowserAuth.auth.getSession()).data;
       if (!active) return;
+      setFromNativeApp(!!handoff?.fromNativeApp);
       setSignedIn(!!data.session);
       if (data.session) await refresh();
     }).catch((error) => { if (active) setMessage(error.message); });
@@ -208,7 +212,9 @@ export default function UploadApp() {
   }
 
   return <main className={styles.page}>
-    <nav><a href="/">← Back to the jukebox</a><a href="/artist-upload">Rights submission</a></nav>
+    <nav>{fromNativeApp
+      ? <button type="button" className={styles.backButton} onClick={() => window.history.back()}>‹ Back to the app</button>
+      : <a href="/">← Back to the jukebox</a>}<a href="/artist-upload">Rights submission</a></nav>
     <header><p>ARTIST STUDIO</p><h1>Upload a complete discography.</h1>
       <p>Add albums, singles, and unreleased original music. Drafts stay private until you sign the catalog license and the team verifies your rights.</p></header>
     {!signedIn ? <section className={styles.card}><h2>Sign in to begin</h2>

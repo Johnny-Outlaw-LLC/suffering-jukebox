@@ -112,6 +112,13 @@ test('the tab bar is phone-only and stacks under the full screen player', () => 
   assert.ok(indexHtml.includes('if (dy < -30) ytpEnterFullscreen();'), 'swipe up no longer opens the player');
 });
 
+test('the compact dock closes and stops playback after the next button', () => {
+  assert.match(indexHtml, /id="ytp-mf-next">[\s\S]*?id="ytp-mf-mini-close">✕<\/button>/);
+  assert.match(indexHtml, /onclick="event\.stopPropagation\(\);closeYTPlayer\(\)"[^>]*id="ytp-mf-mini-close"/);
+  assert.match(indexHtml, /#ytp-mini-footer\.dock-mini #ytp-mf-mini-close \{ display: flex; \}/);
+  assert.match(indexHtml, /'ytp-mf-next', 'ytp-mf-mini-close', 'ytp-mf-repeat'/);
+});
+
 test('You signs a visitor in, or opens the account menu', () => {
   const calls = [];
   const scope = {
@@ -125,4 +132,58 @@ test('You signs a visitor in, or opens the account menu', () => {
   scope.googleUser = { email: 'a@b.c' };
   lptbYou({});
   assert.deepStrictEqual(calls, ['auth', 'menu']);
+});
+
+test('the account tab says Sign In for a visitor and You for a user', () => {
+  const label = { textContent: '' };
+  const scope = {
+    googleUser: null,
+    document: { querySelector: () => label },
+  };
+  const { lptbSyncAuthLabel } = loadHtmlFnsInScope(['lptbSyncAuthLabel'], scope);
+  lptbSyncAuthLabel();
+  assert.equal(label.textContent, 'Sign In');
+  scope.googleUser = { email: 'a@b.c' };
+  lptbSyncAuthLabel();
+  assert.equal(label.textContent, 'You');
+});
+
+test('Listening Party Explore switches between Artists, Playlists, and Songs on mobile', () => {
+  const scope = {
+    SJ_BRAND: surface.publicSurface(LP),
+    landingTab: 'playlists',
+    landingTabAllowed: id => ['explore', 'playlists', 'songs'].includes(id),
+  };
+  const { lptbExploreSwitcherHTML } = loadHtmlFnsInScope(['lptbExploreSwitcherHTML'], scope);
+  const html = lptbExploreSwitcherHTML();
+  assert.match(html, /aria-label="Explore by"/);
+  assert.match(html, /setLandingTab\('explore'\)[^>]*>Artists/);
+  assert.match(html, /class="active" aria-selected="true" onclick="setLandingTab\('playlists'\)"[^>]*>Playlists/);
+  assert.match(html, /setLandingTab\('songs'\)[^>]*>Songs/);
+  scope.SJ_BRAND = surface.publicSurface(SJ);
+  assert.equal(lptbExploreSwitcherHTML(), '');
+});
+
+test('the Explore switcher is phone-only and rendered above each Explore view', () => {
+  assert.match(indexHtml, /\.lptb-explore-switcher \{ display: none; \}/);
+  assert.match(indexHtml, /@media \(max-width: 640px\)[\s\S]*?html\.has-phone-tabbar \.lptb-explore-switcher \{ display: grid;/);
+  assert.match(indexHtml, /<div class="landing-wrap">\s*\$\{lptbExploreSwitcherHTML\(\)\}/);
+});
+
+test('native artist cards resolve submitted release covers against the live site', () => {
+  const scope = {
+    ALBUM_ART: {},
+    SJ_FRAME_ORIGIN: 'https://listeningparty.stream',
+    sjIsNative: () => true,
+  };
+  const { sjAbsSiteUrl, landingThumb } = loadHtmlFnsInScope(['sjAbsSiteUrl', 'landingThumb'], scope);
+  scope.sjAbsSiteUrl = sjAbsSiteUrl;
+  assert.equal(
+    landingThumb({ top_album_name: 'Nouns Group EP', top_album_art_url: '/artist-release-art/release-id' }),
+    'https://listeningparty.stream/artist-release-art/release-id',
+  );
+  assert.equal(
+    landingThumb({ top_album_name: 'Victim Weight', top_album_art_url: '/album-art/album-id?v=1' }),
+    'https://listeningparty.stream/album-art/album-id?v=1',
+  );
 });

@@ -569,8 +569,10 @@ body:not(.light) .top-tracks-tbl td { color: var(--text); }
 body:not(.light) .tt-rank { color: var(--text); }
 body:not(.light) .tt-num { color: var(--text); }
 .artist-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; vertical-align: middle; margin-right: 4px; }
-.td-yt a { color: var(--accent); font-size: .62rem; text-decoration: none; opacity: .4; transition: opacity .12s; }
-.tt-row:hover .td-yt a { opacity: 1; }
+.td-yt .tt-row-play { min-height:28px; padding:0 10px; border:1px solid var(--accent); border-radius:14px;
+  background:transparent; color:var(--accent); font:600 .5rem/1 var(--mono); cursor:pointer; opacity:.72; transition:opacity .12s,background .12s,color .12s; }
+.tt-row:hover .td-yt .tt-row-play { opacity:1; }
+.td-yt .tt-row-play:hover { background:var(--accent); color:#fff; }
 /* The row's ⋯, same popup the album track lines and the player open. */
 .td-more { width: 24px; text-align: right; }
 .tt-row td.td-more { padding: 0 .5rem 0 0; }
@@ -618,6 +620,9 @@ body:not(.light) .tt-num { color: var(--text); }
 #signInOverlay .modal { max-width: 420px; }
 #signInOverlay .modal-body { display: grid; gap: .8rem; }
 #signInOverlay .m-btn { width: 100%; justify-content: center; }
+#signin-apple { background:#000; color:#fff; border:1px solid #000; font-weight:600; }
+#signin-apple:hover { background:#171717; border-color:#171717; }
+.signin-apple-mark { font-size:1.25em; line-height:1; margin-right:.42em; }
 #signin-form { display: grid; gap: .55rem; }
 #signin-form .m-input { width: 100%; box-sizing: border-box; font-family: inherit; font-size: .66rem; }
 .signin-or { display: flex; align-items: center; gap: .6rem; font-size: .56rem; color: var(--text-muted); }
@@ -2516,6 +2521,7 @@ textarea.report-input { resize:vertical; }
 .ytp-mf-playlist-row:hover .ytp-mf-playlist-rm { opacity:.85; }
 .ytp-mf-playlist-rm:hover { color:#ef4444; opacity:1; }
 .ytp-mf-top, .ytp-mf-middle, .ytp-mf-bottom { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+.ytp-mf-mini-close { display: none; }
 .ytp-mf-mobile-window { display: none; }
 .ytp-mf-up-next {
   display:none; align-items:center; gap:7px; min-width:0; max-width:min(320px,42vw);
@@ -3671,7 +3677,59 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 .plb-acc-item.open > .plb-nest { display:block; }
 .plb-empty.small { padding:.5rem .4rem; font-size:.5rem; text-align:left; }
 @media (max-width:720px) {
-  .plb-results { max-height:36vh; }
+  /* Playlist browsing is a small catalogue, not a desktop table squeezed into
+     a sheet. Give the list enough height and let each result keep its title,
+     artwork and action on separate, readable lines. */
+  #admOverlay .plb-results { max-height:min(52dvh,560px); padding:8px; }
+  #admOverlay .plb-sec { padding:10px 6px 5px; font-size:11px; }
+  #admOverlay .plb-nest { padding-left:6px; margin:4px 0 8px 6px; }
+  #admOverlay .plb-row { gap:8px; padding:9px 7px; }
+  #admOverlay .plb-row.plb-row-drill:not(.list-album-row) {
+    display:grid; grid-template-columns:18px 48px minmax(0,1fr);
+    grid-template-areas:"caret art info" ". . add"; align-items:center;
+  }
+  #admOverlay .plb-row.plb-row-drill:not(.list-album-row) .plb-caret { grid-area:caret; }
+  #admOverlay .plb-row.plb-row-drill:not(.list-album-row) :is(.plb-art,.plb-art-ph) {
+    grid-area:art; width:48px; height:48px;
+  }
+  #admOverlay .plb-row.plb-row-drill:not(.list-album-row) .plb-info { grid-area:info; }
+  #admOverlay .plb-row.plb-row-drill:not(.list-album-row) .plb-add { grid-area:add; justify-self:start; }
+  #admOverlay .plb-row:not(.plb-row-drill) {
+    display:grid; grid-template-columns:48px minmax(0,1fr);
+    grid-template-areas:"art info" ". add"; align-items:center;
+  }
+  #admOverlay .plb-row:not(.plb-row-drill) :is(.plb-art,.plb-art-ph) { grid-area:art; width:48px; height:48px; }
+  #admOverlay .plb-row:not(.plb-row-drill) .plb-info { grid-area:info; }
+  #admOverlay .plb-row:not(.plb-row-drill) .plb-add { grid-area:add; justify-self:start; }
+  #admOverlay .plb-name { font-size:15px; line-height:1.3; white-space:normal; overflow:visible; }
+  #admOverlay .plb-meta { font-size:13px; line-height:1.35; white-space:normal; }
+  #admOverlay .plb-add { min-height:34px; padding:6px 11px; font-size:12px; }
+
+  /* Album rows inherit the app-wide iOS discography grid. Re-map that grid in
+     this nested browser so the Add button cannot crush the cover and title. */
+  html.sj-ios #admOverlay .list-album-row.plb-row-drill {
+    display:grid; grid-template-columns:64px minmax(0,1fr) 18px;
+    grid-template-areas:"art info caret" "art views caret" "art add caret";
+    column-gap:12px; row-gap:2px; align-items:center; min-height:84px;
+    padding:10px 6px 10px 10px; border:1px solid var(--border); border-left-width:3px;
+  }
+  html.sj-ios #admOverlay .list-album-row .list-art,
+  html.sj-ios #admOverlay .list-album-row .list-art-ph {
+    grid-area:art; width:64px; height:64px; border-radius:7px; object-fit:cover;
+  }
+  html.sj-ios #admOverlay .list-album-row .list-info { display:block; grid-area:info; min-width:0; }
+  html.sj-ios #admOverlay .list-album-row .list-name {
+    display:block; overflow:visible; font-size:16px; line-height:1.25;
+    white-space:normal; word-break:normal; overflow-wrap:anywhere;
+  }
+  html.sj-ios #admOverlay .list-album-row .list-meta { font-size:13px; margin-top:3px; }
+  html.sj-ios #admOverlay .list-album-row .list-views-block { grid-area:views; font-size:12px; }
+  html.sj-ios #admOverlay .list-album-row .plb-add { grid-area:add; justify-self:start; }
+  html.sj-ios #admOverlay .list-album-row .plb-caret { display:block; grid-area:caret; align-self:center; }
+  html.sj-ios #admOverlay .trk-line { display:grid; grid-template-columns:24px minmax(0,1fr) auto; gap:4px 8px; padding:8px 4px; }
+  html.sj-ios #admOverlay .trk-line .trk-name { min-width:0; white-space:normal; }
+  html.sj-ios #admOverlay .trk-line .trk-metrics { grid-column:2; }
+  html.sj-ios #admOverlay .trk-line .plb-add { grid-column:3; grid-row:1 / span 2; }
 }
 .pl-btn { background:var(--accent); border:none; color:#fff; font-family:var(--mono); font-size:.55rem; letter-spacing:.06em; padding:.42rem 1rem; border-radius:7px; cursor:pointer; transition:background .15s; white-space:nowrap; text-transform:uppercase; }
 .pl-btn:hover { background:var(--accent-hover); }
@@ -4580,6 +4638,7 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
    row's width (and with it the card art) when a search narrows the grid down
    to one result. auto-fill leaves the remaining tracks empty instead. */
 .landing-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min, 240px), 1fr)); gap: 20px; }
+.landing-grid, .playlist-explore-grid { touch-action: pan-y; }
 .landing-grid.detail-name { --card-min: 160px; }
 .landing-grid.detail-yt   { --card-min: 220px; }
 .landing-grid.detail-full { --card-min: 320px; }
@@ -4850,7 +4909,8 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   .la-hero-name { font-size: 1.15rem; }
   .la-hero-stats { gap: 18px; }
   .la-albums { padding: 12px 12px 16px; }
-  /* Keep Play + Explore Artist Discography on one line on a narrow phone. */
+  /* Discography navigation lives in the artist's ⋯ menu on a phone. */
+  .landing-discography-btn { display: none !important; }
   .la-hero-actions { flex-wrap: nowrap; gap: 8px; }
   .la-hero-actions .landing-play-btn,
   .la-hero-actions .landing-explore-btn { font-size: .5rem; letter-spacing: .02em; padding: .5rem .65rem; white-space: nowrap; }
@@ -4875,6 +4935,13 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   .landing-grid.detail-yt .landing-card-name { font-size: .8rem; line-height: 1.25; overflow-wrap: anywhere; }
   .landing-grid.detail-yt .landing-stat-val { font-size: .8rem; }
   .landing-grid.detail-yt .landing-stat-lbl { font-size: .4rem; }
+  .landing-grid.detail-full .landing-card-stats {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px;
+  }
+  .landing-grid.detail-full .landing-card-stats .landing-stat { min-width: 0; }
+  .landing-grid.detail-full .landing-card-stats .landing-stat-lbl {
+    white-space: normal; line-height: 1.25; overflow-wrap: anywhere;
+  }
   .landing-grid.detail-name .landing-card-x,
   .landing-grid.detail-yt .landing-card-x { width: 20px; height: 20px; font-size: .6rem; top: 5px; right: 5px; }
 }
@@ -4982,6 +5049,7 @@ html[data-surface="lp"] .brand-title em {
    The tab bar sits under the full screen player (z-index 2001) and under the
    dock (4990), which rests on top of it. */
 #lp-tabbar { display: none; }
+.lptb-explore-switcher { display: none; }
 @media (max-width: 640px) {
   html.has-phone-tabbar { --lp-tabbar-h: calc(58px + env(safe-area-inset-bottom, 0px)); }
   html.has-phone-tabbar body { padding-bottom: calc(var(--ytp-dock-height) + var(--lp-tabbar-h) + 8px); }
@@ -4996,6 +5064,12 @@ html[data-surface="lp"] .brand-title em {
   .lptb-tab svg { width: 22px; height: 22px; }
   .lptb-tab.on { color: var(--accent); }
   .lptb-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: 10px; }
+  html.has-phone-tabbar .lptb-explore-switcher { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px; margin: 0 0 16px; padding: 3px; border-radius: 12px; background: color-mix(in srgb, var(--text) 9%, transparent); }
+  .lptb-explore-switcher button { min-width: 0; min-height: 38px; padding: 0 8px; border: 0; border-radius: 9px;
+    background: transparent; color: var(--text-muted); font: 700 13px/1 var(--lp-body, var(--phone-ui-font)); cursor: pointer; }
+  .lptb-explore-switcher button.active { background: var(--bg-elevated); color: var(--text); box-shadow: 0 1px 5px rgba(0,0,0,.24); }
+  .lptb-explore-switcher button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
   /* The dock parks above the tab bar, and when closed it slides fully out of
      sight rather than stopping behind the bar. */
@@ -5035,7 +5109,9 @@ html[data-surface="lp"] .brand-title em {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #ytp-mini-footer.dock-mini .ytp-mf-middle { width: auto; justify-content: flex-end; gap: 2px !important; }
   #ytp-mini-footer.dock-mini #ytp-mf-playpause { width: 42px; height: 42px; border-radius: 50%; }
-  #ytp-mini-footer.dock-mini #ytp-mf-next { width: 40px; height: 40px; border-color: transparent; background: none; }
+  #ytp-mini-footer.dock-mini #ytp-mf-next,
+  #ytp-mini-footer.dock-mini #ytp-mf-mini-close { width: 40px; height: 40px; border-color: transparent; background: none; }
+  #ytp-mini-footer.dock-mini #ytp-mf-mini-close { display: flex; }
   /* The pill is the same frosted material as the tab bar under it, in the
      system face, with a hairline of where the song is along its bottom edge.
      --mf-prog is written by ytpMfPaintProgress(); scrubbing stays in the sheet. */
@@ -5045,7 +5121,8 @@ html[data-surface="lp"] .brand-title em {
   #ytp-mini-footer.dock-mini .ytp-mf-song,
   #ytp-mini-footer.dock-mini .ytp-mf-artist { font-family: var(--phone-ui-font); letter-spacing: 0; text-transform: none; }
   #ytp-mini-footer.dock-mini #ytp-mf-playpause,
-  #ytp-mini-footer.dock-mini #ytp-mf-next { border: 0; background: none; color: var(--text); font-size: 22px; }
+  #ytp-mini-footer.dock-mini #ytp-mf-next,
+  #ytp-mini-footer.dock-mini #ytp-mf-mini-close { border: 0; background: none; color: var(--text); font-size: 22px; }
   #ytp-mini-footer.dock-mini::before,
   #ytp-mini-footer.dock-mini::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 0; height: 2px;
     border-radius: 1px; pointer-events: none; }
@@ -5204,6 +5281,7 @@ html[data-surface="lp"] .brand-title em {
 .lph-door b { font-size:16px; font-weight:700; }
 .lph-door em { font-style:normal; font-size:14px; line-height:1.45; color:var(--text-muted); }
 .lph-door:hover b { color:var(--accent); }
+.lph-bg-shortcut { display:none; }
 
 /* Live stations reuse the Hot right now vinyl. Multi-station: snap between
    full feature panels in the hero column. */
@@ -5249,6 +5327,9 @@ html[data-surface="lp"] .brand-title em {
   .lph-door, .lph-door + .lph-door { padding:16px 0; border-left:0; border-bottom:1px solid var(--border); }
   .lph-live-track { height:auto; }
   .lph-live-track .lph-feature { height:auto; }
+}
+@media (max-width:640px) {
+  .lph-bg-shortcut { display:grid; }
 }
 @media (prefers-reduced-motion: reduce) {
   .lph-vinyl, .lph-skel, .lp-home-heat-skel, .lph-chip.lph-live-chip .dot { animation:none; }
@@ -5454,6 +5535,67 @@ html.sj-ios .modal-close {
   display: inline-flex; align-items: center; justify-content: center;
 }
 
+/* Playlist management uses the older pl-* dialog family. Give it the same
+   sheet geometry and UIKit-sized controls as the rest of the iPhone app. */
+html.sj-ios .pl-modal-overlay { background: rgba(0,0,0,.4); backdrop-filter:none; -webkit-backdrop-filter:none; }
+html.sj-ios :is(.pl-btn,.pl-row-play,.pl-row-action-btn,.oa-act) {
+  font-family:var(--ios-font); letter-spacing:-.01em; text-transform:none;
+}
+@media (max-width:640px) {
+  html.sj-ios .pl-modal-overlay { padding:0; align-items:flex-end; }
+  html.sj-ios .pl-modal {
+    width:100% !important; max-width:none !important; height:min(88dvh,760px); max-height:calc(100dvh - env(safe-area-inset-top,0px) - 8px);
+    border:0; border-radius:16px 16px 0 0; background:var(--bg-card); position:relative;
+    padding-bottom:env(safe-area-inset-bottom,0px); animation:sjIosSheetUp .38s cubic-bezier(.2,.9,.25,1);
+  }
+  html.sj-ios .pl-modal::before {
+    content:''; position:absolute; z-index:2; top:5px; left:50%; width:36px; height:5px; margin-left:-18px;
+    border-radius:3px; background:var(--ios-fill-strong);
+  }
+  html.sj-ios .pl-modal-header { min-height:56px; box-sizing:border-box; padding:17px 16px 10px; border-bottom:.5px solid var(--ios-sep); }
+  html.sj-ios .pl-modal-title { font-size:17px; letter-spacing:-.02em; }
+  html.sj-ios .pl-modal-body { padding:14px 16px; gap:12px; overscroll-behavior:contain; }
+  html.sj-ios .pl-modal-footer { padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px)); border-top:.5px solid var(--ios-sep); }
+  html.sj-ios .pl-modal-footer .pl-btn { min-height:44px; padding:0 16px; border:0; border-radius:12px; font-size:15px; font-weight:600; }
+  html.sj-ios .pl-modal-footer .pl-btn:not(.ghost) { flex:1; background:var(--accent); }
+  html.sj-ios .pl-modal-footer .pl-btn.ghost { background:var(--ios-fill); color:var(--text); }
+
+  /* My Playlists: inset grouped rows with the title first and actions in a
+     horizontally scrollable control row instead of a wrapped desktop toolbar. */
+  html.sj-ios #plModalOverlay .pl-list { gap:10px; }
+  html.sj-ios #plModalOverlay .pl-card { border:0; border-radius:14px; background:var(--bg-elevated); }
+  html.sj-ios #plModalOverlay .pl-row-hdr { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; padding:12px; }
+  html.sj-ios #plModalOverlay .pl-row-name { grid-column:1 / -1; font-size:17px; letter-spacing:-.02em; min-width:0; }
+  html.sj-ios #plModalOverlay .pl-vis-select { min-height:34px; font:13px var(--ios-font); border:0; border-radius:9px; background:var(--ios-fill); padding:0 24px 0 10px; }
+  html.sj-ios #plModalOverlay .pl-row-play,
+  html.sj-ios #plModalOverlay .pl-row-action-btn { min-height:40px; padding:0 12px; border:0; border-radius:10px; background:var(--ios-fill); color:var(--text); font-size:14px; }
+  html.sj-ios #plModalOverlay .pl-row-play { color:var(--accent); }
+  html.sj-ios #plModalOverlay .pl-row-action-btn.danger { color:#ff453a; }
+  html.sj-ios #plModalOverlay .pl-row-expand { width:40px; height:40px; padding:0; border-radius:10px; background:var(--ios-fill); font-size:14px; }
+  html.sj-ios #plModalOverlay .pl-track-item { min-height:48px; padding:4px 12px; font-size:14px; border-bottom:.5px solid var(--ios-sep); }
+  html.sj-ios #plModalOverlay .pl-track-move { min-width:28px; min-height:22px; font-size:14px; }
+  html.sj-ios #plModalOverlay .pl-track-remove { min-height:36px; padding:0 10px; font-size:13px; color:#ff453a; opacity:1; }
+
+  /* My Artists: a navigation-list rhythm, large rows and touchable album
+     actions while retaining every desktop management capability. */
+  html.sj-ios #myArtistsOverlay .modal { height:min(92dvh,820px); }
+  html.sj-ios #myArtistsOverlay .modal-body { padding:12px 16px; }
+  html.sj-ios #myArtistsOverlay .ma-search-row { position:sticky; top:0; z-index:2; padding:0 0 10px; background:var(--bg-card); }
+  html.sj-ios #myArtistsOverlay .ma-summary { display:grid; grid-template-columns:1fr 1fr; gap:8px; border:0; background:none; padding:0; }
+  html.sj-ios #myArtistsOverlay .ma-summary > div { padding:12px; border-radius:12px; background:var(--ios-fill); font-size:13px; }
+  html.sj-ios #myArtistsOverlay .ma-summary b { font-size:24px; }
+  html.sj-ios #myArtistsOverlay .ma-list-row { min-height:58px; box-sizing:border-box; padding:8px 4px; border-bottom:.5px solid var(--ios-sep); }
+  html.sj-ios #myArtistsOverlay .oa-name { font-family:var(--ios-font); font-size:17px; letter-spacing:-.01em; }
+  html.sj-ios #myArtistsOverlay .oa-meta { margin-top:4px; font-family:var(--ios-font); font-size:13px; letter-spacing:0; }
+  html.sj-ios #myArtistsOverlay .ma-list-go { font-size:28px; font-weight:300; }
+  html.sj-ios #myArtistsOverlay .ma-back { min-height:44px; padding:0; font:15px var(--ios-font); }
+  html.sj-ios #myArtistsOverlay .oa-artist-row,
+  html.sj-ios #myArtistsOverlay .ma-artist-tools { gap:8px; overflow-x:auto; flex-wrap:nowrap; scrollbar-width:none; }
+  html.sj-ios #myArtistsOverlay :is(.oa-act,.ma-artist-tools .oa-act) { min-height:40px; padding:0 12px !important; border:0; border-radius:10px; background:var(--ios-fill); color:var(--text); font-size:14px !important; }
+  html.sj-ios #myArtistsOverlay .oa-alb { min-height:52px; padding:6px 4px; gap:8px; overflow-x:auto; }
+  html.sj-ios #myArtistsOverlay .oa-alb-name { min-width:140px; font-size:15px; }
+}
+
 /* Context menus (⋯): iOS menu material, 17pt rows, hairline separators. */
 html.sj-ios .sjm-menu {
   background: var(--ios-material); border: none; border-radius: 14px; padding: 0; overflow: hidden;
@@ -5635,7 +5777,7 @@ html.sj-ios #es-body .top-tracks-tbl { display: block; width: 100%; min-width: 0
 html.sj-ios #es-body .top-tracks-tbl thead { display: none; }
 html.sj-ios #es-body .top-tracks-tbl tbody { display: block; }
 html.sj-ios #es-body tr.tt-row {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) 44px; grid-template-areas: "name name more" "artist album more";
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto 44px; grid-template-areas: "name name play more" "artist album play more";
   align-items: center; column-gap: 0; row-gap: 3px; padding: 9px 0 9px 2px; background: none;
   border-bottom: .5px solid var(--ios-sep);
 }
@@ -5651,6 +5793,9 @@ html.sj-ios #es-body tr.tt-row > td.tt-artist-c .es-artist { color: inherit; }
 html.sj-ios #es-body tr.tt-row > td.tt-album-c { display: block; grid-area: album; min-width: 0; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; font: 400 13px/1.25 var(--ios-font) !important; color: var(--text-muted) !important; }
 html.sj-ios #es-body tr.tt-row > td.tt-album-c::before { content: ' · '; white-space: pre; }
+html.sj-ios #es-body tr.tt-row > td.td-yt { display:flex; grid-area:play; align-items:center; justify-content:flex-end; padding-left:8px !important; }
+html.sj-ios #es-body tr.tt-row > td.td-yt .tt-row-play { min-height:32px; padding:0 12px; border:0; border-radius:16px;
+  background:var(--accent); color:#fff; opacity:1; font:600 13px/1 var(--ios-font); }
 html.sj-ios #es-body tr.tt-row > td.td-more { display: flex; grid-area: more; align-items: center; justify-content: center; }
 html.sj-ios #es-body tr.tt-row > td.td-more .tt-more { width: 44px; height: 44px; border: 0; background: none; color: var(--text-muted); font-size: 20px; }
 html.sj-ios #es-body .top-tracks-tbl tr:not(.tt-row) { display: block; }
@@ -5857,6 +6002,7 @@ if (window.__SJ_NATIVE__ === true) {
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytBackTrack()" title="Previous" id="ytp-mf-prev">⏮</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytTogglePlayPause()" title="Play/Pause" id="ytp-mf-playpause">⏸</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytNextTrack()" title="Next" id="ytp-mf-next">⏭</button>
+        <button type="button" class="ytp-mf-btn ytp-mf-mini-close" onclick="event.stopPropagation();closeYTPlayer()" title="Close player" aria-label="Close player" id="ytp-mf-mini-close">✕</button>
         <button class="ytp-mf-btn" onclick="event.stopPropagation();ytpMobToggleRepeat()" title="Repeat" id="ytp-mf-repeat">↻</button>
       </div>
       <div class="ytp-mf-up-next" id="ytp-mf-up-next"></div>
@@ -5930,7 +6076,7 @@ if (window.__SJ_NATIVE__ === true) {
           <button type="button" class="user-menu-item cta" id="user-menu-import" onclick="openAddMusic()">＋ Import Music</button>
           <button type="button" class="user-menu-item" id="user-menu-playlists" style="display:none" onclick="userMenuAction('playlists')">Manage Playlists</button>
           <button type="button" class="user-menu-item" id="user-menu-artists" onclick="userMenuAction('myartists')">Manage My Artists</button>
-          <a class="user-menu-item" id="user-menu-artist-studio" data-sj-feature="artistUpload" href="/artist-discography-upload">Artist Studio</a>
+          <button type="button" class="user-menu-item" id="user-menu-artist-studio" data-sj-feature="artistUpload" onclick="userMenuAction('studio')">Artist Studio</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-settings" onclick="userMenuAction('settings')">Settings</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">Help &amp; How-To Guide</button>
@@ -6339,7 +6485,7 @@ if (window.__SJ_NATIVE__ === true) {
 </div>
 
 <!-- Add music (adm*): one box for a link, a song, an artist, a list of songs or a screenshot. -->
-<!-- Sign in: Google, or an email and password for an account that has one. -->
+<!-- Sign in: native Apple, Google, or an existing email/password account. -->
 <div class="modal-overlay" id="signInOverlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="signin-title">
     <div class="modal-header">
@@ -6347,6 +6493,7 @@ if (window.__SJ_NATIVE__ === true) {
       <button class="modal-close" onclick="closeSignIn()" aria-label="Close">✕</button>
     </div>
     <div class="modal-body">
+      <button type="button" class="m-btn" id="signin-apple" onclick="sjAppleSignIn()" hidden><span class="signin-apple-mark" aria-hidden="true">&#63743;</span>Continue with Apple</button>
       <button type="button" class="m-btn" id="signin-google" onclick="sjGoogleSignIn()">Continue with Google</button>
       <div class="signin-or">or sign in with email</div>
       <form id="signin-form" onsubmit="event.preventDefault();sjEmailSignIn()">
@@ -7425,6 +7572,7 @@ const LPH_ICONS = {
   record: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path stroke-linecap="round" d="M12 5.5a6.5 6.5 0 0 1 6.5 6.5"/></g></svg>',
   spotify: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M7.5 9.5c3-1 6.5-.7 9 .8M8 12.6c2.5-.7 5.2-.4 7.3.8M8.6 15.5c2-.5 3.9-.3 5.5.6"/></g></svg>',
   tv: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path stroke-linecap="round" d="M8 21h8M12 17v4"/></g></svg>',
+  headphones: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><path d="M4 14h3v6H5a1 1 0 0 1-1-1v-5Zm16 0h-3v6h2a1 1 0 0 0 1-1v-5Z"/></g></svg>',
 };
 
 function lphEsc(s) {
@@ -7512,6 +7660,17 @@ function lphStartListening() {
   const r = lphFeaturePick();
   if (r) { playPlaylist(r.playlist_id); return; }
   setLandingTab('playlists');
+}
+
+async function lphOpenBackgroundEnabled() {
+  homeBgOnly = true;
+  try { localStorage.setItem('sj_home_bg_only', '1'); } catch (_) {}
+  if (!_homeLibLoaded) await ensureHomeLibrary();
+  setLandingTab('playlists');
+  if (_homeBgTrackIds.size) await openPlaylistChart('__dynamic_background');
+  else showToast('No background-enabled content is available yet.');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  void sjTrackProductEvent('bg_home_shortcut');
 }
 
 function lphStartRoom() {
@@ -7814,6 +7973,9 @@ function landingHomeHTML() {
           <button type="button" class="lph-door" onclick="lphStartRoom()">
             <span class="lph-door-ico">${LPH_ICONS.tv}</span><b>Start a room</b><em>Put the party on a TV. Guests scan the code and add songs.</em>
           </button>
+          ${taIsMobileDevice() && sjBgFilterOffered() ? `<button type="button" class="lph-door lph-bg-shortcut" onclick="lphOpenBackgroundEnabled()">
+            <span class="lph-door-ico">${LPH_ICONS.headphones}</span><b>Background Play Enabled</b><em>Browse playlists with music that keeps playing when the screen is off.</em>
+          </button>` : ''}
         </div>
       </section>
     </div>`;
@@ -7861,6 +8023,19 @@ function lptbTabs() {
 // Kept for callers and tests that read the list directly.
 const LPTB_TABS = lptbTabs();
 
+/** Listening Party's one bottom Explore tab opens these three catalog views. */
+function lptbExploreSwitcherHTML() {
+  if (SJ_BRAND.id !== 'lp' || !['explore', 'playlists', 'songs'].includes(landingTab)) return '';
+  const tabs = [
+    ['explore', 'Artists'],
+    ['playlists', 'Playlists'],
+    ['songs', 'Songs'],
+  ].filter(([id]) => landingTabAllowed(id));
+  return `<nav class="lptb-explore-switcher" aria-label="Explore by" role="tablist">${tabs.map(([id, label]) =>
+    `<button type="button" role="tab" class="${landingTab === id ? 'active' : ''}" aria-selected="${landingTab === id}" onclick="setLandingTab('${id}')">${label}</button>`
+  ).join('')}</nav>`;
+}
+
 function lptbMount() {
   if (!SJ_BRAND.features.phoneMiniPlayer || document.getElementById('lp-tabbar')) return;
   document.documentElement.classList.add('has-phone-tabbar');
@@ -7875,10 +8050,17 @@ function lptbMount() {
   lptbSync();
 }
 
+/** The account tab names the action until there is an account to open. */
+function lptbSyncAuthLabel() {
+  const label = document.querySelector('#lp-tabbar [data-lptb="you"] span');
+  if (label) label.textContent = googleUser ? 'You' : 'Sign In';
+}
+
 /** Marks the tab for the sheet on screen, or none while a playlist wall is open. */
 function lptbSync() {
   const bar = document.getElementById('lp-tabbar');
   if (!bar) return;
+  lptbSyncAuthLabel();
   let on = '';
   try {
     if (isLandingMode && viewMode !== 'playlistchart') on = landingTab;
@@ -8611,6 +8793,10 @@ async function sjGetSession() {
 // every URL-ish field that comes back from the database is made absolute once,
 // here, rather than in each of the dozens of places that draw a cover.
 const SJ_URL_KEY = /(url|artwork|thumb|thumbnail|image|cover|avatar)$/i;
+function sjAbsSiteUrl(value) {
+  if (typeof value !== 'string' || typeof sjIsNative !== 'function' || !sjIsNative()) return value;
+  return value[0] === '/' && value[1] !== '/' ? SJ_FRAME_ORIGIN + value : value;
+}
 function sjAbsSiteUrls(data) {
   if (!data || typeof sjIsNative !== 'function' || !sjIsNative()) return data;
   const walk = v => {
@@ -8619,7 +8805,7 @@ function sjAbsSiteUrls(data) {
     for (const k in v) {
       const x = v[k];
       if (typeof x === 'string') {
-        if (x[0] === '/' && x[1] !== '/' && SJ_URL_KEY.test(k)) v[k] = SJ_FRAME_ORIGIN + x;
+        if (SJ_URL_KEY.test(k)) v[k] = sjAbsSiteUrl(x);
       } else if (x && typeof x === 'object') walk(x);
     }
   };
@@ -9323,7 +9509,7 @@ function buildSinglePanelHTML(alb, L) {
   const yr         = (alb.release_date || '').slice(0, 4);
   const albTracks     = (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id);
   const _albMetricVal = albumViews(alb);
-  const _albMetricLbl = barChartMode === 'mine' ? 'my jukebox plays' : barChartMode === 'total' ? 'jukebox plays' : barChartMode === 'score' ? 'score' : 'views';
+  const _albMetricLbl = barChartMode === 'mine' ? 'my jukebox plays' : barChartMode === 'total' ? 'jukebox plays' : barChartMode === 'score' ? 'score' : albumChartPlayLabel(alb, true);
   const _albMetricFmt = barChartMode === 'score' ? (_albMetricVal > 0 ? '+' + _albMetricVal : String(_albMetricVal || 0)) : fmtV(_albMetricVal);
   const trkAreaH      = albTracks.length * PANEL_TRK_H;
   const name          = alb.name;
@@ -9581,7 +9767,7 @@ function openMobileAlbumPanel(albId) {
       ${artEl}
       <div style="flex:1;min-width:0">
         <div class="mob-ae-title">${alb.name}</div>
-        <div class="mob-ae-meta">${year}${trkCount ? ' · ' + trkCount + ' tracks' : ''}${views ? ' · ' + fmtV(views) + ' views' : ''}</div>
+        <div class="mob-ae-meta">${year}${trkCount ? ' · ' + trkCount + ' tracks' : ''}${views ? ' · ' + fmtV(views) + ' ' + albumChartPlayLabel(alb, true) : ''}</div>
       </div>
       <button class="mob-ae-close" onclick="closeMobileAlbumPanel()">✕</button>
     </div>
@@ -9763,7 +9949,8 @@ function openSongCard(trackId) {
   const albName    = alb?.name || '-';
   const artist     = alb ? allArtists.find(a => a.id === alb.artist_id) : null;
   const artistName = artist?.name || 'Silver Jews';
-  const views      = ytData[trackId]?.views || 0;
+  const playMetric = sjChartPlayMetric(trackId);
+  const views      = playMetric.value;
   const likes      = ytData[trackId]?.likes || 0;
   const vid        = ytData[trackId]?.video_id;
   const dur        = fmtDur(track.duration_ms);
@@ -9783,7 +9970,7 @@ function openSongCard(trackId) {
   el.style.cssText = `left:${cx}px;top:${cy}px;width:${cW}px;z-index:${++scZCounter}`;
 
   let _metricBit = '';
-  if      (barChartMode === 'yt'    && views)              _metricBit = fmtV(views) + ' YT views';
+  if      (barChartMode === 'yt'    && views)              _metricBit = fmtV(views) + ' ' + playMetric.label.toLowerCase();
   else if (barChartMode === 'mine')                        _metricBit = fmtV(myInAppPlays[trackId] || 0) + ' my jukebox plays';
   else if (barChartMode === 'total')                       _metricBit = fmtV(inAppPlays[trackId] || 0) + ' jukebox plays';
   const metaLine = [
@@ -9810,7 +9997,7 @@ function openSongCard(trackId) {
       ${(views || likes || vid) ? `<div>
         <div class="sc-section-lbl">Metrics</div>
         <div class="sc-metrics" style="align-items:center">
-          ${views ? `<div class="sc-metric" style="${barChartMode==='yt'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">▶</span><div><div class="sc-metric-val">${fmtV(views)}</div><div class="sc-metric-lbl">YouTube Views${barChartMode==='yt'?' ◆':''}</div></div></div>` : ''}
+          ${views ? `<div class="sc-metric" style="${barChartMode==='yt'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">▶</span><div><div class="sc-metric-val">${fmtV(views)}</div><div class="sc-metric-lbl">${playMetric.label}${barChartMode==='yt'?' ◆':''}</div></div></div>` : ''}
           ${likes ? `<div class="sc-metric"><span class="sc-metric-icon" style="color:${color}">♥</span><div><div class="sc-metric-val">${fmtV(likes)}</div><div class="sc-metric-lbl">YouTube Likes</div></div></div>` : ''}
           ${googleUser ? `<div class="sc-metric" style="${barChartMode==='mine'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-myplays-${trackId}">${fmtV(myInAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">My Jukebox Plays${barChartMode==='mine'?' ◆':''}</div></div></div>` : ''}
           <div class="sc-metric" style="${barChartMode==='total'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-inapp-${trackId}">${fmtV(inAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">Jukebox Plays${barChartMode==='total'?' ◆':''}</div></div></div>
@@ -10133,9 +10320,21 @@ async function loadArtistOnDemandAudio(trackIds) {
   const chunks = [];
   for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
   const responses = await Promise.all(chunks.map(async c => {
-    const res = await fetch(sjApiUrl('/api/sj-artist-audio?purpose=normal-playback&track_ids=' + encodeURIComponent(c.join(','))), { cache: 'no-store' });
-    if (!res.ok) return [];
-    const body = await res.json().catch(() => ({}));
+    const url = sjApiUrl('/api/sj-artist-audio?purpose=normal-playback&track_ids=' + encodeURIComponent(c.join(',')));
+    const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
+    let body;
+    if (typeof sjIsNative === 'function' && sjIsNative() && nativeHttp?.get) {
+      // The app's bundled WebView is a different origin from the live API.
+      // Capacitor HTTP follows the Listening Party -> shared signer redirect
+      // without WebKit CORS blocking the signed artist-upload response.
+      const response = await nativeHttp.get({ url });
+      body = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+      if (response.status < 200 || response.status >= 300) return [];
+    } else {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return [];
+      body = await res.json().catch(() => ({}));
+    }
     return body.ok ? (body.tracks || []) : [];
   }));
   responses.flat().forEach(r => {
@@ -11521,6 +11720,7 @@ async function sjDlInit() {
     // Anything tapped in the car since this app was last awake.
     void sjCarDrainFeedback();
     void sjCarPushPlayCounts();
+    void sjCarRefreshLibrary();
     void sjCarPushShuffleProfile();
     void sjCarPushActions();
     void sjCarPushRatings();
@@ -11598,6 +11798,7 @@ async function sjCarPushPlaylists() {
 // One key per device per account: carAccessStatus says whether the phone
 // already holds one for this email, so this is a no-op on every later launch.
 // Older app builds lack setCarAccess and simply skip all of it.
+let _sjCarStreamIds = [];
 let _sjCarAccessBusy = false;
 async function sjCarEnsureAccess() {
   const p = sjDlPlugin();
@@ -11630,9 +11831,24 @@ async function sjCarClearAccess() {
 
 // An upload or a removal should be in the car on the next drive, not after the
 // next launch.
-function sjCarRefreshLibrary() {
+async function sjCarRefreshLibrary() {
   const p = sjDlPlugin();
-  if (p && p.refreshCarLibrary) p.refreshCarLibrary().catch(() => {});
+  if (!p || !p.refreshCarLibrary) return;
+  try {
+    const result = await p.refreshCarLibrary();
+    _sjCarStreamIds = Array.isArray(result?.trackIds) ? result.trackIds.filter(Boolean) : _sjCarStreamIds;
+    void sjCarPushShuffleProfile();
+    sjCarSchedulePushRatings();
+  } catch (_) {}
+}
+
+// Compatibility name retained for the authentication lifecycle. Streaming is
+// now refreshed by native URLSession (rather than duplicating the fetch in the
+// web view), but older call sites still mean exactly the same thing.
+function sjCarPushStreamLibrary() { return sjCarRefreshLibrary(); }
+
+function sjCarTrackIds() {
+  return [...new Set([..._sjDownloads.keys(), ..._sjCarStreamIds])];
 }
 
 let _sjCarRatingsTimer = null;
@@ -13514,7 +13730,7 @@ function ytpArrangeDockControls() {
   // prev / play / next / repeat). Go Live is LP-desktop only via CSS; Repeat
   // is hidden by CSS on the desktop dock. Dragging between dock and full
   // screen then moves the transport rather than rearranging it.
-  ['ytp-mf-golive', 'ytp-mf-shuffle', 'ytp-mf-prev', 'ytp-mf-playpause', 'ytp-mf-next', 'ytp-mf-repeat'].forEach(id => {
+  ['ytp-mf-golive', 'ytp-mf-shuffle', 'ytp-mf-prev', 'ytp-mf-playpause', 'ytp-mf-next', 'ytp-mf-mini-close', 'ytp-mf-repeat'].forEach(id => {
     const el = document.getElementById(id); if (el) middle.appendChild(el);
   });
   const upNext = document.getElementById('ytp-mf-up-next');
@@ -15893,7 +16109,7 @@ const _WN_TABS = [
   ['additions', 'Artist Additions'],
   ['issues',    'Playback Issues'],
   ['comments',  'Public Comments'],
-  ['updates',   'Jukebox Updates']
+  ['updates',   'APP UPDATES']
 ].filter(t => SJ_COMMENTS_ENABLED || t[0] !== 'comments');
 
 function openUpdatesFeed() {
@@ -20629,6 +20845,10 @@ function lamRender(row) {
         : '');
   menu.innerHTML =
     _sjmHeader(row.name || 'Artist') +
+    (row.slug && sjmArtistHasDiscography(row.artist_id)
+      ? '<button class="sjm-item" onclick="lamExplore()">' +
+          '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Discography</span></button>'
+      : '') +
     '<button class="sjm-item" onclick="lamAddAll()"' + (n ? '' : ' disabled') + '>' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add all to playlist</span>' +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
@@ -20666,6 +20886,12 @@ function lamRender(row) {
         '<button class="sjm-item sjm-danger" onclick="lamRemoveFromMine()">' +
           '<span class="sjm-ic">✕</span><span class="sjm-label">Remove from My Artists</span></button>'
       : '');
+}
+
+function lamExplore() {
+  const row = (landingStats || []).find(r => r.artist_id === _lamArtistId);
+  lamClose();
+  if (row?.slug) landingExploreArtist(row.slug, row.artist_id);
 }
 
 async function lamAddToMyArtists() {
@@ -22306,7 +22532,7 @@ async function openManageAlbum(albumId) {
 function mgbTrackViews(trackId) {
   const top = tvTop(trackId);
   if (top && Number.isFinite(Number(top.view_count))) return Number(top.view_count);
-  return Number(ytData[trackId]?.views) || 0;
+  return sjChartPlayValue(trackId);
 }
 
 function mgbAlbumViewsTotal(trackList) {
@@ -22361,7 +22587,7 @@ function mgbRender() {
   const total = mgbAlbumViewsTotal(d.tracks);
   const uploading = !!_mgbCoverBusy;
   body.innerHTML =
-    '<div class="ms-sec"><div class="ms-sec-h">Album · ' + fmtV(total) + ' YouTube views</div>' +
+    '<div class="ms-sec"><div class="ms-sec-h">Album · ' + fmtV(total) + ' ' + sjChartPlayLabel(d.tracks.map(t => t.id), false) + '</div>' +
       '<div class="ms-field"><label for="mgb-name">Name</label>' +
         '<input id="mgb-name" type="text" maxlength="120" value="' + msQ(al.name) + '"></div>' +
       '<div class="ms-field"><label for="mgb-year">Year</label>' +
@@ -22392,7 +22618,7 @@ function mgbRender() {
         return '<div class="mgb-trk">' +
           '<div class="mgb-trk-body">' +
             '<div class="mgb-trk-title">' + escHtml(t.name || '') + '</div>' +
-            '<div class="mgb-trk-meta">' + fmtV(views) + ' views' +
+            '<div class="mgb-trk-meta">' + fmtV(views) + ' ' + sjChartPlayMetric(t.id).label.toLowerCase() +
               (prim ? ' · ' + escHtml(tvLabel(prim)) : '') + '</div></div>' +
           '<button type="button" class="pl-btn ghost" onclick="openManageSong(\'' + t.id + '\')">Song options</button>' +
           '<button type="button" class="pl-btn ghost" onclick="mgbEditLyrics(\'' + t.id + '\')">Lyrics</button>' +
@@ -24073,7 +24299,8 @@ function _buildAccordionContent(trackId) {
   if (!track) return '';
   const alb        = getAlbumForTrack(track);
   const color      = alb ? albumColor(alb) : '#888';
-  const views      = ytData[trackId]?.views || 0;
+  const playMetric = sjChartPlayMetric(trackId);
+  const views      = playMetric.value;
   const likes      = ytData[trackId]?.likes || 0;
   const vid        = ytData[trackId]?.video_id;
   const dur        = fmtDur(track.duration_ms);
@@ -24081,7 +24308,7 @@ function _buildAccordionContent(trackId) {
   const sliderIdAcc = 'acc-ls-' + trackId;
   const safeTitle  = (track.name || '').replace(/'/g, "\\'");
   let _mPart = null;
-  if      (barChartMode === 'yt'    && views) _mPart = fmtV(views) + ' YT views';
+  if      (barChartMode === 'yt'    && views) _mPart = fmtV(views) + ' ' + playMetric.label.toLowerCase();
   else if (barChartMode === 'mine')            _mPart = fmtV(myInAppPlays[trackId] || 0) + ' my jukebox plays';
   else if (barChartMode === 'total')           _mPart = fmtV(inAppPlays[trackId]   || 0) + ' jukebox plays';
   else if (barChartMode === 'score')           { const sc = trackVoteScores[trackId] || 0; _mPart = sc + (sc === 1 ? ' heart' : ' hearts'); }
@@ -25083,7 +25310,14 @@ function openPlaylistBuilder(mode, playlistId) {
   admOpenPlaylist(mode === 'add' ? playlistId : null);
 }
 
-function openPlaylistImporter() { openPlaylistBuilder('import'); }
+function openPlaylistImporter() {
+  if (!googleUser) {
+    showToast('Sign in to create a playlist.');
+    handleAuthClick();
+    return;
+  }
+  openPlaylistBuilder('import');
+}
 
 function plbPlaylistById(id) {
   if (!id || id === 'new') return null;
@@ -25257,7 +25491,7 @@ function plbBrowseAlbumRows(albumsList, artistId, artistName) {
   if (!albumsList.length) return '<div class="plb-empty small">No albums for this artist yet.</div>';
   return albumsList.map(album => {
     const albTracks = _plbAlbumTracks[album.id] || [];
-    const totalViews = albTracks.reduce((s, t) => s + (ytData[t.id]?.views || 0), 0);
+    const totalViews = albTracks.reduce((s, t) => s + sjChartPlayValue(t.id), 0);
     const color = albumColor(album);
     const year = (album.release_date || '').slice(0, 4);
     const art = album.art_url
@@ -25267,7 +25501,7 @@ function plbBrowseAlbumRows(albumsList, artistId, artistName) {
       `<div class="list-album-row plb-row-drill" style="border-left:3px solid ${color}" onclick="plbToggleAlbum('${album.id}','${plbJsStr(album.name)}','${plbJsStr(artistName)}')">` +
         art +
         `<div class="list-info"><div class="list-name">${escHtml(album.name)}</div><div class="list-meta">${year ? year + ' \u00b7 ' : ''}${albTracks.length} track${albTracks.length === 1 ? '' : 's'}</div></div>` +
-        (totalViews ? `<div class="list-views-block"><div class="list-views" style="color:var(--accent)">${fmtV(totalViews)}</div><div class="list-views-lbl">yt views</div></div>` : '') +
+        (totalViews ? `<div class="list-views-block"><div class="list-views" style="color:var(--accent)">${fmtV(totalViews)}</div><div class="list-views-lbl">${sjChartPlayLabel(albTracks.map(t => t.id), true)}</div></div>` : '') +
         `<button type="button" class="plb-add" data-plb-bulk="album" data-plb-id="${album.id}" onclick="event.stopPropagation();plbAddAlbum('${album.id}',this)">+ Add album</button>` +
         `<span class="plb-caret">\u203a</span>` +
       `</div>` +
@@ -25302,9 +25536,9 @@ async function plbToggleAlbum(albumId, albumName, artistName) {
 
 function plbBrowseTrackRows(trackRows, albumName, artistName) {
   if (!trackRows.length) return '<div class="plb-empty small">No songs on this album yet.</div>';
-  const maxViews = Math.max(...trackRows.map(t => ytData[t.id]?.views || 0), 1);
+  const maxViews = Math.max(...trackRows.map(t => sjChartPlayValue(t.id)), 1);
   return trackRows.map(t => {
-    const views = ytData[t.id]?.views || 0;
+    const views = sjChartPlayValue(t.id);
     const barPct = (views / maxViews * 100).toFixed(1);
     const barHTML = `<div class="trk-bar-group"><div class="trk-bar-wrap"><div class="trk-bar-bg"><div class="trk-bar-fill" style="width:${barPct}%;background:var(--accent)"></div></div></div><span class="trk-v">${views ? fmtV(views) : ''}</span></div>`;
     const on = plbDraftHas(t.id) || _plbExisting.has(t.id);
@@ -25455,11 +25689,23 @@ let landingDetailLevel  = localStorage.getItem('sj_landing_detail') || 'full';
 const SJ_LANDING_SIZES = ['name', 'yt', 'full'];
 const SJ_PL_SIZES = ['sm', 'md', 'lg'];
 const SJ_SIZE_LABELS = {
-  landing: ['Artist Name Only', 'Total YT Plays', 'Full Details'],
+  landing: ['Artist Name Only', 'YouTube / In-App Plays', 'Full Details'],
   playlist: ['Small', 'Medium', 'Large'],
 };
 let playlistCardSize = localStorage.getItem('sj_pl_card_size') || 'md';
 if (SJ_PL_SIZES.indexOf(playlistCardSize) < 0) playlistCardSize = 'md';
+// Artists and Playlists share one three-stop zoom on mobile: compact is three
+// cards across, medium is two, and full/large is one. Use the old artist
+// preference as the migration source because it also describes how much card
+// detail the listener asked to see.
+let exploreCardZoom = localStorage.getItem('sj_explore_card_zoom');
+if (!SJ_PL_SIZES.includes(exploreCardZoom)) {
+  const legacyIdx = Math.max(0, SJ_LANDING_SIZES.indexOf(landingDetailLevel));
+  exploreCardZoom = SJ_PL_SIZES[legacyIdx];
+}
+let _exploreCardZoomIdx = SJ_PL_SIZES.indexOf(exploreCardZoom);
+landingDetailLevel = SJ_LANDING_SIZES[_exploreCardZoomIdx];
+playlistCardSize = SJ_PL_SIZES[_exploreCardZoomIdx];
 // Explore Artists / Playlists page view — Covers is the card grid; Details is
 // the nested track list. Separate keys so flipping one tab does not flip the other.
 let exploreArtistsView = 'covers';   // 'covers' | 'detail'
@@ -25489,6 +25735,7 @@ let _homeBgArtistIds = new Set(); // artists with at least one of my uploaded bg
 let _homeBgTrackIds = new Set();  // track ids with my uploaded bg-audio
 let _homeLibLoaded = false;
 let _homeLibLoading = false;
+let _homeLibError = false;
 // Explore Playlist is deliberately a view over public playlists, never a
 // second copy of them. Artwork is cached by track so the 9×9 sleeves remain
 // cheap to repaint while a listener filters or returns from a chart.
@@ -25763,7 +26010,7 @@ function landingColor(row, idx) {
 }
 
 function landingThumb(row) {
-  return ALBUM_ART[row.top_album_name] || row.top_album_art_url || row.top_album_thumb || null;
+  return sjAbsSiteUrl(ALBUM_ART[row.top_album_name] || row.top_album_art_url || row.top_album_thumb || null);
 }
 
 // Everything the scope, contributor and search filters allow, BEFORE the
@@ -25794,10 +26041,14 @@ function playlistExploreRowsAll() {
   if (playlistExploreContributor && scope !== 'mine' && scope !== 'live') {
     rows = rows.filter(p => (p.user_email || '') === playlistExploreContributor);
   }
-  const dynamic = scope === 'public' || scope === 'live'
-      || (scope !== 'mine' && playlistExploreContributor)
+  const allDynamic = dynamicPlaylistRows();
+  const dynamic = scope === 'live' || (scope !== 'mine' && playlistExploreContributor)
     ? []
-    : dynamicPlaylistRows();
+    : scope === 'public'
+      ? allDynamic.filter(p => p._publicDynamic)
+      : scope === 'mine'
+        ? allDynamic.filter(p => !p._publicDynamic)
+        : allDynamic;
   const q = playlistExploreSearchQ.trim().toLowerCase();
   if (q) {
     rows = rows.filter(p => playlistMatchesSearch(p, q));
@@ -25927,8 +26178,26 @@ function nowPlayingDynamicRow() {
   };
 }
 
+function backgroundEnabledDynamicRow() {
+  if (!_homeLibLoaded || !_homeBgTrackIds.size) return null;
+  return {
+    id:'__dynamic_background',
+    name:'Background Enabled Content',
+    _dynamic:true,
+    _publicDynamic:true,
+    is_public:true,
+    _description:'Approved artist-uploaded music from the shared catalog.',
+    _tracks:dynamicPlaylistTracks([..._homeBgTrackIds]),
+  };
+}
+
 function dynamicPlaylistRows() {
   const rows = [];
+  // Both brand surfaces are views of one catalogue. Artist-uploaded audio is
+  // public listening content regardless of which surface accepted the upload, and it
+  // must remain discoverable without an account or a hand-made playlist.
+  const background = backgroundEnabledDynamicRow();
+  if (background) rows.push(background);
   // Hearts are account data. Do not build Favorites from a signed-out browser
   // or before this account's reactions have loaded.
   if (!googleUser || !_myReactionTracksLoaded) return rows;
@@ -26309,24 +26578,83 @@ function sjSizeSliderTitle(kind, name) {
   if (el) el.title = 'Card size: ' + name;
 }
 
-function setLandingDetailIdx(i) {
+function setExploreCardZoomIdx(i, persist = true) {
   const n = Math.max(0, Math.min(SJ_LANDING_SIZES.length - 1, parseInt(i, 10) || 0));
+  _exploreCardZoomIdx = n;
+  exploreCardZoom = SJ_PL_SIZES[n];
   landingDetailLevel = SJ_LANDING_SIZES[n];
-  try { localStorage.setItem('sj_landing_detail', landingDetailLevel); } catch (_) {}
+  playlistCardSize = SJ_PL_SIZES[n];
+  if (persist) {
+    try {
+      localStorage.setItem('sj_explore_card_zoom', exploreCardZoom);
+      localStorage.setItem('sj_landing_detail', landingDetailLevel);
+      localStorage.setItem('sj_pl_card_size', playlistCardSize);
+    } catch (_) {}
+  }
   sjSizeSliderTitle('landing', SJ_SIZE_LABELS.landing[n]);
-  const grid = document.querySelector('.landing-grid');
-  if (grid) SJ_LANDING_SIZES.forEach(k => grid.classList.toggle('detail-' + k, k === landingDetailLevel));
-  else if (isLandingMode) renderLanding();
+  sjSizeSliderTitle('playlist', SJ_SIZE_LABELS.playlist[n]);
+  document.querySelectorAll('.landing-grid').forEach(grid => {
+    SJ_LANDING_SIZES.forEach(k => grid.classList.toggle('detail-' + k, k === landingDetailLevel));
+  });
+  document.querySelectorAll('.playlist-explore-grid').forEach(grid => {
+    SJ_PL_SIZES.forEach(k => grid.classList.toggle('pl-size-' + k, k === playlistCardSize));
+  });
+  document.querySelectorAll('.sj-size-slider').forEach(slider => { slider.value = String(n); });
 }
 
-function setPlaylistCardSizeIdx(i) {
-  const n = Math.max(0, Math.min(SJ_PL_SIZES.length - 1, parseInt(i, 10) || 0));
-  playlistCardSize = SJ_PL_SIZES[n];
-  try { localStorage.setItem('sj_pl_card_size', playlistCardSize); } catch (_) {}
-  sjSizeSliderTitle('playlist', SJ_SIZE_LABELS.playlist[n]);
-  const grid = document.querySelector('.playlist-explore-grid');
-  if (grid) SJ_PL_SIZES.forEach(k => grid.classList.toggle('pl-size-' + k, k === playlistCardSize));
-  else if (isLandingMode && landingTab === 'playlists') renderLanding();
+function setLandingDetailIdx(i) { setExploreCardZoomIdx(i); }
+function setPlaylistCardSizeIdx(i) { setExploreCardZoomIdx(i); }
+
+function sjExplorePinchZoomIdx(startIdx, startSpan, span) {
+  const ratio = Math.max(0.01, Number(span) || 1) / Math.max(1, Number(startSpan) || 1);
+  const steps = Math.round(Math.log(ratio) / Math.log(1.5));
+  return Math.max(0, Math.min(SJ_PL_SIZES.length - 1, startIdx + steps));
+}
+
+// Pinching either card wall changes the shared three-stop Artist/Playlist
+// zoom. pan-y on the grids keeps one-finger scrolling native while reserving
+// a two-finger gesture for the card size.
+function sjBindExploreCardPinch() {
+  document.querySelectorAll('.landing-grid, .playlist-explore-grid').forEach(grid => {
+    if (grid.dataset.pinchBound === '1') return;
+    grid.dataset.pinchBound = '1';
+    const points = new Map();
+    let start = null;
+    const span = () => {
+      const [a, b] = [...points.values()];
+      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 1;
+    };
+    grid.addEventListener('pointerdown', ev => {
+      if (ev.pointerType !== 'touch') return;
+      points.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      try { grid.setPointerCapture(ev.pointerId); } catch (_) {}
+      if (points.size === 2) start = { span: span(), idx: _exploreCardZoomIdx };
+    });
+    grid.addEventListener('pointermove', ev => {
+      if (ev.pointerType !== 'touch' || !points.has(ev.pointerId)) return;
+      points.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (points.size !== 2 || !start) return;
+      const next = sjExplorePinchZoomIdx(start.idx, start.span, span());
+      if (next !== _exploreCardZoomIdx) setExploreCardZoomIdx(next, false);
+      grid._sjCardPinchAt = Date.now();
+      ev.preventDefault();
+    });
+    const done = ev => {
+      if (!points.has(ev.pointerId)) return;
+      points.delete(ev.pointerId);
+      if (points.size >= 2 || !start) return;
+      start = null;
+      grid._sjCardPinchAt = Date.now();
+      setExploreCardZoomIdx(_exploreCardZoomIdx, true);
+    };
+    grid.addEventListener('pointerup', done);
+    grid.addEventListener('pointercancel', done);
+    grid.addEventListener('click', ev => {
+      if (Date.now() - (grid._sjCardPinchAt || 0) < 400) {
+        ev.preventDefault(); ev.stopPropagation();
+      }
+    }, true);
+  });
 }
 
 // Signed out there is only public content, so the All / My / Public chips come
@@ -26993,8 +27321,10 @@ function plWallRefreshStats() {
       totEl.textContent = n ? fmtV(n) : '—';
     }
     if (ytEl) {
-      const n = Number(ytData[tid]?.views) || 0;
+      const metric = sjChartPlayMetric(tid);
+      const n = metric.value;
       ytEl.textContent = n ? fmtV(n) : '—';
+      ytEl.title = metric.label;
     }
   });
 }
@@ -27062,9 +27392,10 @@ async function plWallLoadReactionCounts(ids) {
 
 function playlistChartTipMeta(row, i, isCurrent, played, skipped) {
   const status = isCurrent ? 'Playing now' : played ? 'Played' : skipped ? 'Blocked' : `#${i + 1} · Up next`;
-  const views = Number(ytData[row.trackId]?.views || row.views || 0);
+  const metric = sjChartPlayMetric(row.trackId, row.views);
+  const views = metric.value;
   const bits = [status];
-  if (views) bits.push(fmtV(views) + ' views');
+  if (views) bits.push(fmtV(views) + ' ' + metric.label.toLowerCase());
   if (googleUser) {
     const plays = Number(myInAppPlays[row.trackId]) || 0;
     const last = plWallFmtLastPlay(myLastPlayed[row.trackId]);
@@ -28383,7 +28714,7 @@ function plDetailSortValue(col, item, i) {
     case 'addedby': return (row.addedByName || (row.addedByEmail ? row.addedByEmail.split('@')[0] : '')).toLowerCase();
     case 'last': { const t = myLastPlayed[row.trackId]; return t ? new Date(t).getTime() : -Infinity; }
     case 'total': return Number(inAppPlays[row.trackId]) || 0;
-    case 'yt': return Number(ytData[row.trackId]?.views || row.views) || 0;
+    case 'yt': return sjChartPlayValue(row.trackId, row.views);
     case 'heart': return Number((trackReactionCounts[row.trackId] || {}).heart) || 0;
     default: return i;
   }
@@ -28534,7 +28865,8 @@ function plWallDetailRowHTML(item, i, curIdx) {
   const heartN = Number((trackReactionCounts[row.trackId] || {}).heart) || 0;
   const last = plWallFmtLastPlay(myLastPlayed[row.trackId]) || '—';
   const tot = Number(inAppPlays[row.trackId]) || 0;
-  const yt = Number(ytData[row.trackId]?.views || row.views) || 0;
+  const playMetric = sjChartPlayMetric(row.trackId, row.views);
+  const yt = playMetric.value;
   const uploaded = plWallUploadedBy(row.trackId);
   const addedByLbl = row.addedByName || (row.addedByEmail ? row.addedByEmail.split('@')[0] : '');
   // Same two rules as the cover wall: anyone who can arrange the playlist can
@@ -28575,7 +28907,7 @@ function plWallDetailRowHTML(item, i, curIdx) {
     `<td><div class="pl-detail-muted" title="${esc(row.addedByEmail)}">${esc(addedByLbl) || '—'}</div></td>` +
     `<td class="num" data-pl-last>${esc(last)}</td>` +
     `<td class="num" data-pl-total>${tot ? fmtV(tot) : '—'}</td>` +
-    `<td class="num" data-pl-yt>${yt ? fmtV(yt) : '—'}</td>` +
+    `<td class="num" data-pl-yt title="${playMetric.label}">${yt ? fmtV(yt) : '—'}</td>` +
     `<td class="rxn" onclick="event.stopPropagation()"><button type="button" class="pl-wall-rxn pl-detail-rxn${heartN ? ' on' : ''}" data-reaction-track="${row.trackId}" data-track-reaction="heart" onclick="event.stopPropagation();ytpReact('heart',this,event)" title="Heart">${SJ_REACTION_ICONS.heart}<span class="pl-wall-rxn-n">${ytpReactionCountLabel(heartN) || '0'}</span></button></td>` +
     manageCell +
   `</tr>`;
@@ -29482,7 +29814,7 @@ function plDetailTheadHTML() {
     plTh('addedby', 'Added To Playlist By') +
     plTh('last', 'Last Played', { cls: 'num' }) +
     plTh('total', 'Total Plays', { cls: 'num' }) +
-    plTh('yt', 'YT Plays', { cls: 'num' }) +
+    plTh('yt', 'YouTube / In-App Plays', { cls: 'num', title: 'YouTube views; In-App Plays when a song has no YouTube version' }) +
     plTh('heart', `<span style="color:#ef4444;display:inline-flex;width:13px;height:13px">${SJ_REACTION_ICONS.heart}</span>`, { cls: 'rxn', title: 'Hearts' }) +
     '<th class="rxn" title="Manage your songs">Controls</th>' +
   '</tr>';
@@ -29672,12 +30004,12 @@ async function initLanding() {
     sjApplyHeaderBrand();
     document.title = _sjBaseTitle = SJ_BRAND.name;
     const _lsSess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
-    const rows = await fetch(`${REST}/rpc/landing_stats`, {
+    const rows = sjAbsSiteUrls(await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${_lsSess?.access_token || ANON}`,
         'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
       body: JSON.stringify({ p_user_email: null })
-    }).then(r => r.json());
+    }).then(r => r.json()));
     if (!Array.isArray(rows) || !rows.length) { renderEmpty('No artists yet'); return; }
     landingStats = rows;
     await refreshBgUnlock();
@@ -29695,12 +30027,12 @@ async function refreshLandingStats() {
   if (!isLandingMode) return;
   try {
     const _lsSess = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
-    const rows = await fetch(`${REST}/rpc/landing_stats`, {
+    const rows = sjAbsSiteUrls(await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${_lsSess?.access_token || ANON}`,
         'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
       body: JSON.stringify({ p_user_email: null })
-    }).then(r => r.json());
+    }).then(r => r.json()));
     if (Array.isArray(rows) && rows.length) { landingStats = rows; renderLanding(); }
   } catch (_) {}
 }
@@ -29711,12 +30043,12 @@ async function ensureOAStats() {
   if (Array.isArray(landingStats) && landingStats.length) return;
   try {
     const _s = (await sjGetSession().catch(() => ({ data: {} }))).data?.session;
-    const rows = await fetch(`${REST}/rpc/landing_stats`, {
+    const rows = sjAbsSiteUrls(await fetch(`${REST}/rpc/landing_stats`, {
       method: 'POST',
       headers: { apikey: ANON, Authorization: `Bearer ${_s?.access_token || ANON}`,
         'Content-Type': 'application/json', 'Content-Profile': 'jukebox' },
       body: JSON.stringify({ p_user_email: null })
-    }).then(r => r.json());
+    }).then(r => r.json()));
     if (Array.isArray(rows) && rows.length) landingStats = rows;
   } catch (_) {}
 }
@@ -29730,6 +30062,13 @@ function defaultLandingCompare(a, b) {
   if (ap !== bp) return ap - bp;
   if (ap < pinned.length) return 0; // keep the pinned artists in their fixed order
   return (b.total_plays || 0) - (a.total_plays || 0);
+}
+
+function landingChartPlayMetric(row) {
+  const youtube = Number(row?.total_views) || 0;
+  return youtube > 0
+    ? { value: youtube, label: 'YouTube Plays' }
+    : { value: Number(row?.total_plays) || 0, label: 'In-App Plays' };
 }
 
 // opts.singlesAlways keeps singles-only artists in whatever the Include
@@ -29762,7 +30101,7 @@ function getVisibleLandingStats(opts) {
   else if (landingSortMode === 'plays_desc') sorted.sort((a, b) => (b.total_plays || 0) - (a.total_plays || 0));
   else if (landingSortMode === 'my_plays_desc') sorted.sort((a, b) => (b.my_plays || 0) - (a.my_plays || 0));
   else if (landingSortMode === 'score_desc') sorted.sort((a, b) => (b.jukebox_score || 0) - (a.jukebox_score || 0));
-  else if (landingSortMode === 'yt_desc') sorted.sort((a, b) => (b.total_views || 0) - (a.total_views || 0));
+  else if (landingSortMode === 'yt_desc') sorted.sort((a, b) => landingChartPlayMetric(b).value - landingChartPlayMetric(a).value);
   else sorted.sort(defaultLandingCompare);
   return sorted;
 }
@@ -30140,17 +30479,29 @@ async function ensureHomeLibrary() {
     // One request rather than a walk out to tracks and albums 50 ids at a
     // time: the server already has to do these joins, and it is the only side
     // that can see artist-licensed audio, which is the filter's other half.
-    const res = await fetch(sjApiUrl('/api/sj-bg-available'), {
-      headers: { ...(await sjAuthHeaders()) },
-      cache: 'no-store',
-    });
-    const body = await res.json();
-    if (!res.ok || !body.ok) throw new Error(body.error || 'unavailable');
+    const url = sjApiUrl('/api/sj-bg-available');
+    const headers = { ...(await sjAuthHeaders()) };
+    const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
+    let body;
+    if (sjIsNative() && nativeHttp?.get) {
+      const response = await nativeHttp.get({ url, headers });
+      body = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+      if (response.status < 200 || response.status >= 300 || !body?.ok) {
+        throw new Error(body?.error || 'unavailable');
+      }
+    } else {
+      const res = await fetch(url, { headers, cache: 'no-store' });
+      body = await res.json();
+      if (!res.ok || !body.ok) throw new Error(body.error || 'unavailable');
+    }
     _homeBgTrackIds = new Set((body.trackIds || []).filter(Boolean));
     _homeBgArtistIds = new Set((body.artistIds || []).filter(Boolean));
-  } catch (_) {
+    _homeLibError = false;
+  } catch (error) {
+    console.error('[sj] could not load background-enabled catalog', error);
     _homeBgArtistIds = new Set();
     _homeBgTrackIds = new Set();
+    _homeLibError = true;
   } finally {
     _homeLibLoading = false;
     _homeLibLoaded = true;
@@ -30713,7 +31064,7 @@ async function esEnsureCatalog(force) {
 }
 
 const _ES_SORTS = [
-  { col: 'views',  lbl: 'YouTube Views',       tip: 'Most watched first' },
+  { col: 'views',  lbl: 'YouTube / In-App Plays', tip: 'YouTube views, falling back to in-app plays when no YouTube version exists' },
   { col: 'name',   lbl: 'Song A-Z',            tip: 'By song title' },
   { col: 'artist', lbl: 'Artist A-Z',          tip: 'By artist, then album running order' },
   { col: 'plays',  lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
@@ -31332,10 +31683,13 @@ function renderLanding() {
   const plSortOpt = (v, lbl) => `<option value="${v}"${playlistExploreSort === v ? ' selected' : ''}>${lbl}</option>`;
   main.innerHTML = `
     <div class="landing-wrap">
+      ${lptbExploreSwitcherHTML()}
       ${landingTab === 'home' ? landingHomeHTML() : landingTab === 'live' ? liveStationsPageHTML(esc) : landingTab === 'playlists' ? (() => {
         const rows = playlistExploreRows();
         const emptyMsg = !_playlistsLoaded
           ? 'Loading playlists…'
+          : _playlistsError
+          ? _playlistsError
           : (playlistExploreRowsAll().length
             ? 'Every playlist here is hidden. Use the Playlists menu, or Show All, to bring them back.'
             : playlistExploreSearchQ.trim()
@@ -31393,6 +31747,10 @@ function renderLanding() {
               <button type="button" class="pl-wall-back${playlistExploreDetailGroup === 'artist' ? ' on' : ''}" onclick="setPlaylistExploreDetailGroup('artist')">By artist</button>
             </span>` : ''}
             ${sjFiltersBtnHTML()}
+            ${sjBgFilterOffered() ? `<div class="landing-control-group sj-more-filter sj-bg-explore-filter" style="margin:0">
+              <span class="landing-control-lbl">Playback</span>
+              <label class="playlist-explore-hide-shared"><input type="checkbox"${homeBgOnly ? ' checked' : ''} onchange="setSjBgOnly(this.checked)"><span>Background Play Enabled only</span></label>
+            </div>` : ''}
             ${plScope() === 'mine' && googleUser ? `<label class="playlist-explore-hide-shared sj-more-filter"><input type="checkbox"${playlistExploreHideShared ? ' checked' : ''} onchange="setPlaylistExploreHideShared(this.checked)"><span>Hide shared</span></label>` : ''}
           </div>
           ${(() => {
@@ -31455,7 +31813,7 @@ function renderLanding() {
             ${sortOpt('date_desc', 'Date Added: Newest First')}
             ${sortOpt('date_asc', 'Date Added: Oldest First')}
             ${sortOpt('plays_desc', 'Total Jukebox Plays')}
-            ${sortOpt('yt_desc', 'Total YouTube Plays')}
+            ${sortOpt('yt_desc', 'YouTube / In-App Plays')}
             ${sortOpt('my_plays_desc', 'My Jukebox Plays')}
             ${sortOpt('score_desc', 'Hearts')}
           </select>
@@ -31482,7 +31840,7 @@ function renderLanding() {
       ${rows.length ? '' : `<div class="landing-no-results">No artists match ${landingSearchQ ? '“' + esc(landingSearchQ) + '”' : 'the current filters'}.</div>`}
       ${exploreArtistsView === 'detail' ? eaDetailPageHTML(rows) : `
       <div class="landing-grid detail-${landingDetailLevel}${landingExpandedIds.size ? ' la-has-open' : ''}">
-        ${rows.map((r, i) => { if (landingExpandedIds.has(r.artist_id)) return laExpandedCardHTML(r, i); const thumb = landingThumb(r); return `
+        ${rows.map((r, i) => { if (landingExpandedIds.has(r.artist_id)) return laExpandedCardHTML(r, i); const thumb = landingThumb(r); const primaryPlays = landingChartPlayMetric(r); return `
           <div class="landing-card" data-artist-id="${r.artist_id}"
                style="--card-accent:${landingColor(r, i)}"
                onclick="toggleLandingCard('${r.artist_id}')">
@@ -31492,7 +31850,7 @@ function renderLanding() {
             <div class="landing-card-body">
             <div class="landing-card-name">${esc(r.name)}</div>
             <div class="landing-card-stats">
-              <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_views)}</span><span class="landing-stat-lbl">YouTube Plays</span></div>
+              <div class="landing-stat"><span class="landing-stat-val">${fmtV(primaryPlays.value)}</span><span class="landing-stat-lbl">${primaryPlays.label}</span></div>
               <div class="landing-stat landing-stat-plays"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">Jukebox Plays</span></div>
               <div class="landing-stat landing-stat-albums"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
               <div class="landing-stat landing-stat-tracks"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
@@ -31502,7 +31860,7 @@ function renderLanding() {
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
               ${r.discography_complete === false
                 ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
+                : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
               <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
             </div>
             </div>
@@ -31516,6 +31874,7 @@ function renderLanding() {
   if (landingTab === 'explore' && exploreArtistsView === 'detail') eaRepopenAlbums();
   if (landingTab === 'playlists' && explorePlaylistsView === 'detail') peRepopenPlaylists();
   if (landingTab === 'home') lpHomePaintHeat();
+  sjBindExploreCardPinch();
   updateLandingActionsHeader();
   if (_landingSearchFocus && landingTab === 'explore') {
     _landingSearchFocus = false;
@@ -31792,6 +32151,7 @@ function laExpandedCardHTML(r, i) {
   const esc   = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const color = landingColor(r, i);
   const thumb = landingThumb(r);
+  const primaryPlays = landingChartPlayMetric(r);
   return `
     <div class="landing-card la-expanded" data-artist-id="${r.artist_id}" style="--card-accent:${color}">
       <div class="la-hero">
@@ -31800,7 +32160,7 @@ function laExpandedCardHTML(r, i) {
           <div class="la-hero-eyebrow">Artist Discography</div>
           <div class="la-hero-name">${esc(r.name)}</div>
           <div class="la-hero-stats">
-            <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_views)}</span><span class="landing-stat-lbl">YouTube Plays</span></div>
+            <div class="landing-stat"><span class="landing-stat-val">${fmtV(primaryPlays.value)}</span><span class="landing-stat-lbl">${primaryPlays.label}</span></div>
             <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">Jukebox Plays</span></div>
             <div class="landing-stat"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
             <div class="landing-stat"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
@@ -31810,7 +32170,7 @@ function laExpandedCardHTML(r, i) {
             <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
             ${r.discography_complete === false
                 ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
+                : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
             <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();laToggleSongView('${r.artist_id}')">${laSongViewIds.has(r.artist_id) ? 'View Albums' : 'View Songs'}</button>
             <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
           </div>
@@ -31905,7 +32265,7 @@ function laAlbumHTML(alb, idx) {
   const thumb     = albumThumb(alb);
   const yr        = (alb.release_date || '').slice(0, 4);
   const albTracks = (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id);
-  const views     = albTracks.reduce((s, t) => s + (ytData[t.id]?.views || 0), 0);
+  const views     = albTracks.reduce((s, t) => s + sjChartPlayValue(t.id), 0);
   const hasVids   = albTracks.some(t => ytData[t.id]?.video_id || t.artist_audio_only);
   const isOpen    = laOpenAlbumIds.has(alb.id);
   return `<div class="la-alb" style="animation-delay:${Math.min(idx * 50, 500)}ms">
@@ -31917,7 +32277,7 @@ function laAlbumHTML(alb, idx) {
       </div>
       <div class="list-views-block">
         <div class="list-views" style="color:${color}">${fmtV(views)}</div>
-        <div class="list-views-lbl">yt views</div>
+        <div class="list-views-lbl">${albumChartPlayLabel(alb, true)}</div>
       </div>
       ${hasVids ? `<button class="ctrl-btn" onclick="event.stopPropagation();playAlbum('${alb.id}',event)" title="Play album">▶ Play</button>${almMoreBtn(alb.id)}` : ''}
       <div class="list-chevron" data-la-chev="${alb.id}">${isOpen ? '▲' : '▼'}</div>
@@ -32044,7 +32404,7 @@ function eaDetailArtistHTML(r) {
       <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
       ${r.discography_complete === false
         ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')">Import Discography</button>`
-        : `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Discography →</button>`}
+        : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Discography →</button>`}
     </div>
     <div class="ex-detail-albs">${albList.map(alb => eaDetailAlbumHTML(alb, r.artist_id)).join('')}</div>
   </div>`;
@@ -32407,12 +32767,22 @@ function hideArtistFromCard(artistId) {
 // player shipped with it. The in-app modal it replaced went stale twice.
 function openFaq() {
   if (typeof closeUserMenu === 'function') closeUserMenu();
+  // Pop-up windows are not a dependable navigation surface inside WKWebView.
+  // Help is bundled with the native shell, so keep it in this navigation stack
+  // and let the guide's Back link return to the player.
+  if (sjIsNative()) {
+    window.location.assign('/help/lp/index.html');
+    return;
+  }
   window.open('/help', '_blank', 'noopener');
 }
 
 async function landingPlayArtist(artistId, ev) {
   const row = landingStats.find(r => r.artist_id === artistId);
   if (!row) return;
+  // This must happen before the first await. iOS only grants an audio element
+  // permission to play while the original tap gesture is still active.
+  sjUnlockAudioEl();
   const cardBtn = document.querySelector(`.landing-card[data-artist-id="${artistId}"] .landing-play-btn`);
   const origLabel = cardBtn ? cardBtn.textContent : null;
   if (cardBtn) cardBtn.textContent = 'Loading…';
@@ -32432,7 +32802,6 @@ async function landingPlayArtist(artistId, ev) {
     }
     const artistAudioIds = playable.filter(t => t.artist_audio_only && !ytData[t.id]?.video_id).map(t => t.id);
     if (artistAudioIds.length) {
-      sjUnlockAudioEl();
       await loadArtistOnDemandAudio(artistAudioIds);
     }
     const queue = shuffleInPlace([...playable]).map(t => t.artist_audio_only && !ytData[t.id]?.video_id
@@ -32987,18 +33356,19 @@ async function loadTrackAudio(trackIds) {
 // The "home" prefix on those names is historical; they now serve all of
 // Explore. Availability itself is loaded by ensureHomeLibrary().
 //
-// Mobile only, matching taIsMobileDevice() - the same gate that decides
-// whether artist audio is offered at all. On a desktop the sound never stops
-// for a hidden tab, so the filter would answer a question nobody asked.
-
-// The control only earns its space where it would actually narrow something.
-// Off a phone, or with nothing to play, its one possible outcome is an empty
-// grid, so it stays hidden instead.
+// The control remains visible while availability loads and when the result is
+// empty. Hiding it based on a network response made the feature disappear on
+// otherwise healthy installs and offered no way to distinguish "none found"
+// from "filter unavailable".
 function sjBgFilterOffered() {
-  return taIsMobileDevice() && !!(_homeLibLoaded && _homeBgTrackIds.size);
+  return true;
 }
 
-function sjBgActive() { return homeBgOnly && sjBgFilterOffered(); }
+// A pending or failed availability request must never turn a healthy public
+// catalog into an empty screen. Apply the filter only after its ids arrived.
+function sjBgActive() {
+  return homeBgOnly && sjBgFilterOffered() && _homeLibLoaded && !_homeLibError;
+}
 
 function sjBgHasTrack(id) { return !!(id && _homeBgTrackIds.has(id)); }
 
@@ -33016,13 +33386,45 @@ function sjBgPlaylistOn(pl) {
   return ((pl && pl._tracks) || []).some(r => _homeBgTrackIds.has(r.track_id));
 }
 
-function setSjBgOnly(on) {
+async function setSjBgOnly(on) {
   homeBgOnly = !!on;
   try { localStorage.setItem('sj_home_bg_only', homeBgOnly ? '1' : '0'); } catch (_) {}
+  if (homeBgOnly && !_homeLibLoaded) await ensureHomeLibrary();
   renderLanding();   // draws whichever of the three tabs is open
 }
 
 // ── Album helpers ─────────────────────────────────────────────
+// Public charts prefer YouTube's audience count when a playable YouTube
+// version exists. Artist-uploaded songs have no YouTube count, so their zero
+// was misleading: use the same all-listener in-app count that powers Total
+// Plays instead. Every surface shares this file, keeping SJ and LP identical.
+function sjChartPlayMetric(trackId, fallbackViews) {
+  const yt = ytData[trackId] || {};
+  const supplied = Number(fallbackViews);
+  const youtubeViews = Number.isFinite(supplied) ? supplied : (Number(yt.views) || 0);
+  const hasYouTube = !!yt.video_id || youtubeViews > 0;
+  return hasYouTube
+    ? { value: youtubeViews, source: 'youtube', label: 'YouTube Views' }
+    : { value: Number(inAppPlays[trackId]) || 0, source: 'inapp', label: 'In-App Plays' };
+}
+
+function sjChartPlayValue(trackId, fallbackViews) {
+  return sjChartPlayMetric(trackId, fallbackViews).value;
+}
+
+function sjChartPlayLabel(trackIds, compact) {
+  const sources = new Set((trackIds || []).filter(Boolean).map(id => sjChartPlayMetric(id).source));
+  if (sources.size === 1 && sources.has('inapp')) return compact ? 'in-app plays' : 'In-App Plays';
+  if (sources.size > 1) return compact ? 'YT + in-app plays' : 'YouTube + In-App Plays';
+  return compact ? 'yt views' : 'YouTube Views';
+}
+
+function albumChartPlayLabel(album, compact) {
+  if (album._ddResearch || album._ddResearchGroup) return compact ? 'views' : 'Views';
+  const ids = (tracks[album.artist_id] || []).filter(t => t.album_id === album.id).map(t => t.id);
+  return sjChartPlayLabel(ids, compact);
+}
+
 function albumViews(album) {
   if (barChartMode === 'hidden') return 0;
   if (album._ddResearchGroup) {
@@ -33036,7 +33438,7 @@ function albumViews(album) {
   if (barChartMode === 'mine')  return tks.reduce((s, t) => s + (myInAppPlays[t.id] || 0), 0);
   if (barChartMode === 'total') return tks.reduce((s, t) => s + (inAppPlays[t.id]   || 0), 0);
   if (barChartMode === 'score') return tks.reduce((s, t) => s + Math.max(0, trackVoteScores[t.id] || 0), 0);
-  return tks.reduce((s, t) => s + (ytData[t.id]?.views || 0), 0);
+  return tks.reduce((s, t) => s + sjChartPlayValue(t.id), 0);
 }
 function albumThumb(album) {
   if (album._ddResearch) return album.art_url || null;
@@ -33056,13 +33458,14 @@ function renderTrackLines(alb, mode = 'inline') {
   const albTracks = (tracks[alb.artist_id] || [])
     .filter(t => t.album_id === alb.id)
     .sort((a, b) => a.track_number - b.track_number);
-  const maxViews    = Math.max(...albTracks.map(t => ytData[t.id]?.views    || 0), 1);
+  const maxViews    = Math.max(...albTracks.map(t => sjChartPlayValue(t.id)), 1);
   const maxMyPlays  = Math.max(...albTracks.map(t => myInAppPlays[t.id]     || 0), 1);
   const maxTotPlays = Math.max(...albTracks.map(t => inAppPlays[t.id]       || 0), 1);
   const maxScore    = Math.max(...albTracks.map(t => Math.abs(trackVoteScores[t.id] || 0)), 1);
 
   return albTracks.map(t => {
-    const views  = ytData[t.id]?.views   || 0;
+    const chartMetric = sjChartPlayMetric(t.id);
+    const views  = chartMetric.value;
     const myPl   = myInAppPlays[t.id]    || 0;
     const totPl  = inAppPlays[t.id]      || 0;
     const sc     = trackVoteScores[t.id] || 0;
@@ -33093,8 +33496,8 @@ function renderTrackLines(alb, mode = 'inline') {
       : '';
     // All modes now use inline accordion - no floating popup cards
     const _trkTipStats = (() => {
-      const v = ytData[t.id]?.views, l = ytData[t.id]?.likes;
-      const parts = []; if (v) parts.push('\u25B6 ' + fmtV(v) + ' views'); if (l) parts.push('\u2665 ' + fmtV(l)); parts.push('\u266A ' + (t.track_number ? 'track ' + t.track_number : t.name));
+      const v = chartMetric.value, l = ytData[t.id]?.likes;
+      const parts = []; if (v) parts.push('\u25B6 ' + fmtV(v) + ' ' + chartMetric.label.toLowerCase()); if (l) parts.push('\u2665 ' + fmtV(l)); parts.push('\u266A ' + (t.track_number ? 'track ' + t.track_number : t.name));
       return parts.join('  ');
     })();
     const skipped = isTrackSkipped(t.id);
@@ -33331,18 +33734,17 @@ function updateLandingActionsHeader() {
   // A host's own room is not a room they can join, so it is left out of the
   // count for the same reason it is left off the wall.
   const liveScopeCount = liveRoomPlaylists.filter(p => !p._roomIsOwner).length;
-  const scopeChips = !googleUser ? ''
-    : (landingTab === 'explore' || landingTab === 'songs')
+  const scopeChips = (landingTab === 'explore' || landingTab === 'songs')
     ? `<span class="landing-nav-scope" role="group" aria-label="Artist scope">
         <button type="button" class="playlist-explore-filter${artistScope() === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
-        <button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">${mineScopeLbl}</button>
+        ${googleUser ? `<button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">${mineScopeLbl}</button>` : ''}
         <button type="button" class="playlist-explore-filter${artistScope() === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
         ${sjBgFilterOffered() ? `<button type="button" class="playlist-explore-filter${homeBgOnly ? ' active' : ''}" onclick="setSjBgOnly(${homeBgOnly ? 'false' : 'true'})" title="Only what keeps playing with the screen off or the app in the background">Background Enabled</button>` : ''}
       </span>`
     : landingTab === 'playlists'
     ? `<span class="landing-nav-scope" role="group" aria-label="Playlist scope">
         <button type="button" class="playlist-explore-filter${plScope() === 'all' ? ' active' : ''}" onclick="setPlaylistExploreFilter('all')">All</button>
-        <button type="button" class="playlist-explore-filter${plScope() === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>
+        ${googleUser ? `<button type="button" class="playlist-explore-filter${plScope() === 'mine' ? ' active' : ''}" onclick="setPlaylistExploreFilter('mine')">My Playlists${minePlCount ? ' (' + minePlCount + ')' : ''}</button>` : ''}
         <button type="button" class="playlist-explore-filter${plScope() === 'public' ? ' active' : ''}" onclick="setPlaylistExploreFilter('public')">Public</button>
         ${liveRoomsOnPlaylistWall() && liveScopeCount ? `<button type="button" class="playlist-explore-filter${plScope() === 'live' ? ' active' : ''}" onclick="setPlaylistExploreFilter('live')">Live (${liveScopeCount})</button>` : ''}
         ${sjBgFilterOffered() ? `<button type="button" class="playlist-explore-filter${homeBgOnly ? ' active' : ''}" onclick="setSjBgOnly(${homeBgOnly ? 'false' : 'true'})" title="Only what keeps playing with the screen off or the app in the background">Background Enabled</button>` : ''}
@@ -33497,7 +33899,7 @@ function renderViewToggle() {
       <button class="sort-btn ${listSort==='date'?'active':''}" onclick="setListSort('date')">Date</button>` : '';
   const SJ_SCORE_HELP = 'Hearts sent by listeners while each song plays';
   const _metricOpts = [
-    { val: 'yt',     lbl: 'Total YouTube Views', tip: 'Bar height shows each album\'s total YouTube views' },
+    { val: 'yt',     lbl: 'YouTube / In-App Plays', tip: 'YouTube views, with in-app plays for songs that have no YouTube version' },
     { val: 'score',  lbl: 'Hearts', tip: SJ_SCORE_HELP },
     { val: 'total',  lbl: 'Jukebox Plays', tip: 'Bar height shows how many times each album has been played in this app' },
     ...(googleUser ? [{ val: 'mine', lbl: 'My Jukebox Plays', tip: 'Bar height shows how many times you have played each album here' }] : []),
@@ -33508,7 +33910,7 @@ function renderViewToggle() {
   // not something anyone has ever asked for.
   const _ttSortOpts = [
     { col: 'chrono',  lbl: 'Chronological',       tip: 'Album by album in release order, tracks in running order' },
-    { col: 'views',   lbl: 'YouTube Views',       tip: 'Most watched first' },
+    { col: 'views',   lbl: 'YouTube / In-App Plays', tip: 'YouTube views, falling back to in-app plays when no YouTube version exists' },
     ...(googleUser ? [{ col: 'myplays', lbl: 'My Plays', tip: 'The songs you have played here most' }] : []),
     { col: 'plays',   lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
     { col: 'alts',    lbl: 'Alt Video',            tip: 'Songs with alternate YouTube versions first' },
@@ -33773,7 +34175,7 @@ function renderTimeline(albList, tlMode) {
       const _albThumbEsc = (thumb||'').replace(/"/g,'&quot;');
       const _albDataAttrs = `data-alb-id="${alb.id}" data-alb-name="${_albNameEsc}" data-alb-color="${color}" data-alb-thumb="${_albThumbEsc}"`;
       html += `<div data-tl-item="${alb.id}" class="tl-bar-rect tl-alb-row" ${_albDataAttrs} onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x - BAR_W/2}px;top:${barTop}px;width:${BAR_W}px;height:${barH}px;background:${color};opacity:.9;border-radius:4px 4px 0 0;transition:height .45s ease,top .45s ease,opacity .3s;cursor:pointer"></div>`;
-      const _barLbl = barChartMode === 'mine' ? 'My Jukebox Plays' : barChartMode === 'total' ? 'Jukebox Plays' : barChartMode === 'score' ? 'Hearts' : 'YT Views';
+      const _barLbl = barChartMode === 'mine' ? 'My Jukebox Plays' : barChartMode === 'total' ? 'Jukebox Plays' : barChartMode === 'score' ? 'Hearts' : albumChartPlayLabel(alb, false);
       const _barValFmt = barChartMode === 'score' ? (views > 0 ? '+' + views : String(views || 0)) : fmtV(views);
       html += `<div data-tl-lbl="${alb.id}" class="tl-bar-lbl-el tl-alb-row" ${_albDataAttrs} onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x}px;top:${barTop - TOP_PAD + 3}px;transform:translateX(-50%);white-space:nowrap;font-weight:600;text-align:center;line-height:1.2;cursor:pointer"><div style="font-size:.72rem;color:var(--accent)">${_barValFmt}</div><div style="font-size:.35rem;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase">${_barLbl}</div></div>`;
     }
@@ -33840,7 +34242,7 @@ function renderListView(albList, sortOverride) {
       ? !!(ddItem?.externalId || ddItem?.audioUrl)
       : albTracks.some(t => ytData[t.id]?.video_id || t.artist_audio_only);
     const _listMetricVal = albumViews(alb);
-    const _listMetricLbl = barChartMode === 'mine' ? 'my juke plays' : barChartMode === 'total' ? 'juke plays' : barChartMode === 'score' ? 'score' : 'yt views';
+    const _listMetricLbl = barChartMode === 'mine' ? 'my juke plays' : barChartMode === 'total' ? 'juke plays' : barChartMode === 'score' ? 'score' : albumChartPlayLabel(alb, true);
     const _listMetricFmt = barChartMode === 'score' ? (_listMetricVal > 0 ? '+' + _listMetricVal : String(_listMetricVal || 0)) : fmtV(_listMetricVal);
     const _showListMetric = barChartMode !== 'hidden';
 
@@ -33892,6 +34294,18 @@ let ttTrackCache = [];     // cached for re-sort without full render
 // (Explore Artists / Playlists Details).
 let _ttLastOpts = null;
 
+function ttPlayTrack(trackId, ev) {
+  ev?.preventDefault(); ev?.stopPropagation();
+  const track = findTrackById(trackId);
+  if (track?.artist_audio_only && !ytData[trackId]?.video_id) {
+    void sjArtistPlayTrack(trackId, ev);
+    return;
+  }
+  const videoId = ytData[trackId]?.video_id;
+  if (!videoId) { showToast('This song is not available to play yet.'); return; }
+  openYTPlayer(videoId, track?.name || 'Track', trackId, ev);
+}
+
 function renderTopTracks(trackList, opts) {
   opts = opts || {};
   _ttLastOpts = opts;
@@ -33913,7 +34327,8 @@ function renderTopTracks(trackList, opts) {
 
   const rows = trackList.map(t => ({
     ...t,
-    _views : ytData[t.id]?.views  || 0,
+    _views : sjChartPlayValue(t.id),
+    _playSource: sjChartPlayMetric(t.id).source,
     _likes : ytData[t.id]?.likes  || 0,
     _dur   : t.duration_ms        || 0,
     _plays  : inAppPlays[t.id]    || 0,
@@ -33998,7 +34413,7 @@ function renderTopTracks(trackList, opts) {
       ${showAlts ? `<th ${thClick('alts')} ${thCls('alts')} style="width:72px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='alts'?';color:var(--text)':''}" title="Alternate YouTube uploads for this song">Alt Video${sortArrow('alts')}</th>` : ''}
       ${showLyric && !replaceAlts ? `<th ${thClick('lyric')} ${thCls('lyric')} style="width:78px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyrics${sortArrow('lyric')}</th>` : ''}
       ${replaceAlts ? `<th ${thClick('lyric')} ${thCls('lyric')} style="width:78px;text-align:center;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='lyric'?';color:var(--text)':''}" title="Synced lyrics scroll with the song; static lyrics are the words only">Lyric Status${sortArrow('lyric')}</th>` : ''}
-      <th ${thClick('views')} ${thCls('views')} style="min-width:130px;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='views'?';color:var(--text)':''}">YouTube Views${sortArrow('views')}</th>
+      <th ${thClick('views')} ${thCls('views')} style="min-width:130px;${staticSort ? '' : 'cursor:pointer;user-select:none'}${ttSortCol==='views'?';color:var(--text)':''}" title="YouTube views; In-App Plays when a song has no YouTube version">YouTube / In-App Plays${sortArrow('views')}</th>
       ${googleUser ? `<th ${thClick('myplays')} ${thCls('myplays')} style="min-width:65px;${staticSort ? '' : 'cursor:pointer;user-select:none'}text-align:right${ttSortCol==='myplays'?';color:var(--text)':''}" title="My plays">My Plays${sortArrow('myplays')}</th>` : ''}
       <th ${thClick('plays')} ${thCls('plays')} style="min-width:65px;${staticSort ? '' : 'cursor:pointer;user-select:none'}text-align:right${ttSortCol==='plays'?';color:var(--text)':''}" title="Total plays">Total Plays${sortArrow('plays')}</th>
       <th style="width:24px"></th>
@@ -34014,7 +34429,8 @@ function renderTopTracks(trackList, opts) {
       const durStr   = t._dur ? fmtDur(t._dur) : '-';
       const yr       = (t._alb?.release_date || '').slice(0,4);
       const tipThumb = thumb ? `<img src="${thumb}" style="width:56px;height:56px;border-radius:5px;object-fit:cover;flex-shrink:0">` : `<div style="width:56px;height:56px;border-radius:5px;background:${color}22;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.2rem;color:${color}">♪</div>`;
-      const tipStats = (t._views ? '\u25B6 ' + fmtV(t._views) + ' views' : '') + (t._likes ? '  \u2665 ' + fmtV(t._likes) : '') + (durStr !== '\u2014' ? '  \u23F1 ' + durStr : '');
+      const playLabel = t._playSource === 'inapp' ? 'in-app plays' : 'YouTube views';
+      const tipStats = (t._views ? '\u25B6 ' + fmtV(t._views) + ' ' + playLabel : '') + (t._likes ? '  \u2665 ' + fmtV(t._likes) : '') + (durStr !== '\u2014' ? '  \u23F1 ' + durStr : '');
       const altCell  = t._alts > 0
         ? `<span class="tt-alt tt-alt-yes" title="${t._alts + 1} YouTube versions">Alt${t._alts > 1 ? ' · ' + t._alts : ''}</span>`
         : `<span class="tt-alt tt-alt-no">—</span>`;
@@ -34036,10 +34452,10 @@ function renderTopTracks(trackList, opts) {
         ${showAlts ? `<td style="text-align:center">${altCell}</td>` : ''}
         ${showLyric && !replaceAlts ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
         ${replaceAlts ? `<td style="text-align:center"><span class="tt-lyr tt-lyr-${t._lyric}">${t._lyric === 'synced' ? 'Synced' : t._lyric === 'static' ? 'Static' : '—'}</span></td>` : ''}
-        <td><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${viewsPct}%;background:${color}"></div></div><div class="tt-num">${fmtV(t._views)}</div></div></td>
+        <td title="${playLabel}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${viewsPct}%;background:${color}"></div></div><div class="tt-num">${fmtV(t._views)}</div></div></td>
         ${googleUser ? `<td data-myplays="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._myPlays/maxMyPlays*100).toFixed(1)}%;background:${color}88"></div></div><div class="tt-num" style="${t._myPlays?'color:var(--accent)':''}">${t._myPlays ? fmtV(t._myPlays) : '-'}</div></div></td>` : ''}
         <td data-inapp="${t.id}"><div class="tt-bar-wrap"><div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(t._plays/maxTotalPlays*100).toFixed(1)}%;background:${color}66"></div></div><div class="tt-num" style="${t._plays?'color:var(--accent)':''}">${t._plays ? fmtV(t._plays) : '-'}</div></div></td>
-        <td class="td-yt">${vid ? `<a href="#" title="Play YouTube Video" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${(t.name||'').replace(/'/g,"\\'")}',null,event)">▶</a>` : t.artist_audio_only ? `<a href="#" title="Play artist audio" onclick="sjArtistPlayTrack('${t.id}',event)">▶</a>` : ''}</td>
+        <td class="td-yt"><button type="button" class="tt-row-play" title="Play ${(t.name || '').replace(/"/g,'&quot;')}" onclick="ttPlayTrack('${t.id}',event)">Play</button></td>
         <td class="td-more" onclick="event.stopPropagation()"><button class="tt-more" onclick="event.stopPropagation();sjmOpen('${t.id}',this,event)" title="Add to playlist, report a problem, and more" aria-label="More actions">⋯</button></td>
       </tr>`;
     }).join('')}
@@ -34566,7 +34982,7 @@ function oaSortList(list) {
       return db - da || byName(a, b);
     });
   } else if (oaSort === 'yt') {
-    arr.sort((a, b) => num(oaStatRow(b.id), 'total_views') - num(oaStatRow(a.id), 'total_views') || byName(a, b));
+    arr.sort((a, b) => landingChartPlayMetric(oaStatRow(b.id)).value - landingChartPlayMetric(oaStatRow(a.id)).value || byName(a, b));
   } else if (oaSort === 'jukebox') {
     arr.sort((a, b) => num(oaStatRow(b.id), 'total_plays') - num(oaStatRow(a.id), 'total_plays') || byName(a, b));
   } else {
@@ -34635,7 +35051,7 @@ function renderOtherArtistsBtn() {
           <select class="oa-by-sel oa-sort-sel${oaSort !== 'name' ? ' on' : ''}" title="Sort the artist list" onclick="event.stopPropagation()" onchange="oaSetSort(this.value)">
             <option value="name"${oaSort === 'name' ? ' selected' : ''}>Name (A–Z)</option>
             <option value="date"${oaSort === 'date' ? ' selected' : ''}>Date added (newest)</option>
-            <option value="yt"${oaSort === 'yt' ? ' selected' : ''}>YouTube views</option>
+            <option value="yt"${oaSort === 'yt' ? ' selected' : ''}>YouTube / In-App Plays</option>
             <option value="jukebox"${oaSort === 'jukebox' ? ' selected' : ''}>Jukebox views</option>
           </select>
         </div>
@@ -34901,9 +35317,27 @@ async function admPost(path, body) {
   if (googleUser) { try { token = (await _sjjToken()) || ''; } catch (_) {} }
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = 'Bearer ' + token;
-  const res = await sjFetch(path, { method: 'POST', headers, body: JSON.stringify(body) }, 90000);
-  const data = await res.json().catch(() => ({}));
-  if (!data.ok) { const err = new Error(data.error || 'Request failed.'); err.status = res.status; throw err; }
+  const url = sjApiUrl(path);
+  const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
+  let data, status;
+  if (sjIsNative() && nativeHttp?.post) {
+    // WKWebView reports the otherwise healthy cross-origin POST as "Load
+    // failed" on iOS. Use URLSession through Capacitor for native imports;
+    // it also preserves the bearer token across the request.
+    const response = await nativeHttp.post({
+      url, headers, data: body, responseType: 'json',
+      connectTimeout: 90000, readTimeout: 90000,
+    });
+    status = response.status;
+    data = typeof response.data === 'string'
+      ? (() => { try { return JSON.parse(response.data); } catch (_) { return {}; } })()
+      : (response.data || {});
+  } else {
+    const res = await sjFetch(url, { method: 'POST', headers, body: JSON.stringify(body) }, 90000);
+    status = res.status;
+    data = await res.json().catch(() => ({}));
+  }
+  if (!data.ok) { const err = new Error(data.error || 'Request failed.'); err.status = status; throw err; }
   return data;
 }
 
@@ -38808,11 +39242,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-09-29';
+const SJ_APP_UPDATED_FALLBACK = '2026-09-30';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-09-30', items: [
+    'The iPhone app now offers Sign in with Apple alongside Google and the existing email sign-in for review and test accounts.',
+  ]},
   { date: '2026-09-29', items: [
     'Listening Party now uses a transparent logo with dark lettering in light mode.',
     'Play Next is now in the menu between Play Now and Add to Queue. It puts a song or album right after the song playing now.',
@@ -39876,7 +40313,31 @@ function sjIsTrustedAnalyticsOrigin(origin) {
   return sjIsBrandOrigin(origin);
 }
 
-function openAnalyticsInNewTab() {
+function sjNativeHandoffUrl(path, session) {
+  const target = SJ_FRAME_ORIGIN + path;
+  if (!session?.access_token || !session?.refresh_token) return target;
+  // The fragment is never sent to the server. The destination consumes and
+  // removes it before rendering account data, then stores the session through
+  // the normal Supabase client.
+  const payload = btoa(JSON.stringify({
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    fromNativeApp: true,
+  })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  return target + '#sj-app-session=' + payload;
+}
+
+async function sjOpenHostedTool(path) {
+  let session = null;
+  try { session = (await sjGetSession()).data?.session || null; } catch (_) {}
+  window.location.assign(sjNativeHandoffUrl(path, session));
+}
+
+async function openAnalyticsInNewTab() {
+  if (sjIsNative()) {
+    await sjOpenHostedTool('/analytics');
+    return;
+  }
   // Vercel may redirect between the apex and www hosts. Local storage does not
   // cross that boundary, so transfer the already-authenticated session only to
   // the trusted Analytics tab that explicitly requests it.
@@ -39938,7 +40399,12 @@ async function userMenuAction(action) {
     return;
   }
   if (action === 'mystats') {
-    openAnalyticsInNewTab();
+    await openAnalyticsInNewTab();
+    return;
+  }
+  if (action === 'studio') {
+    if (sjIsNative()) await sjOpenHostedTool('/artist-discography-upload');
+    else window.location.assign('/artist-discography-upload');
     return;
   }
   if (action === 'updates') {
@@ -41574,6 +42040,8 @@ function handleAuthClick() {
   const overlay = document.getElementById('signInOverlay');
   if (!overlay) { sjGoogleSignIn(); return; }
   sjSignInErr('');
+  const appleBtn = document.getElementById('signin-apple');
+  if (appleBtn) appleBtn.hidden = !(typeof sjIsNative === 'function' && sjIsNative());
   overlay.classList.add('open');
   setTimeout(() => document.getElementById('signin-email')?.focus(), 60);
 }
@@ -41597,6 +42065,47 @@ async function sjGoogleSignIn() {
     provider: 'google',
     options: { redirectTo: sjAuthRedirectUrl() }
   });
+}
+
+async function sjAppleSignIn() {
+  if (googleUser || !sjIsNative()) return;
+  const plugin = window.Capacitor?.Plugins?.SJAuth;
+  if (!plugin?.signInWithApple) {
+    sjSignInErr('Sign in with Apple is unavailable in this build.');
+    return;
+  }
+  const btn = document.getElementById('signin-apple');
+  if (btn) { btn.disabled = true; btn.textContent = 'Opening Apple sign-in…'; }
+  sjSignInErr('');
+  try {
+    const result = await plugin.signInWithApple();
+    const { error } = await sbAuth.auth.signInWithIdToken({
+      provider: 'apple',
+      token: result.identityToken,
+      nonce: result.nonce,
+    });
+    if (error) throw error;
+
+    // Apple only sends a person's name on the first authorization. Preserve it
+    // immediately; later sign-ins still carry the stable user id and email.
+    if (result.fullName) {
+      const { error: profileError } = await sbAuth.auth.updateUser({
+        data: { full_name: result.fullName }
+      });
+      if (profileError) console.warn('[sj] could not save Apple display name', profileError);
+    }
+    try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch (_) {}
+    window.location.reload();
+  } catch (e) {
+    if (e && (e.code === 'cancelled' || /cancel/i.test(e.message || ''))) return;
+    console.error('[sj] Apple sign-in failed', e);
+    sjSignInErr(e?.message || 'Could not sign in with Apple.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="signin-apple-mark" aria-hidden="true">&#63743;</span>Continue with Apple';
+    }
+  }
 }
 
 async function sjEmailSignIn() {
@@ -41675,6 +42184,7 @@ async function sjNativeSignIn() {
 }
 
 function updateAuthBtn() {
+  lptbSyncAuthLabel();
   const btn = document.getElementById('auth-btn');
   const menuWrap = document.getElementById('user-menu-wrap');
   const menuBtn = document.getElementById('user-menu-btn');
@@ -43567,6 +44077,7 @@ let _queueSourcePlaylistTracks = null;
 let _savedPlaylists = [];  // cached playlists from Supabase
 let _playlistsLoading = false;
 let _playlistsLoaded  = false; // set true after first load so render() never re-loops
+let _playlistsError   = '';    // a failed request is not the same as an empty library
 let playlists    = []; // own playlists
 let pubPlaylists = []; // public playlists by others
 let _ytCurrentPlay = null;  // { eventId, trackId, playbackStarted }
@@ -43680,7 +44191,7 @@ function _applyPlayCounts(rows) {
 function _afterPlayCountsLoaded() {
   void sjCarPushPlayCounts();
   Object.keys(inAppPlays).filter(tid => inAppPlays[tid] > 0).forEach(tid => refreshInAppPlayUI(tid));
-  if (barChartMode === 'total' || barChartMode === 'mine') {
+  if (barChartMode === 'yt' || barChartMode === 'total' || barChartMode === 'mine') {
     if (viewMode === 'alltracks') render();
     else renderTimelineOnly();
   }
@@ -43836,7 +44347,8 @@ async function ensureDailyForTrack(trackId) {
     const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     let got = false;
     try {
-      if (barChartMode === 'yt' && !dailyYtData[trackId]) {
+      const chartUsesInApp = barChartMode === 'yt' && sjChartPlayMetric(trackId).source === 'inapp';
+      if (barChartMode === 'yt' && !chartUsesInApp && !dailyYtData[trackId]) {
         const rows = await dbGetAllPages(
           `${REST}/yt_daily_snapshots?select=snapshot_date,view_count,video_id&track_id=eq.${trackId}&snapshot_date=gte.${since}&order=snapshot_date.asc`,
           hdrs);
@@ -43844,7 +44356,7 @@ async function ensureDailyForTrack(trackId) {
           dailyYtData[trackId] = rows.map(r => ({ date: r.snapshot_date, views: Number(r.view_count) || 0, videoId: r.video_id || null }));
           got = true;
         }
-      } else if (barChartMode === 'total' && !dailyPlaysData[trackId]) {
+      } else if ((barChartMode === 'total' || chartUsesInApp) && !dailyPlaysData[trackId]) {
         const rows = await dbGetAllPages(
           `${REST}/play_events?select=played_at,source&track_id=eq.${trackId}&played_at=gte.${since}T00:00:00Z&album_id=not.is.null&or=(source.is.null,source.in.(video,audio))`,
           hdrs);
@@ -43901,6 +44413,11 @@ function renderSparkSVG(points, color, secondary) {
 
 function getDailySparkPoints(trackId) {
   if (barChartMode === 'yt') {
+    if (sjChartPlayMetric(trackId).source === 'inapp') {
+      const plays = dailyPlaysData[trackId];
+      if (!plays || !plays.length) return null;
+      return { points: plays.map(p => ({ date: p.date, value: p.count })), label: 'Daily In-App Plays' };
+    }
     const arr = dailyYtData[trackId];
     if (!arr || arr.length < 2) return null;
     const pts = [];
@@ -43946,7 +44463,12 @@ function getAlbumDailySparkPoints(albId) {
   });
   const dates = Object.keys(dateMap).sort();
   if (!dates.length) return null;
-  const label = barChartMode === 'yt' ? 'Daily New YT Views' : 'Daily Jukebox Plays';
+  const baseLabel = sjChartPlayLabel(albTrackIds, false);
+  const label = barChartMode === 'yt'
+    ? (baseLabel === 'In-App Plays' ? 'Daily In-App Plays'
+      : baseLabel === 'YouTube Views' ? 'Daily New YouTube Views'
+      : 'Daily YouTube + In-App Plays')
+    : 'Daily Jukebox Plays';
   return { points: dates.map(d => ({ date: d, value: dateMap[d] })), label };
 }
 
@@ -44042,8 +44564,8 @@ function refreshTrackBarUI(trackId, skipCascade) {
     barDisplay  = totPl ? fmtV(totPl) : '-';
     barOp       = '0.65';
   } else if (barChartMode === 'yt') {
-    const maxViews = Math.max(...albTracks.map(t => ytData[t.id]?.views || 0), 1);
-    const views = ytData[trackId]?.views || 0;
+    const maxViews = Math.max(...albTracks.map(t => sjChartPlayValue(t.id)), 1);
+    const views = sjChartPlayValue(trackId);
     barPct      = (views / maxViews * 100).toFixed(1);
     barDisplay  = fmtV(views);
   }
@@ -44091,7 +44613,7 @@ function refreshAlbumMetricUI(albumId) {
   if (!alb) return;
   const val = albumViews(alb);
   const yr  = (alb.release_date || '').slice(0, 4);
-  const lbl = barChartMode === 'mine' ? 'my plays' : barChartMode === 'total' ? 'total plays' : barChartMode === 'score' ? 'score' : 'views';
+  const lbl = barChartMode === 'mine' ? 'my plays' : barChartMode === 'total' ? 'total plays' : barChartMode === 'score' ? 'score' : albumChartPlayLabel(alb, true);
   const fmt = barChartMode === 'score' ? (val > 0 ? '+' + val : String(val || 0)) : fmtV(val);
   el.innerHTML = `<span style="color:var(--accent);font-weight:600">${fmt}</span><span style="color:var(--text-muted)"> ${lbl} · ${yr}</span>`;
 }
@@ -44106,7 +44628,6 @@ function refreshAllAlbumBarsUI() {
   const ids = [...selectedIds];
   const visAlbs = ids.flatMap(aid => (albums[aid] || [])).filter(a => isAlbumVisible(a.id));
   const newMax = Math.max(...visAlbs.map(a => albumViews(a)), 1);
-  const _barLbl = barChartMode === 'mine' ? 'My Plays' : barChartMode === 'total' ? 'All Plays' : barChartMode === 'score' ? 'Hearts' : 'YT Views';
   visAlbs.forEach(alb => {
     const barEl = stage.querySelector(`.tl-bar-rect[data-tl-item="${alb.id}"]`);
     const lblEl = stage.querySelector(`[data-tl-lbl="${alb.id}"]`);
@@ -44118,7 +44639,8 @@ function refreshAllAlbumBarsUI() {
     if (barEl) { barEl.style.height = newBarH + 'px'; barEl.style.top = newTop + 'px'; }
     if (lblEl) {
       lblEl.style.top = (newTop - TOP_PAD + 3) + 'px';
-      lblEl.innerHTML = `<div style="font-size:.72rem;color:var(--accent)">${fmt}</div><div style="font-size:.35rem;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase">${_barLbl}</div>`;
+      const barLbl = barChartMode === 'mine' ? 'My Plays' : barChartMode === 'total' ? 'All Plays' : barChartMode === 'score' ? 'Hearts' : albumChartPlayLabel(alb, false);
+      lblEl.innerHTML = `<div style="font-size:.72rem;color:var(--accent)">${fmt}</div><div style="font-size:.35rem;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase">${barLbl}</div>`;
     }
   });
 }
@@ -46162,17 +46684,33 @@ async function deletePlaylist(playlistId) {
 
 async function loadPlaylists() {
   try {
+    _playlistsError = '';
     const myEmail = googleUser?.email;
     const { data:{session} } = await sjGetSession();
-    const sharedResponse = await fetch(sjApiUrl('/api/playlist-share'), { headers: session ? { Authorization:`Bearer ${session.access_token}` } : {} });
-    const sharedData = await sharedResponse.json();
-    if (!sharedResponse.ok || !sharedData.ok) throw new Error(sharedData.error || 'Could not load playlists.');
+    const headers = session ? { Authorization:`Bearer ${session.access_token}` } : {};
+    const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
+    let sharedData;
+    if (typeof sjIsNative === 'function' && sjIsNative() && nativeHttp?.get) {
+      const response = await nativeHttp.get({ url: sjApiUrl('/api/playlist-share'), headers });
+      sharedData = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+      if (response.status < 200 || response.status >= 300 || !sharedData?.ok) {
+        throw new Error(sharedData?.error || 'Could not load playlists.');
+      }
+    } else {
+      const response = await fetch(sjApiUrl('/api/playlist-share'), { headers });
+      sharedData = await response.json();
+      if (!response.ok || !sharedData.ok) throw new Error(sharedData.error || 'Could not load playlists.');
+    }
     const all = sharedData.playlists || [];
     playlists    = myEmail ? all.filter(p => p.user_email === myEmail) : [];
     pubPlaylists = all.filter(p => p.is_public && p.user_email !== myEmail);
     _savedPlaylists = all;
     _sjCarPlaylistsLoaded = true;
-  } catch(e) { return _savedPlaylists; }
+  } catch(e) {
+    console.error('[sj] could not load playlists', e);
+    _playlistsError = 'Could not load playlists. Check your connection and try again.';
+    return _savedPlaylists;
+  }
   // One push per load, from the single place playlists are ever fetched, so the
   // car's Playlists tab cannot drift from what the app shows.
   void sjCarPushPlaylists();
@@ -47910,13 +48448,30 @@ async function mjHeaders() {
 }
 
 async function mjRequest(path, method, body) {
-  const res = await sjFetch(path, {
-    method: method || 'GET',
-    headers: method === 'GET' ? { Authorization: 'Bearer ' + (await _sjjToken() || '') } : await mjHeaders(),
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!data.ok) { const err = new Error(data.error || 'Request failed.'); err.data = data; err.status = res.status; throw err; }
+  const verb = method || 'GET';
+  const headers = verb === 'GET'
+    ? { Authorization: 'Bearer ' + (await _sjjToken() || '') }
+    : await mjHeaders();
+  const url = sjApiUrl(path);
+  const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
+  let data, status;
+  if (sjIsNative() && nativeHttp?.request) {
+    const response = await nativeHttp.request({
+      url, method: verb, headers, data: body, responseType: 'json',
+      connectTimeout: 90000, readTimeout: 90000,
+    });
+    status = response.status;
+    data = typeof response.data === 'string'
+      ? (() => { try { return JSON.parse(response.data); } catch (_) { return {}; } })()
+      : (response.data || {});
+  } else {
+    const res = await sjFetch(url, {
+      method: verb, headers, body: body ? JSON.stringify(body) : undefined
+    });
+    status = res.status;
+    data = await res.json().catch(() => ({}));
+  }
+  if (!data.ok) { const err = new Error(data.error || 'Request failed.'); err.data = data; err.status = status; throw err; }
   return data;
 }
 
