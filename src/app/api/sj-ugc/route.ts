@@ -90,6 +90,16 @@ export async function POST(req: NextRequest) {
       details: details || null,
     });
     if (error) { console.error("[sj-ugc:report]", error.message); return bad("Your report could not be sent. Please try again.", 502); }
+    // Also into the admin Issue Reports list the owner already works from, so
+    // a report is seen even where email is not configured. Only "playback"
+    // issues are auto-resolved, so this category always waits for a person.
+    const { error: issueError } = await sb.schema(JUKEBOX_SCHEMA).from("issues").insert({
+      category: "content",
+      description: `Playlist report (${reason}): "${playlist.name || "Untitled"}" owned by ${playlist.owner || "unknown"}. Playlist id ${playlist.id}.${details ? ` Details: ${details}` : ""}`,
+      user_email: email,
+      user_id: user.id,
+    });
+    if (issueError) console.error("[sj-ugc:report:issue]", issueError.message);
     await notifyOwner({ reason, details, playlistName: playlist.name, playlistId: playlist.id, reportedEmail: playlist.owner, reporterEmail: email });
     return NextResponse.json({ ok: true });
   }
