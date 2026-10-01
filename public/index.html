@@ -6801,9 +6801,9 @@ if (window.__SJ_NATIVE__ === true) {
       </select>
       <label class="report-label" for="ugc-report-details">Details (optional)</label>
       <textarea id="ugc-report-details" class="report-input" rows="3" maxlength="2000"></textarea>
-      <label class="report-anon-row" style="display:flex;align-items:center;gap:7px;margin-top:10px;cursor:pointer;font-size:.6rem;color:var(--text-muted)">
-        <input type="checkbox" id="ugc-report-block" checked style="width:13px;height:13px;accent-color:var(--accent);cursor:pointer">
-        <span id="ugc-report-block-lbl">Also block this person and hide all of their playlists from me</span>
+      <label class="report-anon-row" style="display:flex;align-items:center;gap:10px;margin-top:10px;cursor:pointer;font-size:.6rem;color:var(--text-muted)">
+        <input type="checkbox" id="ugc-report-block" checked style="flex:0 0 auto;accent-color:var(--accent);cursor:pointer">
+        <span id="ugc-report-block-lbl" style="flex:1 1 auto;min-width:0">Also block this person and hide all of their playlists from me</span>
       </label>
       <div id="ugc-report-status" class="report-status"></div>
     </div>
@@ -41932,12 +41932,35 @@ function closeUgcReport() {
   _ugcReportId = null;
 }
 
-async function ugcPost(body) {
-  const headers = { ...(await sjAuthHeaders()), 'Content-Type': 'application/json' };
-  const res = await sjFetch(sjApiUrl('/api/sj-ugc'), { method: 'POST', headers, body: JSON.stringify(body) });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok || !out.ok) throw new Error(out.error || 'Something went wrong. Please try again.');
+// WKWebView reports a healthy cross-origin POST or DELETE as "Load failed"
+// (see admPost), so in the native app these go through URLSession instead.
+async function sjApiJson(method, path, body, timeoutMs) {
+  const headers = { ...(await sjAuthHeaders()) };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const url = sjApiUrl(path);
+  const ms = timeoutMs || SJ_FETCH_TIMEOUT_MS;
+  const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
+  let out, ok;
+  if (sjIsNative() && nativeHttp?.request) {
+    const response = await nativeHttp.request({
+      method, url, headers, data: body, responseType: 'json',
+      connectTimeout: ms, readTimeout: ms,
+    });
+    out = typeof response.data === 'string'
+      ? (() => { try { return JSON.parse(response.data); } catch (_) { return {}; } })()
+      : (response.data || {});
+    ok = response.status >= 200 && response.status < 300;
+  } else {
+    const res = await sjFetch(url, { method, headers, cache: 'no-store', body: body === undefined ? undefined : JSON.stringify(body) }, ms);
+    out = await res.json().catch(() => ({}));
+    ok = res.ok;
+  }
+  if (!ok || !out.ok) throw new Error(out.error || 'Something went wrong. Please try again.');
   return out;
+}
+
+function ugcPost(body) {
+  return sjApiJson('POST', '/api/sj-ugc', body);
 }
 
 async function submitUgcReport(blockOnly) {
@@ -41981,9 +42004,7 @@ async function settingsPaintBlocked() {
   const box = document.getElementById('set-blocked-list');
   if (!box || !googleUser) return;
   try {
-    const res = await sjFetch(sjApiUrl('/api/sj-ugc'), { headers: await sjAuthHeaders(), cache: 'no-store' });
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok || !out.ok) throw new Error(out.error || 'Could not load your blocked people.');
+    const out = await sjApiJson('GET', '/api/sj-ugc');
     const rows = out.blocked || [];
     box.innerHTML = rows.length
       ? rows.map(r => `<div class="set-row" style="justify-content:space-between"><span style="font-size:.62rem;color:var(--text)">${escHtml(r.name)}</span><button type="button" class="pl-btn ghost" data-unblock="${escHtml(r.id)}">Unblock</button></div>`).join('')
@@ -42018,9 +42039,7 @@ async function sjDeleteAccount() {
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Deleting your account…';
   try {
-    const res = await sjFetch(sjApiUrl('/api/sj-account'), { method: 'DELETE', headers: await sjAuthHeaders() }, 60000);
-    const out = await res.json().catch(() => ({}));
-    if (!res.ok || !out.ok) throw new Error(out.error || 'Your account could not be deleted. Please try again.');
+    await sjApiJson('DELETE', '/api/sj-account', undefined, 60000);
     closeSettings();
     await handleLogout();
     _savedPlaylists = []; playlists = []; pubPlaylists = []; _playlistsLoaded = false;
