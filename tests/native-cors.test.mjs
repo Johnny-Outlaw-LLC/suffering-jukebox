@@ -71,3 +71,38 @@ test('native playlist intake bypasses WKWebView fetch and keeps authentication',
   assert.deepEqual(request.data, { text: 'Pink Floyd' });
   assert.equal(result.query, 'Pink Floyd');
 });
+
+test('native catalogue reads bypass WKWebView fetch and preserve PostgREST headers', async () => {
+  let request;
+  const scope = {
+    SJ_FETCH_TIMEOUT_MS: 45000,
+    sjIsNative: () => true,
+    sjFetch: () => { throw new Error('WKWebView fetch should not run'); },
+    window: { Capacitor: { Plugins: { CapacitorHttp: { get: async options => {
+      request = options;
+      return { status: 200, data: '[{"id":"track-1"}]' };
+    } } } } },
+  };
+  const { sjDbGetJson } = loadHtmlFnsInScope(['sjDbGetJson'], scope);
+  const headers = {
+    apikey: 'public-key',
+    Authorization: 'Bearer public-key',
+    'Accept-Profile': 'jukebox',
+  };
+  const result = await sjDbGetJson(
+    'https://example.supabase.co/rest/v1/tracks?id=in.(track-1)',
+    headers,
+  );
+  assert.equal(request.url, 'https://example.supabase.co/rest/v1/tracks?id=in.(track-1)');
+  assert.deepEqual(request.headers, headers);
+  assert.equal(request.responseType, 'json');
+  assert.equal(request.connectTimeout, 45000);
+  assert.equal(request.readTimeout, 45000);
+  assert.deepEqual(result, [{ id: 'track-1' }]);
+});
+
+test('playlist hydration uses the native-safe catalogue reader at every metadata stage', () => {
+  assert.match(dashboard, /const dbGet = async \(path\) => \{[\s\S]*?sjDbGetJson/);
+  assert.match(dashboard, /const dbGetAuth = async \(path\) => \{[\s\S]*?sjDbGetJson/);
+  assert.match(dashboard, /async function openPlaylistChart[\s\S]*?dbGet\(`\/tracks[\s\S]*?dbGet\(`\/albums[\s\S]*?dbGet\(`\/artists[\s\S]*?loadYT\(ids\)/);
+});

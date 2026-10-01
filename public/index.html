@@ -8813,10 +8813,47 @@ function sjAbsSiteUrls(data) {
   return data;
 }
 
-const dbGet = async (path) => {
-  const r = await sjFetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Accept-Profile': 'jukebox' } });
+// Public catalogue reads are cross-origin from the bundled iOS app. WebKit's
+// fetch can leave those requests pending even though the native HTTP stack can
+// reach the same Data API immediately (the background-enabled discovery API
+// already uses that path). Keep one GET transport for every PostgREST read so
+// opening a playlist cannot discover its ids successfully and then hang while
+// hydrating the track, album, artist, metric, and video rows.
+async function sjDbGetJson(url, headers) {
+  const nativeHttp = typeof window !== 'undefined' ? window.Capacitor?.Plugins?.CapacitorHttp : null;
+  if (typeof sjIsNative === 'function' && sjIsNative() && nativeHttp?.get) {
+    const response = await nativeHttp.get({
+      url,
+      headers,
+      responseType: 'json',
+      connectTimeout: SJ_FETCH_TIMEOUT_MS,
+      readTimeout: SJ_FETCH_TIMEOUT_MS,
+    });
+    let data = response.data;
+    if (typeof data === 'string') {
+      try { data = data ? JSON.parse(data) : null; }
+      catch (_) { throw new Error(data || `Request failed (${response.status || 0})`); }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const message = data?.message || data?.error || data?.hint
+        || (typeof data === 'string' ? data : '')
+        || `Request failed (${response.status || 0})`;
+      throw new Error(message);
+    }
+    return data;
+  }
+  const r = await sjFetch(url, { headers });
   if (!r.ok) throw new Error(await r.text());
-  return sjAbsSiteUrls(await r.json());
+  return r.json();
+}
+
+const dbGet = async (path) => {
+  const data = await sjDbGetJson(`${REST}${path}`, {
+    apikey: ANON,
+    Authorization: `Bearer ${ANON}`,
+    'Accept-Profile': 'jukebox',
+  });
+  return sjAbsSiteUrls(data);
 };
 
 const dbRpc = async (path, body) => {
@@ -8850,9 +8887,12 @@ const dbRpcAuth = async (path, body) => {
 const dbGetAuth = async (path) => {
   const { data: { session } } = await sjGetSession();
   const tok = session?.access_token || ANON;
-  const r = await sjFetch(`${REST}${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${tok}`, 'Accept-Profile': 'jukebox' } });
-  if (!r.ok) throw new Error(await r.text());
-  return sjAbsSiteUrls(await r.json());
+  const data = await sjDbGetJson(`${REST}${path}`, {
+    apikey: ANON,
+    Authorization: `Bearer ${tok}`,
+    'Accept-Profile': 'jukebox',
+  });
+  return sjAbsSiteUrls(data);
 };
 
 const dbPost = async (path, body) => {
