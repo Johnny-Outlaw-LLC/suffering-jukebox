@@ -1702,6 +1702,9 @@ body.light .sc-link:hover { background: #e8e8e8; }
 .sjm-item:hover .sjm-ic { color: inherit; }
 .sjm-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sjm-sub { font-size: .44rem; color: var(--text-muted); flex-shrink: 0; }
+/* A row whose explanation is too long to sit beside its label puts it underneath. */
+.sjm-stack { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sjm-stack .sjm-sub { white-space: normal; }
 .sjm-scroll { max-height: 260px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .sjm-on .sjm-ic, .sjm-on .sjm-label { color: var(--accent); }
 .sjm-empty { font-size: .48rem; color: var(--text-muted); padding: 10px 8px; text-align: center; line-height: 1.5; }
@@ -20637,8 +20640,8 @@ function sjmPlayerSectionHTML(tid) {
     const on = has && ((_taManualAudio && _taBgActive) || (_taPreferBg && _taBgActive));
     out += '<button class="sjm-item" onclick="sjmClose();taToggleAudioMode()">' +
       '<span class="sjm-ic">' + (on ? '\u2713' : '\u25d0') + '</span>' +
-      '<span class="sjm-label">' + (on ? 'Background Play is on' : 'Background Play') + '</span>' +
-      '<span class="sjm-sub">' + (on ? 'tap to go back to video' : has ? 'keeps playing when locked' : 'YouTube stops when the phone locks') + '</span></button>';
+      '<span class="sjm-stack"><span class="sjm-label">' + (on ? 'Background Play is on' : 'Background Play') + '</span>' +
+      '<span class="sjm-sub">' + (on ? 'tap to go back to video' : has ? 'keeps playing when locked' : 'YouTube stops when the phone locks') + '</span></span></button>';
   }
   const vs = typeof tvList === 'function' ? tvList(tid) : [];
   if (vs.length > 1) {
@@ -21375,6 +21378,15 @@ function sjmRenderRoot() {
         '</button>') +
     '<button class="sjm-item" onclick="sjmReport()">' +
       '<span class="sjm-ic">⚑</span><span class="sjm-label">Report a problem</span></button>' +
+    (function () {
+      // The playlist this song is playing from, or the one on screen, when
+      // somebody else made it (App Store Guideline 1.2).
+      const pid = [_queueSourcePlaylistId, playlistChartId].find(id => ugcReportablePlaylist(id));
+      return pid
+        ? '<button class="sjm-item" onclick="sjmClose();openUgcReport(\'' + pid + '\')">' +
+            '<span class="sjm-ic">⊘</span><span class="sjm-label">Report / Block playlist</span></button>'
+        : '';
+    })() +
     (vid
       ? '<a class="sjm-item" href="https://www.youtube.com/watch?v=' + vid + '" target="_blank" rel="noopener" onclick="sjmClose()">' +
           '<span class="sjm-ic">↗</span><span class="sjm-label">Open on YouTube</span></a>'
@@ -24824,13 +24836,13 @@ async function playPlaylist(playlistId) {
     if (!ytPlayerEl) {
       openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
       ytQueue = q; ytQueueIdx = 0;
-      setQueueSourcePlaylist(q);
+      setQueueSourcePlaylist(q, playlistId);
       updateYTQueueUI();
       if (doShuffle && q.length > 1) _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
     } else {
       ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
       ytQueue = q; ytQueueIdx = 0;
-      setQueueSourcePlaylist(q);
+      setQueueSourcePlaylist(q, playlistId);
       updateYTQueueUI();
       if (doShuffle && q.length > 1) ytNextTrack(); // player already exists - skip immediately
     }
@@ -27830,7 +27842,7 @@ async function playlistChartPlay(startIndex) {
   const source = playlistChartId && playlistChartId !== '__dynamic_now_playing'
     ? ((_savedPlaylists || []).find(p => p.id === playlistChartId) || playlists.find(p => p.id === playlistChartId))
     : null;
-  if (source) setQueueSourcePlaylist(q);
+  if (source) setQueueSourcePlaylist(q, source.id);
   renderPlaylistChart();
 }
 
@@ -44348,6 +44360,7 @@ let _queueHasAdditions = false;  // true when user has explicitly added to queue
 // until it grows. Keep a lightweight snapshot so Now Playing can tell the
 // difference even when the listener reorders or removes songs.
 let _queueSourcePlaylistTracks = null;
+let _queueSourcePlaylistId = null;  // the saved playlist the queue was started from
 let _savedPlaylists = [];  // cached playlists from Supabase
 let _playlistsLoading = false;
 let _playlistsLoaded  = false; // set true after first load so render() never re-loops
@@ -44358,9 +44371,11 @@ let _ytCurrentPlay = null;  // { eventId, trackId, playbackStarted }
 
 function clearQueueSourcePlaylist() {
   _queueSourcePlaylistTracks = null;
+  _queueSourcePlaylistId = null;
 }
 
-function setQueueSourcePlaylist(items) {
+function setQueueSourcePlaylist(items, playlistId) {
+  _queueSourcePlaylistId = playlistId || null;
   const counts = new Map();
   (items || []).forEach(item => {
     if (!item?.trackId) return;
@@ -46215,7 +46230,7 @@ async function hydratePlaylistLink() {
     setYtShuffleEnabled(doShuffle);
     openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
     ytQueue = q; ytQueueIdx = 0;
-    setQueueSourcePlaylist(q);
+    setQueueSourcePlaylist(q, pl.id);
     updateYTQueueUI();
     if (doShuffle && q.length > 1) _ytShuffleAfterReady = true;
   } catch (e) {}
