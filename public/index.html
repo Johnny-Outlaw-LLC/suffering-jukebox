@@ -6245,6 +6245,19 @@ if (window.__SJ_NATIVE__ === true) {
               </div>
               <input type="file" id="set-avatar-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="settingsPickAvatar(this)">
             </div>
+            <div class="set-block">
+              <div class="set-h">Blocked people</div>
+              <p class="set-sub">You do not see playlists made by people you have blocked. To block someone, open one of their playlists and choose Report / Block.</p>
+              <div id="set-blocked-list"><span class="set-status">Loading…</span></div>
+            </div>
+            <div class="set-block">
+              <div class="set-h">Delete account</div>
+              <p class="set-sub" data-sj-brand="Permanently deletes your {brand} account and everything in it: your playlists, hearts, listening history, uploaded songs, Online Jukeboxes and settings. Music and lyric fixes you added for everyone stay, with your name removed. This cannot be undone.">Permanently deletes your account and everything in it: your playlists, hearts, listening history, uploaded songs, Online Jukeboxes and settings. Music and lyric fixes you added for everyone stay, with your name removed. This cannot be undone.</p>
+              <div class="set-row">
+                <button type="button" class="pl-btn" id="set-delete-account" style="background:#dc2626" onclick="sjDeleteAccount()">Delete my account</button>
+              </div>
+              <span class="set-status" id="set-delete-status"></span>
+            </div>
           </div>
         </section>
 
@@ -6766,6 +6779,38 @@ if (window.__SJ_NATIVE__ === true) {
     <div class="modal-footer">
       <button class="m-btn ghost" onclick="closeReportModal()">Cancel</button>
       <button class="m-btn" onclick="submitReport()">Send report</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ugcReportOverlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title">⚑ Report or block</span>
+      <button class="modal-close" onclick="closeUgcReport()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="ugc-report-context" class="report-ctx"></div>
+      <label class="report-label" for="ugc-report-reason">What is wrong with this playlist?</label>
+      <select id="ugc-report-reason" class="report-input">
+        <option value="offensive">Offensive or inappropriate</option>
+        <option value="harassment">Harassment or hate</option>
+        <option value="spam">Spam or misleading</option>
+        <option value="copyright">Copyright</option>
+        <option value="other">Something else</option>
+      </select>
+      <label class="report-label" for="ugc-report-details">Details (optional)</label>
+      <textarea id="ugc-report-details" class="report-input" rows="3" maxlength="2000"></textarea>
+      <label class="report-anon-row" style="display:flex;align-items:center;gap:7px;margin-top:10px;cursor:pointer;font-size:.6rem;color:var(--text-muted)">
+        <input type="checkbox" id="ugc-report-block" checked style="width:13px;height:13px;accent-color:var(--accent);cursor:pointer">
+        <span id="ugc-report-block-lbl">Also block this person and hide all of their playlists from me</span>
+      </label>
+      <div id="ugc-report-status" class="report-status"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="m-btn ghost" onclick="closeUgcReport()">Cancel</button>
+      <button class="m-btn ghost" id="ugc-block-only" onclick="submitUgcReport(true)">Block only</button>
+      <button class="m-btn" id="ugc-report-send" onclick="submitUgcReport(false)">Send report</button>
     </div>
   </div>
 </div>
@@ -26358,7 +26403,12 @@ function plWallTitleActionsHTML({ isNowPlaying, isDetail, canAddSongs, canArrang
   const settingsBtn = minePl
     ? `<button type="button" class="pl-wall-back" onclick="openPlaylistSettings('${playlistChartId}')">Playlist Settings</button>`
     : '';
-  return `<div class="pl-wall-header-actions">${sizeCtrl}${modeTog}${mixBtn}${addBtn}${startBtn}${queueBtn}${shareBtn}${settingsBtn}</div>`;
+  // Somebody else's saved playlist: the person who made it can be reported
+  // and blocked (App Store Guideline 1.2).
+  const reportBtn = (!minePl && ugcReportablePlaylist(playlistChartId))
+    ? `<button type="button" class="pl-wall-back" onclick="openUgcReport('${playlistChartId}')" title="Report this playlist or block the person who made it">⚑ Report / Block</button>`
+    : '';
+  return `<div class="pl-wall-header-actions">${sizeCtrl}${modeTog}${mixBtn}${addBtn}${startBtn}${queueBtn}${shareBtn}${settingsBtn}${reportBtn}</div>`;
 }
 
 async function ensureMyReactionTracks(force) {
@@ -41028,6 +41078,7 @@ function settingsShow(section) {
   else settingsStopJukeboxPoll();
   if (section === 'audio') setAudioLoad();
   if (section === 'integrations') settingsPaintIntegrations();
+  if (section === 'profile') settingsPaintBlocked();
   if (section === 'playback') {
     settingsPaintSpotifyPlayback();
     spRefreshStatus().then(settingsPaintSpotifyPlayback);
@@ -41846,6 +41897,140 @@ async function handleLogout() {
   _pbRestoreDone = false; // allow restore again next time someone signs in
   blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
   updateAuthBtn();
+}
+
+// ── Report / block other people's playlists (App Store Guideline 1.2) ──────
+// A block hides every playlist the blocked person owns. It is applied by
+// /api/playlist-share, so it follows the account to every device; the page
+// drops their playlists from memory straight away so the block is visible now.
+let _ugcReportId = null;
+
+function ugcReportablePlaylist(id) {
+  if (!id || String(id).startsWith('__')) return false;
+  const p = (_savedPlaylists || []).find(x => x.id === id);
+  if (!p || !p.user_email) return false;
+  return !googleUser || p.user_email !== googleUser.email;
+}
+
+function openUgcReport(id) {
+  if (!googleUser) { showToast('Sign in to report or block.'); handleAuthClick(); return; }
+  const p = (_savedPlaylists || []).find(x => x.id === id);
+  if (!p) { showToast('That playlist is no longer available.'); return; }
+  _ugcReportId = id;
+  const who = p.user_name || 'this person';
+  document.getElementById('ugc-report-context').textContent = 'Playlist: ' + (p.name || 'Untitled') + '  ·  by ' + who;
+  document.getElementById('ugc-report-reason').value = 'offensive';
+  document.getElementById('ugc-report-details').value = '';
+  document.getElementById('ugc-report-block').checked = true;
+  document.getElementById('ugc-report-block-lbl').textContent = 'Also block ' + who + ' and hide all of their playlists from me';
+  document.getElementById('ugc-report-status').textContent = '';
+  document.getElementById('ugcReportOverlay').classList.add('open');
+}
+
+function closeUgcReport() {
+  document.getElementById('ugcReportOverlay')?.classList.remove('open');
+  _ugcReportId = null;
+}
+
+async function ugcPost(body) {
+  const headers = { ...(await sjAuthHeaders()), 'Content-Type': 'application/json' };
+  const res = await sjFetch(sjApiUrl('/api/sj-ugc'), { method: 'POST', headers, body: JSON.stringify(body) });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || !out.ok) throw new Error(out.error || 'Something went wrong. Please try again.');
+  return out;
+}
+
+async function submitUgcReport(blockOnly) {
+  const id = _ugcReportId;
+  const p = (_savedPlaylists || []).find(x => x.id === id);
+  if (!id || !p) { closeUgcReport(); return; }
+  const block = blockOnly || document.getElementById('ugc-report-block').checked;
+  const status = document.getElementById('ugc-report-status');
+  const btns = ['ugc-report-send', 'ugc-block-only'].map(b => document.getElementById(b));
+  btns.forEach(b => { if (b) b.disabled = true; });
+  status.textContent = blockOnly ? 'Blocking…' : 'Sending…';
+  try {
+    if (!blockOnly) {
+      await ugcPost({
+        action: 'report',
+        playlistId: id,
+        reason: document.getElementById('ugc-report-reason').value,
+        details: document.getElementById('ugc-report-details').value,
+      });
+    }
+    if (block) await ugcPost({ action: 'block', playlistId: id });
+    closeUgcReport();
+    if (block) {
+      const owner = p.user_email;
+      _savedPlaylists = _savedPlaylists.filter(x => x.user_email !== owner);
+      playlists = playlists.filter(x => x.user_email !== owner);
+      pubPlaylists = pubPlaylists.filter(x => x.user_email !== owner);
+      returnToPlaylistExplorer('playlists');
+    }
+    showToast(blockOnly ? 'Blocked. You will not see their playlists any more.'
+      : block ? 'Report sent and person blocked. We review every report within 24 hours.'
+      : 'Report sent. We review every report within 24 hours.');
+  } catch (e) {
+    status.textContent = e.message || 'Something went wrong. Please try again.';
+  } finally {
+    btns.forEach(b => { if (b) b.disabled = false; });
+  }
+}
+
+async function settingsPaintBlocked() {
+  const box = document.getElementById('set-blocked-list');
+  if (!box || !googleUser) return;
+  try {
+    const res = await sjFetch(sjApiUrl('/api/sj-ugc'), { headers: await sjAuthHeaders(), cache: 'no-store' });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || !out.ok) throw new Error(out.error || 'Could not load your blocked people.');
+    const rows = out.blocked || [];
+    box.innerHTML = rows.length
+      ? rows.map(r => `<div class="set-row" style="justify-content:space-between"><span style="font-size:.62rem;color:var(--text)">${escHtml(r.name)}</span><button type="button" class="pl-btn ghost" data-unblock="${escHtml(r.id)}">Unblock</button></div>`).join('')
+      : '<span class="set-status">You have not blocked anyone.</span>';
+    box.querySelectorAll('[data-unblock]').forEach(b => b.addEventListener('click', () => settingsUnblock(b.dataset.unblock, b)));
+  } catch (e) {
+    box.innerHTML = '<span class="set-status">' + escHtml(e.message) + '</span>';
+  }
+}
+
+async function settingsUnblock(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    await ugcPost({ action: 'unblock', id });
+    showToast('Unblocked.');
+    // Their playlists come back on the next load.
+    _playlistsLoaded = false;
+    void loadPlaylists();
+  } catch (e) {
+    showToast(e.message);
+  }
+  settingsPaintBlocked();
+}
+
+// ── Delete account (App Store Guideline 5.1.1(v)) ──────────────────────────
+async function sjDeleteAccount() {
+  if (!googleUser) return;
+  const status = document.getElementById('set-delete-status');
+  const ok = window.confirm('Delete your ' + SJ_BRAND.name + ' account?\n\nYour playlists, hearts, listening history, uploaded songs, Online Jukeboxes and settings are deleted permanently. This cannot be undone.');
+  if (!ok) return;
+  const btn = document.getElementById('set-delete-account');
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Deleting your account…';
+  try {
+    const res = await sjFetch(sjApiUrl('/api/sj-account'), { method: 'DELETE', headers: await sjAuthHeaders() }, 60000);
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || !out.ok) throw new Error(out.error || 'Your account could not be deleted. Please try again.');
+    closeSettings();
+    await handleLogout();
+    _savedPlaylists = []; playlists = []; pubPlaylists = []; _playlistsLoaded = false;
+    goHome();
+    showToast('Your account has been deleted.');
+  } catch (e) {
+    if (status) status.textContent = e.message;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ── Playback state persistence (resume queue + position for signed-in users) ──

@@ -123,8 +123,16 @@ export async function GET(req: NextRequest) {
         ? await sb.schema(JUKEBOX_SCHEMA).from("playlists").select("*").in("id", missingAccess)
         : { data: [] };
 
+      // People this viewer has blocked (/api/sj-ugc): none of their playlists,
+      // public or shared, reach this viewer.
+      const { data: blockRows } = email
+        ? await sb.schema(JUKEBOX_SCHEMA).from("user_blocks").select("blocked_email").eq("blocker_email", email)
+        : { data: [] };
+      const blocked = new Set((blockRows || []).map(x => x.blocked_email));
+
       const rows = [...(publicRows || []), ...(mine || []), ...(shared || []), ...(accessShared || [])]
-        .filter((row, i, all) => all.findIndex(x => x.id === row.id) === i);
+        .filter((row, i, all) => all.findIndex(x => x.id === row.id) === i)
+        .filter(row => !blocked.has(cleanEmail(row.user_email)));
 
       const allGrants = await loadGrants(sb, rows.map(x => x.id));
       const grantsByPl = new Map<string, PlaylistGrant[]>();
