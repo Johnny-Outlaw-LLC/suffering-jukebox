@@ -12,6 +12,18 @@ test('native bundle uses a hostname distinct from the live API origin', () => {
   assert.equal(capacitor.server.hostname, 'app.listeningparty.stream');
 });
 
+test('trusted hosted tools stay inside the native WebView', () => {
+  assert.deepEqual(capacitor.server.allowNavigation, [
+    'listeningparty.stream',
+    '*.listeningparty.stream',
+    'sufferingjukebox.stream',
+    '*.sufferingjukebox.stream',
+  ]);
+  assert.match(dashboard, /sjOpenHostedTool\('\/analytics'\)/);
+  assert.match(dashboard, /sjOpenHostedTool\('\/artist-discography-upload'\)/);
+  assert.match(dashboard, /fromNativeApp: true/);
+});
+
 test('API CORS admits both native apps and handles preflight dynamically', () => {
   assert.match(proxy, /capacitor:\/\/www\.sufferingjukebox\.stream/);
   assert.match(proxy, /https:\/\/app\.listeningparty\.stream/);

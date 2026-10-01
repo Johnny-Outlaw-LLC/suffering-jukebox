@@ -29,7 +29,9 @@ export async function consumeNativeSessionHandoff(): Promise<{
 
   try {
     const payload = JSON.parse(decodeBase64Url(encoded)) as NativeSessionPayload;
-    if (!payload.accessToken || !payload.refreshToken) return null;
+    if (!payload.accessToken || !payload.refreshToken) {
+      return { session: null, fromNativeApp: payload.fromNativeApp === true };
+    }
     const { data, error } = await sjBrowserAuth.auth.setSession({
       access_token: payload.accessToken,
       refresh_token: payload.refreshToken,

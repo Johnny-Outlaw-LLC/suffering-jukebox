@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+const lpHelp = readFileSync(new URL('../public/help/lp/index.html', import.meta.url), 'utf8');
 
 test('mobile dock has no resize handle, and the full player is dismissed by pulling it down', () => {
   const start = html.indexOf('/* A phone player has two deliberate states');
@@ -57,6 +58,14 @@ test('native account tools stay in the app navigation stack', () => {
   assert.match(html, /async function openAnalyticsInNewTab\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*sjOpenHostedTool\('\/analytics'\)/);
   assert.match(html, /action === 'studio'[\s\S]*sjOpenHostedTool\('\/artist-discography-upload'\)/);
   assert.match(html, /#sj-app-session=/, 'hosted tools need the native session handoff');
+});
+
+test('native Help clears the status bar and provides an in-app Back button', () => {
+  assert.match(lpHelp, /viewport-fit=cover/);
+  assert.match(lpHelp, /env\(safe-area-inset-top, 0px\)/);
+  assert.match(lpHelp, /id="nativeBack"/);
+  assert.match(lpHelp, /window\.Capacitor[\s\S]*document\.documentElement\.classList\.add\('native-shell'\)/);
+  assert.match(lpHelp, /window\.history\.back\(\)/);
 });
 
 test('playlist and artist management share the iOS sheet treatment', () => {
