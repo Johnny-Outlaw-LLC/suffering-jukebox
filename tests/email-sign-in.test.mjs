@@ -40,6 +40,7 @@ function signInScope(authResult) {
   const calls = { password: [], reloads: 0, stored: {} };
   const scope = {
     googleUser: null,
+    sjIsNative: () => false,
     document: page.document,
     setTimeout: () => {},
     localStorage: { setItem: (k, v) => { calls.stored[k] = v; } },
@@ -124,7 +125,7 @@ test('Google is still one tap from the panel', async () => {
 
 test('an email and password sign in, clear the password box, and reload like Google does', async () => {
   const { page, calls, scope } = signInScope({ error: null });
-  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr'], scope);
+  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr', 'closeSignIn'], scope);
   page.document.getElementById('signin-email').value = '  Testing@Shutterfield.com ';
   page.document.getElementById('signin-password').value = 'not-the-real-one';
   await sjEmailSignIn();
@@ -136,7 +137,7 @@ test('an email and password sign in, clear the password box, and reload like Goo
 
 test('a wrong password says so in plain words and does not reload', async () => {
   const { page, calls, scope } = signInScope({ error: { message: 'Invalid login credentials' } });
-  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr'], scope);
+  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr', 'closeSignIn'], scope);
   page.document.getElementById('signin-email').value = TEST_ACCOUNT.email;
   page.document.getElementById('signin-password').value = 'wrong';
   await sjEmailSignIn();
@@ -148,7 +149,7 @@ test('a wrong password says so in plain words and does not reload', async () => 
 
 test('an empty form asks for both fields and never calls Supabase', async () => {
   const { page, calls, scope } = signInScope({ error: null });
-  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr'], scope);
+  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr', 'closeSignIn'], scope);
   page.document.getElementById('signin-email').value = TEST_ACCOUNT.email;
   await sjEmailSignIn();
   assert.equal(calls.password.length, 0);
