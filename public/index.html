@@ -2844,6 +2844,13 @@ textarea.report-input { resize:vertical; }
     flex: 0 0 auto; height: auto !important; min-height: 0; aspect-ratio: 16 / 9;
   }
   #yt-player-container.ytp-mob-fs .yt-player-frame iframe { height: 100% !important; }
+  /* Hide Video: the frame collapses to nothing rather than going display:none,
+     so YouTube keeps playing (and keeps the sound, when it has it) while the
+     lyrics take the screen. */
+  #yt-player-container.ytp-mob-fs.ytp-hide-video .yt-player-frame {
+    height: 0 !important; min-height: 0 !important; aspect-ratio: auto; overflow: hidden;
+    border: 0 !important; padding: 0 !important;
+  }
   #yt-player-container.ytp-mob-fs .ytp-title { font-size: .7rem; }
 
   /* ── Bottom panel: lyrics or queue, never both ──
@@ -2941,6 +2948,7 @@ textarea.report-input { resize:vertical; }
      Lyrics drops out for a song without any, and Up Next spans the row. */
   .ytp-md-tabs { display: flex; }
   .ytp-md-tab { flex: 1 1 0; }
+  .ytp-md-tab.ytp-md-vidtog { flex: 0 0 auto; padding: 0 12px; }
   .ytp-md-tab[hidden] { display: none; }
   .ytp-md-tabs { gap: 0; padding: 0; background: none; border-radius: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--text) 12%, transparent); }
@@ -10266,6 +10274,7 @@ function ytpMobDeckHTML(trackId) {
       <div class="ytp-md-tabs" role="tablist">
         <button class="ytp-md-tab" id="ytp-md-tab-playlist" role="tab" onclick="ytpMobSetTab('playlist',true);event.stopPropagation()">Up Next</button>
         <button class="ytp-md-tab" id="ytp-md-tab-lyrics" role="tab" onclick="ytpMobSetTab('lyrics',true);event.stopPropagation()">Lyrics</button>
+        <button class="ytp-md-tab ytp-md-vidtog" id="ytp-md-video-toggle" type="button" onclick="ytpMobToggleVideo();event.stopPropagation()" aria-pressed="false">Hide Video</button>
       </div>
     </div>`;
 }
@@ -11963,7 +11972,7 @@ function sjCarFollowTime() {
   return f.pos + (f.playing ? Math.max(0, performance.now() - f.at) / 1000 : 0);
 }
 
-async function sjCarOnNativeStatus(st) {
+async function sjCarOnNativeStatus(st, opts) {
   if (!st || document.visibilityState === 'hidden') return;
   const trackId = st.trackId || null;
   const state = st.state;
@@ -11986,6 +11995,10 @@ async function sjCarOnNativeStatus(st) {
   };
   if (_sjCarFollow.loaded !== trackId) await sjCarFollowLoad(trackId);
   else sjCarFollowAlign();
+  // Open on the playback screen when following begins or the app is brought
+  // up mid-drive. A minimize after that is respected until the next time.
+  if ((!prev || opts?.opened) && _sjCarFollow && ytPlayerEl && ytpIsMob() && !_ytpFs) ytpEnterFullscreen();
+  ytpMobSyncDeck();
 }
 
 async function sjCarFollowLoad(trackId) {
@@ -12078,7 +12091,7 @@ async function sjCarFollowInit() {
   // Opening the app mid-drive: catch up at once rather than on the next tick.
   const catchUp = async () => {
     if (document.visibilityState === 'hidden') return;
-    try { await sjCarOnNativeStatus(await p.getStatus()); } catch (_) {}
+    try { await sjCarOnNativeStatus(await p.getStatus(), { opened: true }); } catch (_) {}
   };
   document.addEventListener('visibilitychange', () => { void catchUp(); });
   void catchUp();
@@ -13517,11 +13530,36 @@ function ytpMobFsOn() {
 function ytpMobApplyFs(on) {
   if (!_ytpContainerEl) return;
   if (!on) {
-    _ytpContainerEl.classList.remove('ytp-mob-fs', 'ytp-tab-lyrics', 'ytp-tab-playlist');
+    _ytpContainerEl.classList.remove('ytp-mob-fs', 'ytp-tab-lyrics', 'ytp-tab-playlist', 'ytp-hide-video');
     return;
   }
   _ytpContainerEl.classList.add('ytp-mob-fs');
   ytpMobSetTab(_ytpMobTab, false);
+  ytpMobPaintVideo();
+}
+
+// Hide Video gives the phone's whole screen under the deck to the lyrics.
+// Remembered, so a passenger reading along keeps it from song to song.
+let _ytpMobHideVideo = false;
+try { _ytpMobHideVideo = localStorage.getItem('sj_mob_hide_video') === '1'; } catch (_) {}
+
+function ytpMobToggleVideo() {
+  _ytpMobHideVideo = !_ytpMobHideVideo;
+  try { localStorage.setItem('sj_mob_hide_video', _ytpMobHideVideo ? '1' : '0'); } catch (_) {}
+  // Hiding the video is for reading, so it lands on the lyrics.
+  if (_ytpMobHideVideo && _ytpMobTab !== 'lyrics') ytpMobSetTab('lyrics', true);
+  ytpMobPaintVideo();
+}
+
+function ytpMobPaintVideo() {
+  if (!_ytpContainerEl) return;
+  _ytpContainerEl.classList.toggle('ytp-hide-video', _ytpMobHideVideo && _ytpContainerEl.classList.contains('ytp-mob-fs'));
+  const btn = document.getElementById('ytp-md-video-toggle');
+  if (btn) {
+    btn.textContent = _ytpMobHideVideo ? 'Show Video' : 'Hide Video';
+    btn.setAttribute('aria-pressed', _ytpMobHideVideo ? 'true' : 'false');
+  }
+  if (document.getElementById('ytp-mf-lyrics-pane')?.classList.contains('show')) ytpMfLayoutLyrics();
 }
 
 function ytpMobSetTab(tab, userSet) {
@@ -13552,10 +13590,13 @@ function ytpMobSetTab(tab, userSet) {
 function ytpMobSyncDeck() {
   if (!ytPlayerEl) return;
   const n = ytQueue.length;
+  // Following the car, the phone holds only the song playing now; next and
+  // previous are the car's, so they stay live.
+  const car = !!_sjCarFollow;
   const prev = document.getElementById('ytp-md-prev');
-  if (prev) prev.disabled = !(n > 1 && (ytQueueIdx > 0 || ytRepeat));
+  if (prev) prev.disabled = !car && !(n > 1 && (ytQueueIdx > 0 || ytRepeat));
   const next = document.getElementById('ytp-md-next');
-  if (next) next.disabled = !(n > 1 && (ytQueueIdx < n - 1 || ytRepeat));
+  if (next) next.disabled = !car && !(n > 1 && (ytQueueIdx < n - 1 || ytRepeat));
   const sh = document.getElementById('ytp-md-shuffle');
   if (sh) { sh.classList.toggle('on', !!ytShuffle); sh.title = ytShuffle ? 'Shuffle on' : 'Shuffle off'; }
   const rp = document.getElementById('ytp-md-repeat');

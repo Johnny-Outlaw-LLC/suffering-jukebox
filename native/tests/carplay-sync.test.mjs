@@ -272,6 +272,8 @@ test('the phone follows what CarPlay is playing, muted, and its buttons steer th
     ytAPIPlayer: yt, ytVideoId: 'vidA', ytPlayerEl: {}, _taAudioEl: null, _taBgActive: false, _taManualAudio: false,
     _ytUserWantsPlay: true, _lyrSyncEnabled: false, _lyrSyncTimer: null, syncedLyricsCache: {},
     ytpSetPlayPauseIcon: () => {}, lyrSyncStart: () => {}, sjDlPlugin: () => native,
+    ytpIsMob: () => true, _ytpFs: false, ytpMobSyncDeck: () => {},
+    ytpEnterFullscreen: () => calls.push('fullscreen'),
   });
   vm.runInContext('var _sjCarFollow = null; var _sjCarFollowDriving = false;\n' +
     ['sjCarFollowTime', 'sjCarOnNativeStatus', 'sjCarFollowLoad', 'sjCarFollowAlign', 'sjCarFollowStop', 'sjCarFollowCommand']
@@ -281,13 +283,21 @@ test('the phone follows what CarPlay is playing, muted, and its buttons steer th
   await ctx.sjCarOnNativeStatus({ state: 'paused', trackId: 'a', positionSeconds: 5 });
   assert.equal(calls.length, 0);
 
-  // The car plays A: the page loads A's video and holds it, muted, to the car.
+  // The car plays A: the page loads A's video, opens the playback screen, and
+  // holds the video, muted, to the car.
   await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 40, title: 'Song A' });
-  assert.deepEqual(calls.splice(0), ['ytPlayNow:vidA:a']);
+  assert.deepEqual(calls.splice(0), ['ytPlayNow:vidA:a', 'fullscreen']);
   assert.equal(ctx._ytUserWantsPlay, false);
   await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 41 });
   assert.equal(yt.muted, true);
   assert.deepEqual(calls.splice(0), ['playVideo', 'seek:41']);
+
+  // Minimized mid-song stays minimized; bringing the app back up reopens it.
+  yt.time = 41;
+  await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 41 });
+  assert.deepEqual(calls.splice(0), []);
+  await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 41 }, { opened: true });
+  assert.deepEqual(calls.splice(0), ['fullscreen']);
 
   // Small drift is left alone; a pause in the car pauses the video.
   yt.time = 41.5;
