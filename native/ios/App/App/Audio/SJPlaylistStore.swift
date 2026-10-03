@@ -16,6 +16,9 @@ final class SJPlaylistStore {
         let id: String
         var name: String
         var trackIds: [String]
+        /// The listener's own (or Favorites) vs someone else's public playlist.
+        /// nil for snapshots saved before the page sent it.
+        var mine: Bool? = nil
     }
 
     static let shared = SJPlaylistStore()

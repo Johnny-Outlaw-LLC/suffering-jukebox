@@ -11868,11 +11868,15 @@ async function sjCarPushPlaylists() {
   if (!p || (!_sjCarPlaylistsLoaded && !reactionsReady)) return;
   try {
     const named = (_savedPlaylists || []).concat(dynamicPlaylistRows());
+    const myEmail = String(googleUser?.email || '').toLowerCase();
     const playlists = named
       .map(pl => ({
         id: pl.id,
         name: pl.name || 'Playlist',
         trackIds: (pl._tracks || []).map(r => r.track_id).filter(Boolean),
+        // Splits the car's About tab into your playlists and public ones.
+        // Favorites has no owner row: it is always yours.
+        mine: !pl.user_email || String(pl.user_email).toLowerCase() === myEmail,
       }));
     await p.setPlaylists({ playlists, preserveSaved: !_sjCarPlaylistsLoaded, preserveFavorites: !reactionsReady });
   } catch (_) {}

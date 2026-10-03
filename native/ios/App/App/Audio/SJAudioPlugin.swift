@@ -192,7 +192,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         let playlists: [SJPlaylistStore.Playlist] = raw.compactMap { obj in
             guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
             let ids = (obj["trackIds"] as? [Any])?.compactMap { $0 as? String } ?? []
-            return SJPlaylistStore.Playlist(id: id, name: name, trackIds: ids)
+            return SJPlaylistStore.Playlist(id: id, name: name, trackIds: ids, mine: obj["mine"] as? Bool)
         }
         let preserveSaved = call.getBool("preserveSaved") ?? false
         let preserveFavorites = call.getBool("preserveFavorites") ?? false

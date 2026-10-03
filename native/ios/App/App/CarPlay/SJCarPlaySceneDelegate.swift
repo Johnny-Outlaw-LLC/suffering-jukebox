@@ -21,6 +21,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     private var artistsTab: CPListTemplate?
     private var playlistsTab: CPListTemplate?
     private var songsTab: CPListTemplate?
+    private var aboutTab: CPListTemplate?
 
     /// CarPlay refuses a list longer than this, and the limit is a hard error
     /// rather than a truncation, so every section is clamped before it is handed
@@ -73,6 +74,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         artistsTab = nil
         playlistsTab = nil
         songsTab = nil
+        aboutTab = nil
         CPNowPlayingTemplate.shared.remove(self)
         SJAudioEngine.shared.onQueueChanged = nil
         SJAudioEngine.shared.onTrackChanged = nil
@@ -137,9 +139,14 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
         artistsTab = artists
         playlistsTab = playlists
-        songsTab = songs
+        let about = CPListTemplate(title: "About", sections: aboutSections())
+        about.tabTitle = "About"
+        about.tabImage = UIImage(systemName: "info.circle")
 
-        return CPTabBarTemplate(templates: [artists, playlists, songs])
+        songsTab = songs
+        aboutTab = about
+
+        return CPTabBarTemplate(templates: [artists, playlists, songs, about])
     }
 
     private func refreshTabs() {
@@ -147,26 +154,18 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         artistsTab?.updateSections(withAccount(artistSections()))
         playlistsTab?.updateSections(withAccount(playlistSections()))
         songsTab?.updateSections(withAccount(songSections()))
+        aboutTab?.updateSections(aboutSections())
     }
 
     // MARK: - Account
 
-    /// Every tab opens with who the car is signed in as. Signing in has to
-    /// happen on the phone: CarPlay gives an app no way to type a password or
-    /// show a web sign-in sheet, and Apple does not allow it while driving.
-    ///
-    /// Signed in, the account name rides as the first section's header - small
-    /// type in the top corner, there only so the driver can tell. Signed out,
-    /// a row explains how to get their own uploads into the car.
+    /// Signing in has to happen on the phone: CarPlay gives an app no way to
+    /// type a password or show a web sign-in sheet, and Apple does not allow it
+    /// while driving. Signed out, each tab opens with a row saying so. Signed
+    /// in, the tabs are left alone - who is signed in lives on the About tab
+    /// (a section header naming the account floated over the list on scroll).
     private func withAccount(_ sections: [CPListSection]) -> [CPListSection] {
-        let library = SJStreamLibrary.shared
-        if library.isSignedIn {
-            guard let name = library.accountName, let first = sections.first else { return sections }
-            let headed = CPListSection(items: first.items,
-                                       header: "Signed in as " + name,
-                                       sectionIndexTitle: nil)
-            return [headed] + sections.dropFirst()
-        }
+        guard !SJStreamLibrary.shared.isSignedIn else { return sections }
         let prompt = CPListItem(text: "Sign In On Your Phone",
                                 detailText: "to unlock your personal content")
         prompt.setImage(UIImage(systemName: "person.crop.circle"))
@@ -219,7 +218,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
         let byArtist = Dictionary(grouping: downloads) { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }
-        let items = byArtist.keys.sorted().prefix(itemLimit).map { artist -> CPListItem in
+        let items = byArtist.keys.sorted().prefix(max(0, itemLimit - 1)).map { artist -> CPListItem in
             let entries = sorted(byArtist[artist] ?? [])
             let item = CPListItem(text: artist, detailText: songCount(entries.count))
             item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
@@ -229,7 +228,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
             return item
         }
-        return [CPListSection(items: Array(items))]
+        return [CPListSection(items: [shuffleItem(for: downloads)] + Array(items))]
     }
 
     // MARK: - Playlists
@@ -244,7 +243,9 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                     : "Add songs you uploaded or downloaded to a playlist and it will appear here."
             )
         }
-        let items = playable.prefix(itemLimit).map { entry -> CPListItem in
+        var seen = Set<String>()
+        let everySong = playable.flatMap { $0.entries }.filter { seen.insert($0.trackId).inserted }
+        let items = playable.prefix(max(0, itemLimit - 1)).map { entry -> CPListItem in
             let (playlist, entries) = entry
             // Kept in the saved running order, not re-sorted: a playlist is a
             // sequence, and alphabetising it would quietly destroy the point.
@@ -256,7 +257,73 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
             return item
         }
-        return [CPListSection(items: Array(items))]
+        return [CPListSection(items: [shuffleItem(for: everySong)] + Array(items))]
+    }
+
+    // MARK: - About
+
+    /// Version, who the car is signed in as, and how much it can play - split
+    /// into the listener's own library (their uploads and playlists) and the
+    /// public one (artist-licensed songs, other people's public playlists).
+    private func aboutSections() -> [CPListSection] {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        let app = CPListSection(items: [
+            infoItem("Version", "\(version) (\(build))"),
+            infoItem("Released", Self.releaseDate()),
+        ], header: "Listening Party", sectionIndexTitle: nil)
+
+        let library = SJStreamLibrary.shared
+        let account: CPListItem
+        if library.isSignedIn {
+            account = infoItem(library.accountName ?? "Signed in", library.keyEmail ?? "Signed in")
+            account.setImage(UIImage(systemName: "person.crop.circle.fill"))
+        } else {
+            account = CPListItem(text: "Not signed in", detailText: "Sign in on your iPhone to unlock your personal content")
+            account.setImage(UIImage(systemName: "person.crop.circle"))
+            account.handler = { [weak self] _, completion in
+                self?.showSignInHelp()
+                completion()
+            }
+        }
+        let accountSection = CPListSection(items: [account], header: "Account", sectionIndexTitle: nil)
+
+        // A song is public when the server lists it as artist-licensed; every
+        // other song the car has - own uploads, own downloads - is personal.
+        let songs = SJCarLibrary.all()
+        let isPublic: (SJCarEntry) -> Bool = { SJStreamLibrary.shared.entry(for: $0.trackId)?.source == "artist" }
+        let publicSongs = songs.filter(isPublic)
+        let personalSongs = songs.filter { !isPublic($0) }
+        let playlists = SJPlaylistStore.shared.playable().map { $0.playlist }
+        let publicPlaylists = playlists.filter { $0.mine == false }.count
+        let personalPlaylists = playlists.count - publicPlaylists
+
+        return [app, accountSection,
+                countsSection("Your Library", personalSongs, playlists: personalPlaylists),
+                countsSection("Public Library", publicSongs, playlists: publicPlaylists)]
+    }
+
+    private func countsSection(_ title: String, _ songs: [SJCarEntry], playlists: Int) -> CPListSection {
+        let artists = Set(songs.map { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }).count
+        return CPListSection(items: [
+            infoItem("Artists", artists.formatted()),
+            infoItem("Songs", songs.count.formatted()),
+            infoItem("Playlists", playlists.formatted()),
+        ], header: title, sectionIndexTitle: nil)
+    }
+
+    private func infoItem(_ text: String, _ detail: String) -> CPListItem {
+        CPListItem(text: text, detailText: detail)
+    }
+
+    /// When this build was made: the app binary's own timestamp, so it is
+    /// right for every build without anyone remembering to update it.
+    private static func releaseDate() -> String {
+        guard let url = Bundle.main.executableURL,
+              let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        else { return "Unknown" }
+        return date.formatted(date: .abbreviated, time: .omitted)
     }
 
     // MARK: - Songs
