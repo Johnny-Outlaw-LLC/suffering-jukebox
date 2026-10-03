@@ -37,7 +37,9 @@ final class SJStreamLibrary {
 
     /// Used until the web layer has told us which site it is, so a phone that
     /// has never signed in still finds the artist-licensed songs.
-    static let defaultBaseURL = "https://www.listeningparty.stream"
+    /// The apex, not www: www answers with a redirect, and a redirect can drop
+    /// the Authorization header that carries the car key.
+    static let defaultBaseURL = "https://listeningparty.stream"
 
     private let queue = DispatchQueue(label: "sj.stream", attributes: .concurrent)
     private var entries: [String: Entry] = [:]
