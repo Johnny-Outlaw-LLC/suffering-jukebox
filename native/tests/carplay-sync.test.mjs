@@ -246,3 +246,70 @@ test('the car key is issued through Capacitor HTTP, not a WebKit POST', async ()
   await ctx.sjCarEnsureAccess();
   assert.equal(requests.length, 2);
 });
+
+test('the phone follows what CarPlay is playing, muted, and its buttons steer the car', async () => {
+  const fn = name => {
+    for (const head of ['async function ' + name + '(', 'function ' + name + '(']) {
+      const start = html.indexOf('\n' + head);
+      if (start >= 0) return html.slice(start, html.indexOf('\n}', start) + 2);
+    }
+    throw new Error('missing ' + name);
+  };
+  const calls = [];
+  const yt = {
+    state: -1, time: 0, muted: false,
+    getPlayerState() { return this.state; }, getCurrentTime() { return this.time; }, getDuration() { return 300; },
+    isMuted() { return this.muted; }, mute() { this.muted = true; }, unMute() { this.muted = false; },
+    playVideo() { this.state = 1; calls.push('playVideo'); }, pauseVideo() { this.state = 2; calls.push('pauseVideo'); },
+    seekTo(t) { this.time = t; calls.push('seek:' + Math.round(t)); },
+  };
+  const native = { pause: async () => calls.push('native:pause'), play: async () => calls.push('native:play'),
+    next: async () => calls.push('native:next'), previous: async () => calls.push('native:previous') };
+  const ctx = vm.createContext({
+    performance: { now: () => 0 }, setTimeout: () => 0, document: { visibilityState: 'visible' },
+    ytData: { a: { video_id: 'vidA' } }, loadYT: async () => ({}), findTrackById: () => ({ name: 'Song A' }),
+    ytPlayNow: (v, title, id) => calls.push('ytPlayNow:' + v + ':' + id),
+    ytAPIPlayer: yt, ytVideoId: 'vidA', ytPlayerEl: {}, _taAudioEl: null, _taBgActive: false, _taManualAudio: false,
+    _ytUserWantsPlay: true, _lyrSyncEnabled: false, _lyrSyncTimer: null, syncedLyricsCache: {},
+    ytpSetPlayPauseIcon: () => {}, lyrSyncStart: () => {}, sjDlPlugin: () => native,
+  });
+  vm.runInContext('var _sjCarFollow = null; var _sjCarFollowDriving = false;\n' +
+    ['sjCarFollowTime', 'sjCarOnNativeStatus', 'sjCarFollowLoad', 'sjCarFollowAlign', 'sjCarFollowStop', 'sjCarFollowCommand']
+      .map(fn).join('\n'), ctx);
+
+  // A paused engine left over from an earlier drive is not followed.
+  await ctx.sjCarOnNativeStatus({ state: 'paused', trackId: 'a', positionSeconds: 5 });
+  assert.equal(calls.length, 0);
+
+  // The car plays A: the page loads A's video and holds it, muted, to the car.
+  await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 40, title: 'Song A' });
+  assert.deepEqual(calls.splice(0), ['ytPlayNow:vidA:a']);
+  assert.equal(ctx._ytUserWantsPlay, false);
+  await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 41 });
+  assert.equal(yt.muted, true);
+  assert.deepEqual(calls.splice(0), ['playVideo', 'seek:41']);
+
+  // Small drift is left alone; a pause in the car pauses the video.
+  yt.time = 41.5;
+  await ctx.sjCarOnNativeStatus({ state: 'paused', trackId: 'a', positionSeconds: 42 });
+  assert.deepEqual(calls.splice(0), ['pauseVideo']);
+
+  // The phone's buttons drive the car.
+  assert.equal(ctx.sjCarFollowCommand('toggle'), true);
+  assert.equal(ctx.sjCarFollowCommand('next'), true);
+  assert.deepEqual(calls.filter(c => c.startsWith('native:')), ['native:play', 'native:next']);
+  calls.length = 0;
+
+  // The passenger picks something else: following ends, sound returns, the car pauses.
+  ctx.sjCarFollowStop(true);
+  assert.equal(ctx._sjCarFollow, null);
+  assert.equal(yt.muted, false);
+  assert.deepEqual(calls, ['native:pause']);
+  assert.equal(ctx.sjCarFollowCommand('next'), false);
+
+  // Nothing happens while the app is in the background.
+  calls.length = 0;
+  ctx.document.visibilityState = 'hidden';
+  await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 1 });
+  assert.equal(calls.length, 0);
+});

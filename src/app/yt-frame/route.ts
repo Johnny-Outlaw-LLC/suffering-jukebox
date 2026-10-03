@@ -20,6 +20,9 @@ export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("v") || "";
   const videoId = ALLOWED_ID.test(raw) ? raw : "";
   const autoplay = req.nextUrl.searchParams.get("autoplay") === "0" ? 0 : 1;
+  // The app's "follow the car" view starts the video muted: CarPlay owns the
+  // sound, and an unmuted first frame would play the song twice.
+  const mute = req.nextUrl.searchParams.get("mute") === "1" ? 1 : 0;
 
   const html = `<!doctype html>
 <html><head>
@@ -36,6 +39,7 @@ export async function GET(req: NextRequest) {
 (function () {
   var VIDEO_ID = ${JSON.stringify(videoId)};
   var AUTOPLAY = ${autoplay};
+  var MUTE = ${mute};
   var player = null, ready = false;
   var pending = [];
 
@@ -87,7 +91,7 @@ export async function GET(req: NextRequest) {
   window.onYouTubeIframeAPIReady = function () {
     player = new YT.Player('p', {
       videoId: VIDEO_ID,
-      playerVars: { autoplay: AUTOPLAY, rel: 0, playsinline: 1, enablejsapi: 1, controls: 1 },
+      playerVars: { autoplay: AUTOPLAY, mute: MUTE, rel: 0, playsinline: 1, enablejsapi: 1, controls: 1 },
       events: {
         onReady: function () {
           ready = true;

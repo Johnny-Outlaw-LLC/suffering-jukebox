@@ -369,10 +369,16 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
     }
 
     private static func dict(_ s: SJStatus) -> JSObject {
-        [
+        // Title and artist ride along so the page can show a song CarPlay
+        // started even when it has never loaded that song's catalogue row.
+        let current = SJAudioEngine.shared.currentTrack
+        let track = current?.id == s.trackId ? current : nil
+        return [
             "state": s.state.rawValue,
             "index": s.index,
             "trackId": s.trackId ?? NSNull(),
+            "title": track?.title ?? NSNull(),
+            "artist": track?.artist ?? NSNull(),
             "positionSeconds": s.positionSeconds,
             "durationSeconds": s.durationSeconds,
         ]

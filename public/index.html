@@ -10441,6 +10441,11 @@ async function loadArtistOnDemandAudio(trackIds) {
 
 function ytpStartArtistAudio(item) {
   if (!item?.trackId) return;
+  if (_sjCarFollow) {
+    // No video for this song, and the car has the sound: just the cover.
+    ytpShowArtFrame(item.artwork || (typeof ytpTrackMeta === 'function' ? ytpTrackMeta(item.trackId, item.title).artwork : '') || '');
+    return;
+  }
   _taManualAudio = true;
   _ytUserWantsPlay = true;
   const art = item.artwork || (typeof ytpTrackMeta === 'function' ? ytpTrackMeta(item.trackId, item.title).artwork : '') || '';
@@ -10501,6 +10506,7 @@ async function sjArtistPlayTrack(trackId, ev) {
 }
 
 function openYTPlayer(videoId, title, trackId, ev) {
+  if (_sjCarFollow && !_sjCarFollowDriving) sjCarFollowStop(true);
   loadYTAPI(); // ensure YT iframe API is loading
   ytVideoId = videoId;
   const safeTitle = (title||'').replace(/</g,'&lt;');
@@ -10667,7 +10673,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
   if (_isMobPlayer) requestAnimationFrame(() => ytpEnterFullscreen());
   if (!videoId && trackId) {
     ytpStartArtistAudio(ytQueue[0]);
-  } else if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused) {
+  } else if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused && !_sjCarFollow) {
     _taManualAudio = true;
     _ytUserWantsPlay = true;
     setTimeout(() => { if (_taManualAudio) taEnterBgAudio(); taSyncAudioBtn(); }, 500);
@@ -10713,7 +10719,8 @@ const sjIsNative = () => window.__SJ_NATIVE__ === true;
 function ytpEmbedSrc(videoId, autoplay) {
   const ap = autoplay === false ? 0 : 1;
   if (sjIsNative()) {
-    return `${SJ_FRAME_ORIGIN}/yt-frame?v=${encodeURIComponent(videoId)}&autoplay=${ap}`;
+    const mute = _sjCarFollow ? '&mute=1' : '';
+    return `${SJ_FRAME_ORIGIN}/yt-frame?v=${encodeURIComponent(videoId)}&autoplay=${ap}${mute}`;
   }
   const origin = encodeURIComponent(location.origin);
   return `https://www.youtube.com/embed/${videoId}?autoplay=${ap}&rel=0&enablejsapi=1&playsinline=1&controls=1&origin=${origin}`;
@@ -10978,6 +10985,7 @@ function ytNormalizeQueue(items) {
 }
 
 function ytPlayNow(videoId, title, trackId) {
+  if (_sjCarFollow && !_sjCarFollowDriving) sjCarFollowStop(true);
   if (_djActive) djExit();
   clearQueueSourcePlaylist();
   ytMarkMobPlayIntent();
@@ -10995,8 +11003,8 @@ function ytPlayNow(videoId, title, trackId) {
     updateYTQueueUI();
     return;
   }
-  if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId)) _taManualAudio = true;
-  const _useTa = _taManualAudio && !!taTrackAudio(trackId);
+  if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !_sjCarFollow) _taManualAudio = true;
+  const _useTa = _taManualAudio && !!taTrackAudio(trackId) && !_sjCarFollow;
   if (_taBgActive && !_useTa) {
     // Track has no uploaded audio — pause bg element but keep the preference.
     _taManualAudio = false; _taBgActive = false;
@@ -11009,7 +11017,7 @@ function ytPlayNow(videoId, title, trackId) {
     taPlayBgIdx(0);
     try { ytAPIPlayer?.cueVideoById?.(videoId); } catch (_) {}
     ytpSetPlayPauseIcon(true);
-  } else if (typeof spShouldTry === 'function' && spShouldTry(trackId)) {
+  } else if (!_sjCarFollow && typeof spShouldTry === 'function' && spShouldTry(trackId)) {
     _ytUserWantsPlay = true;
     try { ytAPIPlayer?.cueVideoById?.(videoId); } catch (_) {}
     ytpSetPlayPauseIcon(true);
@@ -11073,6 +11081,7 @@ function _ytCaptureLastPlayed() {
 
 function ytPlayQueueIdx(idx, opts) {
   if (idx < 0 || idx >= ytQueue.length || !ytPlayerEl) return;
+  if (_sjCarFollow && !_sjCarFollowDriving) sjCarFollowStop(true);
   if (_djActive && !opts?.fromDj) { djExit(); return; }
   if (idx !== ytQueueIdx) _ytCaptureLastPlayed();
   ytMarkMobPlayIntent();
@@ -11429,6 +11438,7 @@ function ytpPaintTogs() {
 }
 
 function ytNextTrack() {
+  if (sjCarFollowCommand('next')) return;
   if (_djActive) { djExit(); return; }
   if (_liveRoomListen) {
     showToast('The host controls playback in a live jukebox.');
@@ -11456,6 +11466,7 @@ function ytNextTrack() {
 }
 
 function ytPrevTrack() {
+  if (sjCarFollowCommand('previous')) return;
   if (_djActive) { djExit(); return; }
   if (_liveRoomListen) {
     showToast('The host controls playback in a live jukebox.');
@@ -11467,6 +11478,7 @@ function ytPrevTrack() {
 }
 
 function ytBackTrack() {
+  if (sjCarFollowCommand('previous')) return;
   if (_liveRoomListen) {
     showToast('The host controls playback in a live jukebox.');
     return;
@@ -11486,6 +11498,7 @@ function ytBackTrack() {
 
 // ── Mini-player play/pause toggle ──────────────────────────────
 function ytTogglePlayPause() {
+  if (sjCarFollowCommand('toggle')) return;
   if (_taBgActive && _taAudioEl) {
     // Audio-only mode: toggle the audio element, not the embed
     if (_taAudioEl.paused) { _ytUserWantsPlay = true; _taAudioEl.play().catch(() => {}); ytpSetPlayPauseIcon(true); ytpSetMediaPlaybackState('playing'); }
@@ -11634,6 +11647,11 @@ function ytpAttachSlotPlayer(slot, onReadyCb) {
 function ytpOnSlotStateChange(slot, ev) {
   if (_ytpLayoutRestore) return;
   if (slot !== _ytActiveSlot) return;
+  // Following the car: the car owns play state, logging and what plays next.
+  if (_sjCarFollow) {
+    if (ev.data === 1) { try { ytAPIPlayer.mute(); } catch (_) {} sjCarFollowAlign(); }
+    return;
+  }
   if (ev.data === 1) { // PLAYING
     if (_pbRestoreOpts) {
       try { ytAPIPlayer.pauseVideo(); } catch (_) {}
@@ -11826,6 +11844,7 @@ async function sjDlInit() {
     // server during the drive when there is signal, not days later.
     await p.addListener('carplayFeedback', () => { void sjCarDrainFeedback(); });
   } catch (_) {}
+  void sjCarFollowInit();
   try {
     await p.addListener('downloadChange', d => {
       if (!d || !d.trackId) return;
@@ -11924,6 +11943,145 @@ async function sjCarClearAccess() {
   const p = sjDlPlugin();
   if (!p || !p.clearCarAccess) return;
   try { await p.clearCarAccess(); } catch (_) {}
+}
+
+// ── CarPlay → phone: follow the car ──────────────────────────────────
+// CarPlay plays through the native engine; this page plays YouTube in its own
+// web view. Two players, one car: if the page simply started the same song,
+// the car would get it twice. So while the car is playing, the page FOLLOWS
+// it - the same song's video, muted, held to the car's position, with lyrics
+// timed off the car's clock - and the phone's transport buttons steer the car.
+// The page never drives the native engine itself, so native playing at all
+// means the car (or the lock screen carrying on from it) started it.
+// Picking a different song on the phone ends following and pauses the car.
+var _sjCarFollow = null;          // { trackId, title, artist, pos, at, playing, loaded }
+var _sjCarFollowDriving = false;  // true while this code is the one loading a song
+
+function sjCarFollowTime() {
+  const f = _sjCarFollow;
+  if (!f) return null;
+  return f.pos + (f.playing ? Math.max(0, performance.now() - f.at) / 1000 : 0);
+}
+
+async function sjCarOnNativeStatus(st) {
+  if (!st || document.visibilityState === 'hidden') return;
+  const trackId = st.trackId || null;
+  const state = st.state;
+  if (!trackId || state === 'idle' || state === 'ended') {
+    if (_sjCarFollow) sjCarFollowStop(false);
+    return;
+  }
+  // Only start following real playback; a paused native engine left over from
+  // an earlier drive is not the car playing now.
+  if (!_sjCarFollow && state !== 'playing') return;
+  const prev = _sjCarFollow;
+  _sjCarFollow = {
+    trackId,
+    title: st.title || prev?.title || '',
+    artist: st.artist || '',
+    pos: Number(st.positionSeconds) || 0,
+    at: performance.now(),
+    playing: state !== 'paused',
+    loaded: prev && prev.trackId === trackId ? prev.loaded : null,
+  };
+  if (_sjCarFollow.loaded !== trackId) await sjCarFollowLoad(trackId);
+  else sjCarFollowAlign();
+}
+
+async function sjCarFollowLoad(trackId) {
+  const f = _sjCarFollow;
+  if (!f || f.loading === trackId) return;
+  f.loading = trackId;
+  let videoId = ytData[trackId]?.video_id || null;
+  if (!videoId) {
+    try {
+      const m = await loadYT([trackId]);
+      if (m && m[trackId]) { ytData[trackId] = { ...(ytData[trackId] || {}), ...m[trackId] }; videoId = m[trackId].video_id || null; }
+    } catch (_) {}
+  }
+  if (_sjCarFollow?.trackId !== trackId) return;   // the car moved on meanwhile
+  const title = (typeof findTrackById === 'function' && findTrackById(trackId)?.name) || f.title || '';
+  // Whatever the phone was playing itself stops: the car has the speakers.
+  try { _taAudioEl?.pause(); } catch (_) {}
+  _taBgActive = false; _taManualAudio = false;
+  if (typeof _spActive !== 'undefined' && _spActive) { try { void spPauseTransport(); } catch (_) {} }
+  _sjCarFollowDriving = true;
+  try {
+    if (videoId || !ytPlayerEl) ytPlayNow(videoId, title, trackId);
+    else {
+      // An upload with no video, into a player that is already open: show the
+      // cover rather than asking YouTube to load nothing.
+      try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+      ytQueue = [{ ...ytQueueItem(null, title, trackId), artistAudio: true }];
+      ytQueueIdx = 0;
+      ytVideoId = null;
+      ytpStartArtistAudio(ytQueue[0]);
+      ytpOnTrackChange(null, trackId, title);
+      updateYTQueueUI();
+    }
+  } finally { _sjCarFollowDriving = false; }
+  _ytUserWantsPlay = false;   // keeps the page off Now Playing and background keepalive
+  if (_sjCarFollow) { _sjCarFollow.loaded = trackId; _sjCarFollow.loading = null; }
+  setTimeout(sjCarFollowAlign, 600);
+}
+
+// Hold the muted video to the car: same song, same play state, within two
+// seconds. Called on every native status tick (twice a second).
+function sjCarFollowAlign() {
+  const f = _sjCarFollow;
+  if (!f || f.loaded !== f.trackId) return;
+  ytpSetPlayPauseIcon(f.playing);
+  if (f.playing && _lyrSyncEnabled && syncedLyricsCache[f.trackId] && !_lyrSyncTimer) lyrSyncStart();
+  if (!ytAPIPlayer || typeof ytAPIPlayer.getPlayerState !== 'function' || !ytVideoId) return;
+  try {
+    if (!ytAPIPlayer.isMuted?.()) ytAPIPlayer.mute();
+    const ps = ytAPIPlayer.getPlayerState();
+    if (f.playing && ps !== 1 && ps !== 3) ytAPIPlayer.playVideo();
+    else if (!f.playing && ps === 1) ytAPIPlayer.pauseVideo();
+    const t = sjCarFollowTime();
+    const dur = ytAPIPlayer.getDuration?.() || 0;
+    if (t != null && (!dur || t < dur - 1) && Math.abs((ytAPIPlayer.getCurrentTime() || 0) - t) > 2) {
+      ytAPIPlayer.seekTo(t, true);
+    }
+  } catch (_) {}
+}
+
+// pauseCar: the passenger chose something else on the phone, so the car stops
+// rather than playing over it.
+function sjCarFollowStop(pauseCar) {
+  if (!_sjCarFollow) return;
+  _sjCarFollow = null;
+  try { ytAPIPlayer?.unMute?.(); } catch (_) {}
+  if (pauseCar) { try { sjDlPlugin()?.pause?.(); } catch (_) {} }
+}
+
+// The phone's transport buttons, while following. Returns true when handled.
+function sjCarFollowCommand(cmd) {
+  const f = _sjCarFollow;
+  const p = sjDlPlugin();
+  if (!f || !p) return false;
+  try {
+    if (cmd === 'toggle') {
+      f.pos = sjCarFollowTime(); f.at = performance.now(); f.playing = !f.playing;
+      void (f.playing ? p.play() : p.pause());
+      sjCarFollowAlign();
+    } else if (cmd === 'next') void p.next();
+    else if (cmd === 'previous') void p.previous();
+  } catch (_) {}
+  return true;
+}
+
+async function sjCarFollowInit() {
+  const p = sjDlPlugin();
+  if (!p || !p.getStatus) return;
+  try { await p.addListener('statusChange', st => { void sjCarOnNativeStatus(st); }); } catch (_) {}
+  // Opening the app mid-drive: catch up at once rather than on the next tick.
+  const catchUp = async () => {
+    if (document.visibilityState === 'hidden') return;
+    try { await sjCarOnNativeStatus(await p.getStatus()); } catch (_) {}
+  };
+  document.addEventListener('visibilitychange', () => { void catchUp(); });
+  void catchUp();
 }
 
 // An upload or a removal should be in the car on the next drive, not after the
@@ -16406,6 +16564,7 @@ function ytpSetMediaPlaybackState(state) {
 
 function ytpUpdateMediaSession() {
   if (!('mediaSession' in navigator)) return;
+  if (_sjCarFollow) return;   // the car's Now Playing belongs to the native engine
   ytpInitMediaSession();
   const item = ytQueue[ytQueueIdx];
   const meta = ytpTrackMeta(item?.trackId, item?.title);
@@ -16465,7 +16624,7 @@ function ytpEnsureBgAudio() {
 }
 
 function ytpStartBgKeepalive() {
-  if ((!ytpIsMob() && !ytpIsTouchDevice()) || !_ytUserWantsPlay) return;
+  if ((!ytpIsMob() && !ytpIsTouchDevice()) || !_ytUserWantsPlay || _sjCarFollow) return;
   try {
     const a = ytpEnsureBgAudio();
     a.play().catch(() => {});
@@ -24320,7 +24479,8 @@ function lyrSyncTick() {
   const stripOn = !!document.querySelector('#ytp-mf-lyrics-pane.show');
   if (!_lyrSyncEnabled && !stripOn) return;
   let t;
-  if (_taBgActive && _taAudioEl) { t = _taAudioEl.currentTime || 0; }
+  if (_sjCarFollow) { t = sjCarFollowTime(); }
+  else if (_taBgActive && _taAudioEl) { t = _taAudioEl.currentTime || 0; }
   else if (typeof _spActive !== 'undefined' && _spActive) { t = (_spPosMs || 0) / 1000; }
   else {
     if (!ytAPIPlayer || typeof ytAPIPlayer.getCurrentTime !== 'function') return;
