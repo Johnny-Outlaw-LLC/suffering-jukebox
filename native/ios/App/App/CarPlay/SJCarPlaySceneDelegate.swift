@@ -22,9 +22,6 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     private var playlistsTab: CPListTemplate?
     private var songsTab: CPListTemplate?
     private var aboutTab: CPListTemplate?
-    /// Set only when the current queue was started from a saved playlist, so
-    /// the "..." menu can offer an honest Remove from Playlist.
-    private var activePlaylistId: String?
 
     /// CarPlay refuses a list longer than this, and the limit is a hard error
     /// rather than a truncation, so every section is clamped before it is handed
@@ -255,8 +252,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let item = CPListItem(text: playlist.name, detailText: songCount(entries.count))
             item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
-                self?.pushSongList(title: playlist.name, entries: entries,
-                                   preserveOrder: true, playlistId: playlist.id)
+                self?.pushSongList(title: playlist.name, entries: entries, preserveOrder: true)
                 completion()
             }
             return item
@@ -381,18 +377,16 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func pushSongList(title: String,
                               entries: [SJCarEntry],
-                              preserveOrder: Bool = false,
-                              playlistId: String? = nil) {
+                              preserveOrder: Bool = false) {
         let ordered = preserveOrder ? entries : sorted(entries)
-        let section = CPListSection(items: [shuffleItem(for: ordered, playlistId: playlistId)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
+        let section = CPListSection(items: [shuffleItem(for: ordered)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
                                                     in: ordered,
-                                                    showArtist: false,
-                                                    playlistId: playlistId))
+                                                    showArtist: false))
         let template = CPListTemplate(title: title, sections: [section])
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
 
-    private func shuffleItem(for entries: [SJCarEntry], playlistId: String? = nil) -> CPListItem {
+    private func shuffleItem(for entries: [SJCarEntry]) -> CPListItem {
         let item = CPListItem(text: "Shuffle All", detailText: songCount(entries.count))
         item.setImage(UIImage(systemName: "shuffle"))
         item.isEnabled = !entries.isEmpty
@@ -419,7 +413,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                 // Repeat One must not trap Shuffle All on its first song.
                 if engine.repeatMode == .one { engine.cycleRepeatMode() }
                 engine.setShuffle(true)
-                self?.play(startingAt: first, in: entries, playlistId: playlistId)
+                self?.play(startingAt: first, in: entries)
             }
             completion()
         }
@@ -428,8 +422,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func listItems(for shown: [SJCarEntry],
                            in queue: [SJCarEntry],
-                           showArtist: Bool,
-                           playlistId: String? = nil) -> [CPListItem] {
+                           showArtist: Bool) -> [CPListItem] {
         shown.map { entry in
             let detail = showArtist
                 ? [entry.artist, entry.album ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -437,7 +430,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let item = CPListItem(text: entry.title, detailText: detail.isEmpty ? nil : detail)
             item.setImage(artwork(for: entry))
             item.handler = { [weak self] _, completion in
-                self?.play(startingAt: entry, in: queue, playlistId: playlistId)
+                self?.play(startingAt: entry, in: queue)
                 completion()
             }
             return item
@@ -489,7 +482,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     // MARK: - Now Playing actions and reactions
 
-    /// Four buttons on the Now Playing screen, left to right: the "..." menu of
+    /// Four buttons on the Now Playing screen, left to right: the "..." list of
     /// actions picked in Settings, a heart that stamps the moment being
     /// listened to (drawn with a count once the track has any), repeat, and
     /// shuffle on the far right. There is no rating button: thumbs are retired.
@@ -531,91 +524,46 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         CPNowPlayingTemplate.shared.updateNowPlayingButtons([more, heart, repeatBtn, shuffle])
     }
 
-    /// The "..." menu. Playlist removals are offered only when the song is
-    /// playing from that playlist; Favorites is computed from hearts, not
-    /// stored, so it has nothing to remove from.
+    /// The "..." menu, as a pushed list rather than an action sheet. A CarPlay
+    /// action sheet holds three buttons and has no close box, so Cancel took a
+    /// third of it; a list holds every option picked in Settings, and the
+    /// system back arrow in the top corner closes it.
     private func showNowPlayingActions(trackId: String) {
         guard let track = SJAudioEngine.shared.currentTrack, track.id == trackId else { return }
-        let playlistId = activePlaylistId.flatMap { $0.hasPrefix("__dynamic_") ? nil : $0 }
-        var actions: [CPAlertAction] = []
-
-        for actionId in SJCarPlayActionSettings.shared.actions {
+        let items = SJCarPlayActionSettings.shared.actions.compactMap { actionId -> CPListItem? in
+            let title: String
+            let run: () -> Void
             switch actionId {
-            case "remove_song":
-                if let playlistId, SJPlaylistStore.shared.contains(trackId: trackId, in: playlistId) {
-                    actions.append(CPAlertAction(title: "Remove Song from Playlist", style: .destructive) { [weak self] _ in
-                        self?.dismissNowPlayingActions { self?.remove(trackIds: [trackId], fromPlaylist: playlistId) }
-                    })
-                }
-            case "remove_artist":
-                if let playlistId, !track.artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    actions.append(CPAlertAction(title: "Remove Artist from Playlist", style: .destructive) { [weak self] _ in
-                        self?.dismissNowPlayingActions { self?.removeMatching(track: track, fromPlaylist: playlistId, albumOnly: false) }
-                    })
-                }
-            case "remove_album":
-                if let playlistId, !(track.album ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    actions.append(CPAlertAction(title: "Remove Album from Playlist", style: .destructive) { [weak self] _ in
-                        self?.dismissNowPlayingActions { self?.removeMatching(track: track, fromPlaylist: playlistId, albumOnly: true) }
-                    })
-                }
             case "break_7", "break_30", "break_90", "break_180":
                 let days = Int(actionId.dropFirst("break_".count)) ?? 30
-                actions.append(CPAlertAction(title: "Take a Break for \(days) Days", style: .default) { [weak self] _ in
-                    self?.dismissNowPlayingActions { self?.exclude(trackId: trackId, kind: "snooze", value: days) }
-                })
+                title = "Take a Break for \(days) Days"
+                run = { [weak self] in self?.exclude(trackId: trackId, kind: "snooze", value: days) }
             case "never_play":
-                actions.append(CPAlertAction(title: "Never Play Again", style: .destructive) { [weak self] _ in
-                    self?.dismissNowPlayingActions { self?.exclude(trackId: trackId, kind: "block", value: 1) }
-                })
+                title = "Never Play Again"
+                run = { [weak self] in self?.exclude(trackId: trackId, kind: "block", value: 1) }
             default:
-                break
+                return nil
             }
+            let item = CPListItem(text: title, detailText: nil)
+            item.handler = { [weak self] _, completion in
+                // Back to Now Playing first, so the next song is what the
+                // driver sees when the action skips this one.
+                self?.interfaceController?.popTemplate(animated: true) { _, _ in run() }
+                completion()
+            }
+            return item
         }
-        // Cancel is a plain button and comes first. A .cancel-style action is
-        // not drawn as a button in a CarPlay action sheet, and at the end of a
-        // long list it can fall off the screen - either way the sheet had no
-        // way to close.
-        actions.insert(CPAlertAction(title: "Cancel", style: .default) { [weak self] _ in
-            self?.dismissNowPlayingActions()
-        }, at: 0)
-        let sheet = CPActionSheetTemplate(title: track.title, message: track.artist, actions: actions)
-        interfaceController?.presentTemplate(sheet, animated: true, completion: nil)
+        let section = items.isEmpty
+            ? CPListSection(items: [disabledItem("Nothing chosen", "Pick actions in Listening Party Settings on your iPhone.")])
+            : CPListSection(items: items)
+        let list = CPListTemplate(title: track.title, sections: [section])
+        interfaceController?.pushTemplate(list, animated: true, completion: nil)
     }
 
-    private func dismissNowPlayingActions(then action: (() -> Void)? = nil) {
-        guard let interfaceController else { action?(); return }
-        interfaceController.dismissTemplate(animated: true) { _, _ in action?() }
-    }
-
-    private func normalized(_ value: String?) -> String {
-        (value ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-    }
-
-    private func removeMatching(track: SJTrack, fromPlaylist playlistId: String, albumOnly: Bool) {
-        let inPlaylist = Set(SJPlaylistStore.shared.trackIds(in: playlistId))
-        let artist = normalized(track.artist)
-        let album = normalized(track.album)
-        let matching = Set(SJCarLibrary.all().compactMap { entry -> String? in
-            guard inPlaylist.contains(entry.trackId), normalized(entry.artist) == artist else { return nil }
-            if albumOnly && normalized(entry.album) != album { return nil }
-            return entry.trackId
-        })
-        remove(trackIds: matching, fromPlaylist: playlistId)
-    }
-
-    private func remove(trackIds: Set<String>, fromPlaylist playlistId: String) {
-        let removed = SJPlaylistStore.shared.remove(trackIds: trackIds, from: playlistId)
-        guard !removed.isEmpty else { return }
-        for trackId in removed {
-            SJFeedbackOutbox.shared.add(kind: "removePlaylist", trackId: trackId, value: 0,
-                                        positionMs: 0, playlistId: playlistId)
-        }
-        refreshTabs()
-        removeFromCurrentQueueAndAdvance(trackIds: Set(removed))
-        SJCarPlayFeedback.shared.onChange?()
+    private func disabledItem(_ text: String, _ detail: String) -> CPListItem {
+        let item = CPListItem(text: text, detailText: detail)
+        item.isEnabled = false
+        return item
     }
 
     private func exclude(trackId: String, kind: String, value: Int) {
@@ -697,9 +645,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     // MARK: - Playback
 
     private func play(startingAt entry: SJCarEntry,
-                      in entries: [SJCarEntry],
-                      playlistId: String? = nil) {
-        activePlaylistId = playlistId
+                      in entries: [SJCarEntry]) {
         let tracks = entries.map { e in
             SJTrack(id: e.trackId,
                     title: e.title,
