@@ -37,6 +37,11 @@ export interface SJStatus {
   state: SJPlaybackState;
   /** Index into the queue last set with setQueue, or -1. */
   index: number;
+  /** Exact next index chosen by the native engine, including shuffled order. */
+  nextIndex?: number | null;
+  shuffleEnabled?: boolean;
+  repeatMode?: 'off' | 'all' | 'one';
+  queue?: Array<Pick<SJTrack, 'id' | 'title' | 'artist' | 'album' | 'artworkUrl' | 'durationSeconds'>>;
   trackId: string | null;
   positionSeconds: number;
   durationSeconds: number;
@@ -66,6 +71,8 @@ export interface SJNativeAudioPlugin {
   next(): Promise<SJStatus>;
   previous(): Promise<SJStatus>;
   seek(options: { positionSeconds: number }): Promise<SJStatus>;
+  setShuffle(options: { enabled: boolean }): Promise<SJStatus>;
+  setRepeat(options: { enabled: boolean }): Promise<SJStatus>;
   getStatus(): Promise<SJStatus>;
 
   /**
@@ -81,6 +88,12 @@ export interface SJNativeAudioPlugin {
   setShuffleProfile(options: {
     preference: 'discovery' | 'favorites' | 'less_repeats' | 'none';
     weights: Record<string, number>;
+  }): Promise<{ count: number }>;
+
+  /** Listener-owned all-time and local-day heart counts for CarPlay actions. */
+  setHeartCounts(options: {
+    counts: Record<string, number>;
+    todayCounts: Record<string, number>;
   }): Promise<{ count: number }>;
 
   /** Persist a track for offline play. Resolves when the download is queued. */

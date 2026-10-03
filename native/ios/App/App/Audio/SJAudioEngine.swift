@@ -103,6 +103,7 @@ final class SJAudioEngine: NSObject {
         guard shuffleEnabled != on else { return }
         shuffleEnabled = on
         onModeChanged?()
+        publish()
     }
 
     /// A new profile pushed from the web layer redraws the rest of the running
@@ -117,6 +118,14 @@ final class SJAudioEngine: NSObject {
     func cycleRepeatMode() {
         repeatMode = repeatMode.next
         onModeChanged?()
+        publish()
+    }
+
+    func setRepeat(_ mode: SJRepeatMode) {
+        guard repeatMode != mode else { return }
+        repeatMode = mode
+        onModeChanged?()
+        publish()
     }
 
     /// The running order for a shuffled queue.
@@ -168,7 +177,10 @@ final class SJAudioEngine: NSObject {
             if pos + 1 < playOrder.count { return playOrder[pos + 1] }
             guard repeatMode == .all else { return nil }
             rebuildPlayOrder()
-            return playOrder.first
+            // rebuildPlayOrder pins the current song at position zero. The
+            // following entry is both the preview and the song advance() will
+            // choose; returning the first entry would repeat the current song.
+            return playOrder.dropFirst().first ?? playOrder.first
         }
         if index + 1 < queue.count { return index + 1 }
         return repeatMode == .all ? 0 : nil
@@ -308,6 +320,11 @@ final class SJAudioEngine: NSObject {
         guard let next = nextIndex(), queue.indices.contains(next) else { return nil }
         return queue[next]
     }
+
+    /// The queue index behind `nextTrack`. The web player uses this while it is
+    /// following CarPlay so its Up Next card shows the engine's actual shuffled
+    /// choice instead of independently drawing a different one.
+    var nextQueueIndex: Int? { nextIndex() }
 
     /// Prefers the downloaded file. Offline is not a mode - if the file is
     /// there it is always used, which also saves cellular data in the car.

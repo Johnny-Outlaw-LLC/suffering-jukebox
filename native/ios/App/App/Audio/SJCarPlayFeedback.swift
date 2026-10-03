@@ -20,9 +20,11 @@ final class SJCarPlayFeedback {
     private let lock = NSLock()
     private var rated: Set<String> = []
     private var hearts: [String: Int] = [:]
+    private var heartsToday: [String: Int] = [:]
 
     private let ratedKey  = "sj.carplay.ratedTrackIds"
     private let heartsKey = "sj.carplay.heartCounts"
+    private let heartsTodayKey = "sj.carplay.heartCountsToday"
 
     /// Set by the plugin. Fired by the car when something is tapped, so the web
     /// layer can drain the outbox promptly instead of waiting for the next
@@ -32,6 +34,7 @@ final class SJCarPlayFeedback {
     private init() {
         rated = Set(UserDefaults.standard.stringArray(forKey: ratedKey) ?? [])
         hearts = UserDefaults.standard.dictionary(forKey: heartsKey) as? [String: Int] ?? [:]
+        heartsToday = UserDefaults.standard.dictionary(forKey: heartsTodayKey) as? [String: Int] ?? [:]
     }
 
     var ratedTrackIds: Set<String> {
@@ -50,10 +53,17 @@ final class SJCarPlayFeedback {
         return hearts[trackId] ?? 0
     }
 
-    func setHeartCounts(_ counts: [String: Int]) {
+    func heartCountToday(for trackId: String) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        return heartsToday[trackId] ?? 0
+    }
+
+    func setHeartCounts(_ counts: [String: Int], today: [String: Int]) {
         lock.lock(); defer { lock.unlock() }
         hearts = counts
+        heartsToday = today
         UserDefaults.standard.set(counts, forKey: heartsKey)
+        UserDefaults.standard.set(today, forKey: heartsTodayKey)
     }
 }
 
@@ -115,34 +125,41 @@ final class SJShuffleProfile {
     }
 }
 
-/// The actions picked in Settings for the CarPlay Now Playing "..." list.
-/// Kept natively because a CarPlay scene can open without ever starting the web
-/// view that owns the settings screen.
-final class SJCarPlayActionSettings {
+/// Songs hidden from CarPlay without deleting their download or removing them
+/// from the listener's library. The choice survives library refreshes and can
+/// be undone from About > My Music.
+final class SJCarPlayExclusions {
 
-    static let shared = SJCarPlayActionSettings()
-    static let allowed = ["break_7", "break_30", "break_90", "break_180", "never_play"]
+    static let shared = SJCarPlayExclusions()
 
     private let lock = NSLock()
-    private let key = "sj.carplay.nowPlayingActions"
-    private var stored: [String]
+    private let key = "sj.carplay.excludedTrackIds"
+    private var stored: Set<String>
 
     private init() {
-        // Filtered, so a choice saved by an older build that is no longer
-        // offered drops out instead of leaving the list short.
-        stored = (UserDefaults.standard.stringArray(forKey: key) ?? ["break_30", "never_play"])
-            .filter { Self.allowed.contains($0) }
+        stored = Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
     }
 
-    var actions: [String] {
+    var trackIds: Set<String> {
         lock.lock(); defer { lock.unlock() }
         return stored
     }
 
-    func set(_ requested: [String]) {
+    func contains(_ trackId: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        let selected = Set(requested)
-        stored = Self.allowed.filter { selected.contains($0) }
-        UserDefaults.standard.set(stored, forKey: key)
+        return stored.contains(trackId)
+    }
+
+    func exclude(_ trackIds: Set<String>) {
+        guard !trackIds.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        stored.formUnion(trackIds)
+        UserDefaults.standard.set(Array(stored).sorted(), forKey: key)
+    }
+
+    func restoreAll() {
+        lock.lock(); defer { lock.unlock() }
+        stored.removeAll()
+        UserDefaults.standard.removeObject(forKey: key)
     }
 }

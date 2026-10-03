@@ -145,7 +145,7 @@ assert(result[1].entries.map { $0.trackId } == ["b", "a"])
 
 test('Shuffle All starts a random available song with the entire queue and exits Repeat One', { skip: process.platform !== 'darwin' }, () => {
   const source = readFileSync(new URL('../ios/App/App/CarPlay/SJCarPlaySceneDelegate.swift', import.meta.url), 'utf8');
-  const method = source.slice(source.indexOf('    private func shuffleItem('), source.indexOf('    private func listItems(')).replace('private func', 'func');
+  const method = source.slice(source.indexOf('    private func shuffleItem('), source.indexOf('    /// The first three rows')).replace('private func', 'func');
   const script = `
 import Foundation
 struct UIImage { init?(systemName: String) {} }
@@ -198,6 +198,25 @@ assert(!subject.shuffleItem(for: []).isEnabled)
 `;
   const result = spawnSync('swift', ['-'], { input: script, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test('CarPlay song lists put Play All Next and Add All to Queue after Shuffle All', () => {
+  const source = readFileSync(new URL('../ios/App/App/CarPlay/SJCarPlaySceneDelegate.swift', import.meta.url), 'utf8');
+  const start = source.indexOf('    private func queueActionItems(');
+  const end = source.indexOf('    private func add(', start);
+  const actions = source.slice(start, end);
+  assert.match(actions, /return \[shuffleItem\(for: entries\), playNext, addQueue\]/);
+  assert.match(source, /let actions = queueActionItems\(for: downloads\)/);
+});
+
+test('mobile puts repeat on the left, shuffle on the right, and uses a lyric-size slider', () => {
+  const start = html.indexOf('function ytpMobDeckHTML(');
+  const end = html.indexOf('\n}', start);
+  const deck = html.slice(start, end);
+  assert.ok(deck.indexOf('id="ytp-md-repeat"') < deck.indexOf('id="ytp-md-prev"'));
+  assert.ok(deck.indexOf('id="ytp-md-next"') < deck.indexOf('id="ytp-md-shuffle"'));
+  assert.match(html, /class="ytp-lyr-size-slider"/);
+  assert.doesNotMatch(html, /class="ytp-lyr-size-btns"/);
 });
 
 test('the car key is issued through Capacitor HTTP, not a WebKit POST', async () => {
@@ -264,7 +283,9 @@ test('the phone follows what CarPlay is playing, muted, and its buttons steer th
     seekTo(t) { this.time = t; calls.push('seek:' + Math.round(t)); },
   };
   const native = { pause: async () => calls.push('native:pause'), play: async () => calls.push('native:play'),
-    next: async () => calls.push('native:next'), previous: async () => calls.push('native:previous') };
+    next: async () => calls.push('native:next'), previous: async () => calls.push('native:previous'),
+    setShuffle: async value => calls.push('native:shuffle:' + value.enabled),
+    setRepeat: async value => calls.push('native:repeat:' + value.enabled) };
   const ctx = vm.createContext({
     performance: { now: () => 0 }, setTimeout: () => 0, document: { visibilityState: 'visible' },
     ytData: { a: { video_id: 'vidA' } }, loadYT: async () => ({}), findTrackById: () => ({ name: 'Song A' }),
@@ -273,10 +294,13 @@ test('the phone follows what CarPlay is playing, muted, and its buttons steer th
     _ytUserWantsPlay: true, _lyrSyncEnabled: false, _lyrSyncTimer: null, syncedLyricsCache: {},
     ytpSetPlayPauseIcon: () => {}, lyrSyncStart: () => {}, sjDlPlugin: () => native,
     ytpIsMob: () => true, _ytpFs: false, ytpMobSyncDeck: () => {},
+    ytQueue: [], ytQueueIdx: -1, ytShuffle: false, ytRepeat: false, updateYTQueueUI: () => calls.push('queue:paint'),
+    ytpPaintTogs: () => calls.push('shuffle:paint'),
+    ytQueueItem: (videoId, title, trackId, artist) => ({ videoId, title, trackId, artist }),
     ytpEnterFullscreen: () => calls.push('fullscreen'),
   });
-  vm.runInContext('var _sjCarFollow = null; var _sjCarFollowDriving = false;\n' +
-    ['sjCarFollowTime', 'sjCarOnNativeStatus', 'sjCarFollowLoad', 'sjCarFollowAlign', 'sjCarFollowStop', 'sjCarFollowCommand']
+  vm.runInContext('var _sjCarFollow = null; var _sjCarFollowDriving = false; var _sjCarQueueSnapshot = null; var _sjCarNextIndex = null;\n' +
+    ['sjCarFollowTime', 'sjCarSyncPhoneState', 'sjCarOnNativeStatus', 'sjCarFollowLoad', 'sjCarFollowAlign', 'sjCarFollowStop', 'sjCarFollowCommand']
       .map(fn).join('\n'), ctx);
 
   // A paused engine left over from an earlier drive is not followed.
@@ -304,10 +328,34 @@ test('the phone follows what CarPlay is playing, muted, and its buttons steer th
   await ctx.sjCarOnNativeStatus({ state: 'paused', trackId: 'a', positionSeconds: 42 });
   assert.deepEqual(calls.splice(0), ['pauseVideo']);
 
+  // Queue and shuffle come from the same native engine the car uses.
+  await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 42, index: 1,
+    shuffleEnabled: true, repeatMode: 'one', nextIndex: 0, queue: [
+      { id: 'b', title: 'Song B', artist: 'Band' },
+      { id: 'a', title: 'Song A', artist: 'Band' },
+    ] });
+  assert.equal(ctx.ytQueue.length, 2);
+  assert.equal(ctx.ytQueueIdx, 1);
+  assert.equal(ctx.ytShuffle, true);
+  assert.equal(ctx.ytRepeat, true);
+  assert.equal(ctx._sjCarNextIndex, 0);
+  // Loading the selected song temporarily makes the web player a one-song
+  // queue. A routine native tick omits its unchanged queue, so the cached
+  // snapshot must restore the complete list without requiring a reload.
+  ctx.ytQueue = [{ trackId: 'a', title: 'Song A', artist: 'Band' }];
+  await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 43, index: 1,
+    shuffleEnabled: true, repeatMode: 'one', nextIndex: 0 });
+  assert.equal(ctx.ytQueue.length, 2);
+  assert.equal(ctx.ytQueueIdx, 1);
+  calls.length = 0;
+
   // The phone's buttons drive the car.
   assert.equal(ctx.sjCarFollowCommand('toggle'), true);
   assert.equal(ctx.sjCarFollowCommand('next'), true);
-  assert.deepEqual(calls.filter(c => c.startsWith('native:')), ['native:play', 'native:next']);
+  assert.equal(ctx.sjCarFollowCommand('shuffle'), true);
+  assert.equal(ctx.sjCarFollowCommand('repeat'), true);
+  assert.deepEqual(calls.filter(c => c.startsWith('native:')),
+    ['native:pause', 'native:next', 'native:shuffle:true', 'native:repeat:true']);
   calls.length = 0;
 
   // The passenger picks something else: following ends, sound returns, the car pauses.
@@ -322,4 +370,17 @@ test('the phone follows what CarPlay is playing, muted, and its buttons steer th
   ctx.document.visibilityState = 'hidden';
   await ctx.sjCarOnNativeStatus({ state: 'playing', trackId: 'a', positionSeconds: 1 });
   assert.equal(calls.length, 0);
+});
+
+test('CarPlay exposes its exact Up Next choice and conditional heart removals', () => {
+  const scene = readFileSync(new URL('../ios/App/App/CarPlay/SJCarPlaySceneDelegate.swift', import.meta.url), 'utf8');
+  const plugin = readFileSync(new URL('../ios/App/App/Audio/SJAudioPlugin.swift', import.meta.url), 'utf8');
+  assert.match(plugin, /"nextIndex": SJAudioEngine\.shared\.nextQueueIndex/);
+  assert.match(scene, /"UP NEXT: " \+ truncated/);
+  assert.match(scene, /nextArtist\.caseInsensitiveCompare\(currentArtist\)/);
+  assert.match(scene, /if heartCounts\(trackId\)\.today > 0/);
+  assert.match(scene, /Remove My Ratings Today/);
+  assert.match(scene, /Remove All My Ratings for This Song/);
+  assert.match(scene, /removeHeartsToday/);
+  assert.match(scene, /removeAllHearts/);
 });

@@ -117,9 +117,12 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             CPNowPlayingTemplate.shared.upNextTitle = "Up Next"
             return
         }
-        let title = next.title
-        let truncated = title.count > 30 ? String(title.prefix(30)) + "…" : title
-        CPNowPlayingTemplate.shared.upNextTitle = "NEXT: " + truncated
+        let currentArtist = SJAudioEngine.shared.currentTrack?.artist.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let nextArtist = next.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = !nextArtist.isEmpty && nextArtist.caseInsensitiveCompare(currentArtist) != .orderedSame
+            ? "\(nextArtist) - \(next.title)" : next.title
+        let truncated = description.count > 42 ? String(description.prefix(42)) + "…" : description
+        CPNowPlayingTemplate.shared.upNextTitle = "UP NEXT: " + truncated
     }
 
     // MARK: - Templates
@@ -262,9 +265,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     // MARK: - About
 
-    /// Version, who the car is signed in as, and how much it can play - split
-    /// into the listener's own library (their uploads and playlists) and the
-    /// public one (artist-licensed songs, other people's public playlists).
+    /// Version, account, and a My Music entry that can be drilled into to
+    /// remove artists, albums, or individual songs from CarPlay only.
     private func aboutSections() -> [CPListSection] {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = info["CFBundleShortVersionString"] as? String ?? "?"
@@ -294,14 +296,138 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         let songs = SJCarLibrary.all()
         let isPublic: (SJCarEntry) -> Bool = { SJStreamLibrary.shared.entry(for: $0.trackId)?.source == "artist" }
         let publicSongs = songs.filter(isPublic)
-        let personalSongs = songs.filter { !isPublic($0) }
         let playlists = SJPlaylistStore.shared.playable().map { $0.playlist }
         let publicPlaylists = playlists.filter { $0.mine == false }.count
-        let personalPlaylists = playlists.count - publicPlaylists
+
+        let myMusic = CPListItem(text: "My Music", detailText: musicSummary(songs))
+        myMusic.setImage(UIImage(systemName: "music.note.house"))
+        myMusic.handler = { [weak self] _, completion in
+            self?.showMyMusic()
+            completion()
+        }
 
         return [app, accountSection,
-                countsSection("Your Library", personalSongs, playlists: personalPlaylists),
+                CPListSection(items: [myMusic], header: "Your Library", sectionIndexTitle: nil),
                 countsSection("Public Library", publicSongs, playlists: publicPlaylists)]
+    }
+
+    private func musicSummary(_ songs: [SJCarEntry]) -> String {
+        let artists = Set(songs.map { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }).count
+        let albums = Set(songs.map { ($0.artist.isEmpty ? "Unknown Artist" : $0.artist) + "\u{0}" + ($0.album ?? "Unknown Album") }).count
+        return "\(artists) artist\(artists == 1 ? "" : "s") · \(albums) album\(albums == 1 ? "" : "s") · \(songCount(songs.count))"
+    }
+
+    private func showMyMusic() {
+        let songs = SJCarLibrary.all()
+        let artists = Set(songs.map { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }).count
+        let albums = Set(songs.map { ($0.artist.isEmpty ? "Unknown Artist" : $0.artist) + "\u{0}" + ($0.album ?? "Unknown Album") }).count
+        var items: [CPListItem] = []
+        let artistItem = CPListItem(text: "Artists", detailText: artists.formatted())
+        artistItem.setImage(UIImage(systemName: "music.mic"))
+        artistItem.handler = { [weak self] _, completion in self?.showArtistRemovals(); completion() }
+        items.append(artistItem)
+        let albumItem = CPListItem(text: "Albums", detailText: albums.formatted())
+        albumItem.setImage(UIImage(systemName: "square.stack"))
+        albumItem.handler = { [weak self] _, completion in self?.showAlbumRemovals(); completion() }
+        items.append(albumItem)
+        let songItem = CPListItem(text: "Songs", detailText: songs.count.formatted())
+        songItem.setImage(UIImage(systemName: "music.note"))
+        songItem.handler = { [weak self] _, completion in self?.showSongRemovals(); completion() }
+        items.append(songItem)
+
+        let removed = SJCarPlayExclusions.shared.trackIds
+            .filter { SJCarLibrary.entryIncludingExcluded(for: $0) != nil }.count
+        if removed > 0 {
+            let restore = CPListItem(text: "Restore Removed Music", detailText: songCount(removed))
+            restore.setImage(UIImage(systemName: "arrow.uturn.backward"))
+            restore.handler = { [weak self] _, completion in
+                self?.confirmRestoreAll()
+                completion()
+            }
+            items.append(restore)
+        }
+        interfaceController?.pushTemplate(CPListTemplate(title: "My Music", sections: [CPListSection(items: items)]),
+                                          animated: true, completion: nil)
+    }
+
+    private func showArtistRemovals() {
+        let groups = Dictionary(grouping: SJCarLibrary.all()) { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }
+        let items = groups.keys.sorted().prefix(itemLimit).map { name -> CPListItem in
+            removalItem(name, detail: songCount(groups[name]?.count ?? 0), trackIds: Set((groups[name] ?? []).map(\.trackId)))
+        }
+        pushRemovalList(title: "Remove Artists", items: Array(items))
+    }
+
+    private func showAlbumRemovals() {
+        let groups = Dictionary(grouping: SJCarLibrary.all()) {
+            ($0.artist.isEmpty ? "Unknown Artist" : $0.artist) + "\u{0}" + ($0.album ?? "Unknown Album")
+        }
+        let items = groups.keys.sorted().prefix(itemLimit).map { key -> CPListItem in
+            let parts = key.split(separator: "\u{0}", maxSplits: 1, omittingEmptySubsequences: false)
+            let artist = String(parts.first ?? "")
+            let album = parts.count > 1 ? String(parts[1]) : "Unknown Album"
+            return removalItem(album, detail: artist + " · " + songCount(groups[key]?.count ?? 0),
+                               trackIds: Set((groups[key] ?? []).map(\.trackId)))
+        }
+        pushRemovalList(title: "Remove Albums", items: Array(items))
+    }
+
+    private func showSongRemovals() {
+        let songs = SJCarLibrary.all().sorted {
+            let title = $0.title.localizedStandardCompare($1.title)
+            return title == .orderedSame ? $0.trackId < $1.trackId : title == .orderedAscending
+        }
+        let items = songs.prefix(itemLimit).map { song in
+            removalItem(song.title, detail: song.artist, trackIds: [song.trackId])
+        }
+        pushRemovalList(title: "Remove Songs", items: Array(items))
+    }
+
+    private func pushRemovalList(title: String, items: [CPListItem]) {
+        let section = items.isEmpty
+            ? CPListSection(items: [disabledItem("Nothing to remove", "Your CarPlay music library is empty.")])
+            : CPListSection(items: items)
+        interfaceController?.pushTemplate(CPListTemplate(title: title, sections: [section]), animated: true, completion: nil)
+    }
+
+    private func removalItem(_ text: String, detail: String?, trackIds: Set<String>) -> CPListItem {
+        let item = CPListItem(text: text, detailText: detail)
+        item.handler = { [weak self] _, completion in
+            self?.confirmRemoval(name: text, trackIds: trackIds)
+            completion()
+        }
+        return item
+    }
+
+    private func confirmRemoval(name: String, trackIds: Set<String>) {
+        let alert = CPAlertTemplate(titleVariants: ["Remove \(name) from CarPlay?", "Remove from CarPlay?"], actions: [
+            CPAlertAction(title: "Remove", style: .destructive) { [weak self] _ in
+                SJCarPlayExclusions.shared.exclude(trackIds)
+                self?.removeFromCurrentQueueAndAdvance(trackIds: trackIds)
+                self?.refreshTabs()
+                self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+                self?.interfaceController?.popToRootTemplate(animated: true, completion: nil)
+            },
+            CPAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+                self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+            },
+        ])
+        interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+    }
+
+    private func confirmRestoreAll() {
+        let alert = CPAlertTemplate(titleVariants: ["Restore all music removed from CarPlay?", "Restore removed music?"], actions: [
+            CPAlertAction(title: "Restore All", style: .default) { [weak self] _ in
+                SJCarPlayExclusions.shared.restoreAll()
+                self?.refreshTabs()
+                self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+                self?.interfaceController?.popToRootTemplate(animated: true, completion: nil)
+            },
+            CPAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+                self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+            },
+        ])
+        interfaceController?.presentTemplate(alert, animated: true, completion: nil)
     }
 
     private func countsSection(_ title: String, _ songs: [SJCarEntry], playlists: Int) -> CPListSection {
@@ -369,7 +495,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             self?.showSongSort()
             completion()
         }
-        return [CPListSection(items: [shuffleItem(for: downloads), sort] + listItems(for: Array(downloads.prefix(max(0, itemLimit - 2))),
+        let actions = queueActionItems(for: downloads)
+        return [CPListSection(items: actions + [sort] + listItems(for: Array(downloads.prefix(max(0, itemLimit - actions.count - 1))),
                                                        in: downloads, showArtist: true))]
     }
 
@@ -379,7 +506,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                               entries: [SJCarEntry],
                               preserveOrder: Bool = false) {
         let ordered = preserveOrder ? entries : sorted(entries)
-        let section = CPListSection(items: [shuffleItem(for: ordered)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
+        let actions = queueActionItems(for: ordered)
+        let section = CPListSection(items: actions + listItems(for: Array(ordered.prefix(max(0, itemLimit - actions.count))),
                                                     in: ordered,
                                                     showArtist: false))
         let template = CPListTemplate(title: title, sections: [section])
@@ -418,6 +546,61 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             completion()
         }
         return item
+    }
+
+    /// The first three rows in every concrete song list are playback actions:
+    /// Shuffle All, Play All Next, and Add All to Queue. Artists and playlists
+    /// reach this list after their first drill-down; Songs shows the same trio
+    /// directly above its sort row.
+    private func queueActionItems(for entries: [SJCarEntry]) -> [CPListItem] {
+        let playNext = CPListItem(text: "Play All Next", detailText: songCount(entries.count))
+        playNext.setImage(UIImage(systemName: "text.insert"))
+        playNext.isEnabled = !entries.isEmpty
+        playNext.handler = { [weak self] _, completion in
+            self?.add(entries, next: true)
+            completion()
+        }
+
+        let addQueue = CPListItem(text: "Add All to Queue", detailText: songCount(entries.count))
+        addQueue.setImage(UIImage(systemName: "text.badge.plus"))
+        addQueue.isEnabled = !entries.isEmpty
+        addQueue.handler = { [weak self] _, completion in
+            self?.add(entries, next: false)
+            completion()
+        }
+        return [shuffleItem(for: entries), playNext, addQueue]
+    }
+
+    private func add(_ entries: [SJCarEntry], next: Bool) {
+        let additions = tracks(for: entries)
+        guard !additions.isEmpty else { return }
+        let engine = SJAudioEngine.shared
+        guard engine.index >= 0, engine.queue.indices.contains(engine.index) else {
+            engine.setQueue(additions, startIndex: 0, autoPlay: true)
+            interfaceController?.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
+            return
+        }
+        var queue = engine.queue
+        if next {
+            queue.insert(contentsOf: additions, at: min(queue.count, engine.index + 1))
+        } else {
+            queue.append(contentsOf: additions)
+        }
+        // Re-selecting the same current song makes setQueue preserve its play
+        // state and position while exposing the expanded queue to car + phone.
+        engine.setQueue(queue, startIndex: engine.index, autoPlay: false)
+    }
+
+    private func tracks(for entries: [SJCarEntry]) -> [SJTrack] {
+        entries.map { e in
+            SJTrack(id: e.trackId,
+                    title: e.title,
+                    artist: e.artist,
+                    album: e.album,
+                    artworkURL: nil,
+                    url: nil,
+                    durationSeconds: e.durationSeconds)
+        }
     }
 
     private func listItems(for shown: [SJCarEntry],
@@ -483,7 +666,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     // MARK: - Now Playing actions and reactions
 
     /// Four buttons on the Now Playing screen, left to right: the "..." list of
-    /// actions picked in Settings, a heart that stamps the moment being
+    /// actions, a heart that stamps the moment being
     /// listened to (drawn with a count once the track has any), repeat, and
     /// shuffle on the far right. There is no rating button: thumbs are retired.
     ///
@@ -527,23 +710,21 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// The "..." menu, as a pushed list rather than an action sheet. A CarPlay
     /// action sheet holds three buttons and has no close box, so Cancel took a
     /// third of it; a list holds every option picked in Settings, and the
-    /// system back arrow in the top corner closes it.
+    /// system back arrow in the top corner closes it. The list is deliberately
+    /// complete now that it has room; there is no matching Settings screen.
     private func showNowPlayingActions(trackId: String) {
         guard let track = SJAudioEngine.shared.currentTrack, track.id == trackId else { return }
-        let items = SJCarPlayActionSettings.shared.actions.compactMap { actionId -> CPListItem? in
-            let title: String
-            let run: () -> Void
-            switch actionId {
-            case "break_7", "break_30", "break_90", "break_180":
-                let days = Int(actionId.dropFirst("break_".count)) ?? 30
-                title = "Take a Break for \(days) Days"
-                run = { [weak self] in self?.exclude(trackId: trackId, kind: "snooze", value: days) }
-            case "never_play":
-                title = "Never Play Again"
-                run = { [weak self] in self?.exclude(trackId: trackId, kind: "block", value: 1) }
-            default:
-                return nil
-            }
+        var feedback: [(String, () -> Void)] = [7, 30, 90, 180].map { days in
+            ("Take a Break for \(days) Days", { [weak self] in self?.exclude(trackId: trackId, kind: "snooze", value: days) })
+        } + [
+            ("Never Play Again", { [weak self] in self?.exclude(trackId: trackId, kind: "block", value: 1) }),
+            ("Remove Song from CarPlay", { [weak self] in self?.removeFromCarPlay(trackId: trackId) }),
+        ]
+        if heartCounts(trackId).today > 0 {
+            feedback.append(("Remove My Ratings Today", { [weak self] in self?.removeHearts(trackId: trackId, todayOnly: true) }))
+            feedback.append(("Remove All My Ratings for This Song", { [weak self] in self?.removeHearts(trackId: trackId, todayOnly: false) }))
+        }
+        let items = feedback.map { title, run -> CPListItem in
             let item = CPListItem(text: title, detailText: nil)
             item.handler = { [weak self] _, completion in
                 // Back to Now Playing first, so the next song is what the
@@ -553,11 +734,14 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
             return item
         }
-        let section = items.isEmpty
-            ? CPListSection(items: [disabledItem("Nothing chosen", "Pick actions in Listening Party Settings on your iPhone.")])
-            : CPListSection(items: items)
-        let list = CPListTemplate(title: track.title, sections: [section])
+        let list = CPListTemplate(title: track.title, sections: [CPListSection(items: items)])
         interfaceController?.pushTemplate(list, animated: true, completion: nil)
+    }
+
+    private func removeFromCarPlay(trackId: String) {
+        SJCarPlayExclusions.shared.exclude([trackId])
+        removeFromCurrentQueueAndAdvance(trackIds: [trackId])
+        refreshTabs()
     }
 
     private func disabledItem(_ text: String, _ detail: String) -> CPListItem {
@@ -572,6 +756,13 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         SJCarPlayFeedback.shared.onChange?()
     }
 
+    private func removeHearts(trackId: String, todayOnly: Bool) {
+        SJFeedbackOutbox.shared.add(kind: todayOnly ? "removeHeartsToday" : "removeAllHearts",
+                                    trackId: trackId, value: 0, positionMs: 0)
+        refreshNowPlayingButtons()
+        SJCarPlayFeedback.shared.onChange?()
+    }
+
     private func removeFromCurrentQueueAndAdvance(trackIds: Set<String>) {
         let engine = SJAudioEngine.shared
         let oldIndex = engine.index
@@ -583,10 +774,29 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     /// The server's count, plus anything hearted in the car that has not been
     /// sent yet - so a tap bumps the badge immediately.
+    private func heartCounts(_ trackId: String) -> (all: Int, today: Int) {
+        var all = SJCarPlayFeedback.shared.heartCount(for: trackId)
+        var today = SJCarPlayFeedback.shared.heartCountToday(for: trackId)
+        let calendar = Calendar.current
+        for item in SJFeedbackOutbox.shared.pending().filter({ $0.trackId == trackId }).sorted(by: { $0.at < $1.at }) {
+            switch item.kind {
+            case "heart":
+                all += 1
+                if calendar.isDateInToday(Date(timeIntervalSince1970: item.at)) { today += 1 }
+            case "removeHeartsToday":
+                all = max(0, all - today)
+                today = 0
+            case "removeAllHearts":
+                all = 0
+                today = 0
+            default: break
+            }
+        }
+        return (max(0, all), max(0, today))
+    }
+
     private func heartCount(_ trackId: String) -> Int {
-        let pending = SJFeedbackOutbox.shared.pending()
-            .filter { $0.kind == "heart" && $0.trackId == trackId }.count
-        return SJCarPlayFeedback.shared.heartCount(for: trackId) + pending
+        heartCounts(trackId).all
     }
 
     private func tapHeart(trackId: String) {
@@ -646,16 +856,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func play(startingAt entry: SJCarEntry,
                       in entries: [SJCarEntry]) {
-        let tracks = entries.map { e in
-            SJTrack(id: e.trackId,
-                    title: e.title,
-                    artist: e.artist,
-                    album: e.album,
-                    artworkURL: nil,          // artwork is on disk; the engine finds it
-                    url: nil,                 // a download plays from disk; a stream is
-                                              // resolved by the engine as it starts
-                    durationSeconds: e.durationSeconds)
-        }
+        let tracks = tracks(for: entries)
         let start = entries.firstIndex { $0.trackId == entry.trackId } ?? 0
         SJAudioEngine.shared.setQueue(tracks, startIndex: start, autoPlay: true)
         interfaceController?.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)

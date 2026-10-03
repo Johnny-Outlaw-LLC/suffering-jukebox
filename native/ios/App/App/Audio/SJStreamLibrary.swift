@@ -323,6 +323,10 @@ struct SJCarEntry {
 enum SJCarLibrary {
 
     static func all() -> [SJCarEntry] {
+        allIncludingExcluded().filter { !SJCarPlayExclusions.shared.contains($0.trackId) }
+    }
+
+    static func allIncludingExcluded() -> [SJCarEntry] {
         var out: [String: SJCarEntry] = [:]
         for s in SJStreamLibrary.shared.all() {
             out[s.trackId] = SJCarEntry(trackId: s.trackId, title: s.title, artist: s.artist,
@@ -333,6 +337,11 @@ enum SJCarLibrary {
     }
 
     static func entry(for trackId: String) -> SJCarEntry? {
+        guard !SJCarPlayExclusions.shared.contains(trackId) else { return nil }
+        return entryIncludingExcluded(for: trackId)
+    }
+
+    static func entryIncludingExcluded(for trackId: String) -> SJCarEntry? {
         if let d = SJDownloadStore.shared.entry(for: trackId) { return make(d) }
         guard let s = SJStreamLibrary.shared.entry(for: trackId) else { return nil }
         return SJCarEntry(trackId: s.trackId, title: s.title, artist: s.artist,

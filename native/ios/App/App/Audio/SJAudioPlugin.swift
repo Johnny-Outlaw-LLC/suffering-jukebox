@@ -16,6 +16,8 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "next",           returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "previous",       returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "seek",           returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShuffle",     returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRepeat",      returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStatus",      returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "download",       returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeDownload", returnType: CAPPluginReturnPromise),
@@ -29,7 +31,6 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "drainFeedback",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "ackFeedback",    returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCarAccess",   returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setCarPlayActions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearCarAccess", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "carAccessStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "refreshCarLibrary", returnType: CAPPluginReturnPromise),
@@ -83,8 +84,18 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         run(call) { self.engine.seek(to: pos) }
     }
 
+    @objc func setShuffle(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        run(call) { self.engine.setShuffle(enabled) }
+    }
+
+    @objc func setRepeat(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        run(call) { self.engine.setRepeat(enabled ? .all : .off) }
+    }
+
     @objc func getStatus(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { call.resolve(Self.dict(self.engine.status())) }
+        DispatchQueue.main.async { call.resolve(Self.dict(self.engine.status(), forceQueue: true)) }
     }
 
     private func run(_ call: CAPPluginCall, _ body: @escaping () -> Void) {
@@ -235,12 +246,18 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
     /// can show a number and turn red rather than answering only yes/no.
     @objc func setHeartCounts(_ call: CAPPluginCall) {
         let raw = call.getObject("counts") ?? JSObject()
+        let rawToday = call.getObject("todayCounts") ?? JSObject()
         var counts: [String: Int] = [:]
+        var today: [String: Int] = [:]
         for (id, value) in raw {
             if let n = value as? Int { counts[id] = n }
             else if let n = value as? Double { counts[id] = Int(n) }
         }
-        SJCarPlayFeedback.shared.setHeartCounts(counts)
+        for (id, value) in rawToday {
+            if let n = value as? Int { today[id] = n }
+            else if let n = value as? Double { today[id] = Int(n) }
+        }
+        SJCarPlayFeedback.shared.setHeartCounts(counts, today: today)
         DispatchQueue.main.async { SJAudioEngine.shared.onModeChanged?() }
         call.resolve(["count": counts.count])
     }
@@ -282,13 +299,6 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
             return row
         }
         call.resolve(["items": items])
-    }
-
-    /// Which actions the listener wants behind the CarPlay "..." button.
-    @objc func setCarPlayActions(_ call: CAPPluginCall) {
-        let actions = (call.getArray("actions") as? [String]) ?? []
-        SJCarPlayActionSettings.shared.set(actions)
-        call.resolve(["count": SJCarPlayActionSettings.shared.actions.count])
     }
 
     @objc func ackFeedback(_ call: CAPPluginCall) {
@@ -368,12 +378,16 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         )
     }
 
-    private static func dict(_ s: SJStatus) -> JSObject {
+    private static var lastQueueSignature: String?
+
+    private static func dict(_ s: SJStatus, forceQueue: Bool = false) -> JSObject {
         // Title and artist ride along so the page can show a song CarPlay
         // started even when it has never loaded that song's catalogue row.
         let current = SJAudioEngine.shared.currentTrack
         let track = current?.id == s.trackId ? current : nil
-        return [
+        let nativeQueue = SJAudioEngine.shared.queue
+        let queueSignature = nativeQueue.map(\.id).joined(separator: "\u{0}")
+        var result: JSObject = [
             "state": s.state.rawValue,
             "index": s.index,
             "trackId": s.trackId ?? NSNull(),
@@ -381,7 +395,27 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
             "artist": track?.artist ?? NSNull(),
             "positionSeconds": s.positionSeconds,
             "durationSeconds": s.durationSeconds,
+            "shuffleEnabled": SJAudioEngine.shared.shuffleEnabled,
+            "repeatMode": SJAudioEngine.shared.repeatMode.rawValue,
+            "nextIndex": SJAudioEngine.shared.nextQueueIndex ?? NSNull(),
         ]
+        // Position updates arrive twice a second. A large queue only needs to
+        // cross the bridge when its contents change (or getStatus explicitly
+        // asks for a complete snapshot).
+        if forceQueue || queueSignature != lastQueueSignature {
+            result["queue"] = nativeQueue.map { item -> JSObject in
+                [
+                    "id": item.id,
+                    "title": item.title,
+                    "artist": item.artist,
+                    "album": item.album ?? NSNull(),
+                    "artworkUrl": item.artworkURL?.absoluteString ?? NSNull(),
+                    "durationSeconds": item.durationSeconds,
+                ]
+            }
+            lastQueueSignature = queueSignature
+        }
+        return result
     }
 
     private static func downloadDict(trackId: String, state: String, progress: Double, bytes: Int64) -> JSObject {

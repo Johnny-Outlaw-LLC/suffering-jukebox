@@ -147,10 +147,14 @@ export async function GET(req: NextRequest) {
       if (!userId && !device) {
         return NextResponse.json({ ok: false, error: "Missing listener identity." }, { status: 400 });
       }
+      const sinceRaw = req.nextUrl.searchParams.get("since");
+      const sinceMs = sinceRaw ? Date.parse(sinceRaw) : NaN;
+      const since = Number.isFinite(sinceMs) ? sinceMs : null;
       let query = createSjClient()
         .from("track_reactions")
-        .select("track_id,reaction")
-        .in("reaction", [...REACTIONS]);
+        .select("track_id,reaction,created_at")
+        .in("reaction", [...REACTIONS])
+        .order("created_at", { ascending: false });
       query = userId ? query.eq("user_id", userId) : query.eq("device_id", device!);
       const { data, error } = await query.limit(5000);
       if (error) throw error;
@@ -158,15 +162,20 @@ export async function GET(req: NextRequest) {
       // Storage shows this per song. track_ids stays a plain dedup for every
       // existing caller; heart_counts is additive, nobody else reads it yet.
       const heartCounts: Record<string, number> = {};
+      const heartCountsToday: Record<string, number> = {};
       for (const row of data ?? []) {
         if (row.reaction === "heart" && row.track_id) {
           heartCounts[row.track_id] = (heartCounts[row.track_id] ?? 0) + 1;
+          if (since !== null && Date.parse(row.created_at) >= since) {
+            heartCountsToday[row.track_id] = (heartCountsToday[row.track_id] ?? 0) + 1;
+          }
         }
       }
       return NextResponse.json({
         ok: true,
-        track_ids: [...new Set((data ?? []).map((row) => row.track_id).filter(Boolean))],
+        track_ids: [...new Set((data ?? []).filter((row) => row.reaction === "heart").map((row) => row.track_id).filter(Boolean))],
         heart_counts: heartCounts,
+        heart_counts_today: heartCountsToday,
       });
     }
     const rawMany = req.nextUrl.searchParams.get("track_ids");
@@ -213,24 +222,33 @@ export async function POST(req: NextRequest) {
       ? body.reaction as Reaction
       : null;
     const device = deviceId(body.device_id);
+    const clientReactionId = uuid(body.reaction_id);
     if (!trackId || !reaction || !device) {
       return NextResponse.json({ ok: false, error: "Invalid reaction." }, { status: 400 });
     }
 
     const sb = createSjClient();
-    const { data, error } = await sb.from("track_reactions").insert({
+    const payload = {
+      ...(clientReactionId ? { id: clientReactionId } : {}),
       track_id: trackId,
       reaction,
       user_id: await verifiedUserId(req),
       device_id: device,
       position_ms: positionMs(body.position_ms),
-    }).select("id").single();
+    };
+    // CarPlay's disk outbox can retry after the database accepted a heart but
+    // before JavaScript acknowledged it. Its UUID is the database UUID, making
+    // that replay idempotent instead of counting the same tap twice.
+    const write = clientReactionId
+      ? sb.from("track_reactions").upsert(payload, { onConflict: "id", ignoreDuplicates: true }).select("id").maybeSingle()
+      : sb.from("track_reactions").insert(payload).select("id").single();
+    const { data, error } = await write;
     if (error) {
       console.error("[sj-reaction:insert]", error.message);
       return NextResponse.json({ ok: false, error: "Could not save the reaction." }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, reaction_id: data.id, counts: await reactionCounts(trackId) });
+    return NextResponse.json({ ok: true, reaction_id: data?.id ?? clientReactionId, counts: await reactionCounts(trackId) });
   } catch (error) {
     console.error("[sj-reaction:post]", error);
     return NextResponse.json({ ok: false, error: "Bad request." }, { status: 400 });
@@ -250,6 +268,37 @@ export async function DELETE(req: NextRequest) {
       ? body.reaction as Reaction
       : null;
     const device = deviceId(body.device_id);
+    const scope = body.scope === "today" || body.scope === "all" ? body.scope as "today" | "all" : null;
+    const userId = await verifiedUserId(req);
+
+    if (trackId && reaction === "heart" && device && scope) {
+      let deletion = createSjClient()
+        .from("track_reactions")
+        .delete()
+        .eq("track_id", trackId)
+        .eq("reaction", reaction);
+      deletion = userId ? deletion.eq("user_id", userId) : deletion.eq("device_id", device);
+      if (scope === "today") {
+        const startMs = Date.parse(body.day_start);
+        const endMs = Date.parse(body.day_end);
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs || endMs - startMs > 48 * 60 * 60 * 1000) {
+          return NextResponse.json({ ok: false, error: "Invalid rating day." }, { status: 400 });
+        }
+        deletion = deletion.gte("created_at", new Date(startMs).toISOString())
+          .lt("created_at", new Date(endMs).toISOString());
+      }
+      const { data, error } = await deletion.select("id");
+      if (error) {
+        console.error("[sj-reaction:delete-scope]", error.message);
+        return NextResponse.json({ ok: false, error: "Could not remove ratings." }, { status: 500 });
+      }
+      return NextResponse.json({
+        ok: true,
+        deleted: (data ?? []).map((row) => row.id),
+        counts: await reactionCounts(trackId),
+      });
+    }
+
     const rawReactionIds: unknown[] = Array.isArray(body.reaction_ids) ? body.reaction_ids : [];
     const reactionIds = rawReactionIds.length
       ? [...new Set(rawReactionIds.map(uuid).filter((id): id is string => Boolean(id)))].slice(0, 100)
