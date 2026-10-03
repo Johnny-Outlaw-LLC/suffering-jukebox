@@ -22,6 +22,9 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     private var playlistsTab: CPListTemplate?
     private var songsTab: CPListTemplate?
     private var aboutTab: CPListTemplate?
+    /// Set only when the current queue was started from a saved playlist, so
+    /// the "..." menu can offer an honest Remove from Playlist.
+    private var activePlaylistId: String?
 
     /// CarPlay refuses a list longer than this, and the limit is a hard error
     /// rather than a truncation, so every section is clamped before it is handed
@@ -252,7 +255,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let item = CPListItem(text: playlist.name, detailText: songCount(entries.count))
             item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
-                self?.pushSongList(title: playlist.name, entries: entries, preserveOrder: true)
+                self?.pushSongList(title: playlist.name, entries: entries,
+                                   preserveOrder: true, playlistId: playlist.id)
                 completion()
             }
             return item
@@ -377,16 +381,18 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func pushSongList(title: String,
                               entries: [SJCarEntry],
-                              preserveOrder: Bool = false) {
+                              preserveOrder: Bool = false,
+                              playlistId: String? = nil) {
         let ordered = preserveOrder ? entries : sorted(entries)
-        let section = CPListSection(items: [shuffleItem(for: ordered)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
+        let section = CPListSection(items: [shuffleItem(for: ordered, playlistId: playlistId)] + listItems(for: Array(ordered.prefix(max(0, itemLimit - 1))),
                                                     in: ordered,
-                                                    showArtist: false))
+                                                    showArtist: false,
+                                                    playlistId: playlistId))
         let template = CPListTemplate(title: title, sections: [section])
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
 
-    private func shuffleItem(for entries: [SJCarEntry]) -> CPListItem {
+    private func shuffleItem(for entries: [SJCarEntry], playlistId: String? = nil) -> CPListItem {
         let item = CPListItem(text: "Shuffle All", detailText: songCount(entries.count))
         item.setImage(UIImage(systemName: "shuffle"))
         item.isEnabled = !entries.isEmpty
@@ -413,7 +419,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                 // Repeat One must not trap Shuffle All on its first song.
                 if engine.repeatMode == .one { engine.cycleRepeatMode() }
                 engine.setShuffle(true)
-                self?.play(startingAt: first, in: entries)
+                self?.play(startingAt: first, in: entries, playlistId: playlistId)
             }
             completion()
         }
@@ -422,7 +428,8 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func listItems(for shown: [SJCarEntry],
                            in queue: [SJCarEntry],
-                           showArtist: Bool) -> [CPListItem] {
+                           showArtist: Bool,
+                           playlistId: String? = nil) -> [CPListItem] {
         shown.map { entry in
             let detail = showArtist
                 ? [entry.artist, entry.album ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
@@ -430,7 +437,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let item = CPListItem(text: entry.title, detailText: detail.isEmpty ? nil : detail)
             item.setImage(artwork(for: entry))
             item.handler = { [weak self] _, completion in
-                self?.play(startingAt: entry, in: queue)
+                self?.play(startingAt: entry, in: queue, playlistId: playlistId)
                 completion()
             }
             return item
@@ -480,18 +487,16 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         artwork(for: SJCarLibrary.entry(for: trackId))
     }
 
-    // MARK: - Rating and reactions
+    // MARK: - Now Playing actions and reactions
 
-    /// Four buttons on the Now Playing screen: shuffle and repeat for the
-    /// queue, a thumbs-up that toggles the track's rating (drawn green once
-    /// awarded), and a heart that stamps the moment being listened to (drawn
-    /// red with a count once the track has any).
+    /// Four buttons on the Now Playing screen, left to right: the "..." menu of
+    /// actions picked in Settings, a heart that stamps the moment being
+    /// listened to (drawn with a count once the track has any), repeat, and
+    /// shuffle on the far right. There is no rating button: thumbs are retired.
     ///
     /// A tap goes to disk before anything else (SJFeedbackOutbox). The web layer
-    /// owns what a rating means and does the actual sending, but in a car it may
-    /// be suspended and is often offline, so a straight bridge call would drop
-    /// presses silently. The button redraws from the outbox immediately, so it
-    /// reflects the tap whether or not anything has been sent yet.
+    /// does the actual sending, but in a car it may be suspended and is often
+    /// offline, so a straight bridge call would drop presses silently.
     private func refreshNowPlayingButtons() {
         guard let trackId = SJAudioEngine.shared.currentTrack?.id else {
             CPNowPlayingTemplate.shared.updateNowPlayingButtons([])
@@ -499,22 +504,9 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
         let engine = SJAudioEngine.shared
 
-        let shuffle = CPNowPlayingImageButton(
-            image: symbol("shuffle", color: engine.shuffleEnabled ? .systemGreen : nil)
-        ) { _ in
-            SJAudioEngine.shared.setShuffle(!SJAudioEngine.shared.shuffleEnabled)
+        let more = CPNowPlayingMoreButton { [weak self] _ in
+            self?.showNowPlayingActions(trackId: trackId)
         }
-
-        shuffle.isSelected = engine.shuffleEnabled
-
-        let rated = isRated(trackId)
-        let thumb = CPNowPlayingImageButton(
-            image: symbol(rated ? "hand.thumbsup.fill" : "hand.thumbsup", color: rated ? .systemGreen : nil)
-        ) { [weak self] _ in
-            self?.tapRating(trackId: trackId)
-        }
-
-        thumb.isSelected = rated
 
         let heart = CPNowPlayingImageButton(image: heartImage(count: heartCount(trackId))) { [weak self] _ in
             self?.tapHeart(trackId: trackId)
@@ -527,32 +519,122 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         ) { _ in
             SJAudioEngine.shared.cycleRepeatMode()
         }
-
         repeatBtn.isSelected = repeatMode != .off
-        CPNowPlayingTemplate.shared.updateNowPlayingButtons([shuffle, thumb, heart, repeatBtn])
+
+        let shuffle = CPNowPlayingImageButton(
+            image: symbol("shuffle", color: engine.shuffleEnabled ? .systemGreen : nil)
+        ) { _ in
+            SJAudioEngine.shared.setShuffle(!SJAudioEngine.shared.shuffleEnabled)
+        }
+        shuffle.isSelected = engine.shuffleEnabled
+
+        CPNowPlayingTemplate.shared.updateNowPlayingButtons([more, heart, repeatBtn, shuffle])
     }
 
-    /// What the web layer last told us, overlaid with anything tapped in the car
-    /// that it has not absorbed yet - so the car's own taps always win on screen.
-    private func isRated(_ trackId: String) -> Bool {
-        if let pending = SJFeedbackOutbox.shared.pendingRatings()[trackId] { return pending > 0 }
-        return SJCarPlayFeedback.shared.ratedTrackIds.contains(trackId)
+    /// The "..." menu. Playlist removals are offered only when the song is
+    /// playing from that playlist; Favorites is computed from hearts, not
+    /// stored, so it has nothing to remove from.
+    private func showNowPlayingActions(trackId: String) {
+        guard let track = SJAudioEngine.shared.currentTrack, track.id == trackId else { return }
+        let playlistId = activePlaylistId.flatMap { $0.hasPrefix("__dynamic_") ? nil : $0 }
+        var actions: [CPAlertAction] = []
+
+        for actionId in SJCarPlayActionSettings.shared.actions {
+            switch actionId {
+            case "remove_song":
+                if let playlistId, SJPlaylistStore.shared.contains(trackId: trackId, in: playlistId) {
+                    actions.append(CPAlertAction(title: "Remove Song from Playlist", style: .destructive) { [weak self] _ in
+                        self?.dismissNowPlayingActions { self?.remove(trackIds: [trackId], fromPlaylist: playlistId) }
+                    })
+                }
+            case "remove_artist":
+                if let playlistId, !track.artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    actions.append(CPAlertAction(title: "Remove Artist from Playlist", style: .destructive) { [weak self] _ in
+                        self?.dismissNowPlayingActions { self?.removeMatching(track: track, fromPlaylist: playlistId, albumOnly: false) }
+                    })
+                }
+            case "remove_album":
+                if let playlistId, !(track.album ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    actions.append(CPAlertAction(title: "Remove Album from Playlist", style: .destructive) { [weak self] _ in
+                        self?.dismissNowPlayingActions { self?.removeMatching(track: track, fromPlaylist: playlistId, albumOnly: true) }
+                    })
+                }
+            case "break_7", "break_30", "break_90", "break_180":
+                let days = Int(actionId.dropFirst("break_".count)) ?? 30
+                actions.append(CPAlertAction(title: "Take a Break for \(days) Days", style: .default) { [weak self] _ in
+                    self?.dismissNowPlayingActions { self?.exclude(trackId: trackId, kind: "snooze", value: days) }
+                })
+            case "never_play":
+                actions.append(CPAlertAction(title: "Never Play Again", style: .destructive) { [weak self] _ in
+                    self?.dismissNowPlayingActions { self?.exclude(trackId: trackId, kind: "block", value: 1) }
+                })
+            default:
+                break
+            }
+        }
+        actions.append(CPAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.dismissNowPlayingActions()
+        })
+        let sheet = CPActionSheetTemplate(title: track.title, message: track.artist, actions: actions)
+        interfaceController?.presentTemplate(sheet, animated: true, completion: nil)
     }
 
-    /// The server's count, plus anything hearted in the car this session that
-    /// has not been sent yet - so a tap bumps the badge immediately instead of
-    /// waiting on a drain and a round trip.
+    private func dismissNowPlayingActions(then action: (() -> Void)? = nil) {
+        guard let interfaceController else { action?(); return }
+        interfaceController.dismissTemplate(animated: true) { _, _ in action?() }
+    }
+
+    private func normalized(_ value: String?) -> String {
+        (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
+    private func removeMatching(track: SJTrack, fromPlaylist playlistId: String, albumOnly: Bool) {
+        let inPlaylist = Set(SJPlaylistStore.shared.trackIds(in: playlistId))
+        let artist = normalized(track.artist)
+        let album = normalized(track.album)
+        let matching = Set(SJCarLibrary.all().compactMap { entry -> String? in
+            guard inPlaylist.contains(entry.trackId), normalized(entry.artist) == artist else { return nil }
+            if albumOnly && normalized(entry.album) != album { return nil }
+            return entry.trackId
+        })
+        remove(trackIds: matching, fromPlaylist: playlistId)
+    }
+
+    private func remove(trackIds: Set<String>, fromPlaylist playlistId: String) {
+        let removed = SJPlaylistStore.shared.remove(trackIds: trackIds, from: playlistId)
+        guard !removed.isEmpty else { return }
+        for trackId in removed {
+            SJFeedbackOutbox.shared.add(kind: "removePlaylist", trackId: trackId, value: 0,
+                                        positionMs: 0, playlistId: playlistId)
+        }
+        refreshTabs()
+        removeFromCurrentQueueAndAdvance(trackIds: Set(removed))
+        SJCarPlayFeedback.shared.onChange?()
+    }
+
+    private func exclude(trackId: String, kind: String, value: Int) {
+        SJFeedbackOutbox.shared.add(kind: kind, trackId: trackId, value: value, positionMs: 0)
+        removeFromCurrentQueueAndAdvance(trackIds: [trackId])
+        SJCarPlayFeedback.shared.onChange?()
+    }
+
+    private func removeFromCurrentQueueAndAdvance(trackIds: Set<String>) {
+        let engine = SJAudioEngine.shared
+        let oldIndex = engine.index
+        let remaining = engine.queue.filter { !trackIds.contains($0.id) }
+        engine.setQueue(remaining,
+                        startIndex: remaining.isEmpty ? 0 : min(max(0, oldIndex), remaining.count - 1),
+                        autoPlay: !remaining.isEmpty)
+    }
+
+    /// The server's count, plus anything hearted in the car that has not been
+    /// sent yet - so a tap bumps the badge immediately.
     private func heartCount(_ trackId: String) -> Int {
         let pending = SJFeedbackOutbox.shared.pending()
             .filter { $0.kind == "heart" && $0.trackId == trackId }.count
         return SJCarPlayFeedback.shared.heartCount(for: trackId) + pending
-    }
-
-    private func tapRating(trackId: String) {
-        let next = isRated(trackId) ? 0 : 1
-        SJFeedbackOutbox.shared.add(kind: "rate", trackId: trackId, value: next, positionMs: 0)
-        refreshNowPlayingButtons()
-        SJCarPlayFeedback.shared.onChange?()
     }
 
     private func tapHeart(trackId: String) {
@@ -611,7 +693,9 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     // MARK: - Playback
 
     private func play(startingAt entry: SJCarEntry,
-                      in entries: [SJCarEntry]) {
+                      in entries: [SJCarEntry],
+                      playlistId: String? = nil) {
+        activePlaylistId = playlistId
         let tracks = entries.map { e in
             SJTrack(id: e.trackId,
                     title: e.title,

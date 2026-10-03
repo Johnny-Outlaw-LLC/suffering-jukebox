@@ -12047,6 +12047,21 @@ async function sjCarApplyRating(trackId, value) {
   else if (value === 0 && cur !== 0) await instantVote(trackId, cur);
 }
 
+// "Remove from Playlist" in the car. Native has already dropped the song from
+// its own copy; this makes it true on the server and in the page.
+async function sjCarRemoveFromPlaylist(trackId, playlistId) {
+  if (!trackId || !playlistId) return;
+  await dbDelete('/playlist_tracks?playlist_id=eq.' + encodeURIComponent(playlistId)
+    + '&track_id=eq.' + encodeURIComponent(trackId));
+  [playlists, _savedPlaylists].forEach(list => {
+    const playlist = (list || []).find(p => p.id === playlistId);
+    if (playlist && Array.isArray(playlist._tracks)) {
+      playlist._tracks = playlist._tracks.filter(row => row.track_id !== trackId);
+    }
+  });
+  await sjCarPushPlaylists();
+}
+
 // Hearts tapped in the car are acknowledged only once they have
 // been applied, so a drain that dies halfway retries rather than losing taps.
 let _sjCarDraining = false;
@@ -12067,6 +12082,10 @@ async function sjCarDrainFeedback() {
         if (it.kind === 'rate') { done.push(it.id); continue; } // retire queued taps from older builds
         else if (it.kind === 'heart') await ytpSendReaction(it.trackId, 'heart', Number(it.positionMs) || 0, null);
         else if (it.kind === 'play') { drive.push(it); continue; }  // acked with the batch below
+        // The CarPlay "..." menu.
+        else if (it.kind === 'snooze') await setTrackSnooze(it.trackId, Number(it.value) || 30);
+        else if (it.kind === 'block') { if (!isTrackBlocked(it.trackId)) await toggleBlockTrack(it.trackId); }
+        else if (it.kind === 'removePlaylist') await sjCarRemoveFromPlaylist(it.trackId, it.playlistId);
         else { done.push(it.id); continue; }   // unknown kind: drop, never retry
         done.push(it.id);
       } catch (_) { /* leave it queued for the next drain */ }

@@ -115,3 +115,35 @@ final class SJShuffleProfile {
     }
 }
 
+/// The actions picked in Settings for the CarPlay Now Playing "..." menu.
+/// Kept natively because a CarPlay scene can open without ever starting the web
+/// view that owns the settings screen.
+final class SJCarPlayActionSettings {
+
+    static let shared = SJCarPlayActionSettings()
+    static let allowed = [
+        "remove_song", "remove_artist", "remove_album",
+        "break_7", "break_30", "break_90", "break_180",
+        "never_play",
+    ]
+
+    private let lock = NSLock()
+    private let key = "sj.carplay.nowPlayingActions"
+    private var stored: [String]
+
+    private init() {
+        stored = UserDefaults.standard.stringArray(forKey: key) ?? ["remove_song", "break_30", "never_play"]
+    }
+
+    var actions: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return stored
+    }
+
+    func set(_ requested: [String]) {
+        lock.lock(); defer { lock.unlock() }
+        let selected = Set(requested)
+        stored = Self.allowed.filter { selected.contains($0) }
+        UserDefaults.standard.set(stored, forKey: key)
+    }
+}

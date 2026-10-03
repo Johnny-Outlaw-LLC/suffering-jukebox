@@ -175,7 +175,7 @@ class Subject {
   var played: [SJCarEntry] = []
   var first: String?
   func songCount(_ n: Int) -> String { String(n) }
-  func play(startingAt entry: SJCarEntry, in entries: [SJCarEntry]) {
+  func play(startingAt entry: SJCarEntry, in entries: [SJCarEntry], playlistId: String? = nil) {
     first = entry.trackId
     played = entries
   }

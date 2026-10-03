@@ -29,6 +29,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         CAPPluginMethod(name: "drainFeedback",  returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "ackFeedback",    returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCarAccess",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCarPlayActions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearCarAccess", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "carAccessStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "refreshCarLibrary", returnType: CAPPluginReturnPromise),
@@ -268,7 +269,7 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
     /// that fails to reach the server is retried rather than lost.
     @objc func drainFeedback(_ call: CAPPluginCall) {
         let items: [JSObject] = SJFeedbackOutbox.shared.pending().map { item in
-            [
+            var row: JSObject = [
                 "id": item.id,
                 "kind": item.kind,
                 "trackId": item.trackId,
@@ -276,8 +277,18 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
                 "positionMs": item.positionMs,
                 "at": item.at,
             ]
+            if let ms = item.ms { row["ms"] = ms }
+            if let playlistId = item.playlistId { row["playlistId"] = playlistId }
+            return row
         }
         call.resolve(["items": items])
+    }
+
+    /// Which actions the listener wants behind the CarPlay "..." button.
+    @objc func setCarPlayActions(_ call: CAPPluginCall) {
+        let actions = (call.getArray("actions") as? [String]) ?? []
+        SJCarPlayActionSettings.shared.set(actions)
+        call.resolve(["count": SJCarPlayActionSettings.shared.actions.count])
     }
 
     @objc func ackFeedback(_ call: CAPPluginCall) {

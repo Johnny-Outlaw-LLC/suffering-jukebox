@@ -22,6 +22,8 @@ final class SJFeedbackOutbox {
         /// How long a "play" was actually listened to. Optional so an outbox
         /// written before plays were recorded still decodes.
         var ms: Int?
+        /// Present only for a contextual remove-from-playlist action.
+        var playlistId: String?
     }
 
     static let shared = SJFeedbackOutbox()
@@ -52,7 +54,8 @@ final class SJFeedbackOutbox {
     /// when the song is actually left.
     @discardableResult
     func add(kind: String, trackId: String, value: Int, positionMs: Int,
-             at when: Double = Date().timeIntervalSince1970, ms: Int? = nil) -> String {
+             at when: Double = Date().timeIntervalSince1970, ms: Int? = nil,
+             playlistId: String? = nil) -> String {
         let id = UUID().uuidString
         queue.sync(flags: .barrier) {
             items.append(Item(id: id,
@@ -61,7 +64,8 @@ final class SJFeedbackOutbox {
                               value: value,
                               positionMs: positionMs,
                               at: when,
-                              ms: ms))
+                              ms: ms,
+                              playlistId: playlistId))
             // A drive with a stuck web view should not grow without bound.
             if items.count > 500 { items.removeFirst(items.count - 500) }
             persistLocked()

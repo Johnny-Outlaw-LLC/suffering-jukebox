@@ -50,6 +50,34 @@ final class SJPlaylistStore {
 
     func all() -> [Playlist] { queue.sync { playlists } }
 
+    func contains(trackId: String, in playlistId: String) -> Bool {
+        queue.sync {
+            playlists.first(where: { $0.id == playlistId })?.trackIds.contains(trackId) == true
+        }
+    }
+
+    func trackIds(in playlistId: String) -> [String] {
+        queue.sync { playlists.first(where: { $0.id == playlistId })?.trackIds ?? [] }
+    }
+
+    /// Used by the CarPlay "..." menu. Updates the cold-start copy at once; the
+    /// matching server change is queued separately (SJFeedbackOutbox), so the
+    /// song stays gone in the car even offline. Returns the ids actually
+    /// removed so the web layer can mirror every one.
+    @discardableResult
+    func remove(trackIds: Set<String>, from playlistId: String) -> [String] {
+        queue.sync(flags: .barrier) {
+            guard let i = playlists.firstIndex(where: { $0.id == playlistId }) else { return [] }
+            let removed = playlists[i].trackIds.filter { trackIds.contains($0) }
+            guard !removed.isEmpty else { return [] }
+            playlists[i].trackIds.removeAll { trackIds.contains($0) }
+            if let data = try? JSONEncoder().encode(playlists) {
+                try? data.write(to: url, options: .atomic)
+            }
+            return removed
+        }
+    }
+
     /// Playlists with at least one song the car can play - downloaded or
     /// streamable - each narrowed to those songs, in the saved running order.
     func playable() -> [(playlist: Playlist, entries: [SJCarEntry])] {
