@@ -9,7 +9,8 @@ import UIKit
 ///     background play is enough to hear it in the car;
 ///   - every artist-licensed song ("artist"), for everybody, signed in or not.
 ///
-/// The car cannot sign in and the web view is asleep during a drive, so the
+/// The car cannot sign in (CarPlay offers no way to type a password or show a
+/// web sign-in sheet) and the web view is asleep during a drive, so the
 /// phone holds a car key (Keychain) issued by /api/sj-carplay-key while the
 /// listener was signed in, and trades it for a fresh signed URL at the moment
 /// a song starts (/api/sj-carplay-stream). A presigned URL handed over earlier
@@ -67,6 +68,8 @@ final class SJStreamLibrary {
 
     private static let baseDefaultsKey = "sj.carplay.baseURL"
     private static let emailDefaultsKey = "sj.carplay.keyEmail"
+    private static let nameDefaultsKey = "sj.carplay.accountName"
+    private static let signedInDefaultsKey = "sj.carplay.signedIn"
     private static let keychainService = "sj.carplay.key"
 
     var baseURL: String {
@@ -77,13 +80,32 @@ final class SJStreamLibrary {
 
     var hasKey: Bool { Self.readKey() != nil }
 
-    func setAccess(baseURL: String?, key: String?, email: String?) {
+    /// Who the car is signed in as, for the corner of every CarPlay tab.
+    var accountName: String? {
+        UserDefaults.standard.string(forKey: Self.nameDefaultsKey) ?? keyEmail
+    }
+
+    /// What the server said about the key on the last refresh that reached it,
+    /// or nil before one ever has. Persisted, because the car is often started
+    /// with no signal and should not claim the listener is signed out.
+    var keyAccepted: Bool? {
+        UserDefaults.standard.object(forKey: Self.signedInDefaultsKey) as? Bool
+    }
+
+    /// Signed in as far as the car can tell: holding a key the server has not
+    /// rejected.
+    var isSignedIn: Bool { hasKey && keyAccepted != false }
+
+    func setAccess(baseURL: String?, key: String?, email: String?, name: String? = nil) {
         if let baseURL, baseURL.hasPrefix("https://") {
             UserDefaults.standard.set(baseURL, forKey: Self.baseDefaultsKey)
         }
         if let key, !key.isEmpty {
             Self.writeKey(key)
             UserDefaults.standard.set(email, forKey: Self.emailDefaultsKey)
+            UserDefaults.standard.set(name, forKey: Self.nameDefaultsKey)
+            // A fresh key has not been rejected; the refresh below confirms it.
+            UserDefaults.standard.removeObject(forKey: Self.signedInDefaultsKey)
         }
         queue.sync(flags: .barrier) { resolved.removeAll() }
         refresh()
@@ -100,6 +122,8 @@ final class SJStreamLibrary {
         }
         Self.deleteKey()
         UserDefaults.standard.removeObject(forKey: Self.emailDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: Self.nameDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: Self.signedInDefaultsKey)
         queue.sync(flags: .barrier) {
             entries = entries.filter { $0.value.source != "mine" }
             resolved.removeAll()
@@ -140,7 +164,8 @@ final class SJStreamLibrary {
             return
         }
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
-        if let key = Self.readKey() { req.setValue("Bearer " + key, forHTTPHeaderField: "Authorization") }
+        let sentKey = Self.readKey()
+        if let sentKey { req.setValue("Bearer " + sentKey, forHTTPHeaderField: "Authorization") }
         URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
             guard let self else { return }
             defer { self.queue.sync(flags: .barrier) { self.refreshing = false } }
@@ -162,6 +187,16 @@ final class SJStreamLibrary {
                                 ?? Double(r["durationSeconds"] as? Int ?? 0),
                              artworkURL: r["artworkUrl"] as? String,
                              source: r["source"] as? String ?? "artist")
+            }
+            // Only judge the key that was actually sent: a sign-in or sign-out
+            // that landed mid-request owns the state now.
+            if sentKey != nil, sentKey == Self.readKey() {
+                let signedIn = json["signedIn"] as? Bool ?? false
+                UserDefaults.standard.set(signedIn, forKey: Self.signedInDefaultsKey)
+                if signedIn, let account = json["account"] as? [String: Any],
+                   let name = account["name"] as? String, !name.isEmpty {
+                    UserDefaults.standard.set(name, forKey: Self.nameDefaultsKey)
+                }
             }
             self.queue.sync(flags: .barrier) {
                 self.entries = Dictionary(next.map { ($0.trackId, $0) }, uniquingKeysWith: { a, _ in a })

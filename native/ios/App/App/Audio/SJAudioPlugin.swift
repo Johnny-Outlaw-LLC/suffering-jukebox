@@ -294,7 +294,8 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
     @objc func setCarAccess(_ call: CAPPluginCall) {
         SJStreamLibrary.shared.setAccess(baseURL: call.getString("baseUrl"),
                                          key: call.getString("key"),
-                                         email: call.getString("email"))
+                                         email: call.getString("email"),
+                                         name: call.getString("name"))
         call.resolve()
     }
 
@@ -311,6 +312,9 @@ public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
         call.resolve([
             "hasKey": lib.hasKey,
             "email": lib.keyEmail ?? NSNull(),
+            // false once the server has turned the key down (revoked by a
+            // sign-out on another path); the page then issues a new one.
+            "keyAccepted": lib.keyAccepted ?? NSNull(),
             "baseUrl": lib.baseURL,
             "streamable": all.count,
             "mine": all.filter { $0.source == "mine" }.count,

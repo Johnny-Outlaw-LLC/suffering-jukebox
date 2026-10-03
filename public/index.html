@@ -11884,8 +11884,12 @@ async function sjCarPushPlaylists() {
 // holds a car key issued here while the listener is signed in, and native
 // trades it for a fresh signed URL as each song starts (/api/sj-carplay-stream).
 // One key per device per account: carAccessStatus says whether the phone
-// already holds one for this email, so this is a no-op on every later launch.
+// already holds one for this email, so this is a no-op on every later launch -
+// unless the server has since turned that key down (keyAccepted === false).
 // Older app builds lack setCarAccess and simply skip all of it.
+// The POST goes through sjApiJson: a plain fetch() here is the cross-origin
+// POST WKWebView reports as "Load failed", which left the phone with no key and
+// the car showing only artist-licensed songs.
 let _sjCarStreamIds = [];
 let _sjCarAccessBusy = false;
 async function sjCarEnsureAccess() {
@@ -11894,16 +11898,17 @@ async function sjCarEnsureAccess() {
   _sjCarAccessBusy = true;
   try {
     const st = await p.carAccessStatus();
-    if (st?.hasKey && String(st.email || '').toLowerCase() === googleUser.email.toLowerCase()) return;
-    const res = await fetch(sjApiUrl('/api/sj-carplay-key'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
-      body: JSON.stringify({ deviceId: getDeviceId() }),
+    if (st?.hasKey && st.keyAccepted !== false
+        && String(st.email || '').toLowerCase() === googleUser.email.toLowerCase()) return;
+    const data = await sjApiJson('POST', '/api/sj-carplay-key', { deviceId: getDeviceId() });
+    if (!data.key) return;
+    await p.setCarAccess({
+      baseUrl: SJ_FRAME_ORIGIN, key: data.key,
+      email: data.email || googleUser.email,
+      name: data.name || googleUser.name || null,
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok || !data.key) return;
-    await p.setCarAccess({ baseUrl: SJ_FRAME_ORIGIN, key: data.key, email: data.email || googleUser.email });
-  } catch (_) {
+  } catch (e) {
+    console.warn('[carplay] could not issue a car key', e);
   } finally {
     _sjCarAccessBusy = false;
   }
@@ -11927,6 +11932,9 @@ async function sjCarRefreshLibrary() {
     _sjCarStreamIds = Array.isArray(result?.trackIds) ? result.trackIds.filter(Boolean) : _sjCarStreamIds;
     void sjCarPushShuffleProfile();
     sjCarSchedulePushRatings();
+    // The refresh is what finds out a held key was revoked; replace it now
+    // rather than on the next launch.
+    void sjCarEnsureAccess();
   } catch (_) {}
 }
 

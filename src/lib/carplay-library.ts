@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import type { NextRequest } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
 
@@ -60,6 +60,22 @@ export async function carKeyUser(sb: SupabaseClient, req: NextRequest): Promise<
       .update({ last_used_at: new Date().toISOString() }).eq("id", data.id);
   }
   return data.user_id as string;
+}
+
+/// The name the car shows in its corner so the driver can tell the phone is
+/// signed in. Full name first, then the part of the email before the @.
+export function carDisplayName(user: Pick<User, "email" | "user_metadata"> | null | undefined): string | null {
+  const meta = user?.user_metadata || {};
+  for (const v of [meta.full_name, meta.name]) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  const local = (user?.email || "").split("@")[0];
+  return local || null;
+}
+
+export async function carKeyAccount(sb: SupabaseClient, userId: string): Promise<{ name: string | null; email: string | null }> {
+  const { data } = await sb.auth.admin.getUserById(userId);
+  return { name: carDisplayName(data?.user), email: data?.user?.email ?? null };
 }
 
 // ── Library ─────────────────────────────────────────────────────────

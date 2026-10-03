@@ -199,3 +199,50 @@ assert(!subject.shuffleItem(for: []).isEnabled)
   const result = spawnSync('swift', ['-'], { input: script, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 });
+
+test('the car key is issued through Capacitor HTTP, not a WebKit POST', async () => {
+  const requests = [];
+  const handed = [];
+  const plugin = (status) => ({
+    carAccessStatus: async () => status,
+    setCarAccess: async value => handed.push(value),
+  });
+  const ctx = vm.createContext({
+    console,
+    googleUser: { email: 'me@example.com', name: 'Me' },
+    SJ_FRAME_ORIGIN: 'https://www.listeningparty.stream',
+    SJ_FETCH_TIMEOUT_MS: 1000,
+    sjIsNative: () => true,
+    sjApiUrl: path => 'https://www.listeningparty.stream' + path,
+    sjAuthHeaders: async () => ({ Authorization: 'Bearer session' }),
+    getDeviceId: () => 'device-123',
+    fetch: async () => { throw new Error('Load failed'); },
+    sjFetch: async () => { throw new Error('Load failed'); },
+    window: { Capacitor: { Plugins: { CapacitorHttp: { request: async req => {
+      requests.push(req);
+      return { status: 200, data: { ok: true, key: 'k'.repeat(43), email: 'me@example.com', name: 'Johnny Outlaw' } };
+    } } } } },
+    sjDlPlugin: null,
+  });
+  vm.runInContext(extract('sjApiJson') + '\nlet _sjCarAccessBusy = false;\n' + extract('sjCarEnsureAccess'), ctx);
+
+  // No key yet: one is issued natively and handed over with the account name.
+  ctx.sjDlPlugin = () => plugin({ hasKey: false, email: null, keyAccepted: null });
+  await ctx.sjCarEnsureAccess();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, 'POST');
+  assert.equal(requests[0].url, 'https://www.listeningparty.stream/api/sj-carplay-key');
+  assert.equal(requests[0].headers.Authorization, 'Bearer session');
+  assert.deepEqual(JSON.parse(JSON.stringify(requests[0].data)), { deviceId: 'device-123' });
+  assert.equal(handed[0].name, 'Johnny Outlaw');
+
+  // A working key for this account: nothing to do.
+  ctx.sjDlPlugin = () => plugin({ hasKey: true, email: 'ME@example.com', keyAccepted: true });
+  await ctx.sjCarEnsureAccess();
+  assert.equal(requests.length, 1);
+
+  // The server turned the held key down: replace it.
+  ctx.sjDlPlugin = () => plugin({ hasKey: true, email: 'me@example.com', keyAccepted: false });
+  await ctx.sjCarEnsureAccess();
+  assert.equal(requests.length, 2);
+});

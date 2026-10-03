@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
-import { hashCarKey, newCarKey } from "@/lib/carplay-library";
+import { carDisplayName, hashCarKey, newCarKey } from "@/lib/carplay-library";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     const { error } = await sb.schema(JUKEBOX_SCHEMA).from("carplay_keys")
       .insert({ user_id: user.id, token_hash: key.hash, device_id: deviceId });
     if (error) throw error;
-    return noStore({ ok: true, key: key.raw, email: user.email ?? null });
+    return noStore({ ok: true, key: key.raw, email: user.email ?? null, name: carDisplayName(user) });
   } catch (error) {
     console.error("[sj-carplay-key] issue", error);
     return noStore({ ok: false, error: "Could not create a CarPlay key." }, 500);

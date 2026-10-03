@@ -92,11 +92,11 @@ export interface SJNativeAudioPlugin {
    * Hand the phone a car key from /api/sj-carplay-key, so CarPlay can stream
    * this account's uploads with the web view asleep. Stored in the Keychain.
    */
-  setCarAccess(options: { baseUrl: string; key: string; email: string | null }): Promise<void>;
+  setCarAccess(options: { baseUrl: string; key: string; email: string | null; name?: string | null }): Promise<void>;
   /** Sign-out: revoke and forget the key. Artist-licensed songs stay. */
   clearCarAccess(): Promise<void>;
   carAccessStatus(): Promise<{
-    hasKey: boolean; email: string | null; baseUrl: string; streamable: number; mine: number;
+    hasKey: boolean; email: string | null; keyAccepted: boolean | null; baseUrl: string; streamable: number; mine: number;
   }>;
   /** Re-read the streamable list now, e.g. right after an upload. */
   refreshCarLibrary(): Promise<{ ok: boolean; count: number }>;

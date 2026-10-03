@@ -123,15 +123,15 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     // MARK: - Templates
 
     private func makeTabBar() -> CPTemplate {
-        let artists = CPListTemplate(title: "Artists", sections: artistSections())
+        let artists = CPListTemplate(title: "Artists", sections: withAccount(artistSections()))
         artists.tabTitle = "Artists"
         artists.tabImage = UIImage(systemName: "music.mic")
 
-        let playlists = CPListTemplate(title: "Playlists", sections: playlistSections())
+        let playlists = CPListTemplate(title: "Playlists", sections: withAccount(playlistSections()))
         playlists.tabTitle = "Playlists"
         playlists.tabImage = UIImage(systemName: "music.note.list")
 
-        let songs = CPListTemplate(title: "Songs", sections: songSections())
+        let songs = CPListTemplate(title: "Songs", sections: withAccount(songSections()))
         songs.tabTitle = "Songs"
         songs.tabImage = UIImage(systemName: "music.note")
 
@@ -144,9 +144,57 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func refreshTabs() {
         artworkCache.removeAll()
-        artistsTab?.updateSections(artistSections())
-        playlistsTab?.updateSections(playlistSections())
-        songsTab?.updateSections(songSections())
+        artistsTab?.updateSections(withAccount(artistSections()))
+        playlistsTab?.updateSections(withAccount(playlistSections()))
+        songsTab?.updateSections(withAccount(songSections()))
+    }
+
+    // MARK: - Account
+
+    /// Every tab opens with who the car is signed in as. Signing in has to
+    /// happen on the phone: CarPlay gives an app no way to type a password or
+    /// show a web sign-in sheet, and Apple does not allow it while driving.
+    ///
+    /// Signed in, the account name rides as the first section's header - small
+    /// type in the top corner, there only so the driver can tell. Signed out,
+    /// a row explains how to get their own uploads into the car.
+    private func withAccount(_ sections: [CPListSection]) -> [CPListSection] {
+        let library = SJStreamLibrary.shared
+        if library.isSignedIn {
+            guard let name = library.accountName, let first = sections.first else { return sections }
+            let headed = CPListSection(items: first.items,
+                                       header: "Signed in as " + name,
+                                       sectionIndexTitle: nil)
+            return [headed] + sections.dropFirst()
+        }
+        let prompt = CPListItem(text: "Sign In On Your Phone",
+                                detailText: "to unlock your personal content")
+        prompt.setImage(UIImage(systemName: "person.crop.circle"))
+        prompt.handler = { [weak self] _, completion in
+            self?.showSignInHelp()
+            completion()
+        }
+        // The prompt takes one of the template's limited rows, so the list
+        // gives one back rather than tripping CarPlay's hard limit.
+        var rest = sections
+        if let last = rest.last,
+           rest.reduce(0, { $0 + $1.items.count }) + 1 > itemLimit, !last.items.isEmpty {
+            rest[rest.count - 1] = CPListSection(items: Array(last.items.dropLast()),
+                                                 header: last.header,
+                                                 sectionIndexTitle: last.sectionIndexTitle)
+        }
+        return [CPListSection(items: [prompt])] + rest
+    }
+
+    private func showSignInHelp() {
+        let alert = CPAlertTemplate(
+            titleVariants: ["Open Listening Party on your iPhone and sign in. Your uploads will appear here.",
+                            "Sign in on your iPhone to see your uploads."],
+            actions: [CPAlertAction(title: "OK", style: .cancel) { [weak self] _ in
+                self?.interfaceController?.dismissTemplate(animated: true, completion: nil)
+            }]
+        )
+        interfaceController?.presentTemplate(alert, animated: true, completion: nil)
     }
 
     private func emptySection(_ text: String, _ detail: String) -> [CPListSection] {
@@ -223,7 +271,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let item = CPListItem(text: order, detailText: order == songSort ? "Selected" : nil)
             item.handler = { [weak self] _, completion in
                 self?.songSort = order
-                self?.songsTab?.updateSections(self?.songSections() ?? [])
+                if let self { self.songsTab?.updateSections(self.withAccount(self.songSections())) }
                 self?.interfaceController?.popTemplate(animated: true, completion: nil)
                 completion()
             }
