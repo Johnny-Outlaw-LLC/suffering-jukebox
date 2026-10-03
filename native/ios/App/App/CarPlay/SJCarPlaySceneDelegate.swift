@@ -572,9 +572,13 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                 break
             }
         }
-        actions.append(CPAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+        // Cancel is a plain button and comes first. A .cancel-style action is
+        // not drawn as a button in a CarPlay action sheet, and at the end of a
+        // long list it can fall off the screen - either way the sheet had no
+        // way to close.
+        actions.insert(CPAlertAction(title: "Cancel", style: .default) { [weak self] _ in
             self?.dismissNowPlayingActions()
-        })
+        }, at: 0)
         let sheet = CPActionSheetTemplate(title: track.title, message: track.artist, actions: actions)
         interfaceController?.presentTemplate(sheet, animated: true, completion: nil)
     }
