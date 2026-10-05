@@ -62,3 +62,23 @@ test('both lyric editors ask before a song change drops unsaved work', () => {
   assert.match(html, /async function lsyFollowSong\(\)[\s\S]{0,900}cancelLabel: 'Discard'/);
   assert.match(html, /async function ytpUpdateLyrics\(trackId\)[\s\S]{0,1500}cancelLabel: 'Discard'/);
 });
+
+test('a confirmation sits above every modal, including the sync window', () => {
+  const html = dashboardHtml;
+  // z-index of the first CSS rule that starts with this selector.
+  const z = sel => {
+    let at = 0;
+    for (;;) {
+      at = html.indexOf(sel, at);
+      if (at < 0) return NaN;
+      const rule = html.slice(at + sel.length, html.indexOf('}', at));
+      const m = /^\s*\{[^]*?z-index:\s*(\d+)/.exec(rule);
+      if (m) return Number(m[1]);
+      at += sel.length;
+    }
+  };
+  const confirm = z('.sj-confirm-overlay');
+  assert.ok(confirm > z('#lsyOverlay'), `confirm ${confirm} must beat the sync window ${z('#lsyOverlay')}`);
+  const modals = [...html.matchAll(/(?:overlay|modal)[^{};]*\{[^}]*?z-index:\s*(\d+)/gi)].map(m => +m[1]).filter(n => n !== confirm);
+  assert.ok(confirm > Math.max(...modals), `confirm ${confirm} must beat every modal (highest ${Math.max(...modals)})`);
+});
