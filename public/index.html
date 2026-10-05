@@ -3252,6 +3252,10 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .admin-toggle { background:none; border:1px solid #7c3aed55; color:#a78bfa; font-family:var(--mono); font-size:.44rem; padding:.22rem .55rem; border-radius:6px; cursor:pointer; }
 .admin-toggle.on { background:#7c3aed22; border-color:#a78bfa; color:#c4b5fd; }
 .admin-toggle.locked { opacity:.85; cursor:default; }
+/* Admin and Mod stack in one column at one width, and never wrap a label. */
+.admin-toggles { display:inline-flex; flex-direction:column; align-items:stretch; gap:.3rem; }
+.admin-toggles .admin-toggle { white-space:nowrap; text-align:center; }
+.admin-toggle.busy { cursor:progress; pointer-events:none; }
 .admin-song-album { margin-bottom:.65rem; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg-card); }
 .admin-song-album-hdr { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.55rem .75rem; background:var(--bg-elevated); cursor:pointer; }
 .admin-song-album-hdr h3 { font-size:.62rem; font-weight:700; color:var(--text); line-height:1.3; }
@@ -10493,8 +10497,24 @@ function sjUnlockAudioEl() {
   a.play().catch(() => {});
 }
 
+// Artist audio plays through a permanent address on our own domain. The route
+// signs a fresh B2 link on every request and redirects the <audio> element to
+// it, so a page left open for hours can never hold a dead link. Storing the
+// 6 hour signed URL itself is what kept breaking Nouns Group: long sessions
+// outlived it, and a single failed lookup marked the song unavailable.
+function sjArtistStreamUrl(trackId, purpose) {
+  return sjApiUrl('/api/sj-artist-audio?purpose=' + (purpose || 'normal-playback')
+    + '&format=stream&track_ids=' + encodeURIComponent(trackId));
+}
+
+// A personal upload wins; an expiring background link is replaced.
+function sjNeedsArtistStream(id) {
+  const ta = taTrackAudio(id);
+  return !ta || !!ta.expiresAt;
+}
+
 async function loadArtistOnDemandAudio(trackIds) {
-  const ids = [...new Set((trackIds || []).filter(id => id && !taData[id]))];
+  const ids = [...new Set((trackIds || []).filter(id => id && sjNeedsArtistStream(id)))];
   if (!ids.length) return;
   const chunks = [];
   for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
@@ -10506,15 +10526,27 @@ async function loadArtistOnDemandAudio(trackIds) {
     } catch (_) { return []; }
   }));
   responses.flat().forEach(r => {
-    if (!r.trackId || !r.url || taData[r.trackId]) return;
+    if (!r.trackId || !r.url || !sjNeedsArtistStream(r.trackId)) return;
     taData[r.trackId] = {
-      url: r.url,
+      url: sjArtistStreamUrl(r.trackId, 'normal-playback'),
       path: null,
       duration: Number(r.duration) || null,
       isPublic: true,
       artistLicensed: true,
       licensedArtist: r.artist || null,
       uploadedBy: null,
+    };
+  });
+  // Every caller passes artist-audio-only tracks. The lookup above only adds
+  // the duration and credit, so a failed lookup must not stop the song: the
+  // stream route decides eligibility itself, and the <audio> error path
+  // reports a genuine refusal.
+  ids.forEach(id => {
+    if (!sjNeedsArtistStream(id)) return;
+    taData[id] = {
+      url: sjArtistStreamUrl(id, 'normal-playback'),
+      path: null, duration: null, isPublic: true, artistLicensed: true,
+      licensedArtist: null, uploadedBy: null,
     };
   });
 }
@@ -16889,7 +16921,11 @@ async function taOwnAudioUrls(trackIds) {
   return data.tracks || [];
 }
 
-function taTrackAudio(trackId) { return (trackId && taData[trackId]) || null; }
+function taTrackAudio(trackId) {
+  const ta = (trackId && taData[trackId]) || null;
+  if (ta?.expiresAt && Date.now() > ta.expiresAt) { delete taData[trackId]; return null; }
+  return ta;
+}
 
 function taEnsureAudioEl() {
   if (_taAudioEl) return _taAudioEl;
@@ -23317,10 +23353,22 @@ function lsyParseTime(s) {
   const n = Number(s);
   return isFinite(n) && n >= 0 ? n : null;
 }
+// An artist upload (Nouns Group) has no YouTube video: it plays through our
+// own <audio> element, so the editor's clock, seek and pause have to follow
+// that element whenever it is the one playing this song. Reading
+// ytAPIPlayer there left the clock at 00:00 and Stamp did nothing useful.
+function lsyAudioEl() {
+  const a = typeof _taAudioEl !== 'undefined' ? _taAudioEl : null;
+  if (!_lsy || !a || !_taBgActive) return null;
+  return a.dataset.trackId === String(_lsy.trackId) ? a : null;
+}
 function lsyOffset() {
+  if (lsyAudioEl()) return 0;
   return (_lsy && nowPlayingTrackId === _lsy.trackId) ? (_ytpLyrOffset || 0) : 0;
 }
 function lsyNow() {
+  const a = lsyAudioEl();
+  if (a) return Math.max(0, a.currentTime || 0);
   try { return Math.max(0, (ytAPIPlayer.getCurrentTime() || 0) - lsyOffset()); } catch (_) { return 0; }
 }
 function lsyLinesFromText(text) {
@@ -23367,7 +23415,16 @@ async function lsyOpen(trackId, text) {
 
 async function lsyEnsurePlaying(trackId) {
   const status = document.getElementById('lsyStatus');
-  if (nowPlayingTrackId === trackId && ytAPIPlayer) return;
+  if (lsyAudioEl()) return;
+  if (nowPlayingTrackId === trackId && ytAPIPlayer && !ytpIsArtistAudio(ytQueue[ytQueueIdx])) return;
+  let track = typeof findTrackById === 'function' ? findTrackById(trackId) : null;
+  if (!track) {
+    try { track = (await dbGet('/tracks?id=eq.' + encodeURIComponent(trackId) + '&select=id,artist_audio_only'))[0]; } catch (_) {}
+  }
+  if (track && track.artist_audio_only) {
+    if (nowPlayingTrackId !== trackId) sjArtistPlayTrack(trackId);
+    return;
+  }
   let v = null;
   try { v = tvPrimary(trackId); } catch (_) {}
   if (!v) {
@@ -23447,6 +23504,8 @@ function lsyNudge(i, d) {
   lsySeek(Math.max(0, l.t - 0.5));
 }
 function lsySeek(t) {
+  const a = lsyAudioEl();
+  if (a) { try { a.currentTime = Math.max(0, t); a.play().catch(() => {}); } catch (_) {} return; }
   try { ytAPIPlayer.seekTo(t + lsyOffset(), true); ytAPIPlayer.playVideo(); } catch (_) {}
 }
 function lsyPlayFrom(i) {
@@ -23457,6 +23516,8 @@ function lsyPlayFrom(i) {
 function lsyBack5() { lsySeek(Math.max(0, lsyNow() - 5)); }
 function lsyFwd5() { lsySeek(lsyNow() + 5); }
 function lsyToggle() {
+  const a = lsyAudioEl();
+  if (a) { ytTogglePlayPause(); return; }
   try { ytAPIPlayer.getPlayerState() === 1 ? ytAPIPlayer.pauseVideo() : ytAPIPlayer.playVideo(); } catch (_) {}
 }
 function lsyKey(e) {
@@ -25100,6 +25161,11 @@ function refreshLyricCardSync() {
 }
 
 function lyrSeek(t) {
+  // An artist upload plays in our own <audio>; LRC time is its time.
+  if (_taBgActive && _taAudioEl && _taAudioEl.dataset.trackId === String(nowPlayingTrackId)) {
+    try { _taAudioEl.currentTime = Math.max(0, t); _taAudioEl.play().catch(() => {}); } catch (e) {}
+    return;
+  }
   // t is the LRC timestamp (song-relative); add offset to get video position
   try { ytAPIPlayer?.seekTo(t + _ytpLyrOffset, true); ytAPIPlayer?.playVideo?.(); } catch(e) {}
 }
@@ -34167,6 +34233,9 @@ async function loadTrackAudio(trackIds) {
       if (!r.trackId || !r.url || taData[r.trackId]) return;
       taData[r.trackId] = {
         url: r.url,
+        // Signed links die after expiresIn seconds; taTrackAudio drops the
+        // entry a little early so the next play fetches a live one.
+        expiresAt: Date.now() + Math.max(60, (Number(r.expiresIn) || 3600) - 300) * 1000,
         path: null,
         duration: Number(r.duration) || null,
         isPublic: true,
@@ -40096,6 +40165,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-05';
 const SJ_CHANGELOG = [
   { date: '2026-10-05', items: [
     'Songs uploaded by artists (like Nouns Group) now play on Listening Party instead of saying Artist audio is unavailable.',
+    'Songs uploaded by artists keep playing however long the page stays open. They used to stop after a few hours, or say Artist audio is unavailable after one slow connection.',
+    'Lyric syncing now works on songs artists uploaded themselves. The clock follows the song, and Stamp, skip and pause all work.',
+    'Tapping a synced lyric line on an artist upload jumps the song to that line.',
+    'User Management: making someone an Admin or Mod updates that row in place instead of reloading the whole list, and the two buttons are now the same width.',
     'Edit Lyrics now has Add Lyric Syncing. Play the song and tap once as each line starts, then fix any time with the box, the − / + buttons or Play from this line. It is saved in the app only.',
     'You can add lyric syncing to songs you added. Admins and the new Mods can do it on any song.',
     'New Mod role: Mods can edit lyrics, lyric timing and song, album and artist names on any artist, without being admins.',
@@ -44159,8 +44232,36 @@ function renderAdminUserToggle(u) {
   if (email === SJ_PROTECTED_ADMIN_EMAIL) {
     return '<button type="button" class="admin-toggle on locked" disabled title="Owner admin - cannot be removed">Owner Admin</button>';
   }
-  const modBtn = u.is_admin ? '' : ` <button type="button" class="admin-toggle${u.is_mod ? ' on' : ''}" title="Mods can edit lyrics, timing and names, nothing else" data-email="${escAdmin(email)}" onclick="toggleModUser(this.dataset.email, ${!u.is_mod}, this)">${u.is_mod ? 'Mod' : 'Make Mod'}</button>`;
-  return `<button type="button" class="admin-toggle${u.is_admin ? ' on' : ''}" data-email="${escAdmin(email)}" onclick="toggleAdminUser(this.dataset.email, ${!u.is_admin}, this)">${u.is_admin ? 'Admin' : 'Make Admin'}</button>` + modBtn;
+  const modBtn = u.is_admin ? '' : `<button type="button" class="admin-toggle${u.is_mod ? ' on' : ''}" title="Mods can edit lyrics, timing and names, nothing else" data-email="${escAdmin(email)}" onclick="toggleModUser(this.dataset.email, ${!u.is_mod}, this)">${u.is_mod ? 'Mod' : 'Make Mod'}</button>`;
+  return `<div class="admin-toggles"><button type="button" class="admin-toggle${u.is_admin ? ' on' : ''}" data-email="${escAdmin(email)}" onclick="toggleAdminUser(this.dataset.email, ${!u.is_admin}, this)">${u.is_admin ? 'Admin' : 'Make Admin'}</button>` + modBtn + '</div>';
+}
+
+// The loaded rows, by email, so a role change repaints one cell instead of
+// reloading the whole table (which flashed "Loading users..." and back).
+let _adminUsersByEmail = new Map();
+
+async function adminUserRoleChange(email, patch, btn, failMsg) {
+  if (!sjIsAdmin) return;
+  const key = String(email || '').toLowerCase();
+  btn.classList.add('busy');
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-admin-users'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+      body: JSON.stringify({ email, ...patch }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed.');
+    const u = _adminUsersByEmail.get(key) || { email: key };
+    Object.assign(u, patch);
+    _adminUsersByEmail.set(key, u);
+    const cell = btn.closest('td');
+    if (cell) cell.innerHTML = renderAdminUserToggle(u);
+    else await loadAdminUsers();
+  } catch (e) {
+    btn.classList.remove('busy');
+    alert(e.message || failMsg);
+  }
 }
 
 async function loadAdminUsers() {
@@ -44172,6 +44273,7 @@ async function loadAdminUsers() {
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load users.');
     const users = data.users || [];
+    _adminUsersByEmail = new Map(users.map(u => [String(u.email || '').toLowerCase(), u]));
     body.innerHTML = `
       <div class="admin-page-toolbar">
         <div class="admin-page-title">${fmtAdminNum(users.length)} logged-in users</div>
@@ -44199,21 +44301,7 @@ async function loadAdminUsers() {
 }
 
 async function toggleModUser(email, makeMod, btn) {
-  if (!sjIsAdmin) return;
-  btn.disabled = true;
-  try {
-    const res = await fetch(sjApiUrl('/api/sj-admin-users'), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
-      body: JSON.stringify({ email, is_mod: makeMod === true || makeMod === 'true' }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed.');
-    await loadAdminUsers();
-  } catch (e) {
-    alert(e.message || 'Could not update mod status.');
-    btn.disabled = false;
-  }
+  await adminUserRoleChange(email, { is_mod: makeMod === true || makeMod === 'true' }, btn, 'Could not update mod status.');
 }
 
 async function toggleAdminUser(email, makeAdmin, btn) {
@@ -44223,20 +44311,7 @@ async function toggleAdminUser(email, makeAdmin, btn) {
     alert('This owner admin account cannot be demoted.');
     return;
   }
-  btn.disabled = true;
-  try {
-    const res = await fetch(sjApiUrl('/api/sj-admin-users'), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
-      body: JSON.stringify({ email, is_admin: makeAdmin === true || makeAdmin === 'true' }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed.');
-    await loadAdminUsers();
-  } catch (e) {
-    alert(e.message || 'Could not update admin status.');
-    btn.disabled = false;
-  }
+  await adminUserRoleChange(email, { is_admin: makeAdmin === true || makeAdmin === 'true' }, btn, 'Could not update admin status.');
 }
 
 // ── Song Details Modal (admin) ────────────────────────────────

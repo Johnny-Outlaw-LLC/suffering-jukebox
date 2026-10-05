@@ -24,6 +24,9 @@ export async function GET(req: NextRequest) {
     .slice(0, 50);
   const trackIds = [...new Set(requested)];
   const stream = req.nextUrl.searchParams.get("format") === "stream";
+  // format=stream is the address the player keeps: it signs a fresh link on
+  // every request, so it never expires. One on-demand track per stream;
+  // background-only licences never stream on demand.
   if (stream && (purpose !== "normal-playback" || trackIds.length !== 1)) {
     return NextResponse.json({ ok: false, error: "Streaming requires one on-demand track." },
       { status: 400, headers: { "Cache-Control": "no-store" } });
@@ -60,6 +63,12 @@ export async function GET(req: NextRequest) {
       ? await onDemandArtistAudioTracks(sb, ARTIST_AGREEMENT_VERSION, trackIds)
       : await approvedArtistAudioTracks(sb, trackIds);
     if (!selected.length) {
+      // An <audio> element given a 200 JSON body stalls on decoding; a 404
+      // fails at once so the player can say so.
+      if (stream) {
+        return NextResponse.json({ ok: false, error: "Artist audio is not available." },
+          { status: 404, headers: { "Cache-Control": "no-store" } });
+      }
       return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
     }
 
@@ -91,6 +100,10 @@ export async function GET(req: NextRequest) {
         expiresIn: PUBLIC_SIGNED_URL_SECONDS,
       };
     }));
+    if (stream && !tracks.length) {
+      return NextResponse.json({ ok: false, error: "Artist audio is not available." },
+        { status: 404, headers: { "Cache-Control": "no-store" } });
+    }
     if (stream && tracks.length === 1) {
       return NextResponse.redirect(tracks[0].url, {
         status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
