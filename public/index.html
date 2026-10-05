@@ -21116,6 +21116,7 @@ async function plmRemove() {
 let _lamArtistId = null;
 let _lamAnchor = null;
 let _lamFavIds = null; // null = still checking; [] = none
+let _lamOnPage = false; // opened from the artist page's own ⋯, beside Share
 
 function lamClose() {
   // The artist break picker is a sibling fly-out, not a child of #lam-menu.
@@ -21126,6 +21127,7 @@ function lamClose() {
   if (_lamAnchor) { _lamAnchor.removeAttribute('aria-expanded'); _lamAnchor = null; }
   _lamArtistId = null;
   _lamFavIds = null;
+  _lamOnPage = false;
   document.removeEventListener('mousedown', _lamOutside, true);
   window.removeEventListener('scroll', lamClose, true);
   window.removeEventListener('resize', lamClose);
@@ -21141,14 +21143,17 @@ function _lamOutside(e) {
       e.target !== _lamAnchor && !_lamAnchor?.contains(e.target)) lamClose();
 }
 
-function lamOpen(artistId, anchorEl, ev) {
+function lamOpen(artistId, anchorEl, ev, opts) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   sjmClose(); plmClose();
   const already = _lamArtistId === artistId && document.getElementById('lam-menu');
   lamClose();
   if (already) return;
-  const row = (landingStats || []).find(r => r.artist_id === artistId);
+  const onPage = !!(opts && opts.onPage);
+  const row = (landingStats || []).find(r => r.artist_id === artistId)
+    || (onPage ? artistPageRow(artistId) : null);
   if (!row) return;
+  _lamOnPage = onPage;
   const t0 = performance.now();
   const n = Number(row.track_count) || 0;
   sjPerfMenuOpenStart('lam', { tracks: n, artists: 1 });
@@ -21198,9 +21203,23 @@ function lamRender(row) {
             '<span class="sjm-ic">★</span><span class="sjm-label">Add favorites to playlist</span>' +
             '<span class="sjm-sub">' + fav.length + '</span></button>'
         : '');
+  const nVis = _lamOnPage ? getVisibleTracksWithVideo(false).length : 0;
   menu.innerHTML =
     _sjmHeader(row.name || 'Artist') +
-    (row.slug && sjmArtistHasDiscography(row.artist_id)
+    (_lamOnPage
+      ? '<button class="sjm-item" onclick="lamPagePlay(false)"' + (nVis ? '' : ' disabled') + '>' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.play + '</span><span class="sjm-label">Play All</span>' +
+          (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
+        '<button class="sjm-item" onclick="lamPagePlay(true)"' + (nVis ? '' : ' disabled') + '>' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.shuffle + '</span><span class="sjm-label">Shuffle All</span>' +
+          (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
+        (lamCanManage(row)
+          ? '<button class="sjm-item" onclick="lamManage()">' +
+              '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Artist</span></button>'
+          : '') +
+        '<div class="sjm-sep"></div>'
+      : '') +
+    (!_lamOnPage && row.slug && sjmArtistHasDiscography(row.artist_id)
       ? '<button class="sjm-item" onclick="lamExplore()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Discography</span></button>'
       : '') +
@@ -21231,7 +21250,11 @@ function lamRender(row) {
         '<button class="sjm-item" onclick="lamAddToMyArtists()">' +
           '<span class="sjm-ic">+</span><span class="sjm-label">Add to My Artists</span></button>'
       : '') +
-    (lamCanManage(row)
+    (_lamOnPage && row.slug
+      ? '<button class="sjm-item" onclick="lamCopyLink()">' +
+          '<span class="sjm-ic">🔗</span><span class="sjm-label">Copy artist link</span></button>'
+      : '') +
+    (!_lamOnPage && lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamManage()">' +
           '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>'
@@ -21477,6 +21500,66 @@ function lamManage() {
   const id = _lamArtistId;
   lamClose();
   if (id) openMyArtists(id);
+}
+
+// Play All / Shuffle All from the artist page ⋯ play what the album filter
+// shows, the same list the Playlist Controls Shuffle All uses. Play All means
+// in order, so it turns shuffle off first.
+function lamPagePlay(shuffle) {
+  lamClose();
+  if (shuffle) { shuffleAllVisible(); return; }
+  if (ytShuffle) setYtShuffleEnabled(false);
+  playAllVisible(false);
+}
+
+function lamCopyLink() {
+  const row = artistPageRow(_lamArtistId);
+  lamClose();
+  if (!row || !row.slug) return;
+  const url = location.origin + '/' + row.slug;
+  Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(url))
+    .then(() => showToast('Link copied.'))
+    .catch(() => showToast(url));
+}
+
+// ── Artist page ⋯ (beside Share) and Manage Artist in the album menu ────────
+// The artist card's ⋯ menu (lam*), opened for the artist this page is about.
+// landing_stats can land after the page paints; until it does, a bare row
+// from allArtists stands in, and Manage Artist waits for can_manage.
+function artistPageArtistId() {
+  if (isLandingMode) return null;
+  if (FEATURED_ARTIST_ID && allArtists.some(a => a.id === FEATURED_ARTIST_ID)) return FEATURED_ARTIST_ID;
+  if (IS_COMMUNITY) return allArtists.length === 1 ? allArtists[0].id : null;
+  const sj = allArtists.find(a => (a.name || '').toLowerCase().includes('silver jews'));
+  return sj ? sj.id : null;
+}
+
+function artistPageRow(id) {
+  id = id || artistPageArtistId();
+  if (!id) return null;
+  const row = (landingStats || []).find(r => r.artist_id === id);
+  if (row) return row;
+  const a = allArtists.find(x => x.id === id);
+  if (!a) return null;
+  const n = (albums[id] || []).reduce((s, alb) => s + ((tracks[alb.id] || []).length), 0);
+  return { artist_id: id, name: a.name, slug: a.slug, track_count: n };
+}
+
+function artistPageCanManage() {
+  return !!googleUser && lamCanManage(artistPageRow());
+}
+
+function artistPageManage() {
+  const id = artistPageArtistId();
+  document.querySelectorAll('.filter-dd-menu.open').forEach(m => m.classList.remove('open'));
+  sjFilterPending = null;
+  otherContentFilterPending = null;
+  if (id) openMyArtists(id);
+}
+
+function artistPageMenu(anchorEl, ev) {
+  const id = artistPageArtistId();
+  if (id) lamOpen(id, anchorEl, ev, { onPage: true });
 }
 
 // Opens the same folder-matching batch upload used by Audio Storage's
@@ -34290,7 +34373,10 @@ function renderViewToggle() {
   // On a phone the Share button joins the second row, pushed to the right of
   // the bars caption, rather than taking a whole line to itself. Playlists is
   // the one view with no second row, so there it stays put.
-  const _shareBtn = `<button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}</button>`;
+  const _moreBtn = artistPageArtistId()
+    ? `<button type="button" class="sj-export-btn sj-artist-more-btn" onclick="artistPageMenu(this, event)" title="Artist options" aria-label="Artist options">⋯</button>`
+    : '';
+  const _shareBtn = `<button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}</button>${_moreBtn}`;
   const _shareR2 = _mobNav && viewMode !== 'playlists';
   const listSort_ = viewMode === 'list' ? `
       <span class="ctrl-row-meta"${_shareR2 ? '' : ' style="margin-left:auto"'}>Sort</span>
@@ -34412,6 +34498,7 @@ function renderCommunityFilterBar() {
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
           ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add supplemental content</button>` : ''}
+          ${artistPageCanManage() ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();artistPageManage()">✎ Manage Artist</button>` : ''}
         </div>
       </div>
     </div>
@@ -34519,6 +34606,7 @@ function renderFilterBar(allAlbs) {
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
           ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add supplemental content</button>` : ''}
+          ${artistPageCanManage() ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();artistPageManage()">✎ Manage Artist</button>` : ''}
         </div>
       </div>
     </div>
@@ -39641,11 +39729,15 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-10-01';
+const SJ_APP_UPDATED_FALLBACK = '2026-10-04';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-10-04', items: [
+    'An artist page has a ⋯ button beside Share with Play All, Shuffle All, Manage Artist, Add all to playlist, Play Next, Copy artist link and the rest of the artist options.',
+    'The album menu on an artist page has a Manage Artist button when the artist is yours to manage.',
+  ]},
   { date: '2026-10-01', items: [
     'My Data & Analytics and Artist Studio now stay inside the iPhone app instead of opening Safari, with a Back button that returns to Listening Party.',
     'Help & How-To now clears the iPhone status bar and includes an in-app Back button.',
