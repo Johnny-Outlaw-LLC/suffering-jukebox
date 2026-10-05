@@ -2437,6 +2437,23 @@ textarea.report-input { resize:vertical; }
   background: var(--accent); border: none; cursor: pointer;
 }
 .ytp-mf-seek::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
+.ta-bg-scrub {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
+  display: flex; align-items: center; gap: 10px; padding: 18px 16px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0));
+  cursor: default;
+}
+.ta-bg-scrub-time {
+  font-family: var(--mono); font-size: .62rem; color: #eee; min-width: 2.6em;
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+.ta-bg-scrub-time.dur { text-align: right; }
+.ta-bg-seek {
+  height: 5px;
+  background: linear-gradient(to right, var(--accent) var(--ta-prog, 0%), rgba(255,255,255,.28) var(--ta-prog, 0%));
+}
+.ta-bg-seek::-webkit-slider-thumb { width: 14px; height: 14px; }
+.ta-bg-seek::-moz-range-thumb { width: 14px; height: 14px; }
 
 /* Reaction markers — shown while hovering any scrub zone */
 .ytp-scrub-zone { position: relative; }
@@ -14862,7 +14879,7 @@ function ytpScrubPrefixes() {
 }
 
 function ytpSetScrubCur(sec) {
-  ['ytp-mf-cur', 'ytp-md-cur'].forEach(id => {
+  ['ytp-mf-cur', 'ytp-md-cur', 'ytp-ov-cur'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = ytpFmtClock(sec);
   });
@@ -16960,6 +16977,8 @@ function taEnsureAudioEl() {
   _taAudioEl.setAttribute('playsinline', '');
   _taAudioEl.addEventListener('ended', taOnAudioEnded);
   _taAudioEl.addEventListener('timeupdate', taOnAudioTime);
+  _taAudioEl.addEventListener('playing', taSyncBgScrub);
+  _taAudioEl.addEventListener('loadedmetadata', taSyncBgScrub);
   document.body.appendChild(_taAudioEl);
   return _taAudioEl;
 }
@@ -16975,6 +16994,7 @@ function taIsMobileDevice() {
 
 // Gray out the video while audio-only mode has the sound.
 function taSyncBgOverlay() {
+  taSyncBgScrub();
   const on = _taManualAudio && _taBgActive;
   const ov = document.getElementById('ta-bg-overlay');
   if (!on) { if (ov) ov.remove(); return; }
@@ -16988,6 +17008,49 @@ function taSyncBgOverlay() {
   }
   if (getComputedStyle(frame).position === 'static') frame.style.position = 'relative';
   if (el.parentNode !== frame) frame.appendChild(el);
+}
+
+// An uploaded (non-YouTube) track has no YouTube controls to seek with, so the
+// big player gets its own scrub bar along the bottom of the frame. It runs its
+// own clock and takes itself down the moment uploaded audio stops playing, so
+// no exit path has to remember to remove it.
+let _taScrubTimer = null;
+function taSyncBgScrub() {
+  let el = document.getElementById('ta-bg-scrub');
+  const frame = ytPlayerEl?.querySelector('.yt-player-frame');
+  if (!_taBgActive || !_taAudioEl || !frame) {
+    if (el) el.remove();
+    if (_taScrubTimer) { clearInterval(_taScrubTimer); _taScrubTimer = null; }
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'ta-bg-scrub';
+    el.className = 'ta-bg-scrub';
+    el.setAttribute('onclick', 'event.stopPropagation()');
+    el.innerHTML =
+      '<span class="ta-bg-scrub-time" id="ytp-ov-cur">0:00</span>' +
+      '<input class="ytp-mf-seek ta-bg-seek" id="ytp-ov-seek" type="range" min="0" max="0" value="0" step="0.25" aria-label="Seek"' +
+      ' oninput="ytpMfSeekInput(this)" onchange="ytpMfSeekCommit(this)" onpointerdown="ytpMfSeekStart()" onpointerup="ytpMfSeekEnd()">' +
+      '<span class="ta-bg-scrub-time dur" id="ytp-ov-dur">0:00</span>';
+  }
+  if (getComputedStyle(frame).position === 'static') frame.style.position = 'relative';
+  if (el.parentNode !== frame) frame.appendChild(el);
+  taPaintBgScrub();
+  if (!_taScrubTimer) _taScrubTimer = setInterval(taSyncBgScrub, 250);
+}
+function taPaintBgScrub() {
+  if (_mfSeeking) return;
+  const seek = document.getElementById('ytp-ov-seek');
+  if (!seek) return;
+  const { pos, dur } = ytpMfPlaybackPos();
+  const max = dur > 0 ? dur : 0;
+  const maxStr = String(max);
+  if (seek.max !== maxStr) seek.max = maxStr;
+  seek.value = String(Math.min(pos, max));
+  seek.style.setProperty('--ta-prog', max ? (Math.min(1, pos / max) * 100).toFixed(2) + '%' : '0%');
+  const c = document.getElementById('ytp-ov-cur'); if (c) c.textContent = ytpFmtClock(pos);
+  const d = document.getElementById('ytp-ov-dur'); if (d) d.textContent = ytpFmtClock(dur);
 }
 
 function taSetPreferBg(on) {
@@ -40433,6 +40496,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-05';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-10-05', items: [
+    'Songs artists uploaded (not from YouTube) now have a position bar along the bottom of the big player. Drag it to jump anywhere in the song.',
     'Songs uploaded by artists (like Nouns Group) now play on Listening Party instead of saying Artist audio is unavailable.',
     'Songs uploaded by artists keep playing however long the page stays open. They used to stop after a few hours, or say Artist audio is unavailable after one slow connection.',
     'Lyric syncing now works on songs artists uploaded themselves. The clock follows the song, and Stamp, skip and pause all work.',
