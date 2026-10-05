@@ -6364,6 +6364,26 @@ if (window.__SJ_NATIVE__ === true) {
   </div>
 </div>
 
+<!-- Share Song - one link to one song (/s/<artist-title>-<track id>).
+     openShareSong(trackId) fills it; "Start at" is offered only for the
+     song that is playing, and starts unticked. -->
+<div class="sj-confirm-overlay" id="sjShareSongOverlay" onclick="if(event.target===this)closeShareSong()">
+  <div class="sj-confirm-box sj-share-song-box">
+    <div class="sj-confirm-title">Share song</div>
+    <div class="sj-confirm-msg" id="sssName"></div>
+    <input type="text" class="pl-input sj-prompt-input" id="sssUrl" readonly onclick="this.select()" aria-label="Song link">
+    <label class="sss-time" id="sssTimeRow" hidden>
+      <input type="checkbox" id="sssTime" onchange="sssPaint()">
+      <span>Start at <span id="sssTimeLbl">0:00</span></span>
+    </label>
+    <div class="sj-confirm-actions">
+      <button type="button" class="pl-btn ghost" onclick="closeShareSong()">Close</button>
+      <button type="button" class="pl-btn ghost" id="sssShareBtn" onclick="sssNativeShare()" hidden>Share…</button>
+      <button type="button" class="pl-btn" id="sssCopyBtn" onclick="sssCopy()">Copy link</button>
+    </div>
+  </div>
+</div>
+
 <!-- In-app text prompt - replaces browser prompt() for renames.
      sjPromptDialog(title, value, opts) returns a Promise<string|null>. -->
 <div class="sj-confirm-overlay" id="sjPromptOverlay" onclick="if(event.target===this)_sjPromptResolve(null)">
@@ -7230,6 +7250,12 @@ if (window.__SJ_NATIVE__ === true) {
 .sj-confirm-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 .sj-prompt-input { font-size: .66rem; padding: .55rem .75rem; margin-bottom: 1rem; }
 .sj-prompt-input:focus { border-color: var(--accent); }
+.sj-share-song-box .sj-prompt-input { margin-bottom: .7rem; }
+.sss-time { display: flex; align-items: center; gap: .45rem; font-size: .6rem; color: var(--text); margin: 0 0 1rem; cursor: pointer; }
+.sss-time[hidden] { display: none; }
+.sss-time input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.sj-song-tap { position: fixed; left: 50%; bottom: calc(var(--ytp-dock-height, 0px) + 28px); transform: translateX(-50%); z-index: 5200; display: flex; align-items: center; gap: .6rem; background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: .85rem 1.4rem; font-family: inherit; font-size: .7rem; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); cursor: pointer; max-width: calc(100vw - 32px); }
+.sj-song-tap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 760px) {
   #settingsOverlay { padding: 0; }
   #settingsOverlay .pl-modal { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; }
@@ -8324,6 +8350,10 @@ let amMaxTrk = 60;  // tracks it takes from any single playlist
 // Playlist vanity pages (/p/my-mix) inject window.__PLAYLIST_PAGE__.
 let _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
 let _PLAYLIST_PAGE = window.__PLAYLIST_PAGE__ || null;
+// Share Song pages (/s/<artist-title>-<id>) inject window.__SONG_PAGE__; the app
+// itself runs as home, then opens the artist and plays the song.
+let _SONG_PAGE = window.__SONG_PAGE__ || null;
+if (_SONG_PAGE) { try { history.replaceState(null, '', '/'); } catch (_) {} }
 // Hide the server-rendered catalog wall for listeners; crawlers already saw it
 // in the first HTML response (and CSS already clips it for JS browsers).
 if (_SLUG_ARTIST) {
@@ -21262,6 +21292,10 @@ function lamRender(row) {
           '<span class="sjm-label">Take a Break from Artist</span>' +
           '<span class="sjm-sub">›</span></button>'
       : '') +
+    (googleUser && row.discography_complete === false
+      ? '<button class="sjm-item" onclick="lamImportDiscography()" title="This artist came in as a single album or song - finish the discography">' +
+          '<span class="sjm-ic">⤓</span><span class="sjm-label">Import full discography</span></button>'
+      : '') +
     (canAddToMyArtists
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamAddToMyArtists()">' +
@@ -21519,6 +21553,12 @@ function lamManage() {
   if (id) openMyArtists(id);
 }
 
+function lamImportDiscography() {
+  const row = artistPageRow(_lamArtistId);
+  lamClose();
+  if (row && row.name) openImportDiscography(row.name);
+}
+
 // Play All / Shuffle All from the artist page ⋯ play what the album filter
 // shows, the same list the Playlist Controls Shuffle All uses. Play All means
 // in order, so it turns shuffle off first.
@@ -21696,6 +21736,8 @@ function sjmRenderRoot() {
     (ytQueue[ytQueueIdx]?.trackId === tid ? '' :
       '<button class="sjm-item" onclick="sjmPlayNext()">' +
         '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play Next</span></button>') +
+    '<button class="sjm-item" onclick="sjmShareSong()">' +
+      '<span class="sjm-ic">🔗</span><span class="sjm-label">Share song</span></button>' +
     // Only offered on music that is not already in My Library. Own imports
     // and anything claimed via Add to My Library both count — in_my_library
     // tracks claimed songs; oaIsMine covers artists you imported.
@@ -32348,9 +32390,7 @@ function renderLanding() {
             ${landingOwnerLine(r, false)}
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-              ${r.discography_complete === false
-                ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
+              <button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>
               <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
             </div>
             </div>
@@ -32658,9 +32698,7 @@ function laExpandedCardHTML(r, i) {
           ${landingOwnerLine(r, true)}
           <div class="la-hero-actions">
             <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-            ${r.discography_complete === false
-                ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
+            <button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>
             <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();laToggleSongView('${r.artist_id}')">${laSongViewIds.has(r.artist_id) ? 'View Albums' : 'View Songs'}</button>
             <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
           </div>
@@ -32892,9 +32930,7 @@ function eaDetailArtistHTML(r) {
       <span class="ex-detail-artist-chev" aria-hidden="true"></span>
       <span class="ex-detail-artist-meta">${r.album_count || albList.length} albums · ${r.track_count || 0} tracks</span>
       <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-      ${r.discography_complete === false
-        ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')">Import Discography</button>`
-        : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Discography →</button>`}
+      <button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Discography →</button>
     </div>
     <div class="ex-detail-albs">${albList.map(alb => eaDetailAlbumHTML(alb, r.artist_id)).join('')}</div>
   </div>`;
@@ -39752,6 +39788,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-10-04', items: [
+    'Every song’s ⋯ menu has Share song. It gives you a link that previews as the song (title, artist and artwork) and, when opened, goes to that artist and plays the song. While a song is playing you can tick Start at to send the exact moment.',
+    'Every artist card now shows Explore Artist Discography, including artists that came in as a single album or song. Importing the rest of their discography moved into the card’s ⋯ menu.',
     'Renaming a song or an artist in Manage My Artists opens a proper rename box in the app instead of a browser popup. Enter saves, Escape cancels.',
     'An artist page has a ⋯ button beside Share with Play All, Shuffle All, Manage Artist, Add all to playlist, Play Next, Copy artist link and the rest of the artist options.',
     'The album menu on an artist page has a Manage Artist button when the artist is yours to manage.',
@@ -41707,6 +41745,93 @@ function _sjConfirmResolve(result) {
   const resolve = _sjConfirmResolver;
   _sjConfirmResolver = null;
   if (resolve) resolve(result);
+}
+
+// ── Share Song ───────────────────────────────────────────────────────────────
+// Link shape is /s/<artist-title>-<track uuid>. The words are decoration; the
+// uuid is the address, so a rename never breaks a link already out there.
+// songShareSlug() is the client's copy of songSlug() in src/lib/song-share.ts -
+// keep the two in step.
+let _sss = null; // { trackId, title, artist, sec }
+
+function songShareSlug(artist, title) {
+  return [artist, title].filter(Boolean).join(' ').toLowerCase()
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    .slice(0, 60).replace(/-+$/g, '');
+}
+
+function songShareUrl(trackId, artist, title, sec) {
+  // The native shell's origin is not a public address, so it shares the brand's.
+  const base = (sjIsNative() || !/^https?:$/.test(location.protocol)) ? SJ_BRAND.url : location.origin;
+  const s = songShareSlug(artist, title);
+  return base + '/s/' + (s ? s + '-' : '') + trackId + (sec > 0 ? '?t=' + Math.floor(sec) : '');
+}
+
+function sjmShareSong() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) openShareSong(tid);
+}
+
+function openShareSong(trackId) {
+  const m = ytpTrackMeta(trackId, null);
+  const title = (m.title && m.title !== 'Unknown') ? m.title : (findTrackById(trackId)?.name || 'Song');
+  const artist = m.artist || '';
+  // Only the song that is playing right now has a "now" worth sharing.
+  let sec = 0;
+  if (ytQueue[ytQueueIdx]?.trackId === trackId) {
+    try { sec = Math.floor(ytAPIPlayer?.getCurrentTime?.() || 0); } catch (_) {}
+  }
+  _sss = { trackId, title, artist, sec };
+  document.getElementById('sssName').textContent = artist ? title + ' · ' + artist : title;
+  document.getElementById('sssTime').checked = false;
+  document.getElementById('sssTimeRow').hidden = !(sec >= 2);
+  document.getElementById('sssTimeLbl').textContent = fmtDur(sec * 1000) || '0:00';
+  document.getElementById('sssShareBtn').hidden = !navigator.share;
+  document.getElementById('sssCopyBtn').textContent = 'Copy link';
+  sssPaint();
+  document.getElementById('sjShareSongOverlay').classList.add('open');
+}
+
+function closeShareSong() {
+  document.getElementById('sjShareSongOverlay').classList.remove('open');
+  _sss = null;
+}
+
+function sssLink() {
+  if (!_sss) return '';
+  const withTime = document.getElementById('sssTime').checked;
+  return songShareUrl(_sss.trackId, _sss.artist, _sss.title, withTime ? _sss.sec : 0);
+}
+
+function sssPaint() {
+  const inp = document.getElementById('sssUrl');
+  if (inp) inp.value = sssLink();
+}
+
+async function sssCopy() {
+  const url = sssLink();
+  if (!url) return;
+  const btn = document.getElementById('sssCopyBtn');
+  try {
+    await navigator.clipboard.writeText(url);
+    if (btn) btn.textContent = 'Copied ✓';
+    showToast('Link copied.');
+  } catch (_) {
+    const inp = document.getElementById('sssUrl');
+    if (inp) { inp.focus(); inp.select(); }
+    showToast('Press Ctrl+C to copy.');
+  }
+}
+
+async function sssNativeShare() {
+  if (!_sss || !navigator.share) return;
+  const url = sssLink();
+  try {
+    await navigator.share({ title: _sss.title + (_sss.artist ? ' - ' + _sss.artist : ''), url });
+    closeShareSong();
+  } catch (_) { /* cancelled */ }
 }
 
 // ── In-app text prompt - replaces browser prompt() for renames. Resolves
@@ -46630,6 +46755,79 @@ async function hydrateStationLink() {
   } catch (e) {}
 }
 hydrateStationLink();
+
+// ── Opening a Share Song link ────────────────────────────────────────────
+// Opens the artist (in place, so it works on a brand with no artist pages),
+// plays the one song, honours ?t=, and if the browser would not let sound start
+// by itself, puts up one big Play button instead of a silent player.
+if (_SONG_PAGE) _pbRestoreDone = true;  // arriving to hear one song - don't resume the old queue
+
+async function hydrateSongPage() {
+  const page = _SONG_PAGE;
+  if (!page?.id) return;
+  try { await _initPromise; } catch (e) {}
+  try {
+    const info = await resolvePlaylistTracks([page.id]);
+    const it = info[page.id];
+    if (page.artistId && page.artistSlug && typeof enterArtistJukebox === 'function') {
+      try {
+        await enterArtistJukebox({ id: page.artistId, name: page.artistName || '', slug: page.artistSlug });
+      } catch (_) {}
+    }
+    if (!it?.videoId || isTrackSkipped(page.id)) {
+      showToast("That song isn't available any more.");
+      return;
+    }
+    const item = { videoId: it.videoId, title: it.name || 'Song', trackId: page.id };
+    openYTPlayer(item.videoId, item.title, item.trackId);
+    ytQueue = [item]; ytQueueIdx = 0;
+    updateYTQueueUI();
+    _songPageAfterLoad(item, Number(page.t) || 0);
+  } catch (e) {}
+}
+hydrateSongPage();
+
+function _songPageAfterLoad(item, startSec) {
+  let seeked = !(startSec > 0), tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    let st = -1, vid = null;
+    try {
+      st = ytAPIPlayer?.getPlayerState?.();
+      vid = ytAPIPlayer?.getVideoData?.()?.video_id;
+    } catch (_) {}
+    if (vid && vid !== item.videoId) { clearInterval(timer); return; } // they moved on
+    if (!seeked && vid === item.videoId && st !== -1 && st != null) {
+      try { ytAPIPlayer.seekTo(startSec, true); seeked = true; } catch (_) {}
+    }
+    if (st === 1) { clearInterval(timer); _songTapRemove(); return; }
+    // About four seconds in and still not playing: autoplay was refused.
+    if (tries === 8 && st !== 3) _songTapShow(item, startSec);
+    if (tries > 60) clearInterval(timer);
+  }, 500);
+}
+
+function _songTapShow(item, startSec) {
+  if (document.getElementById('sj-song-tap')) return;
+  const b = document.createElement('button');
+  b.id = 'sj-song-tap';
+  b.className = 'sj-song-tap';
+  b.type = 'button';
+  b.innerHTML = '<b>▶</b><span>Play ' + escHtml(item.title) + '</span>';
+  b.onclick = () => {
+    _songTapRemove();
+    try {
+      if (startSec > 0) ytAPIPlayer.seekTo(startSec, true);
+      ytAPIPlayer.playVideo();
+    } catch (_) { openYTPlayer(item.videoId, item.title, item.trackId); }
+  };
+  document.body.appendChild(b);
+}
+
+function _songTapRemove() {
+  const b = document.getElementById('sj-song-tap');
+  if (b) b.remove();
+}
 
 async function hydratePlaylistLink() {
   const id = _plIncomingId;
