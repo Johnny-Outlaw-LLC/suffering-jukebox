@@ -6364,6 +6364,21 @@ if (window.__SJ_NATIVE__ === true) {
   </div>
 </div>
 
+<!-- In-app text prompt - replaces browser prompt() for renames.
+     sjPromptDialog(title, value, opts) returns a Promise<string|null>. -->
+<div class="sj-confirm-overlay" id="sjPromptOverlay" onclick="if(event.target===this)_sjPromptResolve(null)">
+  <form class="sj-confirm-box" onsubmit="event.preventDefault();_sjPromptResolve(document.getElementById('sjPromptInput').value)">
+    <div class="sj-confirm-title" id="sjPromptTitle">Rename</div>
+    <div class="sj-confirm-msg" id="sjPromptMsg" style="display:none"></div>
+    <input type="text" class="pl-input sj-prompt-input" id="sjPromptInput" autocomplete="off" spellcheck="false"
+      onkeydown="if(event.key==='Escape'){event.preventDefault();_sjPromptResolve(null)}">
+    <div class="sj-confirm-actions">
+      <button type="button" class="pl-btn ghost" onclick="_sjPromptResolve(null)">Cancel</button>
+      <button type="submit" class="pl-btn" id="sjPromptOkBtn">Save</button>
+    </div>
+  </form>
+</div>
+
 <!-- SYNC MODAL -->
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -7213,6 +7228,8 @@ if (window.__SJ_NATIVE__ === true) {
 .sj-confirm-title { font-size: .68rem; font-weight: 700; color: var(--text); margin-bottom: .5rem; }
 .sj-confirm-msg { font-size: .6rem; line-height: 1.55; color: var(--text-muted); margin-bottom: 1.1rem; }
 .sj-confirm-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.sj-prompt-input { font-size: .66rem; padding: .55rem .75rem; margin-bottom: 1rem; }
+.sj-prompt-input:focus { border-color: var(--accent); }
 @media (max-width: 760px) {
   #settingsOverlay { padding: 0; }
   #settingsOverlay .pl-modal { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; }
@@ -38159,7 +38176,7 @@ async function maDeleteTrack(artistId, albumId, trackId) {
 
 async function maRenameTrack(artistId, albumId, trackId) {
   const t = (_maTrkCache[albumId] || []).find(x => x.id === trackId); if (!t) return;
-  const name = prompt('New song name:', t.name);
+  const name = await sjPromptDialog('Rename song', t.name, { placeholder: 'Song name' });
   if (name === null) return;
   const trimmed = name.trim();
   if (!trimmed || trimmed === t.name) return;
@@ -38239,7 +38256,7 @@ function maFindArtist(artistId) {
 
 async function maRename(artistId) {
   const a = maFindArtist(artistId); if (!a) return;
-  const name = prompt('New artist name:', a.name);
+  const name = await sjPromptDialog('Rename artist', a.name, { placeholder: 'Artist name' });
   if (!name || !name.trim() || name.trim() === a.name) return;
   maBusy('Renaming…');
   try {
@@ -39735,6 +39752,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-04';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-10-04', items: [
+    'Renaming a song or an artist in Manage My Artists opens a proper rename box in the app instead of a browser popup. Enter saves, Escape cancels.',
     'An artist page has a ⋯ button beside Share with Play All, Shuffle All, Manage Artist, Add all to playlist, Play Next, Copy artist link and the rest of the artist options.',
     'The album menu on an artist page has a Manage Artist button when the artist is yours to manage.',
   ]},
@@ -41688,6 +41706,35 @@ function _sjConfirmResolve(result) {
   if (overlay) overlay.classList.remove('open');
   const resolve = _sjConfirmResolver;
   _sjConfirmResolver = null;
+  if (resolve) resolve(result);
+}
+
+// ── In-app text prompt - replaces browser prompt() for renames. Resolves
+// with the typed string, or null for Cancel / Escape / a backdrop click.
+let _sjPromptResolver = null;
+function sjPromptDialog(title, value, opts) {
+  opts = opts || {};
+  if (_sjPromptResolver) _sjPromptResolve(null);
+  return new Promise((resolve) => {
+    _sjPromptResolver = resolve;
+    const overlay = document.getElementById('sjPromptOverlay');
+    const input   = document.getElementById('sjPromptInput');
+    const msgEl   = document.getElementById('sjPromptMsg');
+    document.getElementById('sjPromptTitle').textContent = title || 'Rename';
+    document.getElementById('sjPromptOkBtn').textContent = opts.okLabel || 'Save';
+    msgEl.textContent = opts.message || '';
+    msgEl.style.display = opts.message ? '' : 'none';
+    input.value = value == null ? '' : String(value);
+    input.placeholder = opts.placeholder || '';
+    overlay.classList.add('open');
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  });
+}
+function _sjPromptResolve(result) {
+  const overlay = document.getElementById('sjPromptOverlay');
+  if (overlay) overlay.classList.remove('open');
+  const resolve = _sjPromptResolver;
+  _sjPromptResolver = null;
   if (resolve) resolve(result);
 }
 
