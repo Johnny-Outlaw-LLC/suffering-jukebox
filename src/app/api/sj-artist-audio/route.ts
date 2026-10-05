@@ -33,9 +33,26 @@ export async function GET(req: NextRequest) {
   }
   const sister = sisterB2RedirectUrl(req.nextUrl.host, req.nextUrl.pathname + req.nextUrl.search);
   if (sister) {
-    return NextResponse.redirect(new URL(sister), {
-      status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
-    });
+    // A stream is opened by an <audio> element, which follows a redirect fine.
+    if (stream) {
+      return NextResponse.redirect(new URL(sister), {
+        status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
+      });
+    }
+    // The JSON lookup is a fetch() from the page, and a cross-site redirect
+    // fails CORS there, which surfaced as "Artist audio is unavailable".
+    // Ask the sister surface from the server instead; the signed URL it
+    // returns is good on any host.
+    try {
+      const upstream = await fetch(sister, { cache: "no-store" });
+      const body = await upstream.json();
+      return NextResponse.json(body, {
+        status: upstream.status, headers: { "Cache-Control": "private, no-store, max-age=0" },
+      });
+    } catch (error) {
+      console.error("[sj-artist-audio:sister]", error);
+      return NextResponse.json({ ok: false, error: "Could not authorize artist audio." }, { status: 502 });
+    }
   }
   try {
     const sb = createSjServiceClient();
