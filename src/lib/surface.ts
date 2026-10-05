@@ -19,6 +19,14 @@ export interface SurfaceFeatures {
   /** /<slug> serves an indexable artist page with catalog text and JSON-LD. */
   artistPages: boolean;
   /**
+   * An open artist puts /<artist-slug> in the address bar, and that address
+   * loads the artist. True on both brands. Listening Party shares the root
+   * namespace with its playlists, so src/proxy.ts sends a slug to the playlist
+   * when one has it and to the artist otherwise. Separate from artistPages,
+   * which also decides /community, the /p/ playlist prefix and the sitemap.
+   */
+  artistAddresses: boolean;
+  /**
    * The Explore Artists landing tab, and clicking an artist opens the artist
    * discography view (charts, albums, tracks).
    */
@@ -211,6 +219,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     homeJsonLd: null,
     features: {
       artistPages: true,
+      artistAddresses: true,
       artistJukebox: true,
       exploreSongs: true,
       homeTab: false,
@@ -284,6 +293,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     },
     features: {
       artistPages: false,
+      artistAddresses: true,
       artistJukebox: true,
       exploreSongs: true,
       homeTab: true,
@@ -368,6 +378,7 @@ export function publicSurface(s: Surface) {
     // to grow a matching default.
     features: {
       artistPages: s.features.artistPages,
+      artistAddresses: s.features.artistAddresses,
       artistJukebox: s.features.artistJukebox,
       exploreSongs: s.features.exploreSongs,
       homeTab: s.features.homeTab,

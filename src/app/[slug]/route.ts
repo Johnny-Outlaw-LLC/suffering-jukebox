@@ -3,9 +3,8 @@
 // crawlable HTML catalog (song titles + lyrics as real text) so search engines
 // and AI crawlers can find the artist and the words — not only a Loading… div.
 //
-// Only surfaces that lead with artists have these pages. Listening Party leads
-// with playlists and has no artist view to land on, so it sends the visitor
-// home rather than rendering a page whose navigation does not exist.
+// Served on every brand with artistAddresses. On Listening Party a slug only
+// reaches here when src/proxy.ts found no playlist with that name.
 import { NextRequest, NextResponse } from "next/server";
 import { readPublicHtml } from "@/lib/serve-html";
 import { currentSurface } from "@/lib/surface";
@@ -29,7 +28,7 @@ export async function GET(
   // Keep the query string on redirects so a shared-link ?s= still hydrates
   // on the main page even when the artist slug no longer resolves.
   const home = `${surface.url}/${req.nextUrl.search}`;
-  if (!surface.features.artistPages) return NextResponse.redirect(home, 302);
+  if (!surface.features.artistAddresses) return NextResponse.redirect(home, 302);
 
   const { slug: raw } = await params;
   const slug = (raw || "").toLowerCase();
