@@ -3,6 +3,7 @@ import {
   getAuthUser,
   getSjLastUpdated,
   isSjAdmin,
+  isSjMod,
   upsertSjAppUser,
 } from "@/lib/sj-admin-auth";
 
@@ -12,12 +13,14 @@ export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   const lastUpdated = await getSjLastUpdated();
   if (!user?.email) {
-    return NextResponse.json({ ok: true, isAdmin: false, lastUpdated });
+    return NextResponse.json({ ok: true, isAdmin: false, isMod: false, lastUpdated });
   }
   const admin = await isSjAdmin(user.email);
+  const mod = !admin && (await isSjMod(user.email));
   return NextResponse.json({
     ok: true,
     isAdmin: admin,
+    isMod: mod,
     lastUpdated,
     email: user.email,
     name: user.user_metadata?.full_name ?? user.email,
@@ -34,6 +37,8 @@ export async function POST(req: NextRequest) {
     (user.user_metadata?.full_name as string | undefined) ?? null,
   );
   const admin = await isSjAdmin(user.email);
+  const mod = !admin && (await isSjMod(user.email));
   const lastUpdated = await getSjLastUpdated();
-  return NextResponse.json({ ok: true, isAdmin: admin, lastUpdated });
+  return NextResponse.json({ ok: true, isAdmin: admin,
+    isMod: mod, lastUpdated });
 }

@@ -3506,6 +3506,24 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 /* ── PLAYLIST MODAL ── */
 .pl-modal-overlay { position:fixed; inset:0; z-index:5100; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:2rem; }
 .pl-modal-overlay.open { display:flex; }
+
+/* Lyric sync editor (lsy*) */
+#lsyOverlay { z-index: 5300; }
+.lsy-help { font-size:.46rem; color:var(--text-muted); line-height:1.5; }
+.lsy-bar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.lsy-clock { font-family:var(--mono); font-size:.62rem; color:var(--text); min-width:4.4rem; text-align:center; }
+.lsy-stamp { margin-left:auto; background:var(--accent); color:#0a0a0a; font-weight:700; padding:.5rem 1.1rem; }
+.lsy-lines { flex:1; min-height:160px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:4px; }
+.lsy-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
+.lsy-row.cur { background:color-mix(in srgb, var(--accent) 14%, transparent); border-left-color:var(--accent); }
+.lsy-row.done .lsy-text { color:var(--text-muted); }
+.lsy-time { width:4.6rem; flex:none; font-family:var(--mono); font-size:.5rem; padding:3px 4px; border:1px solid var(--border); border-radius:5px; background:transparent; color:var(--text); }
+.lsy-nudge { display:flex; gap:2px; flex:none; }
+.lsy-nudge button { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:5px; font-size:.5rem; min-width:1.5rem; height:1.5rem; cursor:pointer; }
+.lsy-nudge button:hover { color:var(--accent); border-color:var(--accent); }
+.lsy-text { font-size:.56rem; min-width:0; overflow-wrap:anywhere; }
+.lsy-foot { display:flex; justify-content:space-between; gap:8px; font-size:.44rem; color:var(--text-muted); }
+@media (max-width:640px) { .lsy-nudge { display:none; } .lsy-stamp { flex:1 1 100%; margin-left:0; padding:.8rem; } }
 /* Audio uploads open from Settings (5100); keep them above their parent dialog. */
 #audioBatchOverlay { z-index:5200; }
 /* Stacked on top of Manage Album — ms/ad/lyrics must sit above mgb (DOM order
@@ -7114,7 +7132,36 @@ if (window.__SJ_NATIVE__ === true) {
     </div>
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="mgbLyrClose()">Cancel</button>
+      <button class="pl-btn ghost" onclick="lsyStart(_mgbLyrTrackId,'mgb-lyr-ta')">Add Lyric Syncing</button>
       <button class="pl-btn" id="mgb-lyr-save" onclick="mgbLyrSave()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- LYRIC SYNC EDITOR -->
+<div class="pl-modal-overlay" id="lsyOverlay">
+  <div class="pl-modal" style="width:min(680px,96vw);max-height:min(92vh,820px);display:flex;flex-direction:column">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title" id="lsyTitle">Sync lyrics</span>
+      <button class="modal-close" onclick="lsyClose()">✕</button>
+    </div>
+    <div class="pl-modal-body" style="overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px">
+      <div class="lsy-help">Play the song and press <b>Space</b> (or Stamp) the moment each highlighted line starts. <b>Backspace</b> undoes, <b>P</b> pauses, arrows skip 5s. Fix any time afterwards with the box, − / + or ▶.</div>
+      <div class="lsy-bar">
+        <button type="button" class="pl-btn ghost" onclick="lsyBack5()" title="Back 5 seconds">⏪ 5s</button>
+        <button type="button" class="pl-btn ghost" onclick="lsyToggle()" title="Play / pause">⏯</button>
+        <button type="button" class="pl-btn ghost" onclick="lsyFwd5()" title="Forward 5 seconds">5s ⏩</button>
+        <span class="lsy-clock" id="lsyClock">00:00.00</span>
+        <button type="button" class="pl-btn ghost" onclick="lsyUndo()">Undo</button>
+        <button type="button" class="pl-btn lsy-stamp" onclick="lsyStamp()">Stamp line</button>
+      </div>
+      <div class="lsy-lines" id="lsyLines"></div>
+      <div class="lsy-foot"><span id="lsyCount"></span><span id="lsyStatus"></span></div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="lsyClear()">Remove timing</button>
+      <button class="pl-btn ghost" onclick="lsyClose()">Cancel</button>
+      <button class="pl-btn" onclick="lsySave()">Save timing</button>
     </div>
   </div>
 </div>
@@ -20460,7 +20507,7 @@ function djExit(opts) {
 const _tvEditCache = {};
 async function tvCanEdit(trackId) {
   if (!trackId) return false;
-  if (sjIsAdmin) return true;
+  if (sjIsAdmin || sjIsMod) return true;
   if (!googleUser) return false;
   if (_tvEditCache[trackId] !== undefined) return _tvEditCache[trackId];
   try {
@@ -22398,7 +22445,7 @@ function sjmLyricsHistory() {
 
 function sjmCanManageSong(trackId) {
   if (!trackId || !googleUser) return false;
-  if (sjIsAdmin) return true;
+  if (sjIsAdmin || sjIsMod) return true;
   if (_tvEditCache[trackId] === true) return true;
   if (_tvEditCache[trackId] === false) return false;
   tvCanEdit(trackId).then(ok => {
@@ -22473,7 +22520,7 @@ function almAlbumQueueItems(albumId) {
 
 function almCanManage(albumId) {
   if (!googleUser) return false;
-  if (sjIsAdmin) return true;
+  if (sjIsAdmin || sjIsMod) return true;
   const alb = almFindAlbum(albumId);
   if (!alb) return false;
   const row = (landingStats || []).find(r => r.artist_id === alb.artist_id);
@@ -23003,7 +23050,7 @@ async function openManageAlbum(albumId) {
     }
     if (!alb) throw new Error('Album not found.');
     const row = (landingStats || []).find(r => r.artist_id === alb.artist_id);
-    if (!(sjIsAdmin || (row && row.can_manage) || almCanManage(albumId))) {
+    if (!(sjIsAdmin || sjIsMod || (row && row.can_manage) || almCanManage(albumId))) {
       throw new Error('Only the person who imported this music can manage it.');
     }
     if (!trks.length) {
@@ -23221,6 +23268,252 @@ async function mgbUploadCover(dataUrl) {
   } finally {
     _mgbCoverBusy = false;
     mgbRender();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// LYRIC SYNC EDITOR  (lsy*)  - added 2026-10-05
+//
+// Times plain lyrics by hand and saves them as LRC into tracks.lyrics_synced,
+// flagged 'manual'. Nothing is sent to another site. One tap per line while the
+// song plays; every time stays editable afterwards.
+//
+//   - Times are stored as LRC time = player time - this version's
+//     lyric_offset_seconds, because that is exactly what the player adds back
+//     (see _ytpLyrOffset / lyrSeek).
+//   - Bracketed section headers like [Chorus] are not sung, so they are left
+//     out of the timed list rather than asking for a tap.
+//   - A person taps after they hear the line, so each stamp is pulled
+//     LSY_REACT seconds earlier.
+//   - Saving goes through /api/sj-edit (action save_synced_lyrics). The server
+//     decides who may: an admin, a Mod, or whoever added the artist.
+// ══════════════════════════════════════════════════════════════
+const LSY_REACT = 0.2;
+let _lsy = null;
+let _lsyTimer = null;
+
+async function sjEditFetch(action, payload) {
+  const res = await fetch(sjApiUrl('/api/sj-edit'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+    body: JSON.stringify({ ...(payload || {}), action }),
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok || data.error) throw new Error(data.error || 'Could not save.');
+  return data;
+}
+
+function lsyFmt(t) {
+  if (t == null || !isFinite(t)) return '';
+  const m = Math.floor(t / 60);
+  return String(m).padStart(2, '0') + ':' + (t - m * 60).toFixed(2).padStart(5, '0');
+}
+function lsyParseTime(s) {
+  s = String(s || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d+):(\d{1,2}(?:\.\d+)?)$/);
+  if (m) return (+m[1]) * 60 + (+m[2]);
+  const n = Number(s);
+  return isFinite(n) && n >= 0 ? n : null;
+}
+function lsyOffset() {
+  return (_lsy && nowPlayingTrackId === _lsy.trackId) ? (_ytpLyrOffset || 0) : 0;
+}
+function lsyNow() {
+  try { return Math.max(0, (ytAPIPlayer.getCurrentTime() || 0) - lsyOffset()); } catch (_) { return 0; }
+}
+function lsyLinesFromText(text) {
+  return String(text || '').split(/\r?\n/).map(s => s.trim())
+    .filter(s => s && !/^\[[^\]]*\]$/.test(s))
+    .map(s => ({ text: s.slice(0, 300), t: null }));
+}
+
+// Entry from any Edit lyrics screen: save changed words first (the timed lines
+// have to match the saved lyrics), then open the editor.
+async function lsyStart(trackId, textareaId) {
+  if (!googleUser) { showToast('Sign in to sync lyrics.'); return; }
+  const ta = textareaId ? document.getElementById(textareaId) : null;
+  const text = ta ? ta.value.trim() : (lyricsCache[trackId] || '');
+  if (!text) { showToast('Add the lyrics first, then sync them.'); return; }
+  if (ta && text !== (lyricsCache[trackId] || '').trim()) {
+    try { await sjLyricsWrite(trackId, text); showToast('Lyrics saved.'); }
+    catch (e) { showToast(e.message || 'Could not save the lyrics first.'); return; }
+  }
+  lsyOpen(trackId, text);
+}
+
+async function lsyOpen(trackId, text) {
+  const lines = lsyLinesFromText(text);
+  if (!lines.length) { showToast('No lines to time.'); return; }
+  _lsy = { trackId, lines, cur: 0, busy: false, hadSync: false };
+  try {
+    const ex = await fetchSyncedLyrics(trackId);
+    if (ex && ex.length === lines.length) {
+      ex.forEach((l, i) => { lines[i].t = l.t; });
+      _lsy.hadSync = true;
+    } else if (ex) { _lsy.hadSync = true; }
+  } catch (_) {}
+  const t = (typeof findTrackById === 'function' ? findTrackById(trackId) : null)
+    || (typeof _mgbData !== 'undefined' && _mgbData && (_mgbData.tracks || []).find(x => x.id === trackId));
+  document.getElementById('lsyTitle').textContent = 'Sync lyrics' + (t && t.name ? ' · ' + t.name : '');
+  document.getElementById('lsyOverlay').classList.add('open');
+  document.addEventListener('keydown', lsyKey, true);
+  clearInterval(_lsyTimer);
+  _lsyTimer = setInterval(lsyTick, 100);
+  lsyRender();
+  lsyEnsurePlaying(trackId);
+}
+
+async function lsyEnsurePlaying(trackId) {
+  const status = document.getElementById('lsyStatus');
+  if (nowPlayingTrackId === trackId && ytAPIPlayer) return;
+  let v = null;
+  try { v = tvPrimary(trackId); } catch (_) {}
+  if (!v) {
+    try {
+      const rows = await dbGet('/track_videos?track_id=eq.' + trackId + '&select=video_id,is_primary,is_playable,lyric_offset_seconds');
+      v = (rows || []).find(r => r.is_primary && r.is_playable !== false) || (rows || []).find(r => r.is_playable !== false) || null;
+    } catch (_) {}
+  }
+  if (!v || !v.video_id) { if (status) status.textContent = 'No video found for this song, so there is nothing to time against.'; return; }
+  try { ytPlayNow(v.video_id, (document.getElementById('lsyTitle').textContent || '').replace(/^Sync lyrics · /, ''), trackId); }
+  catch (e) { if (status) status.textContent = 'Could not start the song.'; }
+}
+
+function lsyClose() {
+  document.getElementById('lsyOverlay')?.classList.remove('open');
+  document.removeEventListener('keydown', lsyKey, true);
+  clearInterval(_lsyTimer); _lsyTimer = null;
+  _lsy = null;
+}
+
+function lsyRender() {
+  if (!_lsy) return;
+  const box = document.getElementById('lsyLines');
+  box.innerHTML = _lsy.lines.map((l, i) =>
+    '<div class="lsy-row' + (i === _lsy.cur ? ' cur' : '') + (l.t != null ? ' done' : '') + '" data-i="' + i + '" onclick="lsySetCur(' + i + ')">' +
+      '<input class="lsy-time" value="' + lsyFmt(l.t) + '" placeholder="--:--.--" onclick="event.stopPropagation()" onchange="lsyEditTime(' + i + ',this.value)" aria-label="Start time">' +
+      '<span class="lsy-nudge"><button type="button" title="0.1s earlier" onclick="event.stopPropagation();lsyNudge(' + i + ',-0.1)">−</button>' +
+      '<button type="button" title="0.1s later" onclick="event.stopPropagation();lsyNudge(' + i + ',0.1)">+</button>' +
+      '<button type="button" title="Play from this line" onclick="event.stopPropagation();lsyPlayFrom(' + i + ')">▶</button></span>' +
+      '<span class="lsy-text">' + escHtml(l.text) + '</span></div>').join('');
+  lsyCount();
+  const cur = box.querySelector('.lsy-row.cur');
+  if (cur) cur.scrollIntoView({ block: 'center' });
+}
+function lsyCount() {
+  if (!_lsy) return;
+  const n = _lsy.lines.filter(l => l.t != null).length;
+  document.getElementById('lsyCount').textContent = n + ' of ' + _lsy.lines.length + ' lines timed';
+}
+function lsyTick() {
+  const el = document.getElementById('lsyClock');
+  if (el) el.textContent = lsyFmt(lsyNow());
+}
+function lsySetCur(i) {
+  if (!_lsy) return;
+  _lsy.cur = i;
+  document.querySelectorAll('#lsyLines .lsy-row').forEach(r => r.classList.toggle('cur', +r.dataset.i === i));
+}
+function lsyStamp() {
+  if (!_lsy || _lsy.cur >= _lsy.lines.length) return;
+  const i = _lsy.cur;
+  _lsy.lines[i].t = Math.max(0, lsyNow() - LSY_REACT);
+  _lsy.cur = Math.min(_lsy.lines.length, i + 1);
+  lsyRender();
+  if (_lsy.cur >= _lsy.lines.length) document.getElementById('lsyStatus').textContent = 'Every line is timed. Check any you doubt, then Save.';
+}
+function lsyUndo() {
+  if (!_lsy) return;
+  const i = Math.max(0, Math.min(_lsy.cur, _lsy.lines.length) - 1);
+  _lsy.lines[i].t = null;
+  _lsy.cur = i;
+  lsyRender();
+  const prev = _lsy.lines[i - 1];
+  lsySeek(prev && prev.t != null ? Math.max(0, prev.t - 1) : Math.max(0, lsyNow() - 4));
+}
+function lsyEditTime(i, v) {
+  if (!_lsy) return;
+  _lsy.lines[i].t = lsyParseTime(v);
+  lsyCount();
+  const row = document.querySelector('#lsyLines .lsy-row[data-i="' + i + '"]');
+  if (row) { row.classList.toggle('done', _lsy.lines[i].t != null); row.querySelector('.lsy-time').value = lsyFmt(_lsy.lines[i].t); }
+}
+function lsyNudge(i, d) {
+  const l = _lsy && _lsy.lines[i]; if (!l) return;
+  l.t = Math.max(0, (l.t != null ? l.t : lsyNow()) + d);
+  lsyEditTime(i, lsyFmt(l.t));
+  lsySeek(Math.max(0, l.t - 0.5));
+}
+function lsySeek(t) {
+  try { ytAPIPlayer.seekTo(t + lsyOffset(), true); ytAPIPlayer.playVideo(); } catch (_) {}
+}
+function lsyPlayFrom(i) {
+  const l = _lsy && _lsy.lines[i]; if (!l) return;
+  lsySeek(l.t != null ? Math.max(0, l.t - 1) : lsyNow());
+  lsySetCur(i);
+}
+function lsyBack5() { lsySeek(Math.max(0, lsyNow() - 5)); }
+function lsyFwd5() { lsySeek(lsyNow() + 5); }
+function lsyToggle() {
+  try { ytAPIPlayer.getPlayerState() === 1 ? ytAPIPlayer.pauseVideo() : ytAPIPlayer.playVideo(); } catch (_) {}
+}
+function lsyKey(e) {
+  if (!_lsy) return;
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); lsyStamp(); }
+  else if (e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); lsyUndo(); }
+  else if (e.key === 'p' || e.key === 'P') { e.preventDefault(); e.stopPropagation(); lsyToggle(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); lsyBack5(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); lsyFwd5(); }
+}
+
+function lsyBuildLrc() {
+  const out = [];
+  let last = -1;
+  for (let i = 0; i < _lsy.lines.length; i++) {
+    const l = _lsy.lines[i];
+    if (l.t == null) throw new Error('Line ' + (i + 1) + ' still needs a time.');
+    if (l.t < last) throw new Error('Line ' + (i + 1) + ' starts before the line above it.');
+    last = l.t;
+    out.push('[' + lsyFmt(l.t) + ']' + l.text);
+  }
+  return out.join('\n');
+}
+async function lsySave() {
+  if (!_lsy || _lsy.busy) return;
+  const status = document.getElementById('lsyStatus');
+  let lrc;
+  try { lrc = lsyBuildLrc(); } catch (e) { status.textContent = e.message; return; }
+  _lsy.busy = true; status.textContent = 'Saving…';
+  try {
+    await sjEditFetch('save_synced_lyrics', { track_id: _lsy.trackId, lrc });
+    const id = _lsy.trackId;
+    syncedLyricsCache[id] = parseLRC(lrc);
+    try { if (_ytpCurrentTrackId === id) ytpApplySync(id); } catch (_) {}
+    try { accSyncLyricsUI(id); } catch (_) {}
+    showToast('Lyric syncing saved.');
+    lsyClose();
+  } catch (e) {
+    status.textContent = e.message || 'Could not save.';
+    if (_lsy) _lsy.busy = false;
+  }
+}
+async function lsyClear() {
+  if (!_lsy || _lsy.busy) return;
+  if (!confirm('Remove the timing for this song? The words stay.')) return;
+  _lsy.busy = true;
+  try {
+    await sjEditFetch('save_synced_lyrics', { track_id: _lsy.trackId, lrc: '' });
+    syncedLyricsCache[_lsy.trackId] = null;
+    try { if (_ytpCurrentTrackId === _lsy.trackId) ytpApplySync(_lsy.trackId); } catch (_) {}
+    showToast('Timing removed.');
+    lsyClose();
+  } catch (e) {
+    document.getElementById('lsyStatus').textContent = e.message || 'Could not remove.';
+    if (_lsy) _lsy.busy = false;
   }
 }
 
@@ -38231,7 +38524,7 @@ async function maRenameTrack(artistId, albumId, trackId) {
   if (!trimmed || trimmed === t.name) return;
   maBusy('Renaming track…');
   try {
-    const d = await amFetch('?action=rename_track', { method: 'POST', body: JSON.stringify({ track_id: trackId, name: trimmed }) });
+    const d = await sjEditFetch('rename_track', { track_id: trackId, name: trimmed });
     t.name = d.name || trimmed;
     maRenderTracks(artistId, albumId);
     maBusy('✓ Track renamed');
@@ -38275,6 +38568,7 @@ async function maEditLyrics(artistId, albumId, trackId) {
     <div class="lyr-edit-row">
       <button class="lyr-save-btn" onclick="maSaveLyrics('${artistId}','${albumId}','${trackId}')">Save</button>
       <button class="lyr-cancel-btn" onclick="maEditLyrics('${artistId}','${albumId}','${trackId}')">Cancel</button>
+      <button class="lyr-cancel-btn" onclick="lsyStart('${trackId}','ma-lyr-ta-${trackId}')">Add Lyric Syncing</button>
     </div>`;
 }
 
@@ -38284,7 +38578,7 @@ async function maSaveLyrics(artistId, albumId, trackId) {
   if (!lyr) { maBusy('Lyrics are empty, nothing saved.', true); return; }
   maBusy('Saving lyrics…');
   try {
-    await amFetch('?action=save_lyrics', { method: 'POST', body: JSON.stringify({ track_id: trackId, lyrics: lyr }) });
+    await sjEditFetch('save_lyrics', { track_id: trackId, lyrics: lyr });
     lyricsCache[trackId] = lyr;
     const t = (_maTrkCache[albumId] || []).find(x => x.id === trackId);
     if (t) t.has_lyrics = true;
@@ -38309,7 +38603,7 @@ async function maRename(artistId) {
   if (!name || !name.trim() || name.trim() === a.name) return;
   maBusy('Renaming…');
   try {
-    await amFetch('?action=rename_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId, name: name.trim() }) });
+    await sjEditFetch('rename_artist', { artist_id: artistId, name: name.trim() });
     a.name = name.trim();
     const listRow = _maData.find(x => x.id === artistId);
     if (listRow) listRow.name = a.name;
@@ -39801,6 +40095,9 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-05';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-10-05', items: [
+    'Edit Lyrics now has Add Lyric Syncing. Play the song and tap once as each line starts, then fix any time with the box, the − / + buttons or Play from this line. It is saved in the app only.',
+    'You can add lyric syncing to songs you added. Admins and the new Mods can do it on any song.',
+    'New Mod role: Mods can edit lyrics, lyric timing and song, album and artist names on any artist, without being admins.',
     'Play counts now say In-App Plays everywhere instead of Jukebox Plays, including sort options, chart modes and column headers.',
     'Artist cards no longer show In-App Plays twice when an artist has no YouTube views.',
     'In search results, an artist match says Go to Discography and an album match says View Album.',
@@ -40784,6 +41081,7 @@ function closeChangelog() {
 
 let googleUser = null;
 let sjIsAdmin = false;
+let sjIsMod = false;   // Mod: edits lyrics, timing and names, but is not an admin
 
 // ── Who you are, as YOU set it ─────────────────────────────────────────────
 // Google tells us a name and a picture at sign-in; jukebox.app_users holds the
@@ -40847,7 +41145,7 @@ async function sjAuthHeaders() {
 
 async function refreshSjAdminState() {
   if (!googleUser) {
-    sjIsAdmin = false;
+    sjIsAdmin = false; sjIsMod = false;
     sjProfile = null;
     sjLastUpdated = SJ_APP_UPDATED_FALLBACK;
     return;
@@ -40864,6 +41162,7 @@ async function refreshSjAdminState() {
     const data = await res.json();
     if (data.ok) {
       sjIsAdmin = !!data.isAdmin;
+      sjIsMod = !!data.isMod;
       if (data.lastUpdated) sjLastUpdated = data.lastUpdated;
     }
   } catch (_) {}
@@ -41175,10 +41474,7 @@ function sjParseAlbumLyrics(text, tracks) {
 async function sjLyricsWrite(trackId, newLyrics) {
   const lyrics = String(newLyrics == null ? '' : newLyrics).trim();
   if (!lyrics) throw new Error('Lyrics cannot be emptied here — replace the words instead.');
-  await amFetch('?action=save_lyrics', {
-    method: 'POST',
-    body: JSON.stringify({ track_id: trackId, lyrics }),
-  });
+  await sjEditFetch('save_lyrics', { track_id: trackId, lyrics });
   lyricsCache[trackId] = lyrics;
   try { _lyricsEditHistCache.set(trackId, true); } catch (_) {}
 }
@@ -42458,7 +42754,7 @@ async function handleLogout() {
   await sjCarClearAccess();
   await sbAuth.auth.signOut();
   googleUser = null;
-  sjIsAdmin = false;
+  sjIsAdmin = false; sjIsMod = false;
   _pbRestoreDone = false; // allow restore again next time someone signs in
   blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
   updateAuthBtn();
@@ -42812,7 +43108,7 @@ function initGoogleAuth() {
       _lpHomeHeatLoading = false;
       _lpHomeHeatFailed = false;
       try { sjjStopBroadcast(); } catch (_) {}
-      sjIsAdmin = false;
+      sjIsAdmin = false; sjIsMod = false;
       sjProfile = null;
       sjBgUnlock = null;
       _homeLibLoaded = false;
@@ -43862,7 +44158,8 @@ function renderAdminUserToggle(u) {
   if (email === SJ_PROTECTED_ADMIN_EMAIL) {
     return '<button type="button" class="admin-toggle on locked" disabled title="Owner admin - cannot be removed">Owner Admin</button>';
   }
-  return `<button type="button" class="admin-toggle${u.is_admin ? ' on' : ''}" onclick="toggleAdminUser(${JSON.stringify(email)}, ${!u.is_admin}, this)">${u.is_admin ? 'Admin' : 'Make Admin'}</button>`;
+  const modBtn = u.is_admin ? '' : ` <button type="button" class="admin-toggle${u.is_mod ? ' on' : ''}" title="Mods can edit lyrics, timing and names, nothing else" onclick="toggleModUser(${JSON.stringify(email)}, ${!u.is_mod}, this)">${u.is_mod ? 'Mod' : 'Make Mod'}</button>`;
+  return `<button type="button" class="admin-toggle${u.is_admin ? ' on' : ''}" onclick="toggleAdminUser(${JSON.stringify(email)}, ${!u.is_admin}, this)">${u.is_admin ? 'Admin' : 'Make Admin'}</button>` + modBtn;
 }
 
 async function loadAdminUsers() {
@@ -43897,6 +44194,24 @@ async function loadAdminUsers() {
     requestAnimationFrame(syncAdminUsersTableScroll);
   } catch (e) {
     body.innerHTML = `<div class="admin-metrics-error">${escAdmin(e.message || 'Could not load users.')}</div>`;
+  }
+}
+
+async function toggleModUser(email, makeMod, btn) {
+  if (!sjIsAdmin) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-admin-users'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+      body: JSON.stringify({ email, is_mod: makeMod === true || makeMod === 'true' }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed.');
+    await loadAdminUsers();
+  } catch (e) {
+    alert(e.message || 'Could not update mod status.');
+    btn.disabled = false;
   }
 }
 
@@ -48149,6 +48464,7 @@ async function startLyricsEdit(trackId, mode) {
     `<div class="lyr-edit-row">` +
     `<button class="lyr-save-btn" onclick="saveLyricsEdit('${trackId}','${mode}')">Save</button>` +
     `<button class="lyr-cancel-btn" onclick="cancelLyricsEdit('${trackId}','${mode}')">Cancel</button>` +
+    `<button class="lyr-cancel-btn" onclick="lsyStart('${trackId}','lyr-ta-${trackId}-${mode}')">Add Lyric Syncing</button>` +
     `<span style="font-size:.42rem;color:var(--text-muted);margin-left:auto;align-self:center">Editing as ${googleUser.name}</span>` +
     `</div>`;
   targetEl.style.display = 'none';
