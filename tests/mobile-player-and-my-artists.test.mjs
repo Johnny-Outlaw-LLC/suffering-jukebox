@@ -55,7 +55,8 @@ test('full-detail mobile artist stats use a readable two-by-two grid', () => {
 
 test('native account tools stay in the app navigation stack', () => {
   assert.match(html, /function openFaq\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*window\.location\.assign\('\/help\/lp\/index\.html'\)/);
-  assert.match(html, /async function openAnalyticsInNewTab\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*sjOpenHostedTool\('\/analytics'\)/);
+  assert.match(html, /async function openAnalyticsInNewTab\(\) \{\s*return openHostedToolInNewTab\('\/analytics'\);/);
+  assert.match(html, /async function openHostedToolInNewTab\(path\) \{\s*if \(sjIsNative\(\)\) \{\s*await sjOpenHostedTool\(path\);/);
   assert.match(html, /action === 'studio'[\s\S]*sjOpenHostedTool\('\/artist-discography-upload'\)/);
   assert.match(html, /#sj-app-session=/, 'hosted tools need the native session handoff');
 });

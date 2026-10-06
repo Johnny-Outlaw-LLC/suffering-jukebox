@@ -1,0 +1,133 @@
+/* Artist stats. Page chrome, tokens and buttons come from analytics.module.css;
+   this file is the charts and panels. Marks wear the brand accent; text never
+   does - values and labels stay in the text tokens. */
+
+.body{ max-width: 1120px; margin: 0 auto; transition: opacity .2s ease; }
+.refetching{ opacity: .55; }
+
+.picker{ display: grid; gap: 6px; justify-items: end; }
+.picker span{ color: var(--sj-muted); font: 11px var(--sj-mono); letter-spacing: .1em; text-transform: uppercase; }
+.picker select{
+  appearance: none; min-width: 220px; padding: 10px 34px 10px 14px; border-radius: 999px;
+  color: var(--sj-text); background: var(--sj-panel-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 14px center;
+  border: 1px solid #353535; font: inherit; font-size: 13px; font-weight: 700;
+}
+
+.filters{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; }
+.artistLink{ margin-left: auto; color: var(--sj-muted); font: 12px var(--sj-mono); text-decoration: none; }
+.artistLink:hover{ color: var(--sj-text); text-decoration: underline; }
+
+.tiles{ display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.tile{ padding: 16px; border: 1px solid var(--sj-line); border-radius: 14px; background: var(--sj-panel); min-width: 0; }
+.tileLabel{ display: block; color: var(--sj-muted); font: 11px var(--sj-mono); letter-spacing: .08em; text-transform: uppercase; }
+.tileValue{ display: block; margin-top: 8px; font-size: 30px; font-weight: 750; letter-spacing: -.035em; line-height: 1.05; }
+.tileNote{ display: block; margin-top: 6px; color: var(--sj-muted); font-size: 12px; line-height: 1.35; }
+.delta{ display: block; margin-top: 6px; font-size: 12px; font-style: normal; line-height: 1.35; color: var(--sj-muted); }
+.up{ color: #8eeab4; }
+.down{ color: #ffb4a0; }
+.flat{ color: var(--sj-muted); }
+
+.panel{
+  min-width: 0; margin-bottom: 16px; padding: 20px; box-sizing: border-box;
+  border: 1px solid var(--sj-line); border-radius: 16px; background: var(--sj-panel);
+}
+.panelHead{ display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; margin-bottom: 14px; }
+.panelHead h2{ margin: 0; font-size: 18px; letter-spacing: -.02em; }
+.panelHead span{ color: var(--sj-muted); font-size: 12px; }
+.subhead{ margin: 18px 0 10px; color: var(--sj-muted); font: 11px var(--sj-mono); letter-spacing: .08em; text-transform: uppercase; }
+.grid2{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.grid3{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.grid2 .panel, .grid3 .panel{ margin-bottom: 0; }
+.grid2{ margin-bottom: 16px; }
+.empty{ margin: 0; color: var(--sj-muted); font-size: 14px; line-height: 1.55; }
+.footnote{ margin: 14px 0 0; color: var(--sj-muted); font-size: 12px; line-height: 1.5; }
+
+/* Plays per day */
+.chartWrap{ position: relative; width: 100%; }
+.chartSvg{ display: block; overflow: visible; touch-action: pan-y; outline: none; }
+.chartSvg:focus-visible{ outline: 2px solid var(--sj-accent); outline-offset: 4px; border-radius: 6px; }
+.grid{ stroke: var(--sj-line); stroke-width: 1; }
+.axis{ fill: var(--sj-muted); font: 11px var(--sj-mono); font-variant-numeric: tabular-nums; }
+.area{ fill: var(--sj-accent); fill-opacity: .1; }
+.line{ fill: none; stroke: var(--sj-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.crosshair{ stroke: var(--sj-muted); stroke-width: 1; }
+.dot{ fill: var(--sj-accent); stroke: var(--sj-panel); stroke-width: 2; }
+.tooltip{
+  position: absolute; top: 0; width: 140px; box-sizing: border-box; padding: 9px 11px; pointer-events: none;
+  border: 1px solid var(--sj-line); border-radius: 10px; background: var(--sj-panel-2);
+  box-shadow: 0 8px 24px rgba(0,0,0,.4); font-size: 12px;
+}
+.tooltip span{ display: block; margin-bottom: 5px; color: var(--sj-muted); }
+.tooltip p{ display: flex; align-items: center; gap: 7px; margin: 2px 0; color: var(--sj-muted); }
+.tooltip strong{ color: var(--sj-text); font-size: 14px; }
+.key, .keyMuted{ display: inline-block; width: 12px; height: 2px; border-radius: 1px; background: var(--sj-accent); }
+.keyMuted{ background: var(--sj-muted); }
+
+.tableView{ margin-top: 12px; color: var(--sj-muted); font-size: 13px; }
+.tableView summary{ cursor: pointer; width: max-content; }
+.tableView summary:hover{ color: var(--sj-text); }
+.tableView table{ width: 100%; max-width: 420px; margin-top: 10px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tableView th, .tableView td{ padding: 5px 8px; border-bottom: 1px solid var(--sj-line); text-align: right; }
+.tableView th:first-child, .tableView td:first-child{ text-align: left; }
+.tableView td{ color: var(--sj-text); }
+
+/* Songs */
+.tableScroll{ overflow-x: auto; margin: 0 -4px; }
+.songs{ width: 100%; min-width: 620px; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.songs thead th{ padding: 0 10px 10px; color: var(--sj-muted); font: 11px var(--sj-mono); letter-spacing: .06em; text-transform: uppercase; text-align: right; white-space: nowrap; }
+.songs thead th:first-child{ text-align: left; }
+.songs tbody th, .songs td{ padding: 10px; border-top: 1px solid var(--sj-line); text-align: right; white-space: nowrap; }
+.songs tbody th{ text-align: left; font-weight: 600; white-space: normal; }
+.songs tbody th span{ display: block; }
+.songs tbody th small{ display: block; margin-top: 2px; color: var(--sj-muted); font-size: 12px; font-weight: 400; }
+.songs td{ color: var(--sj-text); }
+.playsCol{ width: 34%; }
+.inlineBar{ display: flex; align-items: center; gap: 10px; }
+.inlineBar b{ display: block; height: 8px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--sj-accent); }
+.inlineBar span{ flex: none; min-width: 3ch; }
+
+/* Bar lists */
+.barList{ list-style: none; margin: 0; padding: 0; display: grid; gap: 11px; }
+.barText{ display: flex; justify-content: space-between; gap: 12px; margin-bottom: 5px; font-size: 13px; }
+.barText span{ min-width: 0; overflow-wrap: anywhere; }
+.barText small{ color: var(--sj-muted); }
+.barText strong{ font-variant-numeric: tabular-nums; }
+.barTrack{ height: 8px; }
+.bar, .barMuted{ display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--sj-accent); }
+.barMuted{ background: #6f6a66; }
+
+/* Heart moments */
+.moments, .quotes{ list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.momentHead{ display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 14px; }
+.momentHead span{ color: var(--sj-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.moments blockquote, .quotes blockquote{ margin: 6px 0 0; font-size: 15px; line-height: 1.45; font-style: italic; }
+.quotes span{ display: block; margin-top: 4px; color: var(--sj-muted); font-size: 12px; }
+.strip{ position: relative; height: 34px; margin-top: 10px; border-bottom: 1px solid var(--sj-line); }
+.stripCol, .stripPeak{ position: absolute; bottom: 0; min-width: 3px; box-sizing: border-box; border-left: 1px solid var(--sj-panel); border-right: 1px solid var(--sj-panel); border-radius: 3px 3px 0 0; background: var(--sj-accent); opacity: .42; }
+.stripPeak{ opacity: 1; }
+.stripStart, .stripEnd{ position: absolute; top: 100%; margin-top: 4px; color: var(--sj-muted); font: 10px var(--sj-mono); }
+.stripStart{ left: 0; }
+.stripEnd{ right: 0; }
+.moments li{ padding-bottom: 14px; }
+
+@media (max-width: 900px){
+  .grid3{ grid-template-columns: 1fr; }
+}
+@media (max-width: 720px){
+  .grid2{ grid-template-columns: 1fr; }
+  .picker{ justify-items: start; }
+  .picker select{ min-width: 0; width: 100%; }
+  .artistLink{ margin-left: 0; width: 100%; }
+  .panel{ padding: 16px; }
+  .tileValue{ font-size: 26px; }
+  /* The table scrolls sideways on a phone; keep song names readable while it does. */
+  .songs tbody th{ min-width: 168px; }
+  .playsCol{ width: auto; }
+  .inlineBar{ min-width: 110px; }
+}
+
+.moreButton{
+  appearance: none; margin-top: 12px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--sj-muted); font: inherit; font-size: 13px; text-decoration: underline; text-underline-offset: 3px;
+}
+.moreButton:hover{ color: var(--sj-text); }

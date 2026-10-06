@@ -242,17 +242,19 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     url: LP_URL,
     host: "listeningparty.stream",
     origins: [LP_URL, "https://www.listeningparty.stream"],
-    title: "Listening Party — Build, Share and Play Playlists",
+    // Positioned for independent artists (2026-10-05): artists publish, fans
+    // listen free. Playlists and rooms are still here; they are not the pitch.
+    title: "Listening Party | Music Straight From Independent Artists",
     description:
-      "Listening Party is a free online playlist player. Build a playlist from anything on YouTube, share it with a link, read the words as they play, and listen together in a room. No account needed to listen.",
+      "Listening Party is where independent artists share their music with fans. Upload your songs, sync the lyrics and send one link. Fans listen free with no ads, with the screen off or in CarPlay, and you see who is listening.",
     ogDescription:
-      "Build a playlist from anything on YouTube, share it with a link, and listen together. Free, with lyrics, hearts and listening stats.",
+      "Independent artists upload their songs, sync the lyrics and send fans one link. Free to listen, no ads, screen off or in the car.",
     twitterDescription:
-      "Build a playlist, share it with a link, listen together. No account required to listen.",
+      "Your record, in their pocket. Free to listen, no ads, screen off or in the car.",
     manifestDescription:
-      "Build a playlist from anything on YouTube, share it with a link, and listen together.",
+      "Music straight from independent artists. Free, no ads, synced lyrics, and it keeps playing with the screen off.",
     keywords:
-      "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
+      "Listening Party, independent artists, share your music with fans, upload your music, synced lyrics, free music no ads, listen with the screen off, CarPlay music, artist stats, listen together",
     tagline: "Join the Listening Party",
     // Name is painted into the album-grid wordmark, same as Suffering Jukebox.
     // Empty headerTitle hides the live HTML title so it is not drawn twice.
@@ -274,7 +276,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600;700;800&family=Lilita+One&display=swap",
     authScheme: "com.johnnyoutlaw.listeningparty",
     shareText:
-      "Listening Party - build a playlist from anything on YouTube, share it with a link, and listen together.",
+      "Listening Party - music straight from independent artists, with the lyrics. Free, no ads.",
     redditSub: null,
     sisterName: "Suffering Jukebox",
     sisterUrl: `${SJ_URL}/`,
@@ -282,10 +284,10 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "@context": "https://schema.org",
       "@type": "WebApplication",
       name: "Listening Party",
-      alternateName: ["Free Online Playlist Player", "Listen Together"],
+      alternateName: ["Independent music, straight to fans", "Listen Together"],
       url: `${LP_URL}/`,
       description:
-        "Free online playlist player. Build a playlist from anything on YouTube, share it with a link, read the words as they play, and listen together.",
+        "Independent artists upload their songs, sync the lyrics and share one link. Fans listen free with no ads, with the screen off, and artists see who is listening.",
       applicationCategory: "MusicApplication",
       operatingSystem: "Any",
       browserRequirements: "Requires JavaScript and HTML5",

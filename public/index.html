@@ -8013,6 +8013,34 @@ function lpHomeMusicPlaying() {
 }
 
 /** The hero's second button: sign in, or get back to your own music. */
+// The artist half of the home page: what an artist gets for putting music here.
+function lphArtistsHTML() {
+  return `<section aria-labelledby="lp-home-artists-title">
+      <div class="lph-head">
+        <h2 class="lph-rule" id="lp-home-artists-title">For artists</h2>
+        <button type="button" class="lph-link" onclick="lphArtistTool('/artist-upload')">Publish your music →</button>
+      </div>
+      <p class="lp-home-sec-lead">Your music, straight to the people who want it. No label, no middleman, no ads.</p>
+      <div class="lph-doors" style="--doors:3">
+        <button type="button" class="lph-door" onclick="lphArtistTool('/artist-upload')">
+          <span class="lph-door-ico">${LPH_ICONS.record}</span><b>Upload and sync</b><em>Your songs and artwork, with lyrics that light up line by line. Add interviews and podcasts beside the album.</em>
+        </button>
+        <button type="button" class="lph-door" onclick="lphArtistTool('/artist-upload')">
+          <span class="lph-door-ico">${LPH_ICONS.headphones}</span><b>Send one link</b><em>Fans open it and play. Free, no ads, and it keeps going with the screen off or in CarPlay.</em>
+        </button>
+        <button type="button" class="lph-door" onclick="lphArtistTool('/artist-stats')">
+          <span class="lph-door-ico">${LPH_ICONS.play}</span><b>See who's listening</b><em>Plays, cities, where fans found you, and the moments they tap the heart.</em>
+        </button>
+      </div>
+    </section>`;
+}
+
+// Artist pages live on the website; the app opens them there with its session.
+function lphArtistTool(path) {
+  if (sjIsNative()) { sjOpenHostedTool(path); return; }
+  window.location.assign(path);
+}
+
 function lpHomeCtaHTML() {
   if (!googleUser) {
     return `<button type="button" class="lph-btn lph-btn-quiet" onclick="handleAuthClick()">Sign In</button>`;
@@ -8129,17 +8157,19 @@ function landingHomeHTML() {
       <section class="lph-hero">
         <div>
           <p class="lph-rule short">${tagline}</p>
-          <h1 class="lph-display">Press play<br>together.</h1>
-          <p class="lph-lede">Pick a playlist, open a room, and <strong>everyone hears the same song at the same second.</strong>${googleUser ? '' : ' Sign in to keep your hearts and play history.'}</p>
+          <h1 class="lph-display">Your record,<br>in their pocket.</h1>
+          <p class="lph-lede">Artists upload their songs, sync the lyrics, and send fans one link. <strong>Fans listen free, with no ads, screen off or in the car.</strong> The artist sees who listened, where, and the lines they loved.</p>
           <div class="lph-cta">
             <button type="button" class="lph-btn lph-btn-go" onclick="lphStartListening()">${LPH_ICONS.play}Start listening</button>
-            ${lpHomeCtaHTML()}
+            <button type="button" class="lph-btn lph-btn-quiet" onclick="lphArtistTool('/artist-upload')">Publish your music</button>
+            ${googleUser ? lpHomeCtaHTML() : ''}
           </div>
           ${googleUser ? '' : '<p class="lph-fine">Free to listen. No account needed.</p>'}
         </div>
         ${lphFeatureHTML()}
       </section>
       ${lphShelfHTML()}
+      ${SJ_BRAND.features.artistUpload ? lphArtistsHTML() : ''}
       ${listening}
       <section aria-labelledby="lp-home-import-title">
         <div class="lph-head"><h2 class="lph-rule" id="lp-home-import-title">Bring your music</h2></div>
@@ -11834,7 +11864,6 @@ function ytpOnSlotStateChange(slot, ev) {
     ytpStartBgKeepalive();
     ytpUpdateMediaSession();
     if (_lyrSyncEnabled && _ytpCurrentTrackId && syncedLyricsCache[_ytpCurrentTrackId]) lyrSyncStart();
-    if (_ytCurrentPlay && !_ytCurrentPlay.playbackStarted) _ytCurrentPlay.playbackStarted = Date.now();
     if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
     const item = ytQueue[ytQueueIdx];
     if (item && item.trackId) {
@@ -16977,6 +17006,7 @@ function taEnsureAudioEl() {
   _taAudioEl.setAttribute('playsinline', '');
   _taAudioEl.addEventListener('ended', taOnAudioEnded);
   _taAudioEl.addEventListener('timeupdate', taOnAudioTime);
+  _taAudioEl.addEventListener('timeupdate', lmTick); // keeps counting with the screen off
   _taAudioEl.addEventListener('playing', taSyncBgScrub);
   _taAudioEl.addEventListener('loadedmetadata', taSyncBgScrub);
   document.body.appendChild(_taAudioEl);
@@ -21481,7 +21511,9 @@ function lamRender(row) {
           (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
         (lamCanManage(row)
           ? '<button class="sjm-item" onclick="lamManage()">' +
-              '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Artist</span></button>'
+              '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Artist</span></button>' +
+            '<button class="sjm-item" onclick="lamStats()">' +
+              '<span class="sjm-ic">📈</span><span class="sjm-label">Artist stats</span></button>'
           : '') +
         '<div class="sjm-sep"></div>'
       : '') +
@@ -21527,7 +21559,9 @@ function lamRender(row) {
     (!_lamOnPage && lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamManage()">' +
-          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>'
+          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>' +
+        '<button class="sjm-item" onclick="lamStats()">' +
+          '<span class="sjm-ic">📈</span><span class="sjm-label">Artist stats</span></button>'
       : '') +
     (isMine
       ? '<div class="sjm-sep"></div>' +
@@ -21786,6 +21820,15 @@ function lamPagePlay(shuffle) {
   if (shuffle) { shuffleAllVisible(); return; }
   if (ytShuffle) setYtShuffleEnabled(false);
   playAllVisible(false);
+}
+
+// Plays, listeners, heart moments and where fans came from. The menu shows it
+// only to managers; /api/artist-stats checks again on every request.
+function lamStats() {
+  const row = artistPageRow(_lamArtistId);
+  lamClose();
+  if (!row || !row.slug) return;
+  openHostedToolInNewTab('/artist-stats?artist=' + encodeURIComponent(row.slug));
 }
 
 function lamCopyLink() {
@@ -40496,6 +40539,10 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-05';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-10-05', items: [
+    'Artists have stats. Open Artist stats from an artist ⋯ menu to see plays, listeners, who came back, cities, the sites that sent fans to your page, the moments fans tap the heart (with the lyric they were hearing) and the lines they quote. Only the artist and the people who manage their music can open it.',
+    'Plays of songs artists uploaded are now credited to the artist everywhere, and play time is measured properly, including with the screen off.',
+    'Listening Party has a new home page message for artists, and a For artists section on Home.',
+    'My Data & Analytics opens again on Listening Party. It had been sending people back to Home.',
     'Songs artists uploaded (not from YouTube) now have a position bar along the bottom of the big player. Drag it to jump anywhere in the song.',
     'Songs uploaded by artists (like Nouns Group) now play on Listening Party instead of saying Artist audio is unavailable.',
     'Songs uploaded by artists keep playing however long the page stays open. They used to stop after a few hours, or say Artist audio is unavailable after one slow connection.',
@@ -41623,15 +41670,20 @@ async function sjOpenHostedTool(path) {
 }
 
 async function openAnalyticsInNewTab() {
+  return openHostedToolInNewTab('/analytics');
+}
+
+// Any hosted tool page (/analytics, /artist-stats) opened with this session.
+async function openHostedToolInNewTab(path) {
   if (sjIsNative()) {
-    await sjOpenHostedTool('/analytics');
+    await sjOpenHostedTool(path);
     return;
   }
   // Vercel may redirect between the apex and www hosts. Local storage does not
   // cross that boundary, so transfer the already-authenticated session only to
-  // the trusted Analytics tab that explicitly requests it.
-  const analyticsTab = window.open('/analytics', '_blank');
-  if (!analyticsTab) return;
+  // the trusted tab that explicitly requests it.
+  const toolTab = window.open(path, '_blank');
+  if (!toolTab) return;
 
   let settled = false;
   const stopListening = () => {
@@ -41640,12 +41692,12 @@ async function openAnalyticsInNewTab() {
     window.removeEventListener('message', receiveSessionRequest);
   };
   const receiveSessionRequest = async (event) => {
-    if (event.source !== analyticsTab || !sjIsTrustedAnalyticsOrigin(event.origin)) return;
+    if (event.source !== toolTab || !sjIsTrustedAnalyticsOrigin(event.origin)) return;
     if (event.data?.type !== SJ_ANALYTICS_SESSION_REQUEST) return;
     try {
       const session = (await sjGetSession()).data?.session;
       if (session?.access_token && session.refresh_token) {
-        analyticsTab.postMessage({
+        toolTab.postMessage({
           type: SJ_ANALYTICS_SESSION_DELIVERY,
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
@@ -45664,7 +45716,7 @@ let _playlistsLoaded  = false; // set true after first load so render() never re
 let _playlistsError   = '';    // a failed request is not the same as an empty library
 let playlists    = []; // own playlists
 let pubPlaylists = []; // public playlists by others
-let _ytCurrentPlay = null;  // { eventId, trackId, playbackStarted }
+let _ytCurrentPlay = null;  // { eventId, trackId }; listen time lives in _lm
 
 function clearQueueSourcePlaylist() {
   _queueSourcePlaylistTracks = null;
@@ -45725,22 +45777,99 @@ async function logPlayEnd(trackId) {
   } catch(e) {}
 }
 
-// ── Patch duration when YT playback stops ─────────────────────────────────
-function patchYTPlayDuration() {
-  if (!_ytCurrentPlay?.eventId || !_ytCurrentPlay.playbackStarted) return;
-  const dur = Date.now() - _ytCurrentPlay.playbackStarted;
-  _ytCurrentPlay.playbackStarted = null;
-  fetch(`${REST}/play_events?id=eq.${_ytCurrentPlay.eventId}`, {
+// ── Listen meter ────────────────────────────────────────────────────────────
+// duration_played_ms used to be written only when a YouTube play was paused
+// after its start had been noted. That ordering almost never held (the start
+// was noted before the play row existed), so 95% of plays had no listen time
+// and uploaded audio never had any. Artist stats need it, so this measures it
+// from the media clock of whatever is audibly playing: a throttled timer in a
+// screen-off tab neither loses time nor invents it, a seek is not a listen,
+// and a pause stops the count without any exit path having to remember to.
+const _lm = { eventId: null, trackId: null, ms: 0, savedMs: 0, pos: null, wall: 0, timer: null };
+
+function lmNow() {
+  if (_taBgActive && _taAudioEl) {
+    return { trackId: _taAudioEl.dataset.trackId || null, pos: _taAudioEl.currentTime || 0,
+      playing: !_taAudioEl.paused && !_taAudioEl.muted };
+  }
+  if (_sjCarFollow) return null; // muted copy of what the car is playing
+  try {
+    if (ytAPIPlayer?.getPlayerState) {
+      return { trackId: ytQueue[ytQueueIdx]?.trackId || null, pos: ytAPIPlayer.getCurrentTime() || 0,
+        playing: ytAPIPlayer.getPlayerState() === 1 };
+    }
+  } catch (_) {}
+  return null;
+}
+
+function lmTick() {
+  if (!_lm.eventId) return;
+  const now = Date.now();
+  const s = lmNow();
+  if (!s || !s.playing || String(s.trackId) !== String(_lm.trackId)) {
+    _lm.pos = null;
+    return;
+  }
+  if (_lm.pos != null) {
+    const media = (s.pos - _lm.pos) * 1000;
+    const wall = now - _lm.wall;
+    // Forward and no faster than real time (plus slack for timer jitter):
+    // anything else is a seek or a replay from the top.
+    if (media > 0 && media <= wall + 1500) _lm.ms += media;
+  }
+  _lm.pos = s.pos;
+  _lm.wall = now;
+  if (_lm.ms - _lm.savedMs >= 30000) lmSave(false);
+}
+
+function lmSave(final) {
+  if (!_lm.eventId) return;
+  const ms = Math.round(_lm.ms);
+  if (ms <= _lm.savedMs && !final) return;
+  _lm.savedMs = ms;
+  fetch(`${REST}/play_events?id=eq.${_lm.eventId}`, {
     method: 'PATCH',
+    keepalive: true, // survives the tab being closed mid-song
     headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
       'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
-    body: JSON.stringify({ duration_played_ms: dur, play_ended_at: new Date().toISOString() })
+    body: JSON.stringify({ duration_played_ms: ms, play_ended_at: new Date().toISOString() })
   }).catch(() => {});
+}
+
+function lmStart(eventId, trackId) {
+  lmTick();
+  lmSave(true);
+  // The play is logged once ten seconds have been heard, so they count.
+  Object.assign(_lm, { eventId, trackId, ms: 10000, savedMs: 0, pos: null, wall: 0 });
+  if (!_lm.timer) {
+    _lm.timer = setInterval(lmTick, 1000);
+    window.addEventListener('pagehide', () => { lmTick(); lmSave(true); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') { lmTick(); lmSave(false); }
+    });
+  }
+}
+
+// Kept under its old name: pause, end and close all call it.
+function patchYTPlayDuration() {
+  lmTick();
+  lmSave(false);
+}
+
+// Where this listen happened, for artist stats. Plays from the native audio
+// engine (screen off in the app, or CarPlay) arrive through log_carplay_plays.
+function sjListenContext() {
+  const app = !!window.Capacitor?.isNativePlatform?.();
+  const hidden = document.visibilityState === 'hidden';
+  return (app ? 'app' : 'web') + (hidden ? '_background' : '');
 }
 
 // ── Log actual YouTube play or queue event ──────────────────────────────────
 async function logYTPlay(videoId, trackId, eventType, source) {
   if (!trackId) return;
+  // The phone following CarPlay plays a muted copy of the car's song; the
+  // car's native engine logs that play, so logging here counted it twice.
+  if (eventType === 'play' && _sjCarFollow) return;
   try {
     // Do not bail when the catalogue row is not loaded. Playlist and Now
     // Playing listens often have only a track id — hearts still landed, but
@@ -45756,9 +45885,11 @@ async function logYTPlay(videoId, trackId, eventType, source) {
       p_device_id:      getDeviceId(),
       p_rating_at_play: null,
       p_surface_id:     (typeof SJ_BRAND !== 'undefined' && SJ_BRAND?.id) || 'sj',
+      p_listen_context: eventType === 'play' ? sjListenContext() : null,
     });
     if (eventType === 'play') {
-      _ytCurrentPlay = { eventId, trackId, playbackStarted: null };
+      _ytCurrentPlay = { eventId, trackId };
+      if (eventId) lmStart(eventId, trackId);
       inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
       if (googleUser) myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
       if (googleUser) myLastPlayed[trackId] = new Date().toISOString();

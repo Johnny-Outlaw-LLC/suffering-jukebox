@@ -1,7 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
+import { ChangeEvent, useMemo, useState } from "react";
 import { sjBrowserAuth } from "@/lib/sj-browser-auth";
 import type { PublicSurface } from "@/lib/surface";
 import AnalyticsDashboard from "./analytics-dashboard";
@@ -10,7 +9,7 @@ import DownloadData from "./download-data";
 import ImportMissing, { type MissingSong } from "./import-missing";
 import styles from "./analytics.module.css";
 import { parseYouTubeTakeoutHtml, type YouTubeMusicConfidence } from "@/lib/youtube-history";
-import { consumeNativeSessionHandoff } from "@/lib/native-session-handoff";
+import { useJukeboxSession } from "@/lib/use-jukebox-session";
 
 type ContentType = "music" | "podcast" | "audiobook" | "other";
 type HistoryEvent = {
@@ -38,18 +37,6 @@ const TYPE_LABEL: Record<ContentType, string> = {
   audiobook: "Audiobook",
   other: "Other",
 };
-const ANALYTICS_SESSION_REQUEST = "sj:analytics-session-request";
-const ANALYTICS_SESSION_DELIVERY = "sj:analytics-session-delivery";
-
-function isTrustedPlayerOrigin(origin: string, brand: PublicSurface) {
-  return origin === window.location.origin
-    || brand.origins.includes(origin)
-    || origin === "https://sufferingjukebox.stream"
-    || origin === "https://www.sufferingjukebox.stream"
-    || origin === "https://listeningparty.stream"
-    || origin === "https://www.listeningparty.stream";
-}
-
 function number(value: number) { return new Intl.NumberFormat().format(value); }
 function minutes(value: number) {
   const total = Math.max(0, Math.round(value / 60000));
@@ -345,49 +332,10 @@ function Wizard({ accessToken, onComplete }: { accessToken: string; onComplete: 
 }
 
 export default function AnalyticsClient({ brand }: { brand: PublicSurface }) {
-  const [sessionReady, setSessionReady] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
-  const [accessToken, setAccessToken] = useState("");
+  const { sessionReady, signedIn, accessToken, fromNativeApp } = useJukeboxSession(brand);
   const [view, setView] = useState<"dashboard" | "import" | "download" | "manage">("dashboard");
   const [dashKey, setDashKey] = useState(0);
   const [error, setError] = useState("");
-  const [fromNativeApp, setFromNativeApp] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    async function applySession(session: Session | null) {
-      if (!active) return;
-      setSignedIn(!!session?.user);
-      setAccessToken(session?.access_token || "");
-      setSessionReady(true);
-    }
-    const receiveSession = async (event: MessageEvent) => {
-      if (event.source !== window.opener || !isTrustedPlayerOrigin(event.origin, brand)) return;
-      if (event.data?.type !== ANALYTICS_SESSION_DELIVERY) return;
-      const nextAccess = String(event.data.accessToken || "");
-      const refreshToken = String(event.data.refreshToken || "");
-      if (!nextAccess || !refreshToken) return;
-      const { data, error } = await sjBrowserAuth.auth.setSession({ access_token: nextAccess, refresh_token: refreshToken });
-      if (!error) {
-        await applySession(data.session);
-        window.opener = null;
-      }
-    };
-    window.addEventListener("message", receiveSession);
-    consumeNativeSessionHandoff().then((handoff) => {
-      if (handoff?.fromNativeApp) setFromNativeApp(true);
-      if (handoff) void applySession(handoff.session);
-      else sjBrowserAuth.auth.getSession().then(({ data: { session } }) => { void applySession(session); });
-    });
-    const { data: { subscription } } = sjBrowserAuth.auth.onAuthStateChange((_event, session) => { void applySession(session); });
-    try {
-      const openerOrigin = document.referrer ? new URL(document.referrer).origin : "";
-      if (window.opener && isTrustedPlayerOrigin(openerOrigin, brand)) {
-        window.opener.postMessage({ type: ANALYTICS_SESSION_REQUEST }, openerOrigin);
-      }
-    } catch { /* No trusted opener session is available. */ }
-    return () => { active = false; window.removeEventListener("message", receiveSession); subscription.unsubscribe(); };
-  }, [brand]);
 
   async function signIn() { await sjBrowserAuth.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/analytics` } }); }
 

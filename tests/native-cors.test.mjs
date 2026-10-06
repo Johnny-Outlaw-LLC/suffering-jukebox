@@ -19,7 +19,9 @@ test('trusted hosted tools stay inside the native WebView', () => {
     'sufferingjukebox.stream',
     '*.sufferingjukebox.stream',
   ]);
-  assert.match(dashboard, /sjOpenHostedTool\('\/analytics'\)/);
+  assert.match(dashboard, /openHostedToolInNewTab\('\/analytics'\)/);
+  assert.match(dashboard, /openHostedToolInNewTab\('\/artist-stats\?artist=' \+/);
+  assert.match(dashboard, /if \(sjIsNative\(\)\) \{\s*await sjOpenHostedTool\(path\);/);
   assert.match(dashboard, /sjOpenHostedTool\('\/artist-discography-upload'\)/);
   assert.match(dashboard, /fromNativeApp: true/);
 });

@@ -129,8 +129,11 @@ export function generateCode(random: () => number = Math.random): string {
  * of these would shadow a real page, so they are refused at the point the
  * owner picks a name rather than left to fight it out in the router.
  */
+// Every top-level page under src/app must be listed here, or Listening Party's
+// root-slug routing treats it as a playlist name and redirects it home (that
+// is how /analytics broke). tests/reserved-slugs.test.mjs enforces it.
 export const RESERVED_SLUGS = new Set([
-  "about", "account", "admin", "api", "artist", "artists", "artist-agreement",
+  "about", "account", "admin", "album-art", "analytics", "api", "artist", "artists", "artist-agreement", "artist-stats",
   "artist-rights-admin", "artist-upload", "artist-music", "artist-release-art", "artist-discography-upload", "assets", "auth", "album", "albums",
   "blog", "community", "contact", "cookies", "dmca", "embed", "explore",
   "faq", "favicon", "feed", "help", "home", "images", "img", "index", "j",
