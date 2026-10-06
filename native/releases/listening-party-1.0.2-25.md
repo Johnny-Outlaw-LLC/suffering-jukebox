@@ -9,6 +9,8 @@
 - Apple processing completed; TestFlight shows 1.0.2 (25), Ready to Submit.
 - Build ID: 976a3b64-ae6d-4399-b684-981182c56314
 - No tester groups or individual testers are assigned.
+- TestFlight's What to Test notes are saved; the tester wizard is awaiting review information.
+- App Store version 1.0.2 is created in Prepare for Submission with build 25 and release notes saved.
 - This upload does not replace the approved App Store version 1.0.1.
 
 This release removes decorative icons from the song menus, removes the redundant
