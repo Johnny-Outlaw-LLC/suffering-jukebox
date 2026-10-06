@@ -136,7 +136,7 @@ export const RESERVED_SLUGS = new Set([
   "about", "account", "admin", "album-art", "analytics", "api", "artist", "artists", "artist-agreement", "artist-stats",
   "artist-rights-admin", "artist-upload", "artist-music", "artist-release-art", "artist-discography-upload", "assets", "auth", "album", "albums",
   "blog", "community", "contact", "cookies", "dmca", "embed", "explore",
-  "faq", "favicon", "feed", "help", "home", "images", "img", "index", "j",
+  "faq", "favicon", "feed", "for-artists", "for-listeners", "help", "home", "images", "img", "index", "j",
   "join", "jukebox", "jukeboxes", "legal", "live", "login", "logout", "me",
   "new", "news", "oembed", "p", "playlist", "playlists", "pricing", "privacy",
   "qr", "queue", "robots", "rss", "s", "search", "settings", "share",

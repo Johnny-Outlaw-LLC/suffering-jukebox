@@ -64,6 +64,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/llms.txt`, lastModified, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/about`, lastModified, changeFrequency: "monthly", priority: 0.8 },
     { url: `${SITE_URL}/help`, lastModified, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${SITE_URL}/for-artists`, lastModified, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${SITE_URL}/for-listeners`, lastModified, changeFrequency: "monthly", priority: 0.8 },
     { url: `${SITE_URL}/privacy`, lastModified, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/terms`, lastModified, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE_URL}/dmca`, lastModified, changeFrequency: "yearly", priority: 0.3 },
