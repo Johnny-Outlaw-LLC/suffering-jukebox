@@ -10,8 +10,9 @@
 - Build ID: 2a800ed7-4923-4384-bfca-add8c13eb2fe.
 - What to Test notes are saved; no testers are assigned yet.
 - Original App Store submission (build 1) withdrawn with user authorization.
-- Version 1.0.0 now has build 3 selected and saved; status Developer Rejected after withdrawal.
-- Final App Store submission has not been sent.
+- Version 1.0.0 build 3 submitted October 6, 2026 at 5:12 PM America/Chicago.
+- Apple confirmed `1 Item Submitted`; status Waiting for Review.
+- Submission ID: 9535e826-431f-477e-ad6d-00577178a8e9.
 
 Includes the simplified song menu, removal of redundant Download for CarPlay,
 Nouns Group artwork hydration, native sign-in fixes, and audio-only playlist
@@ -38,10 +39,9 @@ and CarPlay.
 
 ## Review preparation
 
-The existing submission's metadata, screenshots, privacy settings and review
-details remain in App Store Connect. Build 3 is selected in the App Store draft.
-The user authorized reusing existing review details, but browser privacy masking
-prevents reading their actual credentials and contact phone. The beta description
-and feedback email are saved. Review credentials/contact information require
-direct user entry. Final TestFlight Submit for Review is awaiting explicit
-authorization after automatic approval review rejected that final action.
+The existing metadata, screenshots, privacy settings and App Store review details
+were retained. Apple accepted build 3 for App Store review. The user opted to skip
+tester invitations and TestFlight beta review because only personal testing is
+needed. No beta review submission was sent.
+
+Submission: https://appstoreconnect.apple.com/apps/6819821388/distribution/reviewsubmissions/details/9535e826-431f-477e-ad6d-00577178a8e9
