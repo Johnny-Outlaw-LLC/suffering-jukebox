@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser, createSjServiceClient, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
-import { approvedArtistAudioTracks } from "@/lib/bg-audio-eligibility";
+import { approvedArtistAudioTracks, onDemandArtistAudioTracks } from "@/lib/bg-audio-eligibility";
+import { ARTIST_AGREEMENT_VERSION } from "@/lib/artist-rights";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,11 +68,19 @@ export async function GET(req: NextRequest) {
       if (error) throw error;
       (data ?? []).forEach((row) => row.track_id && trackIds.add(row.track_id));
     }
-    (await approvedArtistAudioTracks(sb)).forEach((row) => trackIds.add(row.track_id));
+    const [approved, discoverable] = await Promise.all([
+      approvedArtistAudioTracks(sb),
+      onDemandArtistAudioTracks(sb, ARTIST_AGREEMENT_VERSION),
+    ]);
+    approved.forEach((row) => trackIds.add(row.track_id));
 
     const ids = [...trackIds];
     return NextResponse.json(
-      { ok: true, trackIds: ids, artistIds: await artistIdsForTracks(sb, ids) },
+      {
+        ok: true, trackIds: ids, artistIds: await artistIdsForTracks(sb, ids),
+        artistUploadedTrackIds: discoverable.map(row => row.track_id),
+        artistUploadedArtistIds: [...new Set(discoverable.map(row => row.artist_id))],
+      },
       // Personal to the caller once they are signed in, so never shared.
       { headers: { "Cache-Control": "private, no-store" } },
     );

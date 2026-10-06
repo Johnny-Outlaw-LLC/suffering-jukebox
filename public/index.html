@@ -5409,6 +5409,8 @@ html[data-surface="lp"] .brand-title em {
 }
 
 
+#audience-guides-top[hidden]{display:none!important}
+.srch-filter-row{padding:10px 18px;border-bottom:1px solid var(--border);font-size:14px;display:flex;align-items:center;gap:8px}
 </style>
 <script src="https://outlawdata.com/outlaw-owner.js" defer></script>
 <script>document.documentElement.classList.add('sj-js');</script>
@@ -6178,7 +6180,7 @@ if (window.__SJ_NATIVE__ === true) {
     <div id="lwytb-header"></div>
   </div>
   <div id="view-extras-header"></div>
-  <nav aria-label="Audience guides" style="display:flex;gap:20px;flex-wrap:wrap;padding:10px 2px;font-size:13px">
+  <nav id="audience-guides-top" hidden aria-label="Audience guides" style="display:flex;gap:20px;flex-wrap:wrap;padding:10px 2px;font-size:13px">
     <a href="/for-artists" style="color:var(--text-muted);text-decoration:none">For Artists</a>
     <a href="/for-listeners" style="color:var(--text-muted);text-decoration:none">For Listeners</a>
   </nav>
@@ -7094,6 +7096,7 @@ if (window.__SJ_NATIVE__ === true) {
       <span class="srch-count" id="srch-count"></span>
       <button class="srch-close-btn" onclick="closeSearchModal()" title="Close">✕</button>
     </div>
+    <label class="srch-filter-row"><input type="checkbox" id="srch-artist-uploaded" onchange="setSearchArtistUploaded(this.checked)"> Artist Uploaded only</label>
     <div id="srch-body">
       <div id="srch-status">Start typing to search songs and lyrics.</div>
     </div>
@@ -8271,7 +8274,13 @@ function lptbSyncAuthLabel() {
 }
 
 /** Marks the tab for the sheet on screen, or none while a playlist wall is open. */
+function syncAudienceGuideLinks() {
+  const top = document.getElementById('audience-guides-top');
+  if (top) top.hidden = !(isLandingMode && landingTab === 'home' && viewMode !== 'playlistchart');
+}
+
 function lptbSync() {
+  syncAudienceGuideLinks();
   const bar = document.getElementById('lp-tabbar');
   if (!bar) return;
   lptbSyncAuthLabel();
@@ -26987,6 +26996,9 @@ let _submitterMenuOpen = false;
 let _landingArtistKeys = [];
 let _artistsMenuOpen = false;
 let homeBgOnly = localStorage.getItem('sj_home_bg_only') === '1';
+let artistUploadedOnly = false;
+let _artistUploadedTrackIds = new Set();
+let _artistUploadedArtistIds = new Set();
 let _homeBgArtistIds = new Set(); // artists with at least one of my uploaded bg-audio files
 let _homeBgTrackIds = new Set();  // track ids with my uploaded bg-audio
 let _homeLibLoaded = false;
@@ -31364,6 +31376,7 @@ function getVisibleLandingStats(opts) {
   }
   if (!landingIncludeSinglesOnly && !opts.singlesAlways) visible = visible.filter(r => !isSinglesOnlyRow(r));
   if (sjBgActive() && !opts.skipBgOnly) visible = visible.filter(r => sjBgArtistOn(r));
+  if (artistUploadedOnly && _homeLibLoaded && !_homeLibError) visible = visible.filter(r => sjArtistUploadedOn(r));
   if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
   else if (landingSubmitterFilter.size) {
     visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -31721,6 +31734,7 @@ function trackPassesHomeBgFilter(trackId) {
 }
 
 function filterTracksForHomeBg(rows) {
+  rows = filterArtistUploadedTracks(rows);
   if (!homeJukeboxBgFilterOn()) return rows;
   return (rows || []).filter(t => t && trackPassesHomeBgFilter(t.id || t.trackId));
 }
@@ -31775,6 +31789,8 @@ async function ensureHomeLibrary() {
     }
     _homeBgTrackIds = new Set((body.trackIds || []).filter(Boolean));
     _homeBgArtistIds = new Set((body.artistIds || []).filter(Boolean));
+    _artistUploadedTrackIds = new Set((body.artistUploadedTrackIds || []).filter(Boolean));
+    _artistUploadedArtistIds = new Set((body.artistUploadedArtistIds || []).filter(Boolean));
     _homeLibError = false;
   } catch (error) {
     console.error('[sj] could not load background-enabled catalog', error);
@@ -32159,6 +32175,7 @@ function esSongRows(opts) {
     rows = rows.filter(t => _esLyricFilter.has(esLyricStatus(t.id)));
   }
   if (sjBgActive()) rows = rows.filter(t => sjBgHasTrack(t.id));
+  if (artistUploadedOnly && _homeLibLoaded && !_homeLibError) rows = rows.filter(t => _artistUploadedTrackIds.has(t.id));
   const q = _esSearchQ.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(t => {
@@ -33210,6 +33227,7 @@ function landingPlayQueue(q, opts) {
   } else {
     openYTPlayer(first.videoId, first.title, first.trackId);
     ytQueue = q; ytQueueIdx = startIdx;
+    if (ytpIsArtistAudio(first)) ytPlayQueueIdx(startIdx);
   }
   updateYTQueueUI();
 }
@@ -33305,8 +33323,10 @@ async function landingShuffleAll() {
     });
     // Video ids only — views/likes/thumbnails belong on artist-page chart loads.
     const yt = await loadYTVideoIds(trackRows.map(t => t.id));
-    const q = trackRows.filter(t => yt[t.id]?.video_id)
-      .map(t => ({ videoId: yt[t.id].video_id, title: t.name, trackId: t.id }));
+    const q = trackRows.filter(t => yt[t.id]?.video_id || t.artist_audio_only)
+      .map(t => t.artist_audio_only && !yt[t.id]?.video_id
+        ? sjArtistQueueItem(t)
+        : { videoId: yt[t.id].video_id, title: t.name, trackId: t.id });
     if (!q.length) {
       alert(homeJukeboxBgFilterOn()
         ? 'No background-play tracks found for the artists shown.'
@@ -34653,6 +34673,24 @@ function sjBgActive() {
   return homeBgOnly && sjBgFilterOffered() && _homeLibLoaded && !_homeLibError;
 }
 
+function filterArtistUploadedTracks(rows) {
+  if (!artistUploadedOnly || !isLandingMode || !['explore', 'songs'].includes(landingTab)
+      || !_homeLibLoaded || _homeLibError) return rows;
+  return (rows || []).filter(t => _artistUploadedTrackIds.has(t.id || t.trackId));
+}
+
+function sjArtistUploadedOn(r) {
+  return !!r && (_artistUploadedArtistIds.has(r.artist_id)
+    || (Array.isArray(r.member_ids) && r.member_ids.some(id => _artistUploadedArtistIds.has(id))));
+}
+
+async function setArtistUploadedOnly(on) {
+  artistUploadedOnly = !!on;
+  if (artistUploadedOnly && !_homeLibLoaded) await ensureHomeLibrary();
+  if (_homeLibError) { artistUploadedOnly = false; showToast('Could not load artist-uploaded music. Try again.'); }
+  renderLanding();
+}
+
 function sjBgHasTrack(id) { return !!(id && _homeBgTrackIds.has(id)); }
 
 // One song is enough to keep an artist or a playlist on screen: hiding Pixies
@@ -35026,6 +35064,7 @@ function updateLandingActionsHeader() {
         <button type="button" class="playlist-explore-filter${artistScope() === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
         ${googleUser ? `<button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">${mineScopeLbl}</button>` : ''}
         <button type="button" class="playlist-explore-filter${artistScope() === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
+        <button type="button" class="playlist-explore-filter${artistUploadedOnly ? ' active' : ''}" aria-pressed="${artistUploadedOnly}" onclick="setArtistUploadedOnly(${artistUploadedOnly ? 'false' : 'true'})" title="Approved music uploaded by artists">Artist Uploaded</button>
         ${sjBgFilterOffered() ? `<button type="button" class="playlist-explore-filter${homeBgOnly ? ' active' : ''}" onclick="setSjBgOnly(${homeBgOnly ? 'false' : 'true'})" title="Only what keeps playing with the screen off or the app in the background">Background Enabled</button>` : ''}
       </span>`
     : landingTab === 'playlists'
@@ -48640,6 +48679,19 @@ async function srchPlayTrack(trackId, el) {
   srchPlay(vid, name, trackId, el);
 }
 
+let _srchArtistUploadedOnly = false;
+async function setSearchArtistUploaded(on) {
+  _srchArtistUploadedOnly = !!on;
+  await _runSearch(document.getElementById('srch-head-input')?.value || '');
+}
+function filterArtistUploadedSearch(data) {
+  const tracks = data.tracks.filter(row => _artistUploadedTrackIds.has(row.track.id));
+  const albumIds = new Set(tracks.map(row => row.track.album_id));
+  return { ...data, tracks,
+    artists: data.artists.filter(row => _artistUploadedArtistIds.has(row.id)),
+    albums: data.albums.filter(row => albumIds.has(row.id)),
+  };
+}
 let _srchTimer = null;
 const _srchHitMeta = {}; // trackId → { name } for play when the page hasn't loaded that artist
 const _srchArtistMeta = {}; // artistId → {id,name,slug,color,is_community,added_by_name}
@@ -48873,7 +48925,15 @@ async function _runSearch(query) {
   if (bodyEl) bodyEl.innerHTML = '<div id="srch-status">Searching…</div>';
   if (countEl) countEl.textContent = '';
 
-  const data = await catalogueSearch(query, () => token !== _srchToken);
+  let data = await catalogueSearch(query, () => token !== _srchToken);
+  if (_srchArtistUploadedOnly) {
+    if (!_homeLibLoaded) await ensureHomeLibrary();
+    if (_homeLibError) {
+      if (token === _srchToken && bodyEl) bodyEl.innerHTML = '<div id="srch-status">Could not load artist-uploaded music. Try again.</div>';
+      return;
+    }
+    if (data) data = filterArtistUploadedSearch(data);
+  }
   if (!data || token !== _srchToken) return;
 
   const q = data.q;
