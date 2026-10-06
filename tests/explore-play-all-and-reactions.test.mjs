@@ -85,3 +85,19 @@ test('successful heart taps update both dock controls and the expanded player co
   assert.equal(await ytpSendReaction('track','heart',2000,null),true);
   assert.deepEqual(labels.map(l => l.textContent), ['2','2','2']);
 });
+
+test('dock arrangement keeps the mobile heart immediately after pause', () => {
+  const rows = [];
+  const classes = {contains: () => false, add() {}, toggle() {}};
+  const right = {classList:classes, appendChild: row => rows.push(row), querySelector: () => null};
+  const buttons = Object.fromEntries(['ytp-mf-playpause','ytp-mf-mini-heart','ytp-mf-next'].map(id => [id,{id,classList:classes}]));
+  const scope = {document:{
+    querySelector: selector => selector === '#ytp-mini-footer .ytp-mf-right' ? right : null,
+    getElementById: id => buttons[id] || null,
+    createElement: () => ({children:[], appendChild(el) { this.children.push(el); }})
+  }, YTP_DECK_ICONS:{}, ytpIsPlaying: () => true, ytShuffle:false, ytRepeat:false};
+  const {ytpArrangeDockControls} = loadHtmlFnsInScope(['ytpArrangeDockControls'],scope);
+  ytpArrangeDockControls();
+  assert.deepEqual(rows.find(row => row.className === 'ytp-mf-middle').children.map(btn => btn.id),
+    ['ytp-mf-playpause','ytp-mf-mini-heart','ytp-mf-next']);
+});
