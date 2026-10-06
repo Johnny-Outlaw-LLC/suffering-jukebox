@@ -189,7 +189,7 @@ test('native artist cards resolve submitted release covers against the live site
 });
 
 test('signing in restores the last queue docked, never full screen', () => {
-  assert.ok(indexHtml.includes('requestAnimationFrame(() => restorePaused ? ytpEnterDocked() : ytpEnterFullscreen())'));
+  assert.match(indexHtml, /if \(_isMobPlayer && !restorePaused\) requestAnimationFrame\(\(\) => ytpEnterFullscreen\(\)\);|requestAnimationFrame\(\(\) => restorePaused \? ytpEnterDocked\(\) : ytpEnterFullscreen\(\)\)/);
   const restore = indexHtml.slice(indexHtml.indexOf('async function restorePlaybackState'), indexHtml.indexOf('function initGoogleAuth'));
   assert.ok(!restore.includes('ytpEnterFullscreen'), 'restore must not open the full screen player');
 });

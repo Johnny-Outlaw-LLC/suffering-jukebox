@@ -10189,6 +10189,7 @@ function findTrackById(tid) {
     artist_id: pcRow.artistId || null,
     album_id: pcRow.albumId,
     duration_ms: pcRow.duration || 0,
+    artist_audio_only: !!pcRow.artistAudio,
   };
   // Playlist / Now Playing listens often never load the artist catalogue, so
   // fall back to whatever meta the queue and search index already carry.
@@ -10202,6 +10203,7 @@ function findTrackById(tid) {
       artist_id: (meta && meta.artistId) || (psm && psm.artistId) || (q && q.artistId) || null,
       album_id: (meta && meta.albumId) || (psm && psm.albumId) || (q && q.albumId) || null,
       duration_ms: (q && q.durationMs) || 0,
+      artist_audio_only: !!(meta?.artistAudio || psm?.artist_audio_only || q?.artistAudio),
     };
   }
   return null;
@@ -10895,9 +10897,11 @@ function openYTPlayer(videoId, title, trackId, ev) {
   if (videoId) setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
   ytpOnTrackChange(videoId, trackId, title);
   showYtpMiniFooter();
-  // A song you tap opens straight to Full Screen on a phone. The paused restore
-  // after sign-in never does: it waits in the dock on your last queue.
-  if (_isMobPlayer) requestAnimationFrame(() => restorePaused ? ytpEnterDocked() : ytpEnterFullscreen());
+  // Mobile opens straight to Full Screen when someone presses play. A queue
+  // restored on its own (sign-in, launch) stays in the docked mini player:
+  // throwing a full screen player at someone who just signed in was unwanted,
+  // and opening then collapsing it left the iPhone app's page half unpainted.
+  if (_isMobPlayer && !restorePaused) requestAnimationFrame(() => ytpEnterFullscreen());
   if (!videoId && trackId) {
     ytpStartArtistAudio(ytQueue[0]);
   } else if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused && !_sjCarFollow) {
@@ -21226,21 +21230,23 @@ function sjmQueueRemove() {
 // Works whether the track is already in the running queue (moved) or not
 // (resolved and spliced in) - either way it lands right after what is
 // playing now and is pinned by identity so shuffle cannot pick around it.
-function sjmPlayNext() {
+async function sjmPlayNext() {
   const tid = _sjmTrackId;
   sjmClose();
   if (!tid) return;
-  const vid = ytData[tid]?.video_id;
-  if (!vid) { showToast('That song has no playable video.'); return; }
-  const meta  = ytpTrackMeta(tid, null);
-  const title = (meta.title && meta.title !== 'Unknown') ? meta.title : 'Track';
+  let info;
+  try { info = await resolvePlaylistTracks([tid]); }
+  catch (_) { showToast('Could not load this song. Try again.'); return; }
+  const item = playlistQueueItem(tid, info[tid]);
+  if (!item) { showToast('That song has no playable audio.'); return; }
+  const title = item.title;
 
-  if (!ytPlayerEl || !ytQueue.length) { ytPlayNow(vid, title, tid); return; }
+  if (!ytPlayerEl || !ytQueue.length) { await landingPlayQueue([item]); return; }
 
   let idx = ytQueue.findIndex(q => q.trackId === tid);
   if (idx < 0) {
     const insertAt = Math.min(ytQueueIdx + 1, ytQueue.length);
-    ytQueue.splice(insertAt, 0, ytQueueItem(vid, title, tid, meta.artist || ''));
+    ytQueue.splice(insertAt, 0, item);
     idx = insertAt;
     _queueHasAdditions = true;
     ytResetShufflePool();
@@ -21585,9 +21591,7 @@ async function plmPlayNext() {
   try {
     const ids = await plmTrackIds(id);
     const info = await resolvePlaylistTracks(ids);
-    const items = sjNoBlocked(ids.map(tid => info[tid]?.videoId
-      ? { videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }
-      : null));
+    const items = sjNoBlocked(ids.map(tid => playlistQueueItem(tid, info[tid])));
     if (!items.length) { showToast('This playlist has no playable songs.'); return; }
     if (!ytPlayerEl || !ytQueue.length) landingPlayQueue(items);
     else ytInsertNextQueueItems(items);
@@ -22008,9 +22012,7 @@ async function lamPlayNext() {
   try {
     const ids = await lamAllTrackIds(id);
     const info = await resolvePlaylistTracks(ids);
-    const items = sjNoBlocked(ids.map(tid => info[tid]?.videoId
-      ? { videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }
-      : null));
+    const items = sjNoBlocked(ids.map(tid => playlistQueueItem(tid, info[tid])));
     if (!items.length) { showToast('This artist has no playable songs.'); return; }
     if (!ytPlayerEl || !ytQueue.length) landingPlayQueue(items);
     else ytInsertNextQueueItems(items);
@@ -25799,7 +25801,7 @@ function _buildAccordionContent(trackId) {
   const addLyrStyle = (lyrKnown && !lyrHas) ? '' : 'display:none';
   return `<div class="trk-acc-body">
     <div class="trk-acc-actions">
-      ${vid ? `<a class="sc-link yt" href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeTitle}','${trackId}',event)">▶ Play</a>` : ''}
+      ${vid ? `<a class="sc-link yt" href="#" onclick="event.preventDefault();event.stopPropagation();openYTPlayer('${vid}','${safeTitle}','${trackId}',event)">▶ Play</a>` : (track.artist_audio_only || taTrackAudio(trackId)) ? `<button class="sc-link yt" onclick="playlistPlayAudioTrack('${trackId}',event)">▶ Play</button>` : ''}
       ${spotifyId ? `<a class="sc-link" href="https://open.spotify.com/track/${spotifyId}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#1db954;border-color:#1db954">Spotify ↗</a>` : ''}
       <button class="sc-link" onclick="sjmOpen('${trackId}',this,event)" title="Add to playlist, report a problem, and more">+ Playlist &amp; more ⋯</button>
       <button type="button" class="sc-link" data-acc-add-lyr="${trackId}" style="${addLyrStyle}" onclick="accAddLyrics('${trackId}',event)" title="Add lyrics for this song">＋ Add Lyrics</button>
@@ -26162,9 +26164,7 @@ async function playlistsShuffleAll() {
     const ids = playlistExploreTrackIds();
     if (!ids.length) { alert('No songs in the playlists shown.'); return; }
     const info = await resolvePlaylistTracks(ids);
-    let q = ids.map(id => info[id] && info[id].videoId
-      ? { videoId: info[id].videoId, title: info[id].name || 'Track', trackId: id }
-      : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
+    let q = ids.map(id => playlistQueueItem(id, info[id])).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
     q = filterQueueForHomeBg(q);
     if (!q.length) {
       alert(homeJukeboxBgFilterOn()
@@ -26188,9 +26188,7 @@ async function playPlaylist(playlistId) {
     const rows = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
     if (!rows.length) { alert('This playlist is empty.'); return; }
     const info = await resolvePlaylistTracks(rows.map(r => r.track_id));
-    let q = rows.map(r => info[r.track_id]?.videoId
-      ? { videoId: info[r.track_id].videoId, title: info[r.track_id].name || 'Track', trackId: r.track_id }
-      : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
+    let q = rows.map(r => playlistQueueItem(r.track_id, info[r.track_id])).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
     q = filterQueueForHomeBg(q);
     if (!q.length) {
       alert(homeJukeboxBgFilterOn()
@@ -26207,23 +26205,8 @@ async function playPlaylist(playlistId) {
     const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
     _queueHasAdditions = false;
-    // IMPORTANT: openYTPlayer()/ytPlayNow() both reset ytQueue internally to a
-    // single-track array, so ytQueue must be (re)assigned AFTER starting
-    // playback, not before - otherwise it gets clobbered and ytNextTrack()
-    // has nothing to shuffle into.
-    if (!ytPlayerEl) {
-      openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-      ytQueue = q; ytQueueIdx = 0;
-      setQueueSourcePlaylist(q, playlistId);
-      updateYTQueueUI();
-      if (doShuffle && q.length > 1) _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
-    } else {
-      ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-      ytQueue = q; ytQueueIdx = 0;
-      setQueueSourcePlaylist(q, playlistId);
-      updateYTQueueUI();
-      if (doShuffle && q.length > 1) ytNextTrack(); // player already exists - skip immediately
-    }
+    await landingPlayQueue(q, { shuffle: doShuffle });
+    setQueueSourcePlaylist(ytQueue, playlistId);
   } catch(e) { alert('Failed to load playlist: ' + e.message); }
 }
 
@@ -28248,6 +28231,7 @@ async function ensurePlaylistSearchMeta(trackIds) {
       playlistSearchMetaByTrack[t.id] = {
         title: (t.name || '').toLowerCase(),
         displayTitle: t.name || '',
+        artist_audio_only: !!t.artist_audio_only,
         artist: (art?.name || '').toLowerCase(),
         // Folded for searching, and kept as written for the large cards.
         artistName: art?.name || '',
@@ -28950,6 +28934,13 @@ function playlistChartRefreshPlayback(opts) {
   playlistChartPaintTransport();
 }
 
+function playlistPlayAudioTrack(trackId, ev) {
+  ev?.preventDefault(); ev?.stopPropagation();
+  const index = playlistChartBaseQueue.findIndex(it => it.trackId === trackId);
+  if (viewMode === 'playlistchart' && index >= 0) return playlistChartPlayAt(index);
+  return sjArtistPlayTrack(trackId, ev);
+}
+
 function playlistChartPlayAt(i) {
   if (liveRoomMode) { showToast('The host controls playback in a live jukebox.'); return; }
   const q = playlistChartQueue();
@@ -29130,7 +29121,7 @@ function playlistChartQueueNext(i) {
   const q = playlistChartQueue();
   const item = q[i];
   if (!item || isTrackSkipped(item.trackId)) return;
-  const norm = ytQueueItem(item.videoId, item.title, item.trackId, item.artist);
+  const norm = Object.assign({}, item, ytQueueItem(item.videoId, item.title, item.trackId, item.artist));
 
   if (ytQueue !== playlistChartBaseQueue) ytQueue = playlistChartBaseQueue.slice();
 
@@ -29194,8 +29185,9 @@ function playlistChartAddToQueue() {
   if (ytQueue === playlistChartBaseQueue) ytQueue = ytQueue.slice();
   let n = 0;
   q.forEach(it => {
-    if (!it?.videoId) return;
-    ytAddToQueue(it.videoId, it.title || 'Track', it.trackId || null);
+    if (!it?.videoId && !it?.artistAudio) return;
+    ytAppendQueueItems([it]);
+    updateYTQueueUI();
     n++;
   });
   showToast(n ? ('Added ' + n + ' song' + (n === 1 ? '' : 's') + ' to queue.') : 'Nothing to add.');
@@ -29220,19 +29212,12 @@ async function playlistChartPlay(startIndex) {
     if (start < 0) { showToast('Every song in this playlist is blocked.'); return; }
   }
   _queueHasAdditions = true;
-  if (!ytPlayerEl) {
-    openYTPlayer(q[start].videoId, q[start].title, q[start].trackId);
-    ytQueue = q; ytQueueIdx = start;
-    updateYTQueueUI();
-  } else {
-    ytPlayNow(q[start].videoId, q[start].title, q[start].trackId);
-    ytQueue = q; ytQueueIdx = start;
-    updateYTQueueUI();
-  }
+  await landingPlayQueue(q, { startTrackId: q[start].trackId });
+  playlistChartBaseQueue = ytQueue;
   const source = playlistChartId && playlistChartId !== '__dynamic_now_playing'
     ? ((_savedPlaylists || []).find(p => p.id === playlistChartId) || playlists.find(p => p.id === playlistChartId))
     : null;
-  if (source) setQueueSourcePlaylist(q, source.id);
+  if (source) setQueueSourcePlaylist(ytQueue, source.id);
   renderPlaylistChart();
 }
 
@@ -29286,6 +29271,7 @@ async function openPlaylistChart(playlistId) {
       const yt = ytData[tid] || {};
       return {
         trackId: tid,
+        artistAudio: !!it.artistAudio,
         title: it.title || meta.title || 'Track',
         artist: it.artist || meta.artist || '',
         album: it.album || meta.album || '',
@@ -29343,7 +29329,7 @@ async function openPlaylistChart(playlistId) {
     const chunks = [];
     for (let i = 0; i < ids.length; i += 70) chunks.push(ids.slice(i, i + 70));
     let stageAt = performance.now();
-    const tRows = (await Promise.all(chunks.map(c => dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,track_number,duration_ms`)))).flat();
+    const tRows = (await Promise.all(chunks.map(c => dbGet(`/tracks?id=in.(${c.join(',')})&select=id,name,album_id,track_number,duration_ms,artist_audio_only`)))).flat();
     sjPerf('playlist-wall.data-tracks', { run: perfRun, requested: ids.length, rows: tRows.length, chunks: chunks.length, durationMs: sjPerfDuration(stageAt) });
     const tById = Object.fromEntries(tRows.map(t => [t.id, t]));
     const albumIds = [...new Set(tRows.map(t => t.album_id).filter(Boolean))];
@@ -29381,8 +29367,8 @@ async function openPlaylistChart(playlistId) {
       if (!t) return null;
       const artwork = chartYT[t.id]?.thumbnail || ALBUM_ART[alb?.name] || alb?.art_url || '';
       const color = alb ? albumColor(alb) : DEFAULT_BAR_COLOR;
-      SJ_TRACK_META[t.id] = { title:t.name || '', artist:artist?.name || '', album:alb?.name || '', year:(alb?.release_date || '').slice(0,4), artwork };
-      return { trackId:t.id, title:t.name || 'Track', artist:artist?.name || '', album:alb?.name || '', albumId: alb?.id || null, _alb: alb || null, color, artwork, index, duration:t.duration_ms || 0, views:chartYT[t.id]?.views || 0, ptId: pt.id, position: pt.position, addedByEmail: pt.added_by_email || null, addedByName: pt.added_by_name || '' };
+      SJ_TRACK_META[t.id] = { title:t.name || '', artistAudio: !!t.artist_audio_only, artist:artist?.name || '', album:alb?.name || '', year:(alb?.release_date || '').slice(0,4), artwork };
+      return { trackId:t.id, artistAudio: !!t.artist_audio_only, title:t.name || 'Track', artist:artist?.name || '', album:alb?.name || '', albumId: alb?.id || null, _alb: alb || null, color, artwork, index, duration:t.duration_ms || 0, views:chartYT[t.id]?.views || 0, ptId: pt.id, position: pt.position, addedByEmail: pt.added_by_email || null, addedByName: pt.added_by_name || '' };
     }).filter(Boolean);
     sjPerf('playlist-wall.rows-built', { run: perfRun, rows: rows.length, durationMs: sjPerfDuration(stageAt) });
     if (playlistChartId !== playlistId) {
@@ -29394,7 +29380,7 @@ async function openPlaylistChart(playlistId) {
     playlistChartBaseQueue = rows.map(r => {
       const videoId = chartYT[r.trackId]?.video_id || null;
       if (videoId) return ytQueueItem(videoId, r.title, r.trackId, r.artist);
-      if (!taTrackAudio(r.trackId)) return null;
+      if (!tById[r.trackId]?.artist_audio_only && !taTrackAudio(r.trackId)) return null;
       const item = ytQueueItem(null, r.title, r.trackId, r.artist);
       item.artistAudio = true;
       return item;
@@ -33418,7 +33404,8 @@ async function landingPlayQueue(q, opts) {
   const shuffle = !!opts?.shuffle;
   q = filterQueueForHomeBg(sjNoBlocked(q));
   if (!q.length) return;
-  let startIdx = 0;
+  let startIdx = opts?.startTrackId ? Math.max(0, q.findIndex(it => it.trackId === opts.startTrackId))
+    : Math.max(0, Math.min(Number(opts?.startIndex) || 0, q.length - 1));
   if (shuffle) {
     // Do not pre-randomize this queue. The playback shuffle bag owns every
     // pick, which is where Discovery, Favorites First, and Less Repeats are
@@ -33433,9 +33420,9 @@ async function landingPlayQueue(q, opts) {
   // open the player. Starting YouTube first and fetching this afterwards left
   // a race where a listener could lock the phone while the WebView still had
   // the speakers; iOS then suspended it before the native handoff completed.
-  // Keep ordinary queues instant, but a Background Enabled shuffle is making
-  // an explicit promise that the very first song survives the screen closing.
-  const primeNativeBackground = homeJukeboxBgFilterOn()
+  // Background Enabled and the phone's audio preference both promise that
+  // the first eligible song survives the screen closing.
+  const primeNativeBackground = (homeJukeboxBgFilterOn() || _taPreferBg)
     && taIsMobileDevice()
     && !!taNativeBgPlugin();
   if (primeNativeBackground) {
@@ -33513,8 +33500,20 @@ async function resolvePlaylistTracks(trackIds) {
     }
   }
   const map = {};
-  tRows.forEach(t => { map[t.id] = { name: t.name, videoId: yt[t.id]?.video_id || null }; });
+  tRows.forEach(t => { map[t.id] = { name: t.name, videoId: yt[t.id]?.video_id || null, artistAudio: !!t.artist_audio_only }; });
   return map;
+}
+
+// A playlist can mix videos, artist recordings and personal audio uploads.
+// Keep the audio marker even when the artist has never been opened on this page.
+function playlistQueueItem(trackId, info) {
+  if (!info) return null;
+  const videoId = info.videoId || null;
+  const artistAudio = !videoId && (!!info.artistAudio || !!taTrackAudio(trackId));
+  if (!videoId && !artistAudio) return null;
+  const item = ytQueueItem(videoId, info.name || 'Track', trackId);
+  if (artistAudio) item.artistAudio = true;
+  return item;
 }
 
 async function landingShuffleAll() {
@@ -34082,7 +34081,7 @@ function pePlaylistTrackRows(p) {
     const t = eaFindTrack(tid);
     const meta = playlistSearchMetaByTrack[tid] || {};
     if (t) return t;
-    return { id: tid, name: meta.displayTitle || meta.title || 'Track', album_id: null, track_number: pt.position, duration_ms: 0 };
+    return { id: tid, artist_audio_only: !!meta.artist_audio_only, name: meta.displayTitle || meta.title || 'Track', album_id: null, track_number: pt.position, duration_ms: 0 };
   }).filter(Boolean);
 }
 
@@ -37946,21 +37945,16 @@ async function admSavePlaylist() {
   admPaintProgress('Saving…');
   admPaintCount();
 
-  // Now Playing is the queue, not a table: queue the videos and stop.
+  // Now Playing is the queue, not a table: append videos and audio recordings.
   if (a.target === '__dynamic_now_playing') {
-    try {
-      const need = rows.filter(r => !r.videoId && r.trackId);
-      if (need.length) {
-        const v = await loadYT(need.map(r => r.trackId));
-        need.forEach(r => { r.videoId = v?.[r.trackId]?.video_id || null; });
-      }
-    } catch (_) {}
-    const additions = rows.filter(r => r.videoId && !(r.trackId && _plbExisting.has(r.trackId))).map(r => {
+    const info = await resolvePlaylistTracks(rows.map(r => r.trackId).filter(Boolean));
+    const additions = rows.filter(r => !(r.trackId && _plbExisting.has(r.trackId))).map(r => {
       if (r.trackId) {
         SJ_TRACK_META[r.trackId] = Object.assign({}, SJ_TRACK_META[r.trackId] || {}, { title: r.title || '', artist: r.artist || '', album: r.album || '' });
+        return playlistQueueItem(r.trackId, info[r.trackId]);
       }
-      return ytQueueItem(r.videoId, r.title || r.ytTitle || 'Track', r.trackId || null, r.artist || '');
-    });
+      return r.videoId ? ytQueueItem(r.videoId, r.title || r.ytTitle || 'Track', null, r.artist || '') : null;
+    }).filter(Boolean);
     ytQueue.push(...additions);
     updateYTQueueUI({ preserveScroll: true });
     _adm = null;
@@ -40826,6 +40820,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-06';
 const SJ_CHANGELOG = [
   { date: '2026-10-06', items: [
     'After you sign in, your last queue now waits in the docked player, paused, instead of opening the full screen player.',
+    'Playlists now include artist recordings without YouTube videos when playing, shuffling, and adding songs to the queue.',
+    'Record Keeper prepares native audio before starting playlist playback so music continues when the screen locks.',
     'For Artists and For Listeners now appear at the top of Home, and in the footer on other pages.',
     'The artist and listener guides have new expandable feature boxes, written by music fans for music fans.',
     'Artist Uploaded filters in Explore Artists, Explore Songs, and Search help you find recordings published directly by artists.',
@@ -43787,8 +43783,8 @@ async function restorePlaybackState(opts) {
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
     ytpSetPlayPauseIcon(false);
-    // Always Docked, even if they left it in Full Screen: a restore should
-    // put the queue within reach, not take over the screen.
+    // A restored queue always comes back Docked and paused, even if it was
+    // left in Full Screen.
   } catch (e) {
     _pbRestoreOpts = null;
     /* no saved state yet, or fetch failed - just start fresh */
@@ -43949,6 +43945,20 @@ function closeSignIn() {
   document.getElementById('signInOverlay')?.classList.remove('open');
 }
 
+function sjFinishSignIn() {
+  document.activeElement?.blur?.();
+  closeSignIn();
+  if (sjIsNative()) {
+    // onAuthStateChange already hydrates the account, library and paused queue.
+    // Reloading WKWebView while the keyboard or system sign-in sheet dismisses
+    // can leave its upper tiles blank until a second, manual refresh.
+    sjNativeRepaint();
+    return;
+  }
+  try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch (_) {}
+  window.location.reload();
+}
+
 function sjSignInErr(msg) {
   const el = document.getElementById('signin-err');
   if (!el) return;
@@ -43993,8 +44003,7 @@ async function sjAppleSignIn() {
       });
       if (profileError) console.warn('[sj] could not save Apple display name', profileError);
     }
-    try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch (_) {}
-    window.location.reload();
+    sjFinishSignIn();
   } catch (e) {
     if (e && (e.code === 'cancelled' || /cancel/i.test(e.message || ''))) return;
     console.error('[sj] Apple sign-in failed', e);
@@ -44019,17 +44028,8 @@ async function sjEmailSignIn() {
     const { error } = await sbAuth.auth.signInWithPassword({ email, password });
     if (error) throw error;
     if (pwEl) pwEl.value = '';
-    try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch (e) {}
-    // Google comes back on a fresh page load, and everything that runs after
-    // signing in (restoring a queue, finishing an import that asked for an
-    // account) is wired to that load. Reload so email takes the same road.
-    // In the iOS app, reloading while the keyboard is still up left the top
-    // of the next page unpainted until something re-rendered it, so put the
-    // keyboard and the sheet away first and let them finish leaving.
-    if (document.activeElement && typeof document.activeElement.blur === 'function') document.activeElement.blur();
-    closeSignIn();
-    if (sjIsNative()) await new Promise(r => setTimeout(r, 450));
-    window.location.reload();
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign in with email'; }
+    sjFinishSignIn();
   } catch (e) {
     const msg = String(e?.message || '');
     sjSignInErr(/invalid login/i.test(msg) ? 'That email and password do not match.' : (msg || 'Could not sign in just now.'));
@@ -44080,7 +44080,7 @@ async function sjNativeSignIn() {
     const { error: exErr } = await sbAuth.auth.exchangeCodeForSession(code);
     if (exErr) throw exErr;
 
-    window.location.reload();   // same landing the web flow does after redirect
+    sjFinishSignIn();
   } catch (e) {
     if (e && (e.code === 'cancelled' || /cancel/i.test(e.message || ''))) return;
     console.error('[sj] native sign-in failed', e);
@@ -48014,17 +48014,12 @@ async function hydratePlaylistLink() {
     if (!pl._tracks?.length) return;
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
     const info = await resolvePlaylistTracks(pl._tracks.map(pt => pt.track_id));
-    const q = pl._tracks.map(pt => info[pt.track_id]?.videoId
-      ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
-      : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
+    const q = pl._tracks.map(pt => playlistQueueItem(pt.track_id, info[pt.track_id])).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
     if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
     const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
-    openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-    ytQueue = q; ytQueueIdx = 0;
-    setQueueSourcePlaylist(q, pl.id);
-    updateYTQueueUI();
-    if (doShuffle && q.length > 1) _ytShuffleAfterReady = true;
+    await landingPlayQueue(q, { shuffle: doShuffle });
+    setQueueSourcePlaylist(ytQueue, pl.id);
   } catch (e) {}
 }
 hydratePlaylistLink();
@@ -48074,9 +48069,9 @@ async function hydratePlaylistShareLink() {
     const d = await fetch('/api/playlist-share?token=' + encodeURIComponent(token)).then(r => r.json());
     if (!d.ok) throw new Error(d.error || 'That shared playlist is unavailable.');
     const info = await resolvePlaylistTracks((d.tracks || []).map(r => r.track_id));
-    const q = (d.tracks || []).map(r => info[r.track_id]?.videoId ? ({ videoId:info[r.track_id].videoId, title:info[r.track_id].name || 'Track', trackId:r.track_id }) : null).filter(Boolean);
+    const q = (d.tracks || []).map(r => playlistQueueItem(r.track_id, info[r.track_id])).filter(Boolean);
     if (!q.length) throw new Error("Couldn't load this playlist's tracks.");
-    openYTPlayer(q[0].videoId, q[0].title, q[0].trackId); ytQueue=q; ytQueueIdx=0; updateYTQueueUI();
+    await landingPlayQueue(q);
     try { history.replaceState(null, '', location.pathname); } catch (_) {}
     showToast('♫ Shared playlist: ' + (d.playlist.name || 'Playlist'));
   } catch (e) { showToast(e.message || 'Could not open shared playlist.'); }
@@ -48616,28 +48611,13 @@ async function playFromPlaylist(playlistId) {
   if (!pl || !pl._tracks?.length) return;
   const sorted = [...pl._tracks].sort((a, b) => a.position - b.position);
   const info = await resolvePlaylistTracks(sorted.map(pt => pt.track_id));
-  const q = sorted.map(pt => info[pt.track_id]?.videoId
-    ? { videoId: info[pt.track_id].videoId, title: info[pt.track_id].name || 'Track', trackId: pt.track_id }
-    : null).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
+  const q = sorted.map(pt => playlistQueueItem(pt.track_id, info[pt.track_id])).filter(Boolean).filter(it => !isTrackSkipped(it.trackId));
   if (!q.length) { showToast("Couldn't load this playlist's tracks."); return; }
   _queueHasAdditions = false;
   const doShuffle = (pl.default_play_mode || 'order') === 'shuffle';
   setYtShuffleEnabled(doShuffle);
-  // IMPORTANT: openYTPlayer()/ytPlayNow() both reset ytQueue internally to a
-  // single-track array, so ytQueue must be (re)assigned AFTER starting
-  // playback, not before - otherwise it gets clobbered and ytNextTrack()
-  // has nothing to shuffle into.
-  if (!ytPlayerEl) {
-    openYTPlayer(q[0].videoId, q[0].title, q[0].trackId);
-    ytQueue = q; ytQueueIdx = 0;
-    updateYTQueueUI();
-    if (doShuffle && q.length > 1) _ytShuffleAfterReady = true; // ytNextTrack() fires once YT API is ready
-  } else {
-    ytPlayNow(q[0].videoId, q[0].title, q[0].trackId);
-    ytQueue = q; ytQueueIdx = 0;
-    updateYTQueueUI();
-    if (doShuffle && q.length > 1) ytNextTrack();
-  }
+  await landingPlayQueue(q, { shuffle: doShuffle });
+  setQueueSourcePlaylist(ytQueue, playlistId);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -48881,12 +48861,11 @@ async function loadAndAddPlaylistToQueue(playlistId) {
   const info = await resolvePlaylistTracks(sorted.map(pt => pt.track_id));
   sorted.forEach(pt => {
     const inf = info[pt.track_id];
-    if (inf?.videoId) ytAddToQueue(inf.videoId, inf.name || 'Track', pt.track_id);
+    const item = playlistQueueItem(pt.track_id, inf);
+    if (item) ytAppendQueueItems([item]);
   });
-  if (!ytPlayerEl && ytQueue.length) {
-    const first = ytQueue[0];
-    openYTPlayer(first.videoId, first.title, first.trackId);
-  }
+  if (!ytPlayerEl && ytQueue.length) await landingPlayQueue(ytQueue.slice());
+  else updateYTQueueUI();
 }
 
 function toggleTLBars() {

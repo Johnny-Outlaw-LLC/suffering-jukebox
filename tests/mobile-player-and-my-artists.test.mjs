@@ -271,3 +271,9 @@ test('the phone Now Playing deck is title row, scrubber, transport and Up Next /
   assert.match(html, /function sjmPlayerSectionHTML\(tid\) \{[\s\S]*taToggleAudioMode\(\)[\s\S]*ytpToggleVersionMenu\(\)/);
   assert.match(html, /_sjmHeader\(_sjmHdr\) \+\s*sjmPlayerSectionHTML\(tid\) \+/);
 });
+
+test('a queue restored after sign-in or launch stays docked, never full screen', () => {
+  assert.match(html, /if \(_isMobPlayer && !restorePaused\) requestAnimationFrame\(\(\) => ytpEnterFullscreen\(\)\);/);
+  const restore = html.slice(html.indexOf('async function restorePlaybackState('), html.indexOf('function initGoogleAuth('));
+  assert.doesNotMatch(restore, /ytpEnterFullscreen\(\)/);
+});

@@ -35,15 +35,18 @@ test('playlist Play Next preserves source order after the current song', async (
     plmTrackIds: async () => ['a', 'b'],
     resolvePlaylistTracks: async () => ({
       a: { videoId: 'video-a', name: 'First' },
-      b: { videoId: 'video-b', name: 'Second' },
+      b: { artistAudio: true, name: 'Artist recording' },
     }),
+    taTrackAudio: () => null,
+    ytQueueItem: (videoId, title, trackId) => ({ videoId, title, trackId }),
     sjNoBlocked: items => items.filter(Boolean),
     ytInsertNextQueueItems: items => { queued = items; },
     showToast() {},
   };
-  const { plmPlayNext } = loadHtmlFnsInScope(['plmPlayNext'], scope);
+  const { plmPlayNext } = loadHtmlFnsInScope(['playlistQueueItem', 'plmPlayNext'], scope);
   await plmPlayNext();
   assert.deepEqual(queued.map(item => item.trackId), ['a', 'b']);
+  assert.equal(queued[1].artistAudio, true);
 });
 
 test('artist Play Next uses the same queue insertion for its playable songs', async () => {
@@ -56,13 +59,16 @@ test('artist Play Next uses the same queue insertion for its playable songs', as
     lamAllTrackIds: async () => ['a', 'missing', 'b'],
     resolvePlaylistTracks: async () => ({
       a: { videoId: 'video-a', name: 'First' },
-      b: { videoId: 'video-b', name: 'Second' },
+      b: { artistAudio: true, name: 'Artist recording' },
     }),
+    taTrackAudio: () => null,
+    ytQueueItem: (videoId, title, trackId) => ({ videoId, title, trackId }),
     sjNoBlocked: items => items.filter(Boolean),
     ytInsertNextQueueItems: items => { queued = items; },
     showToast() {},
   };
-  const { lamPlayNext } = loadHtmlFnsInScope(['lamPlayNext'], scope);
+  const { lamPlayNext } = loadHtmlFnsInScope(['playlistQueueItem', 'lamPlayNext'], scope);
   await lamPlayNext();
   assert.deepEqual(queued.map(item => item.trackId), ['a', 'b']);
+  assert.equal(queued[1].artistAudio, true);
 });

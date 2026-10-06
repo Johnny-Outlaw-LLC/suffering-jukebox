@@ -37,10 +37,11 @@ function fakePage() {
 
 function signInScope(authResult) {
   const page = fakePage();
-  const calls = { password: [], reloads: 0, stored: {} };
+  const calls = { password: [], reloads: 0, repaints: 0, stored: {} };
   const scope = {
     googleUser: null,
     sjIsNative: () => false,
+    sjNativeRepaint: () => { calls.repaints++; },
     document: page.document,
     setTimeout: () => {},
     localStorage: { setItem: (k, v) => { calls.stored[k] = v; } },
@@ -103,11 +104,13 @@ test('native Apple sign-in exchanges a nonce-bound identity token and preserves 
       updateUser: async (payload) => { profiles.push(payload); return { error: null }; },
     } },
   });
-  const { sjAppleSignIn } = loadHtmlFnsInScope(['sjAppleSignIn', 'sjSignInErr'], scope);
+  const { sjAppleSignIn } = loadHtmlFnsInScope(['sjAppleSignIn', 'sjFinishSignIn', 'closeSignIn', 'sjSignInErr'], scope);
   await sjAppleSignIn();
   assert.deepEqual(tokens, [{ provider: 'apple', token: 'apple.jwt', nonce: 'raw-nonce' }]);
   assert.deepEqual(profiles, [{ data: { full_name: 'Johnny D' } }]);
-  assert.equal(calls.reloads, 1);
+  assert.equal(calls.reloads, 0);
+  assert.equal(calls.repaints, 1);
+  assert.equal(page.els.signInOverlay.classList.contains('open'), false);
   assert.equal(page.els['signin-err'].hidden, true);
 });
 
@@ -127,7 +130,7 @@ test('Google is still one tap from the panel', async () => {
 
 test('an email and password sign in, clear the password box, and reload like Google does', async () => {
   const { page, calls, scope } = signInScope({ error: null });
-  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr', 'closeSignIn'], scope);
+  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjFinishSignIn', 'sjSignInErr', 'closeSignIn'], scope);
   page.document.getElementById('signin-email').value = '  Testing@Shutterfield.com ';
   page.document.getElementById('signin-password').value = 'not-the-real-one';
   await sjEmailSignIn();
@@ -139,7 +142,7 @@ test('an email and password sign in, clear the password box, and reload like Goo
 
 test('a wrong password says so in plain words and does not reload', async () => {
   const { page, calls, scope } = signInScope({ error: { message: 'Invalid login credentials' } });
-  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr', 'closeSignIn'], scope);
+  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjFinishSignIn', 'sjSignInErr', 'closeSignIn'], scope);
   page.document.getElementById('signin-email').value = TEST_ACCOUNT.email;
   page.document.getElementById('signin-password').value = 'wrong';
   await sjEmailSignIn();
@@ -151,7 +154,7 @@ test('a wrong password says so in plain words and does not reload', async () => 
 
 test('an empty form asks for both fields and never calls Supabase', async () => {
   const { page, calls, scope } = signInScope({ error: null });
-  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjSignInErr', 'closeSignIn'], scope);
+  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjFinishSignIn', 'sjSignInErr', 'closeSignIn'], scope);
   page.document.getElementById('signin-email').value = TEST_ACCOUNT.email;
   await sjEmailSignIn();
   assert.equal(calls.password.length, 0);
@@ -203,4 +206,51 @@ test('the second fixed-password ShutterField account is also seeded for Listenin
   const sql = readFileSync(join(dir, file), 'utf8');
   assert.match(sql, /ensure_test_account\('testing2@shutterfield\.com',\s*'Johnny D Two'\)/i);
   assert.doesNotMatch(sql, /(insert\s+into|update|delete\s+from)\s+auth\./i);
+});
+
+
+test('native email sign-in dismisses the keyboard and sheet without reloading the web view', async () => {
+  const { page, calls, scope } = signInScope({ error: null });
+  scope.sjIsNative = () => true;
+  let blurred = false;
+  page.document.activeElement = { blur: () => { blurred = true; } };
+  const { sjEmailSignIn } = loadHtmlFnsInScope(['sjEmailSignIn', 'sjFinishSignIn', 'sjSignInErr', 'closeSignIn'], scope);
+  page.document.getElementById('signInOverlay').classList.add('open');
+  page.document.getElementById('signin-email').value = TEST_ACCOUNT.email;
+  page.document.getElementById('signin-password').value = 'test-password';
+  await sjEmailSignIn();
+  assert.equal(calls.password.length, 1);
+  assert.equal(calls.reloads, 0);
+  assert.equal(calls.repaints, 1);
+  assert.equal(blurred, true);
+  assert.equal(page.els.signInOverlay.classList.contains('open'), false);
+  assert.equal(page.els['signin-password'].value, '');
+  assert.equal(page.els['signin-submit'].disabled, false);
+});
+
+test('native Google sign-in exchanges the callback and closes the sheet without reloading', async () => {
+  const { page, calls, scope } = signInScope({ error: null });
+  const codes = [];
+  Object.assign(scope, {
+    sjIsNative: () => true,
+    SJ_AUTH_SCHEME: 'com.johnnyoutlaw.recordkeeper',
+    sjApiUrl: path => 'https://recordkeeper.stream' + path,
+    window: {
+      ...scope.window,
+      Capacitor: { Plugins: { SJAuth: {
+        signIn: async () => ({ url: 'com.johnnyoutlaw.recordkeeper://auth?code=test-code' }),
+      } } },
+    },
+    sbAuth: { auth: {
+      signInWithOAuth: async () => ({ data: { url: 'https://auth.example/authorize' }, error: null }),
+      exchangeCodeForSession: async code => { codes.push(code); return { error: null }; },
+    } },
+  });
+  page.document.getElementById('signInOverlay').classList.add('open');
+  const { sjNativeSignIn } = loadHtmlFnsInScope(['sjNativeSignIn', 'sjFinishSignIn', 'closeSignIn'], scope);
+  await sjNativeSignIn();
+  assert.deepEqual(codes, ['test-code']);
+  assert.equal(calls.reloads, 0);
+  assert.equal(calls.repaints, 1);
+  assert.equal(page.els.signInOverlay.classList.contains('open'), false);
 });
