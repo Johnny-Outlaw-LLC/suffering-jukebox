@@ -13,7 +13,7 @@
 // hostname fallback is what makes localhost and Vercel preview deploys work
 // without setting anything.
 
-export type SurfaceId = "sj" | "lp";
+export type SurfaceId = "sj" | "lp" | "rk";
 
 export interface SurfaceFeatures {
   /** /<slug> serves an indexable artist page with catalog text and JSON-LD. */
@@ -178,7 +178,7 @@ export interface Surface {
 const SJ_URL = "https://www.sufferingjukebox.stream";
 const LP_URL = "https://listeningparty.stream";
 
-export const SURFACES: Record<SurfaceId, Surface> = {
+const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
   sj: {
     id: "sj",
     artistHomeSeo: true,
@@ -312,10 +312,50 @@ export const SURFACES: Record<SurfaceId, Surface> = {
   },
 };
 
+export const SURFACES: Record<SurfaceId, Surface> = {
+  ...BASE_SURFACES,
+  rk: {
+    ...BASE_SURFACES.lp,
+    id: "rk",
+    name: "Record Keeper",
+    url: "https://recordkeeper.stream",
+    host: "recordkeeper.stream",
+    origins: ["https://recordkeeper.stream", "https://www.recordkeeper.stream"],
+    title: "Record Keeper | A Home for Music and the People Who Love It",
+    description: "Explore artists, follow the lyrics, build playlists, upload your own content, track your listening, and enjoy music together.",
+    ogDescription: "Explore music. Make it yours. Discover discographies, create playlists, publish your music, and listen together.",
+    twitterDescription: "Explore artists, build playlists, follow the lyrics, and listen together.",
+    manifestDescription: "A home for music and the people who love it. Explore, create, and listen together.",
+    keywords: "Record Keeper, RecordKeeper.stream, music player, discographies, playlists, synced lyrics, listening stats, listen together, independent artists",
+    tagline: "Explore music. Make it yours.",
+    assetBase: "/brand/rk",
+    textLogo: "/brand/rk/wordmark-dark.png",
+    ogImage: "https://recordkeeper.stream/brand/rk/wordmark.png",
+    ogImageSize: { w: 2149, h: 732 },
+    themeColor: "#171717",
+    accent: "#C94F27",
+    accentHover: "#DF6138",
+    accentRgb: "201,79,39",
+    fontsHref: null,
+    authScheme: "com.johnnyoutlaw.recordkeeper",
+    shareText: "Record Keeper — explore discographies, create playlists, upload your content, and listen together.",
+    sisterName: "Suffering Jukebox",
+    sisterUrl: "https://www.sufferingjukebox.stream/",
+    homeJsonLd: {
+      "@context": "https://schema.org", "@type": "WebApplication",
+      name: "Record Keeper", url: "https://recordkeeper.stream/",
+      description: "Explore artists, follow the lyrics, build playlists, upload your own content, track your listening, and enjoy music together.",
+      applicationCategory: "MusicApplication", operatingSystem: "Any",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+    features: { ...BASE_SURFACES.lp.features },
+  },
+};
+
 export const DEFAULT_SURFACE: SurfaceId = "sj";
 
 function isSurfaceId(v: string | undefined | null): v is SurfaceId {
-  return v === "sj" || v === "lp";
+  return v === "sj" || v === "lp" || v === "rk";
 }
 
 /**

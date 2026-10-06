@@ -118,8 +118,8 @@ function selectionIncludes(selection: AnalyticsQuery["artistSel"], key: string) 
   return selection.mode === "include" ? has : !has;
 }
 function split(events: DemoEvent[]) {
-  const result = { duration_ms: 0, events: 0, sj_ms: 0, lp_ms: 0, spotify_ms: 0, youtube_ms: 0, jukebox_ms: 0,
-    sj_events: 0, lp_events: 0, spotify_events: 0, youtube_events: 0, jukebox_events: 0 };
+  const result = { duration_ms: 0, events: 0, sj_ms: 0, lp_ms: 0, rk_ms: 0, spotify_ms: 0, youtube_ms: 0, jukebox_ms: 0,
+    sj_events: 0, lp_events: 0, rk_events: 0, spotify_events: 0, youtube_events: 0, jukebox_events: 0 };
   for (const event of events) {
     result.events++; result.duration_ms += event.duration;
     result[`${event.source}_events`]++; result[`${event.source}_ms`] += event.duration;

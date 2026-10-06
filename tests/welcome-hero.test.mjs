@@ -281,7 +281,7 @@ test('a live station takes the hero vinyl ahead of Hot right now', () => {
 test('the hero and shelf are mounted on the Home tab and nowhere else', () => {
   // Home is the playlist-led front door; Explore Playlists is the wall.
   assert.ok(
-    /function landingHomeHTML\(\)[\s\S]*?\$\{lphFeatureHTML\(\)\}[\s\S]*?\$\{lphShelfHTML\(\)\}/.test(indexHtml),
+    /function landingHomeHTML\(\)[\s\S]*?\$\{SJ_BRAND.id === 'rk' \? '' : lphFeatureHTML\(\)\}[\s\S]*?\$\{lphShelfHTML\(\)\}/.test(indexHtml),
     'the hero is not mounted on Home',
   );
   for (const fn of ['lphFeatureHTML', 'lphShelfHTML']) {

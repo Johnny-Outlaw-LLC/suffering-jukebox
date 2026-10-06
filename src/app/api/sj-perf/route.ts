@@ -77,7 +77,7 @@ function cleanDetail(entry: IncomingEntry): Record<string, unknown> {
   if (typeof entry.label === "string" && entry.label.trim()) {
     detail.label = entry.label.slice(0, 80);
   }
-  if (entry.surface === "sj" || entry.surface === "lp") detail.surface = entry.surface;
+  if (entry.surface === "sj" || entry.surface === "lp" || entry.surface === "rk") detail.surface = entry.surface;
   return detail;
 }
 

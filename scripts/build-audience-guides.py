@@ -29,7 +29,7 @@ def image(name, caption, assets):
         mode, description = demos[name]
         rk = assets.startswith('/record-keeper')
         brand = 'rk' if rk else '__GUIDE_BRAND__'
-        url = ('https://listeningparty.stream' if rk else '') + '/demo/' + mode + '?brand=' + brand
+        url = '/demo/' + mode + '?brand=' + brand
         return f'<figure class="demo-example"><iframe data-demo src="{url}&amp;embed=1" title="{escape(description)}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-popups"></iframe><figcaption>Interactive fictional demo · {description} <a href="{url}" target="_blank" rel="noopener">Open the full demo →</a></figcaption></figure>'
     path = assets + '/' + name + '.png'
     return f'<figure><a href="{path}" target="_blank" rel="noopener" aria-label="Open full-size screenshot: {escape(caption)}"><img src="{path}" alt="{escape(caption)}" loading="lazy" decoding="async"></a><figcaption>{caption} · Actual application screenshot. Select the image to enlarge.</figcaption></figure>'
@@ -72,16 +72,14 @@ def listeners(link, assets, name):
 BRANDS = [
     dict(id='sj',name='Suffering Jukebox',url='https://sufferingjukebox.stream',logo='/suffering-jukebox-text-logo.png',bg='#120d17',card='#1c1624',ink='#faf5ed',muted='#bdb1c5',accent='#ff8c57',line='#3c3047'),
     dict(id='lp',name='Listening Party',url='https://listeningparty.stream',logo='/brand/lp/listening-party-text-logo.png',bg='#140817',card='#211027',ink='#fdf3df',muted='#c4b2c9',accent='#ff8c57',line='#43254e'),
-    dict(id='rk',name='Record Keeper',url='https://www.outlawapps.online/record-keeper',logo='/record-keeper/wordmark-dark.png',bg='#171717',card='#222222',ink='#fff8ed',muted='#bfb8b0',accent='#ef8b63',line='#414141'),
+    dict(id='rk',name='Record Keeper',url='https://recordkeeper.stream',logo='/brand/rk/wordmark-dark.png',bg='#171717',card='#222222',ink='#fff8ed',muted='#bfb8b0',accent='#ef8b63',line='#414141'),
 ]
 
 def render(b, audience):
     rk = b['id'] == 'rk'
-    base = '/record-keeper' if rk else ''
+    base = ''
     assets = base + '/images/guides'
     def link(path):
-        if rk:
-            return base + ('' if path == '/' else path) if path in ['/', '/for-artists', '/for-listeners'] else 'https://listeningparty.stream' + path
         return path
     title = 'For Artists' if audience == 'artists' else 'For Listeners'
     desc = ('Upload your music, add and sync lyrics, share your discography, and understand your audience with artist stats.' if audience == 'artists' else 'Build playlists, explore artists, share music, upload background audio, and bring Spotify and Google listening history into your stats.')
@@ -89,12 +87,12 @@ def render(b, audience):
     body = body.replace('__GUIDE_BRAND__', b['id'])
     body = body.replace('Request Spotify’s Extended Streaming History export.', '<a href="https://support.spotify.com/us/article/understanding-your-data/" target="_blank" rel="noopener">Request Spotify’s Extended Streaming History export.</a>')
     body = body.replace('Export your history with Google Takeout.', '<a href="https://takeout.google.com/" target="_blank" rel="noopener">Export your history with Google Takeout.</a>')
-    preview = '<div class="preview">Record Keeper brand preview · Sign-in, uploads, and account tools open on Listening Party. <a href="https://www.outlawapps.online/">Back to the garage</a></div>' if rk else ''
+    preview = ''
     colors = ';'.join('--'+k+':'+b[k] for k in ['bg','card','ink','muted','accent','line'])
-    icon = '/record-keeper/icon.png' if rk else '/brand/lp/favicon.png' if b['id']=='lp' else '/favicon.png'
+    icon = '/brand/rk/favicon.png' if rk else '/brand/lp/favicon.png' if b['id']=='lp' else '/favicon.png'
     nav = ''.join(f'<a href="{link("/for-"+a)}"'+(' aria-current="page"' if a == audience else '')+f'>For {a.title()}</a>' for a in ['artists','listeners'])
     html = f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} | {b['name']}</title><meta name="description" content="{desc}"><meta name="robots" content="{'noindex, nofollow' if rk else 'index, follow'}"><link rel="canonical" href="{b['url']}/for-{audience}"><meta property="og:type" content="website"><meta property="og:title" content="{title} | {b['name']}"><meta property="og:description" content="{desc}"><meta property="og:url" content="{b['url']}/for-{audience}"><meta property="og:image" content="{b['url'].replace('/record-keeper','')+b['logo']}"><link rel="icon" href="{icon}"><style>:root{{{colors}}}{CSS}</style></head><body>{preview}<header><div class="top"><a class="brand" href="{link('/')}"><img src="{b['logo']}" alt="{b['name']}"></a><nav aria-label="Main navigation"><a href="{link('/')}">Home</a><a href="{link('/help')}">Help</a></nav></div></header><main>{body}</main><footer><div class="footer-in"><span>{b['name']} · Explore. Create. Listen together.</span><nav aria-label="Audience guides">{nav}</nav></div></footer></body></html>'''
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} | {b['name']}</title><meta name="description" content="{desc}"><meta name="robots" content="index, follow"><link rel="canonical" href="{b['url']}/for-{audience}"><meta property="og:type" content="website"><meta property="og:title" content="{title} | {b['name']}"><meta property="og:description" content="{desc}"><meta property="og:url" content="{b['url']}/for-{audience}"><meta property="og:image" content="{b['url']+b['logo']}"><link rel="icon" href="{icon}"><style>:root{{{colors}}}{CSS}</style></head><body>{preview}<header><div class="top"><a class="brand" href="{link('/')}"><img src="{b['logo']}" alt="{b['name']}"></a><nav aria-label="Main navigation"><a href="{link('/')}">Home</a><a href="{link('/help')}">Help</a></nav></div></header><main>{body}</main><footer><div class="footer-in"><span>{b['name']} · Explore. Create. Listen together.</span><nav aria-label="Audience guides">{nav}</nav></div></footer></body></html>'''
     if not rk:
         html = html.replace(b['url'] + b['logo'], b['url'] + ('/brand/lp/og-image.png' if b['id']=='lp' else '/og-image.png'))
     html = html.replace('</body>', '''<script>
@@ -109,11 +107,9 @@ window.addEventListener('message', function(event) {
     return html
 
 for brand in BRANDS:
-    if brand['id'] == 'rk' and len(sys.argv) < 2:
-        continue
     for audience in ['artists', 'listeners']:
         if brand['id']=='rk':
-            dest = Path(sys.argv[1]) / 'public/record-keeper' / ('for-' + audience)
+            dest = ROOT / 'public' / ('for-' + audience) / 'rk'
         else:
             dest = ROOT / 'public' / ('for-' + audience)
             if brand['id']=='lp': dest /= 'lp'

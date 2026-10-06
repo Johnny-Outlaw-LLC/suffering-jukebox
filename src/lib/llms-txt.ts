@@ -2,7 +2,21 @@ import type { Surface } from "@/lib/surface";
 
 /** Curated markdown brief for AI crawlers (llmstxt.org). */
 export function buildLlmsTxt(surface: Surface): string {
-  return surface.id === "lp" ? lpLlms(surface) : sjLlms(surface);
+  return surface.id === "rk" ? `# Record Keeper
+
+> Explore music. Make it yours.
+
+A home for music and the people who love it at ${surface.url}/. Explore artists and discographies, follow synced lyrics, build playlists, upload your own content, track your listening, and listen together in shared rooms. No account needed to play. Part of the Suffering Jukebox family, with the same catalog and account.
+
+- Home: ${surface.url}/
+- For artists: ${surface.url}/for-artists
+- For listeners: ${surface.url}/for-listeners
+- Help: ${surface.url}/help
+- About: ${surface.url}/about
+- Privacy: ${surface.url}/privacy
+- Terms: ${surface.url}/terms
+- Copyright: ${surface.url}/dmca
+` : surface.id === "lp" ? lpLlms(surface) : sjLlms(surface);
 }
 
 function sjLlms(surface: Surface): string {

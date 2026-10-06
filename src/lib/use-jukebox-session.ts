@@ -23,7 +23,9 @@ function isTrustedPlayerOrigin(origin: string, brand: PublicSurface) {
     || origin === "https://sufferingjukebox.stream"
     || origin === "https://www.sufferingjukebox.stream"
     || origin === "https://listeningparty.stream"
-    || origin === "https://www.listeningparty.stream";
+    || origin === "https://www.listeningparty.stream"
+    || origin === "https://recordkeeper.stream"
+    || origin === "https://www.recordkeeper.stream";
 }
 
 export function useJukeboxSession(brand: PublicSurface) {

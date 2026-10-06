@@ -52,7 +52,7 @@ const nextConfig: NextConfig = {
   // Resolve those paths through SJ before matching LP's filesystem routes.
   async rewrites() {
     return {
-      beforeFiles: process.env.SURFACE_ID?.trim().toLowerCase() === "lp"
+      beforeFiles: ["lp", "rk"].includes(process.env.SURFACE_ID?.trim().toLowerCase() || "")
         ? ["album-art", "artist-release-art"].map((segment) => ({
             source: `/${segment}/:path*`,
             destination: `https://www.sufferingjukebox.stream/${segment}/:path*`,

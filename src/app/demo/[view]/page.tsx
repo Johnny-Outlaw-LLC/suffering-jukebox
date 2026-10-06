@@ -13,7 +13,7 @@ export default async function DemoPage({ params, searchParams }: {
 }) {
   const [{ view }, query, hostHeaders] = await Promise.all([params, searchParams, headers()]);
   if (!views.has(view)) notFound();
-  const brand = publicSurface(query.brand === "lp" || query.brand === "sj" ? SURFACES[query.brand] : currentSurface(hostHeaders.get("host")));
+  const brand = publicSurface(query.brand === "lp" || query.brand === "sj" || query.brand === "rk" ? SURFACES[query.brand] : currentSurface(hostHeaders.get("host")));
   const preview = query.brand === "rk";
   const demoBrand = preview ? {
     ...publicSurface(SURFACES.lp), name: "Record Keeper", url: "https://www.outlawapps.online/record-keeper",

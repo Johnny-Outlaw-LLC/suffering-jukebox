@@ -155,7 +155,7 @@ export async function proxy(request: NextRequest) {
     to.searchParams.set("live", slug);
     response = NextResponse.rewrite(to);
     response.cookies.set("sj_live_room", slug, { maxAge: 120, path: "/", sameSite: "lax", secure: true });
-  } else if (slug && currentSurface(request.headers.get("host")).id === "lp"
+  } else if (slug && currentSurface(request.headers.get("host")).features.playlistsFirst
     && lpRootTarget(slug, await lpRootSlugs()) === "playlist") {
     // A playlist's clean root address. Rewrite internally to the shared
     // playlist route while leaving /my-playlist in the browser address bar.

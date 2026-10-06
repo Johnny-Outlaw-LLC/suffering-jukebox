@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { loadHtmlFns } from './_load.mjs';
 
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const lpHelp = readFileSync(new URL('../public/help/lp/index.html', import.meta.url), 'utf8');
@@ -82,7 +83,7 @@ test('What’s New calls the shipped feed APP UPDATES', () => {
 
 test('the phone Now Playing deck is title row, scrubber, transport and Up Next / Lyrics only', () => {
   const from = html.indexOf('function ytpMobDeckHTML(trackId) {');
-  const deck = html.slice(from, html.indexOf('\n}\n', from));
+  const deck = loadHtmlFns(['ytpMobDeckHTML']).ytpMobDeckHTML.toString();
   assert.ok(from > 0, 'could not locate the phone deck');
   // Up Next leads, as in YouTube Music. ⋯ lives in the sheet's top bar.
   const order = ['ytp-md-head', 'ytp-md-title', 'ytp-md-reaction-rail', 'ytp-md-seek', 'ytp-md-playpause', 'ytp-md-tab-playlist', 'ytp-md-tab-lyrics'];
