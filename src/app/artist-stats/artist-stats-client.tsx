@@ -105,8 +105,9 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
         </div>
         {artists && artists.length > 1 && (
           <label className={styles.picker}>
-            <span>{isAdmin ? "All artists · admin only" : "Your artists"}</span>
-            <select value={slug} onChange={(e) => setSlug(e.target.value)}>
+            <span>{isAdmin ? "Artists with stats · admin only" : "Your artists with stats"}</span>
+            <select value={artists.some(a => a.slug === slug) ? slug : ""} onChange={(e) => setSlug(e.target.value)}>
+              {!artists.some(a => a.slug === slug) && <option value="" disabled>Choose an artist with stats</option>}
               {artists.map((a) => <option key={a.id} value={a.slug}>{a.name}</option>)}
             </select>
           </label>
@@ -123,9 +124,9 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
         </section>
       ) : artists && !artists.length && !stats && !error ? (
         <section className={shell.signIn}>
-          <p className={shell.eyebrow}>No artists yet</p>
-          <h2>Put your music on {brand.name}</h2>
-          <p>Upload your songs, sync the lyrics, and send fans one link. Your stats show up here from the first play.</p>
+          <p className={shell.eyebrow}>No listening stats yet</p>
+          <h2>Your music’s first play starts the story.</h2>
+          <p>Artists appear here after their first recorded play on Suffering Jukebox, Listening Party, or Record Keeper. Upload your songs and share them with your audience to get started.</p>
           <a className={shell.primaryButton} href="/artist-upload">Publish my music</a>
         </section>
       ) : (

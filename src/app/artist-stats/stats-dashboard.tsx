@@ -242,6 +242,7 @@ export function StatsDashboard({ stats, brand }: { stats: Stats; brand: PublicSu
 
   return (
     <>
+      <p className={styles.coverage}>Plays are combined across <strong>Suffering Jukebox, Listening Party, and Record Keeper</strong>. Earlier plays are included even when the site was not recorded.</p>
       <section className={styles.tiles} aria-label="Totals">
         <Tile label="Plays" value={num(t.plays)} delta={deltaFor(t.plays, t.prev_plays, rangeDays)} note={`${num(t.all_time_plays)} all time`} />
         <Tile label="Listeners" value={num(t.listeners)} delta={deltaFor(t.listeners, t.prev_listeners, rangeDays)} />

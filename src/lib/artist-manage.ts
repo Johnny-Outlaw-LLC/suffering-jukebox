@@ -74,26 +74,22 @@ async function artistIdsAsArtist(
 
 export type StatsArtist = { id: string; name: string; slug: string };
 
-/** Every artist whose stats this user can open, for the picker. */
+/** Authorized artists with recorded plays, for the picker. All sites/all time. */
 export async function listStatsArtists(
   sb: ReturnType<typeof createSjServiceClient>,
   user: { id: string; email?: string | null },
 ): Promise<StatsArtist[]> {
   const email = (user.email || "").toLowerCase();
   const db = sb.schema(JUKEBOX_SCHEMA);
-  if (email && (await isSjAdmin(email))) {
-    const out: StatsArtist[] = [];
-    for (let start = 0; ; start += 1000) {
-      const { data, error } = await db.from("artists").select("id, name, slug").order("name").range(start, start + 999);
-      if (error) throw error;
-      const rows = (data || []) as StatsArtist[];
-      out.push(...rows.filter(a => a.slug));
-      if (rows.length < 1000) return out;
-    }
+  const admin = email && (await isSjAdmin(email));
+  const ids = admin ? null : [...await artistIdsAsArtist(sb, user)];
+  if (ids && !ids.length) return [];
+  const out: StatsArtist[] = [];
+  for (let start = 0; ; start += 1000) {
+    const { data, error } = await db.rpc("artists_with_stats", { p_artist_ids: ids }).range(start, start + 999);
+    if (error) throw error;
+    const rows = (data || []) as StatsArtist[];
+    out.push(...rows.filter(a => a.slug));
+    if (rows.length < 1000) return out;
   }
-  const ids = await artistIdsAsArtist(sb, user);
-  if (!ids.size) return [];
-  const { data, error } = await db.from("artists").select("id, name, slug").in("id", [...ids]).order("name");
-  if (error) throw error;
-  return ((data || []) as StatsArtist[]).filter((a) => a.slug);
 }
