@@ -86,7 +86,7 @@ test('successful heart taps update both dock controls and the expanded player co
   assert.deepEqual(labels.map(l => l.textContent), ['2','2','2']);
 });
 
-test('dock arrangement keeps the mobile heart immediately after pause', () => {
+test('dock arrangement keeps the mobile heart first before pause', () => {
   const rows = [];
   const classes = {contains: () => false, add() {}, toggle() {}};
   const right = {classList:classes, appendChild: row => rows.push(row), querySelector: () => null};
@@ -99,5 +99,5 @@ test('dock arrangement keeps the mobile heart immediately after pause', () => {
   const {ytpArrangeDockControls} = loadHtmlFnsInScope(['ytpArrangeDockControls'],scope);
   ytpArrangeDockControls();
   assert.deepEqual(rows.find(row => row.className === 'ytp-mf-middle').children.map(btn => btn.id),
-    ['ytp-mf-playpause','ytp-mf-mini-heart','ytp-mf-next']);
+    ['ytp-mf-mini-heart','ytp-mf-playpause','ytp-mf-next']);
 });
