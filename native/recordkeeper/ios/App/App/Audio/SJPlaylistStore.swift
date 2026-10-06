@@ -1,0 +1,67 @@
+import Foundation
+
+/// Playlist membership for the car.
+///
+/// The download index knows songs, not running orders, so CarPlay had no way to
+/// offer a playlist at all. The web layer pushes what it already has whenever
+/// playlists load or a download finishes; this keeps a copy on disk so the
+/// Playlists tab is populated on a cold start in a car park with no signal.
+///
+/// Only ids are stored. Which of those songs is actually playable is decided at
+/// render time against SJCarLibrary (downloads plus streamable songs), so a
+/// playlist can never promise a track the car cannot play.
+final class SJPlaylistStore {
+
+    struct Playlist: Codable {
+        let id: String
+        var name: String
+        var trackIds: [String]
+        /// The listener's own (or Favorites) vs someone else's public playlist.
+        /// nil for snapshots saved before the page sent it.
+        var mine: Bool? = nil
+    }
+
+    static let shared = SJPlaylistStore()
+
+    private let queue = DispatchQueue(label: "sj.playlists", attributes: .concurrent)
+    private var playlists: [Playlist] = []
+
+    private lazy var url: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent("SufferingJukebox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("playlists.json")
+    }()
+
+    private init() {
+        guard let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([Playlist].self, from: data) else { return }
+        playlists = decoded
+    }
+
+    func replaceAll(_ next: [Playlist]) {
+        queue.sync(flags: .barrier) {
+            playlists = next
+            if let data = try? JSONEncoder().encode(next) {
+                try? data.write(to: url, options: .atomic)
+            }
+        }
+    }
+
+    func all() -> [Playlist] { queue.sync { playlists } }
+
+    /// Playlists with at least one song the car can play - downloaded or
+    /// streamable - each narrowed to those songs, in the saved running order.
+    func playable() -> [(playlist: Playlist, entries: [SJCarEntry])] {
+        // Pin Favorites first while preserving every other playlist's order.
+        let ordered = all().enumerated().sorted { left, right in
+            let leftFavorite = left.element.id == "__dynamic_favorites"
+            let rightFavorite = right.element.id == "__dynamic_favorites"
+            return leftFavorite != rightFavorite ? leftFavorite : left.offset < right.offset
+        }.map { $0.element }
+        return ordered.compactMap { playlist in
+            let entries = playlist.trackIds.compactMap { SJCarLibrary.entry(for: $0) }
+            return entries.isEmpty ? nil : (playlist, entries)
+        }
+    }
+}

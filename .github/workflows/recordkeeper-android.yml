@@ -1,0 +1,32 @@
+name: Record Keeper Android
+on:
+  push:
+    branches: [main]
+    paths: ['native/**', 'public/**', 'src/lib/surface.ts', 'src/lib/surface-head.ts', '.github/workflows/recordkeeper-android.yml']
+  workflow_dispatch:
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm ci --prefix native
+      - run: npm run recordkeeper:android --prefix native
+      - run: chmod +x native/recordkeeper/android/gradlew
+      - run: ./gradlew :app:assembleDebug :app:lintDebug :app:testDebugUnitTest --console=plain
+        working-directory: native/recordkeeper/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Record-Keeper-debug
+          path: native/recordkeeper/android/app/build/outputs/apk/debug/app-debug.apk

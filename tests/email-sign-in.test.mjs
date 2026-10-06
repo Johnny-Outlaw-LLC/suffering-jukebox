@@ -81,7 +81,7 @@ test('the Listening Party native shell has a distinct secure origin from its API
   assert.equal(config.server.iosScheme, 'https');
   assert.equal(config.server.hostname, 'app.listeningparty.stream');
   assert.match(readFileSync(join(root, 'native', 'scripts', 'build-web.mjs'), 'utf8'),
-    /url:\s*'https:\/\/listeningparty\.stream'/);
+    /surfaces\.SURFACES\[surfaceId\]/);
 });
 
 test('native Apple sign-in exchanges a nonce-bound identity token and preserves the first name', async () => {

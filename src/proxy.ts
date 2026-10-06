@@ -23,6 +23,7 @@ const SLUG_TTL_MS = 60_000;
 const NATIVE_ORIGINS = new Set([
   "capacitor://www.sufferingjukebox.stream",
   "https://app.listeningparty.stream",
+  "https://app.recordkeeper.stream",
 ]);
 
 function withNativeCors(request: NextRequest, response: NextResponse): NextResponse {

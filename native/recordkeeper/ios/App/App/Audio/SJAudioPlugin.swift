@@ -1,0 +1,425 @@
+import Capacitor
+import Foundation
+import UIKit
+
+/// Bridges the web UI to the native engine. Deliberately thin: policy lives in
+/// SJAudioEngine so CarPlay, which never touches this class, behaves identically.
+@objc(SJNativeAudio)
+public class SJNativeAudio: CAPPlugin, CAPBridgedPlugin, SJAudioEngineDelegate {
+
+    public let identifier = "SJNativeAudio"
+    public let jsName = "SJNativeAudio"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setQueue",       returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "play",           returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pause",          returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "next",           returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "previous",       returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "seek",           returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShuffle",     returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRepeat",      returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getStatus",      returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "download",       returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "removeDownload", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listDownloads",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "backfillArtwork", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPlayCounts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPlaylists",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRatedTracks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setHeartCounts", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setShuffleProfile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "drainFeedback",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "ackFeedback",    returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setCarAccess",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearCarAccess", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "carAccessStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "refreshCarLibrary", returnType: CAPPluginReturnPromise),
+    ]
+
+    private var engine: SJAudioEngine { SJAudioEngine.shared }
+
+    override public func load() {
+        engine.delegate = self
+        // A tap in the car should reach the server while the drive is still
+        // happening when it can, rather than waiting for the next cold start.
+        SJCarPlayFeedback.shared.onChange = { [weak self] in
+            self?.notifyListeners("carplayFeedback", data: ["pending": SJFeedbackOutbox.shared.pending().count])
+        }
+        // Streamable songs: fetch on launch and on every return to the
+        // foreground, so a song uploaded on the desktop is in the car next drive.
+        SJStreamLibrary.shared.refresh()
+        _ = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { _ in SJStreamLibrary.shared.refresh() }
+    }
+
+    // MARK: - Transport
+
+    @objc func setQueue(_ call: CAPPluginCall) {
+        let raw = call.getArray("tracks", JSObject.self) ?? []
+        let tracks = raw.compactMap(Self.track(from:))
+        let startIndex = call.getInt("startIndex") ?? 0
+        let autoPlay = call.getBool("autoPlay") ?? false
+        DispatchQueue.main.async {
+            self.engine.setQueue(tracks, startIndex: startIndex, autoPlay: autoPlay)
+            call.resolve(Self.dict(self.engine.status()))
+        }
+    }
+
+    @objc func play(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.engine.play(index: call.getInt("index"))
+            call.resolve(Self.dict(self.engine.status()))
+        }
+    }
+
+    @objc func pause(_ call: CAPPluginCall) { run(call) { self.engine.pause() } }
+    @objc func next(_ call: CAPPluginCall) { run(call) { self.engine.next() } }
+    @objc func previous(_ call: CAPPluginCall) { run(call) { self.engine.previous() } }
+
+    @objc func seek(_ call: CAPPluginCall) {
+        guard let pos = call.getDouble("positionSeconds") else {
+            call.reject("positionSeconds is required"); return
+        }
+        run(call) { self.engine.seek(to: pos) }
+    }
+
+    @objc func setShuffle(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        run(call) { self.engine.setShuffle(enabled) }
+    }
+
+    @objc func setRepeat(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? false
+        run(call) { self.engine.setRepeat(enabled ? .all : .off) }
+    }
+
+    @objc func getStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { call.resolve(Self.dict(self.engine.status(), forceQueue: true)) }
+    }
+
+    private func run(_ call: CAPPluginCall, _ body: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            body()
+            call.resolve(Self.dict(self.engine.status()))
+        }
+    }
+
+    // MARK: - Downloads
+
+    @objc func download(_ call: CAPPluginCall) {
+        guard let obj = call.getObject("track"), let track = Self.track(from: obj) else {
+            call.reject("track is required"); return
+        }
+        guard let remote = track.url else {
+            call.reject("track has no signed url to download from"); return
+        }
+        if SJDownloadStore.shared.isDownloaded(track.id) {
+            call.resolve(Self.downloadDict(trackId: track.id, state: "done", progress: 1,
+                                           bytes: SJDownloadStore.shared.entry(for: track.id)?.bytes ?? 0))
+            return
+        }
+
+        SJDownloader.shared.download(track: track, from: remote, progress: { [weak self] fraction in
+            self?.notifyListeners("downloadChange", data: Self.downloadDict(
+                trackId: track.id, state: "downloading", progress: fraction, bytes: 0))
+        }, completion: { [weak self] result in
+            switch result {
+            case .success(let bytes):
+                let payload = Self.downloadDict(trackId: track.id, state: "done", progress: 1, bytes: bytes)
+                self?.notifyListeners("downloadChange", data: payload)
+            case .failure(let error):
+                var payload = Self.downloadDict(trackId: track.id, state: "failed", progress: 0, bytes: 0)
+                payload["error"] = error.localizedDescription
+                self?.notifyListeners("downloadChange", data: payload)
+            }
+        })
+
+        call.resolve(Self.downloadDict(trackId: track.id, state: "downloading", progress: 0, bytes: 0))
+    }
+
+    @objc func removeDownload(_ call: CAPPluginCall) {
+        guard let id = call.getString("trackId") else { call.reject("trackId is required"); return }
+        SJDownloadStore.shared.remove(trackId: id)
+        notifyListeners("downloadChange", data: Self.downloadDict(trackId: id, state: "none", progress: 0, bytes: 0))
+        call.resolve()
+    }
+
+    @objc func listDownloads(_ call: CAPPluginCall) {
+        let downloads = SJDownloadStore.shared.all().map { entry -> JSObject in
+            var dict = Self.downloadDict(trackId: entry.trackId, state: "done", progress: 1, bytes: entry.bytes)
+            // Lets the web layer find the covers worth repairing without
+            // shipping the whole index across the bridge.
+            dict["hasArtwork"] = SJDownloadStore.shared.hasArtwork(for: entry)
+            return dict
+        }
+        call.resolve(["downloads": downloads, "bytesUsed": Int(SJDownloadStore.shared.bytesUsed())])
+    }
+
+    /// Fetch covers for tracks that were downloaded before the metadata
+    /// pipeline carried album art. Images only - the audio is already on disk,
+    /// and nobody should re-download an album to fix a thumbnail.
+    @objc func backfillArtwork(_ call: CAPPluginCall) {
+        let raw = call.getArray("tracks", JSObject.self) ?? []
+        let wanted: [(String, URL)] = raw.compactMap { obj in
+            guard let id = obj["trackId"] as? String,
+                  let urlString = obj["artworkUrl"] as? String,
+                  let url = URL(string: urlString) else { return nil }
+            // Already repaired, or never downloaded: nothing to do either way.
+            guard let entry = SJDownloadStore.shared.entry(for: id) else { return nil }
+            if SJDownloadStore.shared.hasArtwork(for: entry) { return nil }
+            return (id, url)
+        }
+        guard !wanted.isEmpty else { call.resolve(["repaired": 0]); return }
+
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var repaired = 0
+        for (id, url) in wanted {
+            group.enter()
+            URLSession.shared.dataTask(with: url) { data, response, _ in
+                defer { group.leave() }
+                guard let data, !data.isEmpty,
+                      (response as? HTTPURLResponse)?.statusCode ?? 200 < 400,
+                      UIImage(data: data) != nil else { return }
+                if SJDownloadStore.shared.attachArtwork(data, trackId: id) {
+                    lock.lock(); repaired += 1; lock.unlock()
+                }
+            }.resume()
+        }
+        group.notify(queue: .main) {
+            // A repaired cover should appear without waiting for a reconnect.
+            if repaired > 0 { SJAudioEngine.shared.artworkDidChange() }
+            call.resolve(["repaired": repaired])
+        }
+    }
+
+    // MARK: - Playlists
+
+    /// Hand CarPlay the running orders. The car cannot reach the web layer once
+    /// it is driving, so this is pushed whenever playlists change rather than
+    /// pulled when the Playlists tab is opened.
+    @objc func setPlaylists(_ call: CAPPluginCall) {
+        let raw = call.getArray("playlists", JSObject.self) ?? []
+        let playlists: [SJPlaylistStore.Playlist] = raw.compactMap { obj in
+            guard let id = obj["id"] as? String, let name = obj["name"] as? String else { return nil }
+            let ids = (obj["trackIds"] as? [Any])?.compactMap { $0 as? String } ?? []
+            return SJPlaylistStore.Playlist(id: id, name: name, trackIds: ids, mine: obj["mine"] as? Bool)
+        }
+        let preserveSaved = call.getBool("preserveSaved") ?? false
+        let preserveFavorites = call.getBool("preserveFavorites") ?? false
+        let retained = SJPlaylistStore.shared.all().filter {
+            $0.id.hasPrefix("__dynamic_favorites") ? preserveFavorites : preserveSaved
+        }
+        let incoming = playlists.filter {
+            $0.id.hasPrefix("__dynamic_favorites") ? !preserveFavorites : !preserveSaved
+        }
+        SJPlaylistStore.shared.replaceAll(retained + incoming)
+        DispatchQueue.main.async {
+            SJAudioEngine.shared.onQueueChanged?()   // repaint the car's list
+            call.resolve(["count": playlists.count])
+        }
+    }
+
+    @objc func setPlayCounts(_ call: CAPPluginCall) {
+        let raw = call.getObject("counts") ?? JSObject()
+        var counts = UserDefaults.standard.dictionary(forKey: "sj.carplay.playCounts") as? [String: Int] ?? [:]
+        for (id, value) in raw {
+            if let n = value as? Int { counts[id] = max(0, n) }
+        }
+        UserDefaults.standard.set(counts, forKey: "sj.carplay.playCounts")
+        DispatchQueue.main.async { SJAudioEngine.shared.onQueueChanged?() }
+        call.resolve()
+    }
+
+    // MARK: - Car feedback
+
+    /// Compatibility bridge used once to clear thumbs cached by older builds.
+    @objc func setRatedTracks(_ call: CAPPluginCall) {
+        let ids = (call.getArray("trackIds") as? [String]) ?? []
+        SJCarPlayFeedback.shared.setRated(ids)
+        DispatchQueue.main.async { SJAudioEngine.shared.onModeChanged?() }
+        call.resolve(["count": ids.count])
+    }
+
+    /// All-time heart counts for downloaded tracks, so the car's heart button
+    /// can show a number and turn red rather than answering only yes/no.
+    @objc func setHeartCounts(_ call: CAPPluginCall) {
+        let raw = call.getObject("counts") ?? JSObject()
+        let rawToday = call.getObject("todayCounts") ?? JSObject()
+        var counts: [String: Int] = [:]
+        var today: [String: Int] = [:]
+        for (id, value) in raw {
+            if let n = value as? Int { counts[id] = n }
+            else if let n = value as? Double { counts[id] = Int(n) }
+        }
+        for (id, value) in rawToday {
+            if let n = value as? Int { today[id] = n }
+            else if let n = value as? Double { today[id] = Int(n) }
+        }
+        SJCarPlayFeedback.shared.setHeartCounts(counts, today: today)
+        DispatchQueue.main.async { SJAudioEngine.shared.onModeChanged?() }
+        call.resolve(["count": counts.count])
+    }
+
+    /// The listener's Shuffle preference, and this account's weight for every
+    /// song on the phone. The car cannot work these out - no session, no
+    /// catalogue, no network on the drive - so the website hands over finished
+    /// numbers and the engine draws its running order against them.
+    @objc func setShuffleProfile(_ call: CAPPluginCall) {
+        let preference = call.getString("preference") ?? "none"
+        let raw = call.getObject("weights") ?? JSObject()
+        var weights: [String: Double] = [:]
+        for (id, value) in raw {
+            if let n = value as? Double { weights[id] = n }
+            else if let n = value as? Int { weights[id] = Double(n) }
+        }
+        SJShuffleProfile.shared.set(preference: preference, weights: weights)
+        // A profile that lands mid-drive should take effect at the next song,
+        // not the next launch.
+        DispatchQueue.main.async { SJAudioEngine.shared.reshuffleForProfileChange() }
+        call.resolve(["count": weights.count])
+    }
+
+    /// Ratings and hearts tapped in the car, for the web layer to send on.
+    /// Nothing is removed here - only an explicit ack drops an item, so a drain
+    /// that fails to reach the server is retried rather than lost.
+    @objc func drainFeedback(_ call: CAPPluginCall) {
+        let items: [JSObject] = SJFeedbackOutbox.shared.pending().map { item in
+            var row: JSObject = [
+                "id": item.id,
+                "kind": item.kind,
+                "trackId": item.trackId,
+                "value": item.value,
+                "positionMs": item.positionMs,
+                "at": item.at,
+            ]
+            if let ms = item.ms { row["ms"] = ms }
+            if let playlistId = item.playlistId { row["playlistId"] = playlistId }
+            return row
+        }
+        call.resolve(["items": items])
+    }
+
+    @objc func ackFeedback(_ call: CAPPluginCall) {
+        let ids = (call.getArray("ids") as? [String]) ?? []
+        SJFeedbackOutbox.shared.acknowledge(ids: ids)
+        call.resolve(["remaining": SJFeedbackOutbox.shared.pending().count])
+    }
+
+    // MARK: - Streaming in the car
+
+    /// The signed-in page hands over a car key (see /api/sj-carplay-key) and the
+    /// site it came from. The key lives in the Keychain; nothing else about the
+    /// session crosses the bridge.
+    @objc func setCarAccess(_ call: CAPPluginCall) {
+        SJStreamLibrary.shared.setAccess(baseURL: call.getString("baseUrl"),
+                                         key: call.getString("key"),
+                                         email: call.getString("email"),
+                                         name: call.getString("name"))
+        call.resolve()
+    }
+
+    @objc func clearCarAccess(_ call: CAPPluginCall) {
+        SJStreamLibrary.shared.clearAccess()
+        call.resolve()
+    }
+
+    /// Whether this phone already holds a key, and for which account, so the
+    /// page only issues a new one on first sign-in or an account switch.
+    @objc func carAccessStatus(_ call: CAPPluginCall) {
+        let lib = SJStreamLibrary.shared
+        let all = lib.all()
+        call.resolve([
+            "hasKey": lib.hasKey,
+            "email": lib.keyEmail ?? NSNull(),
+            // false once the server has turned the key down (revoked by a
+            // sign-out on another path); the page then issues a new one.
+            "keyAccepted": lib.keyAccepted ?? NSNull(),
+            "baseUrl": lib.baseURL,
+            "streamable": all.count,
+            "mine": all.filter { $0.source == "mine" }.count,
+            "trackIds": all.map(\.trackId),
+        ])
+    }
+
+    /// After an upload or removal, so the car does not wait for the next launch.
+    @objc func refreshCarLibrary(_ call: CAPPluginCall) {
+        SJStreamLibrary.shared.refresh { ok in
+            DispatchQueue.main.async { SJAudioEngine.shared.onQueueChanged?() }
+            let all = SJStreamLibrary.shared.all()
+            call.resolve(["ok": ok, "count": all.count, "trackIds": all.map(\.trackId)])
+        }
+    }
+
+    // MARK: - Engine delegate
+
+    func audioEngine(_ engine: SJAudioEngine, didChange status: SJStatus) {
+        notifyListeners("statusChange", data: Self.dict(status))
+    }
+
+    func audioEngine(_ engine: SJAudioEngine, didReceiveRemoteCommand command: String, trackId: String?) {
+        notifyListeners("remoteCommand", data: ["command": command, "trackId": trackId ?? NSNull()])
+    }
+
+    // MARK: - Mapping
+
+    private static func track(from obj: JSObject) -> SJTrack? {
+        guard let id = obj["id"] as? String,
+              let title = obj["title"] as? String else { return nil }
+        return SJTrack(
+            id: id,
+            title: title,
+            artist: obj["artist"] as? String ?? "",
+            album: obj["album"] as? String,
+            artworkURL: (obj["artworkUrl"] as? String).flatMap(URL.init(string:)),
+            url: (obj["url"] as? String).flatMap(URL.init(string:)),
+            durationSeconds: obj["durationSeconds"] as? Double ?? 0
+        )
+    }
+
+    private static var lastQueueSignature: String?
+
+    private static func dict(_ s: SJStatus, forceQueue: Bool = false) -> JSObject {
+        // Title and artist ride along so the page can show a song CarPlay
+        // started even when it has never loaded that song's catalogue row.
+        let current = SJAudioEngine.shared.currentTrack
+        let track = current?.id == s.trackId ? current : nil
+        let nativeQueue = SJAudioEngine.shared.queue
+        let queueSignature = nativeQueue.map(\.id).joined(separator: "\u{0}")
+        var result: JSObject = [
+            "state": s.state.rawValue,
+            "index": s.index,
+            "trackId": s.trackId ?? NSNull(),
+            "title": track?.title ?? NSNull(),
+            "artist": track?.artist ?? NSNull(),
+            "positionSeconds": s.positionSeconds,
+            "durationSeconds": s.durationSeconds,
+            "shuffleEnabled": SJAudioEngine.shared.shuffleEnabled,
+            "repeatMode": SJAudioEngine.shared.repeatMode.rawValue,
+            "nextIndex": SJAudioEngine.shared.nextQueueIndex ?? NSNull(),
+        ]
+        // Position updates arrive twice a second. A large queue only needs to
+        // cross the bridge when its contents change (or getStatus explicitly
+        // asks for a complete snapshot).
+        if forceQueue || queueSignature != lastQueueSignature {
+            result["queue"] = nativeQueue.map { item -> JSObject in
+                [
+                    "id": item.id,
+                    "title": item.title,
+                    "artist": item.artist,
+                    "album": item.album ?? NSNull(),
+                    "artworkUrl": item.artworkURL?.absoluteString ?? NSNull(),
+                    "durationSeconds": item.durationSeconds,
+                ]
+            }
+            lastQueueSignature = queueSignature
+        }
+        return result
+    }
+
+    private static func downloadDict(trackId: String, state: String, progress: Double, bytes: Int64) -> JSObject {
+        // JSValue has no Int64; Int is 64-bit on every device we ship to.
+        ["trackId": trackId, "state": state, "progress": progress, "bytes": Int(bytes)]
+    }
+}
