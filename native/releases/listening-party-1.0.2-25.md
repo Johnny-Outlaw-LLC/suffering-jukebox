@@ -6,7 +6,10 @@
 - Web source commit: e7053872f849101587bd50ba2b61f32d43a25b03
 - Uploaded October 6, 2026 at 4:06 PM America/Chicago.
 - Xcode reported `Upload succeeded` and `EXPORT SUCCEEDED`.
-- App Store Connect Build Uploads shows 1.0.2 (25), Processing.
+- Apple processing completed; TestFlight shows 1.0.2 (25), Ready to Submit.
+- Build ID: 976a3b64-ae6d-4399-b684-981182c56314
+- No tester groups or individual testers are assigned.
+- This upload does not replace the approved App Store version 1.0.1.
 
 This release removes decorative icons from the song menus, removes the redundant
 Download for CarPlay offer, and refreshes artist artwork after metadata loads.
@@ -21,3 +24,10 @@ Unrelated pending local sign-in and playlist changes are excluded.
 Archive: `/Users/outlaw/Library/Developer/Xcode/Archives/2026-10-06/Listening Party 1.0.2 (25).xcarchive`.
 Upload log: `/private/tmp/sj-menu-artwork-upload.log`.
 The archive is preserved in Xcode’s Archives folder; the upload log is temporary.
+
+## Test notes
+
+Play a Nouns Group recording and confirm its album cover appears in both the
+player and mini player. Open the song’s ⋯ menu and confirm decorative icons
+are absent and available audio has no Download for CarPlay offer. Existing
+offline downloads should still offer Remove download.
