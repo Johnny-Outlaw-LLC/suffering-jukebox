@@ -17953,6 +17953,27 @@ function taPlayBgIdx(idx) {
   }
   const ta = taTrackAudio(item?.trackId);
   if (!ta) return false;
+  // An already-open phone player reaches this function directly when a new
+  // background-capable queue replaces the old one. In the native app, using
+  // the HTML audio element here strands playback inside WKWebView, which iOS
+  // suspends as soon as the screen locks. Hand the new queue to AVPlayer just
+  // like taEnterBgAudio does for a newly opened player.
+  if (taNativeBgPlugin()) {
+    _taNativeBgActive = true;
+    _taBgActive = true;
+    _taBgLogged = true;
+    _taBgStartPos = 0;
+    try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+    try { _taAudioEl?.pause(); } catch (_) {}
+    ytpStopBgKeepalive();
+    void taStartNativeBg(0).catch((error) => {
+      console.warn('taPlayBgIdx native start failed', error);
+      _taNativeBgActive = false;
+      taFailBgAudio('Background audio failed to start — back on YouTube.');
+    });
+    taSyncAudioBtn();
+    return true;
+  }
   const a = taEnsureAudioEl();
   a.src = ta.url;
   a.dataset.trackId = String(item.trackId);
@@ -25194,7 +25215,7 @@ async function playlistsShuffleAll() {
         : 'No playable songs in the playlists shown.');
       return;
     }
-    landingPlayQueue(q, { shuffle: true });
+    await landingPlayQueue(q, { shuffle: true });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
   } catch (e) {
@@ -32430,7 +32451,7 @@ function renderLanding() {
   }
 }
 
-function landingPlayQueue(q, opts) {
+async function landingPlayQueue(q, opts) {
   const shuffle = !!opts?.shuffle;
   q = filterQueueForHomeBg(sjNoBlocked(q));
   if (!q.length) return;
@@ -32445,6 +32466,19 @@ function landingPlayQueue(q, opts) {
   }
   clearQueueSourcePlaylist();
   const first = q[startIdx];
+  // The native app must have the selected song's signed audio URL before we
+  // open the player. Starting YouTube first and fetching this afterwards left
+  // a race where a listener could lock the phone while the WebView still had
+  // the speakers; iOS then suspended it before the native handoff completed.
+  // Keep ordinary queues instant, but a Background Enabled shuffle is making
+  // an explicit promise that the very first song survives the screen closing.
+  const primeNativeBackground = homeJukeboxBgFilterOn()
+    && taIsMobileDevice()
+    && !!taNativeBgPlugin();
+  if (primeNativeBackground) {
+    taSetPreferBg(true);
+    await loadTrackAudio([first.trackId]);
+  }
   // openYTPlayer() resets ytQueue internally to a single-track array, so when
   // it's the one opening the player, ytQueue must be (re)assigned AFTER that
   // call, not before - otherwise the full queue gets clobbered back to 1 item.
@@ -32456,6 +32490,10 @@ function landingPlayQueue(q, opts) {
     ytQueue = q; ytQueueIdx = startIdx;
   }
   updateYTQueueUI();
+  // openYTPlayer also schedules this handoff as a fallback, but do it now that
+  // the full queue and signed URL are both ready. This sends AVPlayer its work
+  // before the listener can immediately background the app.
+  if (primeNativeBackground) taTryStartPreferredBg();
 }
 
 function shuffleInPlace(arr) {
@@ -32558,7 +32596,7 @@ async function landingShuffleAll() {
       return;
     }
     if (homeJukeboxBgFilterOn() && taIsMobileDevice()) taSetPreferBg(true);
-    landingPlayQueue(q, { shuffle: true });
+    await landingPlayQueue(q, { shuffle: true });
     // Background-play audio for the head of the queue (await so the toggle can appear).
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
@@ -32588,7 +32626,7 @@ async function landingShuffleFavorites() {
       .map(tid => ({ videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }));
     if (!q.length) { alert('No favorited tracks have YouTube videos.'); return; }
     if (homeJukeboxBgFilterOn() && taIsMobileDevice()) taSetPreferBg(true);
-    landingPlayQueue(q, { shuffle: true });
+    await landingPlayQueue(q, { shuffle: true });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
   } catch (e) {

@@ -91,6 +91,29 @@ test('Listening Party app sends Background Play to the native audio engine', asy
   assert.equal(api.taNativeBgPlugin(), null, 'the website must keep its existing player');
 });
 
+test('Background Enabled shuffle primes native audio before opening the player', () => {
+  const start = html.indexOf('async function landingPlayQueue(q, opts)');
+  const end = html.indexOf('\nfunction shuffleInPlace', start);
+  assert.ok(start > 0 && end > start, 'could not locate landingPlayQueue');
+  const block = html.slice(start, end);
+  const prime = block.indexOf('await loadTrackAudio([first.trackId])');
+  const open = block.indexOf('openYTPlayer(first.videoId');
+  assert.ok(prime > 0 && open > prime,
+    'the selected signed audio URL must load before the web player can start');
+  assert.match(block, /homeJukeboxBgFilterOn\(\)[\s\S]*?taNativeBgPlugin\(\)/);
+  assert.match(block, /if \(primeNativeBackground\) taTryStartPreferredBg\(\)/);
+});
+
+test('an already-open app player switches background audio to AVPlayer', () => {
+  const start = html.indexOf('function taPlayBgIdx(idx)');
+  const end = html.indexOf('\nfunction taOnAudioEnded', start);
+  assert.ok(start > 0 && end > start, 'could not locate taPlayBgIdx');
+  const block = html.slice(start, end);
+  assert.match(block, /if \(taNativeBgPlugin\(\)\)[\s\S]*?_taNativeBgActive = true[\s\S]*?taStartNativeBg\(0\)/);
+  assert.ok(block.indexOf('taStartNativeBg(0)') < block.indexOf('const a = taEnsureAudioEl()'),
+    'native playback must win before the HTML audio fallback is created');
+});
+
 test('mobile dock has no resize handle, and the full player is dismissed by pulling it down', () => {
   const start = html.indexOf('/* A phone player has two deliberate states');
   const mobileCss = html.slice(start, start + 7000);
