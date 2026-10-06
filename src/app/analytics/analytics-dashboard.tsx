@@ -427,15 +427,24 @@ function MultiSelect({
   );
 }
 
-type Props = { accessToken: string; onNeedImport: () => void };
+export type AnalyticsQuery = {
+  source: SourceFilter; from: string; to: string; artistSel: Selection; trackSel: Selection; bucketMode: BucketMode;
+};
+type Props = {
+  accessToken: string; onNeedImport: () => void;
+  demoData?: (query: AnalyticsQuery) => AnalyticsPayload;
+  demoToday?: string;
+  demoCatalogHref?: string;
+  renderDemoImport?: (songs: MissingSong[], selected: string[], onClose: () => void) => ReactNode;
+};
 
-export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props) {
+export default function AnalyticsDashboard({ accessToken, onNeedImport, demoData, demoToday, demoCatalogHref, renderDemoImport }: Props) {
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [source, setSource] = useState<SourceFilter>("all");
   const [metric, setMetric] = useState<Metric>("hours");
-  const [preset, setPreset] = useState<Preset>("24m");
+  const [preset, setPreset] = useState<Preset>(demoData ? "30d" : "24m");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [artistSel, setArtistSel] = useState<Selection>(ALL);
@@ -452,7 +461,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
   // Local calendar days, not instants: the range the picker shows has to be
   // the range the headline reads back.
   const range = useMemo(() => {
-    const today = new Date();
+    const today = demoToday ? new Date(`${demoToday}T12:00:00`) : new Date();
     if (preset === "all") return { from: "", to: "" };
     if (preset === "custom") return { from: customFrom, to: customTo };
     if (preset === "ytd") return { from: `${today.getFullYear()}-01-01`, to: ymd(today) };
@@ -461,17 +470,16 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     else if (preset === "90d") from.setDate(from.getDate() - 89);
     else from.setFullYear(from.getFullYear() - (preset === "24m" ? 2 : 1));
     return { from: ymd(from), to: ymd(today) };
-  }, [customFrom, customTo, preset]);
+  }, [customFrom, customTo, preset, demoToday]);
 
   const requestKey = JSON.stringify({ source, from: range.from, to: range.to, artistSel, trackSel, bucketMode });
 
   const load = useCallback(async (key: string, signal: AbortSignal) => {
-    const query = JSON.parse(key) as {
-      source: SourceFilter; from: string; to: string; artistSel: Selection; trackSel: Selection; bucketMode: BucketMode;
-    };
+    const query = JSON.parse(key) as AnalyticsQuery;
     setLoading(true);
     setError("");
     try {
+      if (demoData) { setData(demoData(query)); return; }
       const toExclusive = query.to ? new Date(`${query.to}T00:00:00`) : null;
       if (toExclusive) toExclusive.setDate(toExclusive.getDate() + 1);
       const response = await fetch("/api/spotify/history", {
@@ -500,7 +508,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
     } finally {
       if (!signal.aborted) setLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, demoData]);
 
   useEffect(() => {
     // Clicking three artist bars in a row is one question, not three.
@@ -1032,7 +1040,7 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
                   // lives in the player itself, so this one still hops over.
                   // Songs do not - see the song chart below.
                   (row) => (
-                    <a className={styles.rankAdd} href={importHref(row.artist)} target="_blank" rel="noopener" title="Open Import Music with this artist filled in">
+                    <a className={styles.rankAdd} href={demoCatalogHref || importHref(row.artist)} target="_blank" rel="noopener" title={demoData ? "Explore the fictional demo catalog" : "Open Import Music with this artist filled in"}>
                       Import artist
                     </a>
                   ),
@@ -1133,7 +1141,8 @@ export default function AnalyticsDashboard({ accessToken, onNeedImport }: Props)
         {" "}<b>Add to Jukebox</b> appears beside any song the catalogue does not already hold, and imports it here without leaving the page.
       </p>
 
-      {importing && (
+      {importing && demoData && renderDemoImport?.(missingSongs, importing, () => setImporting(null))}
+      {importing && !demoData && (
         <ImportMissing
           accessToken={accessToken}
           songs={missingSongs}

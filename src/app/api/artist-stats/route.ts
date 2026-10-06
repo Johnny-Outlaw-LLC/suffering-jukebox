@@ -7,11 +7,15 @@
 // This route is the gate: the signed-in user comes from the verified token,
 // and canViewArtistStats decides which artists they may open.
 import { NextRequest, NextResponse } from "next/server";
-import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
+import { createSjServiceClient, getAuthUser, isSjAdmin, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { canViewArtistStats, listStatsArtists } from "@/lib/artist-manage";
 import { groupReferrers, lyricAt } from "@/lib/artist-stats";
 
 export const dynamic = "force-dynamic";
+
+function privateJson(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store", Vary: "Authorization" } });
+}
 
 const DAY_OPTIONS = [7, 30, 90, 365];
 
@@ -30,14 +34,14 @@ type Moment = {
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) {
-    return NextResponse.json({ ok: false, error: "Sign in required." }, { status: 401 });
+    return privateJson({ ok: false, error: "Sign in required." }, 401);
   }
   const sb = createSjServiceClient();
 
   try {
-    const artists = await listStatsArtists(sb, user);
+    const [artists, isAdmin] = await Promise.all([listStatsArtists(sb, user), isSjAdmin(user.email)]);
     const slug = (req.nextUrl.searchParams.get("artist") || "").trim().toLowerCase();
-    if (!slug) return NextResponse.json({ ok: true, artists });
+    if (!slug) return privateJson({ ok: true, artists, isAdmin });
 
     const { data: artist } = await sb
       .schema(JUKEBOX_SCHEMA)
@@ -46,12 +50,12 @@ export async function GET(req: NextRequest) {
       .eq("slug", slug)
       .maybeSingle();
     if (!artist) {
-      return NextResponse.json({ ok: false, error: "No artist at that address.", artists }, { status: 404 });
+      return privateJson({ ok: false, error: "No artist at that address.", artists, isAdmin }, 404);
     }
     if (!(await canViewArtistStats(sb, user, artist.id))) {
-      return NextResponse.json(
-        { ok: false, error: "Stats are only for the artist and the people who manage their music.", artists },
-        { status: 403 },
+      return privateJson(
+        { ok: false, error: "These private stats are available only to this artist’s authorized accounts and site admins.", artists, isAdmin },
+        403,
       );
     }
 
@@ -64,7 +68,7 @@ export async function GET(req: NextRequest) {
       .schema(JUKEBOX_SCHEMA)
       .rpc("artist_stats", { p_artist_id: artist.id, p_days: days, p_tz: tz });
     if (error) throw error;
-    if (!data) return NextResponse.json({ ok: false, error: "No stats for that artist." }, { status: 404 });
+    if (!data) return privateJson({ ok: false, error: "No stats for that artist." }, 404);
 
     // The page needs the one line fans hearted, not every song's full lyrics.
     const moments = ((data.moments || []) as Moment[]).map(({ lyrics_synced, ...m }) => ({
@@ -72,9 +76,9 @@ export async function GET(req: NextRequest) {
       lyric: lyricAt(lyrics_synced, m.start_ms),
     }));
     const stats = { ...data, moments, referrers: groupReferrers(data.referrers || []) };
-    return NextResponse.json({ ok: true, artists, stats });
+    return privateJson({ ok: true, artists, stats, isAdmin });
   } catch (err) {
     console.error("[artist-stats]", err);
-    return NextResponse.json({ ok: false, error: "Could not load stats." }, { status: 500 });
+    return privateJson({ ok: false, error: "Could not load stats." }, 500);
   }
 }

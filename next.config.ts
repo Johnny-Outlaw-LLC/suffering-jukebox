@@ -38,6 +38,13 @@ const framableHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
 ];
 
+// Public fictional demos can be embedded in the Record Keeper guides.
+// Authenticated dashboards retain SAMEORIGIN and the original CSP.
+const demoHeaders = [
+  ...framableHeaders.filter(h => h.key !== "Content-Security-Policy"),
+  { key: "Content-Security-Policy", value: "frame-ancestors 'self' https://outlawapps.online https://www.outlawapps.online http://localhost:3127; object-src 'none'; base-uri 'self'" },
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   // Album covers are stored under SJ paths in the shared catalog. LP does not
@@ -69,7 +76,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/yt-frame", headers: framableHeaders },
-      { source: "/((?!yt-frame).*)", headers: securityHeaders },
+      { source: "/demo/:path*", headers: demoHeaders },
+      { source: "/((?!yt-frame|demo/).*)", headers: securityHeaders },
     ];
   },
 };

@@ -36,10 +36,9 @@ export async function canManageArtist(
 }
 
 /**
- * Who may read an artist's stats: anyone who can manage the catalogue, plus
- * the people who brought the music in as the artist (the uploader of a direct
- * release, an upload grant, or an approved rights agreement). The stats are
- * aggregates, but they are still the artist's business, not the public's.
+ * Artist metrics are private. Admins may see all artists; other accounts need
+ * a direct artist upload, an explicit upload grant, or an approved artist
+ * agreement. Community imports and catalog editing access confer no stats access.
  */
 export async function canViewArtistStats(
   sb: ReturnType<typeof createSjServiceClient>,
@@ -47,7 +46,7 @@ export async function canViewArtistStats(
   artistId: string,
 ): Promise<boolean> {
   const email = (user.email || "").toLowerCase();
-  if (email && (await canManageArtist(sb, email, artistId))) return true;
+  if (email && (await isSjAdmin(email))) return true;
   const ids = await artistIdsAsArtist(sb, user);
   return ids.has(artistId);
 }
@@ -82,24 +81,19 @@ export async function listStatsArtists(
 ): Promise<StatsArtist[]> {
   const email = (user.email || "").toLowerCase();
   const db = sb.schema(JUKEBOX_SCHEMA);
-  const ids = await artistIdsAsArtist(sb, user);
-  if (email) {
-    const [added, access] = await Promise.all([
-      db.from("artists").select("id, added_by").ilike("added_by", email),
-      db.from("content_access").select("artist_id").eq("user_email", email),
-    ]);
-    // ilike treats _ in an address as a wildcard, so confirm the match here.
-    (added.data || [])
-      .filter((r: { added_by: string | null }) => (r.added_by || "").toLowerCase() === email)
-      .forEach((r: { id: string }) => ids.add(r.id));
-    (access.data || []).forEach((r: { artist_id: string }) => ids.add(r.artist_id));
+  if (email && (await isSjAdmin(email))) {
+    const out: StatsArtist[] = [];
+    for (let start = 0; ; start += 1000) {
+      const { data, error } = await db.from("artists").select("id, name, slug").order("name").range(start, start + 999);
+      if (error) throw error;
+      const rows = (data || []) as StatsArtist[];
+      out.push(...rows.filter(a => a.slug));
+      if (rows.length < 1000) return out;
+    }
   }
-  const official = email === OFFICIAL_OWNER ? [...OFFICIAL_MANAGE_SLUGS] : [];
-  if (!ids.size && !official.length) return [];
-  const filters = [
-    ids.size ? `id.in.(${[...ids].join(",")})` : "",
-    official.length ? `slug.in.(${official.join(",")})` : "",
-  ].filter(Boolean).join(",");
-  const { data } = await db.from("artists").select("id, name, slug").or(filters).order("name");
+  const ids = await artistIdsAsArtist(sb, user);
+  if (!ids.size) return [];
+  const { data, error } = await db.from("artists").select("id, name, slug").in("id", [...ids]).order("name");
+  if (error) throw error;
   return ((data || []) as StatsArtist[]).filter((a) => a.slug);
 }
