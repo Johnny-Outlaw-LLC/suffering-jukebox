@@ -10893,9 +10893,9 @@ function openYTPlayer(videoId, title, trackId, ev) {
   if (videoId) setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
   ytpOnTrackChange(videoId, trackId, title);
   showYtpMiniFooter();
-  // Mobile still opens straight to Full Screen; Docked is what it falls back
-  // to when minimized from there.
-  if (_isMobPlayer) requestAnimationFrame(() => ytpEnterFullscreen());
+  // A song you tap opens straight to Full Screen on a phone. The paused restore
+  // after sign-in never does: it waits in the dock on your last queue.
+  if (_isMobPlayer) requestAnimationFrame(() => restorePaused ? ytpEnterDocked() : ytpEnterFullscreen());
   if (!videoId && trackId) {
     ytpStartArtistAudio(ytQueue[0]);
   } else if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused && !_sjCarFollow) {
@@ -40817,6 +40817,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-06';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-10-06', items: [
+    'After you sign in, your last queue now waits in the docked player, paused, instead of opening the full screen player.',
     'For Artists and For Listeners now appear at the top of Home, and in the footer on other pages.',
     'The artist and listener guides have new expandable feature boxes, written by music fans for music fans.',
     'Artist Uploaded filters in Explore Artists, Explore Songs, and Search help you find recordings published directly by artists.',
@@ -43778,11 +43779,8 @@ async function restorePlaybackState(opts) {
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
     ytpSetPlayPauseIcon(false);
-    // The player opens Docked by default now - only flip to Full Screen if
-    // that's where they left it. An older saved 'windowed' value (from
-    // before Docked replaced the floating window) lands here too, which is
-    // exactly where it should land.
-    if (row.layout === 'fullscreen') ytpEnterFullscreen();
+    // Always Docked, even if they left it in Full Screen: a restore should
+    // put the queue within reach, not take over the screen.
   } catch (e) {
     _pbRestoreOpts = null;
     /* no saved state yet, or fetch failed - just start fresh */

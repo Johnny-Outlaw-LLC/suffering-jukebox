@@ -187,3 +187,9 @@ test('native artist cards resolve submitted release covers against the live site
     'https://listeningparty.stream/album-art/album-id?v=1',
   );
 });
+
+test('signing in restores the last queue docked, never full screen', () => {
+  assert.ok(indexHtml.includes('requestAnimationFrame(() => restorePaused ? ytpEnterDocked() : ytpEnterFullscreen())'));
+  const restore = indexHtml.slice(indexHtml.indexOf('async function restorePlaybackState'), indexHtml.indexOf('function initGoogleAuth'));
+  assert.ok(!restore.includes('ytpEnterFullscreen'), 'restore must not open the full screen player');
+});
