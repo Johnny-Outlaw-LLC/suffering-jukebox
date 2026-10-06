@@ -25,6 +25,30 @@ test('background-capable playback defaults on for mobile until explicitly disabl
   assert.equal(preference('Desktop Chrome', '1'), true, 'an existing opt-in must be preserved');
 });
 
+test('late background-audio metadata hands an active mobile track off from YouTube', () => {
+  let mediaUpdates = 0;
+  const scope = {
+    _taPreferBg: true,
+    _taBgActive: false,
+    _sjCarFollow: false,
+    _ytUserWantsPlay: true,
+    _taManualAudio: false,
+    ytQueue: [{ trackId: 'ready' }],
+    ytQueueIdx: 0,
+    taIsMobileDevice: () => true,
+    taTrackAudio: id => id === 'ready' ? { url: 'signed-audio' } : null,
+    taEnterBgAudio: () => true,
+    ytpUpdateMediaSession: () => { mediaUpdates++; },
+    ytpSetPlayPauseIcon() {},
+    taSyncAudioBtn() {},
+  };
+  const { taTryStartPreferredBg } = loadHtmlFnsInScope(['taTryStartPreferredBg'], scope);
+
+  assert.equal(taTryStartPreferredBg(), true);
+  assert.equal(scope._taManualAudio, true);
+  assert.equal(mediaUpdates, 1);
+});
+
 test('mobile dock has no resize handle, and the full player is dismissed by pulling it down', () => {
   const start = html.indexOf('/* A phone player has two deliberate states');
   const mobileCss = html.slice(start, start + 7000);

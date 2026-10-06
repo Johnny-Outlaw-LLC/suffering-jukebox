@@ -7709,6 +7709,7 @@ function lphStartListening() {
 async function lphOpenBackgroundEnabled() {
   homeBgOnly = true;
   try { localStorage.setItem('sj_home_bg_only', '1'); } catch (_) {}
+  if (taIsMobileDevice()) taSetPreferBg(true);
   if (!_homeLibLoaded) await ensureHomeLibrary();
   setLandingTab('playlists');
   if (_homeBgTrackIds.size) await openPlaylistChart('__dynamic_background');
@@ -11690,6 +11691,9 @@ function ytpOnSlotStateChange(slot, ev) {
     ytpClearPlaybackWatchdog();
     ytpConfirmPendingStalls();
     ytpMfStartProgress();
+    // Audio availability can arrive before or after the YouTube player reaches
+    // PLAYING. Whichever finishes second completes the preferred handoff.
+    taTryStartPreferredBg();
   } else if (ev.data === 2) { // PAUSED
     if (_taBgActive) return;
     ytpSetPlayPauseIcon(false);
@@ -16834,6 +16838,21 @@ function taSyncBgOverlay() {
 function taSetPreferBg(on) {
   _taPreferBg = !!on;
   try { localStorage.setItem('sj_bg_play', on ? '1' : '0'); } catch (_) {}
+}
+
+function taTryStartPreferredBg() {
+  const item = ytQueue[ytQueueIdx];
+  if (!_taPreferBg || !taIsMobileDevice() || _taBgActive || _sjCarFollow) return false;
+  if (!_ytUserWantsPlay || !taTrackAudio(item?.trackId)) return false;
+  _taManualAudio = true;
+  if (!taEnterBgAudio()) {
+    _taManualAudio = false;
+    return false;
+  }
+  ytpUpdateMediaSession();
+  ytpSetPlayPauseIcon(true);
+  taSyncAudioBtn();
+  return true;
 }
 
 function taToggleAudioMode() {
@@ -32435,6 +32454,7 @@ async function landingShuffleAll() {
         : 'No playable tracks found.');
       return;
     }
+    if (homeJukeboxBgFilterOn() && taIsMobileDevice()) taSetPreferBg(true);
     landingPlayQueue(q, { shuffle: true });
     // Background-play audio for the head of the queue (await so the toggle can appear).
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
@@ -32464,6 +32484,7 @@ async function landingShuffleFavorites() {
     const q = playIds.filter(tid => info[tid]?.videoId)
       .map(tid => ({ videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }));
     if (!q.length) { alert('No favorited tracks have YouTube videos.'); return; }
+    if (homeJukeboxBgFilterOn() && taIsMobileDevice()) taSetPreferBg(true);
     landingPlayQueue(q, { shuffle: true });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
@@ -33743,6 +33764,9 @@ async function loadTrackAudio(trackIds) {
       };
     });
     taSyncAudioBtn();
+    // A direct play can begin before its signed audio URL arrives. Once it is
+    // available, honor the mobile preference instead of leaving YouTube active.
+    taTryStartPreferredBg();
   } catch (_) {}
 }
 
@@ -33795,6 +33819,9 @@ function sjBgPlaylistOn(pl) {
 async function setSjBgOnly(on) {
   homeBgOnly = !!on;
   try { localStorage.setItem('sj_home_bg_only', homeBgOnly ? '1' : '0'); } catch (_) {}
+  // Choosing this filter is also a playback choice: every result promises it
+  // can survive a locked phone, so do not make the listener enable that again.
+  if (homeBgOnly && taIsMobileDevice()) taSetPreferBg(true);
   if (homeBgOnly && !_homeLibLoaded) await ensureHomeLibrary();
   renderLanding();   // draws whichever of the three tabs is open
 }
