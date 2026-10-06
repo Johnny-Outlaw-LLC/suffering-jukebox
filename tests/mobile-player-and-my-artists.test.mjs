@@ -49,6 +49,48 @@ test('late background-audio metadata hands an active mobile track off from YouTu
   assert.equal(mediaUpdates, 1);
 });
 
+test('Listening Party app sends Background Play to the native audio engine', async () => {
+  const calls = [];
+  const plugin = {
+    setQueue: async options => { calls.push(['queue', options]); },
+    setShuffle: async options => { calls.push(['shuffle', options]); },
+    setRepeat: async options => { calls.push(['repeat', options]); },
+    play: async options => { calls.push(['play', options]); },
+    seek: async options => { calls.push(['seek', options]); },
+  };
+  const scope = {
+    SJ_BRAND: { id: 'lp' },
+    sjIsNative: () => true,
+    sjDlPlugin: () => plugin,
+    ytQueue: [
+      { trackId: 'one', title: 'One' },
+      { trackId: 'two', title: 'Two', durationSeconds: 180 },
+    ],
+    ytQueueIdx: 1,
+    ytShuffle: true,
+    ytRepeat: false,
+    ytpTrackMeta: (id, title) => ({ title, artist: 'Artist ' + id, album: 'Album', artwork: 'cover-' + id }),
+    taTrackAudio: id => id === 'two' ? { url: 'signed-two', duration: 181 } : null,
+  };
+  const api = loadHtmlFnsInScope(
+    ['taNativeBgPlugin', 'taNativeQueuePayload', 'taStartNativeBg'],
+    scope,
+  );
+
+  assert.equal(api.taNativeBgPlugin(), plugin);
+  await api.taStartNativeBg(12);
+  assert.deepEqual(calls.map(([name]) => name), ['queue', 'shuffle', 'repeat', 'play', 'seek']);
+  assert.equal(calls[0][1].autoPlay, true);
+  assert.equal(calls[0][1].startIndex, 1);
+  assert.equal(calls[0][1].tracks[1].url, 'signed-two');
+  assert.equal(calls[3][1].index, 1);
+  assert.equal(calls[4][1].positionSeconds, 12);
+  assert.match(html, /function taEnterBgAudio\(\)[\s\S]*?if \(taNativeBgPlugin\(\)\)[\s\S]*?taStartNativeBg\(pos\)/);
+
+  scope.SJ_BRAND = { id: 'sj' };
+  assert.equal(api.taNativeBgPlugin(), null, 'the website must keep its existing player');
+});
+
 test('mobile dock has no resize handle, and the full player is dismissed by pulling it down', () => {
   const start = html.indexOf('/* A phone player has two deliberate states');
   const mobileCss = html.slice(start, start + 7000);

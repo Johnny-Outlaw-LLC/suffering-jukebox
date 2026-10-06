@@ -9198,6 +9198,7 @@ let _taBatchCancel      = false; // set by Cancel — stop after the current fil
 let _taBatchMinimized   = false;
 let _taBatchLastStatus  = '';
 let _taManualAudio      = false; // audio-only mode active for the current track
+let _taNativeBgActive   = false; // native app is playing through AVPlayer
 function taLoadPreferBg() {
   try {
     const saved = localStorage.getItem('sj_bg_play');
@@ -11952,14 +11953,10 @@ async function sjCarClearAccess() {
   try { await p.clearCarAccess(); } catch (_) {}
 }
 
-// ── CarPlay → phone: follow the car ──────────────────────────────────
-// CarPlay plays through the native engine; this page plays YouTube in its own
-// web view. Two players, one car: if the page simply started the same song,
-// the car would get it twice. So while the car is playing, the page FOLLOWS
-// it - the same song's video, muted, held to the car's position, with lyrics
-// timed off the car's clock - and the phone's transport buttons steer the car.
-// The page never drives the native engine itself, so native playing at all
-// means the car (or the lock screen carrying on from it) started it.
+// ── Native engine → phone UI ──────────────────────────────────────────
+// CarPlay and Listening Party Background Play both use the native engine;
+// this page follows it with the matching muted video, lyrics and controls.
+// Keeping one follower avoids two players fighting over the same speakers.
 // Picking a different song on the phone ends following and pauses the car.
 var _sjCarFollow = null;          // { trackId, title, artist, pos, at, playing, loaded }
 var _sjCarFollowDriving = false;  // true while this code is the one loading a song
@@ -12013,6 +12010,12 @@ async function sjCarOnNativeStatus(st, opts) {
   const trackId = st.trackId || null;
   const state = st.state;
   if (!trackId || state === 'idle' || state === 'ended') {
+    if (_taNativeBgActive) {
+      _taNativeBgActive = false;
+      _taBgActive = false;
+      _taManualAudio = false;
+      taSyncAudioBtn();
+    }
     if (_sjCarFollow) sjCarFollowStop(false);
     return;
   }
@@ -12051,9 +12054,12 @@ async function sjCarFollowLoad(trackId) {
   }
   if (_sjCarFollow?.trackId !== trackId) return;   // the car moved on meanwhile
   const title = (typeof findTrackById === 'function' && findTrackById(trackId)?.name) || f.title || '';
-  // Whatever the phone was playing itself stops: the car has the speakers.
+  // The native engine has the speakers; stop any WebView audio duplicate.
   try { _taAudioEl?.pause(); } catch (_) {}
-  _taBgActive = false; _taManualAudio = false;
+  // Phone Background Play also uses this native engine. Keep its mode flags
+  // while the web UI follows AVPlayer; genuine CarPlay starts with them off.
+  _taBgActive = _taNativeBgActive;
+  _taManualAudio = _taNativeBgActive;
   if (typeof _spActive !== 'undefined' && _spActive) { try { void spPauseTransport(); } catch (_) {} }
   _sjCarFollowDriving = true;
   try {
@@ -12070,6 +12076,11 @@ async function sjCarFollowLoad(trackId) {
       updateYTQueueUI();
     }
   } finally { _sjCarFollowDriving = false; }
+  if (_taNativeBgActive) {
+    _taBgActive = true;
+    _taManualAudio = true;
+    taSyncAudioBtn();
+  }
   _ytUserWantsPlay = false;   // keeps the page off Now Playing and background keepalive
   if (_sjCarFollow) { _sjCarFollow.loaded = trackId; _sjCarFollow.loading = null; }
   setTimeout(sjCarFollowAlign, 600);
@@ -12103,6 +12114,12 @@ function sjCarFollowStop(pauseCar) {
   _sjCarFollow = null;
   try { ytAPIPlayer?.unMute?.(); } catch (_) {}
   if (pauseCar) { try { sjDlPlugin()?.pause?.(); } catch (_) {} }
+  if (pauseCar && _taNativeBgActive) {
+    _taNativeBgActive = false;
+    _taBgActive = false;
+    _taManualAudio = false;
+    taSyncAudioBtn();
+  }
 }
 
 // The phone's transport buttons, while following. Returns true when handled.
@@ -16840,6 +16857,71 @@ function taSetPreferBg(on) {
   try { localStorage.setItem('sj_bg_play', on ? '1' : '0'); } catch (_) {}
 }
 
+// The Listening Party app has a real AVPlayer engine. WKWebView audio can be
+// suspended when iOS locks the phone even though the same page works in the
+// foreground, so app Background Play must hand the queue to that engine.
+function taNativeBgPlugin() {
+  if (!sjIsNative() || SJ_BRAND.id !== 'lp') return null;
+  const p = sjDlPlugin();
+  return p?.setQueue && p?.play ? p : null;
+}
+
+function taNativeQueuePayload() {
+  const tracks = [];
+  let startIndex = 0;
+  (ytQueue || []).forEach((item, queueIndex) => {
+    if (!item?.trackId) return;
+    if (queueIndex === ytQueueIdx) startIndex = tracks.length;
+    const meta = ytpTrackMeta(item.trackId, item.title);
+    const audio = taTrackAudio(item.trackId);
+    tracks.push({
+      id: item.trackId,
+      title: meta.title || item.title || 'Track',
+      artist: meta.artist || item.artist || '',
+      album: meta.album || item.album || undefined,
+      artworkUrl: meta.artwork || item.artwork || undefined,
+      url: audio?.url || undefined,
+      durationSeconds: Number(audio?.duration || item.durationSeconds) || 0,
+    });
+  });
+  return { tracks, startIndex };
+}
+
+async function taStartNativeBg(positionSeconds) {
+  const p = taNativeBgPlugin();
+  const payload = taNativeQueuePayload();
+  if (!p || !payload.tracks.length) throw new Error('Native background queue is unavailable');
+  await p.setQueue({ ...payload, autoPlay: true });
+  if (p.setShuffle) await p.setShuffle({ enabled: !!ytShuffle });
+  if (p.setRepeat) await p.setRepeat({ enabled: !!ytRepeat });
+  // setQueue can preserve an existing matching item. play() makes auto-play
+  // explicit in that case as well as for a freshly installed queue.
+  await p.play({ index: payload.startIndex });
+  if (Number(positionSeconds) > 0.5 && p.seek) {
+    await p.seek({ positionSeconds: Number(positionSeconds) });
+  }
+}
+
+async function taExitNativeBg() {
+  const p = taNativeBgPlugin();
+  let pos = sjCarFollowTime() || 0;
+  try {
+    const status = await p?.getStatus?.();
+    pos = Number(status?.positionSeconds) || pos;
+    await p?.pause?.();
+  } catch (_) {}
+  _taNativeBgActive = false;
+  _taBgActive = false;
+  _taManualAudio = false;
+  sjCarFollowStop(false);
+  _ytUserWantsPlay = true;
+  try {
+    if (pos > 0.5) ytAPIPlayer?.seekTo?.(pos, true);
+    ytAPIPlayer?.playVideo?.();
+  } catch (_) {}
+  taSyncAudioBtn();
+}
+
 function taTryStartPreferredBg() {
   const item = ytQueue[ytQueueIdx];
   if (!_taPreferBg || !taIsMobileDevice() || _taBgActive || _sjCarFollow) return false;
@@ -16856,6 +16938,11 @@ function taTryStartPreferredBg() {
 }
 
 function taToggleAudioMode() {
+  if (_taNativeBgActive) {
+    taSetPreferBg(false);
+    void taExitNativeBg();
+    return;
+  }
   if (_taManualAudio && _taBgActive) {
     taSetPreferBg(false);
     taExitBgAudio(); // also clears _taManualAudio + resyncs the button
@@ -16892,7 +16979,7 @@ function taSyncAudioBtn() {
   const signedIn = !!googleUser;
   const show = mob && (has || signedIn);
   btn.style.display = show ? '' : 'none';
-  const on = (_taManualAudio && _taBgActive) || (_taPreferBg && has && _taBgActive);
+  const on = _taNativeBgActive || (_taManualAudio && _taBgActive) || (_taPreferBg && has && _taBgActive);
   if (!has) {
     btn.textContent = 'Background Play';
     btn.style.color = '';
@@ -17740,6 +17827,22 @@ function taEnterBgAudio() {
   if (!ta || !_ytUserWantsPlay) return false;
   let pos = 0;
   try { pos = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
+  if (taNativeBgPlugin()) {
+    _taNativeBgActive = true;
+    _taBgActive = true;
+    _taBgLogged = true;
+    _taBgStartPos = pos;
+    try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+    try { _taAudioEl?.pause(); } catch (_) {}
+    ytpStopBgKeepalive();
+    void taStartNativeBg(pos).catch((error) => {
+      console.warn('taStartNativeBg failed', error);
+      _taNativeBgActive = false;
+      taFailBgAudio('Background audio failed to start — back on YouTube.');
+    });
+    taSyncAudioBtn();
+    return true;
+  }
   const a = taEnsureAudioEl();
   // Always (re)assign so cache-busted URLs replace a stale src for the same track.
   a.src = ta.url;
