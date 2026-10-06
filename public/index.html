@@ -6322,7 +6322,7 @@ if (window.__SJ_NATIVE__ === true) {
           <div class="set-body" id="set-audio-body">
             <div class="set-block">
               <div class="set-h">Your audio storage</div>
-              <p class="set-sub">Private audio files you upload power Background Play on your phone. Importing songs from YouTube creates their listings, but iOS still needs a matching audio file here to keep them playing when the screen locks. Your files stay on your account only; normal listening still uses YouTube. Everyone gets 500&nbsp;MB.</p>
+              <p class="set-sub">Private audio files you upload power Background Play on your phone. Importing songs from YouTube creates their listings, but iOS still needs a matching audio file here to keep them playing when the screen locks. Your files stay on your account only; eligible songs use Background Play by default on phones, while desktop listening still uses YouTube. Everyone gets 500&nbsp;MB.</p>
               <div class="set-audio-meter">
                 <div class="bgs-meter-track"><span class="bgs-meter-fill" id="setAudioMeterFill"></span></div>
                 <div class="bgs-meter-txt" id="setAudioQuotaTxt"><span>Loading…</span><span></span></div>
@@ -9197,8 +9197,17 @@ let _taBatchCancel      = false; // set by Cancel — stop after the current fil
 let _taBatchMinimized   = false;
 let _taBatchLastStatus  = '';
 let _taManualAudio      = false; // audio-only mode active for the current track
-let _taPreferBg         = false; // sticky: once enabled on mobile, prefer bg play when audio exists
-try { _taPreferBg = localStorage.getItem('sj_bg_play') === '1'; } catch (_) {}
+function taLoadPreferBg() {
+  try {
+    const saved = localStorage.getItem('sj_bg_play');
+    if (saved !== null) return saved === '1';
+  } catch (_) {}
+  // Background-capable audio is the useful default on a phone: it survives a
+  // locked screen. Desktop keeps the video default, and a saved 0 remains an
+  // explicit mobile opt-out.
+  return taIsMobileDevice();
+}
+let _taPreferBg         = taLoadPreferBg(); // sticky mobile default; explicit opt-out is persisted
 let _ytpWatchdogTimer   = null;  // fires if a track never reaches PLAYING (stall/embed-blocked)
 let _ytpWatchdogVideoId = null;  // videoId the pending watchdog is guarding
 let _ytpWatchdogStartedAt = 0;   // when we first started waiting on this videoId
@@ -33687,8 +33696,8 @@ async function loadYTVideoIds(trackIds) {
 }
 
 // Personal audio always wins and remains owner-only. On mobile only, missing
-// tracks may receive approved artist audio for the explicit Background Play
-// toggle. Discovery and normal playback always remain on YouTube.
+// tracks may receive approved artist audio for Background Play. Eligible songs
+// prefer it by default on phones; desktop playback remains on YouTube.
 async function loadTrackAudio(trackIds) {
   if (!trackIds.length) return;
   try {

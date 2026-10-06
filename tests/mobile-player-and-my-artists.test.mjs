@@ -4,9 +4,26 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { loadHtmlFnsInScope } from './_load.mjs';
 
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const lpHelp = readFileSync(new URL('../public/help/lp/index.html', import.meta.url), 'utf8');
+
+test('background-capable playback defaults on for mobile until explicitly disabled', () => {
+  const preference = (userAgent, saved) => {
+    const scope = {
+      navigator: { userAgent, maxTouchPoints: 0 },
+      localStorage: { getItem: () => saved },
+    };
+    return loadHtmlFnsInScope(['taIsMobileDevice', 'taLoadPreferBg'], scope).taLoadPreferBg();
+  };
+
+  assert.equal(preference('iPhone', null), true);
+  assert.equal(preference('Android', null), true);
+  assert.equal(preference('Desktop Chrome', null), false);
+  assert.equal(preference('iPhone', '0'), false, 'an explicit mobile opt-out must be preserved');
+  assert.equal(preference('Desktop Chrome', '1'), true, 'an existing opt-in must be preserved');
+});
 
 test('mobile dock has no resize handle, and the full player is dismissed by pulling it down', () => {
   const start = html.indexOf('/* A phone player has two deliberate states');
