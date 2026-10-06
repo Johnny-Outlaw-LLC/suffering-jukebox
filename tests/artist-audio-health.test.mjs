@@ -103,9 +103,9 @@ test('the alert email names the artist, song, site and problem, escaped', () => 
   assert.ok(!html.includes('<b>Song</b>'));
 });
 
-test('the route checks both brands and is locked to cron or an admin', () => {
+test('the route checks every brand and is locked to cron or an admin', () => {
   const src = readRepoFile('src/app/api/sj-artist-audio-health/route.ts');
-  assert.match(src, /\[SURFACES\.sj\.url, SURFACES\.lp\.url\]/);
+  assert.match(src, /Object\.values\(SURFACES\)\.map\(surface => surface\.url\)/);
   assert.match(src, /SJ_CRON_SECRET/);
   assert.match(src, /isSjAdmin/);
 });

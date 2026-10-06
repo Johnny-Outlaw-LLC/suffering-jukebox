@@ -6365,7 +6365,7 @@ html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.ligh
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats" onchange="sjSetShufflePreference(this.value)"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none" onchange="sjSetShufflePreference(this.value)"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
             </div>
-            <div class="set-block" id="set-spotify-playback">
+            <div class="set-block" id="set-spotify-playback" data-sj-feature="spotifyPlayback">
               <div class="set-h">Play through Spotify</div>
               <p class="set-sub">Connect a full Spotify Premium account to play matched songs through Spotify — background play and lock-screen controls without uploading MP3s. Discovery and unmatched songs still use YouTube. Spotify Lite or Mini do not work.</p>
               <div id="set-sp-body"><div class="set-status">Checking Spotify…</div></div>
@@ -7744,7 +7744,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, artistUpload: true, liveStations: false }
+  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -17211,7 +17211,7 @@ function spSetWanted(on) {
 }
 
 function spCanUse() {
-  return !!(googleUser && _spStatus.connected && _spStatus.canStream && _spStatus.isPremium);
+  return SJ_BRAND.features.spotifyPlayback !== false && !!(googleUser && _spStatus.connected && _spStatus.canStream && _spStatus.isPremium);
 }
 
 async function spRequest(path, opts) {
@@ -17269,6 +17269,7 @@ async function spRefreshStatus() {
 }
 
 function settingsPaintSpotifyPlayback() {
+  if (SJ_BRAND.features.spotifyPlayback === false) return;
   const body = document.getElementById('set-sp-body');
   if (!body) return;
   if (!googleUser) {
@@ -17313,6 +17314,7 @@ function settingsPaintSpotifyPlayback() {
 }
 
 async function spConnectForPlayback() {
+  if (SJ_BRAND.features.spotifyPlayback === false) return;
   try {
     try { sessionStorage.setItem('sj_spotify_playback_return', '1'); } catch (_) {}
     const data = await mjRequest('/api/spotify/connect', 'POST');

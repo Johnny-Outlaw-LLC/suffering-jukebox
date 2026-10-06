@@ -68,6 +68,8 @@ export interface SurfaceFeatures {
    * openSpotifyImport() refuses, so a stale ?spotify= return cannot open it.
    */
   spotifyImport: boolean;
+  /** Spotify Premium playback requires a registered callback for this host. */
+  spotifyPlayback: boolean;
   /**
    * Artist licensing for public on-demand streaming: /artist-upload,
    * /artist-agreement and the Publish My Music buttons. Off, both pages
@@ -230,6 +232,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       welcomeHero: false,
       phoneMiniPlayer: true,
       spotifyImport: true,
+      spotifyPlayback: true,
       artistUpload: true,
       liveStations: false,
     },
@@ -306,6 +309,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       welcomeHero: true,
       phoneMiniPlayer: true,
       spotifyImport: false,
+      spotifyPlayback: true,
       artistUpload: true,
       liveStations: true,
     },
@@ -348,7 +352,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       applicationCategory: "MusicApplication", operatingSystem: "Any",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     },
-    features: { ...BASE_SURFACES.lp.features },
+    features: { ...BASE_SURFACES.lp.features, spotifyPlayback: false },
   },
 };
 
@@ -430,6 +434,7 @@ export function publicSurface(s: Surface) {
       welcomeHero: s.features.welcomeHero,
       phoneMiniPlayer: s.features.phoneMiniPlayer,
       spotifyImport: s.features.spotifyImport,
+      spotifyPlayback: s.features.spotifyPlayback,
       artistUpload: s.features.artistUpload,
       liveStations: s.features.liveStations,
     },

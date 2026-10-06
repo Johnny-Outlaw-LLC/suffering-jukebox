@@ -20,7 +20,17 @@ Google OAuth application to maintain.
 Migration `20261006200000_record_keeper_surface.sql` adds `rk` attribution to
 page views and plays and separates Record Keeper in listening analytics. It
 preserves the current server-side identity and artist-stat attribution logic.
-The production migration was applied and tested inside a rolled-back transaction.
+The production migration was applied permanently; play attribution and analytics
+were then verified using a rolled-back test transaction.
+
+Record Keeper launches without Spotify Premium playback or Spotify import.
+Its `spotifyPlayback` feature is disabled by user preference. Before enabling it,
+register `https://recordkeeper.stream/api/spotify/callback` in both shared Spotify
+developer applications and verify authorization. The sibling sites keep their
+existing Spotify features.
+
+The shared artist-audio health endpoint and live playback test cover all three
+production hosts, including Record Keeper.
 
 Porkbun DNS: apex ALIAS and www CNAME point to the Vercel project-specific DNS
 target. Porkbun mail forwarding MX/SPF records are retained.
