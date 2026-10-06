@@ -9,8 +9,9 @@
 - Apple processing completed; TestFlight shows build 3, Ready to Submit.
 - Build ID: 2a800ed7-4923-4384-bfca-add8c13eb2fe.
 - What to Test notes are saved; no testers are assigned yet.
-- Existing App Store submission: version 1.0.0, build 1, Waiting for Review.
-- Build 3 has not replaced that submission.
+- Original App Store submission (build 1) withdrawn with user authorization.
+- Version 1.0.0 now has build 3 selected and saved; status Developer Rejected after withdrawal.
+- Final App Store submission has not been sent.
 
 Includes the simplified song menu, removal of redundant Download for CarPlay,
 Nouns Group artwork hydration, native sign-in fixes, and audio-only playlist
@@ -38,7 +39,9 @@ and CarPlay.
 ## Review preparation
 
 The existing submission's metadata, screenshots, privacy settings and review
-details remain in App Store Connect. Build 3 can replace the selected build only
-after the current queued submission is withdrawn. Tester invitations require
-TestFlight review information; copying the existing review credentials and
-contact details is awaiting explicit user authorization.
+details remain in App Store Connect. Build 3 is selected in the App Store draft.
+The user authorized reusing existing review details, but browser privacy masking
+prevents reading their actual credentials and contact phone. The beta description
+and feedback email are saved. Review credentials/contact information require
+direct user entry. Final TestFlight Submit for Review is awaiting explicit
+authorization after automatic approval review rejected that final action.
