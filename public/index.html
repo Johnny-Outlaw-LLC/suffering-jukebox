@@ -12502,7 +12502,6 @@ async function sjCarRemoveFromPlaylist(trackId, playlistId) {
 
 async function sjCarRemoveHearts(trackId, scope, actionAt) {
   if (!trackId || (scope !== 'today' && scope !== 'all')) return;
-  const headers = { ...(await sjAuthHeaders()), 'Content-Type': 'application/json' };
   const body = { track_id: trackId, reaction: 'heart', device_id: getDeviceId(), scope };
   if (scope === 'today') {
     const at = new Date((Number(actionAt) || Date.now() / 1000) * 1000);
@@ -12511,11 +12510,7 @@ async function sjCarRemoveHearts(trackId, scope, actionAt) {
     body.day_start = start.toISOString();
     body.day_end = end.toISOString();
   }
-  const res = await fetch(sjApiUrl('/api/sj-reaction'), {
-    method: 'DELETE', headers, cache: 'no-store', body: JSON.stringify(body),
-  });
-  const response = await res.json().catch(() => ({}));
-  if (!res.ok || !response.ok) throw new Error(response.error || 'Could not remove ratings.');
+  await sjApiJson('DELETE', '/api/sj-reaction', body);
   await ensureMyReactionTracks(true);
 }
 
@@ -21533,10 +21528,11 @@ function plmRender(p) {
   const canShare = playlistIdCanShare(p.id);
   menu.innerHTML =
     _sjmHeader(p.name || 'Playlist') +
-    '<button class="sjm-item" onclick="plmStart()">' +
-      '<span class="sjm-ic">▶</span><span class="sjm-label">Start Playlist</span>' +
+    '<button class="sjm-item" onclick="plmStart(false)">' +
+      '<span class="sjm-ic">▶</span><span class="sjm-label">Play All</span>' +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
     '</button>' +
+    (n > 1 ? '<button class="sjm-item" onclick="plmStart(true)"><span class="sjm-label">Shuffle All</span><span class="sjm-sub">' + n + '</span></button>' : '') +
     '<button class="sjm-item" onclick="plmAddToPlaylist()"' + (n ? '' : ' disabled') + '>' +
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span></button>' +
     '<button class="sjm-item" onclick="plmPlayNext()"' + (n ? '' : ' disabled') + '>' +
@@ -21560,10 +21556,10 @@ function plmRender(p) {
       : '');
 }
 
-function plmStart() {
+function plmStart(shuffle) {
   const id = _plmPlaylistId;
   plmClose();
-  if (id) playPlaylist(id);
+  if (id) playPlaylist(id, shuffle);
 }
 
 async function plmTrackIds(playlistId) {
@@ -21730,24 +21726,22 @@ function lamRender(row) {
             '<span class="sjm-ic">★</span><span class="sjm-label">Add favorites to playlist</span>' +
             '<span class="sjm-sub">' + fav.length + '</span></button>'
         : '');
-  const nVis = _lamOnPage ? getVisibleTracksWithVideo(false).length : 0;
+  const nVis = _lamOnPage ? getVisibleTracksWithVideo(false).length : n;
   menu.innerHTML =
     _sjmHeader(row.name || 'Artist') +
-    (_lamOnPage
-      ? '<button class="sjm-item" onclick="lamPagePlay(false)"' + (nVis ? '' : ' disabled') + '>' +
+    ('<button class="sjm-item" onclick="lamPlayAll(false)"' + (nVis ? '' : ' disabled') + '>' +
           '<span class="sjm-ic">' + YTP_DECK_ICONS.play + '</span><span class="sjm-label">Play All</span>' +
           (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
-        '<button class="sjm-item" onclick="lamPagePlay(true)"' + (nVis ? '' : ' disabled') + '>' +
+        (nVis > 1 ? '<button class="sjm-item" onclick="lamPlayAll(true)"' + (nVis ? '' : ' disabled') + '>' +
           '<span class="sjm-ic">' + YTP_DECK_ICONS.shuffle + '</span><span class="sjm-label">Shuffle All</span>' +
-          (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
-        (lamCanManage(row)
+          (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' : '') +
+        (_lamOnPage && lamCanManage(row)
           ? '<button class="sjm-item" onclick="lamManage()">' +
               '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Artist</span></button>' +
             '<button class="sjm-item" onclick="lamStats()">' +
               '<span class="sjm-ic">📈</span><span class="sjm-label">Artist stats</span></button>'
           : '') +
-        '<div class="sjm-sep"></div>'
-      : '') +
+        '<div class="sjm-sep"></div>') +
     (!_lamOnPage && row.slug && sjmArtistHasDiscography(row.artist_id)
       ? '<button class="sjm-item" onclick="lamExplore()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Discography</span></button>'
@@ -21977,14 +21971,14 @@ async function lamLoadFavorites(artistId) {
 
 async function lamAllTrackIds(artistId) {
   try {
-    const albs = await dbGet('/albums?artist_id=eq.' + artistId + '&select=id');
+    const albs = await dbGet('/albums?artist_id=eq.' + artistId + '&select=id&order=release_date.asc,id.asc');
     const albumIds = (albs || []).map(a => a.id);
     if (!albumIds.length) return [];
     const ids = [];
     for (let i = 0; i < albumIds.length; i += 40) {
       const chunk = albumIds.slice(i, i + 40);
       const rows = await dbGet('/tracks?album_id=in.(' + chunk.join(',') + ')&select=id');
-      (rows || []).forEach(r => { if (r.id) ids.push(r.id); });
+      chunk.forEach(albumId => (rows || []).filter(r => r.album_id === albumId).forEach(r => { if (r.id) ids.push(r.id); }));
     }
     return ids;
   } catch (e) {
@@ -22044,6 +22038,20 @@ function lamImportDiscography() {
 // Play All / Shuffle All from the artist page ⋯ play what the album filter
 // shows, the same list the Playlist Controls Shuffle All uses. Play All means
 // in order, so it turns shuffle off first.
+async function lamPlayAll(shuffle) {
+  if (_lamOnPage) { lamPagePlay(shuffle); return; }
+  const id = _lamArtistId;
+  lamClose();
+  if (!id) return;
+  try {
+    const ids = await lamAllTrackIds(id);
+    const info = await resolvePlaylistTracks(ids);
+    const q = filterQueueForHomeBg(sjNoBlocked(ids.map(tid => playlistQueueItem(tid, info[tid])).filter(Boolean)));
+    if (!q.length) { showToast('No playable songs found.'); return; }
+    await landingPlayQueue(q, { shuffle: !!shuffle });
+  } catch (e) { showToast('Could not load this artist\'s songs.'); }
+}
+
 function lamPagePlay(shuffle) {
   lamClose();
   if (shuffle) { shuffleAllVisible(); return; }
@@ -26156,7 +26164,8 @@ function closeYTPlaylistDD() {
 // Shuffle All while Explore Playlists is open. Not the catalogue and not one
 // playlist: every song across the playlists on screen, each one once.
 async function playlistsShuffleAll() {
-  const btn = document.getElementById('landing-shuffle-all-btn');
+  const shuffle = arguments[0] !== false;
+  const btn = document.getElementById(shuffle ? 'landing-shuffle-all-btn' : 'landing-play-all-btn');
   const orig = btn ? btn.textContent : null;
   if (btn) { btn.textContent = 'Loading\u2026'; btn.disabled = true; }
   try {
@@ -26172,7 +26181,8 @@ async function playlistsShuffleAll() {
         : 'No playable songs in the playlists shown.');
       return;
     }
-    await landingPlayQueue(q, { shuffle: true });
+    if (shuffle) await landingPlayQueue(q, { shuffle: true });
+    else await landingPlayQueue(q, { shuffle: false });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
   } catch (e) {
@@ -26182,7 +26192,7 @@ async function playlistsShuffleAll() {
   }
 }
 
-async function playPlaylist(playlistId) {
+async function playPlaylist(playlistId, shuffleOverride) {
   try {
     if (homeJukeboxBgFilterOn() && !_homeLibLoaded) await ensureHomeLibrary();
     const rows = await dbGetAuth(`/playlist_tracks?playlist_id=eq.${playlistId}&order=position.asc&select=track_id`);
@@ -26202,7 +26212,7 @@ async function playPlaylist(playlistId) {
     q = resolved;
 
     const pl = _savedPlaylists.find(p => p.id === playlistId) || playlists.find(p => p.id === playlistId);
-    const doShuffle = (pl?.default_play_mode || 'order') === 'shuffle';
+    const doShuffle = typeof shuffleOverride === 'boolean' ? shuffleOverride : (pl?.default_play_mode || 'order') === 'shuffle';
     setYtShuffleEnabled(doShuffle);
     _queueHasAdditions = false;
     await landingPlayQueue(q, { shuffle: doShuffle });
@@ -33517,7 +33527,8 @@ function playlistQueueItem(trackId, info) {
 }
 
 async function landingShuffleAll() {
-  const btn = document.getElementById('landing-shuffle-all-btn');
+  const shuffle = arguments[0] !== false;
+  const btn = document.getElementById(shuffle ? 'landing-shuffle-all-btn' : 'landing-play-all-btn');
   const orig = btn ? btn.textContent : null;
   if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
   try {
@@ -33537,7 +33548,9 @@ async function landingShuffleAll() {
     const chunks = [];
     for (let i = 0; i < albumIds.length; i += 50) chunks.push(albumIds.slice(i, i + 50));
     const trackRows = filterTracksForHomeBg((await Promise.all(chunks.map(c =>
-      dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only`)))).flat());
+      dbGet(`/tracks?album_id=in.(${c.join(',')})&select=id,name,album_id,artist_audio_only,disc_number,track_number&order=disc_number.asc,track_number.asc,id.asc`)))).flat());
+    const albumOrder = new Map(albumIds.map((id, i) => [id, i]));
+    trackRows.sort((a, b) => albumOrder.get(a.album_id) - albumOrder.get(b.album_id) || (a.disc_number || 1) - (b.disc_number || 1) || (a.track_number || 0) - (b.track_number || 0));
     trackRows.forEach(t => {
       const alb = albById[t.album_id];
       const art = alb && artById[alb.artist_id];
@@ -33561,7 +33574,8 @@ async function landingShuffleAll() {
       return;
     }
     if (homeJukeboxBgFilterOn() && taIsMobileDevice()) taSetPreferBg(true);
-    await landingPlayQueue(q, { shuffle: true });
+    if (shuffle) await landingPlayQueue(q, { shuffle: true });
+    else await landingPlayQueue(q, { shuffle: false });
     // Background-play audio for the head of the queue (await so the toggle can appear).
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
@@ -35328,8 +35342,12 @@ function updateLandingActionsHeader() {
   // there is nothing on screen to shuffle. Orange is the Now Playing tab's
   // color; when that tab is also showing, Shuffle All steps back to a
   // standard button instead of competing with it for the same attention.
+  const songCount = landingTab === 'playlists' ? playlistExploreStats().songs
+    : landingTab === 'songs' && _esLoaded ? esSongRows().length
+    : homePlayArtistRows().reduce((n, r) => n + (Number(r.track_count) || 0), 0);
+  const playAction = landingTab === 'playlists' ? 'playlistsShuffleAll' : 'landingShuffleAll';
   const shuffle = totals && landingTab !== 'live'
-    ? `<button type="button" class="landing-shuffle-btn${_npRow ? ' standard' : ''}" id="landing-shuffle-all-btn" onclick="${landingTab === 'playlists' ? 'playlistsShuffleAll()' : 'landingShuffleAll()'}">▶ Shuffle All</button>`
+    ? `<span style="display:flex;flex-direction:column;gap:6px"><button type="button" class="landing-shuffle-btn standard" id="landing-play-all-btn" onclick="${playAction}(false)">▶ Play All</button>${songCount > 1 ? `<button type="button" class="landing-shuffle-btn${_npRow ? ' standard' : ''}" id="landing-shuffle-all-btn" onclick="${playAction}()">▶ Shuffle All</button>` : ''}</span>`
     : '';
   // Import / Manage sit on this row now, beside Shuffle All, instead of down
   // in each tab's own filter row - one action cluster in one place across
@@ -45601,13 +45619,7 @@ async function ytpUndoSessionReactions(trackId, reaction, all) {
   if (_scoreRxn && undoN) sjBumpTrackVoteScore(trackId, -undoN);
   ytpCloseReactionUndo();
   try {
-    const headers = Object.assign({ 'Content-Type': 'application/json' }, await sjAuthHeaders());
-    const res = await fetch(sjApiUrl('/api/sj-reaction'), {
-      method: 'DELETE', headers,
-      body: JSON.stringify({ track_id: trackId, reaction, reaction_ids: ids, device_id: getDeviceId() }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.ok) throw new Error(body.error || 'Could not undo reaction.');
+    const body = await sjApiJson('DELETE', '/api/sj-reaction', { track_id: trackId, reaction, reaction_ids: ids, device_id: getDeviceId() });
     const deleted = new Set(body.deleted || []);
     sessionTrackReactions[trackId][reaction] = bucket.filter(id => !deleted.has(id));
     trackReactionCounts[trackId] = body.counts || counts;
@@ -45768,19 +45780,11 @@ async function ytpSendReaction(trackId, reaction, positionMs, anchor, reactionId
   ytpReactionBurst(def.icon, anchor);
 
   try {
-    const headers = Object.assign({ 'Content-Type': 'application/json' }, await sjAuthHeaders());
-    const res = await fetch(sjApiUrl('/api/sj-reaction'), {
-      method: 'POST', headers,
-      body: JSON.stringify({
-        track_id: trackId,
-        reaction,
-        device_id: getDeviceId(),
-        position_ms: Number.isFinite(positionMs) ? positionMs : null,
-        ...(reactionId ? { reaction_id: reactionId } : {}),
-      })
+    const body = await sjApiJson('POST', '/api/sj-reaction', {
+      track_id: trackId, reaction, device_id: getDeviceId(),
+      position_ms: Number.isFinite(positionMs) ? positionMs : null,
+      ...(reactionId ? { reaction_id: reactionId } : {}),
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.ok) throw new Error(body.error || 'Could not save reaction.');
     if (body.reaction_id) {
       const byTrack = sessionTrackReactions[trackId] || (sessionTrackReactions[trackId] = {});
       const ids = byTrack[reaction] || (byTrack[reaction] = []);
