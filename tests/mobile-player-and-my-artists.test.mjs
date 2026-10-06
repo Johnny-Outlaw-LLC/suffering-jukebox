@@ -114,6 +114,34 @@ test('an already-open app player switches background audio to AVPlayer', () => {
     'native playback must win before the HTML audio fallback is created');
 });
 
+test('private-audio auth failure still falls through to licensed background audio', async () => {
+  const requested = [];
+  let triedHandoff = 0;
+  const scope = {
+    taData: {},
+    sjGetSession: async () => ({ data: { session: { user: { id: 'listener' } } } }),
+    taOwnAudioUrls: async () => { throw new Error('expired private session'); },
+    taIsMobileDevice: () => true,
+    sjApiUrl: path => 'https://listeningparty.stream' + path,
+    sjGetJson: async url => {
+      requested.push(url);
+      return { ok: true, tracks: [{ trackId: 'licensed', url: 'signed-artist-audio', duration: 180, artist: 'Artist' }] };
+    },
+    taSyncAudioBtn() {},
+    taTryStartPreferredBg() { triedHandoff++; },
+    console: { warn() {} },
+  };
+  const { loadTrackAudio } = loadHtmlFnsInScope(['loadTrackAudio'], scope);
+
+  await loadTrackAudio(['licensed']);
+
+  assert.equal(requested.length, 1);
+  assert.match(requested[0], /\/api\/sj-artist-audio\?purpose=mobile-background/);
+  assert.equal(scope.taData.licensed.url, 'signed-artist-audio');
+  assert.equal(scope.taData.licensed.artistLicensed, true);
+  assert.equal(triedHandoff, 1);
+});
+
 test('mobile dock has no resize handle, and the full player is dismissed by pulling it down', () => {
   const start = html.indexOf('/* A phone player has two deliberate states');
   const mobileCss = html.slice(start, start + 7000);

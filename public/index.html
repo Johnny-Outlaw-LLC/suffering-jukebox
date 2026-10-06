@@ -33868,7 +33868,14 @@ async function loadTrackAudio(trackIds) {
     const chunks = [];
     for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
     if (uid) {
-      const mine = (await Promise.all(chunks.map(c => taOwnAudioUrls(c)))).flat();
+      // Private uploads are only the first source. A stale/expired native web
+      // session can make /api/sj-audio reject even while the phone's car key
+      // and the public artist-licensed catalogue are healthy. That rejection
+      // used to escape this whole function, so the licensed request below was
+      // never made and Background Enabled silently fell back to YouTube.
+      let mine = [];
+      try { mine = (await Promise.all(chunks.map(c => taOwnAudioUrls(c)))).flat(); }
+      catch (e) { console.warn('Private background audio unavailable; trying artist audio', e); }
       mine.forEach(r => {
         if (!r.url || !r.path) return;
         taData[r.trackId] = {
