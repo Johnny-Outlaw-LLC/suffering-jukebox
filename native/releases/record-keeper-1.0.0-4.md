@@ -7,7 +7,7 @@
 - Xcode confirmed `Upload succeeded` and `EXPORT SUCCEEDED`.
 - Apple processing is pending.
 - Development export installed and launched successfully on Magic.
-- Build 3 remains in the App Store review queue; build 4 has not replaced it.
+- User explicitly chose to keep build 3 in App Store review; build 4 has not replaced it.
 
 Play All appears above Shuffle All in Explore artist and playlist menus and in
 the Explore page controls. Single-song lists retain Play All and omit Shuffle
