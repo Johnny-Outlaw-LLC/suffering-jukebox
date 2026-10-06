@@ -6,7 +6,7 @@ Console app ID: `4975529032528259557`.
 The signed version 1 / 1.0 bundle was accepted and published to the internal
 testing track as **1.0 — Android Auto internal testing**. Google Play displays
 “Available to internal testers” and “Not reviewed.” The dedicated Record Keeper
-Internal Testers list is enabled with one owner-approved account; the track is
+Internal Testers list is enabled with two owner-approved accounts; the track is
 Active. Tester email addresses are managed in the console rather than Git.
 Join URL: https://play.google.com/apps/internaltest/4700466641862230992.
 This is not a production review submission or public launch.
