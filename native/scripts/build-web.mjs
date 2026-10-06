@@ -41,7 +41,7 @@ const LISTENING_PARTY = {
   accentHover: '#FF7A3A',
   accentRgb: '255,94,20',
   authScheme: 'com.johnnyoutlaw.listeningparty',
-  shareText: 'Listening Party - build a playlist from anything on YouTube, share it with a link, and listen together.',
+  shareText: 'Listening Party - music straight from independent artists, with the lyrics. Free, no ads.',
   redditSub: null,
   sisterName: 'Suffering Jukebox',
   sisterUrl: 'https://sufferingjukebox.stream/',
