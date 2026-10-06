@@ -66,8 +66,11 @@ def render(b, audience):
     colors = ';'.join('--'+k+':'+b[k] for k in ['bg','card','ink','muted','accent','line'])
     icon = '/record-keeper/icon.png' if rk else '/brand/lp/favicon.png' if b['id']=='lp' else '/favicon.png'
     nav = ''.join(f'<a href="{link("/for-"+a)}"'+(' aria-current="page"' if a == audience else '')+f'>For {a.title()}</a>' for a in ['artists','listeners'])
-    return f'''<!doctype html>
+    html = f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} | {b['name']}</title><meta name="description" content="{desc}"><meta name="robots" content="{'noindex, nofollow' if rk else 'index, follow'}"><link rel="canonical" href="{b['url']}/for-{audience}"><meta property="og:type" content="website"><meta property="og:title" content="{title} | {b['name']}"><meta property="og:description" content="{desc}"><meta property="og:url" content="{b['url']}/for-{audience}"><meta property="og:image" content="{b['url'].replace('/record-keeper','')+b['logo']}"><link rel="icon" href="{icon}"><style>:root{{{colors}}}{CSS}</style></head><body>{preview}<header><div class="top"><a class="brand" href="{link('/')}"><img src="{b['logo']}" alt="{b['name']}"></a><nav aria-label="Main navigation"><a href="{link('/')}">Explore</a>{nav}<a href="{link('/help')}">Help</a></nav></div></header><main>{body}</main><footer><div class="footer-in"><span>{b['name']} · Explore. Create. Listen together.</span><span>Real product screens · Captured October 5, 2026 · Account dashboards require sign-in.</span></div></footer></body></html>'''
+    if not rk:
+        html = html.replace(b['url'] + b['logo'], b['url'] + ('/brand/lp/og-image.png' if b['id']=='lp' else '/og-image.png'))
+    return html
 
 for brand in BRANDS:
     if brand['id'] == 'rk' and len(sys.argv) < 2:
