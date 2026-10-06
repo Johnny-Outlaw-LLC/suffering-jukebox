@@ -11059,6 +11059,7 @@ function closeYTPlayer() {
   ytpClearPlaybackWatchdog();
   markPlayerClosed();
   hideYtpMiniFooter();
+  sjNativeRepaint();
   patchYTPlayDuration();
   _ytCurrentPlay = null;
   _ytUserWantsPlay = false;
@@ -14017,6 +14018,24 @@ function ytpEnterDocked() {
   ytpDockClaimFrame();
   showYtpMiniFooter();
   ytpShowQueueChrome();
+  sjNativeRepaint();
+}
+
+// In the iPhone app, parking the YouTube frame off screen (docking, closing,
+// or the player restored after sign-in) left the top 512pt of the page
+// unpainted until the next scroll: WKWebView does not invalidate the tiles the
+// out-of-process frame was covering. A one-pixel scroll and back is what a
+// person's thumb did to bring it back, so do that for them.
+function sjNativeRepaint() {
+  if (typeof sjIsNative !== 'function' || !sjIsNative()) return;
+  const nudge = () => requestAnimationFrame(() => {
+    const dir = window.scrollY > 0 ? -1 : 1;
+    window.scrollBy(0, dir);
+    requestAnimationFrame(() => window.scrollBy(0, -dir));
+  });
+  // Once when the frame moves, and again after the dock has settled.
+  setTimeout(nudge, 60);
+  setTimeout(nudge, 700);
 }
 
 // Kept under its old name because a lot of call sites already ask "is the
