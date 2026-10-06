@@ -18,7 +18,7 @@ const SUPABASE_URL = 'https://ntyvtpimesfoesuykuyi.supabase.co';
 const ANON = readFileSync(new URL('../../src/lib/sj-admin-auth.ts', import.meta.url), 'utf8')
   .match(/SJ_SUPABASE_ANON_KEY\s*=\s*"([^"]+)"/)[1];
 const HOSTS = (process.env.SJ_ARTIST_AUDIO_HOSTS
-  || 'https://www.sufferingjukebox.stream,https://listeningparty.stream').split(',');
+  || 'https://www.sufferingjukebox.stream,https://listeningparty.stream,https://recordkeeper.stream').split(',');
 
 const health = loadTs('src/lib/artist-audio-health.ts', { 'sj-admin-auth': { JUKEBOX_SCHEMA: 'jukebox' } });
 

@@ -56,7 +56,7 @@ async function run(req: NextRequest) {
   const test = req.nextUrl.searchParams.get("test_alert") === "1";
   const sb = createSjServiceClient();
   const songs = await publicArtistAudioSongs(sb);
-  const report = await checkArtistAudio(songs, [SURFACES.sj.url, SURFACES.lp.url]);
+  const report = await checkArtistAudio(songs, Object.values(SURFACES).map(surface => surface.url));
   const alert = report.failures.length || test ? await sendAlert(report, test) : { sent: false, reason: "all passing" };
   if (report.failures.length) console.error("[sj-artist-audio-health]", JSON.stringify(report.failures));
   return NextResponse.json(
