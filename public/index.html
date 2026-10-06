@@ -12161,6 +12161,8 @@ async function sjCarRefreshLibrary() {
   try {
     const result = await p.refreshCarLibrary();
     _sjCarStreamIds = Array.isArray(result?.trackIds) ? result.trackIds.filter(Boolean) : _sjCarStreamIds;
+    taTryStartPreferredBg();
+    taSyncAudioBtn();
     void sjCarPushShuffleProfile();
     sjCarSchedulePushRatings();
     // The refresh is what finds out a held key was revoked; replace it now
@@ -16812,7 +16814,16 @@ async function taOwnAudioUrls(trackIds) {
   return data.tracks || [];
 }
 
-function taTrackAudio(trackId) { return (trackId && taData[trackId]) || null; }
+function taTrackAudio(trackId) {
+  if (!trackId) return null;
+  if (taData[trackId]) return taData[trackId];
+  // AVPlayer resolves private uploads with the device key, independently of
+  // the web session. A web signed URL is not required for native playback.
+  if (taNativeBgPlugin() && sjCarTrackIds().includes(trackId)) {
+    return { nativePlayable: true };
+  }
+  return null;
+}
 
 function taEnsureAudioEl() {
   if (_taAudioEl) return _taAudioEl;
@@ -16950,7 +16961,7 @@ function taToggleAudioMode() {
   }
   const item = ytQueue[ytQueueIdx];
   const audio = taTrackAudio(item?.trackId);
-  if (!googleUser && !audio?.artistLicensed) {
+  if (!googleUser && !audio?.artistLicensed && !audio?.nativePlayable) {
     openBgSetup();   // the sheet explains it and offers sign-in
     return;
   }
@@ -17819,7 +17830,7 @@ function taFailBgAudio(reason) {
 function taEnterBgAudio() {
   const item = ytQueue[ytQueueIdx];
   const ta = taTrackAudio(item?.trackId);
-  if (!googleUser && !ta?.artistLicensed) return false;
+  if (!googleUser && !ta?.artistLicensed && !ta?.nativePlayable) return false;
   // Sticky preference counts as "on" for tracks that have uploaded audio.
   if (!_taManualAudio && !(_taPreferBg && taIsMobileDevice() && ta)) return false;
   if (_taPreferBg && ta) _taManualAudio = true;
@@ -17904,6 +17915,7 @@ function taExitBgAudio() {
 // Warm the HTTP cache for the next background-playable track so the
 // ended→next handoff can call play() immediately without a cold fetch.
 function taPreloadNextBg() {
+  if (taNativeBgPlugin()) return; // AVPlayer resolves the next native stream itself.
   if (!ytQueue.length) return;
   let ni = -1;
   if (ytShuffle && ytQueue.length > 1) {

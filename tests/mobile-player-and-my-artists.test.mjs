@@ -25,6 +25,19 @@ test('background-capable playback defaults on for mobile until explicitly disabl
   assert.equal(preference('Desktop Chrome', '1'), true, 'an existing opt-in must be preserved');
 });
 
+test('native library eligibility starts background playback without a web signed URL', () => {
+  const scope = {
+    taData: {},
+    taNativeBgPlugin: () => ({}),
+    sjCarTrackIds: () => ['private-upload'],
+  };
+  const { taTrackAudio } = loadHtmlFnsInScope(['taTrackAudio'], scope);
+  assert.equal(taTrackAudio('private-upload').nativePlayable, true);
+  assert.equal(taTrackAudio('youtube-only'), null);
+  scope.taNativeBgPlugin = () => null;
+  assert.equal(taTrackAudio('private-upload'), null, 'website playback still requires a URL');
+});
+
 test('late background-audio metadata hands an active mobile track off from YouTube', () => {
   let mediaUpdates = 0;
   const scope = {
@@ -47,6 +60,26 @@ test('late background-audio metadata hands an active mobile track off from YouTu
   assert.equal(taTryStartPreferredBg(), true);
   assert.equal(scope._taManualAudio, true);
   assert.equal(mediaUpdates, 1);
+});
+
+test('a private native-library track enters AVPlayer without web-session authorization', async () => {
+  const calls = [];
+  const scope = {
+    googleUser: null, taData: {},
+    _taPreferBg: true, _taManualAudio: true, _ytUserWantsPlay: true,
+    _taNativeBgActive: false, _taBgActive: false, _taBgLogged: false, _taBgStartPos: 0,
+    ytQueue: [{ trackId: 'private-upload' }], ytQueueIdx: 0,
+    ytAPIPlayer: { getCurrentTime: () => 0, pauseVideo: () => calls.push('pause-video') },
+    _taAudioEl: null,
+    taNativeBgPlugin: () => ({}), sjCarTrackIds: () => ['private-upload'],
+    taStartNativeBg: async () => calls.push('start-native'),
+    ytpStopBgKeepalive() {}, taSyncAudioBtn() {},
+  };
+  const api = loadHtmlFnsInScope(['taTrackAudio', 'taEnterBgAudio'], scope);
+  assert.equal(api.taEnterBgAudio(), true);
+  await Promise.resolve();
+  assert.deepEqual(calls, ['pause-video', 'start-native']);
+  assert.equal(scope._taNativeBgActive, true);
 });
 
 test('Listening Party app sends Background Play to the native audio engine', async () => {
