@@ -67,3 +67,21 @@ test('a rejected native heart rolls back its optimistic count', async () => {
   assert.deepEqual(scope.myReactionTrackIds,[]);
   assert.deepEqual(toasts,['Could not save reaction.']);
 });
+
+
+test('successful heart taps update both dock controls and the expanded player count', async () => {
+  const {scope} = reactionScope();
+  const labels = [{textContent:''}, {textContent:''}, {textContent:''}];
+  const button = label => ({getAttribute: () => 'heart', querySelector: () => label});
+  const dockButtons = labels.slice(0,2).map(button);
+  const rail = {getAttribute: () => 'track', querySelectorAll: () => [button(labels[2])]};
+  scope._ytpReactionTrackId = 'track';
+  scope.document = {querySelectorAll: selector => selector === '#ytp-mini-footer .ytp-dock-reaction' ? dockButtons : selector === '[data-reaction-rail]' ? [rail] : []};
+  delete scope.refreshTrackReactionUI;
+  const {ytpSendReaction} = loadHtmlFnsInScope(['sjApiJson','ytpSendReaction','ytpReactionCountLabel','refreshTrackReactionUI','ytpPaintDockReactionCounts'],scope);
+  assert.equal(await ytpSendReaction('track','heart',1000,null),true);
+  assert.deepEqual(labels.map(l => l.textContent), ['1','1','1']);
+  scope.window.Capacitor.Plugins.CapacitorHttp.request = async () => ({status:200,data:{ok:true,reaction_id:'saved2',counts:{heart:2}}});
+  assert.equal(await ytpSendReaction('track','heart',2000,null),true);
+  assert.deepEqual(labels.map(l => l.textContent), ['2','2','2']);
+});
