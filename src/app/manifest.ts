@@ -16,7 +16,7 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: s.themeColor,
     icons: [
       { src: icon, sizes: "192x192", type: "image/png" },
-      { src: icon, sizes: "512x512", type: "image/png" },
+      { src: s.id === "rk" ? `${s.assetBase}/icon-512.png` : icon, sizes: "512x512", type: "image/png" },
     ],
     // "Share -> Listening Party" from the YouTube app lands in the Add music box
     // (consumeSharedImport in public/index.html). Only works once installed.

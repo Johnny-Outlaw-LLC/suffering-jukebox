@@ -994,7 +994,7 @@ body:not(.light) .tt-num { color: var(--text); }
     object-fit: contain;
     object-position: left center;
   }
-  html[data-surface="lp"] .hdr-brand-mobile img {
+  :is(html[data-surface="lp"],html[data-surface="rk"]) .hdr-brand-mobile img {
     height: 52px !important;
     max-height: 56px;
     max-width: none !important;
@@ -2416,7 +2416,7 @@ textarea.report-input { resize:vertical; }
     transform: none;
     bottom: var(--mf-lyr-bottom);
   }
-  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: calc(var(--mf-body) - 26px); }
+  #ytp-mini-footer.dock-show-playlist .ytp-mf-lyr-view { height: calc(var(--mf-body) - var(--mf-lyr-top, 26px)); }
 }
 .ytp-mf-scrub-time {
   font-size: .48rem; font-family: var(--mono); color: var(--text-muted);
@@ -2437,6 +2437,23 @@ textarea.report-input { resize:vertical; }
   background: var(--accent); border: none; cursor: pointer;
 }
 .ytp-mf-seek::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
+.ta-bg-scrub {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 7;
+  display: flex; align-items: center; gap: 10px; padding: 18px 16px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0));
+  cursor: default;
+}
+.ta-bg-scrub-time {
+  font-family: var(--mono); font-size: .62rem; color: #eee; min-width: 2.6em;
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+.ta-bg-scrub-time.dur { text-align: right; }
+.ta-bg-seek {
+  height: 5px;
+  background: linear-gradient(to right, var(--accent) var(--ta-prog, 0%), rgba(255,255,255,.28) var(--ta-prog, 0%));
+}
+.ta-bg-seek::-webkit-slider-thumb { width: 14px; height: 14px; }
+.ta-bg-seek::-moz-range-thumb { width: 14px; height: 14px; }
 
 /* Reaction markers — shown while hovering any scrub zone */
 .ytp-scrub-zone { position: relative; }
@@ -2486,7 +2503,7 @@ textarea.report-input { resize:vertical; }
   padding: 0 8px;
 }
 .ytp-mf-lyr-view {
-  flex: 1; min-width: 0; min-height: 0; height: calc(var(--mf-body) - 26px); margin-top: 26px; overflow: hidden;
+  flex: 1; min-width: 0; min-height: 0; height: calc(var(--mf-body) - var(--mf-lyr-top, 26px)); margin-top: var(--mf-lyr-top, 26px); overflow: hidden;
   text-align: center;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
           mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
@@ -3252,6 +3269,10 @@ select.ctrl-select:hover { background-color: var(--bg-elevated); border-color: v
 .admin-toggle { background:none; border:1px solid #7c3aed55; color:#a78bfa; font-family:var(--mono); font-size:.44rem; padding:.22rem .55rem; border-radius:6px; cursor:pointer; }
 .admin-toggle.on { background:#7c3aed22; border-color:#a78bfa; color:#c4b5fd; }
 .admin-toggle.locked { opacity:.85; cursor:default; }
+/* Admin and Mod stack in one column at one width, and never wrap a label. */
+.admin-toggles { display:inline-flex; flex-direction:column; align-items:stretch; gap:.3rem; }
+.admin-toggles .admin-toggle { white-space:nowrap; text-align:center; }
+.admin-toggle.busy { cursor:progress; pointer-events:none; }
 .admin-song-album { margin-bottom:.65rem; border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg-card); }
 .admin-song-album-hdr { display:flex; align-items:center; justify-content:space-between; gap:.5rem; padding:.55rem .75rem; background:var(--bg-elevated); cursor:pointer; }
 .admin-song-album-hdr h3 { font-size:.62rem; font-weight:700; color:var(--text); line-height:1.3; }
@@ -3506,6 +3527,39 @@ html.sj-capture #hdr-toolbar-toggle { display:none !important; visibility:hidden
 /* ── PLAYLIST MODAL ── */
 .pl-modal-overlay { position:fixed; inset:0; z-index:5100; background:rgba(0,0,0,.55); backdrop-filter:blur(4px); display:none; align-items:center; justify-content:center; padding:2rem; }
 .pl-modal-overlay.open { display:flex; }
+
+/* Lyric sync editor (lsy*) */
+#lsyOverlay { z-index: 5300; }
+.lsy-help { font-size:.46rem; color:var(--text-muted); line-height:1.5; }
+.lsy-bar { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.lsy-clock { font-family:var(--mono); font-size:.62rem; color:var(--text); min-width:4.4rem; text-align:center; }
+.lsy-stamp { margin-left:auto; background:var(--accent); color:#0a0a0a; font-weight:700; padding:.5rem 1.1rem; }
+.lsy-lines { flex:1; min-height:160px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:4px; }
+.lsy-row { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; border-left:3px solid transparent; }
+.lsy-row.cur { background:color-mix(in srgb, var(--accent) 14%, transparent); border-left-color:var(--accent); }
+.lsy-row.done .lsy-text { color:var(--text-muted); }
+.lsy-time { width:4.6rem; flex:none; font-family:var(--mono); font-size:.5rem; padding:3px 4px; border:1px solid var(--border); border-radius:5px; background:transparent; color:var(--text); }
+.lsy-nudge { display:flex; gap:2px; flex:none; }
+.lsy-nudge button { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:5px; font-size:.5rem; min-width:1.5rem; height:1.5rem; cursor:pointer; }
+.lsy-nudge button:hover { color:var(--accent); border-color:var(--accent); }
+.lsy-text { flex:1; font-size:.56rem; min-width:0; font-family:inherit; color:var(--text); background:transparent; border:1px solid transparent; border-radius:5px; padding:3px 5px; }
+.lsy-text:hover { border-color:var(--border); }
+.lsy-text:focus { outline:none; border-color:var(--accent); background:var(--bg, transparent); }
+.lsy-edit { display:flex; gap:2px; flex:none; }
+.lsy-edit button { background:none; border:1px solid var(--border); color:var(--text-muted); border-radius:5px; font-size:.5rem; min-width:1.5rem; height:1.5rem; cursor:pointer; }
+.lsy-edit button:hover { color:var(--accent); border-color:var(--accent); }
+.lsy-play { min-width:2.6rem; }
+.lsy-seek { display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:.46rem; color:var(--text-muted); }
+.lsy-seek > span { min-width:2.2rem; text-align:center; }
+.lsy-track { position:relative; flex:1; height:22px; display:flex; align-items:center; }
+.lsy-track input[type=range] { position:relative; z-index:1; width:100%; margin:0; height:6px; border-radius:3px; cursor:pointer; -webkit-appearance:none; appearance:none;
+  background:linear-gradient(to right, var(--accent) var(--p,0%), color-mix(in srgb, var(--text-muted) 30%, transparent) var(--p,0%)); }
+.lsy-track input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--accent); border:2px solid #fff; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+.lsy-track input[type=range]::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--accent); border:2px solid #fff; }
+.lsy-marks { position:absolute; left:0; right:0; top:50%; height:14px; transform:translateY(-50%); pointer-events:none; }
+.lsy-marks i { position:absolute; top:0; width:2px; height:14px; margin-left:-1px; border-radius:1px; background:var(--text-muted); opacity:.5; }
+.lsy-foot { display:flex; justify-content:space-between; gap:8px; font-size:.44rem; color:var(--text-muted); }
+@media (max-width:640px) { .lsy-nudge { display:none; } .lsy-stamp { flex:1 1 100%; margin-left:0; padding:.8rem; } }
 /* Audio uploads open from Settings (5100); keep them above their parent dialog. */
 #audioBatchOverlay { z-index:5200; }
 /* Stacked on top of Manage Album — ms/ad/lyrics must sit above mgb (DOM order
@@ -4953,66 +5007,66 @@ body.live-room-listening .yt-queue-up-next-skip { opacity:.35; pointer-events:no
   .landing-grid.detail-yt .landing-card-x { width: 20px; height: 20px; font-size: .6rem; top: 5px; right: 5px; }
 }
 
-/* ── Listening Party look (html[data-surface="lp"]) ─────────────────────── */
+/* ── Listening Party look (:is(html[data-surface="lp"],html[data-surface="rk"])) ─────────────────────── */
 /* The server head rewrite stamps data-surface on <html> for every brand except
    Suffering Jukebox, so nothing in this block can reach SJ. Colour and
    lettering come straight off the logo: plum night ground, orange for actions,
    cream type, and Lilita One standing in for the logo's chunky letters. */
-html[data-surface="lp"] {
+:is(html[data-surface="lp"],html[data-surface="rk"]) {
   --lp-display: 'Lilita One', 'Cooper Black', 'Arial Rounded MT Bold', system-ui, sans-serif;
   --lp-body: 'Figtree', 'Inter', -apple-system, sans-serif;
   --lp-num: 'DM Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --lp-cream: #FDF3DF;
   --mono: var(--lp-body);
 }
-html[data-surface="lp"] body:not(.light) {
+:is(html[data-surface="lp"],html[data-surface="rk"]) body:not(.light) {
   --bg: #140817; --bg-card: #1C0C22; --bg-elevated: #26112D;
   --border: #3A2242; --text: #FDF3DF; --text-muted: #B7A2BD;
   --lp-ink-shadow: #2B0F33; --lp-link: #C98BE0;
 }
-html[data-surface="lp"] body.light {
+:is(html[data-surface="lp"],html[data-surface="rk"]) body.light {
   --bg: #FBF4EA; --bg-card: #FFFDF8; --bg-elevated: #F3E8DA;
   --border: #E6D6C4; --text: #24102B; --text-muted: #6E5A72;
   --lp-ink-shadow: transparent; --lp-link: #7B2A9E;
 }
-html[data-surface="lp"] #sj-boot { background: #140817; color: #FDF3DF; }
+:is(html[data-surface="lp"],html[data-surface="rk"]) #sj-boot { background: #140817; color: #FDF3DF; }
 /* One clear way in: the long "Sign In to Remember..." label becomes an orange Sign in. */
-html[data-surface="lp"] .auth-label-full { display: none; }
-html[data-surface="lp"] .auth-label-short { display: inline; }
-html[data-surface="lp"] .auth-btn:not(.signed-in) { background: var(--accent); border-color: var(--accent);
+:is(html[data-surface="lp"],html[data-surface="rk"]) .auth-label-full { display: none; }
+:is(html[data-surface="lp"],html[data-surface="rk"]) .auth-label-short { display: inline; }
+:is(html[data-surface="lp"],html[data-surface="rk"]) .auth-btn:not(.signed-in) { background: var(--accent); border-color: var(--accent);
   color: #1A0A05; font-weight: 700; border-radius: 999px; }
-html[data-surface="lp"] .auth-btn:not(.signed-in):hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #1A0A05; }
+:is(html[data-surface="lp"],html[data-surface="rk"]) .auth-btn:not(.signed-in):hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #1A0A05; }
 /* Tabs read as navigation, not as two more buttons. */
-html[data-surface="lp"] .landing-tab:not(.landing-tab-now) { background: none; border: 0; border-bottom: 2px solid transparent;
+:is(html[data-surface="lp"],html[data-surface="rk"]) .landing-tab:not(.landing-tab-now) { background: none; border: 0; border-bottom: 2px solid transparent;
   border-radius: 0; padding: .3rem .1rem; margin-right: .7rem; font-size: .72rem; font-weight: 700; letter-spacing: 0;
   color: var(--text-muted); }
-html[data-surface="lp"] .landing-tab:not(.landing-tab-now):hover { color: var(--text); border-bottom-color: var(--border); }
-html[data-surface="lp"] .landing-tab.active:not(.landing-tab-now) { color: var(--text); border-bottom-color: var(--accent); }
-html[data-surface="lp"] footer { font-size: .66rem !important; letter-spacing: .02em !important; padding: 1.2rem 1.5rem 1.6rem !important; }
+:is(html[data-surface="lp"],html[data-surface="rk"]) .landing-tab:not(.landing-tab-now):hover { color: var(--text); border-bottom-color: var(--border); }
+:is(html[data-surface="lp"],html[data-surface="rk"]) .landing-tab.active:not(.landing-tab-now) { color: var(--text); border-bottom-color: var(--accent); }
+:is(html[data-surface="lp"],html[data-surface="rk"]) footer { font-size: .66rem !important; letter-spacing: .02em !important; padding: 1.2rem 1.5rem 1.6rem !important; }
 /* One-line Lilita + tagline beside the 3×3. Height-led so the sub-line
    stays readable; max-width keeps the wide lockup from shoving search off. */
-html[data-surface="lp"] .brand-block img {
+:is(html[data-surface="lp"],html[data-surface="rk"]) .brand-block img {
   height: clamp(52px, 7vw, 76px);
   max-width: min(520px, 80vw);
 }
 /* The light mark has transparent space above and below its lettering. Crop
    that space in the image box so the artwork stays the same header size. */
-html[data-surface="lp"] body.light .brand-block img {
+:is(html[data-surface="lp"],html[data-surface="rk"]) body.light .brand-block img {
   width: min(520px, 80vw);
   object-fit: cover;
   object-position: center;
 }
 @media (max-width: 600px) {
-  html[data-surface="lp"] body.light .hdr-brand-mobile img {
+  :is(html[data-surface="lp"],html[data-surface="rk"]) body.light .hdr-brand-mobile img {
     width: min(326px, calc(100vw - 2rem)) !important;
     max-width: calc(100vw - 2rem) !important;
   }
-  html.has-phone-tabbar[data-surface="lp"] body.light .hdr-brand-mobile img {
+  :is(html.has-phone-tabbar[data-surface="lp"],html.has-phone-tabbar[data-surface="rk"]) body.light .hdr-brand-mobile img {
     width: min(250px, 64vw) !important;
     max-width: min(250px, 64vw) !important;
   }
 }
-html[data-surface="lp"] .brand-copy .brand-title {
+:is(html[data-surface="lp"],html[data-surface="rk"]) .brand-copy .brand-title {
   font-family: var(--lp-display);
   font-weight: 400;
   letter-spacing: 0.01em;
@@ -5021,20 +5075,20 @@ html[data-surface="lp"] .brand-copy .brand-title {
 }
 /* Light mode: cream-on-cream vanishes. Use plum fill with the same orange
    offset as dark mode so the mark still reads as this brand. */
-html[data-surface="lp"] body.light .brand-copy .brand-title {
+:is(html[data-surface="lp"],html[data-surface="rk"]) body.light .brand-copy .brand-title {
   color: #24102B;
   text-shadow: 2px 2px 0 var(--accent);
 }
-html[data-surface="lp"] body.light .brand-title em {
+:is(html[data-surface="lp"],html[data-surface="rk"]) body.light .brand-title em {
   color: var(--accent);
   text-shadow: none;
 }
 /* Tagline sized to sit under ListeningParty.stream at roughly the same width. */
-html[data-surface="lp"] .brand-copy {
+:is(html[data-surface="lp"],html[data-surface="rk"]) .brand-copy {
   width: max-content;
   max-width: min(100%, 22rem);
 }
-html[data-surface="lp"] .brand-copy .brand-tagline {
+:is(html[data-surface="lp"],html[data-surface="rk"]) .brand-copy .brand-tagline {
   font-family: var(--lp-body);
   font-size: clamp(0.48rem, 0.95vw, 0.62rem);
   font-weight: 800;
@@ -5043,10 +5097,10 @@ html[data-surface="lp"] .brand-copy .brand-tagline {
   width: 100%;
   box-sizing: border-box;
 }
-html[data-surface="lp"] body.light .brand-copy .brand-tagline {
+:is(html[data-surface="lp"],html[data-surface="rk"]) body.light .brand-copy .brand-tagline {
   color: #C44A0A;
 }
-html[data-surface="lp"] .brand-title em {
+:is(html[data-surface="lp"],html[data-surface="rk"]) .brand-title em {
   color: var(--accent);
   text-shadow: none;
 }
@@ -5189,7 +5243,7 @@ html[data-surface="lp"] .brand-title em {
 .lph-display { margin:20px 0; font-family:var(--lp-display, inherit); font-weight:400; font-size:clamp(52px, 7.2vw, 94px);
   line-height:.96; letter-spacing:.005em; color:var(--text); text-wrap:balance;
   text-shadow:3px 3px 0 var(--accent), 6px 6px 0 var(--lp-ink-shadow, transparent); }
-.lph-lede { margin:0; max-width:40ch; font-size:19px; line-height:1.55; color:var(--text-muted); }
+.lph-lede { margin:0; max-width:none; font-size:19px; line-height:1.55; color:var(--text-muted); }
 .lph-lede strong { color:var(--text); font-weight:600; }
 .lph-cta { display:flex; flex-wrap:wrap; gap:12px; margin-top:28px; }
 .lph-btn { display:inline-flex; align-items:center; justify-content:center; gap:10px; height:50px; padding:0 26px;
@@ -5355,6 +5409,8 @@ html[data-surface="lp"] .brand-title em {
 }
 
 
+#audience-guides-top[hidden]{display:none!important}
+.srch-filter-row{padding:10px 18px;border-bottom:1px solid var(--border);font-size:14px;display:flex;align-items:center;gap:8px}
 </style>
 <script src="https://outlawdata.com/outlaw-owner.js" defer></script>
 <script>document.documentElement.classList.add('sj-js');</script>
@@ -5960,6 +6016,23 @@ if (window.__SJ_NATIVE__ === true) {
   if (vp) vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover');
 }
 </script>
+<style>
+/* Record Keeper: the approved charcoal, cream, and burnt-orange identity. */
+html[data-surface="rk"] { --lp-display:'Inter',system-ui,sans-serif; --lp-body:'Inter',system-ui,sans-serif; --lp-cream:#FFF8ED; }
+html[data-surface="rk"] body:not(.light) { --bg:#171717; --bg-card:#212121; --bg-elevated:#2B2B2B; --border:#414141; --text:#FFF8ED; --text-muted:#BFB8B0; --lp-ink-shadow:transparent; --lp-link:#EF8B63; }
+html[data-surface="rk"] body.light { --bg:#FFF8ED; --bg-card:#FFFFFF; --bg-elevated:#F3EDE2; --border:#DDD3C5; --text:#171717; --text-muted:#665E57; --lp-ink-shadow:transparent; --lp-link:#AC3D19; }
+html[data-surface="rk"] #sj-boot { background:#171717; color:#FFF8ED; }
+.lph-hero { grid-template-columns:minmax(0,1fr); }
+.lph-hero > div, .lph-lede, .lph-display, .lp-home-sec-lead { max-width:none; }
+html[data-surface="rk"] .lph-display { font-weight:850; letter-spacing:-.065em; text-shadow:none; }
+html[data-surface="rk"] .lph-shelf { grid-template-columns:repeat(3,minmax(0,1fr)); }
+html[data-surface="rk"] .brand-block img, html[data-surface="rk"] body.light .brand-block img { filter:none; height:92px; width:360px; max-width:min(360px,80vw); border-radius:0; object-fit:cover; }
+html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.light .hdr-brand-mobile img { filter:none; border-radius:6px; }
+@media(max-width:640px) {
+  html.has-phone-tabbar[data-surface="rk"] .hdr-brand-mobile img { width:240px !important; max-width:64vw !important; height:64px !important; object-fit:cover; }
+  html[data-surface="rk"] .lph-shelf { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+</style>
 </head>
 <body>
 <div id="sj-boot" aria-live="polite" aria-busy="true">
@@ -6124,6 +6197,10 @@ if (window.__SJ_NATIVE__ === true) {
     <div id="lwytb-header"></div>
   </div>
   <div id="view-extras-header"></div>
+  <nav id="audience-guides-top" hidden aria-label="Audience guides" style="display:flex;gap:20px;flex-wrap:wrap;padding:10px 2px;font-size:13px">
+    <a href="/for-artists" style="color:var(--text-muted);text-decoration:none">For Artists</a>
+    <a href="/for-listeners" style="color:var(--text-muted);text-decoration:none">For Listeners</a>
+  </nav>
 </header>
 
 <main id="main">
@@ -6288,7 +6365,7 @@ if (window.__SJ_NATIVE__ === true) {
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="less_repeats" onchange="sjSetShufflePreference(this.value)"><span><b>Less Repeats</b><span class="set-sub" style="display:block">Moves recently played songs to the bottom of the shuffle weight scale.</span></span></label>
       <label class="set-opt"><input type="radio" name="sj-shuffle-preference" value="none" onchange="sjSetShufflePreference(this.value)"><span><b>No Preferences</b><span class="set-sub" style="display:block">A true, even shuffle with no weighting.</span></span></label>
             </div>
-            <div class="set-block" id="set-spotify-playback">
+            <div class="set-block" id="set-spotify-playback" data-sj-feature="spotifyPlayback">
               <div class="set-h">Play through Spotify</div>
               <p class="set-sub">Connect a full Spotify Premium account to play matched songs through Spotify — background play and lock-screen controls without uploading MP3s. Discovery and unmatched songs still use YouTube. Spotify Lite or Mini do not work.</p>
               <div id="set-sp-body"><div class="set-status">Checking Spotify…</div></div>
@@ -6358,10 +6435,45 @@ if (window.__SJ_NATIVE__ === true) {
     <div class="sj-confirm-title" id="sjConfirmTitle">Confirm</div>
     <div class="sj-confirm-msg" id="sjConfirmMsg"></div>
     <div class="sj-confirm-actions">
-      <button type="button" class="pl-btn ghost" onclick="_sjConfirmResolve(false)">Cancel</button>
+      <button type="button" class="pl-btn ghost" id="sjConfirmCancelBtn" onclick="_sjConfirmResolve(false)">Cancel</button>
       <button type="button" class="pl-btn" id="sjConfirmOkBtn" onclick="_sjConfirmResolve(true)">OK</button>
     </div>
   </div>
+</div>
+
+<!-- Share Song - one link to one song (/s/<artist-title>-<track id>).
+     openShareSong(trackId) fills it; "Start at" is offered only for the
+     song that is playing, and starts unticked. -->
+<div class="sj-confirm-overlay" id="sjShareSongOverlay" onclick="if(event.target===this)closeShareSong()">
+  <div class="sj-confirm-box sj-share-song-box">
+    <div class="sj-confirm-title">Share song</div>
+    <div class="sj-confirm-msg" id="sssName"></div>
+    <input type="text" class="pl-input sj-prompt-input" id="sssUrl" readonly onclick="this.select()" aria-label="Song link">
+    <label class="sss-time" id="sssTimeRow" hidden>
+      <input type="checkbox" id="sssTime" onchange="sssPaint()">
+      <span>Start at <span id="sssTimeLbl">0:00</span></span>
+    </label>
+    <div class="sj-confirm-actions">
+      <button type="button" class="pl-btn ghost" onclick="closeShareSong()">Close</button>
+      <button type="button" class="pl-btn ghost" id="sssShareBtn" onclick="sssNativeShare()" hidden>Share…</button>
+      <button type="button" class="pl-btn" id="sssCopyBtn" onclick="sssCopy()">Copy link</button>
+    </div>
+  </div>
+</div>
+
+<!-- In-app text prompt - replaces browser prompt() for renames.
+     sjPromptDialog(title, value, opts) returns a Promise<string|null>. -->
+<div class="sj-confirm-overlay" id="sjPromptOverlay" onclick="if(event.target===this)_sjPromptResolve(null)">
+  <form class="sj-confirm-box" onsubmit="event.preventDefault();_sjPromptResolve(document.getElementById('sjPromptInput').value)">
+    <div class="sj-confirm-title" id="sjPromptTitle">Rename</div>
+    <div class="sj-confirm-msg" id="sjPromptMsg" style="display:none"></div>
+    <input type="text" class="pl-input sj-prompt-input" id="sjPromptInput" autocomplete="off" spellcheck="false"
+      onkeydown="if(event.key==='Escape'){event.preventDefault();_sjPromptResolve(null)}">
+    <div class="sj-confirm-actions">
+      <button type="button" class="pl-btn ghost" onclick="_sjPromptResolve(null)">Cancel</button>
+      <button type="submit" class="pl-btn" id="sjPromptOkBtn">Save</button>
+    </div>
+  </form>
 </div>
 
 <!-- SYNC MODAL -->
@@ -7001,6 +7113,7 @@ if (window.__SJ_NATIVE__ === true) {
       <span class="srch-count" id="srch-count"></span>
       <button class="srch-close-btn" onclick="closeSearchModal()" title="Close">✕</button>
     </div>
+    <label class="srch-filter-row"><input type="checkbox" id="srch-artist-uploaded" onchange="setSearchArtistUploaded(this.checked)"> Artist Uploaded only</label>
     <div id="srch-body">
       <div id="srch-status">Start typing to search songs and lyrics.</div>
     </div>
@@ -7079,7 +7192,45 @@ if (window.__SJ_NATIVE__ === true) {
     </div>
     <div class="pl-modal-footer">
       <button class="pl-btn ghost" onclick="mgbLyrClose()">Cancel</button>
+      <button class="pl-btn ghost" onclick="lsyStart(_mgbLyrTrackId,'mgb-lyr-ta')">Add Lyric Syncing</button>
       <button class="pl-btn" id="mgb-lyr-save" onclick="mgbLyrSave()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- LYRIC SYNC EDITOR -->
+<div class="pl-modal-overlay" id="lsyOverlay">
+  <div class="pl-modal" style="width:min(680px,96vw);max-height:min(92vh,820px);display:flex;flex-direction:column">
+    <div class="pl-modal-header">
+      <span class="pl-modal-title" id="lsyTitle">Sync lyrics</span>
+      <button class="modal-close" onclick="lsyClose()">✕</button>
+    </div>
+    <div class="pl-modal-body" style="overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px">
+      <div class="lsy-help">Play the song and press <b>Space</b> (or Stamp) the moment each highlighted line starts. <b>Backspace</b> undoes, <b>P</b> pauses, arrows skip 5s. Drag the bar to move through the song. Fix any time afterwards with the box, − / + or ▶. Click any words to change them, ＋ adds a line below, ✕ removes one.</div>
+      <div class="lsy-bar">
+        <button type="button" class="pl-btn ghost" onclick="lsyBack5()" title="Back 5 seconds">⏪ 5s</button>
+        <button type="button" class="pl-btn ghost lsy-play" id="lsyPlayBtn" onclick="lsyToggle()" title="Play">▶</button>
+        <button type="button" class="pl-btn ghost" onclick="lsyFwd5()" title="Forward 5 seconds">5s ⏩</button>
+        <span class="lsy-clock" id="lsyClock">00:00.00</span>
+        <button type="button" class="pl-btn ghost" onclick="lsyUndo()">Undo</button>
+        <button type="button" class="pl-btn lsy-stamp" onclick="lsyStamp()">Stamp line</button>
+      </div>
+      <div class="lsy-seek">
+        <span id="lsyPos">0:00</span>
+        <div class="lsy-track">
+          <div class="lsy-marks" id="lsyMarks"></div>
+          <input type="range" id="lsySeek" min="0" max="0" step="0.1" value="0" aria-label="Song position"
+            oninput="lsyScrubInput(this.value)" onchange="lsyScrubCommit(this.value)">
+        </div>
+        <span id="lsyDur">0:00</span>
+      </div>
+      <div class="lsy-lines" id="lsyLines"></div>
+      <div class="lsy-foot"><span id="lsyCount"></span><span id="lsyStatus"></span></div>
+    </div>
+    <div class="pl-modal-footer">
+      <button class="pl-btn ghost" onclick="lsyClear()">Remove timing</button>
+      <button class="pl-btn ghost" onclick="lsyClose()">Cancel</button>
+      <button class="pl-btn" onclick="lsySave()">Save timing</button>
     </div>
   </div>
 </div>
@@ -7207,12 +7358,21 @@ if (window.__SJ_NATIVE__ === true) {
 .set-audio-song-hit:first-child { border-top: 0; }
 .set-audio-song-hit-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .set-audio-song-hit-sub { color: var(--text-muted); font-size: .46rem; }
-.sj-confirm-overlay { position: fixed; inset: 0; z-index: 5300; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; padding: 1.2rem; }
+/* A confirmation answers whatever is open, so it sits above every modal. */
+.sj-confirm-overlay { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; padding: 1.2rem; }
 .sj-confirm-overlay.open { display: flex; }
 .sj-confirm-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; max-width: 380px; width: 100%; padding: 1.1rem 1.2rem 1rem; animation: slideUp .18s ease; }
 .sj-confirm-title { font-size: .68rem; font-weight: 700; color: var(--text); margin-bottom: .5rem; }
 .sj-confirm-msg { font-size: .6rem; line-height: 1.55; color: var(--text-muted); margin-bottom: 1.1rem; }
 .sj-confirm-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.sj-prompt-input { font-size: .66rem; padding: .55rem .75rem; margin-bottom: 1rem; }
+.sj-prompt-input:focus { border-color: var(--accent); }
+.sj-share-song-box .sj-prompt-input { margin-bottom: .7rem; }
+.sss-time { display: flex; align-items: center; gap: .45rem; font-size: .6rem; color: var(--text); margin: 0 0 1rem; cursor: pointer; }
+.sss-time[hidden] { display: none; }
+.sss-time input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.sj-song-tap { position: fixed; left: 50%; bottom: calc(var(--ytp-dock-height, 0px) + 28px); transform: translateX(-50%); z-index: 5200; display: flex; align-items: center; gap: .6rem; background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: .85rem 1.4rem; font-family: inherit; font-size: .7rem; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.35); cursor: pointer; max-width: calc(100vw - 32px); }
+.sj-song-tap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 760px) {
   #settingsOverlay { padding: 0; }
   #settingsOverlay .pl-modal { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; }
@@ -7422,7 +7582,7 @@ if (window.__SJ_NATIVE__ === true) {
   .ytp-golive-btn svg { width:11px; height:11px; flex-shrink:0; }
   .ytp-golive-btn .ytp-golive-ic { display:inline-flex; align-items:center; justify-content:center; line-height:0; }
   .ytp-golive-btn.live { background:rgba(var(--accent-rgb),.18); }
-  html[data-surface="lp"] .ytp-golive-btn.ready { display:inline-flex !important; align-items:center; justify-content:center; }
+  :is(html[data-surface="lp"],html[data-surface="rk"]) .ytp-golive-btn.ready { display:inline-flex !important; align-items:center; justify-content:center; }
   #yt-player-container.ytp-fs .ytp-golive-btn { width:auto !important; height:34px; padding:0 .75rem !important; }
   /* Dock transport uses --mf-btn height; keep the label readable beside shuffle. */
   #ytp-mini-footer #ytp-mf-golive.ytp-golive-btn.ready {
@@ -7431,7 +7591,7 @@ if (window.__SJ_NATIVE__ === true) {
   #ytp-mini-footer #ytp-mf-golive.ytp-golive-btn svg { width:12px; height:12px; }
   #ytp-mini-footer.dock-mini #ytp-mf-golive { display:none !important; }
   @media (max-width: 640px) {
-    html[data-surface="lp"] .ytp-golive-btn { display:none !important; }
+    :is(html[data-surface="lp"],html[data-surface="rk"]) .ytp-golive-btn { display:none !important; }
   }
   @keyframes sjjPulse { 0%,100% { opacity:1; } 50% { opacity:.25; } }
   .yt-queue-by { font-size:.44rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
@@ -7584,7 +7744,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, artistUpload: true, liveStations: false }
+  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -7755,8 +7915,8 @@ function lphShelfHTML() {
   const waiting = _lphPicks === null || _lphLoading;
   const cards = waiting
     ? '<span class="lph-skel"></span><span class="lph-skel"></span><span class="lph-skel"></span>'
-    : (_lphPicks || []).map(lphCardHTML).join('');
-  const title = !waiting && !(_lphPicks || []).length ? 'Start a playlist' : 'Three to start you off';
+    : (_lphPicks || []).filter(r => SJ_BRAND.id !== 'rk' || r.pick !== 'hot').map(lphCardHTML).join('');
+  const title = !waiting && !(_lphPicks || []).length ? 'Start a playlist' : SJ_BRAND.id === 'rk' ? 'Find your next playlist' : 'Three to start you off';
   return `<section aria-labelledby="lph-shelf-title">
       <div class="lph-head">
         <h2 class="lph-rule" id="lph-shelf-title">${title}</h2>
@@ -7878,6 +8038,34 @@ function lpHomeMusicPlaying() {
 }
 
 /** The hero's second button: sign in, or get back to your own music. */
+// The artist half of the home page: what an artist gets for putting music here.
+function lphArtistsHTML() {
+  return `<section aria-labelledby="lp-home-artists-title">
+      <div class="lph-head">
+        <h2 class="lph-rule" id="lp-home-artists-title">For artists</h2>
+        <button type="button" class="lph-link" onclick="lphArtistTool('/artist-upload')">Publish your music →</button>
+      </div>
+      <p class="lp-home-sec-lead">Your music, straight to the people who want it. No label, no middleman, no ads.</p>
+      <div class="lph-doors" style="--doors:3">
+        <button type="button" class="lph-door" onclick="lphArtistTool('/artist-upload')">
+          <span class="lph-door-ico">${LPH_ICONS.record}</span><b>Upload and sync</b><em>Your songs and artwork, with lyrics that light up line by line. Add interviews and podcasts beside the album.</em>
+        </button>
+        <button type="button" class="lph-door" onclick="lphArtistTool('/artist-upload')">
+          <span class="lph-door-ico">${LPH_ICONS.headphones}</span><b>Send one link</b><em>Fans open it and play. Free, no ads, and it keeps going with the screen off or in CarPlay.</em>
+        </button>
+        <button type="button" class="lph-door" onclick="lphArtistTool('/artist-stats')">
+          <span class="lph-door-ico">${LPH_ICONS.play}</span><b>See who's listening</b><em>Plays, cities, where fans found you, and the moments they tap the heart.</em>
+        </button>
+      </div>
+    </section>`;
+}
+
+// Artist pages live on the website; the app opens them there with its session.
+function lphArtistTool(path) {
+  if (sjIsNative()) { sjOpenHostedTool(path); return; }
+  window.location.assign(path);
+}
+
 function lpHomeCtaHTML() {
   if (!googleUser) {
     return `<button type="button" class="lph-btn lph-btn-quiet" onclick="handleAuthClick()">Sign In</button>`;
@@ -7994,17 +8182,19 @@ function landingHomeHTML() {
       <section class="lph-hero">
         <div>
           <p class="lph-rule short">${tagline}</p>
-          <h1 class="lph-display">Press play<br>together.</h1>
-          <p class="lph-lede">Pick a playlist, open a room, and <strong>everyone hears the same song at the same second.</strong>${googleUser ? '' : ' Sign in to keep your hearts and play history.'}</p>
+          <h1 class="lph-display">${SJ_BRAND.id === 'rk' ? 'Explore. Create. Listen together.' : 'Your record, in their pocket.'}</h1>
+          <p class="lph-lede">${SJ_BRAND.id === 'rk' ? 'Explore artists’ discographies and playlists, or create your own. Upload your own content for playback across your devices. Artists can share their music directly with their audience, with lyrics alongside every song. <strong>Listening stats are available for everyone.</strong> Start a room and listen together with friends.' : 'Artists upload their songs, sync the lyrics, and send fans one link. <strong>Fans listen free, with no ads, screen off or in the car.</strong> The artist sees who listened, where, and the lines they loved.'}</p>
           <div class="lph-cta">
-            <button type="button" class="lph-btn lph-btn-go" onclick="lphStartListening()">${LPH_ICONS.play}Start listening</button>
-            ${lpHomeCtaHTML()}
+            <button type="button" class="lph-btn lph-btn-go" onclick="${SJ_BRAND.id === 'rk' ? "setLandingTab('explore')" : "lphStartListening()"}">${LPH_ICONS.play}${SJ_BRAND.id === 'rk' ? 'Start exploring now' : 'Start listening'}</button>
+            <button type="button" class="lph-btn lph-btn-quiet" onclick="lphArtistTool('/artist-upload')">Publish your music</button>
+            ${googleUser ? lpHomeCtaHTML() : ''}
           </div>
           ${googleUser ? '' : '<p class="lph-fine">Free to listen. No account needed.</p>'}
         </div>
-        ${lphFeatureHTML()}
+        ${SJ_BRAND.id === 'rk' ? '' : lphFeatureHTML()}
       </section>
       ${lphShelfHTML()}
+      ${SJ_BRAND.features.artistUpload ? lphArtistsHTML() : ''}
       ${listening}
       <section aria-labelledby="lp-home-import-title">
         <div class="lph-head"><h2 class="lph-rule" id="lp-home-import-title">Bring your music</h2></div>
@@ -8070,7 +8260,7 @@ const LPTB_TABS = lptbTabs();
 
 /** Listening Party's one bottom Explore tab opens these three catalog views. */
 function lptbExploreSwitcherHTML() {
-  if (SJ_BRAND.id !== 'lp' || !['explore', 'playlists', 'songs'].includes(landingTab)) return '';
+  if (!SJ_BRAND.features.playlistsFirst || !['explore', 'playlists', 'songs'].includes(landingTab)) return '';
   const tabs = [
     ['explore', 'Artists'],
     ['playlists', 'Playlists'],
@@ -8102,7 +8292,13 @@ function lptbSyncAuthLabel() {
 }
 
 /** Marks the tab for the sheet on screen, or none while a playlist wall is open. */
+function syncAudienceGuideLinks() {
+  const top = document.getElementById('audience-guides-top');
+  if (top) top.hidden = !(isLandingMode && landingTab === 'home' && viewMode !== 'playlistchart');
+}
+
 function lptbSync() {
+  syncAudienceGuideLinks();
   const bar = document.getElementById('lp-tabbar');
   if (!bar) return;
   lptbSyncAuthLabel();
@@ -8246,7 +8442,7 @@ function sjApplyBrandToDom() {
     const logoTitle = 'Back to the ' + SJ_BRAND.name + ' home page';
     document.querySelectorAll('img[data-sj-logo]').forEach(function (img) {
       const logoSrc = SJ_BRAND.id === 'lp' && document.body.classList.contains('light')
-        ? '/brand/lp/listening-party-text-logo-light.png' : SJ_BRAND.textLogo;
+        ? '/brand/lp/listening-party-text-logo-light.png' : SJ_BRAND.id === 'rk' && document.body.classList.contains('light') ? '/brand/rk/wordmark.png' : SJ_BRAND.textLogo;
       if (img.getAttribute('src') !== logoSrc) img.src = logoSrc;
       img.alt = SJ_BRAND.name;
       img.title = logoTitle;
@@ -8308,6 +8504,10 @@ let amMaxTrk = 60;  // tracks it takes from any single playlist
 // Playlist vanity pages (/p/my-mix) inject window.__PLAYLIST_PAGE__.
 let _SLUG_ARTIST = window.__SLUG_ARTIST__ || null;
 let _PLAYLIST_PAGE = window.__PLAYLIST_PAGE__ || null;
+// Share Song pages (/s/<artist-title>-<id>) inject window.__SONG_PAGE__; the app
+// itself runs as home, then opens the artist and plays the song.
+let _SONG_PAGE = window.__SONG_PAGE__ || null;
+if (_SONG_PAGE) { try { history.replaceState(null, '', '/'); } catch (_) {} }
 // Hide the server-rendered catalog wall for listeners; crawlers already saw it
 // in the first HTML response (and CSS already clips it for JS browsers).
 if (_SLUG_ARTIST) {
@@ -9604,7 +9804,7 @@ function buildSinglePanelHTML(alb, L) {
   const yr         = (alb.release_date || '').slice(0, 4);
   const albTracks     = (tracks[alb.artist_id] || []).filter(t => t.album_id === alb.id);
   const _albMetricVal = albumViews(alb);
-  const _albMetricLbl = barChartMode === 'mine' ? 'my jukebox plays' : barChartMode === 'total' ? 'jukebox plays' : barChartMode === 'score' ? 'score' : albumChartPlayLabel(alb, true);
+  const _albMetricLbl = barChartMode === 'mine' ? 'my in-app plays' : barChartMode === 'total' ? 'in-app plays' : barChartMode === 'score' ? 'score' : albumChartPlayLabel(alb, true);
   const _albMetricFmt = barChartMode === 'score' ? (_albMetricVal > 0 ? '+' + _albMetricVal : String(_albMetricVal || 0)) : fmtV(_albMetricVal);
   const trkAreaH      = albTracks.length * PANEL_TRK_H;
   const name          = alb.name;
@@ -10066,8 +10266,8 @@ function openSongCard(trackId) {
 
   let _metricBit = '';
   if      (barChartMode === 'yt'    && views)              _metricBit = fmtV(views) + ' ' + playMetric.label.toLowerCase();
-  else if (barChartMode === 'mine')                        _metricBit = fmtV(myInAppPlays[trackId] || 0) + ' my jukebox plays';
-  else if (barChartMode === 'total')                       _metricBit = fmtV(inAppPlays[trackId] || 0) + ' jukebox plays';
+  else if (barChartMode === 'mine')                        _metricBit = fmtV(myInAppPlays[trackId] || 0) + ' my in-app plays';
+  else if (barChartMode === 'total')                       _metricBit = fmtV(inAppPlays[trackId] || 0) + ' in-app plays';
   const metaLine = [
     _metricBit || null,
     albName,
@@ -10094,8 +10294,8 @@ function openSongCard(trackId) {
         <div class="sc-metrics" style="align-items:center">
           ${views ? `<div class="sc-metric" style="${barChartMode==='yt'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">▶</span><div><div class="sc-metric-val">${fmtV(views)}</div><div class="sc-metric-lbl">${playMetric.label}${barChartMode==='yt'?' ◆':''}</div></div></div>` : ''}
           ${likes ? `<div class="sc-metric"><span class="sc-metric-icon" style="color:${color}">♥</span><div><div class="sc-metric-val">${fmtV(likes)}</div><div class="sc-metric-lbl">YouTube Likes</div></div></div>` : ''}
-          ${googleUser ? `<div class="sc-metric" style="${barChartMode==='mine'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-myplays-${trackId}">${fmtV(myInAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">My Jukebox Plays${barChartMode==='mine'?' ◆':''}</div></div></div>` : ''}
-          <div class="sc-metric" style="${barChartMode==='total'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-inapp-${trackId}">${fmtV(inAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">Jukebox Plays${barChartMode==='total'?' ◆':''}</div></div></div>
+          ${googleUser ? `<div class="sc-metric" style="${barChartMode==='mine'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-myplays-${trackId}">${fmtV(myInAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">My In-App Plays${barChartMode==='mine'?' ◆':''}</div></div></div>` : ''}
+          <div class="sc-metric" style="${barChartMode==='total'?'outline:1px solid '+color+'55;border-radius:6px;padding:2px 4px':''}"><span class="sc-metric-icon" style="color:${color}">●</span><div><div class="sc-metric-val" id="sc-inapp-${trackId}">${fmtV(inAppPlays[trackId] || 0) || '0'}</div><div class="sc-metric-lbl">In-App Plays${barChartMode==='total'?' ◆':''}</div></div></div>
           ${vid ? `<a class="sc-link yt" style="margin-left:6px;flex-shrink:0" href="#" onclick="event.preventDefault();openYTPlayer('${vid}','${(track.name||'').replace(/'/g,"\\'")}',null,event)">▶ Play</a>` : ''}
         </div>
       </div>` : ''}
@@ -10410,8 +10610,24 @@ function sjUnlockAudioEl() {
   a.play().catch(() => {});
 }
 
+// Artist audio plays through a permanent address on our own domain. The route
+// signs a fresh B2 link on every request and redirects the <audio> element to
+// it, so a page left open for hours can never hold a dead link. Storing the
+// 6 hour signed URL itself is what kept breaking Nouns Group: long sessions
+// outlived it, and a single failed lookup marked the song unavailable.
+function sjArtistStreamUrl(trackId, purpose) {
+  return sjApiUrl('/api/sj-artist-audio?purpose=' + (purpose || 'normal-playback')
+    + '&format=stream&track_ids=' + encodeURIComponent(trackId));
+}
+
+// A personal upload wins; an expiring background link is replaced.
+function sjNeedsArtistStream(id) {
+  const ta = taTrackAudio(id);
+  return !ta || !!ta.expiresAt;
+}
+
 async function loadArtistOnDemandAudio(trackIds) {
-  const ids = [...new Set((trackIds || []).filter(id => id && !taData[id]))];
+  const ids = [...new Set((trackIds || []).filter(id => id && sjNeedsArtistStream(id)))];
   if (!ids.length) return;
   const chunks = [];
   for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
@@ -10423,15 +10639,27 @@ async function loadArtistOnDemandAudio(trackIds) {
     } catch (_) { return []; }
   }));
   responses.flat().forEach(r => {
-    if (!r.trackId || !r.url || taData[r.trackId]) return;
+    if (!r.trackId || !r.url || !sjNeedsArtistStream(r.trackId)) return;
     taData[r.trackId] = {
-      url: r.url,
+      url: sjArtistStreamUrl(r.trackId, 'normal-playback'),
       path: null,
       duration: Number(r.duration) || null,
       isPublic: true,
       artistLicensed: true,
       licensedArtist: r.artist || null,
       uploadedBy: null,
+    };
+  });
+  // Every caller passes artist-audio-only tracks. The lookup above only adds
+  // the duration and credit, so a failed lookup must not stop the song: the
+  // stream route decides eligibility itself, and the <audio> error path
+  // reports a genuine refusal.
+  ids.forEach(id => {
+    if (!sjNeedsArtistStream(id)) return;
+    taData[id] = {
+      url: sjArtistStreamUrl(id, 'normal-playback'),
+      path: null, duration: null, isPublic: true, artistLicensed: true,
+      licensedArtist: null, uploadedBy: null,
     };
   });
 }
@@ -11677,7 +11905,6 @@ function ytpOnSlotStateChange(slot, ev) {
     ytpStartBgKeepalive();
     ytpUpdateMediaSession();
     if (_lyrSyncEnabled && _ytpCurrentTrackId && syncedLyricsCache[_ytpCurrentTrackId]) lyrSyncStart();
-    if (_ytCurrentPlay && !_ytCurrentPlay.playbackStarted) _ytCurrentPlay.playbackStarted = Date.now();
     if (_ytPlayTimer) { clearTimeout(_ytPlayTimer); _ytPlayTimer = null; }
     const item = ytQueue[ytQueueIdx];
     if (item && item.trackId) {
@@ -14517,7 +14744,20 @@ function ytpMfPlaceLyrics() {
       const hb = handle && handle.getBoundingClientRect();
       anchor = (hb && hb.height ? hb.bottom : dock.getBoundingClientRect().top) + 4;
     }
-    pane.style.setProperty('--mf-font-top', Math.round(anchor - pane.getBoundingClientRect().top) + 'px');
+    const fontTop = Math.round(anchor - pane.getBoundingClientRect().top);
+    pane.style.setProperty('--mf-font-top', fontTop + 'px');
+    // Keep the words clear of the slider wherever the lyric lane puts the
+    // pane: the window starts below the slider plus air, never under it.
+    if (!ytpIsMob()) {
+      const row = document.getElementById('ytp-mf-font-row');
+      const rowH = (row && row.getBoundingClientRect().height) || 26;
+      const want = Math.max(26, Math.round(fontTop + rowH + 8));
+      const had = pane.style.getPropertyValue('--mf-lyr-top');
+      if (had !== want + 'px') {
+        pane.style.setProperty('--mf-lyr-top', want + 'px');
+        ytpMfPaintLyrics(_lyrSyncActiveIdx);
+      }
+    }
   });
   // Small dock and phones keep the plain centred rule: there is no second
   // column to avoid, and the handle is the thing to sit under.
@@ -14730,7 +14970,7 @@ function ytpScrubPrefixes() {
 }
 
 function ytpSetScrubCur(sec) {
-  ['ytp-mf-cur', 'ytp-md-cur'].forEach(id => {
+  ['ytp-mf-cur', 'ytp-md-cur', 'ytp-ov-cur'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = ytpFmtClock(sec);
   });
@@ -16816,7 +17056,12 @@ async function taOwnAudioUrls(trackIds) {
 
 function taTrackAudio(trackId) {
   if (!trackId) return null;
-  if (taData[trackId]) return taData[trackId];
+  const ta = taData[trackId] || null;
+  if (ta?.expiresAt && Date.now() > ta.expiresAt) {
+    delete taData[trackId];
+  } else if (ta) {
+    return ta;
+  }
   // AVPlayer resolves private uploads with the device key, independently of
   // the web session. A web signed URL is not required for native playback.
   if (taNativeBgPlugin() && sjCarTrackIds().includes(trackId)) {
@@ -16833,6 +17078,9 @@ function taEnsureAudioEl() {
   _taAudioEl.setAttribute('playsinline', '');
   _taAudioEl.addEventListener('ended', taOnAudioEnded);
   _taAudioEl.addEventListener('timeupdate', taOnAudioTime);
+  _taAudioEl.addEventListener('timeupdate', lmTick); // keeps counting with the screen off
+  _taAudioEl.addEventListener('playing', taSyncBgScrub);
+  _taAudioEl.addEventListener('loadedmetadata', taSyncBgScrub);
   document.body.appendChild(_taAudioEl);
   return _taAudioEl;
 }
@@ -16848,6 +17096,7 @@ function taIsMobileDevice() {
 
 // Gray out the video while audio-only mode has the sound.
 function taSyncBgOverlay() {
+  taSyncBgScrub();
   const on = _taManualAudio && _taBgActive;
   const ov = document.getElementById('ta-bg-overlay');
   if (!on) { if (ov) ov.remove(); return; }
@@ -16863,6 +17112,49 @@ function taSyncBgOverlay() {
   if (el.parentNode !== frame) frame.appendChild(el);
 }
 
+// An uploaded (non-YouTube) track has no YouTube controls to seek with, so the
+// big player gets its own scrub bar along the bottom of the frame. It runs its
+// own clock and takes itself down the moment uploaded audio stops playing, so
+// no exit path has to remember to remove it.
+let _taScrubTimer = null;
+function taSyncBgScrub() {
+  let el = document.getElementById('ta-bg-scrub');
+  const frame = ytPlayerEl?.querySelector('.yt-player-frame');
+  if (!_taBgActive || !_taAudioEl || !frame) {
+    if (el) el.remove();
+    if (_taScrubTimer) { clearInterval(_taScrubTimer); _taScrubTimer = null; }
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'ta-bg-scrub';
+    el.className = 'ta-bg-scrub';
+    el.setAttribute('onclick', 'event.stopPropagation()');
+    el.innerHTML =
+      '<span class="ta-bg-scrub-time" id="ytp-ov-cur">0:00</span>' +
+      '<input class="ytp-mf-seek ta-bg-seek" id="ytp-ov-seek" type="range" min="0" max="0" value="0" step="0.25" aria-label="Seek"' +
+      ' oninput="ytpMfSeekInput(this)" onchange="ytpMfSeekCommit(this)" onpointerdown="ytpMfSeekStart()" onpointerup="ytpMfSeekEnd()">' +
+      '<span class="ta-bg-scrub-time dur" id="ytp-ov-dur">0:00</span>';
+  }
+  if (getComputedStyle(frame).position === 'static') frame.style.position = 'relative';
+  if (el.parentNode !== frame) frame.appendChild(el);
+  taPaintBgScrub();
+  if (!_taScrubTimer) _taScrubTimer = setInterval(taSyncBgScrub, 250);
+}
+function taPaintBgScrub() {
+  if (_mfSeeking) return;
+  const seek = document.getElementById('ytp-ov-seek');
+  if (!seek) return;
+  const { pos, dur } = ytpMfPlaybackPos();
+  const max = dur > 0 ? dur : 0;
+  const maxStr = String(max);
+  if (seek.max !== maxStr) seek.max = maxStr;
+  seek.value = String(Math.min(pos, max));
+  seek.style.setProperty('--ta-prog', max ? (Math.min(1, pos / max) * 100).toFixed(2) + '%' : '0%');
+  const c = document.getElementById('ytp-ov-cur'); if (c) c.textContent = ytpFmtClock(pos);
+  const d = document.getElementById('ytp-ov-dur'); if (d) d.textContent = ytpFmtClock(dur);
+}
+
 function taSetPreferBg(on) {
   _taPreferBg = !!on;
   try { localStorage.setItem('sj_bg_play', on ? '1' : '0'); } catch (_) {}
@@ -16872,7 +17164,7 @@ function taSetPreferBg(on) {
 // suspended when iOS locks the phone even though the same page works in the
 // foreground, so app Background Play must hand the queue to that engine.
 function taNativeBgPlugin() {
-  if (!sjIsNative() || SJ_BRAND.id !== 'lp') return null;
+  if (!sjIsNative() || !['lp', 'rk'].includes(SJ_BRAND.id)) return null;
   const p = sjDlPlugin();
   return p?.setQueue && p?.play ? p : null;
 }
@@ -17046,7 +17338,7 @@ function spSetWanted(on) {
 }
 
 function spCanUse() {
-  return !!(googleUser && _spStatus.connected && _spStatus.canStream && _spStatus.isPremium);
+  return SJ_BRAND.features.spotifyPlayback !== false && !!(googleUser && _spStatus.connected && _spStatus.canStream && _spStatus.isPremium);
 }
 
 async function spRequest(path, opts) {
@@ -17104,6 +17396,7 @@ async function spRefreshStatus() {
 }
 
 function settingsPaintSpotifyPlayback() {
+  if (SJ_BRAND.features.spotifyPlayback === false) return;
   const body = document.getElementById('set-sp-body');
   if (!body) return;
   if (!googleUser) {
@@ -17148,6 +17441,7 @@ function settingsPaintSpotifyPlayback() {
 }
 
 async function spConnectForPlayback() {
+  if (SJ_BRAND.features.spotifyPlayback === false) return;
   try {
     try { sessionStorage.setItem('sj_spotify_playback_return', '1'); } catch (_) {}
     const data = await mjRequest('/api/spotify/connect', 'POST');
@@ -19281,7 +19575,42 @@ function ytpToggleLyrics(open, opts) {
   }
 }
 
+// The player's lyric pane can be in Edit mode when the song changes. The edit
+// box belongs to the old song, so it must not sit there showing the old words
+// under the new title: ask to save anything unsaved, then reopen the editor on
+// the new song.
+let _ytpLyrEditSwitching = false;
+let _ytpLyrEditPending = null;
 async function ytpUpdateLyrics(trackId) {
+  const wrap = document.querySelector('[id^="lyr-edit-wrap-"][id$="-ytp"]');
+  const editingId = wrap ? wrap.id.slice('lyr-edit-wrap-'.length, -'-ytp'.length) : null;
+  if (_ytpLyrEditSwitching) { _ytpLyrEditPending = trackId; return; }
+  if (!editingId || !trackId || editingId === trackId) return ytpUpdateLyricsView(trackId);
+  _ytpLyrEditSwitching = true;
+  _ytpLyrEditPending = trackId;
+  try {
+    const ta = document.getElementById('lyr-ta-' + editingId + '-ytp');
+    const text = ta ? ta.value.trim() : '';
+    if (ta && text !== (lyricsCache[editingId] || '').trim()) {
+      const name = (findTrackById(editingId) || {}).name || 'the last song';
+      const save = await sjConfirmDialog('The song changed. Save your lyric changes to "' + name + '" before moving on?',
+        { title: 'Unsaved lyric changes', okLabel: 'Save', cancelLabel: 'Discard' });
+      if (save) {
+        try { await sjLyricsWrite(editingId, text); showToast('Lyrics saved.'); }
+        catch (e) { showToast(e.message || 'Could not save. Your edit is still open.'); return; }
+      }
+    }
+    cancelLyricsEdit(editingId, 'ytp');
+    const next = _ytpLyrEditPending || trackId;
+    await ytpUpdateLyricsView(next);
+    if (_ytpCurrentTrackId === next) startLyricsEdit(next, 'ytp');
+  } finally {
+    _ytpLyrEditSwitching = false;
+    _ytpLyrEditPending = null;
+  }
+}
+
+async function ytpUpdateLyricsView(trackId) {
   if (!_ytpLyricsPaneEl || !trackId) return;
   const titleEl = document.getElementById('ytp-lyr-title');
   const textEl  = document.getElementById('ytp-lyr-text');
@@ -20564,7 +20893,7 @@ function djExit(opts) {
 const _tvEditCache = {};
 async function tvCanEdit(trackId) {
   if (!trackId) return false;
-  if (sjIsAdmin) return true;
+  if (sjIsAdmin || sjIsMod) return true;
   if (!googleUser) return false;
   if (_tvEditCache[trackId] !== undefined) return _tvEditCache[trackId];
   try {
@@ -21280,6 +21609,7 @@ async function plmRemove() {
 let _lamArtistId = null;
 let _lamAnchor = null;
 let _lamFavIds = null; // null = still checking; [] = none
+let _lamOnPage = false; // opened from the artist page's own ⋯, beside Share
 
 function lamClose() {
   // The artist break picker is a sibling fly-out, not a child of #lam-menu.
@@ -21290,6 +21620,7 @@ function lamClose() {
   if (_lamAnchor) { _lamAnchor.removeAttribute('aria-expanded'); _lamAnchor = null; }
   _lamArtistId = null;
   _lamFavIds = null;
+  _lamOnPage = false;
   document.removeEventListener('mousedown', _lamOutside, true);
   window.removeEventListener('scroll', lamClose, true);
   window.removeEventListener('resize', lamClose);
@@ -21305,14 +21636,17 @@ function _lamOutside(e) {
       e.target !== _lamAnchor && !_lamAnchor?.contains(e.target)) lamClose();
 }
 
-function lamOpen(artistId, anchorEl, ev) {
+function lamOpen(artistId, anchorEl, ev, opts) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   sjmClose(); plmClose();
   const already = _lamArtistId === artistId && document.getElementById('lam-menu');
   lamClose();
   if (already) return;
-  const row = (landingStats || []).find(r => r.artist_id === artistId);
+  const onPage = !!(opts && opts.onPage);
+  const row = (landingStats || []).find(r => r.artist_id === artistId)
+    || (onPage ? artistPageRow(artistId) : null);
   if (!row) return;
+  _lamOnPage = onPage;
   const t0 = performance.now();
   const n = Number(row.track_count) || 0;
   sjPerfMenuOpenStart('lam', { tracks: n, artists: 1 });
@@ -21362,9 +21696,25 @@ function lamRender(row) {
             '<span class="sjm-ic">★</span><span class="sjm-label">Add favorites to playlist</span>' +
             '<span class="sjm-sub">' + fav.length + '</span></button>'
         : '');
+  const nVis = _lamOnPage ? getVisibleTracksWithVideo(false).length : 0;
   menu.innerHTML =
     _sjmHeader(row.name || 'Artist') +
-    (row.slug && sjmArtistHasDiscography(row.artist_id)
+    (_lamOnPage
+      ? '<button class="sjm-item" onclick="lamPagePlay(false)"' + (nVis ? '' : ' disabled') + '>' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.play + '</span><span class="sjm-label">Play All</span>' +
+          (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
+        '<button class="sjm-item" onclick="lamPagePlay(true)"' + (nVis ? '' : ' disabled') + '>' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.shuffle + '</span><span class="sjm-label">Shuffle All</span>' +
+          (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
+        (lamCanManage(row)
+          ? '<button class="sjm-item" onclick="lamManage()">' +
+              '<span class="sjm-ic">✎</span><span class="sjm-label">Manage Artist</span></button>' +
+            '<button class="sjm-item" onclick="lamStats()">' +
+              '<span class="sjm-ic">📈</span><span class="sjm-label">Artist stats</span></button>'
+          : '') +
+        '<div class="sjm-sep"></div>'
+      : '') +
+    (!_lamOnPage && row.slug && sjmArtistHasDiscography(row.artist_id)
       ? '<button class="sjm-item" onclick="lamExplore()">' +
           '<span class="sjm-ic">🎵</span><span class="sjm-label">Explore Artist Discography</span></button>'
       : '') +
@@ -21390,15 +21740,25 @@ function lamRender(row) {
           '<span class="sjm-label">Take a Break from Artist</span>' +
           '<span class="sjm-sub">›</span></button>'
       : '') +
+    (googleUser && row.discography_complete === false
+      ? '<button class="sjm-item" onclick="lamImportDiscography()" title="This artist came in as a single album or song - finish the discography">' +
+          '<span class="sjm-ic">⤓</span><span class="sjm-label">Import full discography</span></button>'
+      : '') +
     (canAddToMyArtists
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamAddToMyArtists()">' +
           '<span class="sjm-ic">+</span><span class="sjm-label">Add to My Artists</span></button>'
       : '') +
-    (lamCanManage(row)
+    (_lamOnPage && row.slug
+      ? '<button class="sjm-item" onclick="lamCopyLink()">' +
+          '<span class="sjm-ic">🔗</span><span class="sjm-label">Copy artist link</span></button>'
+      : '') +
+    (!_lamOnPage && lamCanManage(row)
       ? '<div class="sjm-sep"></div>' +
         '<button class="sjm-item" onclick="lamManage()">' +
-          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>'
+          '<span class="sjm-ic">✎</span><span class="sjm-label">Manage artist</span></button>' +
+        '<button class="sjm-item" onclick="lamStats()">' +
+          '<span class="sjm-ic">📈</span><span class="sjm-label">Artist stats</span></button>'
       : '') +
     (isMine
       ? '<div class="sjm-sep"></div>' +
@@ -21643,6 +22003,81 @@ function lamManage() {
   if (id) openMyArtists(id);
 }
 
+function lamImportDiscography() {
+  const row = artistPageRow(_lamArtistId);
+  lamClose();
+  if (row && row.name) openImportDiscography(row.name);
+}
+
+// Play All / Shuffle All from the artist page ⋯ play what the album filter
+// shows, the same list the Playlist Controls Shuffle All uses. Play All means
+// in order, so it turns shuffle off first.
+function lamPagePlay(shuffle) {
+  lamClose();
+  if (shuffle) { shuffleAllVisible(); return; }
+  if (ytShuffle) setYtShuffleEnabled(false);
+  playAllVisible(false);
+}
+
+// Plays, listeners, heart moments and where fans came from. The menu shows it
+// only to managers; /api/artist-stats checks again on every request.
+function lamStats() {
+  const row = artistPageRow(_lamArtistId);
+  lamClose();
+  if (!row || !row.slug) return;
+  openHostedToolInNewTab('/artist-stats?artist=' + encodeURIComponent(row.slug));
+}
+
+function lamCopyLink() {
+  const row = artistPageRow(_lamArtistId);
+  lamClose();
+  if (!row || !row.slug) return;
+  const url = location.origin + '/' + row.slug;
+  Promise.resolve(navigator.clipboard && navigator.clipboard.writeText(url))
+    .then(() => showToast('Link copied.'))
+    .catch(() => showToast(url));
+}
+
+// ── Artist page ⋯ (beside Share) and Manage Artist in the album menu ────────
+// The artist card's ⋯ menu (lam*), opened for the artist this page is about.
+// landing_stats can land after the page paints; until it does, a bare row
+// from allArtists stands in, and Manage Artist waits for can_manage.
+function artistPageArtistId() {
+  if (isLandingMode) return null;
+  if (FEATURED_ARTIST_ID && allArtists.some(a => a.id === FEATURED_ARTIST_ID)) return FEATURED_ARTIST_ID;
+  if (IS_COMMUNITY) return allArtists.length === 1 ? allArtists[0].id : null;
+  const sj = allArtists.find(a => (a.name || '').toLowerCase().includes('silver jews'));
+  return sj ? sj.id : null;
+}
+
+function artistPageRow(id) {
+  id = id || artistPageArtistId();
+  if (!id) return null;
+  const row = (landingStats || []).find(r => r.artist_id === id);
+  if (row) return row;
+  const a = allArtists.find(x => x.id === id);
+  if (!a) return null;
+  const n = (albums[id] || []).reduce((s, alb) => s + ((tracks[alb.id] || []).length), 0);
+  return { artist_id: id, name: a.name, slug: a.slug, track_count: n };
+}
+
+function artistPageCanManage() {
+  return !!googleUser && lamCanManage(artistPageRow());
+}
+
+function artistPageManage() {
+  const id = artistPageArtistId();
+  document.querySelectorAll('.filter-dd-menu.open').forEach(m => m.classList.remove('open'));
+  sjFilterPending = null;
+  otherContentFilterPending = null;
+  if (id) openMyArtists(id);
+}
+
+function artistPageMenu(anchorEl, ev) {
+  const id = artistPageArtistId();
+  if (id) lamOpen(id, anchorEl, ev, { onPage: true });
+}
+
 // Opens the same folder-matching batch upload used by Audio Storage's
 // By Artist cards, scoped to this artist's whole catalogue. Uploading is
 // private to the account, so this needs no manage-artist check;
@@ -21760,6 +22195,8 @@ function sjmRenderRoot() {
     (ytQueue[ytQueueIdx]?.trackId === tid ? '' :
       '<button class="sjm-item" onclick="sjmPlayNext()">' +
         '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play Next</span></button>') +
+    '<button class="sjm-item" onclick="sjmShareSong()">' +
+      '<span class="sjm-ic">🔗</span><span class="sjm-label">Share song</span></button>' +
     // Only offered on music that is not already in My Library. Own imports
     // and anything claimed via Add to My Library both count — in_my_library
     // tracks claimed songs; oaIsMine covers artists you imported.
@@ -22407,7 +22844,7 @@ function sjmLyricsHistory() {
 
 function sjmCanManageSong(trackId) {
   if (!trackId || !googleUser) return false;
-  if (sjIsAdmin) return true;
+  if (sjIsAdmin || sjIsMod) return true;
   if (_tvEditCache[trackId] === true) return true;
   if (_tvEditCache[trackId] === false) return false;
   tvCanEdit(trackId).then(ok => {
@@ -22482,7 +22919,7 @@ function almAlbumQueueItems(albumId) {
 
 function almCanManage(albumId) {
   if (!googleUser) return false;
-  if (sjIsAdmin) return true;
+  if (sjIsAdmin || sjIsMod) return true;
   const alb = almFindAlbum(albumId);
   if (!alb) return false;
   const row = (landingStats || []).find(r => r.artist_id === alb.artist_id);
@@ -23012,7 +23449,7 @@ async function openManageAlbum(albumId) {
     }
     if (!alb) throw new Error('Album not found.');
     const row = (landingStats || []).find(r => r.artist_id === alb.artist_id);
-    if (!(sjIsAdmin || (row && row.can_manage) || almCanManage(albumId))) {
+    if (!(sjIsAdmin || sjIsMod || (row && row.can_manage) || almCanManage(albumId))) {
       throw new Error('Only the person who imported this music can manage it.');
     }
     if (!trks.length) {
@@ -23230,6 +23667,482 @@ async function mgbUploadCover(dataUrl) {
   } finally {
     _mgbCoverBusy = false;
     mgbRender();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// LYRIC SYNC EDITOR  (lsy*)  - added 2026-10-05
+//
+// Times plain lyrics by hand and saves them as LRC into tracks.lyrics_synced,
+// flagged 'manual'. Nothing is sent to another site. One tap per line while the
+// song plays; every time stays editable afterwards.
+//
+//   - Times are stored as LRC time = player time - this version's
+//     lyric_offset_seconds, because that is exactly what the player adds back
+//     (see _ytpLyrOffset / lyrSeek).
+//   - Bracketed section headers like [Chorus] are not sung, so they are left
+//     out of the timed list rather than asking for a tap.
+//   - A person taps after they hear the line, so each stamp is pulled
+//     LSY_REACT seconds earlier.
+//   - Saving goes through /api/sj-edit (action save_synced_lyrics). The server
+//     decides who may: an admin, a Mod, or whoever added the artist.
+// ══════════════════════════════════════════════════════════════
+const LSY_REACT = 0.2;
+let _lsy = null;
+let _lsyTimer = null;
+let _lsyScrubbing = false;
+
+async function sjEditFetch(action, payload) {
+  const res = await fetch(sjApiUrl('/api/sj-edit'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+    body: JSON.stringify({ ...(payload || {}), action }),
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok || data.error) throw new Error(data.error || 'Could not save.');
+  return data;
+}
+
+function lsyFmt(t) {
+  if (t == null || !isFinite(t)) return '';
+  const m = Math.floor(t / 60);
+  return String(m).padStart(2, '0') + ':' + (t - m * 60).toFixed(2).padStart(5, '0');
+}
+function lsyFmtShort(t) {
+  if (t == null || !isFinite(t) || t < 0) t = 0;
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+function lsyParseTime(s) {
+  s = String(s || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d+):(\d{1,2}(?:\.\d+)?)$/);
+  if (m) return (+m[1]) * 60 + (+m[2]);
+  const n = Number(s);
+  return isFinite(n) && n >= 0 ? n : null;
+}
+// An artist upload (Nouns Group) has no YouTube video: it plays through our
+// own <audio> element, so the editor's clock, seek and pause have to follow
+// that element whenever it is the one playing this song.
+function lsyAudioEl() {
+  const a = typeof _taAudioEl !== 'undefined' ? _taAudioEl : null;
+  if (!_lsy || !a || !_taBgActive) return null;
+  return a.dataset.trackId === String(_lsy.trackId) ? a : null;
+}
+function lsyOffset() {
+  if (lsyAudioEl()) return 0;
+  return (_lsy && nowPlayingTrackId === _lsy.trackId) ? (_ytpLyrOffset || 0) : 0;
+}
+function lsyNow() {
+  const a = lsyAudioEl();
+  if (a) return Math.max(0, a.currentTime || 0);
+  try { return Math.max(0, (ytAPIPlayer.getCurrentTime() || 0) - lsyOffset()); } catch (_) { return 0; }
+}
+function lsyDuration() {
+  const a = lsyAudioEl();
+  if (a) return isFinite(a.duration) && a.duration > 0 ? a.duration : 0;
+  try { return Math.max(0, (ytAPIPlayer.getDuration() || 0) - lsyOffset()); } catch (_) { return 0; }
+}
+function lsyIsPlaying() {
+  const a = lsyAudioEl();
+  if (a) return !a.paused;
+  try { return ytAPIPlayer.getPlayerState() === 1; } catch (_) { return false; }
+}
+
+// The lines to time are the lyric lines. Blank lines and bracketed section
+// headers like [Chorus] are not sung, so they are not offered for a tap - but
+// each timed line remembers which source line it came from (si), so editing
+// the words here can write the lyrics back with the stanza breaks and headers
+// exactly where they were.
+function lsyIsTimedLine(s) { return !!s && !/^\[[^\]]*\]$/.test(s); }
+function lsyLinesFromText(text) {
+  const src = String(text || '').split(/\r?\n/).map(s => s.trim());
+  const lines = [];
+  src.forEach((s, si) => { if (lsyIsTimedLine(s)) lines.push({ text: s.slice(0, 300), t: null, si }); });
+  return lines;
+}
+// Rebuild the plain lyrics from the source text plus the edited lines.
+// Kept lines take their source slot; a removed line's slot disappears; a new
+// line follows the line it was added after.
+function lsyRebuildText(srcText, lines) {
+  const src = String(srcText || '').split(/\r?\n/).map(s => s.trim());
+  const lead = [];
+  const after = new Map(); // si -> [new lines following it]
+  const kept = new Map();  // si -> line
+  let anchor = null;
+  for (const l of lines) {
+    const text = String(l.text || '').trim();
+    if (l.si != null && lsyIsTimedLine(src[l.si])) { kept.set(l.si, text); anchor = l.si; continue; }
+    if (!text) continue;
+    if (anchor == null) lead.push(text);
+    else { if (!after.has(anchor)) after.set(anchor, []); after.get(anchor).push(text); }
+  }
+  const out = [...lead];
+  src.forEach((s, si) => {
+    if (!lsyIsTimedLine(s)) { out.push(s); return; }
+    if (kept.has(si) && kept.get(si)) out.push(kept.get(si));
+    (after.get(si) || []).forEach(t => out.push(t));
+  });
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function lsyWordsChanged() {
+  if (!_lsy) return false;
+  return lsyRebuildText(_lsy.srcText, _lsy.lines) !== String(_lsy.srcText || '').split(/\r?\n/).map(s => s.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function lsyDirty() { if (_lsy) _lsy.dirty = true; }
+
+// Entry from any Edit lyrics screen: save changed words first (the timed lines
+// have to match the saved lyrics), then open the editor.
+async function lsyStart(trackId, textareaId) {
+  if (!googleUser) { showToast('Sign in to sync lyrics.'); return; }
+  const ta = textareaId ? document.getElementById(textareaId) : null;
+  const text = ta ? ta.value.trim() : (lyricsCache[trackId] || '');
+  if (ta && text && text !== (lyricsCache[trackId] || '').trim()) {
+    try { await sjLyricsWrite(trackId, text); showToast('Lyrics saved.'); }
+    catch (e) { showToast(e.message || 'Could not save the lyrics first.'); return; }
+  }
+  lsyOpen(trackId, text);
+}
+
+async function lsyLyricsFor(trackId) {
+  if (lyricsCache[trackId] !== undefined) return lyricsCache[trackId] || '';
+  try {
+    const rows = await dbGet('/lyrics?track_id=eq.' + trackId + '&select=lyrics&limit=1');
+    lyricsCache[trackId] = rows[0]?.lyrics?.trim() || null;
+  } catch (_) {}
+  return lyricsCache[trackId] || '';
+}
+
+async function lsyOpen(trackId, text, opts) {
+  opts = opts || {};
+  const lines = lsyLinesFromText(text);
+  // A song with no words yet still opens: type the first line and add more.
+  if (!lines.length) lines.push({ text: '', t: null, si: null });
+  _lsy = { trackId, lines, srcText: String(text || ''), cur: 0, busy: false, hadSync: false, dirty: false,
+    seenPlaying: nowPlayingTrackId === trackId, switching: false };
+  try {
+    const ex = await fetchSyncedLyrics(trackId);
+    if (ex && ex.length === lines.length) {
+      ex.forEach((l, i) => { lines[i].t = l.t; });
+      _lsy.hadSync = true;
+    } else if (ex) { _lsy.hadSync = true; }
+  } catch (_) {}
+  if (!_lsy || _lsy.trackId !== trackId) return;
+  const t = (typeof findTrackById === 'function' ? findTrackById(trackId) : null)
+    || (typeof _mgbData !== 'undefined' && _mgbData && (_mgbData.tracks || []).find(x => x.id === trackId));
+  document.getElementById('lsyTitle').textContent = 'Sync lyrics' + (t && t.name ? ' · ' + t.name : '');
+  document.getElementById('lsyStatus').textContent = lines.length === 1 && !lines[0].text ? 'No words yet. Type the first line, then ＋ to add more.' : '';
+  document.getElementById('lsyOverlay').classList.add('open');
+  document.removeEventListener('keydown', lsyKey, true);
+  document.addEventListener('keydown', lsyKey, true);
+  clearInterval(_lsyTimer);
+  _lsyTimer = setInterval(lsyTick, 100);
+  lsyRender();
+  if (!opts.follow) lsyEnsurePlaying(trackId);
+}
+
+async function lsyEnsurePlaying(trackId) {
+  const status = document.getElementById('lsyStatus');
+  if (lsyAudioEl()) return;
+  if (nowPlayingTrackId === trackId && ytAPIPlayer && !ytpIsArtistAudio(ytQueue[ytQueueIdx])) return;
+  let track = typeof findTrackById === 'function' ? findTrackById(trackId) : null;
+  if (!track) {
+    try { track = (await dbGet('/tracks?id=eq.' + encodeURIComponent(trackId) + '&select=id,artist_audio_only'))[0]; } catch (_) {}
+  }
+  if (track && track.artist_audio_only) {
+    if (nowPlayingTrackId !== trackId) sjArtistPlayTrack(trackId);
+    return;
+  }
+  let v = null;
+  try { v = tvPrimary(trackId); } catch (_) {}
+  if (!v) {
+    try {
+      const rows = await dbGet('/track_videos?track_id=eq.' + trackId + '&select=video_id,is_primary,is_playable,lyric_offset_seconds');
+      v = (rows || []).find(r => r.is_primary && r.is_playable !== false) || (rows || []).find(r => r.is_playable !== false) || null;
+    } catch (_) {}
+  }
+  if (!v || !v.video_id) { if (status) status.textContent = 'No video found for this song, so there is nothing to time against.'; return; }
+  try { ytPlayNow(v.video_id, (document.getElementById('lsyTitle').textContent || '').replace(/^Sync lyrics · /, ''), trackId); }
+  catch (e) { if (status) status.textContent = 'Could not start the song.'; }
+}
+
+function lsyClose() {
+  document.getElementById('lsyOverlay')?.classList.remove('open');
+  document.removeEventListener('keydown', lsyKey, true);
+  clearInterval(_lsyTimer); _lsyTimer = null;
+  _lsy = null;
+}
+
+function lsyRowHTML(l, i) {
+  return '<div class="lsy-row' + (i === _lsy.cur ? ' cur' : '') + (l.t != null ? ' done' : '') + '" data-i="' + i + '" onclick="lsySetCur(' + i + ')">' +
+    '<input class="lsy-time" value="' + lsyFmt(l.t) + '" placeholder="--:--.--" onclick="event.stopPropagation()" onchange="lsyEditTime(' + i + ',this.value)" aria-label="Start time">' +
+    '<span class="lsy-nudge"><button type="button" title="0.1s earlier" onclick="event.stopPropagation();lsyNudge(' + i + ',-0.1)">−</button>' +
+    '<button type="button" title="0.1s later" onclick="event.stopPropagation();lsyNudge(' + i + ',0.1)">+</button>' +
+    '<button type="button" title="Play from this line" onclick="event.stopPropagation();lsyPlayFrom(' + i + ')">▶</button></span>' +
+    '<input class="lsy-text" value="' + escHtml(l.text) + '" placeholder="Type this line" aria-label="Words" ' +
+      'onfocus="lsySetCur(' + i + ')" oninput="lsyEditText(' + i + ',this.value)" onkeydown="lsyTextKey(event,' + i + ')">' +
+    '<span class="lsy-edit"><button type="button" title="Add a line below" onclick="event.stopPropagation();lsyAddLine(' + i + ')">＋</button>' +
+    '<button type="button" title="Remove this line" onclick="event.stopPropagation();lsyRemoveLine(' + i + ')">✕</button></span>' +
+    '</div>';
+}
+function lsyRender(focusIdx) {
+  if (!_lsy) return;
+  const box = document.getElementById('lsyLines');
+  const keep = box.scrollTop;
+  box.innerHTML = _lsy.lines.map(lsyRowHTML).join('');
+  lsyCount();
+  lsyPaintMarks();
+  if (focusIdx != null) {
+    box.scrollTop = keep;
+    const inp = box.querySelector('.lsy-row[data-i="' + focusIdx + '"] .lsy-text');
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    return;
+  }
+  const cur = box.querySelector('.lsy-row.cur');
+  if (cur) cur.scrollIntoView({ block: 'center' });
+}
+function lsyCount() {
+  if (!_lsy) return;
+  const n = _lsy.lines.filter(l => l.t != null).length;
+  document.getElementById('lsyCount').textContent = n + ' of ' + _lsy.lines.length + ' lines timed' + (_lsy.dirty ? ' · unsaved' : '');
+}
+// One tick on the position bar for every timed line.
+function lsyPaintMarks() {
+  const el = document.getElementById('lsyMarks');
+  if (!el || !_lsy) return;
+  const d = lsyDuration();
+  el.innerHTML = d > 0 ? _lsy.lines.map((l, i) => l.t == null ? '' :
+    '<i style="left:' + Math.min(100, l.t / d * 100).toFixed(2) + '%" title="Line ' + (i + 1) + '"></i>').join('') : '';
+  el.dataset.dur = String(Math.round(d));
+}
+function lsyTick() {
+  if (!_lsy) return;
+  const now = lsyNow(), dur = lsyDuration();
+  const el = document.getElementById('lsyClock');
+  if (el) el.textContent = lsyFmt(now);
+  const range = document.getElementById('lsySeek');
+  if (range && !_lsyScrubbing) {
+    range.max = String(dur || 0);
+    range.value = String(Math.min(now, dur || now));
+    range.style.setProperty('--p', (dur > 0 ? Math.min(100, now / dur * 100) : 0) + '%');
+    document.getElementById('lsyPos').textContent = lsyFmtShort(now);
+  }
+  const durEl = document.getElementById('lsyDur');
+  if (durEl) durEl.textContent = lsyFmtShort(dur);
+  const marks = document.getElementById('lsyMarks');
+  if (marks && marks.dataset.dur !== String(Math.round(dur))) lsyPaintMarks();
+  const btn = document.getElementById('lsyPlayBtn');
+  if (btn) {
+    const playing = lsyIsPlaying();
+    const want = playing ? '⏸' : '▶';
+    if (btn.textContent !== want) { btn.textContent = want; btn.title = playing ? 'Pause' : 'Play'; }
+  }
+  lsyFollowSong();
+}
+function lsyScrubInput(v) {
+  _lsyScrubbing = true;
+  const range = document.getElementById('lsySeek');
+  const dur = Number(range?.max) || 0;
+  if (range) range.style.setProperty('--p', (dur > 0 ? Number(v) / dur * 100 : 0) + '%');
+  document.getElementById('lsyPos').textContent = lsyFmtShort(Number(v));
+}
+function lsyScrubCommit(v) {
+  _lsyScrubbing = false;
+  lsySeek(Math.max(0, Number(v) || 0));
+}
+
+// The player moved on to another song while the editor was open. Follow it,
+// but never throw away unsaved work without asking.
+async function lsyFollowSong() {
+  if (!_lsy || _lsy.busy || _lsy.switching) return;
+  if (nowPlayingTrackId === _lsy.trackId) { _lsy.seenPlaying = true; return; }
+  // Opening the editor can start the song; until it is playing, a different
+  // track in the player is the one we are leaving, not a new one.
+  if (!_lsy.seenPlaying || !nowPlayingTrackId) return;
+  const next = nowPlayingTrackId;
+  _lsy.switching = true;
+  if (_lsy.dirty) {
+    const fromName = (document.getElementById('lsyTitle').textContent || '').replace(/^Sync lyrics · /, '');
+    const save = await sjConfirmDialog('The song changed. Save your changes to "' + fromName + '" before moving on?',
+      { title: 'Unsaved lyric changes', okLabel: 'Save', cancelLabel: 'Discard' });
+    if (!_lsy) return;
+    if (save && !(await lsySave({ keepOpen: true }))) { if (_lsy) _lsy.switching = false; return; }
+  }
+  if (!_lsy || nowPlayingTrackId !== next) { if (_lsy) _lsy.switching = false; return; }
+  const text = await lsyLyricsFor(next);
+  await lsyOpen(next, text, { follow: true });
+}
+
+function lsySetCur(i) {
+  if (!_lsy) return;
+  _lsy.cur = i;
+  document.querySelectorAll('#lsyLines .lsy-row').forEach(r => r.classList.toggle('cur', +r.dataset.i === i));
+}
+function lsyStamp() {
+  if (!_lsy || _lsy.cur >= _lsy.lines.length) return;
+  const i = _lsy.cur;
+  _lsy.lines[i].t = Math.max(0, lsyNow() - LSY_REACT);
+  _lsy.cur = Math.min(_lsy.lines.length, i + 1);
+  lsyDirty();
+  lsyRender();
+  if (_lsy.cur >= _lsy.lines.length) document.getElementById('lsyStatus').textContent = 'Every line is timed. Check any you doubt, then Save.';
+}
+function lsyUndo() {
+  if (!_lsy) return;
+  const i = Math.max(0, Math.min(_lsy.cur, _lsy.lines.length) - 1);
+  _lsy.lines[i].t = null;
+  _lsy.cur = i;
+  lsyDirty();
+  lsyRender();
+  const prev = _lsy.lines[i - 1];
+  lsySeek(prev && prev.t != null ? Math.max(0, prev.t - 1) : Math.max(0, lsyNow() - 4));
+}
+function lsyEditTime(i, v) {
+  if (!_lsy) return;
+  _lsy.lines[i].t = lsyParseTime(v);
+  lsyDirty();
+  lsyCount();
+  lsyPaintMarks();
+  const row = document.querySelector('#lsyLines .lsy-row[data-i="' + i + '"]');
+  if (row) { row.classList.toggle('done', _lsy.lines[i].t != null); row.querySelector('.lsy-time').value = lsyFmt(_lsy.lines[i].t); }
+}
+// Typing changes the line in place; no re-render, or the caret would jump.
+function lsyEditText(i, v) {
+  const l = _lsy && _lsy.lines[i]; if (!l) return;
+  l.text = String(v || '').slice(0, 300);
+  lsyDirty();
+  lsyCount();
+}
+function lsyTextKey(e, i) {
+  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); lsyAddLine(i); }
+  else if (e.key === 'Backspace' && !e.target.value && _lsy && _lsy.lines.length > 1) {
+    e.preventDefault(); e.stopPropagation(); lsyRemoveLine(i, true);
+  }
+  else if (e.key === 'Escape') e.target.blur();
+}
+function lsyAddLine(i) {
+  if (!_lsy) return;
+  _lsy.lines.splice(i + 1, 0, { text: '', t: null, si: null });
+  _lsy.cur = i + 1;
+  lsyDirty();
+  lsyRender(i + 1);
+}
+function lsyRemoveLine(i, focusPrev) {
+  if (!_lsy || _lsy.lines.length <= 1) { showToast('A song needs at least one line.'); return; }
+  _lsy.lines.splice(i, 1);
+  if (_lsy.cur > i || _lsy.cur >= _lsy.lines.length) _lsy.cur = Math.max(0, _lsy.cur - 1);
+  lsyDirty();
+  lsyRender(focusPrev ? Math.max(0, i - 1) : null);
+}
+function lsyNudge(i, d) {
+  const l = _lsy && _lsy.lines[i]; if (!l) return;
+  l.t = Math.max(0, (l.t != null ? l.t : lsyNow()) + d);
+  lsyEditTime(i, lsyFmt(l.t));
+  lsySeek(Math.max(0, l.t - 0.5));
+}
+function lsySeek(t) {
+  const a = lsyAudioEl();
+  if (a) { try { a.currentTime = Math.max(0, t); if (a.paused) ytTogglePlayPause(); } catch (_) {} return; }
+  try { ytAPIPlayer.seekTo(t + lsyOffset(), true); ytAPIPlayer.playVideo(); } catch (_) {}
+}
+function lsyPlayFrom(i) {
+  const l = _lsy && _lsy.lines[i]; if (!l) return;
+  lsySeek(l.t != null ? Math.max(0, l.t - 1) : lsyNow());
+  lsySetCur(i);
+}
+function lsyBack5() { lsySeek(Math.max(0, lsyNow() - 5)); }
+function lsyFwd5() { lsySeek(lsyNow() + 5); }
+function lsyToggle() {
+  if (lsyAudioEl()) { ytTogglePlayPause(); lsyTick(); return; }
+  try { ytAPIPlayer.getPlayerState() === 1 ? ytAPIPlayer.pauseVideo() : ytAPIPlayer.playVideo(); } catch (_) {}
+  lsyTick();
+}
+function lsyKey(e) {
+  if (!_lsy) return;
+  if (document.getElementById('sjConfirmOverlay')?.classList.contains('open')) return;
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); lsyStamp(); }
+  else if (e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); lsyUndo(); }
+  else if (e.key === 'p' || e.key === 'P') { e.preventDefault(); e.stopPropagation(); lsyToggle(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); lsyBack5(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); lsyFwd5(); }
+}
+
+function lsyBuildLrc() {
+  const out = [];
+  let last = -1;
+  for (let i = 0; i < _lsy.lines.length; i++) {
+    const l = _lsy.lines[i];
+    if (!String(l.text || '').trim()) continue;
+    if (l.t == null) throw new Error('Line ' + (i + 1) + ' still needs a time.');
+    if (l.t < last) throw new Error('Line ' + (i + 1) + ' starts before the line above it.');
+    last = l.t;
+    out.push('[' + lsyFmt(l.t) + ']' + l.text.trim());
+  }
+  return out.join('\n');
+}
+// Saves the words (when they changed here) and then the timing. A song whose
+// lines are not all timed yet can still save its words; the timing waits.
+async function lsySave(opts) {
+  opts = opts || {};
+  if (!_lsy || _lsy.busy) return false;
+  const status = document.getElementById('lsyStatus');
+  const id = _lsy.trackId;
+  const words = lsyWordsChanged() ? lsyRebuildText(_lsy.srcText, _lsy.lines) : null;
+  let lrc = null;
+  try { lrc = lsyBuildLrc(); }
+  catch (e) { if (!words) { status.textContent = e.message; return false; } }
+  if (words === '') { status.textContent = 'Lyrics cannot be emptied here.'; return false; }
+  _lsy.busy = true; status.textContent = 'Saving…';
+  try {
+    if (words) {
+      await sjLyricsWrite(id, words);
+      try { if (_ytpCurrentTrackId === id) ytpUpdateLyrics(id); } catch (_) {}
+      try { renderLyrics(id, words, 'user-edit'); } catch (_) {}
+    }
+    if (lrc) {
+      await sjEditFetch('save_synced_lyrics', { track_id: id, lrc });
+      syncedLyricsCache[id] = parseLRC(lrc);
+      try { if (_ytpCurrentTrackId === id) ytpApplySync(id); } catch (_) {}
+      try { accSyncLyricsUI(id); } catch (_) {}
+    }
+    showToast(lrc ? (words ? 'Lyrics and syncing saved.' : 'Lyric syncing saved.') : 'Lyrics saved. Time every line to save the syncing.');
+    if (_lsy && _lsy.trackId === id) {
+      _lsy.busy = false;
+      _lsy.dirty = !lrc;
+      if (words) { _lsy.srcText = words; _lsy.lines = _lsy.lines.filter(l => String(l.text || '').trim()); lsyReindex(); }
+      status.textContent = '';
+      lsyCount();
+      if (!opts.keepOpen && lrc) lsyClose();
+    }
+    return true;
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Could not save.';
+    if (_lsy) _lsy.busy = false;
+    return false;
+  }
+}
+// After the words are saved, every line maps onto the new source text 1:1.
+function lsyReindex() {
+  const src = String(_lsy.srcText || '').split(/\r?\n/).map(s => s.trim());
+  let k = 0;
+  src.forEach((s, si) => { if (lsyIsTimedLine(s) && _lsy.lines[k]) _lsy.lines[k++].si = si; });
+}
+async function lsyClear() {
+  if (!_lsy || _lsy.busy) return;
+  if (!confirm('Remove the timing for this song? The words stay.')) return;
+  _lsy.busy = true;
+  try {
+    await sjEditFetch('save_synced_lyrics', { track_id: _lsy.trackId, lrc: '' });
+    syncedLyricsCache[_lsy.trackId] = null;
+    try { if (_ytpCurrentTrackId === _lsy.trackId) ytpApplySync(_lsy.trackId); } catch (_) {}
+    showToast('Timing removed.');
+    lsyClose();
+  } catch (e) {
+    document.getElementById('lsyStatus').textContent = e.message || 'Could not remove.';
+    if (_lsy) _lsy.busy = false;
   }
 }
 
@@ -24816,6 +25729,11 @@ function refreshLyricCardSync() {
 }
 
 function lyrSeek(t) {
+  // An artist upload plays in our own <audio>; LRC time is its time.
+  if (_taBgActive && _taAudioEl && _taAudioEl.dataset.trackId === String(nowPlayingTrackId)) {
+    try { _taAudioEl.currentTime = Math.max(0, t); _taAudioEl.play().catch(() => {}); } catch (e) {}
+    return;
+  }
   // t is the LRC timestamp (song-relative); add offset to get video position
   try { ytAPIPlayer?.seekTo(t + _ytpLyrOffset, true); ytAPIPlayer?.playVideo?.(); } catch(e) {}
 }
@@ -24838,8 +25756,8 @@ function _buildAccordionContent(trackId) {
   const safeTitle  = (track.name || '').replace(/'/g, "\\'");
   let _mPart = null;
   if      (barChartMode === 'yt'    && views) _mPart = fmtV(views) + ' ' + playMetric.label.toLowerCase();
-  else if (barChartMode === 'mine')            _mPart = fmtV(myInAppPlays[trackId] || 0) + ' my jukebox plays';
-  else if (barChartMode === 'total')           _mPart = fmtV(inAppPlays[trackId]   || 0) + ' jukebox plays';
+  else if (barChartMode === 'mine')            _mPart = fmtV(myInAppPlays[trackId] || 0) + ' my in-app plays';
+  else if (barChartMode === 'total')           _mPart = fmtV(inAppPlays[trackId]   || 0) + ' in-app plays';
   else if (barChartMode === 'score')           { const sc = trackVoteScores[trackId] || 0; _mPart = sc + (sc === 1 ? ' heart' : ' hearts'); }
   const statParts  = [
     _mPart,
@@ -26262,6 +27180,9 @@ let _submitterMenuOpen = false;
 let _landingArtistKeys = [];
 let _artistsMenuOpen = false;
 let homeBgOnly = localStorage.getItem('sj_home_bg_only') === '1';
+let artistUploadedOnly = false;
+let _artistUploadedTrackIds = new Set();
+let _artistUploadedArtistIds = new Set();
 let _homeBgArtistIds = new Set(); // artists with at least one of my uploaded bg-audio files
 let _homeBgTrackIds = new Set();  // track ids with my uploaded bg-audio
 let _homeLibLoaded = false;
@@ -30639,6 +31560,7 @@ function getVisibleLandingStats(opts) {
   }
   if (!landingIncludeSinglesOnly && !opts.singlesAlways) visible = visible.filter(r => !isSinglesOnlyRow(r));
   if (sjBgActive() && !opts.skipBgOnly) visible = visible.filter(r => sjBgArtistOn(r));
+  if (artistUploadedOnly && _homeLibLoaded && !_homeLibError) visible = visible.filter(r => sjArtistUploadedOn(r));
   if (landingSubmitterFilter.has(LANDING_SUBMITTER_NONE)) visible = [];
   else if (landingSubmitterFilter.size) {
     visible = visible.filter(r => landingSubmitterFilter.has(r.added_by_name || '__official__'));
@@ -30996,6 +31918,7 @@ function trackPassesHomeBgFilter(trackId) {
 }
 
 function filterTracksForHomeBg(rows) {
+  rows = filterArtistUploadedTracks(rows);
   if (!homeJukeboxBgFilterOn()) return rows;
   return (rows || []).filter(t => t && trackPassesHomeBgFilter(t.id || t.trackId));
 }
@@ -31050,6 +31973,8 @@ async function ensureHomeLibrary() {
     }
     _homeBgTrackIds = new Set((body.trackIds || []).filter(Boolean));
     _homeBgArtistIds = new Set((body.artistIds || []).filter(Boolean));
+    _artistUploadedTrackIds = new Set((body.artistUploadedTrackIds || []).filter(Boolean));
+    _artistUploadedArtistIds = new Set((body.artistUploadedArtistIds || []).filter(Boolean));
     _homeLibError = false;
   } catch (error) {
     console.error('[sj] could not load background-enabled catalog', error);
@@ -31434,6 +32359,7 @@ function esSongRows(opts) {
     rows = rows.filter(t => _esLyricFilter.has(esLyricStatus(t.id)));
   }
   if (sjBgActive()) rows = rows.filter(t => sjBgHasTrack(t.id));
+  if (artistUploadedOnly && _homeLibLoaded && !_homeLibError) rows = rows.filter(t => _artistUploadedTrackIds.has(t.id));
   const q = _esSearchQ.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(t => {
@@ -31621,7 +32547,7 @@ const _ES_SORTS = [
   { col: 'views',  lbl: 'YouTube / In-App Plays', tip: 'YouTube views, falling back to in-app plays when no YouTube version exists' },
   { col: 'name',   lbl: 'Song A-Z',            tip: 'By song title' },
   { col: 'artist', lbl: 'Artist A-Z',          tip: 'By artist, then album running order' },
-  { col: 'plays',  lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
+  { col: 'plays',  lbl: 'Total In-App Plays', tip: 'Most played in this app first' },
   { col: 'lyric',  lbl: 'Lyrics',               tip: 'Synced lyrics first, then static, then none' },
   { col: 'alts',   lbl: 'Alt Video',            tip: 'Songs with alternate YouTube versions first' },
   { col: 'added',  lbl: 'Recently Added',      tip: 'Newest songs added to the Jukebox first' },
@@ -32366,9 +33292,9 @@ function renderLanding() {
             ${sortOpt('', 'Default')}
             ${sortOpt('date_desc', 'Date Added: Newest First')}
             ${sortOpt('date_asc', 'Date Added: Oldest First')}
-            ${sortOpt('plays_desc', 'Total Jukebox Plays')}
+            ${sortOpt('plays_desc', 'Total In-App Plays')}
             ${sortOpt('yt_desc', 'YouTube / In-App Plays')}
-            ${sortOpt('my_plays_desc', 'My Jukebox Plays')}
+            ${sortOpt('my_plays_desc', 'My In-App Plays')}
             ${sortOpt('score_desc', 'Hearts')}
           </select>
         </div>
@@ -32405,16 +33331,14 @@ function renderLanding() {
             <div class="landing-card-name">${esc(r.name)}</div>
             <div class="landing-card-stats">
               <div class="landing-stat"><span class="landing-stat-val">${fmtV(primaryPlays.value)}</span><span class="landing-stat-lbl">${primaryPlays.label}</span></div>
-              <div class="landing-stat landing-stat-plays"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">Jukebox Plays</span></div>
+              ${primaryPlays.label === 'In-App Plays' ? '' : `<div class="landing-stat landing-stat-plays"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">In-App Plays</span></div>`}
               <div class="landing-stat landing-stat-albums"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
               <div class="landing-stat landing-stat-tracks"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
             </div>
             ${landingOwnerLine(r, false)}
             <div class="landing-card-actions">
               <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-              ${r.discography_complete === false
-                ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
+              <button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>
               <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
             </div>
             </div>
@@ -32500,6 +33424,7 @@ async function landingPlayQueue(q, opts) {
   } else {
     openYTPlayer(first.videoId, first.title, first.trackId);
     ytQueue = q; ytQueueIdx = startIdx;
+    if (ytpIsArtistAudio(first)) ytPlayQueueIdx(startIdx);
   }
   updateYTQueueUI();
   // openYTPlayer also schedules this handoff as a fallback, but do it now that
@@ -32599,8 +33524,10 @@ async function landingShuffleAll() {
     });
     // Video ids only — views/likes/thumbnails belong on artist-page chart loads.
     const yt = await loadYTVideoIds(trackRows.map(t => t.id));
-    const q = trackRows.filter(t => yt[t.id]?.video_id)
-      .map(t => ({ videoId: yt[t.id].video_id, title: t.name, trackId: t.id }));
+    const q = trackRows.filter(t => yt[t.id]?.video_id || t.artist_audio_only)
+      .map(t => t.artist_audio_only && !yt[t.id]?.video_id
+        ? sjArtistQueueItem(t)
+        : { videoId: yt[t.id].video_id, title: t.name, trackId: t.id });
     if (!q.length) {
       alert(homeJukeboxBgFilterOn()
         ? 'No background-play tracks found for the artists shown.'
@@ -32734,16 +33661,14 @@ function laExpandedCardHTML(r, i) {
           <div class="la-hero-name">${esc(r.name)}</div>
           <div class="la-hero-stats">
             <div class="landing-stat"><span class="landing-stat-val">${fmtV(primaryPlays.value)}</span><span class="landing-stat-lbl">${primaryPlays.label}</span></div>
-            <div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">Jukebox Plays</span></div>
+            ${primaryPlays.label === 'In-App Plays' ? '' : `<div class="landing-stat"><span class="landing-stat-val">${fmtV(r.total_plays)}</span><span class="landing-stat-lbl">In-App Plays</span></div>`}
             <div class="landing-stat"><span class="landing-stat-val">${r.album_count || 0}</span><span class="landing-stat-lbl">Albums</span></div>
             <div class="landing-stat"><span class="landing-stat-val">${r.track_count || 0}</span><span class="landing-stat-lbl">Tracks</span></div>
           </div>
           ${landingOwnerLine(r, true)}
           <div class="la-hero-actions">
             <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-            ${r.discography_complete === false
-                ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')" title="This artist came in as a single album or song - finish the discography">Import Discography into Jukebox</button>`
-                : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>`}
+            <button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Artist Discography →</button>
             <button type="button" class="landing-explore-btn" onclick="event.stopPropagation();laToggleSongView('${r.artist_id}')">${laSongViewIds.has(r.artist_id) ? 'View Albums' : 'View Songs'}</button>
             <button type="button" class="landing-card-more" onclick="event.stopPropagation();lamOpen('${r.artist_id}',this,event)" title="More" aria-label="Artist options" aria-expanded="false">⋯</button>
           </div>
@@ -32975,9 +33900,7 @@ function eaDetailArtistHTML(r) {
       <span class="ex-detail-artist-chev" aria-hidden="true"></span>
       <span class="ex-detail-artist-meta">${r.album_count || albList.length} albums · ${r.track_count || 0} tracks</span>
       <button type="button" class="landing-play-btn" onclick="event.stopPropagation();landingPlayArtist('${r.artist_id}', event)">▶ Play</button>
-      ${r.discography_complete === false
-        ? `<button type="button" class="landing-explore-btn" onclick="event.stopPropagation();openImportDiscography('${esc(r.name).replace(/'/g, "\'")}')">Import Discography</button>`
-        : `<button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Discography →</button>`}
+      <button type="button" class="landing-explore-btn landing-discography-btn" onclick="event.stopPropagation();landingExploreArtist('${esc(r.slug)}','${r.artist_id}')">Explore Discography →</button>
     </div>
     <div class="ex-detail-albs">${albList.map(alb => eaDetailAlbumHTML(alb, r.artist_id)).join('')}</div>
   </div>`;
@@ -33344,7 +34267,7 @@ function openFaq() {
   // Help is bundled with the native shell, so keep it in this navigation stack
   // and let the guide's Back link return to the player.
   if (sjIsNative()) {
-    window.location.assign('/help/lp/index.html');
+    window.location.assign('/help/' + (SJ_BRAND.id === 'rk' ? 'rk' : 'lp') + '/index.html');
     return;
   }
   window.open('/help', '_blank', 'noopener');
@@ -33522,9 +34445,9 @@ async function enterArtistJukebox(artist, opts) {
     if (_ln) { _ln.innerHTML = ''; _ln.style.display = 'none'; _ln.dataset.armed = '0'; }
     resetDashboardState();
     if (opts.pushHistory !== false) {
-      // A brand without artist pages redirects /<slug> home, so its address
-      // stays on the root. Back still returns to the explorer via popstate.
-      const url = SJ_BRAND.features.artistPages ? '/' + artist.slug : '/';
+      // Both brands give an open artist its own address (/nouns-group).
+      // Back still returns to the explorer via popstate.
+      const url = SJ_BRAND.features.artistAddresses !== false ? '/' + artist.slug : '/';
       try { history.pushState({ slug: artist.slug }, '', url); } catch (e) {}
     }
     try { await loadArtistPageData(); } catch (e) { renderEmpty(`Error: ${e.message}`); }
@@ -33599,7 +34522,8 @@ window.addEventListener('popstate', () => {
     dbGet(`/playlists?slug=ilike.${encodeURIComponent(playlistSlug)}&limit=1`)
       .then(async rows => {
         const p = rows[0];
-        if (!p) { window.location.reload(); return; }
+        // On Listening Party a root slug that is not a playlist is an artist.
+        if (!p) { popstateArtist(playlistSlug); return; }
         p._tracks = await dbGet(`/playlist_tracks?playlist_id=eq.${p.id}&order=position.asc`);
         if (!(_savedPlaylists || []).find(x => x.id === p.id)) _savedPlaylists.push(p);
         openPlaylistChart(p.id);
@@ -33607,7 +34531,10 @@ window.addEventListener('popstate', () => {
       .catch(() => window.location.reload());
     return;
   }
-  const slug = path.slice(1);
+  popstateArtist(path.slice(1));
+});
+
+function popstateArtist(slug) {
   if (IS_COMMUNITY && _SLUG_ARTIST && _SLUG_ARTIST.slug === slug) return;
   dbGet(`/artists?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug,is_community,added_by_name`)
     .then(rows => {
@@ -33616,7 +34543,7 @@ window.addEventListener('popstate', () => {
       enterArtistJukebox(artist, { pushHistory: false });
     })
     .catch(() => window.location.reload());
-});
+}
 
 async function init() {
   try {
@@ -33915,6 +34842,9 @@ async function loadTrackAudio(trackIds) {
       if (!r.trackId || !r.url || taData[r.trackId]) return;
       taData[r.trackId] = {
         url: r.url,
+        // Signed links die after expiresIn seconds; taTrackAudio drops the
+        // entry a little early so the next play fetches a live one.
+        expiresAt: Date.now() + Math.max(60, (Number(r.expiresIn) || 3600) - 300) * 1000,
         path: null,
         duration: Number(r.duration) || null,
         isPublic: true,
@@ -33954,6 +34884,24 @@ function sjBgFilterOffered() {
 // catalog into an empty screen. Apply the filter only after its ids arrived.
 function sjBgActive() {
   return homeBgOnly && sjBgFilterOffered() && _homeLibLoaded && !_homeLibError;
+}
+
+function filterArtistUploadedTracks(rows) {
+  if (!artistUploadedOnly || !isLandingMode || !['explore', 'songs'].includes(landingTab)
+      || !_homeLibLoaded || _homeLibError) return rows;
+  return (rows || []).filter(t => _artistUploadedTrackIds.has(t.id || t.trackId));
+}
+
+function sjArtistUploadedOn(r) {
+  return !!r && (_artistUploadedArtistIds.has(r.artist_id)
+    || (Array.isArray(r.member_ids) && r.member_ids.some(id => _artistUploadedArtistIds.has(id))));
+}
+
+async function setArtistUploadedOnly(on) {
+  artistUploadedOnly = !!on;
+  if (artistUploadedOnly && !_homeLibLoaded) await ensureHomeLibrary();
+  if (_homeLibError) { artistUploadedOnly = false; showToast('Could not load artist-uploaded music. Try again.'); }
+  renderLanding();
 }
 
 function sjBgHasTrack(id) { return !!(id && _homeBgTrackIds.has(id)); }
@@ -34332,6 +35280,7 @@ function updateLandingActionsHeader() {
         <button type="button" class="playlist-explore-filter${artistScope() === 'all' ? ' active' : ''}" onclick="setArtistExploreFilter('all')">All</button>
         ${googleUser ? `<button type="button" class="playlist-explore-filter${artistScope() === 'mine' ? ' active' : ''}" onclick="setArtistExploreFilter('mine')">${mineScopeLbl}</button>` : ''}
         <button type="button" class="playlist-explore-filter${artistScope() === 'public' ? ' active' : ''}" onclick="setArtistExploreFilter('public')">Public</button>
+        <button type="button" class="playlist-explore-filter${artistUploadedOnly ? ' active' : ''}" aria-pressed="${artistUploadedOnly}" onclick="setArtistUploadedOnly(${artistUploadedOnly ? 'false' : 'true'})" title="Approved music uploaded by artists">Artist Uploaded</button>
         ${sjBgFilterOffered() ? `<button type="button" class="playlist-explore-filter${homeBgOnly ? ' active' : ''}" onclick="setSjBgOnly(${homeBgOnly ? 'false' : 'true'})" title="Only what keeps playing with the screen off or the app in the background">Background Enabled</button>` : ''}
       </span>`
     : landingTab === 'playlists'
@@ -34486,7 +35435,10 @@ function renderViewToggle() {
   // On a phone the Share button joins the second row, pushed to the right of
   // the bars caption, rather than taking a whole line to itself. Playlists is
   // the one view with no second row, so there it stays put.
-  const _shareBtn = `<button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}</button>`;
+  const _moreBtn = artistPageArtistId()
+    ? `<button type="button" class="sj-export-btn sj-artist-more-btn" onclick="artistPageMenu(this, event)" title="Artist options" aria-label="Artist options">⋯</button>`
+    : '';
+  const _shareBtn = `<button type="button" class="sj-export-btn sj-sharehub-btn" onclick="openSjShareHub()" title="Share this jukebox or download screenshots of it" aria-label="Share this jukebox">${SJ_SHARE_ICON}</button>${_moreBtn}`;
   const _shareR2 = _mobNav && viewMode !== 'playlists';
   const listSort_ = viewMode === 'list' ? `
       <span class="ctrl-row-meta"${_shareR2 ? '' : ' style="margin-left:auto"'}>Sort</span>
@@ -34496,8 +35448,8 @@ function renderViewToggle() {
   const _metricOpts = [
     { val: 'yt',     lbl: 'YouTube / In-App Plays', tip: 'YouTube views, with in-app plays for songs that have no YouTube version' },
     { val: 'score',  lbl: 'Hearts', tip: SJ_SCORE_HELP },
-    { val: 'total',  lbl: 'Jukebox Plays', tip: 'Bar height shows how many times each album has been played in this app' },
-    ...(googleUser ? [{ val: 'mine', lbl: 'My Jukebox Plays', tip: 'Bar height shows how many times you have played each album here' }] : []),
+    { val: 'total',  lbl: 'In-App Plays', tip: 'Bar height shows how many times each album has been played in this app' },
+    ...(googleUser ? [{ val: 'mine', lbl: 'My In-App Plays', tip: 'Bar height shows how many times you have played each album here' }] : []),
     { val: 'hidden', lbl: 'Hide Bars', tip: 'Hide the chart bars and just show album covers' },
   ];
   // All Tracks has no chart to configure, so its second row carries the sort
@@ -34507,7 +35459,7 @@ function renderViewToggle() {
     { col: 'chrono',  lbl: 'Chronological',       tip: 'Album by album in release order, tracks in running order' },
     { col: 'views',   lbl: 'YouTube / In-App Plays', tip: 'YouTube views, falling back to in-app plays when no YouTube version exists' },
     ...(googleUser ? [{ col: 'myplays', lbl: 'My Plays', tip: 'The songs you have played here most' }] : []),
-    { col: 'plays',   lbl: 'Total Jukebox Plays', tip: 'Most played in this app first' },
+    { col: 'plays',   lbl: 'Total In-App Plays', tip: 'Most played in this app first' },
     { col: 'alts',    lbl: 'Alt Video',            tip: 'Songs with alternate YouTube versions first' },
   ];
   const ttSortRow = viewMode === 'alltracks' ? `
@@ -34608,6 +35560,7 @@ function renderCommunityFilterBar() {
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
           ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add supplemental content</button>` : ''}
+          ${artistPageCanManage() ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();artistPageManage()">✎ Manage Artist</button>` : ''}
         </div>
       </div>
     </div>
@@ -34715,6 +35668,7 @@ function renderFilterBar(allAlbs) {
         <div class="filter-dd-footer">
           <button type="button" class="ctrl-btn ctrl-btn--accent" onclick="event.stopPropagation();applySJFilter()">Apply</button>
           ${googleUser ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();ddOpenResearch()">＋ Add supplemental content</button>` : ''}
+          ${artistPageCanManage() ? `<button type="button" class="ctrl-btn" onclick="event.stopPropagation();artistPageManage()">✎ Manage Artist</button>` : ''}
         </div>
       </div>
     </div>
@@ -34770,7 +35724,7 @@ function renderTimeline(albList, tlMode) {
       const _albThumbEsc = (thumb||'').replace(/"/g,'&quot;');
       const _albDataAttrs = `data-alb-id="${alb.id}" data-alb-name="${_albNameEsc}" data-alb-color="${color}" data-alb-thumb="${_albThumbEsc}"`;
       html += `<div data-tl-item="${alb.id}" class="tl-bar-rect tl-alb-row" ${_albDataAttrs} onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x - BAR_W/2}px;top:${barTop}px;width:${BAR_W}px;height:${barH}px;background:${color};opacity:.9;border-radius:4px 4px 0 0;transition:height .45s ease,top .45s ease,opacity .3s;cursor:pointer"></div>`;
-      const _barLbl = barChartMode === 'mine' ? 'My Jukebox Plays' : barChartMode === 'total' ? 'Jukebox Plays' : barChartMode === 'score' ? 'Hearts' : albumChartPlayLabel(alb, false);
+      const _barLbl = barChartMode === 'mine' ? 'My In-App Plays' : barChartMode === 'total' ? 'In-App Plays' : barChartMode === 'score' ? 'Hearts' : albumChartPlayLabel(alb, false);
       const _barValFmt = barChartMode === 'score' ? (views > 0 ? '+' + views : String(views || 0)) : fmtV(views);
       html += `<div data-tl-lbl="${alb.id}" class="tl-bar-lbl-el tl-alb-row" ${_albDataAttrs} onclick="toggleAlbumExpand('${alb.id}')" style="position:absolute;left:${x}px;top:${barTop - TOP_PAD + 3}px;transform:translateX(-50%);white-space:nowrap;font-weight:600;text-align:center;line-height:1.2;cursor:pointer"><div style="font-size:.72rem;color:var(--accent)">${_barValFmt}</div><div style="font-size:.35rem;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase">${_barLbl}</div></div>`;
     }
@@ -35559,7 +36513,7 @@ function oaSetUploader(v) {
   oaRerenderOpen();
 }
 
-// Per-artist stats (date added, YouTube views, jukebox plays) come from the
+// Per-artist stats (date added, YouTube views, in-app plays) come from the
 // landing_stats snapshot, keyed by artist_id. On a direct artist-page load the
 // snapshot may not be fetched yet; missing rows just sort last / alphabetically.
 function oaStatRow(id) {
@@ -38267,13 +39221,13 @@ async function maDeleteTrack(artistId, albumId, trackId) {
 
 async function maRenameTrack(artistId, albumId, trackId) {
   const t = (_maTrkCache[albumId] || []).find(x => x.id === trackId); if (!t) return;
-  const name = prompt('New song name:', t.name);
+  const name = await sjPromptDialog('Rename song', t.name, { placeholder: 'Song name' });
   if (name === null) return;
   const trimmed = name.trim();
   if (!trimmed || trimmed === t.name) return;
   maBusy('Renaming track…');
   try {
-    const d = await amFetch('?action=rename_track', { method: 'POST', body: JSON.stringify({ track_id: trackId, name: trimmed }) });
+    const d = await sjEditFetch('rename_track', { track_id: trackId, name: trimmed });
     t.name = d.name || trimmed;
     maRenderTracks(artistId, albumId);
     maBusy('✓ Track renamed');
@@ -38317,6 +39271,7 @@ async function maEditLyrics(artistId, albumId, trackId) {
     <div class="lyr-edit-row">
       <button class="lyr-save-btn" onclick="maSaveLyrics('${artistId}','${albumId}','${trackId}')">Save</button>
       <button class="lyr-cancel-btn" onclick="maEditLyrics('${artistId}','${albumId}','${trackId}')">Cancel</button>
+      <button class="lyr-cancel-btn" onclick="lsyStart('${trackId}','ma-lyr-ta-${trackId}')">Add Lyric Syncing</button>
     </div>`;
 }
 
@@ -38326,7 +39281,7 @@ async function maSaveLyrics(artistId, albumId, trackId) {
   if (!lyr) { maBusy('Lyrics are empty, nothing saved.', true); return; }
   maBusy('Saving lyrics…');
   try {
-    await amFetch('?action=save_lyrics', { method: 'POST', body: JSON.stringify({ track_id: trackId, lyrics: lyr }) });
+    await sjEditFetch('save_lyrics', { track_id: trackId, lyrics: lyr });
     lyricsCache[trackId] = lyr;
     const t = (_maTrkCache[albumId] || []).find(x => x.id === trackId);
     if (t) t.has_lyrics = true;
@@ -38347,11 +39302,11 @@ function maFindArtist(artistId) {
 
 async function maRename(artistId) {
   const a = maFindArtist(artistId); if (!a) return;
-  const name = prompt('New artist name:', a.name);
+  const name = await sjPromptDialog('Rename artist', a.name, { placeholder: 'Artist name' });
   if (!name || !name.trim() || name.trim() === a.name) return;
   maBusy('Renaming…');
   try {
-    await amFetch('?action=rename_artist', { method: 'POST', body: JSON.stringify({ artist_id: artistId, name: name.trim() }) });
+    await sjEditFetch('rename_artist', { artist_id: artistId, name: name.trim() });
     a.name = name.trim();
     const listRow = _maData.find(x => x.id === artistId);
     if (listRow) listRow.name = a.name;
@@ -39837,11 +40792,50 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-10-01';
+const SJ_APP_UPDATED_FALLBACK = '2026-10-06';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-10-06', items: [
+    'For Artists and For Listeners now appear at the top of Home, and in the footer on other pages.',
+    'The artist and listener guides have new expandable feature boxes, written by music fans for music fans.',
+    'Artist Uploaded filters in Explore Artists, Explore Songs, and Search help you find recordings published directly by artists.',
+    'Shuffle All now includes artist-uploaded recordings even when they have no YouTube video.',
+    'Artist Stats lists artists with plays in the chosen date range, and All Artists combines the artists you can access.',
+  ] },
+  { date: '2026-10-05', items: [
+    'Artists have stats. Open Artist stats from an artist ⋯ menu to see plays, listeners, who came back, cities, the sites that sent fans to your page, the moments fans tap the heart (with the lyric they were hearing) and the lines they quote. Only the artist and the people who manage their music can open it.',
+    'Plays of songs artists uploaded are now credited to the artist everywhere, and play time is measured properly, including with the screen off.',
+    'Listening Party has a new home page message for artists, and a For artists section on Home.',
+    'My Data & Analytics opens again on Listening Party. It had been sending people back to Home.',
+    'Songs artists uploaded (not from YouTube) now have a position bar along the bottom of the big player. Drag it to jump anywhere in the song.',
+    'Songs uploaded by artists (like Nouns Group) now play on Listening Party instead of saying Artist audio is unavailable.',
+    'Songs uploaded by artists keep playing however long the page stays open. They used to stop after a few hours, or say Artist audio is unavailable after one slow connection.',
+    'Lyric syncing now works on songs artists uploaded themselves. The clock follows the song, and Stamp, skip and pause all work.',
+    'Sync lyrics has a position bar: drag it to move through the song. Each timed line shows as a small tick on the bar.',
+    'The play button in Sync lyrics turns into pause while the song is playing.',
+    'You can change the words, add a line or remove a line right in Sync lyrics. Saving keeps your verse breaks and section headings where they were.',
+    'Lyric editors now follow the song. When the next song starts, the editor moves to its lyrics, and asks whether to save or discard first if you have unsaved changes.',
+    'Confirmation questions now always appear on top. Some (like Save or Discard in Sync lyrics) used to open hidden behind the window that asked them.',
+    'On Listening Party, an artist now has its own web address, like listeningparty.stream/nouns-group. Share it, bookmark it, or refresh and you land back on the same artist.',
+    'Tapping a synced lyric line on an artist upload jumps the song to that line.',
+    'User Management: making someone an Admin or Mod updates that row in place instead of reloading the whole list, and the two buttons are now the same width.',
+    'Edit Lyrics now has Add Lyric Syncing. Play the song and tap once as each line starts, then fix any time with the box, the − / + buttons or Play from this line. It is saved in the app only.',
+    'You can add lyric syncing to songs you added. Admins and the new Mods can do it on any song.',
+    'New Mod role: Mods can edit lyrics, lyric timing and song, album and artist names on any artist, without being admins.',
+    'Play counts now say In-App Plays everywhere instead of Jukebox Plays, including sort options, chart modes and column headers.',
+    'Artist cards no longer show In-App Plays twice when an artist has no YouTube views.',
+    'In search results, an artist match says Go to Discography and an album match says View Album.',
+    'In the full-size player, the lyrics no longer run underneath the lyric size slider when they sit off to the right.',
+  ]},
+  { date: '2026-10-04', items: [
+    'Every song’s ⋯ menu has Share song. It gives you a link that previews as the song (title, artist and artwork) and, when opened, goes to that artist and plays the song. While a song is playing you can tick Start at to send the exact moment.',
+    'Every artist card now shows Explore Artist Discography, including artists that came in as a single album or song. Importing the rest of their discography moved into the card’s ⋯ menu.',
+    'Renaming a song or an artist in Manage My Artists opens a proper rename box in the app instead of a browser popup. Enter saves, Escape cancels.',
+    'An artist page has a ⋯ button beside Share with Play All, Shuffle All, Manage Artist, Add all to playlist, Play Next, Copy artist link and the rest of the artist options.',
+    'The album menu on an artist page has a Manage Artist button when the artist is yours to manage.',
+  ]},
   { date: '2026-10-01', items: [
     'My Data & Analytics and Artist Studio now stay inside the iPhone app instead of opening Safari, with a Back button that returns to Listening Party.',
     'Help & How-To now clears the iPhone status bar and includes an in-app Back button.',
@@ -40813,6 +41807,7 @@ function closeChangelog() {
 
 let googleUser = null;
 let sjIsAdmin = false;
+let sjIsMod = false;   // Mod: edits lyrics, timing and names, but is not an admin
 
 // ── Who you are, as YOU set it ─────────────────────────────────────────────
 // Google tells us a name and a picture at sign-in; jukebox.app_users holds the
@@ -40876,7 +41871,7 @@ async function sjAuthHeaders() {
 
 async function refreshSjAdminState() {
   if (!googleUser) {
-    sjIsAdmin = false;
+    sjIsAdmin = false; sjIsMod = false;
     sjProfile = null;
     sjLastUpdated = SJ_APP_UPDATED_FALLBACK;
     return;
@@ -40893,6 +41888,7 @@ async function refreshSjAdminState() {
     const data = await res.json();
     if (data.ok) {
       sjIsAdmin = !!data.isAdmin;
+      sjIsMod = !!data.isMod;
       if (data.lastUpdated) sjLastUpdated = data.lastUpdated;
     }
   } catch (_) {}
@@ -40940,15 +41936,20 @@ async function sjOpenHostedTool(path) {
 }
 
 async function openAnalyticsInNewTab() {
+  return openHostedToolInNewTab('/analytics');
+}
+
+// Any hosted tool page (/analytics, /artist-stats) opened with this session.
+async function openHostedToolInNewTab(path) {
   if (sjIsNative()) {
-    await sjOpenHostedTool('/analytics');
+    await sjOpenHostedTool(path);
     return;
   }
   // Vercel may redirect between the apex and www hosts. Local storage does not
   // cross that boundary, so transfer the already-authenticated session only to
-  // the trusted Analytics tab that explicitly requests it.
-  const analyticsTab = window.open('/analytics', '_blank');
-  if (!analyticsTab) return;
+  // the trusted tab that explicitly requests it.
+  const toolTab = window.open(path, '_blank');
+  if (!toolTab) return;
 
   let settled = false;
   const stopListening = () => {
@@ -40957,12 +41958,12 @@ async function openAnalyticsInNewTab() {
     window.removeEventListener('message', receiveSessionRequest);
   };
   const receiveSessionRequest = async (event) => {
-    if (event.source !== analyticsTab || !sjIsTrustedAnalyticsOrigin(event.origin)) return;
+    if (event.source !== toolTab || !sjIsTrustedAnalyticsOrigin(event.origin)) return;
     if (event.data?.type !== SJ_ANALYTICS_SESSION_REQUEST) return;
     try {
       const session = (await sjGetSession()).data?.session;
       if (session?.access_token && session.refresh_token) {
-        analyticsTab.postMessage({
+        toolTab.postMessage({
           type: SJ_ANALYTICS_SESSION_DELIVERY,
           accessToken: session.access_token,
           refreshToken: session.refresh_token,
@@ -41204,10 +42205,7 @@ function sjParseAlbumLyrics(text, tracks) {
 async function sjLyricsWrite(trackId, newLyrics) {
   const lyrics = String(newLyrics == null ? '' : newLyrics).trim();
   if (!lyrics) throw new Error('Lyrics cannot be emptied here — replace the words instead.');
-  await amFetch('?action=save_lyrics', {
-    method: 'POST',
-    body: JSON.stringify({ track_id: trackId, lyrics }),
-  });
+  await sjEditFetch('save_lyrics', { track_id: trackId, lyrics });
   lyricsCache[trackId] = lyrics;
   try { _lyricsEditHistCache.set(trackId, true); } catch (_) {}
 }
@@ -41777,6 +42775,8 @@ function sjConfirmDialog(message, opts) {
     const titleEl = document.getElementById('sjConfirmTitle');
     const msgEl   = document.getElementById('sjConfirmMsg');
     const okBtn   = document.getElementById('sjConfirmOkBtn');
+    const noBtn   = document.getElementById('sjConfirmCancelBtn');
+    if (noBtn) noBtn.textContent = opts.cancelLabel || 'Cancel';
     if (titleEl) titleEl.textContent = opts.title || 'Confirm';
     if (msgEl)   msgEl.textContent   = message || 'Are you sure?';
     if (okBtn) {
@@ -41792,6 +42792,122 @@ function _sjConfirmResolve(result) {
   if (overlay) overlay.classList.remove('open');
   const resolve = _sjConfirmResolver;
   _sjConfirmResolver = null;
+  if (resolve) resolve(result);
+}
+
+// ── Share Song ───────────────────────────────────────────────────────────────
+// Link shape is /s/<artist-title>-<track uuid>. The words are decoration; the
+// uuid is the address, so a rename never breaks a link already out there.
+// songShareSlug() is the client's copy of songSlug() in src/lib/song-share.ts -
+// keep the two in step.
+let _sss = null; // { trackId, title, artist, sec }
+
+function songShareSlug(artist, title) {
+  return [artist, title].filter(Boolean).join(' ').toLowerCase()
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    .slice(0, 60).replace(/-+$/g, '');
+}
+
+function songShareUrl(trackId, artist, title, sec) {
+  // The native shell's origin is not a public address, so it shares the brand's.
+  const base = (sjIsNative() || !/^https?:$/.test(location.protocol)) ? SJ_BRAND.url : location.origin;
+  const s = songShareSlug(artist, title);
+  return base + '/s/' + (s ? s + '-' : '') + trackId + (sec > 0 ? '?t=' + Math.floor(sec) : '');
+}
+
+function sjmShareSong() {
+  const tid = _sjmTrackId;
+  sjmClose();
+  if (tid) openShareSong(tid);
+}
+
+function openShareSong(trackId) {
+  const m = ytpTrackMeta(trackId, null);
+  const title = (m.title && m.title !== 'Unknown') ? m.title : (findTrackById(trackId)?.name || 'Song');
+  const artist = m.artist || '';
+  // Only the song that is playing right now has a "now" worth sharing.
+  let sec = 0;
+  if (ytQueue[ytQueueIdx]?.trackId === trackId) {
+    try { sec = Math.floor(ytAPIPlayer?.getCurrentTime?.() || 0); } catch (_) {}
+  }
+  _sss = { trackId, title, artist, sec };
+  document.getElementById('sssName').textContent = artist ? title + ' · ' + artist : title;
+  document.getElementById('sssTime').checked = false;
+  document.getElementById('sssTimeRow').hidden = !(sec >= 2);
+  document.getElementById('sssTimeLbl').textContent = fmtDur(sec * 1000) || '0:00';
+  document.getElementById('sssShareBtn').hidden = !navigator.share;
+  document.getElementById('sssCopyBtn').textContent = 'Copy link';
+  sssPaint();
+  document.getElementById('sjShareSongOverlay').classList.add('open');
+}
+
+function closeShareSong() {
+  document.getElementById('sjShareSongOverlay').classList.remove('open');
+  _sss = null;
+}
+
+function sssLink() {
+  if (!_sss) return '';
+  const withTime = document.getElementById('sssTime').checked;
+  return songShareUrl(_sss.trackId, _sss.artist, _sss.title, withTime ? _sss.sec : 0);
+}
+
+function sssPaint() {
+  const inp = document.getElementById('sssUrl');
+  if (inp) inp.value = sssLink();
+}
+
+async function sssCopy() {
+  const url = sssLink();
+  if (!url) return;
+  const btn = document.getElementById('sssCopyBtn');
+  try {
+    await navigator.clipboard.writeText(url);
+    if (btn) btn.textContent = 'Copied ✓';
+    showToast('Link copied.');
+  } catch (_) {
+    const inp = document.getElementById('sssUrl');
+    if (inp) { inp.focus(); inp.select(); }
+    showToast('Press Ctrl+C to copy.');
+  }
+}
+
+async function sssNativeShare() {
+  if (!_sss || !navigator.share) return;
+  const url = sssLink();
+  try {
+    await navigator.share({ title: _sss.title + (_sss.artist ? ' - ' + _sss.artist : ''), url });
+    closeShareSong();
+  } catch (_) { /* cancelled */ }
+}
+
+// ── In-app text prompt - replaces browser prompt() for renames. Resolves
+// with the typed string, or null for Cancel / Escape / a backdrop click.
+let _sjPromptResolver = null;
+function sjPromptDialog(title, value, opts) {
+  opts = opts || {};
+  if (_sjPromptResolver) _sjPromptResolve(null);
+  return new Promise((resolve) => {
+    _sjPromptResolver = resolve;
+    const overlay = document.getElementById('sjPromptOverlay');
+    const input   = document.getElementById('sjPromptInput');
+    const msgEl   = document.getElementById('sjPromptMsg');
+    document.getElementById('sjPromptTitle').textContent = title || 'Rename';
+    document.getElementById('sjPromptOkBtn').textContent = opts.okLabel || 'Save';
+    msgEl.textContent = opts.message || '';
+    msgEl.style.display = opts.message ? '' : 'none';
+    input.value = value == null ? '' : String(value);
+    input.placeholder = opts.placeholder || '';
+    overlay.classList.add('open');
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  });
+}
+function _sjPromptResolve(result) {
+  const overlay = document.getElementById('sjPromptOverlay');
+  if (overlay) overlay.classList.remove('open');
+  const resolve = _sjPromptResolver;
+  _sjPromptResolver = null;
   if (resolve) resolve(result);
 }
 
@@ -42371,7 +43487,7 @@ async function handleLogout() {
   await sjCarClearAccess();
   await sbAuth.auth.signOut();
   googleUser = null;
-  sjIsAdmin = false;
+  sjIsAdmin = false; sjIsMod = false;
   _pbRestoreDone = false; // allow restore again next time someone signs in
   blockedTracks = {}; snoozedTracks = {}; saveLocalBlocked(); refreshBlockedUI();
   updateAuthBtn();
@@ -42725,7 +43841,7 @@ function initGoogleAuth() {
       _lpHomeHeatLoading = false;
       _lpHomeHeatFailed = false;
       try { sjjStopBroadcast(); } catch (_) {}
-      sjIsAdmin = false;
+      sjIsAdmin = false; sjIsMod = false;
       sjProfile = null;
       sjBgUnlock = null;
       _homeLibLoaded = false;
@@ -43775,7 +44891,36 @@ function renderAdminUserToggle(u) {
   if (email === SJ_PROTECTED_ADMIN_EMAIL) {
     return '<button type="button" class="admin-toggle on locked" disabled title="Owner admin - cannot be removed">Owner Admin</button>';
   }
-  return `<button type="button" class="admin-toggle${u.is_admin ? ' on' : ''}" onclick="toggleAdminUser(${JSON.stringify(email)}, ${!u.is_admin}, this)">${u.is_admin ? 'Admin' : 'Make Admin'}</button>`;
+  const modBtn = u.is_admin ? '' : `<button type="button" class="admin-toggle${u.is_mod ? ' on' : ''}" title="Mods can edit lyrics, timing and names, nothing else" data-email="${escAdmin(email)}" onclick="toggleModUser(this.dataset.email, ${!u.is_mod}, this)">${u.is_mod ? 'Mod' : 'Make Mod'}</button>`;
+  return `<div class="admin-toggles"><button type="button" class="admin-toggle${u.is_admin ? ' on' : ''}" data-email="${escAdmin(email)}" onclick="toggleAdminUser(this.dataset.email, ${!u.is_admin}, this)">${u.is_admin ? 'Admin' : 'Make Admin'}</button>` + modBtn + '</div>';
+}
+
+// The loaded rows, by email, so a role change repaints one cell instead of
+// reloading the whole table (which flashed "Loading users..." and back).
+let _adminUsersByEmail = new Map();
+
+async function adminUserRoleChange(email, patch, btn, failMsg) {
+  if (!sjIsAdmin) return;
+  const key = String(email || '').toLowerCase();
+  btn.classList.add('busy');
+  try {
+    const res = await fetch(sjApiUrl('/api/sj-admin-users'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
+      body: JSON.stringify({ email, ...patch }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed.');
+    const u = _adminUsersByEmail.get(key) || { email: key };
+    Object.assign(u, patch);
+    _adminUsersByEmail.set(key, u);
+    const cell = btn.closest('td');
+    if (cell) cell.innerHTML = renderAdminUserToggle(u);
+    else await loadAdminUsers();
+  } catch (e) {
+    btn.classList.remove('busy');
+    alert(e.message || failMsg);
+  }
 }
 
 async function loadAdminUsers() {
@@ -43787,6 +44932,7 @@ async function loadAdminUsers() {
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load users.');
     const users = data.users || [];
+    _adminUsersByEmail = new Map(users.map(u => [String(u.email || '').toLowerCase(), u]));
     body.innerHTML = `
       <div class="admin-page-toolbar">
         <div class="admin-page-title">${fmtAdminNum(users.length)} logged-in users</div>
@@ -43813,6 +44959,10 @@ async function loadAdminUsers() {
   }
 }
 
+async function toggleModUser(email, makeMod, btn) {
+  await adminUserRoleChange(email, { is_mod: makeMod === true || makeMod === 'true' }, btn, 'Could not update mod status.');
+}
+
 async function toggleAdminUser(email, makeAdmin, btn) {
   if (!sjIsAdmin) return;
   const normalized = String(email || '').toLowerCase();
@@ -43820,20 +44970,7 @@ async function toggleAdminUser(email, makeAdmin, btn) {
     alert('This owner admin account cannot be demoted.');
     return;
   }
-  btn.disabled = true;
-  try {
-    const res = await fetch(sjApiUrl('/api/sj-admin-users'), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...(await sjAuthHeaders()) },
-      body: JSON.stringify({ email, is_admin: makeAdmin === true || makeAdmin === 'true' }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed.');
-    await loadAdminUsers();
-  } catch (e) {
-    alert(e.message || 'Could not update admin status.');
-    btn.disabled = false;
-  }
+  await adminUserRoleChange(email, { is_admin: makeAdmin === true || makeAdmin === 'true' }, btn, 'Could not update admin status.');
 }
 
 // ── Song Details Modal (admin) ────────────────────────────────
@@ -43865,7 +45002,7 @@ async function openSongDetails(trackId) {
       <div class="sd-metrics">
         <div class="sd-metric"><div class="sd-metric-lbl">YT Views</div><div class="sd-metric-val" id="sd-views">${yt.youtube_views != null ? fmtV(yt.youtube_views) : '-'}</div></div>
         <div class="sd-metric"><div class="sd-metric-lbl">YT Likes</div><div class="sd-metric-val" id="sd-likes">${yt.youtube_likes != null ? fmtV(yt.youtube_likes) : '-'}</div></div>
-        <div class="sd-metric"><div class="sd-metric-lbl">Jukebox Plays</div><div class="sd-metric-val">${fmtV(data.play_count ?? 0)}</div></div>
+        <div class="sd-metric"><div class="sd-metric-lbl">In-App Plays</div><div class="sd-metric-val">${fmtV(data.play_count ?? 0)}</div></div>
         <div class="sd-metric"><div class="sd-metric-lbl">Lyrics Source</div><div class="sd-metric-val sd-metric-sm">${escAdmin(data.lyrics?.lyrics_source || '-')}</div></div>
       </div>
       <div class="sd-field">
@@ -44845,7 +45982,7 @@ let _playlistsLoaded  = false; // set true after first load so render() never re
 let _playlistsError   = '';    // a failed request is not the same as an empty library
 let playlists    = []; // own playlists
 let pubPlaylists = []; // public playlists by others
-let _ytCurrentPlay = null;  // { eventId, trackId, playbackStarted }
+let _ytCurrentPlay = null;  // { eventId, trackId }; listen time lives in _lm
 
 function clearQueueSourcePlaylist() {
   _queueSourcePlaylistTracks = null;
@@ -44906,22 +46043,99 @@ async function logPlayEnd(trackId) {
   } catch(e) {}
 }
 
-// ── Patch duration when YT playback stops ─────────────────────────────────
-function patchYTPlayDuration() {
-  if (!_ytCurrentPlay?.eventId || !_ytCurrentPlay.playbackStarted) return;
-  const dur = Date.now() - _ytCurrentPlay.playbackStarted;
-  _ytCurrentPlay.playbackStarted = null;
-  fetch(`${REST}/play_events?id=eq.${_ytCurrentPlay.eventId}`, {
+// ── Listen meter ────────────────────────────────────────────────────────────
+// duration_played_ms used to be written only when a YouTube play was paused
+// after its start had been noted. That ordering almost never held (the start
+// was noted before the play row existed), so 95% of plays had no listen time
+// and uploaded audio never had any. Artist stats need it, so this measures it
+// from the media clock of whatever is audibly playing: a throttled timer in a
+// screen-off tab neither loses time nor invents it, a seek is not a listen,
+// and a pause stops the count without any exit path having to remember to.
+const _lm = { eventId: null, trackId: null, ms: 0, savedMs: 0, pos: null, wall: 0, timer: null };
+
+function lmNow() {
+  if (_taBgActive && _taAudioEl) {
+    return { trackId: _taAudioEl.dataset.trackId || null, pos: _taAudioEl.currentTime || 0,
+      playing: !_taAudioEl.paused && !_taAudioEl.muted };
+  }
+  if (_sjCarFollow) return null; // muted copy of what the car is playing
+  try {
+    if (ytAPIPlayer?.getPlayerState) {
+      return { trackId: ytQueue[ytQueueIdx]?.trackId || null, pos: ytAPIPlayer.getCurrentTime() || 0,
+        playing: ytAPIPlayer.getPlayerState() === 1 };
+    }
+  } catch (_) {}
+  return null;
+}
+
+function lmTick() {
+  if (!_lm.eventId) return;
+  const now = Date.now();
+  const s = lmNow();
+  if (!s || !s.playing || String(s.trackId) !== String(_lm.trackId)) {
+    _lm.pos = null;
+    return;
+  }
+  if (_lm.pos != null) {
+    const media = (s.pos - _lm.pos) * 1000;
+    const wall = now - _lm.wall;
+    // Forward and no faster than real time (plus slack for timer jitter):
+    // anything else is a seek or a replay from the top.
+    if (media > 0 && media <= wall + 1500) _lm.ms += media;
+  }
+  _lm.pos = s.pos;
+  _lm.wall = now;
+  if (_lm.ms - _lm.savedMs >= 30000) lmSave(false);
+}
+
+function lmSave(final) {
+  if (!_lm.eventId) return;
+  const ms = Math.round(_lm.ms);
+  if (ms <= _lm.savedMs && !final) return;
+  _lm.savedMs = ms;
+  fetch(`${REST}/play_events?id=eq.${_lm.eventId}`, {
     method: 'PATCH',
+    keepalive: true, // survives the tab being closed mid-song
     headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json',
       'Accept-Profile': 'jukebox', 'Content-Profile': 'jukebox' },
-    body: JSON.stringify({ duration_played_ms: dur, play_ended_at: new Date().toISOString() })
+    body: JSON.stringify({ duration_played_ms: ms, play_ended_at: new Date().toISOString() })
   }).catch(() => {});
+}
+
+function lmStart(eventId, trackId) {
+  lmTick();
+  lmSave(true);
+  // The play is logged once ten seconds have been heard, so they count.
+  Object.assign(_lm, { eventId, trackId, ms: 10000, savedMs: 0, pos: null, wall: 0 });
+  if (!_lm.timer) {
+    _lm.timer = setInterval(lmTick, 1000);
+    window.addEventListener('pagehide', () => { lmTick(); lmSave(true); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') { lmTick(); lmSave(false); }
+    });
+  }
+}
+
+// Kept under its old name: pause, end and close all call it.
+function patchYTPlayDuration() {
+  lmTick();
+  lmSave(false);
+}
+
+// Where this listen happened, for artist stats. Plays from the native audio
+// engine (screen off in the app, or CarPlay) arrive through log_carplay_plays.
+function sjListenContext() {
+  const app = !!window.Capacitor?.isNativePlatform?.();
+  const hidden = document.visibilityState === 'hidden';
+  return (app ? 'app' : 'web') + (hidden ? '_background' : '');
 }
 
 // ── Log actual YouTube play or queue event ──────────────────────────────────
 async function logYTPlay(videoId, trackId, eventType, source) {
   if (!trackId) return;
+  // The phone following CarPlay plays a muted copy of the car's song; the
+  // car's native engine logs that play, so logging here counted it twice.
+  if (eventType === 'play' && _sjCarFollow) return;
   try {
     // Do not bail when the catalogue row is not loaded. Playlist and Now
     // Playing listens often have only a track id — hearts still landed, but
@@ -44937,9 +46151,11 @@ async function logYTPlay(videoId, trackId, eventType, source) {
       p_device_id:      getDeviceId(),
       p_rating_at_play: null,
       p_surface_id:     (typeof SJ_BRAND !== 'undefined' && SJ_BRAND?.id) || 'sj',
+      p_listen_context: eventType === 'play' ? sjListenContext() : null,
     });
     if (eventType === 'play') {
-      _ytCurrentPlay = { eventId, trackId, playbackStarted: null };
+      _ytCurrentPlay = { eventId, trackId };
+      if (eventId) lmStart(eventId, trackId);
       inAppPlays[trackId] = (inAppPlays[trackId] || 0) + 1;
       if (googleUser) myInAppPlays[trackId] = (myInAppPlays[trackId] || 0) + 1;
       if (googleUser) myLastPlayed[trackId] = new Date().toISOString();
@@ -45210,7 +46426,7 @@ function getDailySparkPoints(trackId) {
   } else if (barChartMode === 'total') {
     const arr = dailyPlaysData[trackId];
     if (!arr || !arr.length) return null;
-    return { points: arr.map(p => ({ date: p.date, value: p.count })), label: 'Daily Jukebox Plays' };
+    return { points: arr.map(p => ({ date: p.date, value: p.count })), label: 'Daily In-App Plays' };
   } else if (barChartMode === 'score') return null;
   return null;
 }
@@ -45235,7 +46451,7 @@ function getAlbumDailySparkPoints(albId) {
     ? (baseLabel === 'In-App Plays' ? 'Daily In-App Plays'
       : baseLabel === 'YouTube Views' ? 'Daily New YouTube Views'
       : 'Daily YouTube + In-App Plays')
-    : 'Daily Jukebox Plays';
+    : 'Daily In-App Plays';
   return { points: dates.map(d => ({ date: d, value: dateMap[d] })), label };
 }
 
@@ -46688,6 +47904,79 @@ async function hydrateStationLink() {
 }
 hydrateStationLink();
 
+// ── Opening a Share Song link ────────────────────────────────────────────
+// Opens the artist (in place, so it works on a brand with no artist pages),
+// plays the one song, honours ?t=, and if the browser would not let sound start
+// by itself, puts up one big Play button instead of a silent player.
+if (_SONG_PAGE) _pbRestoreDone = true;  // arriving to hear one song - don't resume the old queue
+
+async function hydrateSongPage() {
+  const page = _SONG_PAGE;
+  if (!page?.id) return;
+  try { await _initPromise; } catch (e) {}
+  try {
+    const info = await resolvePlaylistTracks([page.id]);
+    const it = info[page.id];
+    if (page.artistId && page.artistSlug && typeof enterArtistJukebox === 'function') {
+      try {
+        await enterArtistJukebox({ id: page.artistId, name: page.artistName || '', slug: page.artistSlug });
+      } catch (_) {}
+    }
+    if (!it?.videoId || isTrackSkipped(page.id)) {
+      showToast("That song isn't available any more.");
+      return;
+    }
+    const item = { videoId: it.videoId, title: it.name || 'Song', trackId: page.id };
+    openYTPlayer(item.videoId, item.title, item.trackId);
+    ytQueue = [item]; ytQueueIdx = 0;
+    updateYTQueueUI();
+    _songPageAfterLoad(item, Number(page.t) || 0);
+  } catch (e) {}
+}
+hydrateSongPage();
+
+function _songPageAfterLoad(item, startSec) {
+  let seeked = !(startSec > 0), tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    let st = -1, vid = null;
+    try {
+      st = ytAPIPlayer?.getPlayerState?.();
+      vid = ytAPIPlayer?.getVideoData?.()?.video_id;
+    } catch (_) {}
+    if (vid && vid !== item.videoId) { clearInterval(timer); return; } // they moved on
+    if (!seeked && vid === item.videoId && st !== -1 && st != null) {
+      try { ytAPIPlayer.seekTo(startSec, true); seeked = true; } catch (_) {}
+    }
+    if (st === 1) { clearInterval(timer); _songTapRemove(); return; }
+    // About four seconds in and still not playing: autoplay was refused.
+    if (tries === 8 && st !== 3) _songTapShow(item, startSec);
+    if (tries > 60) clearInterval(timer);
+  }, 500);
+}
+
+function _songTapShow(item, startSec) {
+  if (document.getElementById('sj-song-tap')) return;
+  const b = document.createElement('button');
+  b.id = 'sj-song-tap';
+  b.className = 'sj-song-tap';
+  b.type = 'button';
+  b.innerHTML = '<b>▶</b><span>Play ' + escHtml(item.title) + '</span>';
+  b.onclick = () => {
+    _songTapRemove();
+    try {
+      if (startSec > 0) ytAPIPlayer.seekTo(startSec, true);
+      ytAPIPlayer.playVideo();
+    } catch (_) { openYTPlayer(item.videoId, item.title, item.trackId); }
+  };
+  document.body.appendChild(b);
+}
+
+function _songTapRemove() {
+  const b = document.getElementById('sj-song-tap');
+  if (b) b.remove();
+}
+
 async function hydratePlaylistLink() {
   const id = _plIncomingId;
   if (!id || !/^[0-9a-f-]{20,40}$/i.test(id)) return;
@@ -46795,6 +48084,8 @@ try { sjInstrumentRenders(); } catch (e) { console.warn('[SJ performance] Render
 <footer style="text-align:center;padding:1.5rem 2rem 2rem;font-family:var(--mono);font-size:.46rem;color:var(--text-muted);letter-spacing:.08em;border-top:1px solid var(--border);margin-top:2rem">
   a <a href="https://outlawapps.online" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">Johnny Outlaw</a> Project
   · <a href="/help" style="color:var(--text-muted);text-decoration:none">Help</a>
+  · <a href="/for-artists" style="color:var(--text-muted);text-decoration:none">For Artists</a>
+  · <a href="/for-listeners" style="color:var(--text-muted);text-decoration:none">For Listeners</a>
   · <a href="/about" style="color:var(--text-muted);text-decoration:none">About</a>
   · <a href="/privacy" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">Privacy</a>
   · <a href="/terms" style="color:var(--text-muted);text-decoration:none">Terms</a>
@@ -47611,6 +48902,19 @@ async function srchPlayTrack(trackId, el) {
   srchPlay(vid, name, trackId, el);
 }
 
+let _srchArtistUploadedOnly = false;
+async function setSearchArtistUploaded(on) {
+  _srchArtistUploadedOnly = !!on;
+  await _runSearch(document.getElementById('srch-head-input')?.value || '');
+}
+function filterArtistUploadedSearch(data) {
+  const tracks = data.tracks.filter(row => _artistUploadedTrackIds.has(row.track.id));
+  const albumIds = new Set(tracks.map(row => row.track.album_id));
+  return { ...data, tracks,
+    artists: data.artists.filter(row => _artistUploadedArtistIds.has(row.id)),
+    albums: data.albums.filter(row => albumIds.has(row.id)),
+  };
+}
 let _srchTimer = null;
 const _srchHitMeta = {}; // trackId → { name } for play when the page hasn't loaded that artist
 const _srchArtistMeta = {}; // artistId → {id,name,slug,color,is_community,added_by_name}
@@ -47844,7 +49148,15 @@ async function _runSearch(query) {
   if (bodyEl) bodyEl.innerHTML = '<div id="srch-status">Searching…</div>';
   if (countEl) countEl.textContent = '';
 
-  const data = await catalogueSearch(query, () => token !== _srchToken);
+  let data = await catalogueSearch(query, () => token !== _srchToken);
+  if (_srchArtistUploadedOnly) {
+    if (!_homeLibLoaded) await ensureHomeLibrary();
+    if (_homeLibError) {
+      if (token === _srchToken && bodyEl) bodyEl.innerHTML = '<div id="srch-status">Could not load artist-uploaded music. Try again.</div>';
+      return;
+    }
+    if (data) data = filterArtistUploadedSearch(data);
+  }
   if (!data || token !== _srchToken) return;
 
   const q = data.q;
@@ -47865,7 +49177,7 @@ async function _runSearch(query) {
       </div>
       <div class="srch-actions">
         <button class="srch-btn play" onclick="srchShuffleArtist('${a.id}')">▶ Shuffle All Songs</button>
-        <button class="srch-btn" onclick="srchGoToArtist('${a.id}')">Go to Jukebox →</button>
+        <button class="srch-btn" onclick="srchGoToArtist('${a.id}')">Go to Discography →</button>
       </div>
     </div>`;
   });
@@ -47889,7 +49201,7 @@ async function _runSearch(query) {
       </div>
       <div class="srch-actions">
         <button class="srch-btn play" onclick="srchPlayAlbum('${album.id}')" ${canNav ? '' : 'disabled title="Artist page not available"'}>▶ Play Album</button>
-        <button class="srch-btn" onclick="srchGoToAlbum('${album.id}')" ${canNav ? '' : 'disabled title="Artist page not available"'}>View Album in Jukebox</button>
+        <button class="srch-btn" onclick="srchGoToAlbum('${album.id}')" ${canNav ? '' : 'disabled title="Artist page not available"'}>View Album</button>
       </div>
     </div>`;
   });
@@ -47989,6 +49301,7 @@ async function startLyricsEdit(trackId, mode) {
     `<div class="lyr-edit-row">` +
     `<button class="lyr-save-btn" onclick="saveLyricsEdit('${trackId}','${mode}')">Save</button>` +
     `<button class="lyr-cancel-btn" onclick="cancelLyricsEdit('${trackId}','${mode}')">Cancel</button>` +
+    `<button class="lyr-cancel-btn" onclick="lsyStart('${trackId}','lyr-ta-${trackId}-${mode}')">Add Lyric Syncing</button>` +
     `<span style="font-size:.42rem;color:var(--text-muted);margin-left:auto;align-self:center">Editing as ${googleUser.name}</span>` +
     `</div>`;
   targetEl.style.display = 'none';
@@ -48658,7 +49971,7 @@ function sjjSyncGoLiveBtn() {
     ? window.matchMedia('(min-width: 641px)').matches
     : true;
   const live = !!_sjjLive;
-  const show = SJ_BRAND.id === 'lp'
+  const show = SJ_BRAND.features.liveStations
     && desktop
     && !!ytPlayerEl
     && !_liveRoomListen
@@ -48679,7 +49992,7 @@ function sjjSyncGoLiveBtn() {
 }
 
 async function sjjGoLiveFromPlayer() {
-  if (SJ_BRAND.id !== 'lp') return;
+  if (!SJ_BRAND.features.playlistsFirst) return;
   if (!googleUser) { handleAuthClick(); return; }
   if (!ytPlayerEl || !ytQueue.length) { showToast('Play something first.'); return; }
   if (_liveRoomListen) { showToast('Leave the station you are listening to before going live.'); return; }

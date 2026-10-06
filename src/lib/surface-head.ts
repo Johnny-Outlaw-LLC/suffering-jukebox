@@ -40,6 +40,12 @@ export interface HeadOverrides {
   canonical?: string;
   /** Absolute image URL for og:image / twitter:image. */
   image?: string;
+  /**
+   * The real pixel size of `image`. Left out, the brand card's size stays
+   * declared (what artist pages have always done); null removes the size
+   * tags for an image whose dimensions we do not know.
+   */
+  imageSize?: { w: number; h: number } | null;
   /** Replaces the first application/ld+json block. */
   jsonLd?: Record<string, unknown> | null;
   robots?: string;
@@ -139,6 +145,12 @@ export function applySurfaceHead(
   if (overrides.image) {
     head = setMeta(head, "property", "og:image", overrides.image);
     head = setMeta(head, "name", "twitter:image", overrides.image);
+    if (overrides.imageSize) {
+      head = setMeta(head, "property", "og:image:width", String(overrides.imageSize.w));
+      head = setMeta(head, "property", "og:image:height", String(overrides.imageSize.h));
+    } else if (overrides.imageSize === null) {
+      head = head.replace(/[ \t]*<meta property="og:image:(?:width|height)"[^>]*>\r?\n?/g, "");
+    }
   }
   if (overrides.robots) head = setMeta(head, "name", "robots", overrides.robots);
 

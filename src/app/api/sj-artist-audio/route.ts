@@ -24,6 +24,9 @@ export async function GET(req: NextRequest) {
     .slice(0, 50);
   const trackIds = [...new Set(requested)];
   const stream = req.nextUrl.searchParams.get("format") === "stream";
+  // format=stream is the address the player keeps: it signs a fresh link on
+  // every request, so it never expires. One on-demand track per stream;
+  // background-only licences never stream on demand.
   if (stream && (purpose !== "normal-playback" || trackIds.length !== 1)) {
     return NextResponse.json({ ok: false, error: "Streaming requires one on-demand track." },
       { status: 400, headers: { "Cache-Control": "no-store" } });
@@ -33,9 +36,26 @@ export async function GET(req: NextRequest) {
   }
   const sister = sisterB2RedirectUrl(req.nextUrl.host, req.nextUrl.pathname + req.nextUrl.search);
   if (sister) {
-    return NextResponse.redirect(new URL(sister), {
-      status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
-    });
+    // A stream is opened by an <audio> element, which follows a redirect fine.
+    if (stream) {
+      return NextResponse.redirect(new URL(sister), {
+        status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },
+      });
+    }
+    // The JSON lookup is a fetch() from the page, and a cross-site redirect
+    // fails CORS there, which surfaced as "Artist audio is unavailable".
+    // Ask the sister surface from the server instead; the signed URL it
+    // returns is good on any host.
+    try {
+      const upstream = await fetch(sister, { cache: "no-store" });
+      const body = await upstream.json();
+      return NextResponse.json(body, {
+        status: upstream.status, headers: { "Cache-Control": "private, no-store, max-age=0" },
+      });
+    } catch (error) {
+      console.error("[sj-artist-audio:sister]", error);
+      return NextResponse.json({ ok: false, error: "Could not authorize artist audio." }, { status: 502 });
+    }
   }
   try {
     const sb = createSjServiceClient();
@@ -43,6 +63,12 @@ export async function GET(req: NextRequest) {
       ? await onDemandArtistAudioTracks(sb, ARTIST_AGREEMENT_VERSION, trackIds)
       : await approvedArtistAudioTracks(sb, trackIds);
     if (!selected.length) {
+      // An <audio> element given a 200 JSON body stalls on decoding; a 404
+      // fails at once so the player can say so.
+      if (stream) {
+        return NextResponse.json({ ok: false, error: "Artist audio is not available." },
+          { status: 404, headers: { "Cache-Control": "no-store" } });
+      }
       return NextResponse.json({ ok: true, tracks: [] }, { headers: { "Cache-Control": "no-store" } });
     }
 
@@ -74,6 +100,10 @@ export async function GET(req: NextRequest) {
         expiresIn: PUBLIC_SIGNED_URL_SECONDS,
       };
     }));
+    if (stream && !tracks.length) {
+      return NextResponse.json({ ok: false, error: "Artist audio is not available." },
+        { status: 404, headers: { "Cache-Control": "no-store" } });
+    }
     if (stream && tracks.length === 1) {
       return NextResponse.redirect(tracks[0].url, {
         status: 307, headers: { "Cache-Control": "private, no-store, max-age=0" },

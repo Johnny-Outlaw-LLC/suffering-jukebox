@@ -111,7 +111,7 @@ export async function deleteB2AudioObject(key: string): Promise<void> {
 
 /** Listening Party may ship without B2 keys; the sister surface still signs. */
 export function sisterB2RedirectUrl(host: string | null | undefined, pathAndQuery: string): string | null {
-  if (currentSurface(host).id !== "lp") return null;
+  if (currentSurface(host).id === "sj") return null;
   if (process.env.B2_KEY_ID?.trim() && process.env.B2_APP_KEY?.trim()) return null;
   return new URL(pathAndQuery, SURFACES.sj.url).toString();
 }

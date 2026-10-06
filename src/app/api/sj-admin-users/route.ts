@@ -9,6 +9,7 @@ type AdminUserRow = {
   user_id: string | null;
   user_name: string | null;
   is_admin: boolean;
+  is_mod?: boolean;
   user_level: UserLevel;
   first_seen_at: string;
   last_seen_at: string;
@@ -37,6 +38,9 @@ export async function GET(req: NextRequest) {
 
   const users = ((data as Array<AdminUserRow & { rating_count?: number }> | null) ?? [])
     .map(({ rating_count: _legacyRatingCount, ...user }) => user);
+  const { data: modRows } = await sb.schema(JUKEBOX_SCHEMA).from("app_users").select("email").eq("is_mod", true);
+  const mods = new Set((modRows ?? []).map((r: { email: string }) => String(r.email).toLowerCase()));
+  for (const u of users) u.is_mod = mods.has(String(u.email).toLowerCase());
   return NextResponse.json({
     ok: true,
     users,
@@ -50,6 +54,18 @@ export async function PATCH(req: NextRequest) {
 
   const body = await req.json();
   const email = String(body.email || "").trim().toLowerCase();
+  if (email && typeof body.is_mod === "boolean" && body.is_admin === undefined && body.user_level === undefined) {
+    const sbMod = createSjServiceClient();
+    const { error: modErr } = await sbMod.schema(JUKEBOX_SCHEMA).rpc("set_app_user_mod", {
+      p_email: email,
+      p_mod: body.is_mod,
+    });
+    if (modErr) {
+      console.error("[sj-admin-users:mod]", modErr);
+      return NextResponse.json({ ok: false, error: "Could not update mod status." }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, email, is_mod: body.is_mod });
+  }
   const requestedLevel = normalizeUserLevel(
     body.user_level ?? (body.is_admin ? "admin" : "free"),
   );

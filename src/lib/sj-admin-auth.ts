@@ -49,6 +49,17 @@ export async function isSjAdmin(email: string | null | undefined): Promise<boole
   return !!data;
 }
 
+export async function isSjMod(email: string | null | undefined): Promise<boolean> {
+  if (!email) return false;
+  const sb = createSjServiceClient();
+  const { data, error } = await sb.schema(JUKEBOX_SCHEMA).rpc("is_app_mod", { p_email: email });
+  if (error) {
+    console.error("[sj-admin] is_app_mod", error.message);
+    return false;
+  }
+  return !!data;
+}
+
 export async function verifySjAdmin(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) {

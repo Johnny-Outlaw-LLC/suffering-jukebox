@@ -103,6 +103,7 @@ test('native artist-audio authorization bypasses WebKit CORS through Capacitor H
     taData,
     SJ_FETCH_TIMEOUT_MS: 45000,
     sjIsNative: () => true,
+    taNativeBgPlugin: () => null,
     sjApiUrl: path => 'https://listeningparty.stream' + path,
     sjFetch: async () => { throw new Error('native playback must not use WebKit fetch'); },
     window: { Capacitor: { Plugins: { CapacitorHttp: { get: async request => {
@@ -112,9 +113,11 @@ test('native artist-audio authorization bypasses WebKit CORS through Capacitor H
       ] } };
     } } } } },
   };
-  await loadHtmlFnsInScope(['sjGetJson', 'loadArtistOnDemandAudio'], scope).loadArtistOnDemandAudio(['nouns']);
+  await loadHtmlFnsInScope(['sjGetJson', 'taTrackAudio', 'sjNeedsArtistStream', 'sjArtistStreamUrl', 'loadArtistOnDemandAudio'], scope).loadArtistOnDemandAudio(['nouns']);
   assert.match(requested.url, /purpose=normal-playback/);
-  assert.equal(taData.nouns.url, 'https://audio.example/nouns.m4a');
+  // The player keeps the permanent stream address, never the 6 hour signed link.
+  assert.equal(taData.nouns.url, 'https://listeningparty.stream/api/sj-artist-audio?purpose=normal-playback&format=stream&track_ids=nouns');
+  assert.equal(taData.nouns.duration, 123);
   assert.equal(taData.nouns.artistLicensed, true);
 });
 
@@ -215,16 +218,30 @@ test('Explore Songs plays the selected upload rather than the next YouTube song'
   assert.equal(played,'artist-song');
 });
 
-for (const format of ['', '&format=stream']) {
-  test(`Listening Party without B2 keys uses the shared authorized signer ${format}`, async () => {
-    const api = signer({surface:'lp'});
-    const r = await api.get(`purpose=normal-playback&track_ids=${id}${format}`);
-    assert.equal(r.status,307);
-    assert.equal(r.url.origin,'https://www.sufferingjukebox.stream');
-    assert.equal(r.url.pathname,'/api/sj-artist-audio');
-    assert.equal(r.url.searchParams.get('purpose'),'normal-playback');
-    assert.equal(r.url.searchParams.get('track_ids'),id);
-    assert.equal(r.url.searchParams.get('format'),format ? 'stream' : null);
+test('Listening Party without B2 keys redirects a stream to the shared signer', async () => {
+  const api = signer({surface:'lp'});
+  const r = await api.get(`purpose=normal-playback&track_ids=${id}&format=stream`);
+  assert.equal(r.status,307);
+  assert.equal(r.url.origin,'https://www.sufferingjukebox.stream');
+  assert.equal(r.url.pathname,'/api/sj-artist-audio');
+  assert.equal(r.url.searchParams.get('track_ids'),id);
+  assert.equal(r.url.searchParams.get('format'),'stream');
+  assert.equal(api.signed(),0);
+});
+
+test('Listening Party without B2 keys asks the shared signer server side for JSON', async () => {
+  // A cross-site redirect on a fetch() fails CORS in the browser.
+  const api = signer({surface:'lp'});
+  const realFetch = globalThis.fetch;
+  let asked;
+  globalThis.fetch = async url => { asked = new URL(url); return { status: 200, json: async () => ({ ok: true, tracks: [{ trackId: id }] }) }; };
+  try {
+    const r = await api.get(`purpose=normal-playback&track_ids=${id}`);
+    assert.equal(r.status,200);
+    assert.equal(r.url,undefined);
+    assert.equal(r.body.tracks[0].trackId,id);
+    assert.equal(asked.origin,'https://www.sufferingjukebox.stream');
+    assert.equal(asked.searchParams.get('format'),null);
     assert.equal(api.signed(),0);
-  });
-}
+  } finally { globalThis.fetch = realFetch; }
+});

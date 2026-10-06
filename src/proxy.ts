@@ -23,6 +23,7 @@ const SLUG_TTL_MS = 60_000;
 const NATIVE_ORIGINS = new Set([
   "capacitor://www.sufferingjukebox.stream",
   "https://app.listeningparty.stream",
+  "https://app.recordkeeper.stream",
 ]);
 
 function withNativeCors(request: NextRequest, response: NextResponse): NextResponse {
@@ -73,6 +74,52 @@ async function vanitySlugs(): Promise<Set<string>> {
   return slugInFlight;
 }
 
+// Listening Party gives playlists AND artists the root address
+// (listeningparty.stream/nouns-group). A playlist keeps any name it already
+// has, so links already shared never change meaning; anything else that names
+// a public artist goes to the artist page. Cached for a minute and fails open
+// to the old behaviour (the playlist route), which redirects home if unknown.
+let lpSlugCache: { playlists: Set<string>; artists: Set<string> } | null = null;
+let lpSlugCacheAt = 0;
+let lpSlugInFlight: Promise<{ playlists: Set<string>; artists: Set<string> } | null> | null = null;
+
+async function lpRootSlugs() {
+  if (lpSlugCache && Date.now() - lpSlugCacheAt < SLUG_TTL_MS) return lpSlugCache;
+  if (lpSlugInFlight) return lpSlugInFlight;
+  lpSlugInFlight = (async () => {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+    if (!key) return lpSlugCache;
+    const headers = { apikey: key, Authorization: `Bearer ${key}`, "Accept-Profile": "jukebox" };
+    try {
+      const [pl, ar] = await Promise.all([
+        fetch(`${REST}/playlists?select=slug&slug=not.is.null`, { headers, cache: "no-store" }),
+        fetch(`${REST}/artists?select=slug&slug=not.is.null&visibility=eq.public`, { headers, cache: "no-store" }),
+      ]);
+      if (!pl.ok || !ar.ok) return lpSlugCache;
+      const set = (rows: { slug: string | null }[]) =>
+        new Set(rows.map((r) => (r.slug ?? "").toLowerCase()).filter(Boolean));
+      lpSlugCache = { playlists: set(await pl.json()), artists: set(await ar.json()) };
+      lpSlugCacheAt = Date.now();
+      return lpSlugCache;
+    } catch {
+      return lpSlugCache;
+    } finally {
+      lpSlugInFlight = null;
+    }
+  })();
+  return lpSlugInFlight;
+}
+
+/** Where a Listening Party root slug goes: the playlist route, or the artist page. */
+export function lpRootTarget(
+  slug: string,
+  slugs: { playlists: Set<string>; artists: Set<string> } | null,
+): "playlist" | "artist" {
+  if (!slugs) return "playlist";
+  if (slugs.playlists.has(slug)) return "playlist";
+  return slugs.artists.has(slug) ? "artist" : "playlist";
+}
+
 /** Single lowercase path segment, no file extension: the shape of a slug. */
 function slugCandidate(pathname: string): string | null {
   const m = pathname.match(/^\/([a-z0-9][a-z0-9-]{1,39})\/?$/);
@@ -109,10 +156,11 @@ export async function proxy(request: NextRequest) {
     to.searchParams.set("live", slug);
     response = NextResponse.rewrite(to);
     response.cookies.set("sj_live_room", slug, { maxAge: 120, path: "/", sameSite: "lax", secure: true });
-  } else if (slug && currentSurface(request.headers.get("host")).id === "lp") {
-    // Listening Party owns no /<artist> pages, so playlists can use the clean
-    // root namespace. Rewrite internally to the shared playlist route while
-    // leaving /nouns-group in the browser address bar.
+  } else if (slug && currentSurface(request.headers.get("host")).features.playlistsFirst
+    && lpRootTarget(slug, await lpRootSlugs()) === "playlist") {
+    // A playlist's clean root address. Rewrite internally to the shared
+    // playlist route while leaving /my-playlist in the browser address bar.
+    // An artist slug falls through to /[slug], which serves the artist.
     const to = request.nextUrl.clone();
     to.pathname = `/p/${slug}`;
     response = NextResponse.rewrite(to);

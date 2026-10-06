@@ -1,6 +1,6 @@
-// Johnny Outlaw, LLC — one codebase, two brands.
+// Johnny Outlaw, LLC — one codebase, three brands.
 //
-// Suffering Jukebox and Listening Party are the SAME application reading the
+// Suffering Jukebox, Listening Party and Record Keeper share one application and
 // SAME `jukebox` schema. They differ only in what they are called and which
 // front door they open on: SJ leads with artists, LP leads with playlists.
 //
@@ -13,11 +13,19 @@
 // hostname fallback is what makes localhost and Vercel preview deploys work
 // without setting anything.
 
-export type SurfaceId = "sj" | "lp";
+export type SurfaceId = "sj" | "lp" | "rk";
 
 export interface SurfaceFeatures {
   /** /<slug> serves an indexable artist page with catalog text and JSON-LD. */
   artistPages: boolean;
+  /**
+   * An open artist puts /<artist-slug> in the address bar, and that address
+   * loads the artist. True on both brands. Listening Party shares the root
+   * namespace with its playlists, so src/proxy.ts sends a slug to the playlist
+   * when one has it and to the artist otherwise. Separate from artistPages,
+   * which also decides /community, the /p/ playlist prefix and the sitemap.
+   */
+  artistAddresses: boolean;
   /**
    * The Explore Artists landing tab, and clicking an artist opens the artist
    * discography view (charts, albums, tracks).
@@ -60,6 +68,8 @@ export interface SurfaceFeatures {
    * openSpotifyImport() refuses, so a stale ?spotify= return cannot open it.
    */
   spotifyImport: boolean;
+  /** Spotify Premium playback requires a registered callback for this host. */
+  spotifyPlayback: boolean;
   /**
    * Artist licensing for public on-demand streaming: /artist-upload,
    * /artist-agreement and the Publish My Music buttons. Off, both pages
@@ -170,7 +180,7 @@ export interface Surface {
 const SJ_URL = "https://www.sufferingjukebox.stream";
 const LP_URL = "https://listeningparty.stream";
 
-export const SURFACES: Record<SurfaceId, Surface> = {
+const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
   sj: {
     id: "sj",
     artistHomeSeo: true,
@@ -211,6 +221,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     homeJsonLd: null,
     features: {
       artistPages: true,
+      artistAddresses: true,
       artistJukebox: true,
       exploreSongs: true,
       homeTab: false,
@@ -221,6 +232,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       welcomeHero: false,
       phoneMiniPlayer: true,
       spotifyImport: true,
+      spotifyPlayback: true,
       artistUpload: true,
       liveStations: false,
     },
@@ -233,17 +245,19 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     url: LP_URL,
     host: "listeningparty.stream",
     origins: [LP_URL, "https://www.listeningparty.stream"],
-    title: "Listening Party — Build, Share and Play Playlists",
+    // Positioned for independent artists (2026-10-05): artists publish, fans
+    // listen free. Playlists and rooms are still here; they are not the pitch.
+    title: "Listening Party | Music Straight From Independent Artists",
     description:
-      "Listening Party is a free online playlist player. Build a playlist from anything on YouTube, share it with a link, read the words as they play, and listen together in a room. No account needed to listen.",
+      "Listening Party is where independent artists share their music with fans. Upload your songs, sync the lyrics and send one link. Fans listen free with no ads, with the screen off or in CarPlay, and you see who is listening.",
     ogDescription:
-      "Build a playlist from anything on YouTube, share it with a link, and listen together. Free, with lyrics, hearts and listening stats.",
+      "Independent artists upload their songs, sync the lyrics and send fans one link. Free to listen, no ads, screen off or in the car.",
     twitterDescription:
-      "Build a playlist, share it with a link, listen together. No account required to listen.",
+      "Your record, in their pocket. Free to listen, no ads, screen off or in the car.",
     manifestDescription:
-      "Build a playlist from anything on YouTube, share it with a link, and listen together.",
+      "Music straight from independent artists. Free, no ads, synced lyrics, and it keeps playing with the screen off.",
     keywords:
-      "playlist player, free online playlist, share a playlist, listening party, youtube playlist player, listen together, playlist with lyrics, free music player",
+      "Listening Party, independent artists, share your music with fans, upload your music, synced lyrics, free music no ads, listen with the screen off, CarPlay music, artist stats, listen together",
     tagline: "Join the Listening Party",
     // Name is painted into the album-grid wordmark, same as Suffering Jukebox.
     // Empty headerTitle hides the live HTML title so it is not drawn twice.
@@ -265,7 +279,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600;700;800&family=Lilita+One&display=swap",
     authScheme: "com.johnnyoutlaw.listeningparty",
     shareText:
-      "Listening Party - build a playlist from anything on YouTube, share it with a link, and listen together.",
+      "Listening Party - music straight from independent artists, with the lyrics. Free, no ads.",
     redditSub: null,
     sisterName: "Suffering Jukebox",
     sisterUrl: `${SJ_URL}/`,
@@ -273,10 +287,10 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       "@context": "https://schema.org",
       "@type": "WebApplication",
       name: "Listening Party",
-      alternateName: ["Free Online Playlist Player", "Listen Together"],
+      alternateName: ["Independent music, straight to fans", "Listen Together"],
       url: `${LP_URL}/`,
       description:
-        "Free online playlist player. Build a playlist from anything on YouTube, share it with a link, read the words as they play, and listen together.",
+        "Independent artists upload their songs, sync the lyrics and share one link. Fans listen free with no ads, with the screen off, and artists see who is listening.",
       applicationCategory: "MusicApplication",
       operatingSystem: "Any",
       browserRequirements: "Requires JavaScript and HTML5",
@@ -284,6 +298,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     },
     features: {
       artistPages: false,
+      artistAddresses: true,
       artistJukebox: true,
       exploreSongs: true,
       homeTab: true,
@@ -294,16 +309,57 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       welcomeHero: true,
       phoneMiniPlayer: true,
       spotifyImport: false,
+      spotifyPlayback: true,
       artistUpload: true,
       liveStations: true,
     },
   },
 };
 
+export const SURFACES: Record<SurfaceId, Surface> = {
+  ...BASE_SURFACES,
+  rk: {
+    ...BASE_SURFACES.lp,
+    id: "rk",
+    name: "Record Keeper",
+    url: "https://recordkeeper.stream",
+    host: "recordkeeper.stream",
+    origins: ["https://recordkeeper.stream", "https://www.recordkeeper.stream"],
+    title: "Record Keeper | A Home for Music and the People Who Love It",
+    description: "Explore artists, follow the lyrics, build playlists, upload your own content, track your listening, and enjoy music together.",
+    ogDescription: "Explore music. Make it yours. Discover discographies, create playlists, publish your music, and listen together.",
+    twitterDescription: "Explore artists, build playlists, follow the lyrics, and listen together.",
+    manifestDescription: "A home for music and the people who love it. Explore, create, and listen together.",
+    keywords: "Record Keeper, RecordKeeper.stream, music player, discographies, playlists, synced lyrics, listening stats, listen together, independent artists",
+    tagline: "Explore music. Make it yours.",
+    assetBase: "/brand/rk",
+    textLogo: "/brand/rk/wordmark-dark.png",
+    ogImage: "https://recordkeeper.stream/brand/rk/wordmark.png",
+    ogImageSize: { w: 2149, h: 732 },
+    themeColor: "#171717",
+    accent: "#C94F27",
+    accentHover: "#DF6138",
+    accentRgb: "201,79,39",
+    fontsHref: null,
+    authScheme: "com.johnnyoutlaw.recordkeeper",
+    shareText: "Record Keeper — explore discographies, create playlists, upload your content, and listen together.",
+    sisterName: "Suffering Jukebox",
+    sisterUrl: "https://www.sufferingjukebox.stream/",
+    homeJsonLd: {
+      "@context": "https://schema.org", "@type": "WebApplication",
+      name: "Record Keeper", url: "https://recordkeeper.stream/",
+      description: "Explore artists, follow the lyrics, build playlists, upload your own content, track your listening, and enjoy music together.",
+      applicationCategory: "MusicApplication", operatingSystem: "Any",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+    features: { ...BASE_SURFACES.lp.features, spotifyPlayback: false },
+  },
+};
+
 export const DEFAULT_SURFACE: SurfaceId = "sj";
 
 function isSurfaceId(v: string | undefined | null): v is SurfaceId {
-  return v === "sj" || v === "lp";
+  return v === "sj" || v === "lp" || v === "rk";
 }
 
 /**
@@ -368,6 +424,7 @@ export function publicSurface(s: Surface) {
     // to grow a matching default.
     features: {
       artistPages: s.features.artistPages,
+      artistAddresses: s.features.artistAddresses,
       artistJukebox: s.features.artistJukebox,
       exploreSongs: s.features.exploreSongs,
       homeTab: s.features.homeTab,
@@ -377,6 +434,7 @@ export function publicSurface(s: Surface) {
       welcomeHero: s.features.welcomeHero,
       phoneMiniPlayer: s.features.phoneMiniPlayer,
       spotifyImport: s.features.spotifyImport,
+      spotifyPlayback: s.features.spotifyPlayback,
       artistUpload: s.features.artistUpload,
       liveStations: s.features.liveStations,
     },

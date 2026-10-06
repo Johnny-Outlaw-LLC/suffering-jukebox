@@ -19,7 +19,9 @@ test('trusted hosted tools stay inside the native WebView', () => {
     'sufferingjukebox.stream',
     '*.sufferingjukebox.stream',
   ]);
-  assert.match(dashboard, /sjOpenHostedTool\('\/analytics'\)/);
+  assert.match(dashboard, /openHostedToolInNewTab\('\/analytics'\)/);
+  assert.match(dashboard, /openHostedToolInNewTab\('\/artist-stats\?artist=' \+/);
+  assert.match(dashboard, /if \(sjIsNative\(\)\) \{\s*await sjOpenHostedTool\(path\);/);
   assert.match(dashboard, /sjOpenHostedTool\('\/artist-discography-upload'\)/);
   assert.match(dashboard, /fromNativeApp: true/);
 });
@@ -27,6 +29,7 @@ test('trusted hosted tools stay inside the native WebView', () => {
 test('API CORS admits both native apps and handles preflight dynamically', () => {
   assert.match(proxy, /capacitor:\/\/www\.sufferingjukebox\.stream/);
   assert.match(proxy, /https:\/\/app\.listeningparty\.stream/);
+  assert.match(proxy, /https:\/\/app\.recordkeeper\.stream/);
   assert.match(proxy, /request\.method === "OPTIONS"/);
   assert.match(proxy, /Access-Control-Allow-Origin/);
   assert.doesNotMatch(config, /const NATIVE_ORIGIN/);
@@ -36,6 +39,7 @@ test('Listening Party can frame the player route without a playlist rewrite', ()
   const jukebox = readFileSync(new URL('../src/lib/jukebox.ts', import.meta.url), 'utf8');
   assert.match(jukebox, /"yt-frame"/);
   assert.match(config, /frame-ancestors[^\n]+https:\/\/app\.listeningparty\.stream/);
+  assert.match(config, /frame-ancestors[^\n]+https:\/\/app\.recordkeeper\.stream/);
 });
 
 test('playlist creation sends intake and signed-in library requests to the live API', () => {

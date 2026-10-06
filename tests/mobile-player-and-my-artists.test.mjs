@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { loadHtmlFnsInScope } from './_load.mjs';
+import { loadHtmlFns, loadHtmlFnsInScope } from './_load.mjs';
 
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const lpHelp = readFileSync(new URL('../public/help/lp/index.html', import.meta.url), 'utf8');
@@ -122,6 +122,8 @@ test('Listening Party app sends Background Play to the native audio engine', asy
 
   scope.SJ_BRAND = { id: 'sj' };
   assert.equal(api.taNativeBgPlugin(), null, 'the website must keep its existing player');
+  scope.SJ_BRAND = { id: 'rk' };
+  assert.equal(api.taNativeBgPlugin(), plugin, 'Record Keeper uses the same native playback engine');
 });
 
 test('Background Enabled shuffle primes native audio before opening the player', () => {
@@ -221,8 +223,9 @@ test('full-detail mobile artist stats use a readable two-by-two grid', () => {
 });
 
 test('native account tools stay in the app navigation stack', () => {
-  assert.match(html, /function openFaq\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*window\.location\.assign\('\/help\/lp\/index\.html'\)/);
-  assert.match(html, /async function openAnalyticsInNewTab\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*sjOpenHostedTool\('\/analytics'\)/);
+  assert.match(html, /function openFaq\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*SJ_BRAND\.id === 'rk' \? 'rk' : 'lp'/);
+  assert.match(html, /async function openAnalyticsInNewTab\(\) \{\s*return openHostedToolInNewTab\('\/analytics'\);/);
+  assert.match(html, /async function openHostedToolInNewTab\(path\) \{\s*if \(sjIsNative\(\)\) \{\s*await sjOpenHostedTool\(path\);/);
   assert.match(html, /action === 'studio'[\s\S]*sjOpenHostedTool\('\/artist-discography-upload'\)/);
   assert.match(html, /#sj-app-session=/, 'hosted tools need the native session handoff');
 });
@@ -248,7 +251,7 @@ test('What’s New calls the shipped feed APP UPDATES', () => {
 
 test('the phone Now Playing deck is title row, scrubber, transport and Up Next / Lyrics only', () => {
   const from = html.indexOf('function ytpMobDeckHTML(trackId) {');
-  const deck = html.slice(from, html.indexOf('\n}\n', from));
+  const deck = loadHtmlFns(['ytpMobDeckHTML']).ytpMobDeckHTML.toString();
   assert.ok(from > 0, 'could not locate the phone deck');
   // Up Next leads, as in YouTube Music. ⋯ lives in the sheet's top bar.
   const order = ['ytp-md-head', 'ytp-md-title', 'ytp-md-reaction-rail', 'ytp-md-seek', 'ytp-md-playpause', 'ytp-md-tab-playlist', 'ytp-md-tab-lyrics'];

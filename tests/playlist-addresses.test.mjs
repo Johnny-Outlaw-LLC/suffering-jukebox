@@ -14,7 +14,7 @@ test('playlist views use root slugs on Listening Party and prefixed slugs on Suf
 });
 
 test('Listening Party root playlist addresses are internally rewritten without replacing the visible URL', () => {
-  assert.match(proxy, /currentSurface\(request\.headers\.get\("host"\)\)\.id === "lp"/);
+  assert.match(proxy, /currentSurface\(request\.headers\.get\("host"\)\)\.features.playlistsFirst/);
   assert.match(proxy, /to\.pathname = `\/p\/\$\{slug\}`;\s*response = NextResponse\.rewrite\(to\)/);
 });
 

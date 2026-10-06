@@ -29,13 +29,20 @@ const framableHeaders = [
   {
     key: "Content-Security-Policy",
     value: [
-      "frame-ancestors 'self' capacitor: https://www.sufferingjukebox.stream https://app.listeningparty.stream",
+      "frame-ancestors 'self' capacitor: https://www.sufferingjukebox.stream https://app.listeningparty.stream https://app.recordkeeper.stream",
       "object-src 'none'",
       "base-uri 'self'",
     ].join("; "),
   },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+];
+
+// Public fictional demos can be embedded in the Record Keeper guides.
+// Authenticated dashboards retain SAMEORIGIN and the original CSP.
+const demoHeaders = [
+  ...framableHeaders.filter(h => h.key !== "Content-Security-Policy"),
+  { key: "Content-Security-Policy", value: "frame-ancestors 'self' https://outlawapps.online https://www.outlawapps.online http://localhost:3127; object-src 'none'; base-uri 'self'" },
 ];
 
 const nextConfig: NextConfig = {
@@ -45,7 +52,7 @@ const nextConfig: NextConfig = {
   // Resolve those paths through SJ before matching LP's filesystem routes.
   async rewrites() {
     return {
-      beforeFiles: process.env.SURFACE_ID?.trim().toLowerCase() === "lp"
+      beforeFiles: ["lp", "rk"].includes(process.env.SURFACE_ID?.trim().toLowerCase() || "")
         ? ["album-art", "artist-release-art"].map((segment) => ({
             source: `/${segment}/:path*`,
             destination: `https://www.sufferingjukebox.stream/${segment}/:path*`,
@@ -69,7 +76,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/yt-frame", headers: framableHeaders },
-      { source: "/((?!yt-frame).*)", headers: securityHeaders },
+      { source: "/demo/:path*", headers: demoHeaders },
+      { source: "/((?!yt-frame|demo/).*)", headers: securityHeaders },
     ];
   },
 };
