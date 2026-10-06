@@ -6,7 +6,9 @@
 - Web source commit: 7996ebb
 - Uploaded October 6, 2026 at 4:23 PM America/Chicago.
 - Xcode reported `Upload succeeded` and `EXPORT SUCCEEDED`.
-- Apple processing is pending.
+- Apple processing completed; TestFlight shows build 3, Ready to Submit.
+- Build ID: 2a800ed7-4923-4384-bfca-add8c13eb2fe.
+- What to Test notes are saved; no testers are assigned yet.
 - Existing App Store submission: version 1.0.0, build 1, Waiting for Review.
 - Build 3 has not replaced that submission.
 
