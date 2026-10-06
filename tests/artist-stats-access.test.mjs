@@ -42,14 +42,14 @@ function fixture() {
     },
     rpc(name, args) {
       rpcCalls.push({ name, args });
-      if (name === 'artists_with_stats') return {
+      if (name === 'artists_with_stats_in_range') return {
         range(from, to) {
           const matches = rows.artists.filter(a => withPlays.has(a.id) && (!args.p_artist_ids || args.p_artist_ids.includes(a.id)))
             .sort((a, b) => a.name.localeCompare(b.name));
           return Promise.resolve({ data: matches.slice(from, to + 1).map(({ id, name, slug }) => ({ id, name, slug })), error: null });
         },
       };
-      assert.equal(name, 'artist_stats');
+      assert(['artist_stats', 'all_artist_stats'].includes(name));
       return Promise.resolve({ data: { totals: { plays: 42 }, moments: [], referrers: [] }, error: null });
     },
   };
@@ -114,4 +114,54 @@ test('API rejects anonymous and other-artist requests before running metrics', a
   assert.equal(global.status, 200);
   assert.equal((await global.json()).isAdmin, true);
   assert.equal(rpcCalls.filter(call => call.name === 'artist_stats')[1].args.p_artist_id, 'other');
+});
+
+
+test('picker forwards the selected range and timezone with its authorized scope', async () => {
+  const { sb, manage, rpcCalls } = fixture();
+  await manage.listStatsArtists(sb, artist, 7, 'America/Chicago');
+  const call = rpcCalls.find(c => c.name === 'artists_with_stats_in_range');
+  assert.equal(call.args.p_days, 7);
+  assert.equal(call.args.p_tz, 'America/Chicago');
+  assert.deepEqual(call.args.p_artist_ids.sort(), ['approved', 'empty', 'grant', 'own']);
+});
+
+test('All Artists aggregates only authorized IDs and permits global scope only for admins', async () => {
+  const { auth, manage, rpcCalls } = fixture();
+  let user = artist;
+  const route = loadTs('src/app/api/artist-stats/route.ts', {
+    'next/server': { NextResponse: { json: (body, options) => Response.json(body, options) } },
+    'sj-admin-auth': { ...auth, getAuthUser: async () => user },
+    'artist-manage': manage,
+    'artist-stats': { lyricAt: () => null, groupReferrers: rows => rows },
+  });
+  const get = query => route.GET({ nextUrl: new URL(`https://example.test/api/artist-stats${query}`) });
+  assert.equal((await get('?days=7&tz=America/Chicago')).status, 200);
+  let call = rpcCalls.filter(c => c.name === 'all_artist_stats').at(-1);
+  assert.deepEqual(call.args.p_artist_ids.sort(), ['approved', 'empty', 'grant', 'own']);
+  assert.equal(call.args.p_days, 7);
+  assert.equal(call.args.p_tz, 'America/Chicago');
+  user = importer;
+  assert.equal((await get('')).status, 200);
+  assert.deepEqual(rpcCalls.filter(c => c.name === 'all_artist_stats').at(-1).args.p_artist_ids, []);
+  user = admin;
+  assert.equal((await get('?days=999')).status, 200);
+  call = rpcCalls.filter(c => c.name === 'all_artist_stats').at(-1);
+  assert.equal(call.args.p_artist_ids, null);
+  assert.equal(call.args.p_days, 30);
+});
+
+test('an authorized selection without range data falls back to All Artists', async () => {
+  const { auth, manage, rpcCalls, withPlays } = fixture();
+  withPlays.delete('own');
+  const route = loadTs('src/app/api/artist-stats/route.ts', {
+    'next/server': { NextResponse: { json: (body, options) => Response.json(body, options) } },
+    'sj-admin-auth': { ...auth, getAuthUser: async () => artist },
+    'artist-manage': manage,
+    'artist-stats': { lyricAt: () => null, groupReferrers: rows => rows },
+  });
+  const response = await route.GET({ nextUrl: new URL('https://example.test/api/artist-stats?artist=own-music&days=7') });
+  assert.equal(response.status, 200);
+  assert.equal(rpcCalls.filter(c => c.name === 'artist_stats').length, 0);
+  assert.equal(rpcCalls.filter(c => c.name === 'all_artist_stats').length, 1);
 });

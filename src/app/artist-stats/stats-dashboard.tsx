@@ -377,7 +377,7 @@ export function StatsDashboard({ stats, brand }: { stats: Stats; brand: PublicSu
           {stats.referrers.length
             ? <BarList rows={stats.referrers.map((r) => ({ label: r.source, value: r.visits, muted: r.source === "Direct link or typed in" }))} unit="visits" />
             : <p className={styles.empty}>Share your page link and the sites that send fans show up here.</p>}
-          <p className={styles.footnote}>Counts visits to {artistUrl.replace(/^https?:\/\//, "")}. Plays started inside {brand.name} are in the totals above.</p>
+          <p className={styles.footnote}>{stats.artist.slug ? `Counts visits to ${artistUrl.replace(/^https?:\/\//, "")}.` : "Counts visits across artist pages."} Plays started inside {brand.name} are in the totals above.</p>
         </section>
       </div>
     </>

@@ -54,8 +54,7 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
       }
       if (body.stats) {
         setStats(body.stats);
-      } else if (!artistSlug && body.artists?.length) {
-        setSlug(body.artists[0].slug);
+        if (body.stats.artist.slug !== artistSlug) setSlug(body.stats.artist.slug);
       }
     } catch {
       if (signal.aborted) return;
@@ -74,10 +73,10 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
   }, [load, slug, days]);
 
   useEffect(() => {
-    if (!slug) return;
-    const q = new URLSearchParams({ artist: slug });
+    const q = new URLSearchParams();
+    if (slug) q.set("artist", slug);
     if (days !== 30) q.set("days", String(days));
-    window.history.replaceState(null, "", `/artist-stats?${q}`);
+    window.history.replaceState(null, "", `/artist-stats${q.size ? `?${q}` : ""}`);
   }, [slug, days]);
 
   async function signIn() {
@@ -91,23 +90,23 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
     ["--sj-accent-hover" as string]: brand.accentHover,
   };
 
-  const artistUrl = stats ? `${brand.url}/${stats.artist.slug}` : "";
+  const artistUrl = stats?.artist.slug ? `${brand.url}/${stats.artist.slug}` : "";
 
   return (
     <main className={shell.page} data-surface={brand.id} style={pageStyle}>
       <header className={shell.header}>
         {fromNativeApp
           ? <button type="button" className={shell.backButton} onClick={() => window.history.back()}>‹ Back to {brand.name}</button>
-          : <a href={stats ? `/${stats.artist.slug}` : "/"} className={shell.back}>← Back to {brand.name}</a>}
+          : <a href={stats?.artist.slug ? `/${stats.artist.slug}` : "/"} className={shell.back}>← Back to {brand.name}</a>}
         <div>
           <p className={shell.eyebrow}>{brand.name} for artists</p>
           <h1>{stats?.artist.name || "Artist"} <span>Stats</span></h1>
         </div>
-        {artists && artists.length > 1 && (
+        {artists && (
           <label className={styles.picker}>
-            <span>{isAdmin ? "Artists with stats · admin only" : "Your artists with stats"}</span>
+            <span>{isAdmin ? "Artists with stats · admin only" : "Your artists with stats"} · {RANGES.find(r => r.days === days)?.label}</span>
             <select value={artists.some(a => a.slug === slug) ? slug : ""} onChange={(e) => setSlug(e.target.value)}>
-              {!artists.some(a => a.slug === slug) && <option value="" disabled>Choose an artist with stats</option>}
+              <option value="">All Artists</option>
               {artists.map((a) => <option key={a.id} value={a.slug}>{a.name}</option>)}
             </select>
           </label>
@@ -122,13 +121,6 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
           <p>These metrics are private. Artists see only their own music; site admins can see all artists.</p>
           <button className={shell.primaryButton} onClick={() => void signIn()}>Sign in with Google</button>
         </section>
-      ) : artists && !artists.length && !stats && !error ? (
-        <section className={shell.signIn}>
-          <p className={shell.eyebrow}>No listening stats yet</p>
-          <h2>Your music’s first play starts the story.</h2>
-          <p>Artists appear here after their first recorded play on Suffering Jukebox, Listening Party, or Record Keeper. Upload your songs and share them with your audience to get started.</p>
-          <a className={shell.primaryButton} href="/artist-upload">Publish my music</a>
-        </section>
       ) : (
         <div className={`${styles.body} ${loading && stats ? styles.refetching : ""}`}>
           <div className={styles.filters} role="group" aria-label="Date range">
@@ -139,7 +131,7 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
                 {r.label}
               </button>
             ))}
-            {stats && (
+            {artistUrl && (
               <a className={styles.artistLink} href={artistUrl} target="_blank" rel="noopener noreferrer">
                 {artistUrl.replace(/^https?:\/\//, "")}
               </a>
@@ -147,6 +139,7 @@ export default function ArtistStatsClient({ brand }: { brand: PublicSurface }) {
           </div>
 
           {error && <div className={shell.error}>{error}</div>}
+          {artists && !artists.length && !loading && !error && <p className={styles.coverage}>No artists have recorded plays in these {RANGES.find(r => r.days === days)?.label}. Choose a longer date range to see more activity.</p>}
           {!stats && !error && <div className={shell.loading}>Counting plays…</div>}
 
           {stats && <StatsDashboard stats={stats} brand={brand} />}

@@ -52,7 +52,7 @@ export async function canViewArtistStats(
 }
 
 /** Artist ids the user is connected to as the artist, not as an importer. */
-async function artistIdsAsArtist(
+export async function artistIdsAsArtist(
   sb: ReturnType<typeof createSjServiceClient>,
   user: { id: string; email?: string | null },
 ): Promise<Set<string>> {
@@ -74,10 +74,12 @@ async function artistIdsAsArtist(
 
 export type StatsArtist = { id: string; name: string; slug: string };
 
-/** Authorized artists with recorded plays, for the picker. All sites/all time. */
+/** Authorized artists with recorded plays, across all sites in the selected window. */
 export async function listStatsArtists(
   sb: ReturnType<typeof createSjServiceClient>,
   user: { id: string; email?: string | null },
+  days: number | null = null,
+  tz = "UTC",
 ): Promise<StatsArtist[]> {
   const email = (user.email || "").toLowerCase();
   const db = sb.schema(JUKEBOX_SCHEMA);
@@ -86,7 +88,7 @@ export async function listStatsArtists(
   if (ids && !ids.length) return [];
   const out: StatsArtist[] = [];
   for (let start = 0; ; start += 1000) {
-    const { data, error } = await db.rpc("artists_with_stats", { p_artist_ids: ids }).range(start, start + 999);
+    const { data, error } = await db.rpc("artists_with_stats_in_range", { p_artist_ids: ids, p_days: days, p_tz: tz }).range(start, start + 999);
     if (error) throw error;
     const rows = (data || []) as StatsArtist[];
     out.push(...rows.filter(a => a.slug));
