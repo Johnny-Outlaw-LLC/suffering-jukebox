@@ -1,6 +1,6 @@
-// Johnny Outlaw, LLC — one codebase, two brands.
+// Johnny Outlaw, LLC — one codebase, three brands.
 //
-// Suffering Jukebox and Listening Party are the SAME application reading the
+// Suffering Jukebox, Listening Party and Record Keeper share one application and
 // SAME `jukebox` schema. They differ only in what they are called and which
 // front door they open on: SJ leads with artists, LP leads with playlists.
 //
