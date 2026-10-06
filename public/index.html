@@ -1698,7 +1698,7 @@ body.light .sc-link:hover { background: #e8e8e8; }
 }
 .sjm-item:hover { background: rgba(255,255,255,.07); }
 .sjm-item.sjm-danger:hover { color: #ef4444; }
-.sjm-ic { width: 13px; flex-shrink: 0; text-align: center; color: var(--text-muted); font-size: .62rem; }
+.sjm-menu .sjm-ic { display: none; }
 .sjm-item:hover .sjm-ic { color: inherit; }
 .sjm-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sjm-sub { font-size: .44rem; color: var(--text-muted); flex-shrink: 0; }
@@ -10666,14 +10666,16 @@ async function loadArtistOnDemandAudio(trackIds) {
 
 function ytpStartArtistAudio(item) {
   if (!item?.trackId) return;
+  // A restored playlist may only have the app placeholder until metadata loads.
+  void ytpEnsureTrackMeta(item.trackId);
   if (_sjCarFollow) {
     // No video for this song, and the car has the sound: just the cover.
-    ytpShowArtFrame(item.artwork || (typeof ytpTrackMeta === 'function' ? ytpTrackMeta(item.trackId, item.title).artwork : '') || '');
+    ytpShowArtFrame(ytpTrackMeta(item.trackId, item.title).artwork);
     return;
   }
   _taManualAudio = true;
   _ytUserWantsPlay = true;
-  const art = item.artwork || (typeof ytpTrackMeta === 'function' ? ytpTrackMeta(item.trackId, item.title).artwork : '') || '';
+  const art = ytpTrackMeta(item.trackId, item.title).artwork;
   ytpShowArtFrame(art);
   const start = () => {
     if (ytQueue[ytQueueIdx]?.trackId !== item.trackId) return;
@@ -15136,14 +15138,16 @@ function ytpTrackMeta(trackId, fallbackTitle, videoIdHint, queueItemHint) {
     || ((typeof nowPlayingTrackId !== 'undefined' && nowPlayingTrackId === trackId
          && typeof ytVideoId !== 'undefined') ? ytVideoId : null)
     || null;
-  const art = (cache && cache.artwork)
-    || (qItem && qItem.artwork)
-    || (albumName ? ALBUM_ART[albumName] : null)
-    || (album ? albumThumb(album) : null)
-    || (album && album.art_url)
-    || (trackId ? ytData[trackId]?.thumbnail : null)
-    || (qVid ? ('https://i.ytimg.com/vi/' + qVid + '/hqdefault.jpg') : null)
-    || '/favicon.png';
+  const art = [
+    albumName ? ALBUM_ART[albumName] : null,
+    album ? albumThumb(album) : null,
+    album && album.art_url,
+    cache && cache.artwork,
+    qItem && qItem.artwork,
+    trackId ? ytData[trackId]?.thumbnail : null,
+    qVid ? ('https://i.ytimg.com/vi/' + qVid + '/hqdefault.jpg') : null,
+  ].find(src => src && !/\/favicon\.png(?:$|\?)/.test(src)
+    && (typeof SJ_BRAND === 'undefined' || src !== SJ_BRAND.icon)) || '/favicon.png';
   return {
     title: (track && track.name) || fallbackTitle || (cache && cache.title) || (qItem && qItem.title) || 'Unknown',
     artist: artistName,
@@ -15285,6 +15289,11 @@ async function ytpEnsureTrackMeta(trackId) {
     if (nowPlayingTrackId === trackId) {
       ytpApplyTitle(trackId, t.name);
       ytpUpdateMiniFooter();
+      // The audio-only player's large cover was painted before this lookup.
+      // Refresh it too, while leaving an active YouTube frame alone.
+      if (ytPlayerEl?.querySelector('.ytp-art-frame')) {
+        ytpShowArtFrame(ytpTrackMeta(trackId, t.name).artwork);
+      }
       if (ytPlayerEl && _ytUserWantsPlay) ytpUpdateMediaSession();
     }
   } catch (_) {
@@ -22172,17 +22181,14 @@ function sjmRenderRoot() {
         '<div class="sjm-sep"></div>';
     })() +
     (function () {
-      // Native only, and only for a track that actually has a file behind it.
+      // Available audio already plays in CarPlay. Only show existing offline
+      // download management; another download is not required to listen.
       if (!sjIsNative() || !sjDlPlugin()) return '';
-      if (!taTrackAudio(tid)?.url) return '';
       const st = sjDlState(tid);
-      const label = st === 'done' ? 'Remove download'
-                  : st === 'downloading' ? 'Downloading...'
-                  : 'Download for CarPlay';
-      const ic = st === 'done' ? '\u2713' : '\u2913';
+      if (st !== 'done' && st !== 'downloading') return '';
+      const label = st === 'done' ? 'Remove download' : 'Downloading...';
       return '<button class="sjm-item" onclick="sjmToggleDownload()"' +
           (st === 'downloading' ? ' disabled' : '') + '>' +
-          '<span class="sjm-ic">' + ic + '</span>' +
           '<span class="sjm-label">' + label + '</span>' +
           '<span class="sjm-sub">' + (st === 'done' ? 'offline' : 'offline play') + '</span>' +
         '</button><div class="sjm-sep"></div>';
