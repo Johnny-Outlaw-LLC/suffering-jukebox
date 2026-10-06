@@ -35,6 +35,8 @@ production hosts, including Record Keeper.
 Porkbun DNS: apex ALIAS and www CNAME point to the Vercel project-specific DNS
 target. Porkbun mail forwarding MX/SPF records are retained.
 
-Native apps remain the existing Suffering Jukebox and Listening Party apps.
-This launch publishes the Record Keeper website and installable web manifest;
-it does not create a separate App Store application.
+The original web launch did not create an App Store application. Record Keeper
+now has a separate generated iOS product using the maintained Listening Party
+native sources. See `native/README.md` for build commands and the new bundle ID's
+device-signing and authentication setup. App Store distribution and physical
+CarPlay verification are separate from successful simulator compilation.

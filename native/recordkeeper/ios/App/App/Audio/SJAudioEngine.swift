@@ -326,6 +326,25 @@ final class SJAudioEngine: NSObject {
     /// choice instead of independently drawing a different one.
     var nextQueueIndex: Int? { nextIndex() }
 
+    /// The queue split around the current song for the CarPlay Up Next list.
+    /// `upcoming` starts with the current song and follows the real running
+    /// order (shuffled or not, wrapping under Repeat All), so the song the Up
+    /// Next button names is always the row right after it. `earlier` is what
+    /// already played. A CarPlay list cannot be scrolled to a row, so queue
+    /// order put a shuffled next song anywhere - often past the item limit.
+    var upNextOrder: (upcoming: [Int], earlier: [Int]) {
+        guard queue.indices.contains(index) else { return (Array(queue.indices), []) }
+        // Settles a Repeat All reshuffle first, so the list matches the button.
+        _ = nextIndex()
+        if shuffleEnabled, let pos = playOrder.firstIndex(of: index) {
+            return (Array(playOrder[pos...]), Array(playOrder[..<pos]))
+        }
+        if repeatMode == .all {
+            return (Array(index..<queue.count) + Array(0..<index), [])
+        }
+        return (Array(index..<queue.count), Array(0..<index))
+    }
+
     /// Prefers the downloaded file. Offline is not a mode - if the file is
     /// there it is always used, which also saves cellular data in the car.
     private func playableURL(for track: SJTrack) -> URL? {

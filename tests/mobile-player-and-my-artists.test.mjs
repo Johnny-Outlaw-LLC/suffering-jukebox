@@ -4,10 +4,178 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { loadHtmlFns } from './_load.mjs';
+import { loadHtmlFns, loadHtmlFnsInScope } from './_load.mjs';
 
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const lpHelp = readFileSync(new URL('../public/help/lp/index.html', import.meta.url), 'utf8');
+
+test('background-capable playback defaults on for mobile until explicitly disabled', () => {
+  const preference = (userAgent, saved) => {
+    const scope = {
+      navigator: { userAgent, maxTouchPoints: 0 },
+      localStorage: { getItem: () => saved },
+    };
+    return loadHtmlFnsInScope(['taIsMobileDevice', 'taLoadPreferBg'], scope).taLoadPreferBg();
+  };
+
+  assert.equal(preference('iPhone', null), true);
+  assert.equal(preference('Android', null), true);
+  assert.equal(preference('Desktop Chrome', null), false);
+  assert.equal(preference('iPhone', '0'), false, 'an explicit mobile opt-out must be preserved');
+  assert.equal(preference('Desktop Chrome', '1'), true, 'an existing opt-in must be preserved');
+});
+
+test('native library eligibility starts background playback without a web signed URL', () => {
+  const scope = {
+    taData: {},
+    taNativeBgPlugin: () => ({}),
+    sjCarTrackIds: () => ['private-upload'],
+  };
+  const { taTrackAudio } = loadHtmlFnsInScope(['taTrackAudio'], scope);
+  assert.equal(taTrackAudio('private-upload').nativePlayable, true);
+  assert.equal(taTrackAudio('youtube-only'), null);
+  scope.taNativeBgPlugin = () => null;
+  assert.equal(taTrackAudio('private-upload'), null, 'website playback still requires a URL');
+});
+
+test('late background-audio metadata hands an active mobile track off from YouTube', () => {
+  let mediaUpdates = 0;
+  const scope = {
+    _taPreferBg: true,
+    _taBgActive: false,
+    _sjCarFollow: false,
+    _ytUserWantsPlay: true,
+    _taManualAudio: false,
+    ytQueue: [{ trackId: 'ready' }],
+    ytQueueIdx: 0,
+    taIsMobileDevice: () => true,
+    taTrackAudio: id => id === 'ready' ? { url: 'signed-audio' } : null,
+    taEnterBgAudio: () => true,
+    ytpUpdateMediaSession: () => { mediaUpdates++; },
+    ytpSetPlayPauseIcon() {},
+    taSyncAudioBtn() {},
+  };
+  const { taTryStartPreferredBg } = loadHtmlFnsInScope(['taTryStartPreferredBg'], scope);
+
+  assert.equal(taTryStartPreferredBg(), true);
+  assert.equal(scope._taManualAudio, true);
+  assert.equal(mediaUpdates, 1);
+});
+
+test('a private native-library track enters AVPlayer without web-session authorization', async () => {
+  const calls = [];
+  const scope = {
+    googleUser: null, taData: {},
+    _taPreferBg: true, _taManualAudio: true, _ytUserWantsPlay: true,
+    _taNativeBgActive: false, _taBgActive: false, _taBgLogged: false, _taBgStartPos: 0,
+    ytQueue: [{ trackId: 'private-upload' }], ytQueueIdx: 0,
+    ytAPIPlayer: { getCurrentTime: () => 0, pauseVideo: () => calls.push('pause-video') },
+    _taAudioEl: null,
+    taNativeBgPlugin: () => ({}), sjCarTrackIds: () => ['private-upload'],
+    taStartNativeBg: async () => calls.push('start-native'),
+    ytpStopBgKeepalive() {}, taSyncAudioBtn() {},
+  };
+  const api = loadHtmlFnsInScope(['taTrackAudio', 'taEnterBgAudio'], scope);
+  assert.equal(api.taEnterBgAudio(), true);
+  await Promise.resolve();
+  assert.deepEqual(calls, ['pause-video', 'start-native']);
+  assert.equal(scope._taNativeBgActive, true);
+});
+
+test('Listening Party app sends Background Play to the native audio engine', async () => {
+  const calls = [];
+  const plugin = {
+    setQueue: async options => { calls.push(['queue', options]); },
+    setShuffle: async options => { calls.push(['shuffle', options]); },
+    setRepeat: async options => { calls.push(['repeat', options]); },
+    play: async options => { calls.push(['play', options]); },
+    seek: async options => { calls.push(['seek', options]); },
+  };
+  const scope = {
+    SJ_BRAND: { id: 'lp' },
+    sjIsNative: () => true,
+    sjDlPlugin: () => plugin,
+    ytQueue: [
+      { trackId: 'one', title: 'One' },
+      { trackId: 'two', title: 'Two', durationSeconds: 180 },
+    ],
+    ytQueueIdx: 1,
+    ytShuffle: true,
+    ytRepeat: false,
+    ytpTrackMeta: (id, title) => ({ title, artist: 'Artist ' + id, album: 'Album', artwork: 'cover-' + id }),
+    taTrackAudio: id => id === 'two' ? { url: 'signed-two', duration: 181 } : null,
+  };
+  const api = loadHtmlFnsInScope(
+    ['taNativeBgPlugin', 'taNativeQueuePayload', 'taStartNativeBg'],
+    scope,
+  );
+
+  assert.equal(api.taNativeBgPlugin(), plugin);
+  await api.taStartNativeBg(12);
+  assert.deepEqual(calls.map(([name]) => name), ['queue', 'shuffle', 'repeat', 'play', 'seek']);
+  assert.equal(calls[0][1].autoPlay, true);
+  assert.equal(calls[0][1].startIndex, 1);
+  assert.equal(calls[0][1].tracks[1].url, 'signed-two');
+  assert.equal(calls[3][1].index, 1);
+  assert.equal(calls[4][1].positionSeconds, 12);
+  assert.match(html, /function taEnterBgAudio\(\)[\s\S]*?if \(taNativeBgPlugin\(\)\)[\s\S]*?taStartNativeBg\(pos\)/);
+
+  scope.SJ_BRAND = { id: 'sj' };
+  assert.equal(api.taNativeBgPlugin(), null, 'the website must keep its existing player');
+  scope.SJ_BRAND = { id: 'rk' };
+  assert.equal(api.taNativeBgPlugin(), plugin, 'Record Keeper uses the same native playback engine');
+});
+
+test('Background Enabled shuffle primes native audio before opening the player', () => {
+  const start = html.indexOf('async function landingPlayQueue(q, opts)');
+  const end = html.indexOf('\nfunction shuffleInPlace', start);
+  assert.ok(start > 0 && end > start, 'could not locate landingPlayQueue');
+  const block = html.slice(start, end);
+  const prime = block.indexOf('await loadTrackAudio([first.trackId])');
+  const open = block.indexOf('openYTPlayer(first.videoId');
+  assert.ok(prime > 0 && open > prime,
+    'the selected signed audio URL must load before the web player can start');
+  assert.match(block, /homeJukeboxBgFilterOn\(\)[\s\S]*?taNativeBgPlugin\(\)/);
+  assert.match(block, /if \(primeNativeBackground\) taTryStartPreferredBg\(\)/);
+});
+
+test('an already-open app player switches background audio to AVPlayer', () => {
+  const start = html.indexOf('function taPlayBgIdx(idx)');
+  const end = html.indexOf('\nfunction taOnAudioEnded', start);
+  assert.ok(start > 0 && end > start, 'could not locate taPlayBgIdx');
+  const block = html.slice(start, end);
+  assert.match(block, /if \(taNativeBgPlugin\(\)\)[\s\S]*?_taNativeBgActive = true[\s\S]*?taStartNativeBg\(0\)/);
+  assert.ok(block.indexOf('taStartNativeBg(0)') < block.indexOf('const a = taEnsureAudioEl()'),
+    'native playback must win before the HTML audio fallback is created');
+});
+
+test('private-audio auth failure still falls through to licensed background audio', async () => {
+  const requested = [];
+  let triedHandoff = 0;
+  const scope = {
+    taData: {},
+    sjGetSession: async () => ({ data: { session: { user: { id: 'listener' } } } }),
+    taOwnAudioUrls: async () => { throw new Error('expired private session'); },
+    taIsMobileDevice: () => true,
+    sjApiUrl: path => 'https://listeningparty.stream' + path,
+    sjGetJson: async url => {
+      requested.push(url);
+      return { ok: true, tracks: [{ trackId: 'licensed', url: 'signed-artist-audio', duration: 180, artist: 'Artist' }] };
+    },
+    taSyncAudioBtn() {},
+    taTryStartPreferredBg() { triedHandoff++; },
+    console: { warn() {} },
+  };
+  const { loadTrackAudio } = loadHtmlFnsInScope(['loadTrackAudio'], scope);
+
+  await loadTrackAudio(['licensed']);
+
+  assert.equal(requested.length, 1);
+  assert.match(requested[0], /\/api\/sj-artist-audio\?purpose=mobile-background/);
+  assert.equal(scope.taData.licensed.url, 'signed-artist-audio');
+  assert.equal(scope.taData.licensed.artistLicensed, true);
+  assert.equal(triedHandoff, 1);
+});
 
 test('mobile dock has no resize handle, and the full player is dismissed by pulling it down', () => {
   const start = html.indexOf('/* A phone player has two deliberate states');
@@ -55,7 +223,7 @@ test('full-detail mobile artist stats use a readable two-by-two grid', () => {
 });
 
 test('native account tools stay in the app navigation stack', () => {
-  assert.match(html, /function openFaq\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*window\.location\.assign\('\/help\/lp\/index\.html'\)/);
+  assert.match(html, /function openFaq\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*SJ_BRAND\.id === 'rk' \? 'rk' : 'lp'/);
   assert.match(html, /async function openAnalyticsInNewTab\(\) \{\s*return openHostedToolInNewTab\('\/analytics'\);/);
   assert.match(html, /async function openHostedToolInNewTab\(path\) \{\s*if \(sjIsNative\(\)\) \{\s*await sjOpenHostedTool\(path\);/);
   assert.match(html, /action === 'studio'[\s\S]*sjOpenHostedTool\('\/artist-discography-upload'\)/);

@@ -66,6 +66,42 @@ request and a file, not two copies of one state.
 
 ## Build
 
+### Record Keeper iOS
+
+From `native/`, run `npm run sync:recordkeeper:ios` to generate and sync the
+Record Keeper product, or `npm run ios:recordkeeper` to also open it in Xcode.
+The workspace is `products/record-keeper/ios/App/App.xcworkspace` and the scheme
+is `App`. Its bundle ID is `com.johnnyoutlaw.recordkeeper`, version 1.0.0,
+build 1. Listening Party retains its existing bundle ID and workspace.
+
+Both products bundle the canonical `public/` interface and use brand settings
+from `src/lib/surface.ts`. Record Keeper inherits the same native streaming,
+offline downloads, lock-screen controls, playlists, background audio, and
+CarPlay sources. Spotify playback follows Record Keeper's disabled web feature.
+
+`products/` is generated and ignored. Make native source changes in `native/ios`
+and web changes in `public/`, then sync again. Do not make durable changes in
+the generated project; each sync recopies the maintained project and sources.
+This iOS-only command does not generate or sync Android.
+
+Before device distribution, register the explicit Record Keeper App ID on team
+2J69KHU242 with Sign in with Apple and the managed CarPlay audio capability,
+and obtain a matching provisioning profile. Confirm its native sign-in callback
+`com.johnnyoutlaw.recordkeeper://auth` is accepted by the shared authentication
+service and its bundle ID is an accepted native Apple sign-in audience. The
+existing Listening Party entitlement/profile does not establish those settings
+for a new bundle ID. Deploy the `app.recordkeeper.stream` CORS and `/yt-frame`
+frame-ancestor changes before testing the complete online flow.
+
+Build without device signing for simulator verification:
+
+```bash
+cd products/record-keeper/ios/App
+xcodebuild -workspace App.xcworkspace -scheme App -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /private/tmp/record-keeper-ios-build CODE_SIGNING_ALLOWED=NO build
+```
+
 ```bash
 npm install
 npm run sync     # stage web assets into www/ and run cap sync

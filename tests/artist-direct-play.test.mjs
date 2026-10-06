@@ -103,6 +103,7 @@ test('native artist-audio authorization bypasses WebKit CORS through Capacitor H
     taData,
     SJ_FETCH_TIMEOUT_MS: 45000,
     sjIsNative: () => true,
+    taNativeBgPlugin: () => null,
     sjApiUrl: path => 'https://listeningparty.stream' + path,
     sjFetch: async () => { throw new Error('native playback must not use WebKit fetch'); },
     window: { Capacitor: { Plugins: { CapacitorHttp: { get: async request => {

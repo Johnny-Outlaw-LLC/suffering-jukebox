@@ -6399,7 +6399,7 @@ html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.ligh
           <div class="set-body" id="set-audio-body">
             <div class="set-block">
               <div class="set-h">Your audio storage</div>
-              <p class="set-sub">Private audio files you upload power Background Play on your phone. Importing songs from YouTube creates their listings, but iOS still needs a matching audio file here to keep them playing when the screen locks. Your files stay on your account only; normal listening still uses YouTube. Everyone gets 500&nbsp;MB.</p>
+              <p class="set-sub">Private audio files you upload power Background Play on your phone. Importing songs from YouTube creates their listings, but iOS still needs a matching audio file here to keep them playing when the screen locks. Your files stay on your account only; eligible songs use Background Play by default on phones, while desktop listening still uses YouTube. Everyone gets 500&nbsp;MB.</p>
               <div class="set-audio-meter">
                 <div class="bgs-meter-track"><span class="bgs-meter-fill" id="setAudioMeterFill"></span></div>
                 <div class="bgs-meter-txt" id="setAudioQuotaTxt"><span>Loading…</span><span></span></div>
@@ -7869,6 +7869,7 @@ function lphStartListening() {
 async function lphOpenBackgroundEnabled() {
   homeBgOnly = true;
   try { localStorage.setItem('sj_home_bg_only', '1'); } catch (_) {}
+  if (taIsMobileDevice()) taSetPreferBg(true);
   if (!_homeLibLoaded) await ensureHomeLibrary();
   setLandingTab('playlists');
   if (_homeBgTrackIds.size) await openPlaylistChart('__dynamic_background');
@@ -9397,8 +9398,18 @@ let _taBatchCancel      = false; // set by Cancel — stop after the current fil
 let _taBatchMinimized   = false;
 let _taBatchLastStatus  = '';
 let _taManualAudio      = false; // audio-only mode active for the current track
-let _taPreferBg         = false; // sticky: once enabled on mobile, prefer bg play when audio exists
-try { _taPreferBg = localStorage.getItem('sj_bg_play') === '1'; } catch (_) {}
+let _taNativeBgActive   = false; // native app is playing through AVPlayer
+function taLoadPreferBg() {
+  try {
+    const saved = localStorage.getItem('sj_bg_play');
+    if (saved !== null) return saved === '1';
+  } catch (_) {}
+  // Background-capable audio is the useful default on a phone: it survives a
+  // locked screen. Desktop keeps the video default, and a saved 0 remains an
+  // explicit mobile opt-out.
+  return taIsMobileDevice();
+}
+let _taPreferBg         = taLoadPreferBg(); // sticky mobile default; explicit opt-out is persisted
 let _ytpWatchdogTimer   = null;  // fires if a track never reaches PLAYING (stall/embed-blocked)
 let _ytpWatchdogVideoId = null;  // videoId the pending watchdog is guarding
 let _ytpWatchdogStartedAt = 0;   // when we first started waiting on this videoId
@@ -10882,9 +10893,9 @@ function openYTPlayer(videoId, title, trackId, ev) {
   if (videoId) setTimeout(attachYTAPIPlayer, ytpIsMob() ? 50 : 400);
   ytpOnTrackChange(videoId, trackId, title);
   showYtpMiniFooter();
-  // Mobile still opens straight to Full Screen; Docked is what it falls back
-  // to when minimized from there.
-  if (_isMobPlayer) requestAnimationFrame(() => ytpEnterFullscreen());
+  // A song you tap opens straight to Full Screen on a phone. The paused restore
+  // after sign-in never does: it waits in the dock on your last queue.
+  if (_isMobPlayer) requestAnimationFrame(() => restorePaused ? ytpEnterDocked() : ytpEnterFullscreen());
   if (!videoId && trackId) {
     ytpStartArtistAudio(ytQueue[0]);
   } else if (_taPreferBg && taIsMobileDevice() && taTrackAudio(trackId) && !restorePaused && !_sjCarFollow) {
@@ -11048,6 +11059,7 @@ function closeYTPlayer() {
   ytpClearPlaybackWatchdog();
   markPlayerClosed();
   hideYtpMiniFooter();
+  sjNativeRepaint();
   patchYTPlayDuration();
   _ytCurrentPlay = null;
   _ytUserWantsPlay = false;
@@ -11908,6 +11920,9 @@ function ytpOnSlotStateChange(slot, ev) {
     ytpClearPlaybackWatchdog();
     ytpConfirmPendingStalls();
     ytpMfStartProgress();
+    // Audio availability can arrive before or after the YouTube player reaches
+    // PLAYING. Whichever finishes second completes the preferred handoff.
+    taTryStartPreferredBg();
   } else if (ev.data === 2) { // PAUSED
     if (_taBgActive) return;
     ytpSetPlayPauseIcon(false);
@@ -12166,14 +12181,10 @@ async function sjCarClearAccess() {
   try { await p.clearCarAccess(); } catch (_) {}
 }
 
-// ── CarPlay → phone: follow the car ──────────────────────────────────
-// CarPlay plays through the native engine; this page plays YouTube in its own
-// web view. Two players, one car: if the page simply started the same song,
-// the car would get it twice. So while the car is playing, the page FOLLOWS
-// it - the same song's video, muted, held to the car's position, with lyrics
-// timed off the car's clock - and the phone's transport buttons steer the car.
-// The page never drives the native engine itself, so native playing at all
-// means the car (or the lock screen carrying on from it) started it.
+// ── Native engine → phone UI ──────────────────────────────────────────
+// CarPlay and Listening Party Background Play both use the native engine;
+// this page follows it with the matching muted video, lyrics and controls.
+// Keeping one follower avoids two players fighting over the same speakers.
 // Picking a different song on the phone ends following and pauses the car.
 var _sjCarFollow = null;          // { trackId, title, artist, pos, at, playing, loaded }
 var _sjCarFollowDriving = false;  // true while this code is the one loading a song
@@ -12227,6 +12238,12 @@ async function sjCarOnNativeStatus(st, opts) {
   const trackId = st.trackId || null;
   const state = st.state;
   if (!trackId || state === 'idle' || state === 'ended') {
+    if (_taNativeBgActive) {
+      _taNativeBgActive = false;
+      _taBgActive = false;
+      _taManualAudio = false;
+      taSyncAudioBtn();
+    }
     if (_sjCarFollow) sjCarFollowStop(false);
     return;
   }
@@ -12265,9 +12282,12 @@ async function sjCarFollowLoad(trackId) {
   }
   if (_sjCarFollow?.trackId !== trackId) return;   // the car moved on meanwhile
   const title = (typeof findTrackById === 'function' && findTrackById(trackId)?.name) || f.title || '';
-  // Whatever the phone was playing itself stops: the car has the speakers.
+  // The native engine has the speakers; stop any WebView audio duplicate.
   try { _taAudioEl?.pause(); } catch (_) {}
-  _taBgActive = false; _taManualAudio = false;
+  // Phone Background Play also uses this native engine. Keep its mode flags
+  // while the web UI follows AVPlayer; genuine CarPlay starts with them off.
+  _taBgActive = _taNativeBgActive;
+  _taManualAudio = _taNativeBgActive;
   if (typeof _spActive !== 'undefined' && _spActive) { try { void spPauseTransport(); } catch (_) {} }
   _sjCarFollowDriving = true;
   try {
@@ -12284,6 +12304,11 @@ async function sjCarFollowLoad(trackId) {
       updateYTQueueUI();
     }
   } finally { _sjCarFollowDriving = false; }
+  if (_taNativeBgActive) {
+    _taBgActive = true;
+    _taManualAudio = true;
+    taSyncAudioBtn();
+  }
   _ytUserWantsPlay = false;   // keeps the page off Now Playing and background keepalive
   if (_sjCarFollow) { _sjCarFollow.loaded = trackId; _sjCarFollow.loading = null; }
   setTimeout(sjCarFollowAlign, 600);
@@ -12317,6 +12342,12 @@ function sjCarFollowStop(pauseCar) {
   _sjCarFollow = null;
   try { ytAPIPlayer?.unMute?.(); } catch (_) {}
   if (pauseCar) { try { sjDlPlugin()?.pause?.(); } catch (_) {} }
+  if (pauseCar && _taNativeBgActive) {
+    _taNativeBgActive = false;
+    _taBgActive = false;
+    _taManualAudio = false;
+    taSyncAudioBtn();
+  }
 }
 
 // The phone's transport buttons, while following. Returns true when handled.
@@ -12358,6 +12389,8 @@ async function sjCarRefreshLibrary() {
   try {
     const result = await p.refreshCarLibrary();
     _sjCarStreamIds = Array.isArray(result?.trackIds) ? result.trackIds.filter(Boolean) : _sjCarStreamIds;
+    taTryStartPreferredBg();
+    taSyncAudioBtn();
     void sjCarPushShuffleProfile();
     sjCarSchedulePushRatings();
     // The refresh is what finds out a held key was revoked; replace it now
@@ -13987,6 +14020,24 @@ function ytpEnterDocked() {
   ytpDockClaimFrame();
   showYtpMiniFooter();
   ytpShowQueueChrome();
+  sjNativeRepaint();
+}
+
+// In the iPhone app, parking the YouTube frame off screen (docking, closing,
+// or the player restored after sign-in) left the top 512pt of the page
+// unpainted until the next scroll: WKWebView does not invalidate the tiles the
+// out-of-process frame was covering. A one-pixel scroll and back is what a
+// person's thumb did to bring it back, so do that for them.
+function sjNativeRepaint() {
+  if (typeof sjIsNative !== 'function' || !sjIsNative()) return;
+  const nudge = () => requestAnimationFrame(() => {
+    const dir = window.scrollY > 0 ? -1 : 1;
+    window.scrollBy(0, dir);
+    requestAnimationFrame(() => window.scrollBy(0, -dir));
+  });
+  // Once when the frame moves, and again after the dock has settled.
+  setTimeout(nudge, 60);
+  setTimeout(nudge, 700);
 }
 
 // Kept under its old name because a lot of call sites already ask "is the
@@ -17025,9 +17076,19 @@ async function taOwnAudioUrls(trackIds) {
 }
 
 function taTrackAudio(trackId) {
-  const ta = (trackId && taData[trackId]) || null;
-  if (ta?.expiresAt && Date.now() > ta.expiresAt) { delete taData[trackId]; return null; }
-  return ta;
+  if (!trackId) return null;
+  const ta = taData[trackId] || null;
+  if (ta?.expiresAt && Date.now() > ta.expiresAt) {
+    delete taData[trackId];
+  } else if (ta) {
+    return ta;
+  }
+  // AVPlayer resolves private uploads with the device key, independently of
+  // the web session. A web signed URL is not required for native playback.
+  if (taNativeBgPlugin() && sjCarTrackIds().includes(trackId)) {
+    return { nativePlayable: true };
+  }
+  return null;
 }
 
 function taEnsureAudioEl() {
@@ -17120,7 +17181,92 @@ function taSetPreferBg(on) {
   try { localStorage.setItem('sj_bg_play', on ? '1' : '0'); } catch (_) {}
 }
 
+// The Listening Party app has a real AVPlayer engine. WKWebView audio can be
+// suspended when iOS locks the phone even though the same page works in the
+// foreground, so app Background Play must hand the queue to that engine.
+function taNativeBgPlugin() {
+  if (!sjIsNative() || !['lp', 'rk'].includes(SJ_BRAND.id)) return null;
+  const p = sjDlPlugin();
+  return p?.setQueue && p?.play ? p : null;
+}
+
+function taNativeQueuePayload() {
+  const tracks = [];
+  let startIndex = 0;
+  (ytQueue || []).forEach((item, queueIndex) => {
+    if (!item?.trackId) return;
+    if (queueIndex === ytQueueIdx) startIndex = tracks.length;
+    const meta = ytpTrackMeta(item.trackId, item.title);
+    const audio = taTrackAudio(item.trackId);
+    tracks.push({
+      id: item.trackId,
+      title: meta.title || item.title || 'Track',
+      artist: meta.artist || item.artist || '',
+      album: meta.album || item.album || undefined,
+      artworkUrl: meta.artwork || item.artwork || undefined,
+      url: audio?.url || undefined,
+      durationSeconds: Number(audio?.duration || item.durationSeconds) || 0,
+    });
+  });
+  return { tracks, startIndex };
+}
+
+async function taStartNativeBg(positionSeconds) {
+  const p = taNativeBgPlugin();
+  const payload = taNativeQueuePayload();
+  if (!p || !payload.tracks.length) throw new Error('Native background queue is unavailable');
+  await p.setQueue({ ...payload, autoPlay: true });
+  if (p.setShuffle) await p.setShuffle({ enabled: !!ytShuffle });
+  if (p.setRepeat) await p.setRepeat({ enabled: !!ytRepeat });
+  // setQueue can preserve an existing matching item. play() makes auto-play
+  // explicit in that case as well as for a freshly installed queue.
+  await p.play({ index: payload.startIndex });
+  if (Number(positionSeconds) > 0.5 && p.seek) {
+    await p.seek({ positionSeconds: Number(positionSeconds) });
+  }
+}
+
+async function taExitNativeBg() {
+  const p = taNativeBgPlugin();
+  let pos = sjCarFollowTime() || 0;
+  try {
+    const status = await p?.getStatus?.();
+    pos = Number(status?.positionSeconds) || pos;
+    await p?.pause?.();
+  } catch (_) {}
+  _taNativeBgActive = false;
+  _taBgActive = false;
+  _taManualAudio = false;
+  sjCarFollowStop(false);
+  _ytUserWantsPlay = true;
+  try {
+    if (pos > 0.5) ytAPIPlayer?.seekTo?.(pos, true);
+    ytAPIPlayer?.playVideo?.();
+  } catch (_) {}
+  taSyncAudioBtn();
+}
+
+function taTryStartPreferredBg() {
+  const item = ytQueue[ytQueueIdx];
+  if (!_taPreferBg || !taIsMobileDevice() || _taBgActive || _sjCarFollow) return false;
+  if (!_ytUserWantsPlay || !taTrackAudio(item?.trackId)) return false;
+  _taManualAudio = true;
+  if (!taEnterBgAudio()) {
+    _taManualAudio = false;
+    return false;
+  }
+  ytpUpdateMediaSession();
+  ytpSetPlayPauseIcon(true);
+  taSyncAudioBtn();
+  return true;
+}
+
 function taToggleAudioMode() {
+  if (_taNativeBgActive) {
+    taSetPreferBg(false);
+    void taExitNativeBg();
+    return;
+  }
   if (_taManualAudio && _taBgActive) {
     taSetPreferBg(false);
     taExitBgAudio(); // also clears _taManualAudio + resyncs the button
@@ -17128,7 +17274,7 @@ function taToggleAudioMode() {
   }
   const item = ytQueue[ytQueueIdx];
   const audio = taTrackAudio(item?.trackId);
-  if (!googleUser && !audio?.artistLicensed) {
+  if (!googleUser && !audio?.artistLicensed && !audio?.nativePlayable) {
     openBgSetup();   // the sheet explains it and offers sign-in
     return;
   }
@@ -17157,7 +17303,7 @@ function taSyncAudioBtn() {
   const signedIn = !!googleUser;
   const show = mob && (has || signedIn);
   btn.style.display = show ? '' : 'none';
-  const on = (_taManualAudio && _taBgActive) || (_taPreferBg && has && _taBgActive);
+  const on = _taNativeBgActive || (_taManualAudio && _taBgActive) || (_taPreferBg && has && _taBgActive);
   if (!has) {
     btn.textContent = 'Background Play';
     btn.style.color = '';
@@ -17999,7 +18145,7 @@ function taFailBgAudio(reason) {
 function taEnterBgAudio() {
   const item = ytQueue[ytQueueIdx];
   const ta = taTrackAudio(item?.trackId);
-  if (!googleUser && !ta?.artistLicensed) return false;
+  if (!googleUser && !ta?.artistLicensed && !ta?.nativePlayable) return false;
   // Sticky preference counts as "on" for tracks that have uploaded audio.
   if (!_taManualAudio && !(_taPreferBg && taIsMobileDevice() && ta)) return false;
   if (_taPreferBg && ta) _taManualAudio = true;
@@ -18007,6 +18153,22 @@ function taEnterBgAudio() {
   if (!ta || !_ytUserWantsPlay) return false;
   let pos = 0;
   try { pos = ytAPIPlayer?.getCurrentTime?.() || 0; } catch (_) {}
+  if (taNativeBgPlugin()) {
+    _taNativeBgActive = true;
+    _taBgActive = true;
+    _taBgLogged = true;
+    _taBgStartPos = pos;
+    try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+    try { _taAudioEl?.pause(); } catch (_) {}
+    ytpStopBgKeepalive();
+    void taStartNativeBg(pos).catch((error) => {
+      console.warn('taStartNativeBg failed', error);
+      _taNativeBgActive = false;
+      taFailBgAudio('Background audio failed to start — back on YouTube.');
+    });
+    taSyncAudioBtn();
+    return true;
+  }
   const a = taEnsureAudioEl();
   // Always (re)assign so cache-busted URLs replace a stale src for the same track.
   a.src = ta.url;
@@ -18068,6 +18230,7 @@ function taExitBgAudio() {
 // Warm the HTTP cache for the next background-playable track so the
 // ended→next handoff can call play() immediately without a cold fetch.
 function taPreloadNextBg() {
+  if (taNativeBgPlugin()) return; // AVPlayer resolves the next native stream itself.
   if (!ytQueue.length) return;
   let ni = -1;
   if (ytShuffle && ytQueue.length > 1) {
@@ -18117,6 +18280,27 @@ function taPlayBgIdx(idx) {
   }
   const ta = taTrackAudio(item?.trackId);
   if (!ta) return false;
+  // An already-open phone player reaches this function directly when a new
+  // background-capable queue replaces the old one. In the native app, using
+  // the HTML audio element here strands playback inside WKWebView, which iOS
+  // suspends as soon as the screen locks. Hand the new queue to AVPlayer just
+  // like taEnterBgAudio does for a newly opened player.
+  if (taNativeBgPlugin()) {
+    _taNativeBgActive = true;
+    _taBgActive = true;
+    _taBgLogged = true;
+    _taBgStartPos = 0;
+    try { ytAPIPlayer?.pauseVideo?.(); } catch (_) {}
+    try { _taAudioEl?.pause(); } catch (_) {}
+    ytpStopBgKeepalive();
+    void taStartNativeBg(0).catch((error) => {
+      console.warn('taPlayBgIdx native start failed', error);
+      _taNativeBgActive = false;
+      taFailBgAudio('Background audio failed to start — back on YouTube.');
+    });
+    taSyncAudioBtn();
+    return true;
+  }
   const a = taEnsureAudioEl();
   a.src = ta.url;
   a.dataset.trackId = String(item.trackId);
@@ -25982,7 +26166,7 @@ async function playlistsShuffleAll() {
         : 'No playable songs in the playlists shown.');
       return;
     }
-    landingPlayQueue(q, { shuffle: true });
+    await landingPlayQueue(q, { shuffle: true });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
   } catch (e) {
@@ -33224,7 +33408,7 @@ function renderLanding() {
   }
 }
 
-function landingPlayQueue(q, opts) {
+async function landingPlayQueue(q, opts) {
   const shuffle = !!opts?.shuffle;
   q = filterQueueForHomeBg(sjNoBlocked(q));
   if (!q.length) return;
@@ -33239,6 +33423,19 @@ function landingPlayQueue(q, opts) {
   }
   clearQueueSourcePlaylist();
   const first = q[startIdx];
+  // The native app must have the selected song's signed audio URL before we
+  // open the player. Starting YouTube first and fetching this afterwards left
+  // a race where a listener could lock the phone while the WebView still had
+  // the speakers; iOS then suspended it before the native handoff completed.
+  // Keep ordinary queues instant, but a Background Enabled shuffle is making
+  // an explicit promise that the very first song survives the screen closing.
+  const primeNativeBackground = homeJukeboxBgFilterOn()
+    && taIsMobileDevice()
+    && !!taNativeBgPlugin();
+  if (primeNativeBackground) {
+    taSetPreferBg(true);
+    await loadTrackAudio([first.trackId]);
+  }
   // openYTPlayer() resets ytQueue internally to a single-track array, so when
   // it's the one opening the player, ytQueue must be (re)assigned AFTER that
   // call, not before - otherwise the full queue gets clobbered back to 1 item.
@@ -33251,6 +33448,10 @@ function landingPlayQueue(q, opts) {
     if (ytpIsArtistAudio(first)) ytPlayQueueIdx(startIdx);
   }
   updateYTQueueUI();
+  // openYTPlayer also schedules this handoff as a fallback, but do it now that
+  // the full queue and signed URL are both ready. This sends AVPlayer its work
+  // before the listener can immediately background the app.
+  if (primeNativeBackground) taTryStartPreferredBg();
 }
 
 function shuffleInPlace(arr) {
@@ -33354,7 +33555,8 @@ async function landingShuffleAll() {
         : 'No playable tracks found.');
       return;
     }
-    landingPlayQueue(q, { shuffle: true });
+    if (homeJukeboxBgFilterOn() && taIsMobileDevice()) taSetPreferBg(true);
+    await landingPlayQueue(q, { shuffle: true });
     // Background-play audio for the head of the queue (await so the toggle can appear).
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
@@ -33383,7 +33585,8 @@ async function landingShuffleFavorites() {
     const q = playIds.filter(tid => info[tid]?.videoId)
       .map(tid => ({ videoId: info[tid].videoId, title: info[tid].name || 'Track', trackId: tid }));
     if (!q.length) { alert('No favorited tracks have YouTube videos.'); return; }
-    landingPlayQueue(q, { shuffle: true });
+    if (homeJukeboxBgFilterOn() && taIsMobileDevice()) taSetPreferBg(true);
+    await landingPlayQueue(q, { shuffle: true });
     await loadTrackAudio(q.slice(0, 40).map(x => x.trackId));
     taSyncAudioBtn();
   } catch (e) {
@@ -34085,7 +34288,7 @@ function openFaq() {
   // Help is bundled with the native shell, so keep it in this navigation stack
   // and let the guide's Back link return to the player.
   if (sjIsNative()) {
-    window.location.assign('/help/lp/index.html');
+    window.location.assign('/help/' + (SJ_BRAND.id === 'rk' ? 'rk' : 'lp') + '/index.html');
     return;
   }
   window.open('/help', '_blank', 'noopener');
@@ -34615,8 +34818,8 @@ async function loadYTVideoIds(trackIds) {
 }
 
 // Personal audio always wins and remains owner-only. On mobile only, missing
-// tracks may receive approved artist audio for the explicit Background Play
-// toggle. Discovery and normal playback always remain on YouTube.
+// tracks may receive approved artist audio for Background Play. Eligible songs
+// prefer it by default on phones; desktop playback remains on YouTube.
 async function loadTrackAudio(trackIds) {
   if (!trackIds.length) return;
   try {
@@ -34625,7 +34828,14 @@ async function loadTrackAudio(trackIds) {
     const chunks = [];
     for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
     if (uid) {
-      const mine = (await Promise.all(chunks.map(c => taOwnAudioUrls(c)))).flat();
+      // Private uploads are only the first source. A stale/expired native web
+      // session can make /api/sj-audio reject even while the phone's car key
+      // and the public artist-licensed catalogue are healthy. That rejection
+      // used to escape this whole function, so the licensed request below was
+      // never made and Background Enabled silently fell back to YouTube.
+      let mine = [];
+      try { mine = (await Promise.all(chunks.map(c => taOwnAudioUrls(c)))).flat(); }
+      catch (e) { console.warn('Private background audio unavailable; trying artist audio', e); }
       mine.forEach(r => {
         if (!r.url || !r.path) return;
         taData[r.trackId] = {
@@ -34665,6 +34875,9 @@ async function loadTrackAudio(trackIds) {
       };
     });
     taSyncAudioBtn();
+    // A direct play can begin before its signed audio URL arrives. Once it is
+    // available, honor the mobile preference instead of leaving YouTube active.
+    taTryStartPreferredBg();
   } catch (_) {}
 }
 
@@ -34735,6 +34948,9 @@ function sjBgPlaylistOn(pl) {
 async function setSjBgOnly(on) {
   homeBgOnly = !!on;
   try { localStorage.setItem('sj_home_bg_only', homeBgOnly ? '1' : '0'); } catch (_) {}
+  // Choosing this filter is also a playback choice: every result promises it
+  // can survive a locked phone, so do not make the listener enable that again.
+  if (homeBgOnly && taIsMobileDevice()) taSetPreferBg(true);
   if (homeBgOnly && !_homeLibLoaded) await ensureHomeLibrary();
   renderLanding();   // draws whichever of the three tabs is open
 }
@@ -40603,6 +40819,7 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-06';
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
   { date: '2026-10-06', items: [
+    'After you sign in, your last queue now waits in the docked player, paused, instead of opening the full screen player.',
     'For Artists and For Listeners now appear at the top of Home, and in the footer on other pages.',
     'The artist and listener guides have new expandable feature boxes, written by music fans for music fans.',
     'Artist Uploaded filters in Explore Artists, Explore Songs, and Search help you find recordings published directly by artists.',
@@ -43564,11 +43781,8 @@ async function restorePlaybackState(opts) {
     setYtShuffleEnabled(!!row.shuffle);
     updateYTQueueUI();
     ytpSetPlayPauseIcon(false);
-    // The player opens Docked by default now - only flip to Full Screen if
-    // that's where they left it. An older saved 'windowed' value (from
-    // before Docked replaced the floating window) lands here too, which is
-    // exactly where it should land.
-    if (row.layout === 'fullscreen') ytpEnterFullscreen();
+    // Always Docked, even if they left it in Full Screen: a restore should
+    // put the queue within reach, not take over the screen.
   } catch (e) {
     _pbRestoreOpts = null;
     /* no saved state yet, or fetch failed - just start fresh */

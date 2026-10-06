@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dashboardHtml, loadHtmlFnsInScope } from './_load.mjs';
+import { dashboardHtml, loadHtmlFnsInScope, loadTs } from './_load.mjs';
 import { TEST_ACCOUNT } from '../scripts/test-account.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -80,8 +80,10 @@ test('the Listening Party native shell has a distinct secure origin from its API
   const config = JSON.parse(readFileSync(join(root, 'native', 'capacitor.config.json'), 'utf8'));
   assert.equal(config.server.iosScheme, 'https');
   assert.equal(config.server.hostname, 'app.listeningparty.stream');
-  assert.match(readFileSync(join(root, 'native', 'scripts', 'build-web.mjs'), 'utf8'),
-    /surfaces\.SURFACES\[surfaceId\]/);
+  const surfaces = loadTs('src/lib/surface.ts');
+  assert.equal(surfaces.SURFACES.lp.url, 'https://listeningparty.stream');
+  assert.equal(surfaces.SURFACES.rk.url, 'https://recordkeeper.stream');
+  assert.match(readFileSync(join(root, 'native', 'scripts', 'build-web.mjs'), 'utf8'), /surfaces\.SURFACES\[id\]/);
 });
 
 test('native Apple sign-in exchanges a nonce-bound identity token and preserves the first name', async () => {

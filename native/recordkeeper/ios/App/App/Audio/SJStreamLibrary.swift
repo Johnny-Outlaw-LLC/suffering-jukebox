@@ -259,16 +259,19 @@ final class SJStreamLibrary {
         guard let url = comps?.url else { completion(nil); return }
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         if let key = Self.readKey() { req.setValue("Bearer " + key, forHTTPHeaderField: "Authorization") }
-        URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             guard let self,
                   (response as? HTTPURLResponse)?.statusCode == 200,
                   let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let address = json["url"] as? String,
                   let signed = URL(string: address) else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                NSLog("[SJAudio] Stream resolution failed track=%@ status=%ld error=%@", trackId, status, error?.localizedDescription ?? "invalid response")
                 completion(nil)
                 return
             }
+            NSLog("[SJAudio] Stream resolved track=%@", trackId)
             let seconds = (json["expiresIn"] as? Double) ?? Double(json["expiresIn"] as? Int ?? 3600)
             let expires = Date().addingTimeInterval(max(60, seconds - 30 * 60))
             self.queue.sync(flags: .barrier) { self.resolved[trackId] = (signed, expires) }

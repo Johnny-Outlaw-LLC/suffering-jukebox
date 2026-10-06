@@ -92,9 +92,16 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         let engine = SJAudioEngine.shared
         let queue = engine.queue
         guard !queue.isEmpty else { return }
-        let items = queue.enumerated().prefix(itemLimit).map { (i, track) -> CPListItem in
+        // The list opens at its top and CarPlay offers no way to scroll it, so
+        // it starts at the current song in running order: the song the button
+        // named is always the second row. Already-played songs follow below.
+        let order = engine.upNextOrder
+        let upcoming = Array(order.upcoming.prefix(itemLimit))
+        let earlier = Array(order.earlier.prefix(max(0, itemLimit - upcoming.count)))
+        let makeItem = { [weak self] (i: Int) -> CPListItem in
+            let track = queue[i]
             let item = CPListItem(text: track.title, detailText: track.artist)
-            item.setImage(artwork(forTrackId: track.id))
+            item.setImage(self?.artwork(forTrackId: track.id))
             item.isPlaying = (i == engine.index)
             item.handler = { [weak self] _, completion in
                 SJAudioEngine.shared.play(index: i)
@@ -105,9 +112,19 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
             return item
         }
-        let template = CPListTemplate(title: "Up Next", sections: [CPListSection(items: items)])
+        var sections = [CPListSection(items: upcoming.map(makeItem))]
+        if !earlier.isEmpty {
+            sections.append(CPListSection(items: earlier.map(makeItem), header: "Played", sectionIndexTitle: nil))
+        }
+        let template = CPListTemplate(title: "Up Next", sections: sections)
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
+
+    /// How much song text fits on the Up Next button after "UP NEXT: ".
+    /// CarPlay draws the button in its own font and never truncates it, so a
+    /// longer label grows leftward until it covers the back arrow. Lower this
+    /// if a car's screen still collides.
+    private let upNextTextLimit = 22
 
     /// The button itself names the next track, rather than a generic "Up
     /// Next" label that only means something once tapped - so the driver
@@ -119,10 +136,28 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
         let currentArtist = SJAudioEngine.shared.currentTrack?.artist.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let nextArtist = next.artist.trimmingCharacters(in: .whitespacesAndNewlines)
-        let description = !nextArtist.isEmpty && nextArtist.caseInsensitiveCompare(currentArtist) != .orderedSame
-            ? "\(nextArtist) - \(next.title)" : next.title
-        let truncated = description.count > 42 ? String(description.prefix(42)) + "…" : description
+        let title = next.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withArtist = "\(nextArtist) - \(title)"
+        // The artist only earns its room when it changes and still leaves the
+        // whole title readable; otherwise the title alone gets the space.
+        let description = !nextArtist.isEmpty
+            && nextArtist.caseInsensitiveCompare(currentArtist) != .orderedSame
+            && withArtist.count <= upNextTextLimit
+            ? withArtist : title
+        let truncated = ellipsized(description, limit: upNextTextLimit)
         CPNowPlayingTemplate.shared.upNextTitle = "UP NEXT: " + truncated
+    }
+
+    /// Cuts at the last word break that fits, so the label ends "Sweet Home…"
+    /// rather than "Sweet Home Ala…", unless that would throw away most of it.
+    private func ellipsized(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+        var cut = String(text.prefix(limit - 1))
+        if let space = cut.lastIndex(of: " "), cut.distance(from: cut.startIndex, to: space) >= limit / 2 {
+            cut = String(cut[..<space])
+        }
+        while let last = cut.last, " -,:".contains(last) { cut.removeLast() }
+        return cut + "…"
     }
 
     // MARK: - Templates
@@ -207,7 +242,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private static let nothingDownloaded = (
         "Nothing to play yet",
-        "Upload music or download songs on listeningparty.stream."
+        "Upload music or download songs on recordkeeper.stream."
     )
 
     // MARK: - Artists

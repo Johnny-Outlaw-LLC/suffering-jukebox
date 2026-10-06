@@ -341,6 +341,8 @@ test('Explore filters include Background Play Enabled content on every device', 
   assert.doesNotMatch(indexHtml, /taIsMobileDevice\(\) && sjBgFilterOffered\(\) \? `<div class="landing-control-group sj-more-filter sj-bg-explore-filter"/);
   assert.match(indexHtml, /function sjBgFilterOffered\(\) \{\s*return true;/);
   assert.match(indexHtml, /async function setSjBgOnly\(on\)[\s\S]*?await ensureHomeLibrary\(\)/);
+  assert.match(indexHtml, /async function setSjBgOnly\(on\)[\s\S]*?if \(homeBgOnly && taIsMobileDevice\(\)\) taSetPreferBg\(true\)/);
+  assert.match(indexHtml, /async function landingShuffleAll\(\)[\s\S]*?homeJukeboxBgFilterOn\(\) && taIsMobileDevice\(\)[\s\S]*?taSetPreferBg\(true\)[\s\S]*?landingPlayQueue/);
   assert.doesNotMatch(indexHtml, /const scopeChips = !googleUser \? ''/);
   assert.match(indexHtml, /const scopeChips = \(landingTab === 'explore' \|\| landingTab === 'songs'\)[\s\S]*?Background Enabled/);
   assert.match(indexHtml, /\$\{googleUser \? `<button[^`]*My Playlists/);
