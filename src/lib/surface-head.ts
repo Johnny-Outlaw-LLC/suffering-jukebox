@@ -199,9 +199,15 @@ export function applySurfaceHead(
 
   // The dashboard is a classic script that reads this at startup, so it has to
   // be defined before it and JSON.stringify keeps it inert markup either way.
+  // Safari's Smart App Banner. Only brands with a live App Store listing.
+  const appBanner = surface.appStoreId
+    ? `<meta name="apple-itunes-app" content="app-id=${esc(surface.appStoreId)}">\n`
+    : "";
+
   const inject =
     theme +
     look +
+    appBanner +
     `<script>window.__SURFACE__=${JSON.stringify(publicSurface(surface)).replace(
       /</g,
       "\\u003c"

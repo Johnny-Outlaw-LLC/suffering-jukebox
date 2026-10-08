@@ -162,6 +162,11 @@ export interface Surface {
   fontsHref: string | null;
   /** Custom URL scheme the native shell signs in through. */
   authScheme: string;
+  /**
+   * Apple ID of the brand's live App Store listing, or "" while it has none.
+   * Drives the Safari Smart App Banner and the Download on the App Store badge.
+   */
+  appStoreId: string;
   /** Sentence used when sharing the site itself. */
   shareText: string;
   /** Subreddit for the share sheet, or null to drop that button. */
@@ -211,6 +216,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
     accentRgb: "255,107,53",
     fontsHref: null,
     authScheme: "com.johnnyoutlaw.sufferingjukebox",
+    appStoreId: "",
     shareText:
       "Suffering Jukebox - explore Silver Jews & Purple Mountains with play counts, hearts, and lyrics.",
     redditSub: "sufferingjukebox",
@@ -278,6 +284,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
     fontsHref:
       "https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600;700;800&family=Lilita+One&display=swap",
     authScheme: "com.johnnyoutlaw.listeningparty",
+    appStoreId: "",
     shareText:
       "Listening Party - music straight from independent artists, with the lyrics. Free, no ads.",
     redditSub: null,
@@ -342,6 +349,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
     accentRgb: "201,79,39",
     fontsHref: null,
     authScheme: "com.johnnyoutlaw.recordkeeper",
+    appStoreId: "6819821388",
     shareText: "Record Keeper — explore discographies, create playlists, upload your content, and listen together.",
     sisterName: "Suffering Jukebox",
     sisterUrl: "https://www.sufferingjukebox.stream/",
@@ -414,6 +422,7 @@ export function publicSurface(s: Surface) {
     accentHover: s.accentHover,
     accentRgb: s.accentRgb,
     authScheme: s.authScheme,
+    appStoreId: s.appStoreId,
     shareText: s.shareText,
     redditSub: s.redditSub,
     sisterName: s.sisterName,

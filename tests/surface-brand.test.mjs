@@ -172,6 +172,17 @@ test('a brand with its own accent gets it before the first paint', () => {
   assert.ok(!sj.includes('<style>:root{--accent:'), 'SJ got a redundant theme override');
 });
 
+test('only a brand with a live App Store listing gets the Smart App Banner', () => {
+  const RK = surface.SURFACES.rk;
+  assert.match(RK.appStoreId, /^\d+$/);
+  assert.ok(headOf(head.applySurfaceHead(indexHtml, RK)).includes(
+    `<meta name="apple-itunes-app" content="app-id=${RK.appStoreId}">`));
+  for (const s of [SJ, LP]) {
+    if (s.appStoreId) continue;
+    assert.ok(!head.applySurfaceHead(indexHtml, s).includes('apple-itunes-app'), s.id);
+  }
+});
+
 test('an accent has to be legible on the near-black page', () => {
   // LP's mark colour is a deep purple that works as a tile behind white
   // artwork and would vanish as a highlight. Relative luminance, sRGB.
