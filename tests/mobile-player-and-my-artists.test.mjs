@@ -277,3 +277,44 @@ test('a queue restored after sign-in or launch stays docked, never full screen',
   const restore = html.slice(html.indexOf('async function restorePlaybackState('), html.indexOf('function initGoogleAuth('));
   assert.doesNotMatch(restore, /ytpEnterFullscreen\(\)/);
 });
+
+test('the player scrubber follows the native engine clock, not the paused WebView audio', () => {
+  let now = 1000;
+  const seeks = [];
+  const scope = {
+    _sjCarFollow: { trackId: 't1', pos: 30, dur: 128, at: 1000, playing: true },
+    _taBgActive: true,
+    _taAudioEl: { currentTime: 0, duration: NaN },
+    _mfSeeking: false,
+    ytAPIPlayer: null,
+    ytQueue: [],
+    ytQueueIdx: 0,
+    performance: { now: () => now },
+    findTrackById: () => ({ duration_ms: 128000 }),
+    sjDlPlugin: () => ({ seek: (o) => { seeks.push(o.positionSeconds); return Promise.resolve(); } }),
+    ytpSetScrubCur: () => {},
+    ytpMfPaintProgress: () => {},
+  };
+  const fns = loadHtmlFnsInScope(
+    ['sjCarFollowTime', 'ytpMfPlaybackPos', 'ytpSeekNative', 'ytpMfSeekInput', 'ytpMfSeekCommit'], scope);
+
+  now = 3500; // 2.5 s after the last native status
+  assert.deepEqual(fns.ytpMfPlaybackPos(), { pos: 32.5, dur: 128 });
+
+  // A status without a duration still shows the song length from the catalogue.
+  scope._sjCarFollow.dur = 0;
+  assert.equal(fns.ytpMfPlaybackPos().dur, 128);
+
+  // Dragging only moves the label; releasing seeks AVPlayer once.
+  fns.ytpMfSeekInput({ value: '90' });
+  assert.deepEqual(seeks, []);
+  fns.ytpMfSeekCommit({ value: '90' });
+  assert.deepEqual(seeks, [90]);
+  assert.equal(scope._taAudioEl.currentTime, 0, 'the paused WebView element is not the one to seek');
+  assert.equal(fns.ytpMfPlaybackPos().pos, 90);
+});
+
+test('a native status keeps its duration for the scrubber', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.match(html, /dur: Number\(st\.durationSeconds\)/);
+});

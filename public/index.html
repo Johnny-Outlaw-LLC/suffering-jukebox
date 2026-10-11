@@ -12281,6 +12281,7 @@ async function sjCarOnNativeStatus(st, opts) {
     title: st.title || prev?.title || '',
     artist: st.artist || '',
     pos: Number(st.positionSeconds) || 0,
+    dur: Number(st.durationSeconds) || (prev && prev.trackId === trackId ? prev.dur : 0) || 0,
     at: performance.now(),
     playing: state !== 'paused',
     loaded: prev && prev.trackId === trackId ? prev.loaded : null,
@@ -14985,6 +14986,18 @@ function ytpFmtClock(sec) {
 }
 
 function ytpMfPlaybackPos() {
+  // The native engine (AVPlayer) has the speakers: the WebView <audio> element
+  // sits paused at 0, so the scrubber follows the engine's reported clock, the
+  // same one lyric sync uses.
+  if (_sjCarFollow) {
+    let dur = _sjCarFollow.dur || 0;
+    if (!dur) {
+      const ms = (typeof findTrackById === 'function' ? findTrackById(_sjCarFollow.trackId) : null)?.duration_ms;
+      if (ms) dur = ms / 1000;
+    }
+    const pos = sjCarFollowTime() || 0;
+    return { pos: dur ? Math.min(pos, dur) : pos, dur };
+  }
   if (_taBgActive && _taAudioEl) {
     return {
       pos: _taAudioEl.currentTime || 0,
@@ -15061,10 +15074,21 @@ function ytpMfSeekEnd() {
   _mfSeeking = false;
   ytpMfPaintProgress();
 }
+// Seek the native engine; the drag itself only moves the label, and the
+// release sends one seek across the bridge.
+function ytpSeekNative(sec) {
+  const f = _sjCarFollow;
+  const p = sjDlPlugin();
+  if (!f || !p?.seek) return false;
+  try { void p.seek({ positionSeconds: sec }); } catch (_) {}
+  f.pos = sec; f.at = performance.now();
+  return true;
+}
 function ytpMfSeekInput(el) {
   _mfSeeking = true;
   const sec = Number(el.value) || 0;
   ytpSetScrubCur(sec);
+  if (_sjCarFollow) return;
   if (_taBgActive && _taAudioEl) {
     try { _taAudioEl.currentTime = sec; } catch (_) {}
   } else if (ytAPIPlayer?.seekTo) {
@@ -15073,7 +15097,8 @@ function ytpMfSeekInput(el) {
 }
 function ytpMfSeekCommit(el) {
   const sec = Number(el.value) || 0;
-  if (_taBgActive && _taAudioEl) {
+  if (ytpSeekNative(sec)) { /* native engine moved */ }
+  else if (_taBgActive && _taAudioEl) {
     try { _taAudioEl.currentTime = sec; } catch (_) {}
   } else if (ytAPIPlayer?.seekTo) {
     try { ytAPIPlayer.seekTo(sec, true); } catch (_) {}
