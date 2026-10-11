@@ -39,4 +39,4 @@ Archive: `/Users/outlaw/Library/Developer/Xcode/Archives/2026-10-08/Record Keepe
   the 1.0.0 set on this version (old files remain in the Asset Library).
 - App Review sign-in, contact and notes carried over from 1.0.0. Release:
   automatically after approval.
-- Not yet submitted for review.
+- Superseded by build 8 (see record-keeper-1.0.1-8.md), which was submitted.
