@@ -27,3 +27,16 @@ text, What's New). Captioned 6.9" screenshots are in
 Generated with `npm run sync:recordkeeper:ios`; archive overrides:
 `MARKETING_VERSION=1.0.1 CURRENT_PROJECT_VERSION=7`.
 Archive: `/Users/outlaw/Library/Developer/Xcode/Archives/2026-10-08/Record Keeper 1.0.1 (7).xcarchive`.
+
+## App Store Connect (October 11, 2026)
+
+- Version 1.0.1 created; build 7 attached; status Prepare for Submission.
+- Subtitle (App Information) changed from "Playlists, lyrics & listening" to
+  "Playlists, Lyrics & CarPlay". Keywords, promotional text and What's New
+  entered as in listing.json. Description unchanged.
+- Screenshots: Apple now requires the 6.1"/6.3" size. Uploaded three
+  1206x2622 shots there and three 1320x2868 shots to 6.5"-6.9", replacing
+  the 1.0.0 set on this version (old files remain in the Asset Library).
+- App Review sign-in, contact and notes carried over from 1.0.0. Release:
+  automatically after approval.
+- Not yet submitted for review.
