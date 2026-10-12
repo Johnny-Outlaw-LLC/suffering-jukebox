@@ -2354,6 +2354,14 @@ textarea.report-input { resize:vertical; }
   font-size: .5rem; line-height: 1.2; color: var(--text-muted); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Artist, song and album in the dock are links when there is somewhere to go
+   (ytpMfSyncLinks). The phone's mini bar keeps its own tap: open full screen. */
+#ytp-mini-footer:not(.dock-mini) .is-link { cursor: pointer; }
+@media (hover: hover) {
+  #ytp-mini-footer:not(.dock-mini) .is-link:hover {
+    color: var(--accent); text-decoration: underline; text-underline-offset: 2px;
+  }
+}
 /* ── Scrub / seek bar ── */
 .ytp-mf-scrub {
   grid-area: scrub; display: flex; align-items: center; gap: 8px; width: auto;
@@ -6067,11 +6075,11 @@ html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.ligh
       <div class="ytp-mf-side">
       <div class="ytp-mf-playlist" id="ytp-mf-playlist" onclick="event.stopPropagation()" onscroll="ytpDockPlaylistOnScroll()"></div>
       <div class="ytp-mf-meta">
-        <div class="ytp-mf-artist" id="ytp-mf-artist"></div>
+        <div class="ytp-mf-artist" id="ytp-mf-artist" onclick="ytpMfNavClick('artist',event)" onkeydown="if(event.key==='Enter')ytpMfNavClick('artist',event)"></div>
         <div class="ytp-mf-song-row">
-          <div class="ytp-mf-song" id="ytp-mf-song">-</div>
+          <div class="ytp-mf-song" id="ytp-mf-song" onclick="ytpMfNavClick('song',event)" onkeydown="if(event.key==='Enter')ytpMfNavClick('song',event)">-</div>
         </div>
-        <div class="ytp-mf-album" id="ytp-mf-album"></div>
+        <div class="ytp-mf-album" id="ytp-mf-album" onclick="ytpMfNavClick('album',event)" onkeydown="if(event.key==='Enter')ytpMfNavClick('album',event)"></div>
         <div class="ytp-mf-feedback">
           <span class="ytp-mf-reactions" id="ytp-mf-reactions">
             <button class="ytp-mf-btn ytp-dock-reaction" data-reaction-track="" data-track-reaction="heart" onclick="ytpReact('heart',this,event)" oncontextmenu="ytpOpenReactionUndo('heart',this,event)" onpointerdown="ytpReactionPressStart('heart',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heart playback reaction. Right-click or long-press to undo." aria-label="Send a heart playback reaction" id="ytp-mf-react-heart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/></svg><span class="sj-reaction-count"></span></button>
@@ -14957,6 +14965,7 @@ function ytpUpdateMiniFooter() {
   if (prevBtn) prevBtn.style.visibility = 'visible';
   const nextBtn = document.getElementById('ytp-mf-next');
   if (nextBtn) nextBtn.style.visibility = 'visible';
+  ytpMfSyncLinks(item?.trackId || null);
   ytpSyncVoteBtn(item?.trackId || null);
   ytpSyncBlockBtn(item?.trackId || null);
   setYtShuffleEnabled(ytShuffle); // paints the mini-footer shuffle button state
@@ -14972,6 +14981,109 @@ function ytpMfArtFallback(img) {
   const cur = img.getAttribute('src') || '';
   if (yt && cur !== yt) { img.setAttribute('src', yt); return; }
   if (cur !== '/favicon.png') img.setAttribute('src', '/favicon.png');
+}
+
+// The dock's artist, album and song lines are links: the artist opens their
+// Artist Discography, the album opens it with that album expanded, and the
+// song opens Song Details. Same rules as the ⋯ menu's Explore Artist
+// Discography, so a singles-only artist stays plain text.
+//
+// A song played from a playlist or Home usually has neither its artist nor
+// its album loaded, so ytpMfEnsureNav() looks both up. The answer lives in
+// its own cache: SJ_TRACK_META is rewritten wholesale at play time and would
+// drop anything added to it here.
+const _ytpMfNav = {};       // trackId -> { artist, albumId }
+const _ytpMfLookups = {};   // trackId -> lookup promise (kept a minute)
+
+function ytpMfNavTarget(kind, tid) {
+  if (!tid) return null;
+  if (kind === 'song') return { tid };
+  if (!SJ_BRAND.features.artistJukebox) return null;
+  const cached = _ytpMfNav[tid] || {};
+  const artist = _sjmArtistFor(tid) || cached.artist || null;
+  if (!artist || !artist.slug || !sjmArtistHasDiscography(artist.id)) return null;
+  if (kind === 'artist') return { artist };
+  const albumId = findTrackById(tid)?.album_id || SJ_TRACK_META[tid]?.albumId || cached.albumId || null;
+  return albumId ? { artist, albumId } : null;
+}
+
+function ytpMfSyncLinks(tid) {
+  const titles = {
+    artist: 'Explore Artist Discography',
+    album: 'Open this album in the Artist Discography',
+    song: 'Song details',
+  };
+  ['artist', 'song', 'album'].forEach(kind => {
+    const el = document.getElementById('ytp-mf-' + kind);
+    if (!el) return;
+    const text = (el.textContent || '').trim();
+    const on = !!(text && text !== '-' && ytpMfNavTarget(kind, tid));
+    el.classList.toggle('is-link', on);
+    if (on) {
+      el.title = titles[kind];
+      el.setAttribute('role', 'link');
+      el.tabIndex = 0;
+    } else {
+      el.removeAttribute('title');
+      el.removeAttribute('role');
+      el.removeAttribute('tabindex');
+    }
+  });
+  ytpMfEnsureNav(tid);
+}
+
+function ytpMfEnsureNav(tid) {
+  if (!tid) return Promise.resolve();
+  const cached = _ytpMfNav[tid] || {};
+  const needArtist = !(_sjmArtistFor(tid) || cached.artist);
+  const needAlbum = !(findTrackById(tid)?.album_id || SJ_TRACK_META[tid]?.albumId || cached.albumId);
+  if (!needArtist && !needAlbum) return Promise.resolve();
+  if (_ytpMfLookups[tid]) return _ytpMfLookups[tid];
+  const p = dbGet('/tracks?id=eq.' + tid + '&select=album_id,albums(artists(id,name,slug))&limit=1')
+    .then(rows => {
+      const row = rows?.[0];
+      const a = row?.albums?.artists;
+      const hit = {};
+      if (row?.album_id) hit.albumId = row.album_id;
+      if (a?.id && a?.slug) hit.artist = { id: a.id, name: a.name || 'Artist', slug: a.slug };
+      if (!hit.albumId && !hit.artist) return;
+      _ytpMfNav[tid] = Object.assign({}, _ytpMfNav[tid] || {}, hit);
+      if ((ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId) === tid) ytpMfSyncLinks(tid);
+    })
+    .catch(() => { /* the lines simply stay plain text */ })
+    .finally(() => setTimeout(() => { if (_ytpMfLookups[tid] === p) delete _ytpMfLookups[tid]; }, 60000));
+  _ytpMfLookups[tid] = p;
+  return p;
+}
+
+async function ytpMfNavClick(kind, ev) {
+  const dock = document.getElementById('ytp-mini-footer');
+  if (dock && dock.classList.contains('dock-mini')) return;   // the bar's tap opens full screen
+  const el = ev && ev.currentTarget;
+  if (el && !el.classList.contains('is-link')) return;
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const tid = ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId;
+  // The page may have moved on since the dock painted (Home clears the
+  // loaded catalogue), so resolve again rather than trusting the class.
+  let target = ytpMfNavTarget(kind, tid);
+  if (!target) { await ytpMfEnsureNav(tid); target = ytpMfNavTarget(kind, tid); }
+  if (!target) return;
+  if (kind === 'song') { openSongDetails(tid); return; }
+  ytpMfOpenDiscography(target.artist, target.albumId || null);
+}
+
+async function ytpMfOpenDiscography(artist, albumId) {
+  const here = IS_COMMUNITY && !isLandingMode && FEATURED_ARTIST_ID === artist.id;
+  if (!here) await enterArtistJukebox(artist);
+  if (FEATURED_ARTIST_ID !== artist.id) return;   // navigation was refused or already busy
+  if (!albumId) {
+    if (here) window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (window.innerWidth <= 640) { openMobileAlbumPanel(albumId); return; }
+  expandedAlbumIds.add(albumId);
+  renderTimelineOnly();
+  setTimeout(() => document.querySelector(`[data-alb-id="${albumId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
 }
 
 let _mfSeeking = false;
@@ -40875,11 +40987,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-10-06';
+const SJ_APP_UPDATED_FALLBACK = '2026-10-12';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-10-12', items: [
+    'In the docked player, the artist, album and song are now links. Click the artist to explore their discography, the album to open it there, or the song to see its details.',
+  ] },
   { date: '2026-10-06', items: [
     'After you sign in, your last queue now waits in the docked player, paused, instead of opening the full screen player.',
     'Playlists now include artist recordings without YouTube videos when playing, shuffling, and adding songs to the queue.',
@@ -45062,11 +45177,12 @@ async function toggleAdminUser(email, makeAdmin, btn) {
 
 // ── Song Details Modal (admin) ────────────────────────────────
 async function openSongDetails(trackId) {
-  if (!sjIsAdmin) return;
+  if (!sjIsAdmin) { openSongInfo(trackId); return; }
   const overlay = document.getElementById('songDetailsOverlay');
   const body    = document.getElementById('song-details-body');
   const footer  = document.getElementById('song-details-footer');
   if (!overlay || !body) return;
+  sdSetFooterMode(false);
   overlay.classList.add('open');
   body.innerHTML = '<div class="admin-metrics-loading">Loading…</div>';
   if (footer) footer.style.display = 'none';
@@ -45109,6 +45225,55 @@ async function openSongDetails(trackId) {
     body.innerHTML = `<div class="admin-metrics-error">${escAdmin(e.message || 'Could not load song.')}</div>`;
     if (footer) footer.style.display = '';
   }
+}
+
+// The admin popup edits; everyone else reads. Same footer, two shapes.
+function sdSetFooterMode(readOnly) {
+  const footer = document.getElementById('song-details-footer');
+  if (!footer) return;
+  const save = footer.querySelector('.sd-save-btn');
+  const cancel = footer.querySelector('.pl-btn.ghost');
+  if (save) save.style.display = readOnly ? 'none' : '';
+  if (cancel) cancel.textContent = readOnly ? 'Close' : 'Cancel';
+}
+
+// Song Details for listeners: read only, built from what the page already
+// holds, so it opens instantly and needs no admin route.
+function openSongInfo(trackId) {
+  const overlay = document.getElementById('songDetailsOverlay');
+  const body    = document.getElementById('song-details-body');
+  const footer  = document.getElementById('song-details-footer');
+  if (!overlay || !body || !trackId) return;
+  const track = findTrackById(trackId) || {};
+  const m     = ytpTrackMeta(trackId, null);
+  const q     = ytQueue.find(i => i && i.trackId === trackId);
+  const durMs = track.duration_ms || q?.durationMs || 0;
+  const top   = tvTop(trackId);
+  const views = Number(ytData[trackId]?.views) || Number(top?.view_count) || 0;
+  const likes = Number(ytData[trackId]?.likes) || 0;
+  const albumBit = m.album ? (m.album + (m.year ? ' (' + m.year + ')' : '')) : (m.year || '');
+  const bits = [m.artist, albumBit, track.track_number ? 'Track ' + track.track_number : '', durMs ? fmtDur(durMs) : '']
+    .filter(Boolean);
+  const metric = (lbl, val) =>
+    '<div class="sd-metric"><div class="sd-metric-lbl">' + lbl + '</div><div class="sd-metric-val">' + val + '</div></div>';
+  const nVersions = tvList(trackId).length;
+  document.getElementById('song-details-title').textContent =
+    (m.title && m.title !== 'Unknown') ? m.title : 'Song Details';
+  body.innerHTML =
+    '<div class="sd-meta-row">' +
+      bits.map(b => '<span>' + escHtml(b) + '</span>').join('<span class="sd-meta-dot">·</span>') +
+    '</div>' +
+    '<div class="sd-metrics">' +
+      metric('YT Views', views ? fmtV(views) : '-') +
+      metric('YT Likes', likes ? fmtV(likes) : '-') +
+      metric('In-App Plays', fmtV(Number(inAppPlays[trackId]) || 0)) +
+      (googleUser
+        ? metric('My Plays', fmtV(Number(myInAppPlays[trackId]) || 0))
+        : metric('Versions', nVersions ? String(nVersions) : '-')) +
+    '</div>';
+  if (footer) footer.style.display = '';
+  sdSetFooterMode(true);
+  overlay.classList.add('open');
 }
 
 function closeSongDetails() {
