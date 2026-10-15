@@ -156,3 +156,15 @@ test('Settings has a Desktop App section the page can show', () => {
   assert.match(html, /data-set-nav="desktop" data-sj-feature="desktopApp"/);
   assert.match(html, /desktopApp: false \}\r?\n\}, \(window\.__SURFACE__/);
 });
+
+test('Home offers the Windows download only where it is useful', () => {
+  const html = (scope) => loadHtmlFnsInScope(['lphDesktopHTML'], {
+    lphEsc: (s) => String(s), sjIsDesktop: () => false, navigator: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    window: {}, ...scope,
+  }).lphDesktopHTML();
+  const rk = surface.publicSurface(RK);
+  assert.match(html({ SJ_BRAND: rk }), /href="\/api\/desktop-download\?platform=windows"/);
+  assert.equal(html({ SJ_BRAND: surface.publicSurface(surface.SURFACES.lp) }), '');
+  assert.equal(html({ SJ_BRAND: rk, sjIsDesktop: () => true }), '');
+  assert.equal(html({ SJ_BRAND: rk, navigator: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)' } }), '');
+});
