@@ -85,6 +85,13 @@ export interface SurfaceFeatures {
    */
   liveStations: boolean;
   /**
+   * Record Keeper for Windows and Mac (native/recordkeeper/desktop): the
+   * Desktop App section in Settings, the account menu entry and the footer's
+   * Windows App link. In a browser they offer the download; inside the app
+   * the section holds the tray and Mini Player switches.
+   */
+  desktopApp: boolean;
+  /**
    * List public /p/<slug> playlist pages in the sitemap. On for both brands:
    * the pages are real, indexable MusicPlaylist documents and Google will not
    * find them without a listing (or a crawl path that reaches them).
@@ -241,6 +248,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       spotifyPlayback: true,
       artistUpload: true,
       liveStations: false,
+      desktopApp: false,
     },
   },
 
@@ -319,6 +327,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       spotifyPlayback: true,
       artistUpload: true,
       liveStations: true,
+      desktopApp: false,
     },
   },
 };
@@ -360,7 +369,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       applicationCategory: "MusicApplication", operatingSystem: "Any",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     },
-    features: { ...BASE_SURFACES.lp.features, spotifyPlayback: false },
+    features: { ...BASE_SURFACES.lp.features, spotifyPlayback: false, desktopApp: true },
   },
 };
 
@@ -446,6 +455,7 @@ export function publicSurface(s: Surface) {
       spotifyPlayback: s.features.spotifyPlayback,
       artistUpload: s.features.artistUpload,
       liveStations: s.features.liveStations,
+      desktopApp: s.features.desktopApp,
     },
   };
 }

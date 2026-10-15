@@ -40,3 +40,14 @@ now has a separate generated iOS product using the maintained Listening Party
 native sources. See `native/README.md` for build commands and the new bundle ID's
 device-signing and authentication setup. App Store distribution and physical
 CarPlay verification are separate from successful simulator compilation.
+
+## Desktop app
+
+Record Keeper for Windows lives in `native/recordkeeper/desktop` (Electron).
+It loads the live site in its own window and adds a system tray icon, closing
+to the tray, and an always-on-top Mini Player. Settings has a Desktop App
+section (`features.desktopApp`, Record Keeper only) that offers the download in
+a browser and holds the tray and Mini Player switches inside the app. The
+installer is a GitHub release asset tagged `rk-desktop-v<version>`, reached
+through `/api/desktop-download?platform=windows`. See that folder's README for
+the release steps and the Mac build.

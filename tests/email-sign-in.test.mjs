@@ -119,6 +119,7 @@ test('Google is still one tap from the panel', async () => {
   const { scope } = signInScope({ error: null });
   Object.assign(scope, {
     sjIsNative: () => false,
+    sjIsDesktop: () => false,
     sjAuthRedirectUrl: () => 'https://www.sufferingjukebox.stream',
     sbAuth: { auth: { signInWithOAuth: async (o) => { oauth.push(o); } } },
   });

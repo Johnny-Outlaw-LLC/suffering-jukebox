@@ -2616,6 +2616,17 @@ textarea.report-input { resize:vertical; }
 .ytp-mini-footer.dock-controls-wrapped .ytp-mf-win { grid-area: win; }
 /* Separator between the transport controls and the window buttons. */
 .ytp-mf-sep { width: 1px; align-self: stretch; margin: 2px 0; background: var(--border); flex-shrink: 0; }
+/* Desktop app (sjd*): controls that only mean something inside the app, and
+   links that only mean something outside it. html.sj-desktop is set by sjdInit(). */
+.sjd-only { display: none !important; }
+html.sj-desktop .sjd-only { display: inline-flex !important; align-items: center; justify-content: center; }
+html.sj-desktop .sjd-web-only { display: none !important; }
+.sjd-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--bg-elevated); }
+.sjd-card + .sjd-card { margin-top: 12px; }
+.sjd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.sjd-actions a.pl-btn { text-decoration: none; display: inline-flex; align-items: center; }
+.sjd-note { font-size: .5rem; color: var(--text-muted); margin-top: 8px; }
+.set-opt.sjd-off { opacity: .5; }
 /* Match the restore glyph's square fill to the bar, not the player window. */
 #ytp-mf-restore svg rect { fill: var(--bg-card); }
 #ytp-mini-footer .tvb-up { color: #22c55e; }
@@ -6085,6 +6096,7 @@ html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.ligh
             <button class="ytp-mf-btn ytp-dock-reaction" data-reaction-track="" data-track-reaction="heart" onclick="ytpReact('heart',this,event)" oncontextmenu="ytpOpenReactionUndo('heart',this,event)" onpointerdown="ytpReactionPressStart('heart',this,event)" onpointerup="ytpReactionPressEnd(event)" onpointercancel="ytpReactionPressEnd(event)" onpointerleave="ytpReactionPressEnd(event)" title="Send a heart playback reaction. Right-click or long-press to undo." aria-label="Send a heart playback reaction" id="ytp-mf-react-heart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/></svg><span class="sj-reaction-count"></span></button>
           </span>
           <button class="ytp-mf-btn" onclick="sjmOpenForPlayer(this,event)" title="Add to playlist, never play again, report a problem" id="ytp-mf-more">⋯</button>
+          <button class="ytp-mf-btn sjd-only" onclick="event.stopPropagation();sjdSetMini(true)" title="Mini Player (Ctrl+Shift+M)" aria-label="Open the Mini Player" id="ytp-mf-desk-mini"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="12" width="8" height="6" rx="1" fill="currentColor"/></svg></button>
         </div>
         <div class="ytp-mf-volume-row">
           <label class="ytp-mf-volume-ctrl" title="Volume" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()">Vol <input id="ytp-mf-vol-slider" type="range" min="0" max="100" step="5" value="100" aria-label="Volume" oninput="ytpSetVolume(this.valueAsNumber)"></label>
@@ -6185,6 +6197,7 @@ html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.ligh
           <button type="button" class="user-menu-item" id="user-menu-artist-studio" data-sj-feature="artistUpload" onclick="userMenuAction('studio')">Artist Studio</button>
           <button type="button" class="user-menu-item" id="user-menu-mystats" onclick="userMenuAction('mystats')">Data &amp; Analytics</button>
           <button type="button" class="user-menu-item" id="user-menu-settings" onclick="userMenuAction('settings')">Settings</button>
+          <button type="button" class="user-menu-item" id="user-menu-desktop" data-sj-feature="desktopApp" onclick="userMenuAction('desktop')">Desktop App</button>
           <button type="button" class="user-menu-item" id="user-menu-faq" onclick="userMenuAction('faq')">Help &amp; How-To Guide</button>
           <button type="button" class="user-menu-item phone-tabbar-only" onclick="closeUserMenu();toggleTheme()">Light / Dark Theme</button>
           <button type="button" class="user-menu-item" id="user-menu-updates" style="display:none" onclick="userMenuAction('updates')">What's New</button>
@@ -6319,6 +6332,7 @@ html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.ligh
         <button type="button" class="set-nav-btn" data-set-nav="integrations" onclick="settingsShow('integrations')">Integrations</button>
         <button type="button" class="set-nav-btn" data-set-nav="audio" onclick="settingsShow('audio')">Audio Storage</button>
         <button type="button" class="set-nav-btn" data-set-nav="jukebox" onclick="settingsShow('jukebox')">Online Jukebox</button>
+        <button type="button" class="set-nav-btn" data-set-nav="desktop" data-sj-feature="desktopApp" onclick="settingsShow('desktop')">Desktop App</button>
       </nav>
       <div class="set-pane">
 
@@ -6430,6 +6444,10 @@ html[data-surface="rk"] .hdr-brand-mobile img, html[data-surface="rk"] body.ligh
           <div class="pl-modal-body" id="sjj-body" style="padding-top:1.1rem">
             <div class="sjj-empty">Loading your jukebox&hellip;</div>
           </div>
+        </section>
+
+        <section class="set-sec" data-set-pane="desktop">
+          <div class="set-body" id="set-desktop-body"></div>
         </section>
 
       </div>
@@ -7760,7 +7778,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false }
+  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false, desktopApp: false }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -10881,6 +10899,7 @@ function openYTPlayer(videoId, title, trackId, ev) {
           </label>
           ${ytpReactionRailHTML(trackId, 'ytp-desktop-reaction-rail', true)}
           <button class="ytp-btn" id="ytp-more-btn" onclick="sjmOpenForPlayer(this,event)" onmousedown="event.stopPropagation()" title="Add to playlist, never play again, report a problem">&#8943;</button>
+          <button class="ytp-btn sjd-only" id="ytp-desk-mini-btn" onclick="sjdSetMini(true);event.stopPropagation()" onmousedown="event.stopPropagation()" title="Mini Player (Ctrl+Shift+M)">Mini Player</button>
         </div>
         <div class="ytp-toolbar-transport">
           <button type="button" class="ytp-deck-btn ytp-golive-btn" id="ytp-golive-btn" title="Put this queue on air so others can listen and add songs" hidden onmousedown="event.stopPropagation()" onclick="sjjGoLiveFromPlayer();event.stopPropagation()"><span class="ytp-golive-ic">${YTP_DECK_ICONS.record}</span><span class="ytp-golive-lbl">Go Live</span></button>
@@ -40987,11 +41006,15 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-10-12';
+const SJ_APP_UPDATED_FALLBACK = '2026-10-15';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-10-15', items: [
+    'Record Keeper has a Windows app. It plays from its own window instead of a browser tab, sits in the system tray with play, pause and skip, and keeps playing when you close the window. Get it from Settings, Desktop App, or the Windows App link at the bottom of the page.',
+    'The Windows app has a Mini Player: the song, the artwork and the controls in a small window that can stay on top of everything else. Open it from the player, the tray, or with Ctrl+Shift+M.',
+  ] },
   { date: '2026-10-12', items: [
     'In the docked player, the artist, album and song are now links. Click the artist to explore their discography, the album to open it there, or the song to see its details.',
   ] },
@@ -42202,6 +42225,10 @@ async function userMenuAction(action) {
     openMyArtists();
     return;
   }
+  if (action === 'desktop') {
+    openSettings('desktop');
+    return;
+  }
   if (action === 'faq') {
     openFaq();
     return;
@@ -42713,12 +42740,188 @@ async function refreshPendingRights() {
   } catch (_) {}
 }
 
+// ── Desktop app (sjd*) ─────────────────────────────────────────────────────
+// Record Keeper for Windows and Mac is a window around this page
+// (native/recordkeeper/desktop). Its preload hands over window.sjDesktop; when
+// that is missing everything here is inert and the page is just the website.
+//
+// The shell owns the tray, closing to the tray and the Mini Player window. The
+// page owns playback: it reports what is playing and obeys transport commands,
+// so there is still one player and one queue. The Mini Player is a remote
+// control, never a second player.
+//
+// sjIsDesktop() is deliberately NOT sjIsNative(). sjIsNative() means the
+// Capacitor phone shell and switches on native audio, downloads and CarPlay,
+// none of which exist on a desktop. In the desktop app the page is the website.
+let _sjdSettings = null;
+let _sjdMini = false;
+let _sjdTimer = 0;
+let _sjdLastSent = '';
+let _sjdMetaKey = '';
+let _sjdMetaAt = 0;
+let _sjdMeta = null;
+
+function sjIsDesktop() {
+  return !!(window.sjDesktop && typeof window.sjDesktop.pushState === 'function');
+}
+
+/** The SJAuth-shaped plugin sjNativeSignIn() expects, backed by the desktop bridge. */
+function sjdAuthPlugin() {
+  if (!sjIsDesktop()) return null;
+  return { signIn: (opts) => window.sjDesktop.signIn(opts) };
+}
+
+function sjdInit() {
+  if (!sjIsDesktop()) return;
+  document.documentElement.classList.add('sj-desktop');
+  const d = window.sjDesktop;
+  d.onCommand(sjdCommand);
+  d.onMini((open) => {
+    _sjdMini = !!open;
+    if (_sjdSettings) _sjdSettings.miniOpen = _sjdMini;
+    sjdSchedule();
+    sjdPush(true);
+  });
+  d.onSettings((s) => {
+    if (!s) return;
+    _sjdSettings = s;
+    _sjdMini = !!s.miniOpen;
+    settingsPaintDesktop();
+  });
+  d.getSettings().then((s) => {
+    if (s) { _sjdSettings = s; _sjdMini = !!s.miniOpen; }
+    settingsPaintDesktop();
+  }).catch(() => {});
+  sjdSchedule();
+}
+
+function sjdSchedule() {
+  if (_sjdTimer) clearInterval(_sjdTimer);
+  // Quick while the Mini Player is up (its scrubber reads it), slow otherwise
+  // (only the tray tooltip and menu are listening).
+  _sjdTimer = setInterval(() => sjdPush(false), _sjdMini ? 500 : 2000);
+}
+
+function sjdAbs(url) {
+  try { return new URL(url, window.location.href).href; } catch (_) { return ''; }
+}
+
+/** What the Mini Player and tray show. Plain data, no markup. */
+function sjdPlayerState() {
+  const item = (ytPlayerEl && ytQueueIdx >= 0) ? ytQueue[ytQueueIdx] : null;
+  if (!item) return { has: false };
+  const key = (item.trackId || '') + '|' + (item.videoId || '') + '|' + (item.title || '');
+  // ytpTrackMeta() scans the catalogue, so it runs once per song plus a
+  // refresh every few seconds for names that are hydrated in afterwards.
+  if (key !== _sjdMetaKey || !_sjdMeta || performance.now() - _sjdMetaAt > 5000) {
+    const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title, item.videoId, item) : null;
+    let art = meta?.artwork && meta.artwork !== '/favicon.png' ? meta.artwork : '';
+    if (!art && item.videoId) art = 'https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg';
+    if (!art) art = SJ_BRAND.icon || '';
+    _sjdMeta = {
+      title: meta?.title || item.title || '',
+      artist: meta?.artist || item.artist || '',
+      art: art ? sjdAbs(art) : '',
+    };
+    _sjdMetaKey = key;
+    _sjdMetaAt = performance.now();
+  }
+  const { pos, dur } = ytpMfPlaybackPos();
+  return {
+    has: true,
+    title: _sjdMeta.title,
+    artist: _sjdMeta.artist,
+    art: _sjdMeta.art,
+    playing: ytpIsPlaying(),
+    pos,
+    dur,
+    canHeart: !!(item.trackId || nowPlayingTrackId),
+  };
+}
+
+function sjdPush(force) {
+  if (!sjIsDesktop()) return;
+  let s;
+  try { s = sjdPlayerState(); } catch (_) { s = { has: false }; }
+  const key = JSON.stringify([s.has, s.title, s.artist, s.art, s.playing, Math.round(s.dur || 0)]);
+  // The position moves every tick, and only the Mini Player needs it.
+  if (!force && !_sjdMini && key === _sjdLastSent) return;
+  _sjdLastSent = key;
+  try { window.sjDesktop.pushState(s); } catch (_) {}
+}
+
+function sjdCommand(cmd, arg) {
+  try {
+    if (cmd === 'toggle') { if (ytPlayerEl) ytTogglePlayPause(); }
+    else if (cmd === 'next') { if (ytPlayerEl) ytNextTrack(); }
+    else if (cmd === 'prev') { if (ytPlayerEl) ytBackTrack(); }
+    else if (cmd === 'seek') {
+      const sec = Number(arg);
+      // ytpMfSeekCommit only reads .value, and already knows which engine has the sound.
+      if (ytPlayerEl && Number.isFinite(sec) && sec >= 0) ytpMfSeekCommit({ value: String(sec) });
+    }
+    else if (cmd === 'heart') { void ytpReact('heart', null, null); }
+  } catch (e) {
+    console.warn('[desktop] command failed', cmd, e);
+  }
+  setTimeout(() => sjdPush(true), 250);
+}
+
+function sjdSetMini(open) {
+  if (!sjIsDesktop()) return;
+  window.sjDesktop.setMini(!!open).catch(() => {});
+}
+
+async function sjdSet(patch) {
+  if (!sjIsDesktop()) return;
+  try {
+    const s = await window.sjDesktop.setSettings(patch);
+    if (s) _sjdSettings = s;
+  } catch (_) {}
+  settingsPaintDesktop();
+}
+
+function sjdDownloadHTML() {
+  const name = SJ_BRAND.name;
+  return '<div class="set-block">' +
+    '<div class="set-h">' + name + ' for Windows</div>' +
+    '<p class="set-sub">Play from its own window instead of a browser tab. It sits in the system tray, keeps playing when you close the window, and has a Mini Player that can stay on top of everything else.</p>' +
+    '<div class="sjd-actions"><a class="pl-btn" href="/api/desktop-download?platform=windows">Download for Windows</a></div>' +
+    '<p class="sjd-note">Windows 10 or 11. A Mac version is on the way. Until the app is signed, Windows may say it is from an unrecognized publisher: choose More info, then Run anyway.</p>' +
+    '</div>';
+}
+
+function settingsPaintDesktop() {
+  const body = document.getElementById('set-desktop-body');
+  if (!body) return;
+  if (!sjIsDesktop()) { body.innerHTML = sjdDownloadHTML(); return; }
+  const s = _sjdSettings || {};
+  const mac = s.platform === 'darwin';
+  const trayName = mac ? 'menu bar' : 'system tray';
+  const key = mac ? 'Cmd' : 'Ctrl';
+  const chk = (on) => (on ? ' checked' : '');
+  body.innerHTML =
+    '<div class="set-block">' +
+      '<div class="set-h">' + (mac ? 'Menu bar' : 'System tray') + '</div>' +
+      '<p class="set-sub">Keep ' + SJ_BRAND.name + ' one click away in the ' + trayName + ', with play, pause and skip in its menu.</p>' +
+      '<label class="set-opt"><input type="checkbox" id="sjd-tray"' + chk(s.tray) + ' onchange="sjdSet({tray:this.checked})"><span><b>Show in ' + trayName + '</b></span></label>' +
+      '<label class="set-opt' + (s.tray ? '' : ' sjd-off') + '"><input type="checkbox" id="sjd-close-to-tray"' + chk(s.closeToTray) + (s.tray ? '' : ' disabled') + ' onchange="sjdSet({closeToTray:this.checked})"><span><b>Keep playing when I close the window</b><span class="set-sub" style="display:block">Closing the window hides it to the ' + trayName + ' instead of quitting. Quit from the ' + trayName + ' menu.</span></span></label>' +
+    '</div>' +
+    '<div class="set-block">' +
+      '<div class="set-h">Mini Player</div>' +
+      '<p class="set-sub">A small window with the song, the artwork and the controls. Open it here, from the player, from the ' + trayName + ' menu, or with ' + key + '+Shift+M.</p>' +
+      '<label class="set-opt"><input type="checkbox" id="sjd-on-top"' + chk(s.alwaysOnTop) + ' onchange="sjdSet({alwaysOnTop:this.checked})"><span><b>Always on top</b><span class="set-sub" style="display:block">The Mini Player stays above your other windows. The pin on the Mini Player switches this too.</span></span></label>' +
+      '<div class="sjd-actions"><button type="button" class="pl-btn" onclick="sjdSetMini(true)">Open Mini Player</button></div>' +
+    '</div>' +
+    (s.version ? '<p class="sjd-note">Desktop app version ' + String(s.version).replace(/[^0-9A-Za-z.\-]/g, '') + '</p>' : '');
+}
+
 // ── Settings ───────────────────────────────────────────────────────────────
 // One panel, four sections. Profile, Privacy and Playback are a form with a
 // Save at the bottom; the Online Jukebox section is the live host console,
 // which acts as you press things and so hides that footer.
 let _setSection = 'profile';
-const SET_SECTIONS = ['profile', 'privacy', 'playback', 'integrations', 'audio', 'jukebox'];
+const SET_SECTIONS = ['profile', 'privacy', 'playback', 'integrations', 'audio', 'jukebox', 'desktop'];
 // Held here rather than read back off the <img>, which carries the Google
 // picture when nothing has been chosen. Undefined means "not touched".
 let _setPendingAvatar;
@@ -42757,12 +42960,13 @@ function settingsShow(section) {
   });
   // The console and audio storage have no Save: everything on them takes effect as it is pressed.
   const save = document.getElementById('set-save');
-  if (save) save.style.display = (section === 'jukebox' || section === 'audio' || section === 'integrations') ? 'none' : '';
+  if (save) save.style.display = (section === 'jukebox' || section === 'audio' || section === 'integrations' || section === 'desktop') ? 'none' : '';
   settingsSay('');
   if (section === 'jukebox') settingsStartJukeboxPoll();
   else settingsStopJukeboxPoll();
   if (section === 'audio') setAudioLoad();
   if (section === 'integrations') settingsPaintIntegrations();
+  if (section === 'desktop') settingsPaintDesktop();
   if (section === 'profile') settingsPaintBlocked();
   if (section === 'playback') {
     settingsPaintSpotifyPlayback();
@@ -44146,7 +44350,7 @@ function sjSignInErr(msg) {
 async function sjGoogleSignIn() {
   if (googleUser) return;
   try { localStorage.setItem('auth_return_path', window.location.pathname + window.location.search); } catch(e) {}
-  if (sjIsNative()) return sjNativeSignIn();
+  if (sjIsNative() || sjIsDesktop()) return sjNativeSignIn();
   await sbAuth.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: sjAuthRedirectUrl() }
@@ -44218,7 +44422,10 @@ async function sjEmailSignIn() {
 // runs in an ASWebAuthenticationSession sheet instead. Navigating in-page just
 // handed the whole thing to Safari and left the app behind.
 async function sjNativeSignIn() {
-  const plugin = window.Capacitor?.Plugins?.SJAuth;
+  // The desktop app's bridge speaks the same signIn({url, callbackScheme}) ->
+  // {url} as the phones' SJAuth plugin, with the person's own browser as the
+  // sheet. sjdAuthPlugin() is null outside the desktop app.
+  const plugin = window.Capacitor?.Plugins?.SJAuth || sjdAuthPlugin();
   if (!plugin) { alert('Sign-in is unavailable in this build.'); return; }
   try {
     // skipBrowserRedirect: hand us the URL rather than navigating the page.
@@ -44242,7 +44449,8 @@ async function sjNativeSignIn() {
     // - true, but unrecognisable to the person reading it. /api/sj-auth-start
     // is a 302 to that exact same URL, so the alert names this site instead and
     // the flow is otherwise byte-for-byte what it was.
-    const startUrl = sjApiUrl('/api/sj-auth-start') + '?to=' + encodeURIComponent(data.url);
+    // Absolute, because the desktop app opens it in another program entirely.
+    const startUrl = new URL(sjApiUrl('/api/sj-auth-start'), window.location.href).href + '?to=' + encodeURIComponent(data.url);
 
     const result = await plugin.signIn({ url: startUrl, callbackScheme: SJ_AUTH_SCHEME });
     const cb = new URL(result.url);
@@ -47014,6 +47222,7 @@ setInterval(() => { if (googleUser && ytPlayerEl) savePlaybackState(); }, 20000)
 ytpInitMediaSession();
 wakeInit();
 sjDlInit();
+sjdInit();
 
 trackPageView();
 
@@ -48320,6 +48529,7 @@ try { sjInstrumentRenders(); } catch (e) { console.warn('[SJ performance] Render
   · <a href="/for-artists" style="color:var(--text-muted);text-decoration:none">For Artists</a>
   · <a href="/for-listeners" style="color:var(--text-muted);text-decoration:none">For Listeners</a>
   · <a href="/about" style="color:var(--text-muted);text-decoration:none">About</a>
+  <span data-sj-feature="desktopApp" class="sjd-web-only">· <a href="/api/desktop-download?platform=windows" style="color:var(--text-muted);text-decoration:none">Windows App</a></span>
   · <a href="/privacy" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">Privacy</a>
   · <a href="/terms" style="color:var(--text-muted);text-decoration:none">Terms</a>
   · <a href="/dmca" style="color:var(--text-muted);text-decoration:none">Copyright</a>
