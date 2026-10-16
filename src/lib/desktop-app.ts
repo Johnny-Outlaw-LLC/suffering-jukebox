@@ -10,11 +10,11 @@
  * download link got popular.
  */
 export const DESKTOP_APP = {
-  version: "1.0.1",
+  version: "1.0.2",
   repo: "Johnny-Outlaw-LLC/suffering-jukebox",
   /** Installer file names by platform; null until that build is published. */
   files: {
-    windows: "Record-Keeper-Setup-1.0.1.exe",
+    windows: "Record-Keeper-Setup-1.0.2.exe",
     mac: null as string | null,
   },
 } as const;
