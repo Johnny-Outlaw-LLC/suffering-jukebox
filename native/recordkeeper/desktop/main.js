@@ -276,11 +276,6 @@ function createMini() {
     icon: ICON,
     backgroundColor: '#171717',
     alwaysOnTop: settings.alwaysOnTop,
-    // A tool window (WS_EX_TOOLWINDOW on Windows): no taskbar button of its
-    // own, and window managers such as DisplayFusion leave it alone instead
-    // of stacking their title bar buttons on top of it. The tray icon is how
-    // you get back to it.
-    skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, 'mini', 'preload.js'),
       contextIsolation: true,

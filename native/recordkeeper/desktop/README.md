@@ -42,8 +42,6 @@ playing, and a Mini Player that can stay on top of other windows.
   The page may change only `tray`, `closeToTray`, `alwaysOnTop` and
   `minimizeToMini` (the minimize button opens the Mini Player). The page only
   shows a switch the shell reports, so an older install never gets a dead one.
-- The Mini Player is a tool window (`skipTaskbar`): no taskbar button, and
-  DisplayFusion does not put its title bar buttons on it. The tray brings it back.
 
 ## Run it
 
