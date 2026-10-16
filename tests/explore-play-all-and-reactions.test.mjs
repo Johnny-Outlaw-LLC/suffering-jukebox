@@ -11,8 +11,8 @@ for (const kind of ['artist', 'playlist']) {
     const scope = { document: { getElementById: () => menu }, googleUser: null,
       _sjmHeader: () => '', YTP_DECK_ICONS: {}, playlistIdCanShare: () => false,
       oaIsMine: () => false, _lamFavIds: [], _lamOnPage: false, sjmArtistHasDiscography: () => false,
-      lamCanManage: () => false };
-    const { lamRender, plmRender } = loadHtmlFnsInScope(['lamRender', 'plmRender'], scope);
+      lamCanManage: () => false, ytPlayerEl: null, ytQueue: [] };
+    const { lamRender, plmRender } = loadHtmlFnsInScope(['sjQueueIsPlaying', 'lamRender', 'plmRender'], scope);
     if (kind === 'artist') lamRender({ name: 'Artist', track_count: n });
     else plmRender({ id: 'playlist', _tracks: Array(n).fill('track') });
     assert.ok(menu.innerHTML.includes('Play All'));
@@ -21,6 +21,21 @@ for (const kind of ['artist', 'playlist']) {
     assert.match(menu.innerHTML, kind === 'artist' ? /lamPlayAll\(false\)/ : /plmStart\(false\)/);
   });
 }
+
+for (const kind of ['artist', 'playlist']) test(`${kind} menu offers Add All to Queue instead of Play All while music plays`, () => {
+  const menu = { innerHTML: '' };
+  const scope = { document: { getElementById: () => menu }, googleUser: null,
+    _sjmHeader: () => '', YTP_DECK_ICONS: {}, playlistIdCanShare: () => false,
+    oaIsMine: () => false, _lamFavIds: [], _lamOnPage: false, sjmArtistHasDiscography: () => false,
+    lamCanManage: () => false, ytPlayerEl: {}, ytQueue: [{ trackId: 'x' }] };
+  const { lamRender, plmRender } = loadHtmlFnsInScope(['sjQueueIsPlaying', 'lamRender', 'plmRender'], scope);
+  if (kind === 'artist') lamRender({ name: 'Artist', track_count: 2 });
+  else plmRender({ id: 'playlist', _tracks: ['a', 'b'] });
+  assert.ok(menu.innerHTML.includes('Add All to Queue'));
+  assert.ok(!menu.innerHTML.includes('Play All'));
+  assert.ok(!menu.innerHTML.includes('Add playlist to queue'));
+  assert.match(menu.innerHTML, kind === 'artist' ? /lamAddAllToQueue\(\)/ : /plmAddToQueue\(\)/);
+});
 
 test('playlist Play All preserves order and disables shuffle', async () => {
   let played;

@@ -14,6 +14,8 @@ test('Record Keeper resolves its own hosts and shares catalog features', () => {
   assert.equal(RK.features.homeTab, true);
   assert.equal(RK.features.artistUpload, true);
   assert.equal(RK.features.playlistsFirst, true);
+  assert.equal(RK.features.artistsBeforePlaylists, true);
+  assert.equal(surface.SURFACES.lp.features.artistsBeforePlaylists, false);
   assert.equal(RK.features.liveStations, true);
   assert.equal(RK.features.spotifyPlayback, false);
   assert.equal(surface.SURFACES.sj.features.spotifyPlayback, true);

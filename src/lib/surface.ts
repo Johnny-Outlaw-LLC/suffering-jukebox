@@ -46,6 +46,13 @@ export interface SurfaceFeatures {
    * strip. Listening Party leads with playlists; Suffering Jukebox with artists.
    */
   playlistsFirst: boolean;
+  /**
+   * Explore Artists comes before Explore Playlists in the tab strip even on a
+   * playlistsFirst brand. Record Keeper keeps every other playlistsFirst
+   * behaviour (phone Explore switcher, go live, playlist addresses) but leads
+   * its browsing tabs with artists.
+   */
+  artistsBeforePlaylists: boolean;
   /** The nightly per-artist share-image pipeline and the /share pages. */
   shareImages: boolean;
   /**
@@ -240,6 +247,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       homeTab: false,
       defaultLandingTab: "explore",
       playlistsFirst: false,
+      artistsBeforePlaylists: false,
       shareImages: true,
       sitemapPlaylists: true,
       welcomeHero: false,
@@ -319,6 +327,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       homeTab: true,
       defaultLandingTab: "home",
       playlistsFirst: true,
+      artistsBeforePlaylists: false,
       shareImages: false,
       sitemapPlaylists: true,
       welcomeHero: true,
@@ -369,7 +378,7 @@ export const SURFACES: Record<SurfaceId, Surface> = {
       applicationCategory: "MusicApplication", operatingSystem: "Any",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     },
-    features: { ...BASE_SURFACES.lp.features, spotifyPlayback: false, desktopApp: true },
+    features: { ...BASE_SURFACES.lp.features, spotifyPlayback: false, desktopApp: true, artistsBeforePlaylists: true },
   },
 };
 
@@ -448,6 +457,7 @@ export function publicSurface(s: Surface) {
       homeTab: s.features.homeTab,
       defaultLandingTab: s.features.defaultLandingTab,
       playlistsFirst: s.features.playlistsFirst,
+      artistsBeforePlaylists: s.features.artistsBeforePlaylists,
       shareImages: s.features.shareImages,
       welcomeHero: s.features.welcomeHero,
       phoneMiniPlayer: s.features.phoneMiniPlayer,

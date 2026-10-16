@@ -7788,7 +7788,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false, desktopApp: false }
+  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, artistsBeforePlaylists: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false, desktopApp: false }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -8453,7 +8453,7 @@ function landingTabsAvailable() {
   // A playlist-led brand puts Explore Playlists straight after Home, ahead of
   // Artists and Songs. Live Stations sits after Explore Songs when the brand
   // offers it and somebody is on air.
-  const order = SJ_BRAND.features.playlistsFirst
+  const order = SJ_BRAND.features.playlistsFirst && !SJ_BRAND.features.artistsBeforePlaylists
     ? ['home', 'playlists', 'explore', 'songs', 'live']
     : ['home', 'explore', 'playlists', 'songs', 'live'];
   return order
@@ -21722,10 +21722,14 @@ function plmRender(p) {
   const mine = !!(googleUser && p.user_email === googleUser.email);
   const n = (p._tracks || []).length;
   const canShare = playlistIdCanShare(p.id);
+  const playing = sjQueueIsPlaying();
   menu.innerHTML =
     _sjmHeader(p.name || 'Playlist') +
-    '<button class="sjm-item" onclick="plmStart(false)">' +
-      '<span class="sjm-ic">▶</span><span class="sjm-label">Play All</span>' +
+    (playing
+      ? '<button class="sjm-item" onclick="plmAddToQueue()"' + (n ? '' : ' disabled') + '>' +
+          '<span class="sjm-ic">+</span><span class="sjm-label">Add All to Queue</span>'
+      : '<button class="sjm-item" onclick="plmStart(false)">' +
+          '<span class="sjm-ic">▶</span><span class="sjm-label">Play All</span>') +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
     '</button>' +
     (n > 1 ? '<button class="sjm-item" onclick="plmStart(true)"><span class="sjm-label">Shuffle All</span><span class="sjm-sub">' + n + '</span></button>' : '') +
@@ -21733,8 +21737,8 @@ function plmRender(p) {
       '<span class="sjm-ic">+</span><span class="sjm-label">Add to playlist</span></button>' +
     '<button class="sjm-item" onclick="plmPlayNext()"' + (n ? '' : ' disabled') + '>' +
       '<span class="sjm-ic">' + YTP_DECK_ICONS.next + '</span><span class="sjm-label">Play Next</span></button>' +
-    '<button class="sjm-item" onclick="plmAddToQueue()">' +
-      '<span class="sjm-ic">+</span><span class="sjm-label">Add playlist to queue</span></button>' +
+    (playing ? '' : '<button class="sjm-item" onclick="plmAddToQueue()">' +
+      '<span class="sjm-ic">+</span><span class="sjm-label">Add playlist to queue</span></button>') +
     '<button class="sjm-item" onclick="plmEnableBgPlay()">' +
       '<span class="sjm-ic">🎧</span><span class="sjm-label">Enable Mobile Background Play</span>' +
       (n ? '<span class="sjm-sub">' + n + '</span>' : '') +
@@ -21923,10 +21927,14 @@ function lamRender(row) {
             '<span class="sjm-sub">' + fav.length + '</span></button>'
         : '');
   const nVis = _lamOnPage ? getVisibleTracksWithVideo(false).length : n;
+  const playing = sjQueueIsPlaying();
   menu.innerHTML =
     _sjmHeader(row.name || 'Artist') +
-    ('<button class="sjm-item" onclick="lamPlayAll(false)"' + (nVis ? '' : ' disabled') + '>' +
-          '<span class="sjm-ic">' + YTP_DECK_ICONS.play + '</span><span class="sjm-label">Play All</span>' +
+    ((playing
+        ? '<button class="sjm-item" onclick="lamAddAllToQueue()"' + (nVis ? '' : ' disabled') + '>' +
+          '<span class="sjm-ic">+</span><span class="sjm-label">Add All to Queue</span>'
+        : '<button class="sjm-item" onclick="lamPlayAll(false)"' + (nVis ? '' : ' disabled') + '>' +
+          '<span class="sjm-ic">' + YTP_DECK_ICONS.play + '</span><span class="sjm-label">Play All</span>') +
           (nVis ? '<span class="sjm-sub">' + nVis + '</span>' : '') + '</button>' +
         (nVis > 1 ? '<button class="sjm-item" onclick="lamPlayAll(true)"' + (nVis ? '' : ' disabled') + '>' +
           '<span class="sjm-ic">' + YTP_DECK_ICONS.shuffle + '</span><span class="sjm-label">Shuffle All</span>' +
@@ -22245,6 +22253,34 @@ async function lamPlayAll(shuffle) {
     const q = filterQueueForHomeBg(sjNoBlocked(ids.map(tid => playlistQueueItem(tid, info[tid])).filter(Boolean)));
     if (!q.length) { showToast('No playable songs found.'); return; }
     await landingPlayQueue(q, { shuffle: !!shuffle });
+  } catch (e) { showToast('Could not load this artist\'s songs.'); }
+}
+
+/** Something is loaded in the player, so Play All would replace it. */
+function sjQueueIsPlaying() {
+  return !!(ytPlayerEl && ytQueue && ytQueue.length);
+}
+
+// While music plays, the artist ⋯ offers Add All to Queue in Play All's
+// place: the same list Play All would start, appended in order.
+async function lamAddAllToQueue() {
+  const onPage = _lamOnPage;
+  const id = _lamArtistId;
+  lamClose();
+  try {
+    let q;
+    if (onPage) q = getVisibleTracksWithVideo(false);
+    else {
+      if (!id) return;
+      const ids = await lamAllTrackIds(id);
+      const info = await resolvePlaylistTracks(ids);
+      q = filterQueueForHomeBg(sjNoBlocked(ids.map(tid => playlistQueueItem(tid, info[tid])).filter(Boolean)));
+    }
+    if (!q.length) { showToast('No playable songs found.'); return; }
+    if (!sjQueueIsPlaying()) { await landingPlayQueue(q, { shuffle: false }); return; }
+    ytAppendQueueItems(q);
+    updateYTQueueUI();
+    showToast('Added ' + q.length + ' song' + (q.length === 1 ? '' : 's') + ' to the queue.');
   } catch (e) { showToast('Could not load this artist\'s songs.'); }
 }
 
@@ -35542,8 +35578,11 @@ function updateLandingActionsHeader() {
     : landingTab === 'songs' && _esLoaded ? esSongRows().length
     : homePlayArtistRows().reduce((n, r) => n + (Number(r.track_count) || 0), 0);
   const playAction = landingTab === 'playlists' ? 'playlistsShuffleAll' : 'landingShuffleAll';
+  // Play All is offered on an artist or playlist page (its ⋯ menu), where
+  // "in order" means something. Exploring many artists or playlists only
+  // shuffles.
   const shuffle = totals && landingTab !== 'live'
-    ? `<span style="display:flex;flex-direction:column;gap:6px"><button type="button" class="landing-shuffle-btn standard" id="landing-play-all-btn" onclick="${playAction}(false)">▶ Play All</button>${songCount > 1 ? `<button type="button" class="landing-shuffle-btn${_npRow ? ' standard' : ''}" id="landing-shuffle-all-btn" onclick="${playAction}()">▶ Shuffle All</button>` : ''}</span>`
+    ? (songCount > 1 ? `<button type="button" class="landing-shuffle-btn${_npRow ? ' standard' : ''}" id="landing-shuffle-all-btn" onclick="${playAction}()">▶ Shuffle All</button>` : '')
     : '';
   // Import / Manage sit on this row now, beside Shuffle All, instead of down
   // in each tab's own filter row - one action cluster in one place across
@@ -35556,13 +35595,11 @@ function updateLandingActionsHeader() {
     ? `<div class="playlist-explore-actions">
         ${playlistHiddenIds.size ? `<button type="button" class="playlist-explore-action-btn" onclick="showAllPlaylists(event)" title="Bring every hidden playlist back">Show All (${playlistHiddenIds.size} hidden)</button>` : ''}
         ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openManagePlaylists()">Manage Playlists</button>` : ''}
-        ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openSettings('audio')" title="Upload audio for YouTube catalogue songs so they can keep playing when the screen locks">Enable Background Play</button>` : ''}
         <button type="button" class="playlist-explore-action-btn primary" onclick="openPlaylistImporter()">＋ Create Playlist</button>
       </div>`
     : (landingTab === 'explore' || landingTab === 'songs')
     ? `<div class="playlist-explore-actions">
         <button type="button" class="playlist-explore-action-btn" onclick="userMenuAction('myartists')">Manage My Artists</button>
-        ${googleUser ? `<button type="button" class="playlist-explore-action-btn" onclick="openSettings('audio')" title="Upload audio for YouTube catalogue songs so they can keep playing when the screen locks">Enable Background Play</button>` : ''}
         <button type="button" class="playlist-explore-action-btn primary" onclick="openImportMusic()">＋ Import Music</button>
       </div>`
     : '';
@@ -41027,11 +41064,17 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-10-15';
+const SJ_APP_UPDATED_FALLBACK = '2026-10-16';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-10-16', items: [
+    'On Record Keeper, Explore Artists now comes before Explore Playlists.',
+    'Explore Artists, Playlists and Songs offer Shuffle All only. Play All, which plays one discography or one playlist in order, is in the ⋯ menu on an artist or a playlist.',
+    'While music is playing, the ⋯ menu on an artist or a playlist offers Add All to Queue in place of Play All, so what is playing keeps going.',
+    'The Enable Background Play button is gone from the explore pages. It is still in Settings, Audio Storage, and in each playlist\'s ⋯ menu.',
+  ] },
   { date: '2026-10-15', items: [
     'Record Keeper has a Windows app. It plays from its own window instead of a browser tab, sits in the system tray with play, pause and skip, and keeps playing when you close the window. Get it from Settings, Desktop App, or the Windows App link at the bottom of the page.',
     'The Windows app has a Mini Player: the song, the artwork and the controls in a small window that can stay on top of everything else. Open it from the player, the tray, or with Ctrl+Shift+M.',
