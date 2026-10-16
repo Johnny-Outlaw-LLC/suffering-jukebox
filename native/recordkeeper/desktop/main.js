@@ -217,6 +217,12 @@ function createMain() {
   });
   win.on('resize', () => saveBoundsSoon());
   win.on('move', () => saveBoundsSoon());
+  // Minimize to Mini Player: the minimize button swaps the window for the
+  // Mini Player. openMini() hides the minimized window, and closeMini()
+  // restores it, so coming back works the same as from the expand button.
+  win.on('minimize', () => {
+    if (settings.minimizeToMini && !miniOpen && !quitting) openMini();
+  });
   win.on('maximize', () => { settings.maximized = true; saveSettings(); });
   win.on('unmaximize', () => { settings.maximized = false; saveSettings(); });
 }
@@ -270,6 +276,11 @@ function createMini() {
     icon: ICON,
     backgroundColor: '#171717',
     alwaysOnTop: settings.alwaysOnTop,
+    // A tool window (WS_EX_TOOLWINDOW on Windows): no taskbar button of its
+    // own, and window managers such as DisplayFusion leave it alone instead
+    // of stacking their title bar buttons on top of it. The tray icon is how
+    // you get back to it.
+    skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, 'mini', 'preload.js'),
       contextIsolation: true,
@@ -358,7 +369,7 @@ function destroyTray() {
 function updateTray(force) {
   if (!tray) return;
   const s = playerState;
-  const key = JSON.stringify([s.has, s.title, s.artist, s.playing, miniOpen, settings.alwaysOnTop]);
+  const key = JSON.stringify([s.has, s.title, s.artist, s.playing, miniOpen, settings.alwaysOnTop, settings.minimizeToMini]);
   if (!force && key === lastTrayKey) return;
   lastTrayKey = key;
   tray.setToolTip(L.trayTooltip(s, APP_NAME));
@@ -375,6 +386,7 @@ function updateTray(force) {
     { label: `Show ${APP_NAME}`, click: () => showMain() },
     { label: 'Mini Player', type: 'checkbox', checked: miniOpen, click: () => toggleMini() },
     { label: 'Always on Top', type: 'checkbox', checked: !!settings.alwaysOnTop, click: (item) => changeSettings({ alwaysOnTop: item.checked }) },
+    { label: 'Minimize to Mini Player', type: 'checkbox', checked: !!settings.minimizeToMini, click: (item) => changeSettings({ minimizeToMini: item.checked }) },
     { type: 'separator' },
     { label: `Quit ${APP_NAME}`, click: () => { quitting = true; app.quit(); } },
   ]));
@@ -388,7 +400,7 @@ function sendMini(channel, ...args) {
   if (mini && !mini.isDestroyed()) mini.webContents.send(channel, ...args);
 }
 function sendCommand(cmd, arg) {
-  if (!['toggle', 'next', 'prev', 'seek', 'heart'].includes(cmd)) return;
+  if (!['toggle', 'next', 'prev', 'seek', 'heart', 'skipNext'].includes(cmd)) return;
   sendPage('desktop:command', cmd, arg);
 }
 

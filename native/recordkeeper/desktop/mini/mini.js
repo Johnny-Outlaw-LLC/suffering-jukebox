@@ -48,7 +48,29 @@
       ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>'
       : '<path d="M8 5v14l11-7z"/>';
     document.title = has ? `${state.title} - Record Keeper` : 'Record Keeper Mini Player';
+    paintUpNext();
     paintProgress();
+  }
+
+  function paintUpNext() {
+    const next = state.has ? state.next : null;
+    const song = $('un-song');
+    song.textContent = '';
+    if (next && next.title) {
+      song.append(next.title);
+      if (next.artist) {
+        const a = document.createElement('span');
+        a.className = 'un-artist';
+        a.textContent = ' · ' + next.artist;
+        song.append(a);
+      }
+      song.title = next.artist ? `${next.title} - ${next.artist}` : next.title;
+    } else {
+      song.append(state.has ? 'Nothing queued' : '');
+      song.title = '';
+    }
+    $('upnext').classList.toggle('empty', !(next && next.title));
+    $('skip-next').disabled = !(next && next.title && state.canSkipNext);
   }
 
   $('art').addEventListener('error', () => {
@@ -70,6 +92,7 @@
     setTimeout(() => h.classList.remove('sent'), 450);
     window.rkMini.command('heart');
   });
+  $('skip-next').addEventListener('click', () => window.rkMini.command('skipNext'));
   $('expand').addEventListener('click', () => window.rkMini.expand());
   $('pin').addEventListener('click', () => {
     const on = $('pin').getAttribute('aria-pressed') !== 'true';

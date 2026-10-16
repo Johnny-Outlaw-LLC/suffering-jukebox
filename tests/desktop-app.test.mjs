@@ -72,16 +72,18 @@ test('the sign-in callback is found in a second launch\'s arguments', () => {
   assert.equal(L.findAuthCallback(null), null);
 });
 
-test('settings keep only what the shell knows, and the page may change only three switches', () => {
+test('settings keep only what the shell knows, and the page may change only its four switches', () => {
   const s = L.normalizeSettings({ tray: false, alwaysOnTop: 'yes', bounds: { x: 1, y: 2, width: 50, height: 50 }, evil: 1 });
   assert.equal(s.tray, false);
   assert.equal(s.alwaysOnTop, false);
   assert.equal(s.bounds, null);
   assert.equal('evil' in s, false);
-  const next = L.applyPatch(L.DEFAULT_SETTINGS, { alwaysOnTop: true, bounds: { x: 0 }, trayNoticeShown: true });
+  const next = L.applyPatch(L.DEFAULT_SETTINGS, { alwaysOnTop: true, minimizeToMini: true, bounds: { x: 0 }, trayNoticeShown: true });
   assert.equal(next.alwaysOnTop, true);
   assert.equal(next.trayNoticeShown, false);
-  assert.deepEqual(L.publicSettings(next), { tray: true, closeToTray: true, alwaysOnTop: true });
+  assert.deepEqual(L.publicSettings(next), { tray: true, closeToTray: true, alwaysOnTop: true, minimizeToMini: true });
+  assert.equal(L.DEFAULT_SETTINGS.minimizeToMini, false);
+  assert.equal(L.normalizeSettings({ minimizeToMini: true }).minimizeToMini, true);
 });
 
 test('player state from the page is trimmed before it reaches the Mini Player', () => {
@@ -91,6 +93,11 @@ test('player state from the page is trimmed before it reaches the Mini Player', 
   assert.equal(st.playing, true);
   assert.equal(st.pos, 0);
   assert.equal(st.dur, 240);
+  assert.equal(st.next, null);
+  const withNext = L.sanitizeState({ has: true, title: 'a', next: { title: 'Crow', artist: 'Shellac', evil: '<b>' }, canSkipNext: 1 });
+  assert.deepEqual(withNext.next, { title: 'Crow', artist: 'Shellac' });
+  assert.equal(withNext.canSkipNext, true);
+  assert.equal(L.sanitizeState({ has: true, next: { title: 42 } }).next, null);
   assert.match(L.trayTooltip({ title: 'x'.repeat(300), playing: true }), /…$/);
   assert.ok(L.trayTooltip({ title: 'x'.repeat(300), playing: true }).length <= 127);
 });
@@ -139,14 +146,17 @@ test('player transport commands reach the right player functions', () => {
     ytBackTrack: () => log.push('prev'),
     ytpMfSeekCommit: (el) => log.push('seek:' + el.value),
     ytpReact: async (r, a, e) => { log.push('react:' + r + ':' + a + ':' + e); },
+    ytSkipUpNext: () => log.push('skipNext'),
     sjdPush: () => {},
     setTimeout: () => 0,
     console,
   };
   const { sjdCommand } = loadHtmlFnsInScope(['sjdCommand'], scope);
   sjdCommand('toggle'); sjdCommand('next'); sjdCommand('prev'); sjdCommand('seek', 42.5);
-  sjdCommand('seek', -1); sjdCommand('heart'); sjdCommand('rm -rf');
-  assert.deepEqual(log, ['toggle', 'next', 'prev', 'seek:42.5', 'react:heart:null:null']);
+  sjdCommand('seek', -1); sjdCommand('heart'); sjdCommand('skipNext'); sjdCommand('rm -rf');
+  assert.deepEqual(log, ['toggle', 'next', 'prev', 'seek:42.5', 'react:heart:null:null', 'skipNext']);
+  const main = readRepoFile('native/recordkeeper/desktop/main.js');
+  assert.match(main, /\['toggle', 'next', 'prev', 'seek', 'heart', 'skipNext'\]/);
 });
 
 test('Settings has a Desktop App section the page can show', () => {

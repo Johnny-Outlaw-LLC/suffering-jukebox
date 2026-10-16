@@ -19,7 +19,9 @@ playing, and a Mini Player that can stay on top of other windows.
   when something in this folder changes.
 - **There is one player.** The Mini Player shows what the page reports
   (`desktop:state`, twice a second while it is open) and sends commands back
-  (`toggle`, `next`, `prev`, `seek`, `heart`). The main window hides while it
+  (`toggle`, `next`, `prev`, `seek`, `heart`, `skipNext`). The state carries
+  the song that is up next (`ytUpNextIndex()`, the same pick the player's
+  banner shows), and Skip runs `ytSkipUpNext()`. The main window hides while it
   is up, which the page already handles exactly like a background browser tab:
   YouTube keeps going, and an uploaded file takes over where there is one.
 - **The page side is `sjd*` in `public/index.html`.** `sjIsDesktop()` is
@@ -37,7 +39,11 @@ playing, and a Mini Player that can stay on top of other windows.
 - `backgroundThrottling` is off so the queue advances on time from the tray.
 - The user agent ends in `RecordKeeperDesktop/<version>` instead of Electron's.
 - Settings live in `desktop-settings.json` under the app's user data folder.
-  The page may change only `tray`, `closeToTray` and `alwaysOnTop`.
+  The page may change only `tray`, `closeToTray`, `alwaysOnTop` and
+  `minimizeToMini` (the minimize button opens the Mini Player). The page only
+  shows a switch the shell reports, so an older install never gets a dead one.
+- The Mini Player is a tool window (`skipTaskbar`): no taskbar button, and
+  DisplayFusion does not put its title bar buttons on it. The tray brings it back.
 
 ## Run it
 

@@ -41071,6 +41071,8 @@ const SJ_APP_UPDATED_FALLBACK = '2026-10-16';
 const SJ_CHANGELOG = [
   { date: '2026-10-16', items: [
     'On Record Keeper, Explore Artists now comes before Explore Playlists.',
+    'The Windows app\'s Mini Player shows what is up next, with a Skip button to pick a different song.',
+    'New in the Windows app: Minimize to Mini Player. Turn it on in Settings, Desktop App, or from the tray menu, and the minimize button opens the Mini Player.',
     'Explore Artists, Playlists and Songs offer Shuffle All only. Play All, which plays one discography or one playlist in order, is in the ⋯ menu on an artist or a playlist.',
     'While music is playing, the ⋯ menu on an artist or a playlist offers Add All to Queue in place of Play All, so what is playing keeps going.',
     'The Enable Background Play button is gone from the explore pages. It is still in Settings, Audio Storage, and in each playlist\'s ⋯ menu.',
@@ -42894,6 +42896,8 @@ function sjdPlayerState() {
   const { pos, dur } = ytpMfPlaybackPos();
   return {
     has: true,
+    next: sjdUpNext(),
+    canSkipNext: !_liveRoomListen && ytQueue.length > 2,
     title: _sjdMeta.title,
     artist: _sjdMeta.artist,
     art: _sjdMeta.art,
@@ -42904,11 +42908,27 @@ function sjdPlayerState() {
   };
 }
 
+let _sjdNextKey = '';
+let _sjdNext = null;
+/** The song after this one, as the player's Up next banner names it. */
+function sjdUpNext() {
+  const idx = ytUpNextIndex();
+  const item = idx >= 0 && idx !== ytQueueIdx ? ytQueue[idx] : null;
+  if (!item) { _sjdNextKey = ''; _sjdNext = null; return null; }
+  const key = idx + '|' + (item.trackId || '') + '|' + (item.videoId || '');
+  if (key !== _sjdNextKey || !_sjdNext) {
+    const meta = item.trackId ? ytpTrackMeta(item.trackId, item.title, item.videoId, item) : null;
+    _sjdNext = { title: meta?.title || item.title || '', artist: meta?.artist || item.artist || '' };
+    _sjdNextKey = key;
+  }
+  return _sjdNext.title ? _sjdNext : null;
+}
+
 function sjdPush(force) {
   if (!sjIsDesktop()) return;
   let s;
   try { s = sjdPlayerState(); } catch (_) { s = { has: false }; }
-  const key = JSON.stringify([s.has, s.title, s.artist, s.art, s.playing, Math.round(s.dur || 0)]);
+  const key = JSON.stringify([s.has, s.title, s.artist, s.art, s.playing, Math.round(s.dur || 0), s.next && s.next.title]);
   // The position moves every tick, and only the Mini Player needs it.
   if (!force && !_sjdMini && key === _sjdLastSent) return;
   _sjdLastSent = key;
@@ -42926,6 +42946,7 @@ function sjdCommand(cmd, arg) {
       if (ytPlayerEl && Number.isFinite(sec) && sec >= 0) ytpMfSeekCommit({ value: String(sec) });
     }
     else if (cmd === 'heart') { void ytpReact('heart', null, null); }
+    else if (cmd === 'skipNext') { if (ytPlayerEl) ytSkipUpNext(); }
   } catch (e) {
     console.warn('[desktop] command failed', cmd, e);
   }
@@ -42976,6 +42997,8 @@ function settingsPaintDesktop() {
       '<div class="set-h">Mini Player</div>' +
       '<p class="set-sub">A small window with the song, the artwork and the controls. Open it here, from the player, from the ' + trayName + ' menu, or with ' + key + '+Shift+M.</p>' +
       '<label class="set-opt"><input type="checkbox" id="sjd-on-top"' + chk(s.alwaysOnTop) + ' onchange="sjdSet({alwaysOnTop:this.checked})"><span><b>Always on top</b><span class="set-sub" style="display:block">The Mini Player stays above your other windows. The pin on the Mini Player switches this too.</span></span></label>' +
+      // Older installs do not know this switch, so it only shows when the shell reports it.
+      ('minimizeToMini' in s ? '<label class="set-opt"><input type="checkbox" id="sjd-min-to-mini"' + chk(s.minimizeToMini) + ' onchange="sjdSet({minimizeToMini:this.checked})"><span><b>Minimize to Mini Player</b><span class="set-sub" style="display:block">The minimize button opens the Mini Player instead of sending the window to the taskbar.</span></span></label>' : '') +
       '<div class="sjd-actions"><button type="button" class="pl-btn" onclick="sjdSetMini(true)">Open Mini Player</button></div>' +
     '</div>' +
     (s.version ? '<p class="sjd-note">Desktop app version ' + String(s.version).replace(/[^0-9A-Za-z.\-]/g, '') + '</p>' : '');

@@ -13,19 +13,20 @@ const DEFAULT_SETTINGS = Object.freeze({
   tray: true,          // show an icon in the system tray
   closeToTray: true,   // closing the window keeps the music playing in the tray
   alwaysOnTop: false,  // the Mini Player floats above other windows
+  minimizeToMini: false, // minimizing the window opens the Mini Player instead
   trayNoticeShown: false,
   bounds: null,        // the full window, restored on launch
   maximized: false,
   miniPos: null,       // where the Mini Player was last left
 });
 
-const MINI_SIZE = Object.freeze({ width: 380, height: 136 });
+const MINI_SIZE = Object.freeze({ width: 380, height: 166 });
 
 /** Merge a saved file over the defaults, dropping anything we do not know. */
 function normalizeSettings(raw) {
   const out = { ...DEFAULT_SETTINGS };
   if (!raw || typeof raw !== 'object') return out;
-  for (const k of ['tray', 'closeToTray', 'alwaysOnTop', 'trayNoticeShown', 'maximized']) {
+  for (const k of ['tray', 'closeToTray', 'alwaysOnTop', 'minimizeToMini', 'trayNoticeShown', 'maximized']) {
     if (typeof raw[k] === 'boolean') out[k] = raw[k];
   }
   if (validRect(raw.bounds)) out.bounds = pickRect(raw.bounds);
@@ -37,19 +38,21 @@ function normalizeSettings(raw) {
 
 /** The part of the settings the page may read and change. Window geometry stays in the shell. */
 function publicSettings(s) {
-  return { tray: !!s.tray, closeToTray: !!s.closeToTray, alwaysOnTop: !!s.alwaysOnTop };
+  return { tray: !!s.tray, closeToTray: !!s.closeToTray, alwaysOnTop: !!s.alwaysOnTop, minimizeToMini: !!s.minimizeToMini };
 }
 
-/** Apply a change from the page, accepting only the three switches it owns. */
+/** Apply a change from the page, accepting only the switches it owns. */
 function applyPatch(s, patch) {
   const next = { ...s };
   if (patch && typeof patch === 'object') {
-    for (const k of ['tray', 'closeToTray', 'alwaysOnTop']) {
+    for (const k of PAGE_SWITCHES) {
       if (typeof patch[k] === 'boolean') next[k] = patch[k];
     }
   }
   return next;
 }
+
+const PAGE_SWITCHES = ['tray', 'closeToTray', 'alwaysOnTop', 'minimizeToMini'];
 
 function validRect(r) {
   return !!r && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(r[k])) && r.width >= 200 && r.height >= 120;
@@ -141,6 +144,11 @@ function sanitizeState(s) {
     dur: num(s.dur),
     hearted: !!s.hearted,
     canHeart: !!s.canHeart,
+    // The song after this one, for the Mini Player's Up next line.
+    next: s.next && typeof s.next === 'object' && typeof s.next.title === 'string' && s.next.title
+      ? { title: str(s.next.title, 300), artist: str(s.next.artist, 300) }
+      : null,
+    canSkipNext: !!s.canSkipNext,
   };
 }
 
