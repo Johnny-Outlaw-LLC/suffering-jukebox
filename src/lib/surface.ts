@@ -42,6 +42,14 @@ export interface SurfaceFeatures {
   /** Which landing tab a first-time visitor lands on. */
   defaultLandingTab: "home" | "explore" | "playlists";
   /**
+   * Slug of the Artist Discography a plain visit to "/" opens on, and where
+   * the logo goes home to. Suffering Jukebox opens on Silver Jews, with Purple
+   * Mountains folded in (filterPageArtists in public/index.html); the landing
+   * tabs stay one tap away above it. Null keeps the landing tabs as the front
+   * door, which is what Listening Party and Record Keeper want.
+   */
+  homeArtist: string | null;
+  /**
    * Explore Playlists comes before Explore Artists and Explore Songs in the tab
    * strip. Listening Party leads with playlists; Suffering Jukebox with artists.
    */
@@ -246,6 +254,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       exploreSongs: true,
       homeTab: false,
       defaultLandingTab: "explore",
+      homeArtist: "silver-jews",
       playlistsFirst: false,
       artistsBeforePlaylists: false,
       shareImages: true,
@@ -326,6 +335,7 @@ const BASE_SURFACES: Record<"sj" | "lp", Surface> = {
       exploreSongs: true,
       homeTab: true,
       defaultLandingTab: "home",
+      homeArtist: null,
       playlistsFirst: true,
       artistsBeforePlaylists: false,
       shareImages: false,
@@ -456,6 +466,7 @@ export function publicSurface(s: Surface) {
       exploreSongs: s.features.exploreSongs,
       homeTab: s.features.homeTab,
       defaultLandingTab: s.features.defaultLandingTab,
+      homeArtist: s.features.homeArtist,
       playlistsFirst: s.features.playlistsFirst,
       artistsBeforePlaylists: s.features.artistsBeforePlaylists,
       shareImages: s.features.shareImages,

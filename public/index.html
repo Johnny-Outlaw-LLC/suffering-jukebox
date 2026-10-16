@@ -7788,7 +7788,7 @@ const SJ_BRAND = Object.assign({
   redditSub: 'sufferingjukebox',
   sisterName: '',
   sisterUrl: '',
-  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', playlistsFirst: false, artistsBeforePlaylists: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false, desktopApp: false }
+  features: { artistPages: true, artistAddresses: true, artistJukebox: true, exploreSongs: true, homeTab: false, defaultLandingTab: 'explore', homeArtist: 'silver-jews', playlistsFirst: false, artistsBeforePlaylists: false, shareImages: true, welcomeHero: false, phoneMiniPlayer: true, spotifyImport: true, spotifyPlayback: true, artistUpload: true, liveStations: false, desktopApp: false }
 }, (window.__SURFACE__ || {}));
 SJ_BRAND.utmCampaign = SJ_BRAND.id === 'sj' ? 'suffering_jukebox' : SJ_BRAND.id;
 
@@ -8475,6 +8475,16 @@ function landingDefaultTab() {
   if (landingTabAllowed(want)) return want;
   const first = landingTabsAvailable()[0];
   return first ? first.id : 'playlists';
+}
+/**
+ * The Artist Discography this brand calls home, or '' when the landing tabs
+ * are the front door. Suffering Jukebox opens on Silver Jews, which brings
+ * Purple Mountains with it (filterPageArtists).
+ */
+function sjHomeArtistSlug() {
+  const f = SJ_BRAND.features || {};
+  if (!f.homeArtist || !f.artistJukebox || f.artistAddresses === false) return '';
+  return String(f.homeArtist);
 }
 /** A remembered tab a brand no longer offers must not strand the visitor. */
 function landingClampTab(tab, fallback) {
@@ -34731,6 +34741,12 @@ async function enterArtistJukebox(artist, opts) {
 
 async function goHome(opts) {
   opts = opts || {};
+  // A brand with a home artist is home on that discography. opts.landing asks
+  // for the explorers instead: the landing tabs, the phone tab bar and Back
+  // to "/" all mean a sheet, not the artist.
+  if (!opts.landing && sjHomeArtistSlug()) {
+    if (await enterHomeArtist(opts)) return;
+  }
   // The playlist wall is an in-place landing-page view. Its own back button
   // returns to Explore Playlists, so the logo should do the same.
   if (viewMode === 'playlistchart') {
@@ -34772,6 +34788,62 @@ async function goHome(opts) {
   }
 }
 
+/**
+ * Open the brand's home artist the way clicking it on Explore Artists would.
+ * False when there is no home artist or it could not be found, so the caller
+ * can fall back to the landing tabs.
+ */
+async function enterHomeArtist(opts) {
+  const slug = sjHomeArtistSlug();
+  if (!slug) return false;
+  if (IS_COMMUNITY && _SLUG_ARTIST && _SLUG_ARTIST.slug === slug) {
+    closeSJDropdown();
+    closeUserMenu();
+    return true;
+  }
+  let artist = null;
+  try {
+    artist = (await dbGet(`/artists?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug,is_community,added_by_name&limit=1`))[0];
+  } catch (_) {}
+  if (!artist) return false;
+  await enterArtistJukebox(artist, opts);
+  return true;
+}
+
+/**
+ * A plain visit to "/" on a brand with a home artist opens that discography.
+ * Anything else the root URL was sent to do (a shared song or playlist, a
+ * station, an import, a Spotify or sign-in return) keeps the landing page,
+ * which is where those handlers expect to run. Tracking tags do not count.
+ */
+function shouldOpenHomeArtistOnBoot() {
+  if (!sjHomeArtistSlug() || IS_COMMUNITY || _SONG_PAGE || _PLAYLIST_PAGE) return false;
+  if ((window.location.pathname.replace(/\/+$/, '') || '/') !== '/') return false;
+  if (window.location.hash) return false;
+  for (const k of new URLSearchParams(window.location.search).keys()) {
+    if (!/^(utm_[a-z]+|ref|fbclid|gclid|msclkid|igshid)$/i.test(k)) return false;
+  }
+  return true;
+}
+
+/** Boot straight into the home artist, as a direct /<slug> load would. */
+async function openHomeArtistOnBoot() {
+  if (!shouldOpenHomeArtistOnBoot()) return false;
+  const slug = sjHomeArtistSlug();
+  let artist = null;
+  try {
+    artist = (await dbGet(`/artists?slug=eq.${encodeURIComponent(slug)}&select=id,name,slug&limit=1`))[0];
+  } catch (_) {}
+  if (!artist) return false;
+  _SLUG_ARTIST = { id: artist.id, name: artist.name, slug: artist.slug };
+  IS_COMMUNITY = true;
+  FEATURED_ARTIST_ID = artist.id;
+  // Replace, not push: Back from here leaves the site, as it would from "/".
+  try { history.replaceState({ slug: artist.slug }, '', '/' + artist.slug + window.location.search); } catch (_) {}
+  await loadArtistPageData();
+  return true;
+}
+
 function oaGoToArtist(artistId) {
   const a = oaFindArtist(artistId);
   if (a) enterArtistJukebox(a);
@@ -34782,7 +34854,7 @@ function oaGoToArtist(artistId) {
 // the server route handles those correctly either way.
 window.addEventListener('popstate', () => {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
-  if (path === '/') { goHome({ pushHistory: false }); return; }
+  if (path === '/') { goHome({ pushHistory: false, landing: true }); return; }
   if (path === '/community') { window.location.reload(); return; }
   const playlistMatch = path.match(/^\/p\/([a-z0-9][a-z0-9-]{1,47})$/i)
     || (!SJ_BRAND.features.artistPages && path.match(/^\/([a-z0-9][a-z0-9-]{1,47})$/i));
@@ -34819,6 +34891,7 @@ function popstateArtist(slug) {
 
 async function init() {
   try {
+    if (await openHomeArtistOnBoot()) return;
     if (!IS_COMMUNITY) { await initLanding(); return; }
     await loadArtistPageData();
   } catch (e) { renderEmpty(`Error: ${e.message}`); }
@@ -34861,14 +34934,13 @@ async function loadData() {
     // Default initial state
     if (!_initialExpansionSet) {
       _initialExpansionSet = true;
-      // Silver Jews and Purple Mountains share one jukebox, so one of them
-      // starts tucked away: whichever one the page is NOT about. The main page
-      // and /silver-jews open on Silver Jews; /purple-mountains opens on
-      // Purple Mountains. Either way the two pills in the filter bar bring the
-      // other one straight back. An export asking for all artists gets both.
+      // Silver Jews and Purple Mountains share one jukebox. The home page and
+      // /silver-jews open on the whole discography, both artists showing;
+      // /purple-mountains opens on Purple Mountains with Silver Jews tucked
+      // away. The two pills in the filter bar bring it straight back. An
+      // export asking for all artists gets both.
       const _pmSlugPage = !!(_SLUG_ARTIST && /purple.?mountains/i.test(_SLUG_ARTIST.slug || _SLUG_ARTIST.name || ''));
-      const _dimArtistName = _pmSlugPage ? 'silver jews' : 'purple mountains';
-      const dimArtistDefault = allArtists.find(a => a.name.toLowerCase().includes(_dimArtistName));
+      const dimArtistDefault = _pmSlugPage ? allArtists.find(a => a.name.toLowerCase().includes('silver jews')) : null;
       if (dimArtistDefault && !SJ_EXPORT_ALL_ARTISTS) {
         (albums[dimArtistDefault.id] || []).forEach(a => excludedAlbumIds.add(a.id));
       }
@@ -35646,12 +35718,12 @@ function updateArtistNavHeader() {
 async function artistNavToLanding(tab) {
   landingTab = landingClampTab(tab);
   try { localStorage.setItem('sj_landing_tab_v2', landingTab); } catch (_) {}
-  await goHome();
+  await goHome({ landing: true });
 }
 
 async function artistNavNowPlaying() {
   if (!nowPlayingDynamicRow()) { showToast('Nothing is playing yet.'); return; }
-  await goHome();
+  await goHome({ landing: true });
   if (isLandingMode) openNowPlayingChart();
 }
 
