@@ -102,6 +102,34 @@ test('player state from the page is trimmed before it reaches the Mini Player', 
   assert.ok(L.trayTooltip({ title: 'x'.repeat(300), playing: true }).length <= 127);
 });
 
+test('the Mini Player ⋯ menu is built only from plain data', () => {
+  const picks = [];
+  const t = L.miniMenuTemplate([
+    { type: 'separator' },
+    { label: 'Add to playlist', sub: 'in 2', enabled: true, submenu: 'playlists', children: [
+      { label: 'Personal Playlists', enabled: false },
+      { label: 'Rock & Roll', sub: '12', enabled: true, toggle: true, checked: true },
+    ] },
+    { type: 'separator' }, { type: 'separator' },
+    { label: 'Share song', enabled: true },
+    { label: 'Take a break from this song', enabled: true, submenu: 'break' },
+    { label: '', enabled: true }, null, 'x',
+    { label: 'Report a problem', enabled: false },
+    { type: 'separator' },
+  ], (p) => picks.push(p));
+  assert.deepEqual(t.map(i => i.type === 'separator' ? '-' : i.label), ['Add to playlist\tin 2', '-', 'Share song', 'Take a break from this song', 'Report a problem']);
+  const rock = t[0].submenu[1];
+  assert.equal(rock.label, 'Rock && Roll\t12');
+  assert.equal(rock.type, 'checkbox');
+  assert.equal(rock.checked, true);
+  assert.equal(t[0].submenu[0].click, undefined);
+  assert.equal(t[4].click, undefined);
+  rock.click(); t[2].click(); t[3].click();
+  assert.deepEqual(picks, [['playlists', 'Rock & Roll'], ['Share song'], ['Take a break from this song']]);
+  const main = readRepoFile('native/recordkeeper/desktop/main.js');
+  assert.match(main, /'sjdMenuRun\(' \+ JSON\.stringify\(p\) \+ '\)'/);
+});
+
 test('a remembered Mini Player position stays on screen', () => {
   const area = { x: 0, y: 0, width: 1920, height: 1040 };
   assert.deepEqual(L.clampToArea({ x: 5000, y: -40 }, L.MINI_SIZE, area), { x: 1920 - L.MINI_SIZE.width, y: 0 });

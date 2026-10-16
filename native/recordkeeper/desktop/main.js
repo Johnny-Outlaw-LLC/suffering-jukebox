@@ -448,11 +448,45 @@ function wireIpc() {
 
   ipcMain.on('mini:command', (e, cmd, arg) => { if (fromMini(e)) sendCommand(cmd, arg); });
   ipcMain.on('mini:expand', (e) => { if (fromMini(e)) closeMini(); });
+  ipcMain.on('mini:menu', (e, at) => { if (fromMini(e)) showMiniMenu(at); });
   ipcMain.on('mini:ready', (e) => {
     if (!fromMini(e)) return;
     sendMini('mini:settings', settingsPayload());
     sendMini('mini:state', playerState);
   });
+}
+
+// ── The Mini Player's ⋯ menu ────────────────────────────────────────────────
+// The page reads its own ⋯ menu for the playing song (sjdMenuItems) and runs
+// a pick by clicking the same button (sjdMenuRun). The shell only draws it
+// natively, so it can spill outside the Mini Player's small window.
+let miniMenuBusy = false;
+async function showMiniMenu(at) {
+  if (miniMenuBusy || !win || win.isDestroyed() || !mini || mini.isDestroyed()) return;
+  miniMenuBusy = true;
+  let res = null;
+  try {
+    res = await win.webContents.executeJavaScript('typeof sjdMenuItems === "function" ? sjdMenuItems() : null', true);
+  } catch (_) { res = null; }
+  miniMenuBusy = false;
+  // A page from before this menu existed: open the full window instead.
+  if (!res) { closeMini(); return; }
+  if (!mini || mini.isDestroyed() || !miniOpen) return;
+  const template = L.miniMenuTemplate(res.items, (p) => runMiniMenu(p));
+  if (!template.length) template.push({ label: 'Nothing playing', enabled: false });
+  const x = Number.isFinite(at?.x) ? Math.round(at.x) : 0;
+  const y = Number.isFinite(at?.y) ? Math.round(at.y) : 0;
+  Menu.buildFromTemplate(template).popup({ window: mini, x, y });
+}
+
+async function runMiniMenu(p) {
+  if (!win || win.isDestroyed()) return;
+  let res = null;
+  try {
+    res = await win.webContents.executeJavaScript('sjdMenuRun(' + JSON.stringify(p) + ')', true);
+  } catch (_) { res = null; }
+  if (res && res.needsWindow) { closeMini(); return; }
+  if (res && res.toast) sendMini('mini:toast', String(res.toast).slice(0, 200));
 }
 
 // ── Sign-in through the system browser ─────────────────────────────────────

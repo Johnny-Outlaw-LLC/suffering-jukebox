@@ -52,7 +52,12 @@
     paintProgress();
   }
 
+  let toastUntil = 0;
   function paintUpNext() {
+    // A message from the ⋯ menu (Added to …) borrows this line for a moment.
+    if (performance.now() < toastUntil) return;
+    $('upnext').classList.remove('toast');
+    $('un-lbl').textContent = 'Up next';
     const next = state.has ? state.next : null;
     const song = $('un-song');
     song.textContent = '';
@@ -93,6 +98,21 @@
     window.rkMini.command('heart');
   });
   $('skip-next').addEventListener('click', () => window.rkMini.command('skipNext'));
+  $('more').addEventListener('click', () => {
+    const r = $('more').getBoundingClientRect();
+    window.rkMini.menu({ x: r.left, y: r.bottom + 2 });
+  });
+  window.rkMini.onToast((text) => {
+    if (!text) return;
+    toastUntil = performance.now() + 2800;
+    $('upnext').classList.add('toast');
+    $('upnext').classList.remove('empty');
+    $('un-lbl').textContent = 'Done';
+    $('un-song').textContent = text;
+    $('un-song').title = text;
+    $('skip-next').disabled = true;
+    setTimeout(paintUpNext, 2850);
+  });
   $('expand').addEventListener('click', () => window.rkMini.expand());
   $('pin').addEventListener('click', () => {
     const on = $('pin').getAttribute('aria-pressed') !== 'true';

@@ -21,7 +21,13 @@ playing, and a Mini Player that can stay on top of other windows.
   (`desktop:state`, twice a second while it is open) and sends commands back
   (`toggle`, `next`, `prev`, `seek`, `heart`, `skipNext`). The state carries
   the song that is up next (`ytUpNextIndex()`, the same pick the player's
-  banner shows), and Skip runs `ytSkipUpNext()`. The main window hides while it
+  banner shows), and Skip runs `ytSkipUpNext()`.
+- **The Mini Player's ⋯ is the page's own ⋯ menu, drawn natively.** The shell
+  asks the page for `sjdMenuItems()`, which opens the real player menu out of
+  sight and reads it (the Add to playlist fly-out included), and a pick runs
+  `sjdMenuRun([label])` by clicking that same button. When the click opens a
+  dialog, a fly-out or a new page, the main window comes back to finish it. So
+  a new action in `sjmRenderRoot()` reaches the Mini Player with no change here. The main window hides while it
   is up, which the page already handles exactly like a background browser tab:
   YouTube keeps going, and an uploaded file takes over where there is one.
 - **The page side is `sjd*` in `public/index.html`.** `sjIsDesktop()` is

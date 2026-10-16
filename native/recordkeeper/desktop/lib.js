@@ -119,6 +119,46 @@ function clampToArea(pos, size, area) {
   };
 }
 
+/** One native menu label: the sub text sits right-aligned after a tab, and & would be a mnemonic. */
+function menuLabel(label, sub) {
+  const clean = (s) => String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').trim().slice(0, 120);
+  const l = clean(label);
+  if (!l) return '';
+  const s = clean(sub);
+  return (l + (s ? '\t' + s : '')).replace(/&/g, '&&');
+}
+
+/**
+ * The page's ⋯ menu (sjdMenuItems) as an Electron menu template. A pick calls
+ * onPick with the path the page runs it by: [label], or [flyout, label].
+ * Anything that is not plain data is dropped.
+ */
+function miniMenuTemplate(items, onPick, flyout) {
+  const out = [];
+  for (const it of Array.isArray(items) ? items.slice(0, 120) : []) {
+    if (!it || typeof it !== 'object') continue;
+    if (it.type === 'separator') {
+      if (out.length && out[out.length - 1].type !== 'separator') out.push({ type: 'separator' });
+      continue;
+    }
+    const label = menuLabel(it.label, it.sub);
+    if (!label) continue;
+    const enabled = it.enabled !== false;
+    if (!flyout && typeof it.submenu === 'string' && Array.isArray(it.children) && it.children.length) {
+      const sub = miniMenuTemplate(it.children, onPick, it.submenu);
+      if (sub.length) { out.push({ label, enabled, submenu: sub }); continue; }
+    }
+    const path = flyout ? [flyout, String(it.label)] : [String(it.label)];
+    const entry = { label, enabled };
+    if (it.toggle) { entry.type = 'checkbox'; entry.checked = !!it.checked; }
+    if (enabled) entry.click = () => onPick(path);
+    out.push(entry);
+  }
+  while (out.length && out[0].type === 'separator') out.shift();
+  while (out.length && out[out.length - 1].type === 'separator') out.pop();
+  return out;
+}
+
 /** Tray tooltip: Windows caps it at 127 characters. */
 function trayTooltip(state, appName = 'Record Keeper') {
   if (!state || !state.title) return appName;
@@ -156,5 +196,5 @@ module.exports = {
   SITE_URL, AUTH_SCHEME, APP_ORIGINS, DEFAULT_SETTINGS, MINI_SIZE,
   normalizeSettings, publicSettings, applyPatch,
   isAppUrl, isExternalWebUrl, findAuthCallback, isAllowedSignInUrl,
-  defaultMiniPos, clampToArea, trayTooltip, sanitizeState,
+  defaultMiniPos, clampToArea, trayTooltip, sanitizeState, menuLabel, miniMenuTemplate,
 };

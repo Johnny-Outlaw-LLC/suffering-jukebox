@@ -41072,6 +41072,7 @@ const SJ_CHANGELOG = [
   { date: '2026-10-16', items: [
     'On Record Keeper, Explore Artists now comes before Explore Playlists.',
     'The Windows app\'s Mini Player shows what is up next, with a Skip button to pick a different song.',
+    'The Windows app\'s Mini Player has the ⋯ menu: add the song to a playlist, share it, take a break from it and the rest, without opening the full window.',
     'New in the Windows app: Minimize to Mini Player. Turn it on in Settings, Desktop App, or from the tray menu, and the minimize button opens the Mini Player.',
     'Explore Artists, Playlists and Songs offer Shuffle All only. Play All, which plays one discography or one playlist in order, is in the ⋯ menu on an artist or a playlist.',
     'While music is playing, the ⋯ menu on an artist or a playlist offers Add All to Queue in place of Play All, so what is playing keeps going.',
@@ -42951,6 +42952,127 @@ function sjdCommand(cmd, arg) {
     console.warn('[desktop] command failed', cmd, e);
   }
   setTimeout(() => sjdPush(true), 250);
+}
+
+// ── Mini Player ⋯ ──────────────────────────────────────────────────────────
+// The Mini Player shows the playing song's ⋯ menu as a native menu. It is
+// read off the menu this page builds (sjmOpenForPlayer), so the two can
+// never offer different things: a new action in sjmRenderRoot() reaches the
+// Mini Player with no change here. A pick is run by clicking that same
+// button. When the click opens a dialog, a fly-out or another page, the
+// shell brings the main window back so it can be finished there.
+// Fly-outs read ahead into native submenus. The rest open in the window.
+const SJD_MENU_SUBMENUS = ['playlists'];
+
+function sjdMenuLabel(btn) {
+  return ((btn.querySelector('.sjm-label') || btn).textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function sjdScrapeMenu(el) {
+  const out = [];
+  if (!el) return out;
+  el.querySelectorAll('.sjm-item, .sjm-sep, .sjm-sec, .sjm-empty').forEach(node => {
+    if (node.closest('.sjm-hd') || node.closest('.sjm-newform')) return;
+    if (node.classList.contains('sjm-sep')) { out.push({ type: 'separator' }); return; }
+    if (!node.classList.contains('sjm-item')) {
+      const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+      if (text) out.push({ label: text, enabled: false });
+      return;
+    }
+    const label = sjdMenuLabel(node);
+    if (!label) return;
+    const sub = ((node.querySelector('.sjm-sub') || {}).textContent || '').trim();
+    const item = { label, sub: sub === '\u203a' ? '' : sub, enabled: !node.disabled };
+    if (node.dataset.sjmSubmenu) item.submenu = node.dataset.sjmSubmenu;
+    // A playlist row is a tick that adds or removes, so it is a checkbox.
+    if ((node.getAttribute('onclick') || '').includes('sjmTogglePlaylist')) {
+      item.toggle = true;
+      item.checked = node.classList.contains('sjm-on');
+    }
+    out.push(item);
+  });
+  return out;
+}
+
+function sjdWaitFor(test, ms) {
+  return new Promise(resolve => {
+    const end = performance.now() + ms;
+    (function tick() {
+      if (test()) return resolve(true);
+      if (performance.now() > end) return resolve(false);
+      setTimeout(tick, 60);
+    })();
+  });
+}
+
+function sjdOpenPlayerMenu() {
+  sjmClose();
+  if (!(ytQueue[ytQueueIdx]?.trackId || nowPlayingTrackId)) return null;
+  sjmOpenForPlayer(document.getElementById('ytp-more-btn'), null);
+  return document.getElementById('sjm-menu');
+}
+
+async function sjdOpenFlyout(name) {
+  const btn = document.querySelector('#sjm-menu [data-sjm-submenu="' + name + '"]');
+  if (!btn) return null;
+  btn.click();
+  await sjdWaitFor(() => {
+    const s = document.getElementById('sjm-submenu');
+    return !!s && !/Loading/.test(s.textContent || '');
+  }, 8000);
+  return document.getElementById('sjm-submenu');
+}
+
+/** The ⋯ menu for the playing song, as plain data for the shell. */
+async function sjdMenuItems() {
+  if (!sjdOpenPlayerMenu()) return { items: [] };
+  // sjmOpen() looks the artist up afterwards and repaints once it has it.
+  await new Promise(r => setTimeout(r, 150));
+  const items = sjdScrapeMenu(document.getElementById('sjm-menu'));
+  for (const it of items) {
+    if (!it.submenu || !it.enabled || !SJD_MENU_SUBMENUS.includes(it.submenu)) continue;
+    const sub = await sjdOpenFlyout(it.submenu);
+    if (sub) it.children = sjdScrapeMenu(sub);
+    sjmCloseSubmenu();
+  }
+  sjmClose();
+  return { items };
+}
+
+function sjdShown(el) {
+  const cs = getComputedStyle(el);
+  return cs.display !== 'none' && cs.visibility !== 'hidden' && el.getClientRects().length > 0;
+}
+// showToast() appends a bare fixed div; that is all a toast is.
+function sjdIsToast(n) {
+  return !!n && n.nodeType === 1 && !n.id && !n.className && n.style && n.style.position === 'fixed';
+}
+
+/** Run a pick from the Mini Player's menu: [label], or [flyout, label]. */
+async function sjdMenuRun(path) {
+  if (!Array.isArray(path) || !path.length || !sjdOpenPlayerMenu()) return { needsWindow: false };
+  await new Promise(r => setTimeout(r, 150));
+  const scope = path.length > 1 ? await sjdOpenFlyout(String(path[0])) : document.getElementById('sjm-menu');
+  const want = String(path[path.length - 1]);
+  const btn = scope ? [...scope.querySelectorAll('.sjm-item')].find(b => sjdMenuLabel(b) === want) : null;
+  if (!btn || btn.disabled) { sjmClose(); return { needsWindow: false }; }
+  const toggle = (btn.getAttribute('onclick') || '').includes('sjmTogglePlaylist');
+  const href = location.href;
+  const before = new Set([...document.body.children].filter(sjdShown));
+  const toasts = [];
+  const obs = new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => {
+    if (sjdIsToast(n)) toasts.push((n.textContent || '').trim());
+  })));
+  obs.observe(document.body, { childList: true });
+  btn.click();
+  await new Promise(r => setTimeout(r, toggle ? 900 : 450));
+  obs.disconnect();
+  // A playlist tick repaints its fly-out in place; that is not a dialog.
+  if (toggle) sjmClose();
+  const opened = !!document.getElementById('sjm-menu') || location.href !== href ||
+    [...document.body.children].some(el => !before.has(el) && !sjdIsToast(el) && sjdShown(el));
+  if (!opened) sjmClose();
+  return { needsWindow: opened, toast: toasts[toasts.length - 1] || '' };
 }
 
 function sjdSetMini(open) {
