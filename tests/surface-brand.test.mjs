@@ -464,3 +464,53 @@ test('the dashboard is unaware of any brand but the one it is serving', () => {
     'public/index.html must not name the other brand; it reads window.__SURFACE__',
   );
 });
+
+// ── Home artist ───────────────────────────────────────────────────────────
+
+const RK = surface.SURFACES.rk;
+
+function homeHelpersFor(s, { path = '/', search = '', hash = '', community = false, songPage = null, playlistPage = null } = {}) {
+  return loadHtmlFnsInScope(['sjHomeArtistSlug', 'shouldOpenHomeArtistOnBoot'], {
+    SJ_BRAND: surface.publicSurface(s),
+    IS_COMMUNITY: community,
+    _SONG_PAGE: songPage,
+    _PLAYLIST_PAGE: playlistPage,
+    URLSearchParams,
+    window: { location: { pathname: path, search, hash } },
+  });
+}
+
+test('Suffering Jukebox opens on the Silver Jews discography; the other brands keep their tabs', () => {
+  assert.equal(SJ.features.homeArtist, 'silver-jews');
+  assert.equal(LP.features.homeArtist, null);
+  assert.equal(RK.features.homeArtist, null);
+  assert.equal(homeHelpersFor(SJ).sjHomeArtistSlug(), 'silver-jews');
+  assert.equal(homeHelpersFor(LP).sjHomeArtistSlug(), '');
+  assert.equal(homeHelpersFor(RK).sjHomeArtistSlug(), '');
+  // The explorers behind it still open on Explore Artists.
+  assert.equal(SJ.features.defaultLandingTab, 'explore');
+});
+
+test('only a plain visit to "/" is taken to the home artist', () => {
+  assert.equal(homeHelpersFor(SJ).shouldOpenHomeArtistOnBoot(), true);
+  assert.equal(homeHelpersFor(SJ, { search: '?utm_source=reddit&fbclid=x' }).shouldOpenHomeArtistOnBoot(), true);
+  assert.equal(homeHelpersFor(LP).shouldOpenHomeArtistOnBoot(), false);
+  assert.equal(homeHelpersFor(RK).shouldOpenHomeArtistOnBoot(), false);
+  // Anything the root URL was asked to do stays on the landing page.
+  for (const search of ['?pl=abc', '?station=XYZ', '?live=1', '?spotify=ok', '?playlistShare=t', '?guestImport=k', '?shared_url=u', '?import=artist']) {
+    assert.equal(homeHelpersFor(SJ, { search }).shouldOpenHomeArtistOnBoot(), false, search);
+  }
+  assert.equal(homeHelpersFor(SJ, { hash: '#access_token=x' }).shouldOpenHomeArtistOnBoot(), false);
+  assert.equal(homeHelpersFor(SJ, { songPage: { id: 't1' } }).shouldOpenHomeArtistOnBoot(), false);
+  assert.equal(homeHelpersFor(SJ, { path: '/pavement', community: true }).shouldOpenHomeArtistOnBoot(), false);
+  assert.equal(homeHelpersFor(SJ, { path: '/community', community: true }).shouldOpenHomeArtistOnBoot(), false);
+});
+
+test('leaving an artist for a landing tab does not bounce back to the home artist', () => {
+  // goHome() means the home artist; the tab strip, the phone tab bar and
+  // Back to "/" must ask for the explorers explicitly.
+  const nav = indexHtml.slice(indexHtml.indexOf('async function artistNavToLanding('));
+  assert.ok(/^async function artistNavToLanding\([^]*?goHome\(\{ landing: true \}\)/.test(nav));
+  assert.ok(indexHtml.includes(`if (path === '/') { goHome({ pushHistory: false, landing: true }); return; }`));
+  assert.ok(/async function init\(\) \{\s*try \{\s*if \(await openHomeArtistOnBoot\(\)\) return;/.test(indexHtml));
+});
