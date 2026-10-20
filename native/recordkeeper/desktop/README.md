@@ -62,26 +62,67 @@ run never shares sign-in, settings or the single-instance lock with your copy.
 
 ## Release
 
-1. Bump `version` here and `DESKTOP_APP.version` / `files.windows` in
-   `src/lib/desktop-app.ts`. A test fails if the two disagree.
-2. `npm run dist:win` builds `dist/Record-Keeper-Setup-<version>.exe`.
+Each platform is built on its own OS and can ship on its own. `DESKTOP_APP`
+in `src/lib/desktop-app.ts` names a version per platform; `version` there and
+here in `package.json` is the newest of them. A test fails if they disagree or
+a file name does not match electron-builder's `artifactName`.
+
+1. Bump `version` here and `DESKTOP_APP.version`, plus the entry for the
+   platform you are building in `DESKTOP_APP.builds`.
+2. Build it (below).
 3. Create a GitHub release tagged `rk-desktop-v<version>` on
-   `Johnny-Outlaw-LLC/suffering-jukebox` and attach the installer.
-4. Push. `/api/desktop-download?platform=windows` now sends people to it.
+   `Johnny-Outlaw-LLC/suffering-jukebox` and attach the file. When the other
+   platform catches up to the same version, attach its file to that release.
+4. Push. `/api/desktop-download?platform=windows|mac` now sends people to it;
+   with no platform it picks the visitor's own from the user agent.
+
+There is no auto-update. Web changes do not need one; when the shell itself
+changes, people download the new installer.
+
+### Windows
+
+`npm run dist:win` on Windows builds `dist/Record-Keeper-Setup-<version>.exe`.
 
 The installer is **not code signed**, so Windows SmartScreen warns about an
 unrecognized publisher. The download copy says so. A code signing certificate
 fixes it; electron-builder signs automatically once `CSC_LINK` and
 `CSC_KEY_PASSWORD` are set.
 
-There is no auto-update. Web changes do not need one; when the shell itself
-changes, people download the new installer.
+### Mac
 
-## Mac
+`npm run dist:mac` on a Mac builds `dist/Record-Keeper-<version>.dmg`: one
+universal app (Apple silicon and Intel), macOS 13 or later, signed with
+**Developer ID Application: Johnny Outlaw LLC (2J69KHU242)** under the hardened
+runtime, notarized and stapled, inside a dmg that is itself signed, notarized
+and stapled. A stranger downloads it, drags the app to Applications and it
+opens with no warning. `scripts/dist-mac.cjs` checks the certificate and the
+notary credentials before it builds anything, and ends with Gatekeeper's own
+verdict on the app and the dmg.
 
-`npm run dist:mac` on the Mac builds a universal dmg. For anyone else to open
-it, it must be signed with a Developer ID on team 2J69KHU242 and notarized
-(set `CSC_LINK`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`).
-Then add the file name to `files.mac` in `src/lib/desktop-app.ts` and offer
-the button in `sjdDownloadHTML()`. On the Mac the tray is the menu bar, and
-the copy already says so when `platform` is `darwin`.
+Notarization reads a `notarytool` keychain profile, by default
+`shutterfield-notary` (it is per Apple ID, not per app, so Shutterfield's
+serves). `RK_NOTARY_PROFILE` names another. On a Mac without one, store it
+once; it asks for an app-specific password from https://account.apple.com:
+
+```bash
+xcrun notarytool store-credentials "shutterfield-notary" --apple-id "johnnyoutlawllc@gmail.com" --team-id 2J69KHU242
+```
+
+`RK_SKIP_NOTARIZE=1 npm run dist:mac` signs without notarizing, to test a
+packaging change in a minute instead of ten. That dmg warns on every other Mac:
+never publish it.
+
+What differs on the Mac:
+
+- The tray is the menu bar. Its icon is `assets/trayTemplate.png`, black and
+  alpha only, which macOS tints for a light or dark menu bar. A click opens the
+  menu, as for every menu bar icon.
+- Closing the window hides it whatever the tray setting; the Dock icon brings
+  it back. Quit with Cmd+Q or from the menu bar.
+- The app icon is `build/icon-mac.png`, the record on Apple's rounded-square
+  grid, so macOS does not put a round icon on a gray tile.
+- With Always on Top, the Mini Player also follows you to other Spaces.
+- The sign-in callback arrives as `open-url`; the scheme is registered in the
+  app's Info.plist from `build.protocols`.
+
+`scripts/render-mac-icons.py` redraws both Mac icons from the logo.

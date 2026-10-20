@@ -43,11 +43,14 @@ CarPlay verification are separate from successful simulator compilation.
 
 ## Desktop app
 
-Record Keeper for Windows lives in `native/recordkeeper/desktop` (Electron).
-It loads the live site in its own window and adds a system tray icon, closing
-to the tray, and an always-on-top Mini Player. Settings has a Desktop App
-section (`features.desktopApp`, Record Keeper only) that offers the download in
-a browser and holds the tray and Mini Player switches inside the app. The
-installer is a GitHub release asset tagged `rk-desktop-v<version>`, reached
-through `/api/desktop-download?platform=windows`. See that folder's README for
-the release steps and the Mac build.
+Record Keeper for Windows and Mac lives in `native/recordkeeper/desktop`
+(Electron). It loads the live site in its own window and adds a system tray
+(menu bar on the Mac) icon, closing to the tray, and an always-on-top Mini
+Player. Settings has a Desktop App section (`features.desktopApp`, Record
+Keeper only) that offers both downloads in a browser and holds the tray and
+Mini Player switches inside the app. The installers are GitHub release assets
+tagged `rk-desktop-v<version>`, reached through
+`/api/desktop-download?platform=windows|mac` (no platform: the visitor's own).
+Each platform has its own version in `src/lib/desktop-app.ts`, since the exe
+is built on Windows and the dmg on a Mac. See that folder's README for the
+release steps.

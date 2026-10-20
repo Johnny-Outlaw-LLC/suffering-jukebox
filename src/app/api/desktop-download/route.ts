@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentSurface } from "@/lib/surface";
-import { desktopDownloadUrl } from "@/lib/desktop-app";
+import { desktopDownloadUrl, desktopPlatformFor } from "@/lib/desktop-app";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,8 @@ export async function GET(req: NextRequest) {
   if (!surface.features.desktopApp) {
     return NextResponse.redirect(new URL("/", req.url), 302);
   }
-  const platform = (req.nextUrl.searchParams.get("platform") || "windows").toLowerCase();
+  // No platform named (the footer link): offer the one the visitor is on.
+  const platform = (req.nextUrl.searchParams.get("platform") || desktopPlatformFor(req.headers.get("user-agent"))).toLowerCase();
   const url = desktopDownloadUrl(platform);
   if (!url) {
     return NextResponse.json({ error: "That version of the desktop app is not available yet." }, { status: 404 });

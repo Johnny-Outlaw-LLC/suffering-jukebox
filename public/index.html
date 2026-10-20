@@ -8217,11 +8217,24 @@ function lphAppStoreHTML() {
     </a>`;
 }
 
-// The Windows app beside the App Store badge. Not offered inside the desktop
-// app itself, nor on a phone, where a Windows installer is no use.
+// The desktop app beside the App Store badge, for the computer the visitor
+// is on: the Mac app on a Mac, the Windows app everywhere else. Not offered
+// inside the desktop app itself, nor on a phone or tablet, where neither
+// installer is any use.
+function sjdOnMac() {
+  return /Macintosh|Mac OS X/i.test(navigator.userAgent || '');
+}
 function lphDesktopHTML() {
   if (!SJ_BRAND.features.desktopApp || sjIsDesktop() || window.Capacitor?.isNativePlatform?.()) return '';
   if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) return '';
+  // An iPad asks for desktop sites as a Mac; only a real Mac has no touch screen.
+  if (sjdOnMac() && navigator.maxTouchPoints > 1) return '';
+  if (sjdOnMac()) {
+    return `<a class="lph-desktop" href="/api/desktop-download?platform=mac" title="Download ${lphEsc(SJ_BRAND.name)} for Mac">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5V16H4zm2 .5v8h12V6zM1.5 17.5h21c0 1.1-.9 2-2 2h-17a2 2 0 0 1-2-2z"/></svg>
+      <span><small>Download for</small><b>Mac</b></span>
+    </a>`;
+  }
   return `<a class="lph-desktop" href="/api/desktop-download?platform=windows" title="Download ${lphEsc(SJ_BRAND.name)} for Windows">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 5.1 10.4 4v7.1H3zm8.3-1.2L21 2.5v8.6h-9.7zM3 12.9h7.4V20L3 18.9zm8.3 0H21v8.6l-9.7-1.4z"/></svg>
       <span><small>Download for</small><b>Windows</b></span>
@@ -41136,11 +41149,15 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-10-16';
+const SJ_APP_UPDATED_FALLBACK = '2026-10-19';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-10-19', items: [
+    'Record Keeper has a Mac app. It plays from its own window, sits in the menu bar with play, pause and skip, keeps playing when you close the window, and has the same Mini Player as the Windows app. It runs on Apple silicon and Intel Macs with macOS 13 or later.',
+    'Home offers Download for Mac on a Mac and Download for Windows elsewhere. Settings, Desktop App has both, and the footer link is now Desktop App.',
+  ] },
   { date: '2026-10-16', items: [
     'On Record Keeper, Explore Artists now comes before Explore Playlists.',
     'The Windows app\'s Mini Player shows what is up next, with a Skip button to pick a different song.',
@@ -43163,11 +43180,14 @@ async function sjdSet(patch) {
 
 function sjdDownloadHTML() {
   const name = SJ_BRAND.name;
+  const win = '<a class="pl-btn" href="/api/desktop-download?platform=windows">Download for Windows</a>';
+  const mac = '<a class="pl-btn" href="/api/desktop-download?platform=mac">Download for Mac</a>';
   return '<div class="set-block">' +
-    '<div class="set-h">' + name + ' for Windows</div>' +
-    '<p class="set-sub">Play from its own window instead of a browser tab. It sits in the system tray, keeps playing when you close the window, and has a Mini Player that can stay on top of everything else.</p>' +
-    '<div class="sjd-actions"><a class="pl-btn" href="/api/desktop-download?platform=windows">Download for Windows</a></div>' +
-    '<p class="sjd-note">Windows 10 or 11. A Mac version is on the way. Until the app is signed, Windows may say it is from an unrecognized publisher: choose More info, then Run anyway.</p>' +
+    '<div class="set-h">' + name + ' for Windows and Mac</div>' +
+    '<p class="set-sub">Play from its own window instead of a browser tab. It sits in the system tray or the Mac menu bar, keeps playing when you close the window, and has a Mini Player that can stay on top of everything else.</p>' +
+    '<div class="sjd-actions">' + (sjdOnMac() ? mac + win : win + mac) + '</div>' +
+    '<p class="sjd-note">Mac: macOS 13 or later, Apple silicon or Intel. Open the download and drag ' + name + ' to Applications.</p>' +
+    '<p class="sjd-note">Windows: Windows 10 or 11. Until the Windows app is signed, Windows may say it is from an unrecognized publisher: choose More info, then Run anyway.</p>' +
     '</div>';
 }
 
@@ -43192,7 +43212,7 @@ function settingsPaintDesktop() {
       '<p class="set-sub">A small window with the song, the artwork and the controls. Open it here, from the player, from the ' + trayName + ' menu, or with ' + key + '+Shift+M.</p>' +
       '<label class="set-opt"><input type="checkbox" id="sjd-on-top"' + chk(s.alwaysOnTop) + ' onchange="sjdSet({alwaysOnTop:this.checked})"><span><b>Always on top</b><span class="set-sub" style="display:block">The Mini Player stays above your other windows. The pin on the Mini Player switches this too.</span></span></label>' +
       // Older installs do not know this switch, so it only shows when the shell reports it.
-      ('minimizeToMini' in s ? '<label class="set-opt"><input type="checkbox" id="sjd-min-to-mini"' + chk(s.minimizeToMini) + ' onchange="sjdSet({minimizeToMini:this.checked})"><span><b>Minimize to Mini Player</b><span class="set-sub" style="display:block">The minimize button opens the Mini Player instead of sending the window to the taskbar.</span></span></label>' : '') +
+      ('minimizeToMini' in s ? '<label class="set-opt"><input type="checkbox" id="sjd-min-to-mini"' + chk(s.minimizeToMini) + ' onchange="sjdSet({minimizeToMini:this.checked})"><span><b>Minimize to Mini Player</b><span class="set-sub" style="display:block">The minimize button opens the Mini Player instead of sending the window to the ' + (mac ? 'Dock' : 'taskbar') + '.</span></span></label>' : '') +
       '<div class="sjd-actions"><button type="button" class="pl-btn" onclick="sjdSetMini(true)">Open Mini Player</button></div>' +
     '</div>' +
     (s.version ? '<p class="sjd-note">Desktop app version ' + String(s.version).replace(/[^0-9A-Za-z.\-]/g, '') + '</p>' : '');
@@ -48811,7 +48831,7 @@ try { sjInstrumentRenders(); } catch (e) { console.warn('[SJ performance] Render
   · <a href="/for-artists" style="color:var(--text-muted);text-decoration:none">For Artists</a>
   · <a href="/for-listeners" style="color:var(--text-muted);text-decoration:none">For Listeners</a>
   · <a href="/about" style="color:var(--text-muted);text-decoration:none">About</a>
-  <span data-sj-feature="desktopApp" class="sjd-web-only">· <a href="/api/desktop-download?platform=windows" style="color:var(--text-muted);text-decoration:none">Windows App</a></span>
+  <span data-sj-feature="desktopApp" class="sjd-web-only">· <a href="/api/desktop-download" style="color:var(--text-muted);text-decoration:none">Desktop App</a></span>
   · <a href="/privacy" style="color:var(--text-muted);text-decoration:none" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">Privacy</a>
   · <a href="/terms" style="color:var(--text-muted);text-decoration:none">Terms</a>
   · <a href="/dmca" style="color:var(--text-muted);text-decoration:none">Copyright</a>

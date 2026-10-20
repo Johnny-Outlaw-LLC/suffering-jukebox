@@ -35,15 +35,42 @@ test('the shell registers the same sign-in scheme and origins as the brand', () 
   assert.deepEqual(pkg.build.protocols[0].schemes, [RK.authScheme]);
 });
 
-test('the download link points at the version the shell is built as', () => {
+test('the download links point at the versions the shell was built as', () => {
   const pkg = JSON.parse(readRepoFile('native/recordkeeper/desktop/package.json'));
   assert.equal(desktop.DESKTOP_APP.version, pkg.version);
-  const url = desktop.desktopDownloadUrl('windows');
-  assert.equal(url, `https://github.com/Johnny-Outlaw-LLC/suffering-jukebox/releases/download/rk-desktop-v${pkg.version}/Record-Keeper-Setup-${pkg.version}.exe`);
-  // electron-builder names the file from artifactName; keep the two in step.
-  assert.equal(pkg.build.win.artifactName.replace('${version}', pkg.version).replace('${ext}', 'exe'), desktop.DESKTOP_APP.files.windows);
-  assert.equal(desktop.desktopDownloadUrl('mac'), null);
+  const { windows, mac } = desktop.DESKTOP_APP.builds;
+  const base = 'https://github.com/Johnny-Outlaw-LLC/suffering-jukebox/releases/download';
+  // electron-builder names each file from its artifactName; keep them in step.
+  const named = (pattern, v, ext) => pattern.replace('${version}', v).replace('${ext}', ext);
+  assert.equal(windows.file, named(pkg.build.win.artifactName, windows.version, 'exe'));
+  assert.equal(mac.file, named(pkg.build.mac.artifactName, mac.version, 'dmg'));
+  assert.equal(desktop.desktopDownloadUrl('windows'), `${base}/rk-desktop-v${windows.version}/${windows.file}`);
+  assert.equal(desktop.desktopDownloadUrl('mac'), `${base}/rk-desktop-v${mac.version}/${mac.file}`);
+  // The shell is at the newest platform's version, never ahead of both.
+  const newest = [windows.version, mac.version].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop();
+  assert.equal(pkg.version, newest);
   assert.equal(desktop.desktopDownloadUrl('linux'), null);
+});
+
+test('a link that names no platform offers the visitor\'s own', () => {
+  assert.equal(desktop.desktopPlatformFor('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15'), 'mac');
+  assert.equal(desktop.desktopPlatformFor('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'windows');
+  assert.equal(desktop.desktopPlatformFor('Mozilla/5.0 (X11; Linux x86_64)'), 'windows');
+  assert.equal(desktop.desktopPlatformFor(null), 'windows');
+  const route = readRepoFile('src/app/api/desktop-download/route.ts');
+  assert.match(route, /desktopPlatformFor\(req\.headers\.get\("user-agent"\)\)/);
+});
+
+test('the Mac build is signed for Developer ID with a template menu bar icon', () => {
+  const pkg = JSON.parse(readRepoFile('native/recordkeeper/desktop/package.json'));
+  assert.equal(pkg.build.mac.hardenedRuntime, true);
+  assert.equal(pkg.build.mac.entitlements, 'build/entitlements.mac.plist');
+  assert.equal(pkg.scripts['dist:mac'], 'node scripts/dist-mac.cjs');
+  const ent = readRepoFile('native/recordkeeper/desktop/build/entitlements.mac.plist');
+  assert.match(ent, /com\.apple\.security\.cs\.allow-jit/);
+  const main = readRepoFile('native/recordkeeper/desktop/main.js');
+  assert.match(main, /IS_MAC \? 'trayTemplate\.png' : 'tray\.png'/);
+  assert.ok(pkg.build.files.includes('assets/**'));
 });
 
 test('only our own pages load in the app window', () => {
@@ -195,14 +222,32 @@ test('Settings has a Desktop App section the page can show', () => {
   assert.match(html, /desktopApp: false \}\r?\n\}, \(window\.__SURFACE__/);
 });
 
-test('Home offers the Windows download only where it is useful', () => {
-  const html = (scope) => loadHtmlFnsInScope(['lphDesktopHTML'], {
+test('Home offers the desktop download for the computer the visitor is on', () => {
+  const html = (scope) => loadHtmlFnsInScope(['sjdOnMac', 'lphDesktopHTML'], {
     lphEsc: (s) => String(s), sjIsDesktop: () => false, navigator: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
     window: {}, ...scope,
   }).lphDesktopHTML();
   const rk = surface.publicSurface(RK);
+  const macUa = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15';
   assert.match(html({ SJ_BRAND: rk }), /href="\/api\/desktop-download\?platform=windows"/);
+  assert.match(html({ SJ_BRAND: rk, navigator: { userAgent: macUa, maxTouchPoints: 0 } }), /href="\/api\/desktop-download\?platform=mac"[\s\S]*<b>Mac<\/b>/);
+  // An iPad asking for the desktop site says Macintosh too, but has a touch screen.
+  assert.equal(html({ SJ_BRAND: rk, navigator: { userAgent: macUa, maxTouchPoints: 5 } }), '');
   assert.equal(html({ SJ_BRAND: surface.publicSurface(surface.SURFACES.lp) }), '');
   assert.equal(html({ SJ_BRAND: rk, sjIsDesktop: () => true }), '');
   assert.equal(html({ SJ_BRAND: rk, navigator: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)' } }), '');
+});
+
+test('Settings offers both downloads, the visitor\'s own first', () => {
+  const html = (ua) => loadHtmlFnsInScope(['sjdOnMac', 'sjdDownloadHTML'], {
+    SJ_BRAND: surface.publicSurface(RK), navigator: { userAgent: ua },
+  }).sjdDownloadHTML();
+  const onMac = html('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)');
+  const onWin = html('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+  for (const h of [onMac, onWin]) {
+    assert.match(h, /platform=mac/);
+    assert.match(h, /platform=windows/);
+  }
+  assert.ok(onMac.indexOf('platform=mac') < onMac.indexOf('platform=windows'));
+  assert.ok(onWin.indexOf('platform=windows') < onWin.indexOf('platform=mac'));
 });

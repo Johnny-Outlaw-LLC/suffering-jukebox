@@ -333,7 +333,12 @@ function closeMini() {
 function toggleMini() { if (miniOpen) closeMini(); else openMini(); }
 
 function applyAlwaysOnTop() {
-  if (mini && !mini.isDestroyed()) mini.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
+  if (!mini || mini.isDestroyed()) return;
+  mini.setAlwaysOnTop(!!settings.alwaysOnTop, 'floating');
+  // On the Mac "on top" also means following you to other Spaces; otherwise
+  // it stays behind on the desktop it opened on. skipTransformProcessType
+  // stops Electron hiding the Dock icon for a moment on every call.
+  if (IS_MAC) mini.setVisibleOnAllWorkspaces(!!settings.alwaysOnTop, { skipTransformProcessType: true });
 }
 
 function broadcastMini() {
@@ -344,9 +349,14 @@ function broadcastMini() {
 // ── Tray ───────────────────────────────────────────────────────────────────
 function createTray() {
   if (tray) return;
-  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
+  // The Mac menu bar takes a black-and-alpha "Template" image and tints it
+  // for a light or dark menu bar itself; the colored icon is for Windows.
+  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', IS_MAC ? 'trayTemplate.png' : 'tray.png'));
+  if (IS_MAC) img.setTemplateImage(true);
   tray = new Tray(img);
   tray.on('click', () => {
+    // On the Mac a click opens the menu, as every menu bar icon does.
+    if (IS_MAC) return;
     if (miniOpen && mini && !mini.isDestroyed()) { mini.show(); mini.focus(); return; }
     if (win && win.isVisible() && win.isFocused()) win.hide();
     else showMain();
