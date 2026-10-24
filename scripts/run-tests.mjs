@@ -188,6 +188,11 @@ function serviceRoleKey() {
  * than losing one square on a calendar.
  */
 async function recordRun(result) {
+  // Preview builds must not write test history to the shared production database.
+  if (process.env.VERCEL_ENV === 'preview') {
+    console.log('preview build: test history was not written to the database');
+    return;
+  }
   const key = serviceRoleKey();
   if (!key) {
     console.log('no service role key in the environment, so this run was not recorded');
