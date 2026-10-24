@@ -1,7 +1,54 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cleanText, isUuid } from "@/lib/artist-rights";
+import { createB2DownloadUrl, deleteB2AudioObject, isOwnedAudioKey } from "@/lib/b2-audio";
 import { createSjServiceClient, getAuthUser, JUKEBOX_SCHEMA } from "@/lib/sj-admin-auth";
 import { RESERVED_SLUGS } from "@/lib/jukebox";
+
+type ServiceClient = ReturnType<typeof createSjServiceClient>;
+
+/**
+ * A draft release the caller owns and can still change. Once it has been
+ * signed for (submitted_at) or published it belongs to the review, and every
+ * edit action refuses it.
+ */
+async function editableRelease(sb: ServiceClient, userId: string, releaseId: string) {
+  if (!isUuid(releaseId)) return null;
+  const { data, error } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_releases")
+    .select("id,art_storage_path,submitted_at,published_album_id")
+    .eq("id", releaseId).eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  if (!data || data.submitted_at || data.published_album_id) return null;
+  return data;
+}
+
+async function editableTrack(sb: ServiceClient, userId: string, trackId: string) {
+  if (!isUuid(trackId)) return null;
+  const { data, error } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_tracks")
+    .select("id,release_id").eq("id", trackId).eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  if (!data || !(await editableRelease(sb, userId, data.release_id))) return null;
+  return data;
+}
+
+/**
+ * track_audio has no foreign key to the draft track, so removing a draft
+ * track has to take its audio (row and B2 object) with it, or the file keeps
+ * counting against the artist's storage with nothing pointing at it.
+ */
+async function deleteDraftAudio(sb: ServiceClient, userId: string, trackIds: string[]) {
+  if (!trackIds.length) return;
+  const { data: rows, error } = await sb.schema(JUKEBOX_SCHEMA).from("track_audio")
+    .select("track_id,storage_path").eq("uploaded_by", userId).in("track_id", trackIds);
+  if (error) throw error;
+  for (const row of rows ?? []) {
+    if (row.storage_path && isOwnedAudioKey(row.storage_path, userId, row.track_id)) {
+      await deleteB2AudioObject(row.storage_path).catch(() => undefined);
+    }
+  }
+  const { error: deleteError } = await sb.schema(JUKEBOX_SCHEMA).from("track_audio")
+    .delete().eq("uploaded_by", userId).in("track_id", trackIds);
+  if (deleteError) throw deleteError;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -55,8 +102,15 @@ export async function GET(req: NextRequest) {
     if (audioError) throw audioError;
     const artistMap = new Map((artists ?? []).map((row) => [row.id, row]));
     const audioMap = new Map((audio ?? []).map((row) => [row.track_id, row]));
+    // /artist-release-art only serves published covers, so a draft's cover is
+    // shown to its owner through a short-lived signed link instead.
+    const artPreview = new Map<string, string | null>();
+    await Promise.all(releases.filter((row) => row.art_storage_path).map(async (row) => {
+      artPreview.set(row.id, await createB2DownloadUrl(row.art_storage_path!, 60 * 60).catch(() => null));
+    }));
     return reply({ ok: true, grants, ownedArtists, releases: releases.map((release) => ({
       ...release,
+      art_preview_url: artPreview.get(release.id) ?? null,
       artist: artistMap.get(release.artist_id) ?? null,
       tracks: (tracks ?? []).filter((track) => track.release_id === release.id)
         .sort((a, b) => a.disc_number - b.disc_number || a.track_number - b.track_number)
@@ -157,6 +211,82 @@ export async function POST(req: NextRequest) {
       if (error?.code === "23505") return reply({ ok: false, error: "That disc and track number already exists on this release." }, 409);
       if (error) throw error;
       return reply({ ok: true, trackId: data.id });
+    }
+
+    if (body.action === "update-release") {
+      const release = await editableRelease(sb, user.id, String(body.releaseId || ""));
+      if (!release) return reply({ ok: false, error: "This release can no longer be edited." }, 403);
+      const patch: Record<string, unknown> = {};
+      if (body.name !== undefined) patch.name = cleanText(body.name, 200, true);
+      if (body.isUnreleased !== undefined) patch.is_unreleased = body.isUnreleased === true;
+      if (body.releaseDate !== undefined) patch.release_date = releaseDate(body.releaseDate);
+      if (patch.is_unreleased === true) patch.release_date = null;
+      if (!Object.keys(patch).length) return reply({ ok: true });
+      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_releases")
+        .update(patch).eq("id", release.id).eq("user_id", user.id);
+      if (error) throw error;
+      return reply({ ok: true });
+    }
+
+    if (body.action === "update-track") {
+      const track = await editableTrack(sb, user.id, String(body.trackId || ""));
+      if (!track) return reply({ ok: false, error: "This song can no longer be edited." }, 403);
+      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_tracks")
+        .update({ name: cleanText(body.name, 200, true) }).eq("id", track.id).eq("user_id", user.id);
+      if (error) throw error;
+      return reply({ ok: true });
+    }
+
+    if (body.action === "reorder-tracks") {
+      const release = await editableRelease(sb, user.id, String(body.releaseId || ""));
+      if (!release) return reply({ ok: false, error: "This release can no longer be edited." }, 403);
+      const order = Array.isArray(body.trackIds) ? body.trackIds.map(String) : [];
+      const { data: rows, error } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_tracks")
+        .select("id,track_number").eq("release_id", release.id).eq("user_id", user.id);
+      if (error) throw error;
+      const ids = new Set((rows ?? []).map((row) => row.id));
+      if (order.length !== ids.size || order.some((id) => !ids.has(id)) || new Set(order).size !== order.length) {
+        return reply({ ok: false, error: "Send every song on the release exactly once." }, 400);
+      }
+      // (release, disc, track_number) is unique and not deferrable, so the
+      // songs step through numbers nobody holds before landing on 1..n.
+      const parked = Math.max(0, ...(rows ?? []).map((row) => row.track_number));
+      if (parked + order.length > 999) return reply({ ok: false, error: "Too many songs to reorder." }, 400);
+      for (const offset of [parked, 0]) {
+        for (let i = 0; i < order.length; i++) {
+          const { error: moveError } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_tracks")
+            .update({ track_number: offset + i + 1, disc_number: 1 }).eq("id", order[i]).eq("user_id", user.id);
+          if (moveError) throw moveError;
+        }
+      }
+      return reply({ ok: true });
+    }
+
+    if (body.action === "delete-track") {
+      const track = await editableTrack(sb, user.id, String(body.trackId || ""));
+      if (!track) return reply({ ok: false, error: "This song can no longer be removed." }, 403);
+      await deleteDraftAudio(sb, user.id, [track.id]);
+      const { error } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_tracks")
+        .delete().eq("id", track.id).eq("user_id", user.id);
+      if (error) throw error;
+      return reply({ ok: true });
+    }
+
+    if (body.action === "delete-release") {
+      const release = await editableRelease(sb, user.id, String(body.releaseId || ""));
+      if (!release) return reply({ ok: false, error: "This release can no longer be removed." }, 403);
+      const { data: rows, error } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_tracks")
+        .select("id").eq("release_id", release.id).eq("user_id", user.id);
+      if (error) throw error;
+      await deleteDraftAudio(sb, user.id, (rows ?? []).map((row) => row.id));
+      if (release.art_storage_path?.startsWith(`artist-covers/${user.id}/${release.id}/`)) {
+        await deleteB2AudioObject(release.art_storage_path).catch(() => undefined);
+      }
+      // Tracks go with it (on delete cascade).
+      const { error: deleteError } = await sb.schema(JUKEBOX_SCHEMA).from("artist_upload_releases")
+        .delete().eq("id", release.id).eq("user_id", user.id);
+      if (deleteError) throw deleteError;
+      return reply({ ok: true });
     }
     return reply({ ok: false, error: "Invalid action." }, 400);
   } catch (error) {
