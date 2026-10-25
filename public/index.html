@@ -101,7 +101,12 @@
 }
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
+<script>
+// If jsDelivr is blocked or down, load the same pinned build from unpkg before the app script runs.
+// Without it, createClient threw and stopped the whole app script (browser.error "createClient" + "googleUser").
+window.supabase || document.write('<script src="https://unpkg.com/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"><\/script>');
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 20px; } /* base rem - all rem values scale from here */
@@ -40105,9 +40110,30 @@ window.addEventListener('resize', () => {
 // ============================================================
 const SB_AUTH_URL = 'https://ntyvtpimesfoesuykuyi.supabase.co';
 const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50eXZ0cGltZXNmb2VzdXlrdXlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMTc0NjIsImV4cCI6MjA4OTU5MzQ2Mn0.S6hw0xc4PVKZy_OBj7eu8eRpGHEqZMJ6_6p_Lut1BpQ';
-const sbAuth = window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
-  auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
-});
+// If the Supabase library could not load from either CDN, keep the rest of the app
+// working signed out instead of throwing here and aborting everything below
+// (which also left googleUser uninitialised for every later click).
+function sjAuthUnavailable() {
+  const err = new Error('Sign-in is unavailable right now: the sign-in library did not load. Please refresh.');
+  const fail = async () => ({ data: { session: null, user: null, url: null }, error: err });
+  return {
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: null }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      signOut: async () => ({ error: null }),
+      signInWithOAuth: fail,
+      signInWithIdToken: fail,
+      signInWithPassword: fail,
+      updateUser: fail,
+      exchangeCodeForSession: fail,
+    },
+  };
+}
+const sbAuth = window.supabase?.createClient
+  ? window.supabase.createClient(SB_AUTH_URL, SB_AUTH_KEY, {
+      auth: { detectSessionInUrl: true, persistSession: true, flowType: 'pkce' }
+    })
+  : (sjPerf('browser.error', { message: 'supabase-js unavailable from both CDNs; running signed out' }), sjAuthUnavailable());
 ﻿// ══════════════════════════════════════════════════════════════
 // OTHER CONTENT (dd*) — YouTube podcasts, interviews, supplemental video.
 // ══════════════════════════════════════════════════════════════
