@@ -19,7 +19,25 @@ const LIMITS = Object.freeze({
   renderMs: 1000,
   hardFailureCount: 1,
   repeatedCount: 3,
+  // A single main-thread block or slow render this long is severe on its own.
+  severeMs: 5000,
+  // A "long task" or "stall" longer than this is a tab that was suspended in the
+  // background (laptop lid, phone lock), not the page hanging. Observed up to 2.7 days.
+  implausibleBlockMs: 60_000,
+  // Page loads are network-bound, so one slow connection is not a regression.
+  // Flag only a sustained slowdown: the median of enough loads above the threshold.
+  pageLoadMedianMs: 5000,
+  pageLoadMinSamples: 10,
 });
+
+// Errors thrown by visitors' browser extensions or cross-origin scripts we cannot
+// see into. They are not this site's bugs and cannot be fixed here.
+const EXTERNAL_ERROR_PATTERNS = Object.freeze([
+  /__firefox__/,
+  /window\.ethereum/,
+  /^(Uncaught )?Script error\.?$/,
+  /(chrome|moz|safari(-web)?)-extension:\/\//,
+]);
 
 function localEnv(name) {
   if (process.env[name]?.trim()) return process.env[name].trim();
@@ -49,6 +67,13 @@ function surface(row) {
   return String(row.detail?.surface || 'unknown');
 }
 
+function median(values) {
+  if (!values.length) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function classifyRows(rows) {
   const normalized = (Array.isArray(rows) ? rows : []).map((row) => ({
     event: String(row.event || 'unknown'),
@@ -58,40 +83,66 @@ function classifyRows(rows) {
     createdAt: row.created_at || null,
     detail: row.detail && typeof row.detail === 'object' ? row.detail : {},
   }));
-  const hardFailures = normalized.filter((r) =>
+  const isBlocking = (r) => r.event === 'browser.long-task' || r.event === 'browser.event-loop-stall';
+  const suspendedTab = normalized.filter((r) => isBlocking(r) && r.durationMs > LIMITS.implausibleBlockMs);
+  const plausible = normalized.filter((r) => !(isBlocking(r) && r.durationMs > LIMITS.implausibleBlockMs));
+
+  const errors = plausible.filter((r) =>
     /^(browser\.(error|unhandled-rejection)|.*\.error)$/.test(r.event),
   );
-  const longTasks = normalized.filter((r) =>
+  const isExternal = (r) => EXTERNAL_ERROR_PATTERNS.some((re) => re.test(String(r.detail.message || '')));
+  const externalErrors = errors.filter(isExternal);
+  const hardFailures = errors.filter((r) => !isExternal(r));
+
+  const longTasks = plausible.filter((r) =>
     r.event === 'browser.long-task' && r.durationMs >= LIMITS.longTaskMs,
   );
-  const stalls = normalized.filter((r) =>
+  const stalls = plausible.filter((r) =>
     r.event === 'browser.event-loop-stall' && r.durationMs >= LIMITS.eventLoopStallMs,
   );
-  const slowRenders = normalized.filter((r) =>
+  const slowRenders = plausible.filter((r) =>
     r.event.startsWith('render.') && r.durationMs >= LIMITS.renderMs,
   );
-  const severe = normalized.filter((r) => r.durationMs >= 5000);
+  const timeouts = plausible.filter((r) => r.event === 'browser.request-timeout');
+  const pageLoads = plausible.filter((r) => r.event === 'browser.page-load' && r.durationMs > 0);
+  const pageLoadMedianMs = median(pageLoads.map((r) => r.durationMs));
+  const slowPageLoads = pageLoads.length >= LIMITS.pageLoadMinSamples
+    && pageLoadMedianMs >= LIMITS.pageLoadMedianMs;
+
+  // Severity is about the page itself blocking, not about network waits.
+  const severe = [...longTasks, ...stalls, ...slowRenders].filter((r) => r.durationMs >= LIMITS.severeMs);
   const counts = new Map();
-  for (const row of [...longTasks, ...stalls, ...slowRenders]) {
+  for (const row of [...longTasks, ...stalls, ...slowRenders, ...timeouts]) {
     counts.set(row.event, (counts.get(row.event) || 0) + 1);
   }
   const repeated = [...counts.entries()]
     .filter(([, count]) => count >= LIMITS.repeatedCount)
     .map(([event, count]) => ({ event, count }));
-  const incidents = [...hardFailures, ...longTasks, ...stalls, ...slowRenders];
-  const maxDurationMs = normalized.reduce((max, row) => Math.max(max, row.durationMs), 0);
+  const repeatedTimeouts = repeated.some((r) => r.event === 'browser.request-timeout') ? timeouts : [];
+  const incidents = [
+    ...hardFailures, ...longTasks, ...stalls, ...slowRenders, ...repeatedTimeouts,
+    ...(slowPageLoads ? pageLoads.filter((r) => r.durationMs >= LIMITS.pageLoadMedianMs) : []),
+  ];
+  const maxDurationMs = plausible.reduce((max, row) => Math.max(max, row.durationMs), 0);
   const shouldOpen = hardFailures.length >= LIMITS.hardFailureCount
     || repeated.length > 0
-    || severe.length > 0;
+    || severe.length > 0
+    || slowPageLoads;
   const families = [...new Set(incidents.map((r) => r.event))].sort();
   const fingerprint = families.length ? families.join(',') : 'unknown';
   return {
     rows: normalized,
     incidents,
     hardFailures,
+    externalErrors,
+    suspendedTab,
     longTasks,
     stalls,
     slowRenders,
+    timeouts,
+    pageLoadCount: pageLoads.length,
+    pageLoadMedianMs,
+    slowPageLoads,
     severe,
     repeated,
     maxDurationMs,
@@ -124,7 +175,8 @@ function reportText(result, hours) {
   const lines = [
     `Checked ${result.rows.length} performance events from the last ${hours} hour(s).`,
     `Long tasks >= ${LIMITS.longTaskMs}ms: ${result.longTasks.length}; event-loop stalls >= ${LIMITS.eventLoopStallMs}ms: ${result.stalls.length}; slow renders >= ${LIMITS.renderMs}ms: ${result.slowRenders.length}.`,
-    `Maximum observed duration: ${Math.round(result.maxDurationMs)}ms.`,
+    `Maximum observed duration: ${Math.round(result.maxDurationMs)}ms (excluding ${result.suspendedTab.length} suspended-tab reading(s)).`,
+    `Page loads: ${result.pageLoadCount}, median ${Math.round(result.pageLoadMedianMs)}ms; request timeouts: ${result.timeouts.length}; browser-extension errors ignored: ${result.externalErrors.length}.`,
     `Surfaces observed: ${[...new Set(result.rows.map((r) => r.surface))].sort().join(', ') || 'unknown'}.`,
   ];
   if (result.repeated.length) lines.push(`Repeated families: ${result.repeated.map((r) => `${r.event} (${r.count})`).join(', ')}.`);
@@ -199,7 +251,7 @@ async function raiseIssue(result, hours) {
   return created;
 }
 
-export { LIMITS, classifyRows, issueBody, issueTitle, reportText };
+export { EXTERNAL_ERROR_PATTERNS, LIMITS, classifyRows, issueBody, issueTitle, reportText };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const hours = Math.max(1, Number(process.env.PERF_WINDOW_HOURS || 24));
