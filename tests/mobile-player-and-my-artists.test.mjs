@@ -121,7 +121,10 @@ test('Listening Party app sends Background Play to the native audio engine', asy
   assert.match(html, /function taEnterBgAudio\(\)[\s\S]*?if \(taNativeBgPlugin\(\)\)[\s\S]*?taStartNativeBg\(pos\)/);
 
   scope.SJ_BRAND = { id: 'sj' };
+  assert.equal(api.taNativeBgPlugin(), plugin, 'Suffering Jukebox uses the same native playback engine');
+  scope.sjIsNative = () => false;
   assert.equal(api.taNativeBgPlugin(), null, 'the website must keep its existing player');
+  scope.sjIsNative = () => true;
   scope.SJ_BRAND = { id: 'rk' };
   assert.equal(api.taNativeBgPlugin(), plugin, 'Record Keeper uses the same native playback engine');
 });
@@ -223,7 +226,13 @@ test('full-detail mobile artist stats use a readable two-by-two grid', () => {
 });
 
 test('native account tools stay in the app navigation stack', () => {
-  assert.match(html, /function openFaq\(\)[\s\S]*if \(sjIsNative\(\)\) \{[\s\S]*SJ_BRAND\.id === 'rk' \? 'rk' : 'lp'/);
+  const scope = { sjIsNative: () => true, SJ_BRAND: {}, window: { location: {} } };
+  const { openFaq } = loadHtmlFnsInScope(['openFaq'], scope);
+  for (const [id, guide] of [['rk', '/help/rk/index.html'], ['lp', '/help/lp/index.html'], ['sj', '/help/index.html']]) {
+    scope.SJ_BRAND.id = id;
+    scope.window.location.assign = path => assert.equal(path, guide);
+    openFaq();
+  }
   assert.match(html, /async function openAnalyticsInNewTab\(\) \{\s*return openHostedToolInNewTab\('\/analytics'\);/);
   assert.match(html, /async function openHostedToolInNewTab\(path\) \{\s*if \(sjIsNative\(\)\) \{\s*await sjOpenHostedTool\(path\);/);
   assert.match(html, /action === 'studio'[\s\S]*sjOpenHostedTool\('\/artist-discography-upload'\)/);

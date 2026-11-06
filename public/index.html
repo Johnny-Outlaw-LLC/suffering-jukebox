@@ -7964,8 +7964,8 @@ function lphShelfHTML() {
   const waiting = _lphPicks === null || _lphLoading;
   const cards = waiting
     ? '<span class="lph-skel"></span><span class="lph-skel"></span><span class="lph-skel"></span>'
-    : (_lphPicks || []).filter(r => SJ_BRAND.id !== 'rk' || r.pick !== 'hot').map(lphCardHTML).join('');
-  const title = !waiting && !(_lphPicks || []).length ? 'Start a playlist' : SJ_BRAND.id === 'rk' ? 'Find your next playlist' : 'Three to start you off';
+    : (_lphPicks || []).filter(r => SJ_BRAND.id === 'lp' || r.pick !== 'hot').map(lphCardHTML).join('');
+  const title = !waiting && !(_lphPicks || []).length ? 'Start a playlist' : SJ_BRAND.id === 'lp' ? 'Three to start you off' : 'Find your next playlist';
   return `<section aria-labelledby="lph-shelf-title">
       <div class="lph-head">
         <h2 class="lph-rule" id="lph-shelf-title">${title}</h2>
@@ -8248,6 +8248,7 @@ function lphDesktopHTML() {
 
 function landingHomeHTML() {
   if (!SJ_BRAND.features.homeTab) return '';
+  const isListeningParty = SJ_BRAND.id === 'lp';
   if (SJ_BRAND.features.welcomeHero && !_lphPicks && !_lphLoading) lphLoad();
   if (googleUser && _lpHomeHeat === null && !_lpHomeHeatLoading) lpHomeLoadListening();
   const tagline = lphEsc(SJ_BRAND.tagline || SJ_BRAND.name || '');
@@ -8265,17 +8266,17 @@ function landingHomeHTML() {
       <section class="lph-hero">
         <div>
           <p class="lph-rule short">${tagline}</p>
-          <h1 class="lph-display">${SJ_BRAND.id === 'rk' ? 'Explore. Create. Listen together.' : 'Your record, in their pocket.'}</h1>
-          <p class="lph-lede">${SJ_BRAND.id === 'rk' ? 'Explore artists’ discographies and playlists, or create your own. Upload your own content for playback across your devices. Artists can share their music directly with their audience, with lyrics alongside every song. <strong>Listening stats are available for everyone.</strong> Start a room and listen together with friends.' : 'Artists upload their songs, sync the lyrics, and send fans one link. <strong>Fans listen free, with no ads, screen off or in the car.</strong> The artist sees who listened, where, and the lines they loved.'}</p>
+          <h1 class="lph-display">${isListeningParty ? 'Your record, in their pocket.' : 'Explore. Create. Listen together.'}</h1>
+          <p class="lph-lede">${isListeningParty ? 'Artists upload their songs, sync the lyrics, and send fans one link. <strong>Fans listen free, with no ads, screen off or in the car.</strong> The artist sees who listened, where, and the lines they loved.' : 'Explore artists’ discographies and playlists, or create your own. Upload your own content for playback across your devices. Artists can share their music directly with their audience, with lyrics alongside every song. <strong>Listening stats are available for everyone.</strong> Start a room and listen together with friends.'}</p>
           <div class="lph-cta">
-            <button type="button" class="lph-btn lph-btn-go" onclick="${SJ_BRAND.id === 'rk' ? "setLandingTab('explore')" : "lphStartListening()"}">${LPH_ICONS.play}${SJ_BRAND.id === 'rk' ? 'Start exploring now' : 'Start listening'}</button>
+            <button type="button" class="lph-btn lph-btn-go" onclick="${isListeningParty ? 'lphStartListening()' : "setLandingTab('explore')"}">${LPH_ICONS.play}${isListeningParty ? 'Start listening' : 'Start exploring now'}</button>
             <button type="button" class="lph-btn lph-btn-quiet" onclick="lphArtistTool('/artist-upload')">Publish your music</button>
             ${googleUser ? lpHomeCtaHTML() : ''}
           </div>
           ${googleUser ? '' : '<p class="lph-fine">Free to listen. No account needed.</p>'}
           <div class="lph-getapps">${lphAppStoreHTML()}${lphDesktopHTML()}</div>
         </div>
-        ${SJ_BRAND.id === 'rk' ? '' : lphFeatureHTML()}
+        ${isListeningParty ? lphFeatureHTML() : ''}
       </section>
       ${lphShelfHTML()}
       ${SJ_BRAND.features.artistUpload ? lphArtistsHTML() : ''}
@@ -8337,6 +8338,7 @@ const LPTB_TABS_BY_BRAND = {
   ],
 };
 function lptbTabs() {
+  if (SJ_BRAND.features?.homeTab) return LPTB_TABS_BY_BRAND.lp;
   return LPTB_TABS_BY_BRAND[SJ_BRAND.id] || LPTB_TABS_BY_BRAND.lp;
 }
 // Kept for callers and tests that read the list directly.
@@ -17417,7 +17419,7 @@ function taSetPreferBg(on) {
 // suspended when iOS locks the phone even though the same page works in the
 // foreground, so app Background Play must hand the queue to that engine.
 function taNativeBgPlugin() {
-  if (!sjIsNative() || !['lp', 'rk'].includes(SJ_BRAND.id)) return null;
+  if (!sjIsNative()) return null;
   const p = sjDlPlugin();
   return p?.setQueue && p?.play ? p : null;
 }
@@ -34567,7 +34569,8 @@ function openFaq() {
   // Help is bundled with the native shell, so keep it in this navigation stack
   // and let the guide's Back link return to the player.
   if (sjIsNative()) {
-    window.location.assign('/help/' + (SJ_BRAND.id === 'rk' ? 'rk' : 'lp') + '/index.html');
+    const brand = SJ_BRAND.id === 'sj' ? '' : SJ_BRAND.id + '/';
+    window.location.assign('/help/' + brand + 'index.html');
     return;
   }
   window.open('/help', '_blank', 'noopener');

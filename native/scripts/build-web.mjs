@@ -6,8 +6,9 @@ import ts from 'typescript';
 const nativeDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = resolve(nativeDir, '..');
 const id = process.argv[2] || process.env.SJ_NATIVE_SURFACE || 'lp';
-const appDir = process.env.SJ_NATIVE_APP_DIR ? resolve(process.env.SJ_NATIVE_APP_DIR) : id === 'rk' ? resolve(nativeDir, 'recordkeeper') : nativeDir;
-if (!['lp', 'rk'].includes(id)) throw new Error('Native surface must be lp or rk');
+const appDirs = { lp: nativeDir, rk: resolve(nativeDir, 'recordkeeper'), sj: resolve(nativeDir, 'products/suffering-jukebox') };
+if (!Object.hasOwn(appDirs, id)) throw new Error('Native surface must be lp, rk or sj');
+const appDir = resolve(process.env.SJ_NATIVE_APP_DIR || appDirs[id]);
 async function loadModule(path, imports = {}) {
   const js = ts.transpileModule(await readFile(resolve(root, path), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -21,7 +22,16 @@ async function loadModule(path, imports = {}) {
 }
 const surfaces = await loadModule('src/lib/surface.ts');
 const { applySurfaceHead } = await loadModule('src/lib/surface-head.ts', { '@/lib/surface': surfaces });
-const surface = surfaces.SURFACES[id];
+const { sj, rk } = surfaces.SURFACES;
+const surface = id === 'sj' ? {
+  ...sj,
+  features: {
+    ...rk.features,
+    homeArtist: sj.features.homeArtist,
+    artistPages: sj.features.artistPages,
+    desktopApp: sj.features.desktopApp,
+  },
+} : surfaces.SURFACES[id];
 const web = resolve(root, 'public');
 const www = resolve(appDir, 'www');
 await rm(www, { recursive: true, force: true });

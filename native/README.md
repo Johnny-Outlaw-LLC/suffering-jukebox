@@ -66,6 +66,20 @@ request and a file, not two copies of one state.
 
 ## Build
 
+### Suffering Jukebox iPhone
+
+Run `npm run ios:sufferingjukebox` from `native/` on the Mac to generate and
+open `products/suffering-jukebox/ios/App/App.xcworkspace`. Select the `App`
+scheme and Magic, then run the app. The first screen opens the shared Silver
+Jews and Purple Mountains discography. Home, Explore, Create, You, and the
+audio engine use the same code as Record Keeper.
+
+For device builds, team `2J69KHU242` needs a development profile for
+`com.johnnyoutlaw.sufferingjukebox.ios` with the app's Sign in with Apple and
+managed CarPlay audio entitlements. The app uses the Suffering Jukebox
+`com.johnnyoutlaw.sufferingjukebox://auth` callback. Verify that the auth
+service accepts the new bundle ID as a native Apple sign-in audience.
+
 ### Record Keeper iOS
 
 From `native/`, run `npm run sync:recordkeeper:ios` to generate and sync the
