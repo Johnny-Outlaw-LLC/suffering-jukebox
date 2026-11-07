@@ -250,23 +250,199 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// One row per artist, opening that artist's songs - rather than every song
     /// under a header, which is what the single list used to be. A locker of any
     /// size is unreadable in a car if the first screen is 400 titles.
+    ///
+    /// More artists than one driving screen holds become letter ranges
+    /// ("A – C", "Ma – Mi") that each open a screen of artists, so every
+    /// artist is reachable while moving without scrolling.
     private func artistSections() -> [CPListSection] {
         let downloads = SJCarLibrary.all()
         guard !downloads.isEmpty else {
             return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
         let byArtist = Dictionary(grouping: downloads) { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }
-        let items = byArtist.keys.sorted().prefix(max(0, itemLimit - 1)).map { artist -> CPListItem in
-            let entries = sorted(byArtist[artist] ?? [])
-            let item = CPListItem(text: artist, detailText: songCount(entries.count))
-            item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
+        let names = byArtist.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        // Shuffle All takes a row.
+        let items = indexItems(names, capacity: tabRows - 1, noun: "artist", key: { $0 }) { [weak self] artist in
+            let entries = self?.sorted(byArtist[artist] ?? []) ?? []
+            let item = CPListItem(text: artist, detailText: self?.songCount(entries.count))
+            item.setImage(entries.lazy.compactMap { self?.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
                 self?.pushSongList(title: artist, entries: entries)
                 completion()
             }
             return item
         }
-        return [CPListSection(items: [shuffleItem(for: downloads)] + Array(items))]
+        return [CPListSection(items: [shuffleItem(for: downloads)] + items)]
+    }
+
+    // MARK: - Lists that fit while driving
+
+    /// While the car is moving, CarPlay shows only the first dozen rows of a
+    /// list and will not scroll past them, whatever maximumItemCount says when
+    /// parked. Lists that must reach everything are split to fit that.
+    private let drivingRows = 12
+    private var drivingLimit: Int { max(3, min(itemLimit, drivingRows)) }
+
+    /// Rows a tab has left for its content once the sign-in prompt, when
+    /// shown, has taken one.
+    private var tabRows: Int { drivingLimit - (SJStreamLibrary.shared.isSignedIn ? 0 : 1) }
+
+    /// Sorted `items` as rows when they fit in `capacity`; otherwise as
+    /// alphabetical range rows ("A – C", "Ma – Mi"), each opening the items it
+    /// covers - split again the same way if a range is still too long for one
+    /// screen. `key` is what the list is sorted by.
+    private func indexItems<T>(_ items: [T],
+                               capacity: Int,
+                               noun: String,
+                               key: @escaping (T) -> String,
+                               leaf: @escaping (T) -> CPListItem) -> [CPListItem] {
+        guard items.count > capacity else { return items.map(leaf) }
+        let groups = indexGroups(items, capacity: capacity, key: key)
+        return groups.indices.map { i in
+            let group = groups[i]
+            let label = rangeLabel(first: key(group[0]), last: key(group[group.count - 1]),
+                                   before: i > 0 ? groups[i - 1].last.map(key) : nil,
+                                   after: i + 1 < groups.count ? groups[i + 1].first.map(key) : nil)
+            return rangeRow(label, detail: count(group.count, noun)) { [weak self] in
+                guard let self else { return [] }
+                return self.indexItems(group, capacity: self.drivingLimit, noun: noun, key: key, leaf: leaf)
+            }
+        }
+    }
+
+    /// For lists whose order means something (a playlist, plays, an album
+    /// run): as many items as fit go straight on the screen, the rest behind
+    /// numbered rows ("Songs 10 – 21"), each opening one screen of them. `first`
+    /// is the 1-based position of `items[0]` in the whole list.
+    private func pagedItems<T>(_ items: [T],
+                               capacity: Int,
+                               title: String,
+                               first: Int = 1,
+                               describe: @escaping (T) -> String,
+                               leaf: @escaping (T) -> CPListItem) -> [CPListItem] {
+        guard items.count > capacity else { return items.map(leaf) }
+        let page = drivingLimit
+        for direct in stride(from: capacity - 1, through: 0, by: -1) {
+            let ranges = (items.count - direct + page - 1) / page
+            if direct + ranges <= capacity {
+                return items.prefix(direct).map(leaf)
+                    + numberedRows(items, from: direct, size: page, title: title, first: first,
+                                   describe: describe, leaf: leaf)
+            }
+        }
+        // Too many for one level: equal ranges, each split again when opened.
+        let size = (items.count + capacity - 1) / capacity
+        return numberedRows(items, from: 0, size: size, title: title, first: first, describe: describe, leaf: leaf)
+    }
+
+    private func numberedRows<T>(_ items: [T],
+                                 from offset: Int,
+                                 size: Int,
+                                 title: String,
+                                 first: Int,
+                                 describe: @escaping (T) -> String,
+                                 leaf: @escaping (T) -> CPListItem) -> [CPListItem] {
+        stride(from: offset, to: items.count, by: size).map { lower in
+            let slice = Array(items[lower..<min(lower + size, items.count)])
+            let from = first + lower
+            let to = from + slice.count - 1
+            let label = from == to ? "\(title) \(from)" : "\(title) \(from) – \(to)"
+            let ends = [slice.first, slice.count > 1 ? slice.last : nil].compactMap { $0.map(describe) }
+            return rangeRow(label, detail: ends.joined(separator: " … ")) { [weak self] in
+                guard let self else { return [] }
+                return self.pagedItems(slice, capacity: self.drivingLimit, title: title, first: from,
+                                       describe: describe, leaf: leaf)
+            }
+        }
+    }
+
+    /// A row that opens a screen of `rows`, built only when tapped.
+    private func rangeRow(_ label: String, detail: String, rows: @escaping () -> [CPListItem]) -> CPListItem {
+        let item = CPListItem(text: label, detailText: detail)
+        item.accessoryType = .disclosureIndicator
+        item.handler = { [weak self] _, completion in
+            let template = CPListTemplate(title: label, sections: [CPListSection(items: rows())])
+            self?.interfaceController?.pushTemplate(template, animated: true, completion: nil)
+            completion()
+        }
+        return item
+    }
+
+    private func count(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
+
+    /// At most `capacity` consecutive runs of items. Items sharing a first
+    /// letter stay together when they can, so most rows read as plain letter
+    /// ranges; a letter with too many items for one screen is cut into pieces.
+    private func indexGroups<T>(_ items: [T], capacity: Int, key: (T) -> String) -> [[T]] {
+        var runs: [[T]] = []
+        var runInitial: String?
+        for item in items {
+            let initial = indexInitial(key(item))
+            if initial == runInitial, !runs.isEmpty {
+                runs[runs.count - 1].append(item)
+            } else {
+                runs.append([item])
+                runInitial = initial
+            }
+        }
+        var target = max(drivingLimit, (items.count + capacity - 1) / capacity)
+        while target < items.count {
+            var groups: [[T]] = []
+            var current: [T] = []
+            for run in runs {
+                var rest = run[...]
+                if !current.isEmpty, current.count + rest.count > target {
+                    groups.append(current)
+                    current = []
+                }
+                while rest.count > target {
+                    groups.append(Array(rest.prefix(target)))
+                    rest = rest.dropFirst(target)
+                }
+                current += rest
+            }
+            if !current.isEmpty { groups.append(current) }
+            if groups.count <= capacity { return groups }
+            target += 1
+        }
+        // Never one row holding everything: fall back to even slices.
+        let size = (items.count + capacity - 1) / capacity
+        return stride(from: 0, to: items.count, by: size).map { Array(items[$0..<min($0 + size, items.count)]) }
+    }
+
+    /// "A – C" when a range ends on letter boundaries, "Ma – Mi" when it splits
+    /// a letter: each end gets just enough letters to differ from the
+    /// neighbouring range.
+    private func rangeLabel(first: String, last: String, before: String?, after: String?) -> String {
+        // When a letter is split across ranges, both ends also differ from
+        // each other, so the range reads "Sa – St" rather than "S – St".
+        let splitsLetter = before.map(indexInitial) == indexInitial(first)
+            || after.map(indexInitial) == indexInitial(last)
+        let shared = zip(indexKey(first), indexKey(last)).prefix { $0 == $1 }.count
+        let minimum = splitsLetter ? shared + 1 : 1
+        let start = distinguishingPrefix(first, from: before, atLeast: minimum)
+        let end = distinguishingPrefix(last, from: after, atLeast: minimum)
+        return start == end ? start : "\(start) – \(end)"
+    }
+
+    private func distinguishingPrefix(_ name: String, from neighbour: String?, atLeast minimum: Int) -> String {
+        guard indexInitial(name) != "#" else { return "#" }
+        let key = indexKey(name)
+        let other = neighbour.map(indexKey) ?? ""
+        var length = min(max(1, minimum), max(1, key.count))
+        while length < key.count, key.prefix(length) == other.prefix(length) { length += 1 }
+        let prefix = key.prefix(length)
+        return prefix.prefix(1) + prefix.dropFirst().lowercased()
+    }
+
+    private func indexKey(_ name: String) -> String {
+        name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).uppercased()
+    }
+
+    /// The letter a name files under; digits and symbols share "#".
+    private func indexInitial(_ name: String) -> String {
+        guard let c = indexKey(name).first, c.isLetter else { return "#" }
+        return String(c)
     }
 
     // MARK: - Playlists
@@ -283,19 +459,20 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
         var seen = Set<String>()
         let everySong = playable.flatMap { $0.entries }.filter { seen.insert($0.trackId).inserted }
-        let items = playable.prefix(max(0, itemLimit - 1)).map { entry -> CPListItem in
+        let items = pagedItems(playable, capacity: tabRows - 1, title: "Playlists",
+                               describe: { $0.playlist.name }) { [weak self] entry -> CPListItem in
             let (playlist, entries) = entry
             // Kept in the saved running order, not re-sorted: a playlist is a
             // sequence, and alphabetising it would quietly destroy the point.
-            let item = CPListItem(text: playlist.name, detailText: songCount(entries.count))
-            item.setImage(entries.lazy.compactMap { self.artwork(for: $0) }.first)
+            let item = CPListItem(text: playlist.name, detailText: self?.songCount(entries.count))
+            item.setImage(entries.lazy.compactMap { self?.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
                 self?.pushSongList(title: playlist.name, entries: entries, preserveOrder: true)
                 completion()
             }
             return item
         }
-        return [CPListSection(items: [shuffleItem(for: everySong)] + Array(items))]
+        return [CPListSection(items: [shuffleItem(for: everySong)] + items)]
     }
 
     // MARK: - About
@@ -387,24 +564,30 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func showArtistRemovals() {
         let groups = Dictionary(grouping: SJCarLibrary.all()) { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }
-        let items = groups.keys.sorted().prefix(itemLimit).map { name -> CPListItem in
-            removalItem(name, detail: songCount(groups[name]?.count ?? 0), trackIds: Set((groups[name] ?? []).map(\.trackId)))
+        let names = groups.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let items = indexItems(names, capacity: drivingLimit, noun: "artist", key: { $0 }) { [weak self] name in
+            self?.removalItem(name, detail: self?.songCount(groups[name]?.count ?? 0),
+                              trackIds: Set((groups[name] ?? []).map(\.trackId))) ?? CPListItem(text: name, detailText: nil)
         }
-        pushRemovalList(title: "Remove Artists", items: Array(items))
+        pushRemovalList(title: "Remove Artists", items: items)
     }
 
     private func showAlbumRemovals() {
         let groups = Dictionary(grouping: SJCarLibrary.all()) {
             ($0.artist.isEmpty ? "Unknown Artist" : $0.artist) + "\u{0}" + ($0.album ?? "Unknown Album")
         }
-        let items = groups.keys.sorted().prefix(itemLimit).map { key -> CPListItem in
+        let album: (String) -> String = { key in
             let parts = key.split(separator: "\u{0}", maxSplits: 1, omittingEmptySubsequences: false)
-            let artist = String(parts.first ?? "")
-            let album = parts.count > 1 ? String(parts[1]) : "Unknown Album"
-            return removalItem(album, detail: artist + " · " + songCount(groups[key]?.count ?? 0),
-                               trackIds: Set((groups[key] ?? []).map(\.trackId)))
+            return parts.count > 1 ? String(parts[1]) : "Unknown Album"
         }
-        pushRemovalList(title: "Remove Albums", items: Array(items))
+        let keys = groups.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let items = pagedItems(keys, capacity: drivingLimit, title: "Albums", describe: album) { [weak self] key -> CPListItem in
+            let artist = String(key.split(separator: "\u{0}", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+            let detail = artist + " · " + (self?.songCount(groups[key]?.count ?? 0) ?? "")
+            return self?.removalItem(album(key), detail: detail, trackIds: Set((groups[key] ?? []).map(\.trackId)))
+                ?? CPListItem(text: album(key), detailText: nil)
+        }
+        pushRemovalList(title: "Remove Albums", items: items)
     }
 
     private func showSongRemovals() {
@@ -412,10 +595,11 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let title = $0.title.localizedStandardCompare($1.title)
             return title == .orderedSame ? $0.trackId < $1.trackId : title == .orderedAscending
         }
-        let items = songs.prefix(itemLimit).map { song in
-            removalItem(song.title, detail: song.artist, trackIds: [song.trackId])
+        let items = indexItems(songs, capacity: drivingLimit, noun: "song", key: { $0.title }) { [weak self] song in
+            self?.removalItem(song.title, detail: song.artist, trackIds: [song.trackId])
+                ?? CPListItem(text: song.title, detailText: nil)
         }
-        pushRemovalList(title: "Remove Songs", items: Array(items))
+        pushRemovalList(title: "Remove Songs", items: items)
     }
 
     private func pushRemovalList(title: String, items: [CPListItem]) {
@@ -531,8 +715,18 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             completion()
         }
         let actions = queueActionItems(for: downloads)
-        return [CPListSection(items: actions + [sort] + listItems(for: Array(downloads.prefix(max(0, itemLimit - actions.count - 1))),
-                                                       in: downloads, showArtist: true))]
+        let capacity = tabRows - actions.count - 1
+        let leaf: (SJCarEntry) -> CPListItem = { [weak self] entry in
+            self?.listItem(entry, in: downloads, showArtist: true) ?? CPListItem(text: entry.title, detailText: nil)
+        }
+        // Alphabetical splits by letter; the other sorts keep their order and
+        // split by position, naming the songs at each end.
+        let byArtist = songSort == "By Artist"
+        let songs = songSort == "Alphabetical"
+            ? indexItems(downloads, capacity: capacity, noun: "song", key: { $0.title }, leaf: leaf)
+            : pagedItems(downloads, capacity: capacity, title: "Songs",
+                         describe: { byArtist ? $0.artist : $0.title }, leaf: leaf)
+        return [CPListSection(items: actions + [sort] + songs)]
     }
 
     // MARK: - Shared list plumbing
@@ -542,9 +736,11 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                               preserveOrder: Bool = false) {
         let ordered = preserveOrder ? entries : sorted(entries)
         let actions = queueActionItems(for: ordered)
-        let section = CPListSection(items: actions + listItems(for: Array(ordered.prefix(max(0, itemLimit - actions.count))),
-                                                    in: ordered,
-                                                    showArtist: false))
+        let songs = pagedItems(ordered, capacity: drivingLimit - actions.count, title: "Songs",
+                               describe: { $0.title }) { [weak self] entry in
+            self?.listItem(entry, in: ordered, showArtist: false) ?? CPListItem(text: entry.title, detailText: nil)
+        }
+        let section = CPListSection(items: actions + songs)
         let template = CPListTemplate(title: title, sections: [section])
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
@@ -638,21 +834,19 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         }
     }
 
-    private func listItems(for shown: [SJCarEntry],
-                           in queue: [SJCarEntry],
-                           showArtist: Bool) -> [CPListItem] {
-        shown.map { entry in
-            let detail = showArtist
-                ? [entry.artist, entry.album ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
-                : (entry.album ?? "")
-            let item = CPListItem(text: entry.title, detailText: detail.isEmpty ? nil : detail)
-            item.setImage(artwork(for: entry))
-            item.handler = { [weak self] _, completion in
-                self?.play(startingAt: entry, in: queue)
-                completion()
-            }
-            return item
+    private func listItem(_ entry: SJCarEntry,
+                          in queue: [SJCarEntry],
+                          showArtist: Bool) -> CPListItem {
+        let detail = showArtist
+            ? [entry.artist, entry.album ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+            : (entry.album ?? "")
+        let item = CPListItem(text: entry.title, detailText: detail.isEmpty ? nil : detail)
+        item.setImage(artwork(for: entry))
+        item.handler = { [weak self] _, completion in
+            self?.play(startingAt: entry, in: queue)
+            completion()
         }
+        return item
     }
 
     private func sorted(_ entries: [SJCarEntry]) -> [SJCarEntry] {
