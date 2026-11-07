@@ -145,7 +145,7 @@ assert(result[1].entries.map { $0.trackId } == ["b", "a"])
 
 test('Shuffle All starts a random available song with the entire queue and exits Repeat One', { skip: process.platform !== 'darwin' }, () => {
   const source = readFileSync(new URL('../ios/App/App/CarPlay/SJCarPlaySceneDelegate.swift', import.meta.url), 'utf8');
-  const method = source.slice(source.indexOf('    private func shuffleItem('), source.indexOf('    /// The first three rows')).replace('private func', 'func');
+  const method = source.slice(source.indexOf('    private func shuffleAll('), source.indexOf('    /// Play Next / Add to Queue.')).replace('private func', 'func');
   const script = `
 import Foundation
 struct UIImage { init?(systemName: String) {} }
@@ -183,10 +183,7 @@ ${method}
 }
 let subject = Subject()
 let entries = (0..<1000).map { SJCarEntry(trackId: String($0)) }
-let item = subject.shuffleItem(for: entries)
-var completed = false
-item.handler?(item, { completed = true })
-assert(completed)
+subject.shuffleAll(entries)
 assert(subject.played.count == 1000)
 assert(entries.contains { $0.trackId == subject.first })
 // Shuffle All draws its first song against the listener's weights too, so the
@@ -194,19 +191,38 @@ assert(entries.contains { $0.trackId == subject.first })
 assert(subject.first == "742")
 assert(SJAudioEngine.shared.shuffle)
 assert(SJAudioEngine.shared.repeatMode == .off)
-assert(!subject.shuffleItem(for: []).isEnabled)
+subject.played = []
+subject.shuffleAll([])
+assert(subject.played.isEmpty)
 `;
   const result = spawnSync('swift', ['-'], { input: script, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 });
 
-test('CarPlay song lists put Play All Next and Add All to Queue after Shuffle All', () => {
+test('CarPlay song lists show Shuffle All, Play All, Add to Queue, Play Next as header buttons', () => {
   const source = readFileSync(new URL('../ios/App/App/CarPlay/SJCarPlaySceneDelegate.swift', import.meta.url), 'utf8');
-  const start = source.indexOf('    private func queueActionItems(');
-  const end = source.indexOf('    private func add(', start);
-  const actions = source.slice(start, end);
-  assert.match(actions, /return \[shuffleItem\(for: entries\), playNext, addQueue\]/);
-  assert.match(source, /let actions = queueActionItems\(for: downloads\)/);
+  const start = source.indexOf('    private func queueActions(');
+  const actions = source.slice(start, source.indexOf('    private func shuffleAll(', start));
+  const order = ['"Shuffle All"', '"Play All"', '"Add to Queue"', '"Play Next"'].map(t => actions.indexOf(t));
+  assert.ok(order.every(i => i > 0), 'all four actions exist');
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'in the order Johnny asked for');
+  // Header buttons on iOS 26, rows only as the fallback.
+  assert.match(source, /template\.headerGridButtons = /);
+  assert.match(source, /setHeaderButtons\(template, queueActions\)/);
+  assert.match(source, /fill\(songsTab, songs\.isEmpty \? \[\] : queueActions\(for: songs\)\)/);
+  // Every action lands on Now Playing, and never pushes it twice.
+  const add = source.slice(source.indexOf('    private func add('), source.indexOf('    private func showNowPlaying('));
+  assert.match(add, /enqueue\(tracks\(for: entries\), next: next\)\s+showNowPlaying\(\)/);
+  assert.doesNotMatch(source, /pushTemplate\(CPNowPlayingTemplate\.shared/);
+});
+
+test('CarPlay Up Next can shuffle the queue and remove songs, from its button and the ... menu', () => {
+  const source = readFileSync(new URL('../ios/App/App/CarPlay/SJCarPlaySceneDelegate.swift', import.meta.url), 'utf8');
+  assert.match(source, /func nowPlayingTemplateUpNextButtonTapped[^}]+showUpNext\(\)/);
+  assert.match(source, /CPListItem\(text: "Up Next"/);
+  assert.match(source, /SJAudioEngine\.shared\.shuffleUpcoming\(\)/);
+  assert.match(source, /engine\.removeFromQueue\(at: i\)/);
+  assert.match(source, /"xmark\.circle\.fill"/);
 });
 
 test('mobile puts repeat on the left, shuffle on the right, and uses a lyric-size slider', () => {

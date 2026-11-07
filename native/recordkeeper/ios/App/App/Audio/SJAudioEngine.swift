@@ -308,6 +308,66 @@ final class SJAudioEngine: NSObject {
         }
     }
 
+    // MARK: - Editing the queue in place
+    //
+    // setQueue redraws the whole shuffled running order, which is right for a
+    // fresh queue and wrong for an edit: Play Next under shuffle landed the new
+    // songs at random, and the Up Next button named something else. These keep
+    // the song playing and the order around it exactly as they were.
+
+    /// Puts `tracks` right after the current song (`next`) or after everything
+    /// still to come, in the order given. With nothing playing it starts them.
+    func enqueue(_ tracks: [SJTrack], next: Bool) {
+        guard !tracks.isEmpty else { return }
+        guard queue.indices.contains(index) else {
+            setQueue(tracks, startIndex: 0, autoPlay: true)
+            return
+        }
+        let at = next ? index + 1 : queue.count
+        let added = Array(at..<(at + tracks.count))
+        queue.insert(contentsOf: tracks, at: at)
+        if shuffleEnabled {
+            var order = playOrder.map { $0 >= at ? $0 + tracks.count : $0 }
+            if next, let pos = order.firstIndex(of: index) {
+                order.insert(contentsOf: added, at: pos + 1)
+            } else {
+                order.append(contentsOf: added)
+            }
+            playOrder = order
+        }
+        queueEdited()
+    }
+
+    /// Drops one song from the queue. The song playing is left alone (skip
+    /// it instead), so the edit never interrupts what is being heard.
+    func removeFromQueue(at i: Int) {
+        guard queue.indices.contains(i), i != index else { return }
+        queue.remove(at: i)
+        if i < index { index -= 1 }
+        playOrder = playOrder.filter { $0 != i }.map { $0 > i ? $0 - 1 : $0 }
+        queueEdited()
+    }
+
+    /// Redraws the order of the songs still to come; the one playing and the
+    /// ones already played stay put. Uses the listener's shuffle weights, like
+    /// every other shuffle, and leaves the shuffle setting as it was.
+    func shuffleUpcoming() {
+        guard queue.indices.contains(index) else { return }
+        if shuffleEnabled, let pos = playOrder.firstIndex(of: index) {
+            playOrder = Array(playOrder[...pos]) + weightedPermutation(of: Array(playOrder[(pos + 1)...]))
+        } else {
+            let upcoming = weightedPermutation(of: Array((index + 1)..<queue.count))
+            queue = Array(queue[...index]) + upcoming.map { queue[$0] }
+        }
+        queueEdited()
+    }
+
+    private func queueEdited() {
+        updateNowPlaying()
+        onQueueChanged?()
+        publish()
+    }
+
     var currentTrack: SJTrack? {
         guard index >= 0 && index < queue.count else { return nil }
         return queue[index]

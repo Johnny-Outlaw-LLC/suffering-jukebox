@@ -42,12 +42,14 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             DispatchQueue.main.async {
                 self?.refreshTabs()
                 self?.refreshUpNextTitle()
+                self?.refreshUpNext()
             }
         }
         SJAudioEngine.shared.onTrackChanged = { [weak self] _ in
             DispatchQueue.main.async {
                 self?.refreshNowPlayingButtons()
                 self?.refreshUpNextTitle()
+                self?.refreshUpNext()
             }
         }
         // Shuffle, repeat, a fresh rating or a fresh heart count all redraw the
@@ -58,6 +60,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             DispatchQueue.main.async {
                 self?.refreshNowPlayingButtons()
                 self?.refreshUpNextTitle()
+                self?.refreshUpNext()
             }
         }
         refreshNowPlayingButtons()
@@ -75,6 +78,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         playlistsTab = nil
         songsTab = nil
         aboutTab = nil
+        upNextTemplate = nil
         CPNowPlayingTemplate.shared.remove(self)
         SJAudioEngine.shared.onQueueChanged = nil
         SJAudioEngine.shared.onTrackChanged = nil
@@ -89,35 +93,99 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// and Songs already built to start playback, just framed as "what plays
     /// next" instead of "what to start playing."
     func nowPlayingTemplateUpNextButtonTapped(_ nowPlayingTemplate: CPNowPlayingTemplate) {
+        showUpNext()
+    }
+
+    /// The open Up Next screen, repainted in place when the queue or the song
+    /// changes underneath it. Weak: CarPlay owns it while it is on screen.
+    private weak var upNextTemplate: CPListTemplate?
+    /// Remove mode: every row but the playing one shows an X, and a tap takes
+    /// the song out instead of playing it.
+    private var upNextRemoving = false
+
+    /// Reached from the UP NEXT button and from the "..." menu.
+    private func showUpNext() {
+        guard let controller = interfaceController, !SJAudioEngine.shared.queue.isEmpty else { return }
+        if let open = upNextTemplate, controller.templates.contains(where: { $0 === open }) {
+            controller.pop(to: open, animated: true, completion: nil)
+            return
+        }
+        upNextRemoving = false
+        let template = CPListTemplate(title: "Up Next", sections: [])
+        upNextTemplate = template
+        refreshUpNext()
+        controller.pushTemplate(template, animated: true, completion: nil)
+    }
+
+    private func refreshUpNext() {
+        guard let template = upNextTemplate else { return }
         let engine = SJAudioEngine.shared
         let queue = engine.queue
-        guard !queue.isEmpty else { return }
+        if queue.count < 2 { upNextRemoving = false }
+        let actions = upNextActions(canEdit: queue.count > 1)
+        setHeaderButtons(template, actions)
+        let actionRows = rowActions(actions).map(actionRow)
+        guard !queue.isEmpty else {
+            template.updateSections([CPListSection(items: actionRows + [disabledItem("Nothing queued", "Pick a song, artist or playlist to start.")])])
+            return
+        }
         // The list opens at its top and CarPlay offers no way to scroll it, so
         // it starts at the current song in running order: the song the button
         // named is always the second row. Already-played songs follow below.
+        let room = itemLimit - actionRows.count
         let order = engine.upNextOrder
-        let upcoming = Array(order.upcoming.prefix(itemLimit))
-        let earlier = Array(order.earlier.prefix(max(0, itemLimit - upcoming.count)))
+        let upcoming = Array(order.upcoming.prefix(room))
+        let earlier = Array(order.earlier.prefix(max(0, room - upcoming.count)))
+        let removing = upNextRemoving
         let makeItem = { [weak self] (i: Int) -> CPListItem in
             let track = queue[i]
-            let item = CPListItem(text: track.title, detailText: track.artist)
+            let playing = i == engine.index
+            let item = CPListItem(text: track.title,
+                                  detailText: removing && playing ? "Playing now · skip it to move on" : track.artist)
             item.setImage(self?.artwork(forTrackId: track.id))
-            item.isPlaying = (i == engine.index)
+            item.isPlaying = playing
+            if removing, !playing {
+                item.setAccessoryImage(UIImage(systemName: "xmark.circle.fill"))
+            }
+            let id = track.id
             item.handler = { [weak self] _, completion in
-                SJAudioEngine.shared.play(index: i)
-                // Up Next was pushed on top of Now Playing, so returning to it
-                // is a pop, not another push of the (singleton) template.
-                self?.interfaceController?.popTemplate(animated: true, completion: nil)
-                completion()
+                defer { completion() }
+                let engine = SJAudioEngine.shared
+                // The list may be a moment stale; act only if the row still
+                // names the same song.
+                guard engine.queue.indices.contains(i), engine.queue[i].id == id else { return }
+                if removing {
+                    engine.removeFromQueue(at: i)
+                } else {
+                    engine.play(index: i)
+                    self?.showNowPlaying()
+                }
             }
             return item
         }
-        var sections = [CPListSection(items: upcoming.map(makeItem))]
+        var sections = [CPListSection(items: actionRows + upcoming.map(makeItem))]
         if !earlier.isEmpty {
             sections.append(CPListSection(items: earlier.map(makeItem), header: "Played", sectionIndexTitle: nil))
         }
-        let template = CPListTemplate(title: "Up Next", sections: sections)
-        interfaceController?.pushTemplate(template, animated: true, completion: nil)
+        template.updateSections(sections)
+    }
+
+    private func upNextActions(canEdit: Bool) -> [ListAction] {
+        let shuffle = ListAction(titles: ["Shuffle Queue", "Shuffle"], detail: "New order for what's next",
+                                 symbol: "shuffle", enabled: canEdit) {
+            SJAudioEngine.shared.shuffleUpcoming()
+        }
+        let remove = upNextRemoving
+            ? ListAction(titles: ["Done", "Done"], detail: "Stop removing songs", symbol: "checkmark.circle") { [weak self] in
+                self?.upNextRemoving = false
+                self?.refreshUpNext()
+            }
+            : ListAction(titles: ["Remove Songs", "Remove"], detail: "Tap a song to take it out",
+                         symbol: "xmark.circle", enabled: canEdit) { [weak self] in
+                self?.upNextRemoving = true
+                self?.refreshUpNext()
+            }
+        return [shuffle, remove]
     }
 
     /// How much song text fits on the Up Next button after "UP NEXT: ".
@@ -163,15 +231,15 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     // MARK: - Templates
 
     private func makeTabBar() -> CPTemplate {
-        let artists = CPListTemplate(title: "Artists", sections: withAccount(artistSections()))
+        let artists = CPListTemplate(title: "Artists", sections: [])
         artists.tabTitle = "Artists"
         artists.tabImage = UIImage(systemName: "music.mic")
 
-        let playlists = CPListTemplate(title: "Playlists", sections: withAccount(playlistSections()))
+        let playlists = CPListTemplate(title: "Playlists", sections: [])
         playlists.tabTitle = "Playlists"
         playlists.tabImage = UIImage(systemName: "music.note.list")
 
-        let songs = CPListTemplate(title: "Songs", sections: withAccount(songSections()))
+        let songs = CPListTemplate(title: "Songs", sections: [])
         songs.tabTitle = "Songs"
         songs.tabImage = UIImage(systemName: "music.note")
 
@@ -183,16 +251,37 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
         songsTab = songs
         aboutTab = about
+        fillLibraryTabs()
 
         return CPTabBarTemplate(templates: [artists, playlists, songs, about])
     }
 
     private func refreshTabs() {
         artworkCache.removeAll()
-        artistsTab?.updateSections(withAccount(artistSections()))
-        playlistsTab?.updateSections(withAccount(playlistSections()))
-        songsTab?.updateSections(withAccount(songSections()))
+        fillLibraryTabs()
         aboutTab?.updateSections(aboutSections())
+    }
+
+    /// Artists, Playlists and Songs: their play actions as header buttons
+    /// (rows on older iOS), then the list itself.
+    private func fillLibraryTabs() {
+        fill(artistsTab, libraryActions(SJCarLibrary.all()), artistSections)
+        var seen = Set<String>()
+        let everyPlaylistSong = SJPlaylistStore.shared.playable().flatMap { $0.entries }
+            .filter { seen.insert($0.trackId).inserted }
+        fill(playlistsTab, libraryActions(everyPlaylistSong), playlistSections)
+        let songs = sortedSongs()
+        fill(songsTab, songs.isEmpty ? [] : queueActions(for: songs)) { [weak self] rows in
+            self?.songSections(songs, actionRows: rows) ?? []
+        }
+    }
+
+    private func fill(_ template: CPListTemplate?,
+                      _ actions: [ListAction],
+                      _ sections: ([CPListItem]) -> [CPListSection]) {
+        guard let template else { return }
+        setHeaderButtons(template, actions)
+        template.updateSections(withAccount(sections(rowActions(actions).map(actionRow))))
     }
 
     // MARK: - Account
@@ -254,15 +343,14 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// More artists than one driving screen holds become letter ranges
     /// ("A – C", "Ma – Mi") that each open a screen of artists, so every
     /// artist is reachable while moving without scrolling.
-    private func artistSections() -> [CPListSection] {
+    private func artistSections(actionRows: [CPListItem]) -> [CPListSection] {
         let downloads = SJCarLibrary.all()
         guard !downloads.isEmpty else {
             return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
         let byArtist = Dictionary(grouping: downloads) { $0.artist.isEmpty ? "Unknown Artist" : $0.artist }
         let names = byArtist.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        // Shuffle All takes a row.
-        let items = indexItems(names, capacity: tabRows - 1, noun: "artist", key: { $0 }) { [weak self] artist in
+        let items = indexItems(names, capacity: tabRows - actionRows.count, noun: "artist", key: { $0 }) { [weak self] artist in
             let entries = self?.sorted(byArtist[artist] ?? []) ?? []
             let item = CPListItem(text: artist, detailText: self?.songCount(entries.count))
             item.setImage(entries.lazy.compactMap { self?.artwork(for: $0) }.first)
@@ -272,7 +360,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
             return item
         }
-        return [CPListSection(items: [shuffleItem(for: downloads)] + items)]
+        return [CPListSection(items: actionRows + items)]
     }
 
     // MARK: - Lists that fit while driving
@@ -447,7 +535,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     // MARK: - Playlists
 
-    private func playlistSections() -> [CPListSection] {
+    private func playlistSections(actionRows: [CPListItem]) -> [CPListSection] {
         let playable = SJPlaylistStore.shared.playable()
         guard !playable.isEmpty else {
             return emptySection(
@@ -457,9 +545,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                     : "Add songs you uploaded or downloaded to a playlist and it will appear here."
             )
         }
-        var seen = Set<String>()
-        let everySong = playable.flatMap { $0.entries }.filter { seen.insert($0.trackId).inserted }
-        let items = pagedItems(playable, capacity: tabRows - 1, title: "Playlists",
+        let items = pagedItems(playable, capacity: tabRows - actionRows.count, title: "Playlists",
                                describe: { $0.playlist.name }) { [weak self] entry -> CPListItem in
             let (playlist, entries) = entry
             // Kept in the saved running order, not re-sorted: a playlist is a
@@ -472,7 +558,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
             return item
         }
-        return [CPListSection(items: [shuffleItem(for: everySong)] + items)]
+        return [CPListSection(items: actionRows + items)]
     }
 
     // MARK: - About
@@ -683,7 +769,7 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let item = CPListItem(text: order, detailText: order == songSort ? "Selected" : nil)
             item.handler = { [weak self] _, completion in
                 self?.songSort = order
-                if let self { self.songsTab?.updateSections(self.withAccount(self.songSections())) }
+                self?.fillLibraryTabs()
                 self?.interfaceController?.popTemplate(animated: true, completion: nil)
                 completion()
             }
@@ -693,9 +779,10 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                                           animated: true, completion: nil)
     }
 
-    private func songSections() -> [CPListSection] {
+    /// Every song the car has, in the order the Sort row picked.
+    private func sortedSongs() -> [SJCarEntry] {
         let counts = UserDefaults.standard.dictionary(forKey: "sj.carplay.playCounts") as? [String: Int] ?? [:]
-        let downloads = SJCarLibrary.all().sorted { a, b in
+        return SJCarLibrary.all().sorted { a, b in
             if songSort == "By Plays", counts[a.trackId, default: 0] != counts[b.trackId, default: 0] {
                 return counts[a.trackId, default: 0] > counts[b.trackId, default: 0]
             }
@@ -706,6 +793,9 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let title = a.title.localizedStandardCompare(b.title)
             return title == .orderedSame ? a.trackId < b.trackId : title == .orderedAscending
         }
+    }
+
+    private func songSections(_ downloads: [SJCarEntry], actionRows actions: [CPListItem]) -> [CPListSection] {
         guard !downloads.isEmpty else {
             return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
         }
@@ -714,7 +804,6 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             self?.showSongSort()
             completion()
         }
-        let actions = queueActionItems(for: downloads)
         let capacity = tabRows - actions.count - 1
         let leaf: (SJCarEntry) -> CPListItem = { [weak self] entry in
             self?.listItem(entry, in: downloads, showArtist: true) ?? CPListItem(text: entry.title, detailText: nil)
@@ -735,91 +824,155 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
                               entries: [SJCarEntry],
                               preserveOrder: Bool = false) {
         let ordered = preserveOrder ? entries : sorted(entries)
-        let actions = queueActionItems(for: ordered)
+        let queueActions = queueActions(for: ordered)
+        let actions = rowActions(queueActions).map(actionRow)
         let songs = pagedItems(ordered, capacity: drivingLimit - actions.count, title: "Songs",
                                describe: { $0.title }) { [weak self] entry in
             self?.listItem(entry, in: ordered, showArtist: false) ?? CPListItem(text: entry.title, detailText: nil)
         }
         let section = CPListSection(items: actions + songs)
         let template = CPListTemplate(title: title, sections: [section])
+        setHeaderButtons(template, queueActions)
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
     }
 
-    private func shuffleItem(for entries: [SJCarEntry]) -> CPListItem {
-        let item = CPListItem(text: "Shuffle All", detailText: songCount(entries.count))
-        item.setImage(UIImage(systemName: "shuffle"))
-        item.isEnabled = !entries.isEmpty
-        item.handler = { [weak self] _, completion in
-            // The first song is drawn with the listener's own weights too, not
-            // at random - otherwise Shuffle All ignores the preference for
-            // exactly the song they are most likely to notice.
-            let profile = SJShuffleProfile.shared
-            let first: SJCarEntry?
-            if profile.isWeighted, !entries.isEmpty {
-                let total = entries.reduce(0.0) { $0 + profile.weight(for: $1.trackId) }
-                var roll = Double.random(in: 0..<max(total, .leastNonzeroMagnitude))
-                var chosen = entries.last
-                for entry in entries {
-                    roll -= profile.weight(for: entry.trackId)
-                    if roll <= 0 { chosen = entry; break }
-                }
-                first = chosen
-            } else {
-                first = entries.randomElement()
-            }
-            if let first {
-                let engine = SJAudioEngine.shared
-                // Repeat One must not trap Shuffle All on its first song.
-                if engine.repeatMode == .one { engine.cycleRepeatMode() }
-                engine.setShuffle(true)
-                self?.play(startingAt: first, in: entries)
-            }
+    // MARK: - Play actions: header buttons
+
+    /// Shuffle All, Play All and the like. On iOS 26 they sit as buttons
+    /// across the top of the list, where they cost no rows; older iOS, or more
+    /// actions than the car allows there, falls back to rows above the songs.
+    private struct ListAction {
+        /// Longest first; CarPlay picks the first that fits under the button.
+        let titles: [String]
+        let detail: String?
+        let symbol: String
+        var enabled = true
+        let run: () -> Void
+    }
+
+    private var headerButtonLimit: Int {
+        if #available(iOS 26.0, *) { return Int(CPListTemplate.maximumHeaderGridButtonCount) }
+        return 0
+    }
+
+    private func rowActions(_ actions: [ListAction]) -> [ListAction] {
+        Array(actions.dropFirst(headerButtonLimit))
+    }
+
+    private func setHeaderButtons(_ template: CPListTemplate, _ actions: [ListAction]) {
+        guard #available(iOS 26.0, *) else { return }
+        let buttons = actions.prefix(headerButtonLimit).map { action -> CPGridButton in
+            let button = CPGridButton(titleVariants: action.titles, image: gridImage(action.symbol)) { _ in action.run() }
+            button.isEnabled = action.enabled
+            return button
+        }
+        template.headerGridButtons = buttons.isEmpty ? nil : buttons
+    }
+
+    private func actionRow(_ action: ListAction) -> CPListItem {
+        let item = CPListItem(text: action.titles[0], detailText: action.detail)
+        item.setImage(UIImage(systemName: action.symbol))
+        item.isEnabled = action.enabled
+        item.handler = { _, completion in
+            action.run()
             completion()
         }
         return item
     }
 
-    /// The first three rows in every concrete song list are playback actions:
-    /// Shuffle All, Play All Next, and Add All to Queue. Artists and playlists
-    /// reach this list after their first drill-down; Songs shows the same trio
-    /// directly above its sort row.
-    private func queueActionItems(for entries: [SJCarEntry]) -> [CPListItem] {
-        let playNext = CPListItem(text: "Play All Next", detailText: songCount(entries.count))
-        playNext.setImage(UIImage(systemName: "text.insert"))
-        playNext.isEnabled = !entries.isEmpty
-        playNext.handler = { [weak self] _, completion in
-            self?.add(entries, next: true)
-            completion()
-        }
-
-        let addQueue = CPListItem(text: "Add All to Queue", detailText: songCount(entries.count))
-        addQueue.setImage(UIImage(systemName: "text.badge.plus"))
-        addQueue.isEnabled = !entries.isEmpty
-        addQueue.handler = { [weak self] _, completion in
-            self?.add(entries, next: false)
-            completion()
-        }
-        return [shuffleItem(for: entries), playNext, addQueue]
+    @available(iOS 26.0, *)
+    private func gridImage(_ name: String) -> UIImage {
+        let size = CPListTemplate.maximumGridButtonImageSize
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = interfaceController?.carTraitCollection.displayScale ?? 2
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            let side = min(size.width, size.height)
+            self.drawSymbol(name, in: CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2,
+                                             width: side, height: side).insetBy(dx: side * 0.2, dy: side * 0.2))
+        }.withRenderingMode(.alwaysTemplate)
     }
 
-    private func add(_ entries: [SJCarEntry], next: Bool) {
-        let additions = tracks(for: entries)
-        guard !additions.isEmpty else { return }
-        let engine = SJAudioEngine.shared
-        guard engine.index >= 0, engine.queue.indices.contains(engine.index) else {
-            engine.setQueue(additions, startIndex: 0, autoPlay: true)
-            interfaceController?.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
-            return
-        }
-        var queue = engine.queue
-        if next {
-            queue.insert(contentsOf: additions, at: min(queue.count, engine.index + 1))
+    /// A tab's whole library: Shuffle All is the only action that makes sense
+    /// for hundreds of songs at once.
+    private func libraryActions(_ entries: [SJCarEntry]) -> [ListAction] {
+        guard !entries.isEmpty else { return [] }
+        return [ListAction(titles: ["Shuffle All", "Shuffle"], detail: songCount(entries.count), symbol: "shuffle") { [weak self] in
+            self?.shuffleAll(entries)
+        }]
+    }
+
+    /// An artist's, a playlist's, or the Songs tab's songs. Every one of these
+    /// lands on Now Playing, so the driver sees what started or what is next.
+    private func queueActions(for entries: [SJCarEntry]) -> [ListAction] {
+        let count = songCount(entries.count)
+        let ok = !entries.isEmpty
+        return [
+            ListAction(titles: ["Shuffle All", "Shuffle"], detail: count, symbol: "shuffle", enabled: ok) { [weak self] in
+                self?.shuffleAll(entries)
+            },
+            ListAction(titles: ["Play All", "Play"], detail: count, symbol: "play.fill", enabled: ok) { [weak self] in
+                // In the order shown: Play All means this order, not shuffled.
+                guard let first = entries.first else { return }
+                let engine = SJAudioEngine.shared
+                engine.setShuffle(false)
+                if engine.repeatMode == .one { engine.cycleRepeatMode() }
+                self?.play(startingAt: first, in: entries)
+            },
+            ListAction(titles: ["Add to Queue", "Add to End", "Queue"], detail: count, symbol: "text.badge.plus", enabled: ok) { [weak self] in
+                self?.add(entries, next: false)
+            },
+            ListAction(titles: ["Play Next", "Next"], detail: count, symbol: "text.insert", enabled: ok) { [weak self] in
+                self?.add(entries, next: true)
+            },
+        ]
+    }
+
+    private func shuffleAll(_ entries: [SJCarEntry]) {
+        // The first song is drawn with the listener's own weights too, not at
+        // random - otherwise Shuffle All ignores the preference for exactly
+        // the song they are most likely to notice.
+        let profile = SJShuffleProfile.shared
+        let first: SJCarEntry?
+        if profile.isWeighted, !entries.isEmpty {
+            let total = entries.reduce(0.0) { $0 + profile.weight(for: $1.trackId) }
+            var roll = Double.random(in: 0..<max(total, .leastNonzeroMagnitude))
+            var chosen = entries.last
+            for entry in entries {
+                roll -= profile.weight(for: entry.trackId)
+                if roll <= 0 { chosen = entry; break }
+            }
+            first = chosen
         } else {
-            queue.append(contentsOf: additions)
+            first = entries.randomElement()
         }
-        // Re-selecting the same current song makes setQueue preserve its play
-        // state and position while exposing the expanded queue to car + phone.
-        engine.setQueue(queue, startIndex: engine.index, autoPlay: false)
+        guard let first else { return }
+        let engine = SJAudioEngine.shared
+        // Repeat One must not trap Shuffle All on its first song.
+        if engine.repeatMode == .one { engine.cycleRepeatMode() }
+        engine.setShuffle(true)
+        play(startingAt: first, in: entries)
+    }
+
+    /// Play Next / Add to Queue. The engine keeps the song playing and the
+    /// shuffled order around it, so Play Next really is next and the UP NEXT
+    /// button names it.
+    private func add(_ entries: [SJCarEntry], next: Bool) {
+        SJAudioEngine.shared.enqueue(tracks(for: entries), next: next)
+        showNowPlaying()
+    }
+
+    /// Now Playing is one shared template, and CarPlay throws if it is pushed
+    /// while already on the stack (Now Playing > Up Next > a list, say).
+    private func showNowPlaying() {
+        guard let controller = interfaceController else { return }
+        let nowPlaying = CPNowPlayingTemplate.shared
+        if controller.topTemplate === nowPlaying { return }
+        if controller.templates.contains(where: { $0 === nowPlaying }) {
+            controller.pop(to: nowPlaying, animated: true, completion: nil)
+        } else {
+            controller.pushTemplate(nowPlaying, animated: true, completion: nil)
+        }
     }
 
     private func tracks(for entries: [SJCarEntry]) -> [SJTrack] {
@@ -963,7 +1116,19 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             }
             return item
         }
-        let list = CPListTemplate(title: track.title, sections: [CPListSection(items: items)])
+        // Up Next heads the menu: the whole queue, to reorder or prune.
+        let engine = SJAudioEngine.shared
+        let upNext = CPListItem(text: "Up Next",
+                                detailText: engine.nextTrack.map { "\($0.title) · \(songCount(engine.queue.count)) queued" })
+        upNext.setImage(UIImage(systemName: "list.bullet"))
+        upNext.accessoryType = .disclosureIndicator
+        upNext.handler = { [weak self] _, completion in
+            // Swap the menu for Up Next, so Back from it lands on Now Playing.
+            self?.interfaceController?.popTemplate(animated: false) { _, _ in self?.showUpNext() }
+            completion()
+        }
+        let list = CPListTemplate(title: track.title, sections: [CPListSection(items: [upNext]),
+                                                                 CPListSection(items: items)])
         interfaceController?.pushTemplate(list, animated: true, completion: nil)
     }
 
@@ -1088,6 +1253,6 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
         let tracks = tracks(for: entries)
         let start = entries.firstIndex { $0.trackId == entry.trackId } ?? 0
         SJAudioEngine.shared.setQueue(tracks, startIndex: start, autoPlay: true)
-        interfaceController?.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
+        showNowPlaying()
     }
 }
