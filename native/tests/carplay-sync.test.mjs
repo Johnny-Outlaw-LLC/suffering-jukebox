@@ -401,3 +401,18 @@ test('CarPlay exposes its exact Up Next choice and conditional heart removals', 
   assert.match(scene, /removeHeartsToday/);
   assert.match(scene, /removeAllHearts/);
 });
+
+test('CarPlay browses albums inside an artist and can list the Artists tab by album', () => {
+  const source = readFileSync(new URL('../ios/App/App/CarPlay/SJCarPlaySceneDelegate.swift', import.meta.url), 'utf8');
+  const artist = source.slice(source.indexOf('    private func pushArtist('), source.indexOf('    private func albumSections('));
+  // One album goes straight to its songs; more open on albums, then All Songs.
+  assert.match(artist, /guard byAlbum\.count > 1 else \{\s+pushSongList\(title: artist/);
+  assert.match(artist, /actions \+ albums \+ \[allSongs\]/);
+  assert.match(artist, /setHeaderButtons\(template, queueActions\)/);
+  assert.match(source, /self\?\.pushArtist\(artist, entries: entries\)/);
+  // The toggle is remembered and swaps the tab's list.
+  assert.match(source, /"sj\.carplay\.artistsShowAlbums"/);
+  assert.match(source, /self\.showingAlbums \? self\.albumSections\(actionRows: rows\) : self\.artistSections\(actionRows: rows\)/);
+  // Albums are keyed by artist and album, so two "Greatest Hits" stay apart.
+  assert.match(source, /artistName\(\$0\) \+ "\\u\{0\}" \+ albumName\(\$0\)/);
+});

@@ -265,7 +265,11 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
     /// Artists, Playlists and Songs: their play actions as header buttons
     /// (rows on older iOS), then the list itself.
     private func fillLibraryTabs() {
-        fill(artistsTab, libraryActions(SJCarLibrary.all()), artistSections)
+        let library = SJCarLibrary.all()
+        fill(artistsTab, library.isEmpty ? [] : libraryActions(library) + [artistsViewToggle()]) { [weak self] rows in
+            guard let self else { return [] }
+            return self.showingAlbums ? self.albumSections(actionRows: rows) : self.artistSections(actionRows: rows)
+        }
         var seen = Set<String>()
         let everyPlaylistSong = SJPlaylistStore.shared.playable().flatMap { $0.entries }
             .filter { seen.insert($0.trackId).inserted }
@@ -355,12 +359,114 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
             let item = CPListItem(text: artist, detailText: self?.songCount(entries.count))
             item.setImage(entries.lazy.compactMap { self?.artwork(for: $0) }.first)
             item.handler = { [weak self] _, completion in
-                self?.pushSongList(title: artist, entries: entries)
+                self?.pushArtist(artist, entries: entries)
                 completion()
             }
             return item
         }
         return [CPListSection(items: actionRows + items)]
+    }
+
+    // MARK: - Albums
+
+    /// The Artists tab lists artists or albums; a header button flips it and
+    /// the choice is remembered, like the Songs tab's sort.
+    private var showingAlbums: Bool {
+        get { UserDefaults.standard.bool(forKey: "sj.carplay.artistsShowAlbums") }
+        set { UserDefaults.standard.set(newValue, forKey: "sj.carplay.artistsShowAlbums") }
+    }
+
+    private func artistsViewToggle() -> ListAction {
+        let albums = showingAlbums
+        return ListAction(titles: albums ? ["Show Artists", "Artists"] : ["Show Albums", "Albums"],
+                          detail: albums ? "List by artist" : "List by album",
+                          symbol: albums ? "music.mic" : "square.stack") { [weak self] in
+            guard let self else { return }
+            self.showingAlbums.toggle()
+            self.fillLibraryTabs()
+        }
+    }
+
+    private func artistName(_ entry: SJCarEntry) -> String {
+        let name = entry.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Unknown Artist" : name
+    }
+
+    private func albumName(_ entry: SJCarEntry) -> String {
+        let name = (entry.album ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Unknown Album" : name
+    }
+
+    /// Albums A–Z, "Unknown Album" last. Songs carry no track numbers or
+    /// years, so neither album order nor song order can follow the record.
+    private func albumOrder(_ a: String, _ b: String) -> Bool {
+        let unknownA = a == "Unknown Album", unknownB = b == "Unknown Album"
+        if unknownA != unknownB { return unknownB }
+        return a.localizedStandardCompare(b) == .orderedAscending
+    }
+
+    /// An artist with more than one album opens on their albums, then All
+    /// Songs; with one album it goes straight to the songs. The play buttons
+    /// up top cover everything by the artist either way.
+    private func pushArtist(_ artist: String, entries: [SJCarEntry]) {
+        let byAlbum = Dictionary(grouping: entries, by: albumName)
+        guard byAlbum.count > 1 else {
+            pushSongList(title: artist, entries: entries, showAlbum: false)
+            return
+        }
+        let all = sorted(entries)
+        let queueActions = queueActions(for: all)
+        let actions = rowActions(queueActions).map(actionRow)
+        let allSongs = CPListItem(text: "All Songs", detailText: songCount(all.count))
+        allSongs.setImage(UIImage(systemName: "music.note.list"))
+        allSongs.accessoryType = .disclosureIndicator
+        allSongs.handler = { [weak self] _, completion in
+            self?.pushSongList(title: artist, entries: all)
+            completion()
+        }
+        let names = byAlbum.keys.sorted(by: albumOrder)
+        let albums = pagedItems(names, capacity: drivingLimit - actions.count - 1, title: "Albums",
+                                describe: { $0 }) { [weak self] album in
+            self?.albumItem(album, detail: self?.songCount(byAlbum[album]?.count ?? 0) ?? "",
+                            entries: byAlbum[album] ?? []) ?? CPListItem(text: album, detailText: nil)
+        }
+        let template = CPListTemplate(title: artist, sections: [CPListSection(items: actions + albums + [allSongs])])
+        setHeaderButtons(template, queueActions)
+        interfaceController?.pushTemplate(template, animated: true, completion: nil)
+    }
+
+    /// Every album in the library, as letter ranges when they do not fit one
+    /// driving screen. Two artists' "Greatest Hits" stay two albums.
+    private func albumSections(actionRows: [CPListItem]) -> [CPListSection] {
+        let downloads = SJCarLibrary.all()
+        guard !downloads.isEmpty else {
+            return emptySection(Self.nothingDownloaded.0, Self.nothingDownloaded.1)
+        }
+        struct Album { let name: String; let artist: String; let entries: [SJCarEntry] }
+        let albums = Dictionary(grouping: downloads) { artistName($0) + "\u{0}" + albumName($0) }
+            .values
+            .map { Album(name: albumName($0[0]), artist: artistName($0[0]), entries: $0) }
+            .sorted { a, b in
+                a.name == b.name ? a.artist.localizedStandardCompare(b.artist) == .orderedAscending
+                                 : albumOrder(a.name, b.name)
+            }
+        let items = indexItems(albums, capacity: tabRows - actionRows.count, noun: "album", key: { $0.name }) { [weak self] album in
+            self?.albumItem(album.name, detail: "\(album.artist) · \(self?.songCount(album.entries.count) ?? "")",
+                            entries: album.entries) ?? CPListItem(text: album.name, detailText: nil)
+        }
+        return [CPListSection(items: actionRows + items)]
+    }
+
+    private func albumItem(_ album: String, detail: String, entries: [SJCarEntry]) -> CPListItem {
+        let songs = sorted(entries)
+        let item = CPListItem(text: album, detailText: detail)
+        item.setImage(songs.lazy.compactMap { self.artwork(for: $0) }.first)
+        item.accessoryType = .disclosureIndicator
+        item.handler = { [weak self] _, completion in
+            self?.pushSongList(title: album, entries: songs, showAlbum: false)
+            completion()
+        }
+        return item
     }
 
     // MARK: - Lists that fit while driving
@@ -822,13 +928,15 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func pushSongList(title: String,
                               entries: [SJCarEntry],
-                              preserveOrder: Bool = false) {
+                              preserveOrder: Bool = false,
+                              showAlbum: Bool = true) {
         let ordered = preserveOrder ? entries : sorted(entries)
         let queueActions = queueActions(for: ordered)
         let actions = rowActions(queueActions).map(actionRow)
         let songs = pagedItems(ordered, capacity: drivingLimit - actions.count, title: "Songs",
                                describe: { $0.title }) { [weak self] entry in
-            self?.listItem(entry, in: ordered, showArtist: false) ?? CPListItem(text: entry.title, detailText: nil)
+            self?.listItem(entry, in: ordered, showArtist: false, showAlbum: showAlbum)
+                ?? CPListItem(text: entry.title, detailText: nil)
         }
         let section = CPListSection(items: actions + songs)
         let template = CPListTemplate(title: title, sections: [section])
@@ -989,10 +1097,11 @@ class SJCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, C
 
     private func listItem(_ entry: SJCarEntry,
                           in queue: [SJCarEntry],
-                          showArtist: Bool) -> CPListItem {
+                          showArtist: Bool,
+                          showAlbum: Bool = true) -> CPListItem {
         let detail = showArtist
             ? [entry.artist, entry.album ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
-            : (entry.album ?? "")
+            : (showAlbum ? (entry.album ?? "") : "")
         let item = CPListItem(text: entry.title, detailText: detail.isEmpty ? nil : detail)
         item.setImage(artwork(for: entry))
         item.handler = { [weak self] _, completion in
