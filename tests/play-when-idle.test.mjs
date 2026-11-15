@@ -134,3 +134,43 @@ test('following native playback copies its whole queue back, not the stand-in', 
   assert.deepEqual(scope.ytQueue.map(q => q.trackId), ten.map(t => t.id));
   assert.equal(scope._sjCarStandIn, false);
 });
+
+test('artist ⋯ songs come back in discography order: albums by release, then disc and track', async () => {
+  const asked = [];
+  const scope = {
+    showToast() {},
+    dbGet: async path => {
+      asked.push(path);
+      if (path.startsWith('/albums')) return [{ id: 'first-lp' }, { id: 'second-lp' }];
+      return [
+        { id: 's2', album_id: 'second-lp', disc_number: 1, track_number: 2 },
+        { id: 'f2', album_id: 'first-lp', disc_number: 1, track_number: 2 },
+        { id: 's1', album_id: 'second-lp', disc_number: 1, track_number: 1 },
+        { id: 'f3', album_id: 'first-lp', disc_number: 2, track_number: 1 },
+        { id: 'f1', album_id: 'first-lp', disc_number: 1, track_number: 1 },
+      ];
+    },
+  };
+  const { lamAllTrackIds } = loadHtmlFnsInScope(['lamAllTrackIds'], scope);
+  assert.deepEqual(await lamAllTrackIds('artist'), ['f1', 'f2', 'f3', 's1', 's2']);
+  assert.match(asked[0], /order=release_date\.asc/);
+  assert.match(asked[1], /select=[^&]*album_id/, 'rows are grouped by album_id, so it must be selected');
+});
+
+for (const [label, shuffleArg, ytShuffle, expected] of [
+  ['Play All, Shuffle off', false, false, false],
+  ['Play All, Shuffle on', false, true, true],
+  ['Shuffle All', true, false, true],
+]) test(`artist ⋯ ${label} queues the discography in order`, async () => {
+  let played;
+  const scope = {
+    _lamOnPage: false, _lamArtistId: 'artist', ytShuffle, lamClose() {}, showToast() {},
+    lamAllTrackIds: async () => ['a', 'b', 'c'],
+    resolvePlaylistTracks: async () => ({ a: { videoId: 'va' }, b: { videoId: 'vb' }, c: { videoId: 'vc' } }),
+    playlistQueueItem: id => ({ trackId: id }),
+    sjNoBlocked: q => q, filterQueueForHomeBg: q => q,
+    landingPlayQueue: async (q, opts) => { played = { ids: q.map(x => x.trackId), shuffle: opts.shuffle }; },
+  };
+  await loadHtmlFnsInScope(['lamPlayAll'], scope).lamPlayAll(shuffleArg);
+  assert.deepEqual(played, { ids: ['a', 'b', 'c'], shuffle: expected });
+});

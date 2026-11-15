@@ -22262,8 +22262,12 @@ async function lamAllTrackIds(artistId) {
     const ids = [];
     for (let i = 0; i < albumIds.length; i += 40) {
       const chunk = albumIds.slice(i, i + 40);
-      const rows = await dbGet('/tracks?album_id=in.(' + chunk.join(',') + ')&select=id');
-      chunk.forEach(albumId => (rows || []).filter(r => r.album_id === albumId).forEach(r => { if (r.id) ids.push(r.id); }));
+      // album_id has to come back too: the rows are grouped by it. Selecting
+      // only id matched nothing, so every artist ⋯ Play All found no songs.
+      const rows = await dbGet('/tracks?album_id=in.(' + chunk.join(',') + ')&select=id,album_id,disc_number,track_number');
+      chunk.forEach(albumId => (rows || []).filter(r => r.album_id === albumId)
+        .sort((a, b) => (a.disc_number || 1) - (b.disc_number || 1) || (a.track_number || 0) - (b.track_number || 0))
+        .forEach(r => { if (r.id) ids.push(r.id); }));
     }
     return ids;
   } catch (e) {
@@ -22333,7 +22337,10 @@ async function lamPlayAll(shuffle) {
     const info = await resolvePlaylistTracks(ids);
     const q = filterQueueForHomeBg(sjNoBlocked(ids.map(tid => playlistQueueItem(tid, info[tid])).filter(Boolean)));
     if (!q.length) { showToast('No playable songs found.'); return; }
-    await landingPlayQueue(q, { shuffle: !!shuffle });
+    // Play All queues the discography in release order and leaves the
+    // player's Shuffle as it is: with Shuffle on, that order plays shuffled.
+    // Shuffle All turns Shuffle on.
+    await landingPlayQueue(q, { shuffle: !!shuffle || !!ytShuffle });
   } catch (e) { showToast('Could not load this artist\'s songs.'); }
 }
 
@@ -22376,7 +22383,7 @@ async function lamAddAllToQueue() {
 function lamPagePlay(shuffle) {
   lamClose();
   if (shuffle) { shuffleAllVisible(); return; }
-  if (ytShuffle) setYtShuffleEnabled(false);
+  // Play All keeps the player's Shuffle setting rather than switching it off.
   playAllVisible(false);
 }
 
