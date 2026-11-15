@@ -64,18 +64,29 @@ test('the native engine receives a queue the page changed, once', async () => {
   const plugin = { setQueue: async payload => sent.push(payload), play: async () => {} };
   const scope = {
     SJ_BRAND: { id: 'rk' }, sjIsNative: () => true, sjDlPlugin: () => plugin, console,
-    _taNativeBgActive: true, _sjCarFollow: null, _sjCarFollowDriving: false,
-    _taNativeQueueSig: 'a',
+    _taNativeBgActive: true, _sjCarFollow: null, _sjCarFollowDriving: false, _sjCarStandIn: false,
+    _taNativeQueueSig: 'a', _sjCarQueueSnapshot: null,
     ytQueue: [{ trackId: 'a', title: 'A' }, { trackId: 'b', title: 'B' }], ytQueueIdx: 0,
     ytpTrackMeta: (id, title) => ({ title, artist: '', album: '', artwork: '' }),
     taTrackAudio: () => null,
   };
-  const api = loadHtmlFnsInScope(['taNativeBgPlugin', 'taNativeQueuePayload', 'taNativeQueueSig', 'taNativeSyncQueue'], scope);
+  const api = loadHtmlFnsInScope(['taNativeBgPlugin', 'taNativeQueuePayload', 'taNativeQueueSig', 'taNativeRememberQueue', 'taNativeSyncQueue'], scope);
   api.taNativeSyncQueue();
   api.taNativeSyncQueue();
   assert.equal(sent.length, 1, 'an unchanged queue is not sent again');
   assert.deepEqual(sent[0].tracks.map(t => t.id), ['a', 'b']);
   assert.equal(sent[0].startIndex, 0);
+  assert.deepEqual(scope._sjCarQueueSnapshot.map(t => t.id), ['a', 'b']);
+
+  // While the page shows its one-song stand-in for the song native is playing,
+  // that list must not replace native's queue.
+  scope.ytQueue = [{ trackId: 'a', title: 'A' }];
+  scope._sjCarFollow = { trackId: 'a' };
+  scope._sjCarStandIn = true;
+  api.taNativeSyncQueue();
+  assert.equal(sent.length, 1);
+  scope._sjCarStandIn = false;
+  scope._sjCarFollow = null;
 
   // The page loading the car's own song must not push its stand-in queue.
   scope.ytQueue = [{ trackId: 'z', title: 'Z' }];
@@ -88,4 +99,38 @@ test('the native engine receives a queue the page changed, once', async () => {
   scope._taNativeBgActive = false;
   api.taNativeSyncQueue();
   assert.equal(sent.length, 1);
+});
+
+test('following native playback copies its whole queue back, not the stand-in', async () => {
+  // Reproduces Play on an artist in the phone app: the page sent native ten
+  // songs, so native's status ticks leave the queue out. The page must still
+  // end up showing all ten, and must not send its one-song stand-in back.
+  const sent = [];
+  const native = { setQueue: async q => sent.push(q), play: async () => {}, getStatus: async () => ({}) };
+  const ten = Array.from({ length: 10 }, (_, i) => ({ id: 't' + i, title: 'S' + i, artist: 'Silver Jews' }));
+  const scope = {
+    SJ_BRAND: { id: 'rk' }, sjIsNative: () => true, sjDlPlugin: () => native, console,
+    performance: { now: () => 0 }, setTimeout: () => 0, document: { visibilityState: 'visible' },
+    ytData: { t0: { video_id: 'v0' } }, loadYT: async () => ({}), findTrackById: () => ({ name: 'S0' }),
+    ytAPIPlayer: null, ytPlayerEl: {}, _taAudioEl: null, _taBgActive: true, _taManualAudio: true,
+    _taNativeBgActive: true, taSyncAudioBtn() {}, _ytUserWantsPlay: true, ytpIsMob: () => false,
+    _ytpFs: true, ytpMobSyncDeck() {}, ytpEnterFullscreen() {}, ytpPaintTogs() {},
+    ytQueue: [], ytQueueIdx: 0, ytShuffle: false, ytRepeat: false,
+    _sjCarFollow: null, _sjCarFollowDriving: false, _sjCarStandIn: false,
+    _sjCarQueueSnapshot: null, _sjCarNextIndex: null, _taNativeQueueSig: '',
+    ytQueueItem: (videoId, title, trackId, artist) => ({ videoId, title, trackId, artist }),
+    ytpTrackMeta: (id, title) => ({ title, artist: 'Silver Jews' }), taTrackAudio: () => null,
+    sjCarFollowAlign() {}, sjCarFollowTime: () => 0,
+  };
+  // What ytPlayNow does while following: a one-song queue, then a repaint.
+  scope.ytPlayNow = (v, t, id) => { scope.ytQueue = [{ videoId: v, title: t, trackId: id }]; scope.ytQueueIdx = 0; scope.updateYTQueueUI(); };
+  const api = loadHtmlFnsInScope(['taNativeBgPlugin', 'taNativeQueuePayload', 'taNativeQueueSig',
+    'taNativeRememberQueue', 'taNativeSyncQueue', 'sjCarSyncPhoneState', 'sjCarOnNativeStatus', 'sjCarFollowLoad'], scope);
+  scope.updateYTQueueUI = () => api.taNativeSyncQueue();
+
+  api.taNativeRememberQueue(ten);   // what taStartNativeBg sent
+  await api.sjCarOnNativeStatus({ state: 'playing', trackId: 't0', index: 0, positionSeconds: 1 });
+  assert.equal(sent.length, 0, 'the stand-in queue went to native');
+  assert.deepEqual(scope.ytQueue.map(q => q.trackId), ten.map(t => t.id));
+  assert.equal(scope._sjCarStandIn, false);
 });

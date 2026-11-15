@@ -104,10 +104,10 @@ test('Listening Party app sends Background Play to the native audio engine', asy
     ytRepeat: false,
     ytpTrackMeta: (id, title) => ({ title, artist: 'Artist ' + id, album: 'Album', artwork: 'cover-' + id }),
     taTrackAudio: id => id === 'two' ? { url: 'signed-two', duration: 181 } : null,
-    _taNativeQueueSig: '',
+    _taNativeQueueSig: '', _sjCarQueueSnapshot: null,
   };
   const api = loadHtmlFnsInScope(
-    ['taNativeBgPlugin', 'taNativeQueuePayload', 'taNativeQueueSig', 'taStartNativeBg'],
+    ['taNativeBgPlugin', 'taNativeQueuePayload', 'taNativeQueueSig', 'taNativeRememberQueue', 'taStartNativeBg'],
     scope,
   );
 
@@ -119,6 +119,8 @@ test('Listening Party app sends Background Play to the native audio engine', asy
   assert.equal(calls[0][1].tracks[1].url, 'signed-two');
   assert.equal(calls[3][1].index, 1);
   assert.equal(calls[4][1].positionSeconds, 12);
+  assert.deepEqual(scope._sjCarQueueSnapshot.map(t => t.id), ['one', 'two'],
+    'the page keeps a copy: native leaves an already-reported queue out of later ticks');
   assert.match(html, /function taEnterBgAudio\(\)[\s\S]*?if \(taNativeBgPlugin\(\)\)[\s\S]*?taStartNativeBg\(pos\)/);
 
   scope.SJ_BRAND = { id: 'sj' };

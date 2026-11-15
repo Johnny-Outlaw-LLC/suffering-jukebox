@@ -317,7 +317,7 @@ test('the phone follows what CarPlay is playing, muted, and its buttons steer th
     ytpEnterFullscreen: () => calls.push('fullscreen'),
     _taNativeQueueSig: '', taNativeQueueSig: tracks => tracks.map(t => t.id).join('|'),
   });
-  vm.runInContext('var _sjCarFollow = null; var _sjCarFollowDriving = false; var _sjCarQueueSnapshot = null; var _sjCarNextIndex = null;\n' +
+  vm.runInContext('var _sjCarFollow = null; var _sjCarFollowDriving = false; var _sjCarStandIn = false; var _sjCarQueueSnapshot = null; var _sjCarNextIndex = null;\n' +
     ['sjCarFollowTime', 'sjCarSyncPhoneState', 'sjCarOnNativeStatus', 'sjCarFollowLoad', 'sjCarFollowAlign', 'sjCarFollowStop', 'sjCarFollowCommand']
       .map(fn).join('\n'), ctx);
 

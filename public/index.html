@@ -12297,6 +12297,7 @@ var _sjCarFollow = null;          // { trackId, title, artist, pos, at, playing,
 var _sjCarFollowDriving = false;  // true while this code is the one loading a song
 var _sjCarQueueSnapshot = null;   // complete native queue; routine ticks omit unchanged queues
 var _sjCarNextIndex = null;       // native's exact next choice, including shuffle
+var _sjCarStandIn = false;        // ytQueue is a one-song stand-in, not native's queue yet
 
 function sjCarSyncPhoneState(st) {
   if (!_sjCarFollow || !st) return;
@@ -12307,6 +12308,7 @@ function sjCarSyncPhoneState(st) {
   const nativeQueue = _sjCarQueueSnapshot;
   if (nativeQueue) {
     _taNativeQueueSig = taNativeQueueSig(nativeQueue);
+    _sjCarStandIn = false;
     const next = nativeQueue.map(track => {
       const item = ytQueueItem(ytData[track.id]?.video_id || null, track.title, track.id, track.artist);
       if (track.album) item.album = track.album;
@@ -12358,6 +12360,14 @@ async function sjCarOnNativeStatus(st, opts) {
   // Only start following real playback; a paused native engine left over from
   // an earlier drive is not the car playing now.
   if (!_sjCarFollow && state !== 'playing') return;
+  // Routine ticks leave out a queue native already reported. With no copy of
+  // it here, getStatus always includes it.
+  if (!Array.isArray(st.queue) && !_sjCarQueueSnapshot) {
+    try {
+      const full = await sjDlPlugin()?.getStatus?.();
+      if (Array.isArray(full?.queue)) st = { ...st, queue: full.queue };
+    } catch (_) {}
+  }
   const prev = _sjCarFollow;
   _sjCarFollow = {
     trackId,
@@ -12399,6 +12409,7 @@ async function sjCarFollowLoad(trackId) {
   _taManualAudio = _taNativeBgActive;
   if (typeof _spActive !== 'undefined' && _spActive) { try { void spPauseTransport(); } catch (_) {} }
   _sjCarFollowDriving = true;
+  _sjCarStandIn = true;
   try {
     if (videoId || !ytPlayerEl) ytPlayNow(videoId, title, trackId);
     else {
@@ -12449,6 +12460,7 @@ function sjCarFollowAlign() {
 function sjCarFollowStop(pauseCar) {
   if (!_sjCarFollow) return;
   _sjCarFollow = null;
+  _sjCarStandIn = false;
   try { ytAPIPlayer?.unMute?.(); } catch (_) {}
   if (pauseCar) { try { sjDlPlugin()?.pause?.(); } catch (_) {} }
   if (pauseCar && _taNativeBgActive) {
@@ -17450,7 +17462,7 @@ async function taStartNativeBg(positionSeconds) {
   const p = taNativeBgPlugin();
   const payload = taNativeQueuePayload();
   if (!p || !payload.tracks.length) throw new Error('Native background queue is unavailable');
-  _taNativeQueueSig = taNativeQueueSig(payload.tracks);
+  taNativeRememberQueue(payload.tracks);
   await p.setQueue({ ...payload, autoPlay: true });
   if (p.setShuffle) await p.setShuffle({ enabled: !!ytShuffle });
   if (p.setRepeat) await p.setRepeat({ enabled: !!ytRepeat });
@@ -17468,6 +17480,15 @@ function taNativeQueueSig(tracks) {
   return (tracks || []).map(t => t && t.id).join('|');
 }
 
+// Native only puts its queue in a status update when the queue changed since
+// the last one it reported, and the setQueue reply counts as reported. So the
+// page keeps its own copy of what it sent (same shape as native's queue);
+// without it the phone had no queue to follow and showed one song.
+function taNativeRememberQueue(tracks) {
+  _taNativeQueueSig = taNativeQueueSig(tracks);
+  _sjCarQueueSnapshot = (tracks || []).slice();
+}
+
 // While the native engine plays, the page mirrors its queue
 // (sjCarSyncPhoneState), so a list changed only on this side is overwritten
 // on the next status tick. That is how an artist's Play started AVPlayer on
@@ -17476,13 +17497,16 @@ function taNativeQueueSig(tracks) {
 // setQueue keeps the current song playing when it is still the current one.
 function taNativeSyncQueue() {
   if (_sjCarFollowDriving || !(_taNativeBgActive || _sjCarFollow)) return;
+  // The page is showing a one-song stand-in for the song native is playing
+  // until it has copied native's queue back; that list must never go to native.
+  if (_sjCarStandIn) return;
   const p = taNativeBgPlugin();
   if (!p) return;
   const payload = taNativeQueuePayload();
   if (!payload.tracks.length) return;
   const sig = taNativeQueueSig(payload.tracks);
   if (sig === _taNativeQueueSig) return;
-  _taNativeQueueSig = sig;
+  taNativeRememberQueue(payload.tracks);
   void Promise.resolve(p.setQueue({ ...payload, autoPlay: true }))
     .catch(e => console.warn('native queue sync failed', e));
 }
