@@ -104,9 +104,10 @@ test('Listening Party app sends Background Play to the native audio engine', asy
     ytRepeat: false,
     ytpTrackMeta: (id, title) => ({ title, artist: 'Artist ' + id, album: 'Album', artwork: 'cover-' + id }),
     taTrackAudio: id => id === 'two' ? { url: 'signed-two', duration: 181 } : null,
+    _taNativeQueueSig: '',
   };
   const api = loadHtmlFnsInScope(
-    ['taNativeBgPlugin', 'taNativeQueuePayload', 'taStartNativeBg'],
+    ['taNativeBgPlugin', 'taNativeQueuePayload', 'taNativeQueueSig', 'taStartNativeBg'],
     scope,
   );
 

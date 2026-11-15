@@ -10834,7 +10834,13 @@ function openYTPlayer(videoId, title, trackId, ev) {
   ytVideoId = videoId;
   const safeTitle = (title||'').replace(/</g,'&lt;');
 
-  // If player already exists, offer playback and queue placement choices
+  // A player that is open but idle (paused, or restored at launch) just plays
+  // the song. Session restore itself still goes through the choice below.
+  if (ytPlayerEl && !_pbRestoreOpts && !sjQueueIsPlaying()) {
+    ytPlayNow(videoId, title, trackId);
+    return;
+  }
+  // If music is playing, offer playback and queue placement choices
   if (ytPlayerEl) {
     const triggerEl = ev instanceof Event ? (ev.currentTarget || ev.target) : (ev instanceof Element ? ev : null);
     showYTQueueChoice(videoId, title, trackId, triggerEl);
@@ -12300,6 +12306,7 @@ function sjCarSyncPhoneState(st) {
   if (Array.isArray(st.queue)) _sjCarQueueSnapshot = st.queue;
   const nativeQueue = _sjCarQueueSnapshot;
   if (nativeQueue) {
+    _taNativeQueueSig = taNativeQueueSig(nativeQueue);
     const next = nativeQueue.map(track => {
       const item = ytQueueItem(ytData[track.id]?.video_id || null, track.title, track.id, track.artist);
       if (track.album) item.album = track.album;
@@ -13082,15 +13089,8 @@ function playAlbum(albumId, e) {
     const items = (pseudo._ddGroupItems || []).map(id => ddItemById(id)).filter(i => i?.externalId);
     if (!items.length) return;
     const fullQueue = items.map(i => ({ videoId: i.externalId, title: i.title, trackId: null }));
-    const first = fullQueue[0];
-    if (!ytPlayerEl) {
-      openYTPlayer(first.videoId, first.title, null, e);
-      ytQueue = fullQueue;
-      ytQueueIdx = 0;
-      updateYTQueueUI();
-    } else {
-      showAlbumQueueChoice({ name: pseudo.name, id: albumId }, fullQueue, e);
-    }
+    if (!sjQueueIsPlaying()) ytPlayQueueNow(fullQueue);
+    else showAlbumQueueChoice({ name: pseudo.name, id: albumId }, fullQueue, e);
     return;
   }
   const ddItem = ddItemById(albumId);
@@ -13114,16 +13114,21 @@ function playAlbum(albumId, e) {
   if (!albTracks.length) return;
   const fullQueue = sjNoBlocked(albTracks.map(t => ({ videoId: ytData[t.id].video_id, title: t.name, trackId: t.id })));
   if (!fullQueue.length) { showToast('Every track on this album is blocked.'); return; }
-  const first = fullQueue[0];
-  if (!ytPlayerEl) {
-    openYTPlayer(first.videoId, first.title, first.trackId);
-    // Override queue with full album (openYTPlayer sets it to just [first])
-    ytQueue = fullQueue;
-    ytQueueIdx = 0;
-    updateYTQueueUI();
-  } else {
-    showAlbumQueueChoice(alb, fullQueue, e);
-  }
+  if (!sjQueueIsPlaying()) ytPlayQueueNow(fullQueue);
+  else showAlbumQueueChoice(alb, fullQueue, e);
+}
+
+// Replace whatever is loaded with this list and start its first song. Works
+// with the player closed (ytPlayNow opens it) or open but idle. ytPlayNow
+// installs a one-song queue, so the full list goes in after it;
+// updateYTQueueUI then hands that list to the native engine as well.
+function ytPlayQueueNow(fullQueue) {
+  const first = fullQueue && fullQueue[0];
+  if (!first) return;
+  ytPlayNow(first.videoId, first.title, first.trackId);
+  ytQueue = fullQueue;
+  ytQueueIdx = 0;
+  updateYTQueueUI();
 }
 
 function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
@@ -13172,10 +13177,7 @@ function showAlbumQueueChoice(alb, fullQueue, triggerEl) {
     if (!btn) return;
     ev.stopPropagation();
     if (btn.dataset.albaction === 'play') {
-      ytPlayNow(fullQueue[0].videoId, fullQueue[0].title, fullQueue[0].trackId);
-      ytQueue = fullQueue;
-      ytQueueIdx = 0;
-      updateYTQueueUI();
+      ytPlayQueueNow(fullQueue);
     } else if (btn.dataset.albaction === 'next') {
       ytInsertNextQueueItems(fullQueue);
     } else {
@@ -13261,6 +13263,7 @@ function updateYTQueueUI(opts) {
   }
   ytpPaintDockPlaylist(queueSig);
   try { sjSyncNowPlayingTab(); } catch (_) {}
+  try { taNativeSyncQueue(); } catch (_) {}
   if (!ytPlayerEl) return;
   // The player is rebuilt often enough that the badge has to be re-applied
   // rather than set once when the broadcast starts.
@@ -17447,6 +17450,7 @@ async function taStartNativeBg(positionSeconds) {
   const p = taNativeBgPlugin();
   const payload = taNativeQueuePayload();
   if (!p || !payload.tracks.length) throw new Error('Native background queue is unavailable');
+  _taNativeQueueSig = taNativeQueueSig(payload.tracks);
   await p.setQueue({ ...payload, autoPlay: true });
   if (p.setShuffle) await p.setShuffle({ enabled: !!ytShuffle });
   if (p.setRepeat) await p.setRepeat({ enabled: !!ytRepeat });
@@ -17456,6 +17460,31 @@ async function taStartNativeBg(positionSeconds) {
   if (Number(positionSeconds) > 0.5 && p.seek) {
     await p.seek({ positionSeconds: Number(positionSeconds) });
   }
+}
+
+// The songs the native engine was last given or last reported, by id.
+var _taNativeQueueSig = '';
+function taNativeQueueSig(tracks) {
+  return (tracks || []).map(t => t && t.id).join('|');
+}
+
+// While the native engine plays, the page mirrors its queue
+// (sjCarSyncPhoneState), so a list changed only on this side is overwritten
+// on the next status tick. That is how an artist's Play started AVPlayer on
+// one song and the rest of the discography vanished. Called from
+// updateYTQueueUI: hand the engine any queue it does not already have.
+// setQueue keeps the current song playing when it is still the current one.
+function taNativeSyncQueue() {
+  if (_sjCarFollowDriving || !(_taNativeBgActive || _sjCarFollow)) return;
+  const p = taNativeBgPlugin();
+  if (!p) return;
+  const payload = taNativeQueuePayload();
+  if (!payload.tracks.length) return;
+  const sig = taNativeQueueSig(payload.tracks);
+  if (sig === _taNativeQueueSig) return;
+  _taNativeQueueSig = sig;
+  void Promise.resolve(p.setQueue({ ...payload, autoPlay: true }))
+    .catch(e => console.warn('native queue sync failed', e));
 }
 
 async function taExitNativeBg() {
@@ -22284,9 +22313,17 @@ async function lamPlayAll(shuffle) {
   } catch (e) { showToast('Could not load this artist\'s songs.'); }
 }
 
-/** Something is loaded in the player, so Play All would replace it. */
+/** Music is playing (or starting), so Play would cut it off. A paused
+ *  player, or a queue restored at launch, does not count: Play just plays. */
 function sjQueueIsPlaying() {
-  return !!(ytPlayerEl && ytQueue && ytQueue.length);
+  if (!ytPlayerEl || !ytQueue || !ytQueue.length) return false;
+  // Following the native engine (phone Background Play, CarPlay): it owns the
+  // play state and the page's own intent flag is held false on purpose.
+  if (_sjCarFollow) return !!_sjCarFollow.playing;
+  if (!_ytUserWantsPlay) return false;
+  // The last song finished on YouTube with nothing after it.
+  try { if (!_taBgActive && ytAPIPlayer?.getPlayerState?.() === 0) return false; } catch (_) {}
+  return true;
 }
 
 // While music plays, the artist ⋯ offers Add All to Queue in Play All's
@@ -34607,7 +34644,8 @@ async function landingPlayArtist(artistId, ev) {
     await loadTrackAudio(queue.slice(0, 80).map(x => x.trackId));
     // If music is already playing, let the user choose Play Now vs Add All to Queue
     // (same popup the album/track Play buttons use); otherwise just start playback.
-    if (ytPlayerEl) {
+    // A paused or restored player is not "playing": Play replaces it at once.
+    if (sjQueueIsPlaying()) {
       showAlbumQueueChoice({ name: row.name }, queue, ev);
     } else {
       landingPlayQueue(queue);

@@ -11,7 +11,7 @@ for (const kind of ['artist', 'playlist']) {
     const scope = { document: { getElementById: () => menu }, googleUser: null,
       _sjmHeader: () => '', YTP_DECK_ICONS: {}, playlistIdCanShare: () => false,
       oaIsMine: () => false, _lamFavIds: [], _lamOnPage: false, sjmArtistHasDiscography: () => false,
-      lamCanManage: () => false, ytPlayerEl: null, ytQueue: [] };
+      lamCanManage: () => false, ytPlayerEl: null, ytQueue: [], _sjCarFollow: null, _ytUserWantsPlay: false, _taBgActive: false, ytAPIPlayer: null };
     const { lamRender, plmRender } = loadHtmlFnsInScope(['sjQueueIsPlaying', 'lamRender', 'plmRender'], scope);
     if (kind === 'artist') lamRender({ name: 'Artist', track_count: n });
     else plmRender({ id: 'playlist', _tracks: Array(n).fill('track') });
@@ -27,7 +27,7 @@ for (const kind of ['artist', 'playlist']) test(`${kind} menu offers Add All to 
   const scope = { document: { getElementById: () => menu }, googleUser: null,
     _sjmHeader: () => '', YTP_DECK_ICONS: {}, playlistIdCanShare: () => false,
     oaIsMine: () => false, _lamFavIds: [], _lamOnPage: false, sjmArtistHasDiscography: () => false,
-    lamCanManage: () => false, ytPlayerEl: {}, ytQueue: [{ trackId: 'x' }] };
+    lamCanManage: () => false, ytPlayerEl: {}, ytQueue: [{ trackId: 'x' }], _sjCarFollow: null, _ytUserWantsPlay: true, _taBgActive: false, ytAPIPlayer: { getPlayerState: () => 1 } };
   const { lamRender, plmRender } = loadHtmlFnsInScope(['sjQueueIsPlaying', 'lamRender', 'plmRender'], scope);
   if (kind === 'artist') lamRender({ name: 'Artist', track_count: 2 });
   else plmRender({ id: 'playlist', _tracks: ['a', 'b'] });
