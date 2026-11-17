@@ -548,9 +548,13 @@ function upgradeWikiThumb(src: string): string {
   return /\/\d+px-/.test(src) ? src.replace(/\/\d+px-/, '/500px-') : src;
 }
 
-async function wikiPageSummaryThumb(page: string): Promise<string | null> {
+async function wikiPageSummaryThumb(page: string, albumOnly = false): Promise<string | null> {
   try {
     const d = await (await tfetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.replace(/ /g, '_'))}`)).json();
+    // A title track has its own page ("1984 single by Roger Waters") whose
+    // picture is the single's sleeve, not the album cover.
+    const desc = String(d?.description || '');
+    if (albumOnly && /\b(single|song)\b/i.test(desc) && !/\b(album|ep|soundtrack)\b/i.test(desc)) return null;
     const src = d?.thumbnail?.source;
     if (!src || /\/static\/images\/icons\//i.test(src)) return null;
     return upgradeWikiThumb(src);
@@ -575,9 +579,12 @@ async function wikiAlbumThumbnail(
       const s = await (await tfetch(`${W}?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=6&format=json&origin=*`)).json();
       for (const hit of (s.query?.search || [])) {
         const title = hit.title || '';
+        // "The Pros and Cons of Hitch Hiking (song)" outranked the album page
+        // and gave the album the single's sleeve.
+        if (/\((?:[^)]*\s)?(song|single)\)\s*$/i.test(title)) continue;
         const cleaned = stripWikiAlbumJunk(title, artist);
         if (!similar(norm(cleaned), want) && !similar(norm(coreTitle(cleaned)), want)) continue;
-        const thumb = await wikiPageSummaryThumb(title);
+        const thumb = await wikiPageSummaryThumb(title, true);
         if (thumb) return thumb;
       }
     }
