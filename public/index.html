@@ -9431,6 +9431,14 @@ let ytRepeat            = false;
 let ytAPIPlayer         = null; // active-slot YT.Player (see _ytActiveSlot)
 let _ytActiveSlot       = 'a';  // 'a' | 'b' — ping-pong embeds for overlap crossfade
 let _ytSlotPlayers      = { a: null, b: null };
+let _gl                 = null;  // gapless preload: { idx, videoId, slot, token, ready }
+let _glToken            = 0;
+let _glTimer            = null;  // near-end watcher (see glTick)
+let _glFire             = null;  // setTimeout that starts the next song
+let _glPos              = { v: -1, at: 0 }; // last distinct getCurrentTime() and when it arrived
+let _glStartAt          = 0;     // performance.now() when playVideo() went to the incoming slot
+let _glOutgoing         = null;  // player being handed off from; muted once the incoming one sounds
+let _glLead             = 0.15;  // seconds YouTube takes to start a buffered video; re-measured each handoff
 let _djActive           = false; // Side by Side overlay is open
 let _ytPlayTimer        = null; // 10-second play-log timer
 let _ytPendingPlay      = null; // {videoId, trackId} waiting for 10s threshold
@@ -11448,6 +11456,7 @@ function ytPlayQueueIdx(idx, opts) {
   if (!_useTa) taPrimeAudioEl(item);
   // play will be logged by onStateChange after 10 seconds
   if (!opts?.skipLoad) {
+    glCancel(); // a normal load replaces whatever the idle slot was holding
     if (ytpIsArtistAudio(item)) {
       _ytUserWantsPlay = true;
       _taManualAudio = true;
@@ -11804,6 +11813,8 @@ function ytNextTrack() {
     next = playlistChartNextPlayable(next, 1);
     if (next < 0) return;
   }
+  // The next song is already buffered in the idle slot: start it there.
+  if (glTryHandoff(next)) return;
   ytPlayQueueIdx(next);
 }
 
@@ -11924,7 +11935,17 @@ function ytpSyncAPIPointer() { ytAPIPlayer = ytpSlotPlayer(_ytActiveSlot); }
 function ytpSetSlotVisible(slot) {
   ['a', 'b'].forEach(s => {
     const el = document.getElementById(ytpSlotIframeId(s));
-    if (el) el.style.display = (s === slot) ? 'block' : 'none';
+    if (!el) return;
+    const on = s === slot;
+    // An idle slot holding a video stays laid out but transparent, under the
+    // live one: Chrome throttles hidden cross-origin frames, which would
+    // stall the gapless preload. An empty slot is simply not shown.
+    const src = el.getAttribute('src');
+    const parked = !on && !!src && src !== 'about:blank';
+    el.style.display = (on || parked) ? 'block' : 'none';
+    el.style.opacity = on ? '' : '0';
+    el.style.pointerEvents = on ? '' : 'none';
+    el.style.zIndex = on ? '2' : '1';
   });
 }
 
@@ -11939,7 +11960,204 @@ function ytpGetSlotVolume(slot) {
   try { return ytpSlotPlayer(slot)?.getVolume?.() ?? 0; } catch (_) { return 0; }
 }
 
+// ── Gapless playback ───────────────────────────────────────────────
+// Every song is its own YouTube video, so the plain advance loads the next
+// one into the same player after the first has ended: half a second to two
+// seconds of silence at every seam, which wrecks albums written as one piece
+// (The Pros and Cons of Hitch Hiking). Instead the idle slot loads the next
+// song about GL_PRELOAD_SEC early, muted, plays it just long enough to buffer,
+// parks it at 0:00, and starts it a beat before the current song ends.
+//
+// YouTube needs a moment between playVideo() and sound, so the start goes out
+// _glLead seconds early, re-measured on every handoff. If the precise start
+// is missed (background tab, where timers run once a second), ENDED still
+// goes through ytNextTrack -> glTryHandoff and starts the buffered video.
+//
+// Not offered where the idle frame cannot start without a tap (iPhone/iPad),
+// in the phone app (its own engine), or while Background Play, Spotify,
+// Side by Side, a live room or CarPlay owns the sound. Off switch for
+// testing: localStorage sj_gapless = 'off'.
+const GL_PRELOAD_SEC = 20;
+
+function glIsIOS() {
+  const ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+}
+
+function glAvailable() {
+  try { if (localStorage.getItem('sj_gapless') === 'off') return false; } catch (_) {}
+  return !sjIsNative() && !glIsIOS() && !!ytPlayerEl && !!ytAPIPlayer &&
+    typeof ytAPIPlayer.loadVideoById === 'function' &&
+    !_djActive && !_liveRoomListen && !_sjCarFollow && !_taBgActive && !_taManualAudio &&
+    !(typeof _spActive !== 'undefined' && _spActive) && !_pbRestoreOpts && !_ytpLayoutRestore &&
+    viewMode !== 'playlistchart' && ytQueue.length > 1 &&
+    !!document.getElementById(ytpSlotIframeId(ytpInactiveSlot()));
+}
+
+// What ytNextTrack() will pick, without spending a Play next or a shuffle
+// pick. ytUpNextIndex() reserves the shuffle preview, which the real pick honours.
+function glPeekNext() {
+  const forced = ytPlayNextIndex();
+  if (forced >= 0) return forced;
+  if (ytShuffle && ytQueue.length > 1) return ytUpNextIndex();
+  if (ytQueueIdx < ytQueue.length - 1) return ytQueueIdx + 1;
+  return ytRepeat ? 0 : -1;
+}
+
+// Only songs the normal path would play through the YouTube embed.
+function glPlayable(idx) {
+  const item = ytQueue[idx];
+  if (!item?.videoId || idx === ytQueueIdx) return false;
+  if (ytpIsArtistAudio(item)) return false;
+  if (item.trackId && typeof spShouldTry === 'function' && spShouldTry(item.trackId)) return false;
+  if (_taPreferBg && taIsMobileDevice() && taTrackAudio(item.trackId)) return false;
+  return true;
+}
+
+function glCancel() {
+  if (_glFire) { clearTimeout(_glFire); _glFire = null; }
+  const g = _gl;
+  _gl = null;
+  if (!g || g.slot === _ytActiveSlot) return;
+  const p = ytpSlotPlayer(g.slot);
+  try { p?.pauseVideo?.(); p?.mute?.(); } catch (_) {}
+}
+
+function glPrepare(idx) {
+  const item = ytQueue[idx];
+  const slot = ytpInactiveSlot();
+  const token = ++_glToken;
+  _gl = { idx, videoId: item.videoId, slot, token, ready: false };
+  const load = (player) => {
+    if (_gl?.token !== token || slot === _ytActiveSlot) return;
+    try { player.mute(); player.setVolume(0); player.loadVideoById(item.videoId, 0); }
+    catch (_) { _gl = null; }
+  };
+  const existing = ytpSlotPlayer(slot);
+  if (existing && typeof existing.loadVideoById === 'function') { load(existing); return; }
+  const iframe = document.getElementById(ytpSlotIframeId(slot));
+  if (!iframe) { _gl = null; return; }
+  const src = iframe.getAttribute('src');
+  if (!src || src === 'about:blank') {
+    // A YT.Player can only drive a frame that already holds an embed.
+    iframe.src = ytpEmbedSrc(item.videoId, false);
+    ytpSetSlotVisible(_ytActiveSlot); // lays the idle frame out, transparent
+  }
+  ytpAttachSlotPlayer(slot, load);
+}
+
+// The idle slot reaches PLAYING once the start of the song has buffered:
+// stop it there and rewind, ready to go.
+function glOnIdleState(slot, ev) {
+  const g = _gl;
+  if (!g || slot !== g.slot || g.ready || ev.data !== 1) return;
+  const p = ytpSlotPlayer(slot);
+  try { p.pauseVideo(); p.seekTo(0, true); } catch (_) { return; }
+  g.ready = true;
+}
+
+function glOnActivePlaying() {
+  // The incoming song is sounding: silence the tail of the outgoing one now,
+  // so music that runs across the seam is never heard twice.
+  if (_glOutgoing && _glOutgoing !== ytAPIPlayer) { try { _glOutgoing.mute(); } catch (_) {} }
+  _glOutgoing = null;
+  if (_glStartAt) {
+    const took = (performance.now() - _glStartAt) / 1000;
+    _glStartAt = 0;
+    if (took > 0 && took < 1.5) _glLead = Math.max(0.05, Math.min(0.5, _glLead * 0.6 + took * 0.4));
+  }
+  if (!_glTimer) _glTimer = setInterval(glTick, 200);
+}
+
+// Position from the player, carried forward between YouTube's ~quarter-second
+// time reports so the start can be aimed tighter than the reports allow.
+function glEstimate() {
+  const pos = ytAPIPlayer.getCurrentTime();
+  const now = performance.now();
+  if (pos !== _glPos.v) _glPos = { v: pos, at: now };
+  return _glPos.v + (now - _glPos.at) / 1000;
+}
+
+function glTick() {
+  if (!ytPlayerEl) { clearInterval(_glTimer); _glTimer = null; glCancel(); return; }
+  if (!glAvailable()) { if (_gl) glCancel(); return; }
+  let st, dur, left;
+  try { st = ytAPIPlayer.getPlayerState(); dur = ytAPIPlayer.getDuration(); left = dur - glEstimate(); }
+  catch (_) { return; }
+  if (st !== 1 || !_ytUserWantsPlay || !(dur > 0)) {
+    if (_glFire) { clearTimeout(_glFire); _glFire = null; }
+    return;
+  }
+  const next = glPeekNext();
+  if (_gl && (_gl.idx !== next || ytQueue[next]?.videoId !== _gl.videoId)) glCancel();
+  if (!_gl && left <= GL_PRELOAD_SEC && next >= 0 && glPlayable(next)) glPrepare(next);
+  if (_gl?.ready && !_glFire && document.visibilityState === 'visible' && left <= 1.2) {
+    _glFire = setTimeout(glFire, Math.max(0, (left - _glLead) * 1000));
+  }
+}
+
+function glFire() {
+  _glFire = null;
+  if (!_gl?.ready || !glAvailable() || !_ytUserWantsPlay) return;
+  try {
+    if (ytAPIPlayer.getPlayerState() !== 1) return;
+    // A seek back since this was scheduled: the ticker will aim again.
+    if (ytAPIPlayer.getDuration() - glEstimate() > _glLead + 0.4) return;
+  } catch (_) { return; }
+  ytNextTrack();
+}
+
+// Called by ytNextTrack once it has chosen `next`. True when the buffered
+// idle slot took over; false sends ytNextTrack down the normal load.
+function glTryHandoff(next) {
+  const g = _gl;
+  if (!g?.ready || g.idx !== next || ytQueue[next]?.videoId !== g.videoId ||
+      g.slot === _ytActiveSlot || !glAvailable()) return false;
+  const inP = ytpSlotPlayer(g.slot);
+  const outP = ytAPIPlayer;
+  if (!inP || typeof inP.playVideo !== 'function') return false;
+  const outSlot = _ytActiveSlot;
+  let muted = false, outLeft = 0;
+  try { muted = !!outP?.isMuted?.(); outLeft = outP.getDuration() - outP.getCurrentTime(); } catch (_) {}
+  const volume = ytpSliderVolume();
+  // Close the outgoing song's listen exactly as its ENDED would have.
+  lyrSyncStop();
+  patchYTPlayDuration();
+  if (_glFire) { clearTimeout(_glFire); _glFire = null; }
+  _gl = null;
+  _glOutgoing = outP;
+  _ytActiveSlot = g.slot;
+  ytpSyncAPIPointer();
+  ytPlayQueueIdx(next, { skipLoad: true });
+  try {
+    inP.setVolume(volume);
+    if (muted) inP.mute(); else inP.unMute();
+    _glStartAt = performance.now();
+    inP.playVideo();
+  } catch (_) {}
+  ytpSetSlotVisible(g.slot);
+  // No ytpSyncVolumeSlider() here: the incoming player can still report its
+  // muted preload volume for a moment, and the slider already holds the truth.
+  // At a natural seam the outgoing song has a sliver left: let it finish
+  // under the new one. On a mid-song Next, silence it now.
+  const parkOut = () => {
+    if (_ytActiveSlot === outSlot) return;
+    try { outP?.pauseVideo?.(); outP?.mute?.(); } catch (_) {}
+  };
+  if (outLeft > 1.5) parkOut();
+  else setTimeout(parkOut, Math.round((Math.max(0, outLeft) + 0.4) * 1000));
+  // If YouTube will not start the buffered video, load it the ordinary way.
+  setTimeout(() => {
+    if (_ytActiveSlot !== g.slot || ytQueueIdx !== next || !_ytUserWantsPlay) return;
+    let st;
+    try { st = inP.getPlayerState(); } catch (_) {}
+    if (st !== 1 && st !== 3) { try { inP.loadVideoById(g.videoId); } catch (_) {} }
+  }, 2500);
+  return true;
+}
+
 function ytpDestroySlotPlayers() {
+  glCancel();
   ['a', 'b'].forEach(s => {
     try { if (_ytSlotPlayers[s]) _ytSlotPlayers[s].destroy(); } catch (_) {}
     _ytSlotPlayers[s] = null;
@@ -11988,7 +12206,7 @@ function ytpAttachSlotPlayer(slot, onReadyCb) {
 
 function ytpOnSlotStateChange(slot, ev) {
   if (_ytpLayoutRestore) return;
-  if (slot !== _ytActiveSlot) return;
+  if (slot !== _ytActiveSlot) { glOnIdleState(slot, ev); return; }
   // Following the car: the car owns play state, logging and what plays next.
   if (_sjCarFollow) {
     if (ev.data === 1) { try { ytAPIPlayer.mute(); } catch (_) {} sjCarFollowAlign(); }
@@ -12009,6 +12227,7 @@ function ytpOnSlotStateChange(slot, ev) {
       taSyncAudioBtn();
     }
     _ytUserWantsPlay = true;
+    glOnActivePlaying();
     ytpSetPlayPauseIcon(true);
     ytpStartBgKeepalive();
     ytpUpdateMediaSession();
@@ -14381,8 +14600,7 @@ function ytpDockSyncVideoFrame() {
   frame.style.minHeight = '0';
   frame.style.zIndex = '4991';
   frame.style.pointerEvents = 'auto';
-  const iframe = frame.querySelector('iframe');
-  if (iframe) iframe.style.height = box.height + 'px';
+  frame.querySelectorAll('iframe').forEach(f => { f.style.height = box.height + 'px'; });
 }
 
 function ytpDockScheduleVideoGeometry(duration = 400) {
@@ -14428,8 +14646,7 @@ function ytpDockReleaseFrame() {
     frame.style.minHeight = '';
     frame.style.zIndex = '';
     frame.style.pointerEvents = '';
-    const iframe = frame.querySelector('iframe');
-    if (iframe) iframe.style.height = '';
+    frame.querySelectorAll('iframe').forEach(f => { f.style.height = ''; });
   }
   if (slot) slot.style.display = 'none';
   if (art) art.style.display = '';
@@ -19765,7 +19982,7 @@ function ytpUpdateFsLayout() {
         ? Math.min(Math.round(window.innerWidth * 9 / 16), Math.round(avail * 0.45))
         : Math.max(200, avail);
       frame.style.height = h + 'px';
-      iframe.style.height = h + 'px';
+      ytpSetIframesHeight(frame, h + 'px');
     }
     if (_ytpLyricsOpen) ytpMobLayoutLyrics();
     return;
@@ -19782,7 +19999,13 @@ function ytpUpdateFsLayout() {
   }
   const frameH = Math.max(200, vh - chromeH);
   if (frame) { frame.style.height = frameH + 'px'; frame.style.flex = '1'; }
-  if (iframe) iframe.style.height = frameH + 'px';
+  if (frame) ytpSetIframesHeight(frame, frameH + 'px');
+}
+
+// Both player slots share the frame, and whichever is live after a gapless
+// handoff has to match it, so size them together.
+function ytpSetIframesHeight(frame, h) {
+  frame?.querySelectorAll('iframe').forEach(f => { f.style.height = h; });
 }
 
 function ytpToggleFullscreen() {
@@ -19838,7 +20061,7 @@ function ytpToggleLyrics(open, opts) {
           const avail  = window.innerHeight - ytpPlayerChromeH();
           const h      = Math.min(Math.round(window.innerWidth * 9 / 16), Math.round(avail * 0.45));
           if (frame) frame.style.height = h + 'px';
-          if (iframe) iframe.style.height = h + 'px';
+          if (iframe) ytpSetIframesHeight(frame, h + 'px');
           ytpMobLayoutLyrics();
         }
       } else {
@@ -19868,7 +20091,7 @@ function ytpToggleLyrics(open, opts) {
       const iframe = frame?.querySelector('iframe');
       const h      = Math.max(200, window.innerHeight - ytpPlayerChromeH());
       if (frame) frame.style.height = h + 'px';
-      if (iframe) iframe.style.height = h + 'px';
+      if (iframe) ytpSetIframesHeight(frame, h + 'px');
       _ytpLyricsPaneEl.style.height = '';
       _ytpLyricsPaneEl.style.maxHeight = '';
     } else if (_ytpFs) {
@@ -41244,11 +41467,14 @@ async function ddSubmitManual() {
   }
 }
 
-const SJ_APP_UPDATED_FALLBACK = '2026-10-24';
+const SJ_APP_UPDATED_FALLBACK = '2026-11-17';
 
 // ── Change Log - newest release first; each entry groups the user-facing
 // changes that shipped on that date. Update this by hand when you ship. ──
 const SJ_CHANGELOG = [
+  { date: '2026-11-17', items: [
+    'Songs now run straight into each other on a computer or an Android phone. The next song loads quietly in the last 20 seconds and starts the moment the current one ends, so albums that play as one piece, like The Pros and Cons of Hitch Hiking, no longer stop between tracks. Pressing Next in those last seconds is instant too.',
+  ] },
   { date: '2026-10-24', items: [
     'Uploading your own music is now one page. Drop a folder or a few songs and they start uploading right away, with album names, track order, years and covers filled in from the files themselves.',
     'A folder holding several albums becomes several releases. Rename songs, change their order, swap a cover or remove a song while the files upload. Everything saves as you go.',
