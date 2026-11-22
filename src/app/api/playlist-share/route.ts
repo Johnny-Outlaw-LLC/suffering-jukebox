@@ -21,6 +21,9 @@ import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
+// PostgREST's max-rows on this project. Asking for more per page is ignored.
+const TRACK_PAGE = 1000;
+
 const siteUrl = () => (process.env.NEXT_PUBLIC_SITE_URL || "https://sufferingjukebox.stream").replace(/\/$/, "");
 
 function emailHtml(playlistName: string, fromName: string) {
@@ -142,12 +145,23 @@ export async function GET(req: NextRequest) {
         grantsByPl.set(g.playlist_id, list);
       }
 
-      const { data: tracks } = rows.length
-        ? await sb.schema(JUKEBOX_SCHEMA).from("playlist_tracks")
+      // Paged: one query across every playlist on the page passed PostgREST's
+      // 1,000 row cap at 1,921 rows, and because it sorts by position the cut
+      // fell on the tail of every long playlist. An 87 song playlist opened
+      // with 47. The id tiebreak keeps the pages from overlapping.
+      const tracks: { id: string; playlist_id: string; track_id: string; position: number; added_by_email: string | null; added_by_name: string | null }[] = [];
+      const ids = rows.map(x => x.id);
+      for (let from = 0; ids.length; from += TRACK_PAGE) {
+        const { data, error } = await sb.schema(JUKEBOX_SCHEMA).from("playlist_tracks")
           .select("id,playlist_id,track_id,position,added_by_email,added_by_name")
-          .in("playlist_id", rows.map(x => x.id))
+          .in("playlist_id", ids)
           .order("position")
-        : { data: [] };
+          .order("id")
+          .range(from, from + TRACK_PAGE - 1);
+        if (error) throw error;
+        tracks.push(...(data || []));
+        if (!data || data.length < TRACK_PAGE) break;
+      }
 
       return NextResponse.json({
         ok: true,
